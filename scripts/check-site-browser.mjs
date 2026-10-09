@@ -223,6 +223,10 @@ try {
   assert.equal(await fleet.locator('.fleet-agent').count(), 16)
   assert.equal(await fleet.locator('.fleet-child').count(), 48)
   assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '64')
+  await page.waitForFunction(
+    () => document.querySelector('.fleet-webgl canvas')?.getAttribute('data-stage') === '3',
+  )
+  const runtimeLinks = Number(await fleet.locator('.fleet-webgl canvas').getAttribute('data-links'))
   await fleet.getByRole('button', { name: /05 Do/ }).click()
   assert.equal(await fleet.getAttribute('data-stage'), '4')
   assert.equal(await fleet.locator('.fleet-dovo-orchestrator strong').textContent(), 'Do')
@@ -238,9 +242,22 @@ try {
   )
   assert.equal(await fleet.getAttribute('data-webgl'), 'true')
   assert.equal(await fleet.locator('.fleet-webgl canvas').getAttribute('data-agents'), '256')
-  await fleet.getByRole('button', { name: 'Play animation', exact: true }).waitFor()
+  assert.ok(
+    Number(await fleet.locator('.fleet-webgl canvas').getAttribute('data-links')) >
+      runtimeLinks * 2,
+  )
+  await page.waitForFunction(() =>
+    document.querySelector('.fleet-event')?.textContent?.includes('You review what ships'),
+  )
+  const finalFrames = Number(await fleet.locator('.fleet-webgl canvas').getAttribute('data-frames'))
+  await page.waitForTimeout(1300)
   assert.equal(await fleet.getAttribute('data-stage'), '4')
-  assert.match(await fleet.locator('.fleet-event').textContent(), /You review what ships/)
+  assert.equal(await fleet.getAttribute('data-running'), 'true')
+  assert.ok(
+    Number(await fleet.locator('.fleet-webgl canvas').getAttribute('data-frames')) > finalFrames,
+  )
+  await fleet.getByRole('button', { name: 'Pause animation', exact: true }).click()
+  assert.equal(await fleet.getAttribute('data-running'), 'false')
   await fleet.getByRole('button', { name: 'Replay from start', exact: true }).click()
   assert.equal(await fleet.getAttribute('data-stage'), '0')
   await page.locator('.hero').scrollIntoViewIfNeeded()

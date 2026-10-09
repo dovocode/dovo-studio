@@ -477,8 +477,9 @@ export function AgentFleet() {
   useEffect(() => {
     if (!running) return
     const timer = window.setTimeout(() => {
-      setTick(tick + 1)
-      if (tick + 1 === stages.length * stageLength - 1) setPlaying(false)
+      setTick(
+        tick === stages.length * stageLength - 1 ? (stages.length - 1) * stageLength : tick + 1,
+      )
     }, 1000)
     return () => window.clearTimeout(timer)
   }, [running, tick])
@@ -563,7 +564,6 @@ export function AgentFleet() {
               <button
                 type="button"
                 onClick={() => {
-                  if (tick === stages.length * stageLength - 1) setTick(0)
                   setPlaying(!playing)
                 }}
               >

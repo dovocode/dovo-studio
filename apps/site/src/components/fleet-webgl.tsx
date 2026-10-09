@@ -332,6 +332,52 @@ export function FleetWebGL({ stage, running, reduced, onReady }: Props) {
         }
       }
       if (state.stage === 4) {
+        const connectPeers = (start: Vec3, end: Vec3, phase: number, crossRuntime: boolean) => {
+          const curve = (progress: number): Vec3 => [
+            start[0] + (end[0] - start[0]) * progress,
+            start[1] +
+              (end[1] - start[1]) * progress +
+              Math.sin(progress * Math.PI) * (crossRuntime ? 0.07 : 0.025),
+            start[2] + (end[2] - start[2]) * progress + Math.sin(progress * Math.PI) * 0.08,
+          ]
+          const segments = crossRuntime ? 12 : 6
+          const color: Vec3 = crossRuntime ? [0.065, 0.15, 0.2] : [0.07, 0.19, 0.25]
+          for (let segment = 0; segment < segments; segment++)
+            links.push(
+              { position: curve(segment / segments), color, size: 1 },
+              { position: curve((segment + 1) / segments), color, size: 1 },
+            )
+          signals.push(
+            {
+              position: curve((clock * 0.18 + phase) % 1),
+              color: [0.45, 0.8, 1],
+              size: crossRuntime ? 4.5 : 3,
+            },
+            {
+              position: curve(1 - ((clock * 0.14 + phase + 0.4) % 1)),
+              color: [0.6, 0.9, 1],
+              size: 2.5,
+            },
+          )
+        }
+        for (let group = 0; group < 4; group++) {
+          for (let local = 0; local < perGroup; local++)
+            connectPeers(
+              nodes[group * perGroup + local].position,
+              nodes[group * perGroup + ((local + 7) % perGroup)].position,
+              local * 0.618 + group * 0.17,
+              false,
+            )
+          for (let peer = group + 1; peer < 4; peer++) {
+            for (let lane = 0; lane < 8; lane++)
+              connectPeers(
+                nodes[group * perGroup + ((lane * 7 + peer * 3) % perGroup)].position,
+                nodes[peer * perGroup + ((lane * 9 + group * 5) % perGroup)].position,
+                lane * 0.13 + peer * 0.19,
+                true,
+              )
+          }
+        }
         for (let segment = 0; segment < 12; segment++)
           links.push(
             { position: [0, 0.79 - (segment / 12) * 0.63, 0.1], color: [0.3, 0.5, 0.6], size: 1 },
@@ -374,6 +420,7 @@ export function FleetWebGL({ stage, running, reduced, onReady }: Props) {
       )
       element.dataset.stage = String(state.stage)
       element.dataset.agents = String(nodes.length)
+      element.dataset.links = String(links.length / 2)
       element.dataset.frames = String(++frames)
       if ((state.running && !state.reduced) || transition < 1) frame = requestAnimationFrame(render)
       else previous = 0

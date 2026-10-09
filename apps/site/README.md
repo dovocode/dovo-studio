@@ -33,10 +33,11 @@ luminous runtime constellations, traveling delegation signals and pointer-driven
 coming-soon stage puts Do above the fleet as its coordinating agent. Cross-runtime orchestration and
 Do remain clearly marked coming soon. Playback starts in view, pauses offscreen or in hidden tabs,
 and stops after one cycle; pause, replay and stage selection remain available. Reduced motion
-renders a static scene. Pixel density is capped for mobile, and frames stop when paused. The entire
-flow fits on phone screens. If WebGL is unavailable or its context is lost, the existing HTML/SVG
-visualization remains available; restored contexts rebuild the GPU scene. No new dependencies or
-external assets are required.
+renders a static scene. The final stage adds peer links within each cluster and 48 bidirectional
+handoffs between runtimes. Pixel density is capped for mobile, and frames stop when paused. The
+entire flow fits on phone screens. If WebGL is unavailable or its context is lost, the existing
+HTML/SVG visualization remains available; restored contexts rebuild the GPU scene. No new
+dependencies or external assets are required.
 
 Stable and Nightly Linux setup commands are shown directly on the homepage, downloads and docs,
 including service installation, pairing, and the separate Nightly launcher name. Commands use the
