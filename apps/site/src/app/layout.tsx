@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   icons: { icon: '/dovo-logo.png', apple: '/dovo-logo.png' },
   openGraph: {
     title: 'Dovo Studio',
-    description: 'Build big. Own the process.',
+    description: 'Think big. Build bigger. Your agents, code and automations in one workspace.',
     type: 'website',
     siteName: 'Dovo Studio',
     images: [{ url: '/dovo-logo.png', width: 96, height: 96, alt: 'Dovo Studio' }],

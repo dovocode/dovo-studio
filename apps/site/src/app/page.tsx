@@ -12,40 +12,49 @@ export default function Home() {
     <>
       <div className="hero-stage">
         <section className="hero wrap">
-          <p className="eyebrow">
-            <span className="status-dot" /> FOR BUILDERS WHO WANT THE WHEEL
-          </p>
-          <h1>
-            Build big.
-            <br />
-            <span>Own the process.</span>
-          </h1>
-          <p className="hero-description">
-            Your agents. Your code. Your machine. Put coding agents, Git and automations in one
-            workspace — and take your next idea all the way to shipped.
-          </p>
-          <div className="actions">
-            <Link href="/download/" className="button">
-              Get Dovo Studio <span aria-hidden="true">↓</span>
-            </Link>
-            <a href="#product" className="button button-secondary">
-              Explore the workspace <span aria-hidden="true">↘</span>
-            </a>
+          <div className="hero-copy">
+            <p className="eyebrow">
+              <span className="status-dot" /> THE WORKSPACE FOR CODING AGENTS
+            </p>
+            <h1>
+              Think big.
+              <br />
+              <span>Build bigger.</span>
+            </h1>
           </div>
-          <p className="hero-note">macOS, Windows & Linux · Your runtime, your data</p>
+          <div className="hero-aside">
+            <p className="hero-description">
+              From the first idea to the final diff. Bring your agents, code and automations into
+              one workspace. Keep every decision in your hands.
+            </p>
+            <div className="actions">
+              <Link href="/download/" className="button">
+                Get Dovo Studio <span aria-hidden="true">↓</span>
+              </Link>
+              <a href="#product" className="hero-explore">
+                Explore the workspace <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+            <p className="hero-note">macOS / Windows / Linux</p>
+            <div className="hero-principles" aria-label="Built around your control">
+              <span>Run locally</span>
+              <span>Choose your agents</span>
+              <span>Own your data</span>
+            </div>
+          </div>
         </section>
         <div className="wrap hero-preview">
           <div className="preview-toolbar">
             <span>
               <i /> <i /> <i />
             </span>
-            <span>Dovo Studio / Your next big thing</span>
-            <span className="preview-live">● Runtime connected</span>
+            <span>Dovo Studio / Workbench</span>
+            <span className="preview-live">● Demo workspace</span>
           </div>
           <WorkspaceScreenshot />
           <div className="preview-caption">
             <span>IDEA → AGENT → REVIEW → SHIP</span>
-            <span>Less tab chaos. More shipped work.</span>
+            <span>One workspace. Every step of the build.</span>
           </div>
         </div>
       </div>
@@ -58,16 +67,16 @@ export default function Home() {
       </section>
       <section className="manifesto" aria-labelledby="manifesto-heading">
         <div className="wrap manifesto-inner">
-          <p className="eyebrow">THE DOVO WAY</p>
+          <p className="eyebrow">BUILT AROUND YOUR CONTROL</p>
           <h2 id="manifesto-heading">
-            Let agents do the work.
+            Ambitious work.
             <br />
-            <span>You call the shots.</span>
+            <span>On your terms.</span>
           </h2>
           <div className="manifesto-bottom">
             <p>
-              Choose your agents. Review their work. Run it on your hardware. Dovo brings the pieces
-              together so you can stay focused on what you’re building.
+              The speed of coding agents. The clarity of a single workspace. The freedom to run it
+              all on your own machine. You decide what happens next.
             </p>
             <a href="#product" className="manifesto-link">
               Take a look inside <span aria-hidden="true">↗</span>
@@ -77,19 +86,23 @@ export default function Home() {
       </section>
       <section className="section wrap" id="features">
         <div className="section-heading">
-          <p className="eyebrow">LESS SWITCHING. MORE BUILDING.</p>
+          <p className="eyebrow">01 / THE WORKSPACE</p>
           <h2>
-            Cut the tab chaos.
+            All the context.
             <br />
-            Keep the momentum.
+            All the momentum.
           </h2>
           <p>From the first idea to the final diff, keep the context close to the work.</p>
         </div>
         <div className="feature-grid">
           <article className="feature-card">
-            <span className="feature-symbol" aria-hidden="true">
-              ⌘
-            </span>
+            <div className="feature-top" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-8l-6 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+                <path d="m7 9 3 3-3 3m6 0h4" />
+              </svg>
+              <span>01</span>
+            </div>
             <h3>Give your agents direction.</h3>
             <p>
               Run agents against your projects. Follow streamed progress, answer questions and
@@ -98,9 +111,15 @@ export default function Home() {
             <span className="feature-tag">Agents & threads</span>
           </article>
           <article className="feature-card">
-            <span className="feature-symbol" aria-hidden="true">
-              ⑂
-            </span>
+            <div className="feature-top" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="6" cy="5" r="3" />
+                <circle cx="6" cy="19" r="3" />
+                <circle cx="18" cy="5" r="3" />
+                <path d="M6 8v8m12-8a8 8 0 0 1-8 8H6" />
+              </svg>
+              <span>02</span>
+            </div>
             <h3>Own the final diff.</h3>
             <p>
               Review diffs, work with branches and worktrees, browse pull requests and open a real
@@ -109,9 +128,15 @@ export default function Home() {
             <span className="feature-tag">Git & terminals</span>
           </article>
           <article className="feature-card">
-            <span className="feature-symbol" aria-hidden="true">
-              ◷
-            </span>
+            <div className="feature-top" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="2" y="9" width="6" height="6" rx="1" />
+                <rect x="16" y="2" width="6" height="6" rx="1" />
+                <rect x="16" y="16" width="6" height="6" rx="1" />
+                <path d="M8 12h4m0 0V5h4m-4 7v7h4" />
+              </svg>
+              <span>03</span>
+            </div>
             <h3>Put busywork on autopilot.</h3>
             <p>
               Build automations with schedules, webhooks and task runs. Keep human review in the
@@ -122,7 +147,7 @@ export default function Home() {
         </div>
         <ProductTour />
         <div className="automation-showcase">
-          <p className="eyebrow">REPEAT THE WORKFLOW. KEEP THE JUDGMENT.</p>
+          <p className="eyebrow">02 / AUTOMATIONS</p>
           <h3>Build the flow. Keep a human in the loop.</h3>
           <p>Connect schedules, agent tasks and review steps in the actual automation editor.</p>
           <WorkspaceScreenshot automation />
@@ -130,7 +155,7 @@ export default function Home() {
       </section>
       <section className="ownership wrap">
         <div>
-          <p className="eyebrow">LOCAL AT THE CORE</p>
+          <p className="eyebrow">03 / LOCAL AT THE CORE</p>
           <h2>
             Your machine.
             <br />
@@ -172,9 +197,9 @@ export default function Home() {
       </div>
       <section className="faq section wrap" id="questions">
         <div>
-          <p className="eyebrow">GOOD QUESTIONS</p>
+          <p className="eyebrow">04 / THE DETAILS</p>
           <h2>
-            A little clarity.
+            Clear answers.
             <br />
             Then, go build.
           </h2>
@@ -227,11 +252,11 @@ export default function Home() {
         </div>
       </section>
       <section className="closing wrap">
-        <p className="eyebrow">ENOUGH TALK. LET’S BUILD.</p>
+        <p className="eyebrow">YOUR NEXT CHAPTER STARTS HERE</p>
         <h2>
-          Bring the idea.
+          Big ideas deserve
           <br />
-          <span>Make it happen.</span>
+          <span>a better workspace.</span>
         </h2>
         <p>Open your project. Pick your agent. Get to work.</p>
         <Link href="/download/" className="button">
