@@ -19,6 +19,7 @@ const base = address
 const credential = token
 const readOnly = process.env.DOVO_TASK_READ_ONLY === '1'
 const artifactsEnabled = process.env.DOVO_TASK_ARTIFACTS_ENABLED === '1'
+const pipelineWatchingEnabled = process.env.DOVO_TASK_PIPELINE_WATCHING_ENABLED === '1'
 const pullRequestWatchingEnabled = process.env.DOVO_TASK_PR_WATCHING_ENABLED === '1'
 const artifacts = () => {
   if (!artifactsEnabled) throw new Error('Dovo Artifacts is disabled')
@@ -225,12 +226,35 @@ const tools: Array<
   },
   ...(!readOnly
     ? [
+        ...(pipelineWatchingEnabled
+          ? [
+              {
+                name: 'pipeline_watch',
+                description:
+                  'Hand monitoring of one or more explicit pipeline runs in this thread’s project to Dovo. Use watch with runIds (provider run IDs, up to 20 active runs). Adds watches without replacing other runs. Returns current run details; already finished runs need no watch. Dovo queues failed or actionable results once for each watched run and wakes this thread; successful runs finish silently. Survives turns and restarts; respects paused queues. Finished threads with active watches move to Waiting; settling or archiving cancels their watches. Finish your turn after registering. Use status or stop with optional runIds; omitting runIds selects all watches. Does not follow a branch or discover future runs.',
+                inputSchema: {
+                  type: 'object' as const,
+                  properties: {
+                    action: { type: 'string' as const, enum: ['watch', 'status', 'stop'] },
+                    runIds: {
+                      type: 'array' as const,
+                      items: { type: 'string' as const, minLength: 1, maxLength: 300 },
+                      minItems: 1,
+                      maxItems: 20,
+                      description: 'Required for watch; optional selection for status and stop.',
+                    },
+                  },
+                  required: ['action'],
+                },
+              },
+            ]
+          : []),
         ...(pullRequestWatchingEnabled
           ? [
               {
                 name: 'pull_request_watch',
                 description:
-                  'Hand PR feedback monitoring to Dovo. Use action watch with a PR URL in this thread’s project; replaces this thread’s previous watch. Returns current failed checks. Dovo queues new comments, reviews and check failures and wakes the thread without an agent polling loop. Survives turns and runtime restarts, stops when the PR closes. Use status to inspect the watch or stop to cancel it. Respects paused queues and archived threads.',
+                  'Hand PR feedback monitoring to Dovo. Use action watch with a PR URL in this thread’s project; replaces this thread’s previous watch. Returns current failed checks. Dovo queues new comments, reviews and check failures and wakes the thread without an agent polling loop. Survives turns and runtime restarts, stops when the PR closes. Use status to inspect the watch or stop to cancel it. Respects paused queues. Finished threads with active watches move to Waiting; settling or archiving cancels their watches.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
@@ -350,6 +374,10 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
   try {
     const input = decode(args, arguments_ ?? {})
     switch (name) {
+      case 'pipeline_watch':
+        writable()
+        if (!pipelineWatchingEnabled) throw new Error('Experimental pipeline watching is disabled')
+        return text(await post('/api/pipeline-watch', { ...input, taskId: task, parentRunId }))
       case 'pull_request_watch':
         writable()
         if (!pullRequestWatchingEnabled) throw new Error('Experimental PR watching is disabled')

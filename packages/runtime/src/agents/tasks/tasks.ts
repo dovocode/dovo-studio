@@ -77,6 +77,7 @@ export class Tasks {
     artifactsEnabled: () => boolean = () => false,
     skillCacheDirectory?: string,
     pullRequestWatchingEnabled: () => boolean = () => false,
+    pipelineWatchingEnabled: () => boolean = () => false,
   ) {
     this.runner = new TaskTurnRunner(
       store,
@@ -90,6 +91,7 @@ export class Tasks {
       artifactsEnabled,
       skillCacheDirectory,
       pullRequestWatchingEnabled,
+      pipelineWatchingEnabled,
     )
     this.runner.setLinkedCheckouts(checkouts.linked)
     this.runner.setNativeSessions((taskId, sessionId, control, directories) => {
@@ -769,10 +771,54 @@ export class Tasks {
     attachmentIds: string[] = [],
     expectedRunId?: string,
   ) {
+    return this.applySteeringEffect(id, messageId, text, attachmentIds, expectedRunId)
+  }
+  steerQueuedEffect(id: string, messageId: string, expectedRunId: string) {
     return runtimeOperation(() => {
-      if (this.queue.accepted(id, messageId, text, this.attachments.metadata(id, attachmentIds))) {
+      const task = this.store.task(id)
+      const queued = task.queue?.find((message) => message.id === messageId)
+      if (!queued) {
+        // Retrying a lost response must not inject input the provider already accepted.
+        if (task.messages.some((message) => message.id === messageId)) return undefined
+        throw new HttpError(409, 'This message already started or was removed')
+      }
+      return queued
+    }).pipe(
+      Effect.flatMap((queued) =>
+        queued
+          ? this.applySteeringEffect(
+              id,
+              messageId,
+              queued.text,
+              queued.attachments?.map((file) => file.id) ?? [],
+              expectedRunId,
+              true,
+            )
+          : Effect.succeed({ ok: true }),
+      ),
+    )
+  }
+  private applySteeringEffect(
+    id: string,
+    messageId: string,
+    text: string,
+    attachmentIds: string[] = [],
+    expectedRunId?: string,
+    fromQueue = false,
+  ) {
+    return runtimeOperation(() => {
+      if (
+        !fromQueue &&
+        this.queue.accepted(id, messageId, text, this.attachments.metadata(id, attachmentIds))
+      ) {
         return null
       }
+      if (
+        fromQueue &&
+        expectedRunId &&
+        this.store.providerActions.state(`steer:${expectedRunId}:${messageId}`)
+      )
+        return null
       if (this.steering.has(id))
         throw new HttpError(409, 'A steering request is already being applied')
       const run = this.running.get(id)
@@ -780,12 +826,26 @@ export class Tasks {
       if (expectedRunId !== undefined && run.id !== expectedRunId)
         throw new HttpError(409, 'This run ended. Send your instruction as a follow-up instead.')
       if (this.store.task(id).runPhase === 'finalizing') {
-        this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds))
+        if (!fromQueue)
+          this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds))
         return null
+      }
+      if (fromQueue) {
+        const queued = this.store.task(id).queue?.find((message) => message.id === messageId)
+        if (
+          !queued ||
+          queued.text !== text ||
+          JSON.stringify(queued.attachments?.map((file) => file.id) ?? []) !==
+            JSON.stringify(attachmentIds)
+        )
+          throw new HttpError(409, 'This queued message changed. Refresh it before steering.')
       }
       const nativeSteer = run.steer
       const paused = this.store.task(id).queuePaused ?? false
-      if (!this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds)))
+      if (
+        !fromQueue &&
+        !this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds))
+      )
         return null
       const token = Symbol()
       this.steering.set(id, token)

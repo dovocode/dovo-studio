@@ -3,7 +3,10 @@ import { updateSubagents } from '../../execution/subagents.js'
 import { decodeResult, decode } from '@dovo/protocol'
 import { codexMcpServers } from '../../configuration/mcp-settings.js'
 import { isImageAttachment, serviceTierValue } from '@dovo/protocol'
-import { supportsCodexDaybreak } from '../../configuration/codex-modes.js'
+import {
+  supportsCodexDaybreak,
+  supportsCodexInstantInterrupt,
+} from '../../configuration/codex-modes.js'
 import { codexAuthenticated, codexModels } from '../../catalogs/codex.js'
 import { codexQuestions, codexAsyncQuestions } from './codex-questions.js'
 import { formQuestions } from '../shared/form-questions.js'
@@ -431,6 +434,9 @@ export function createCodexAdapter(): AgentAdapter {
           )
         const tier = serviceTierValue(run.agent.serviceTier)
         const config = {
+          ...(supportsCodexInstantInterrupt(initialized)
+            ? { 'features.instant_interrupt': true }
+            : {}),
           ...(run.linkedDirectories?.some((item) => item.access === 'edit')
             ? {
                 'sandbox_workspace_write.writable_roots': [

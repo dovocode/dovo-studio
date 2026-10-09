@@ -229,3 +229,5 @@ export { projectActivity } from './project-order'
 export { WorkspaceScope } from './workspace/scope'
 
 export * from './fonts'
+
+export { DiscoveryCache } from '@dovo/client-runtime'

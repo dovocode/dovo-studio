@@ -660,18 +660,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               409,
               'Update Dovo or refresh this thread before steering its current run',
             )
-          const queued = s.store
-            .task(input.id)
-            .queue?.find((message) => message.id === input.messageId)
-          if (!queued) throw new HttpError(409, 'This message already started or was removed')
-          yield* s.tasks.steerEffect(
-            input.id,
-            randomUUID(),
-            queued.text,
-            queued.attachments?.map((file) => file.id) ?? [],
-            input.runId,
-          )
-          s.tasks.queue.change(input.id, 'remove', queued.id)
+          if (!input.messageId) throw new HttpError(400, 'Choose a queued message to steer')
+          yield* s.tasks.steerQueuedEffect(input.id, input.messageId, input.runId)
         } else if (input.action === 'resume') {
           if (!s.store.task(input.id).queue?.length)
             return yield* serviceResult({

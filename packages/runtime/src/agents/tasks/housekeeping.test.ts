@@ -263,3 +263,8 @@ it('waits for an already-started backup step when polling is cancelled during sh
   }
   expect(stopped).toBe(true)
 })
+
+it('keeps threads waiting for feedback out of inactive settlement and archiving', () => {
+  const waiting = { ...task('waiting'), waitingForFeedback: true }
+  expect(inactiveTaskIds([waiting], 14, now, () => false)).toEqual([])
+})

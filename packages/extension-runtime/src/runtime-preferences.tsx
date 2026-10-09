@@ -84,13 +84,24 @@ export function RunningTaskPreferences() {
       <SettingsGroup title="Optional features">
         <SettingRow
           label="PR feedback watcher (experimental)"
-          description="Let agents hand PR monitoring to this computer. New comments, reviews and failing checks wake the thread. Watches survive turns and restarts; paused queues and archived threads stay paused."
+          description="Let agents hand PR monitoring to this computer. New comments, reviews and failing checks wake the thread. Finished watched threads move to Waiting. Paused queues stay paused; settling or archiving cancels watches."
         >
           <Toggle
             label="Enable experimental PR feedback watcher"
             checked={value?.enablePullRequestWatching ?? false}
             disabled={disabled}
             onChange={(enablePullRequestWatching) => save({ enablePullRequestWatching })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Pipeline watcher (experimental)"
+          description="Let agents hand pipeline monitoring to this computer. Failed runs wake the thread; successful runs finish silently. Finished watched threads move to Waiting. Paused queues stay paused; settling or archiving cancels watches."
+        >
+          <Toggle
+            label="Enable experimental pipeline watcher"
+            checked={value?.enablePipelineWatching ?? false}
+            disabled={disabled}
+            onChange={(enablePipelineWatching) => save({ enablePipelineWatching })}
           />
         </SettingRow>
         <SettingRow

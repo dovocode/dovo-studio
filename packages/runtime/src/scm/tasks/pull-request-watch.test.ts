@@ -256,7 +256,11 @@ it('pauses disabled/archived/read-only threads, stops on closure or project chan
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: true }))
   await f.s.pullRequestWatch.tick()
   expect(f.read).not.toHaveBeenCalled()
+  expect(await f.status()).toEqual({ watch: null })
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: false }))
+  f.read.mockResolvedValue(detail())
+  await f.watch()
+  f.read.mockClear()
   f.s.store.update((workspace) => ({
     ...workspace,
     agents: workspace.agents.map((agent) => ({ ...agent, permission: 'read-only' })),
@@ -371,4 +375,120 @@ it('polls on the runtime schedule, not on agent turns, and stops when disposed',
     await watcher.dispose()
     vi.useRealTimers()
   }
+})
+
+it('revives Waiting for PR feedback and returns to Waiting after the agent handles it', async () => {
+  const f = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    input.onText('Handled feedback')
+  })
+  vi.spyOn(f.s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review', queuePaused: false }))
+  await f.watch()
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  f.read.mockResolvedValue(detail({ comments: [comment('old'), comment('new')] }))
+  await f.s.pullRequestWatch.tick()
+  await vi.waitFor(() => expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true))
+  expect(run).toHaveBeenCalledTimes(1)
+  expect(f.s.store.task(f.taskId).status).toBe('review')
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
+  await f.s.pullRequestWatch.command({ taskId: f.taskId, action: 'stop' })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+})
+
+it.each(['settle', 'archive'] as const)(
+  'removes both PR and pipeline watches on %s without restoring them',
+  async (action) => {
+    const f = await setup()
+    f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+    await f.watch()
+    f.s.preferences.save({ enablePipelineWatching: true })
+    vi.spyOn(f.s.forgeWork, 'request').mockResolvedValue({
+      run: {
+        id: '7',
+        title: 'Build',
+        url: 'https://github.com/team/project/actions/runs/7',
+        ref: 'main',
+        sha: 'a'.repeat(40),
+        actor: 'author',
+        status: 'running',
+        createdAt: '',
+        updatedAt: '',
+      },
+      jobs: [],
+      cachedAt: new Date().toISOString(),
+    })
+    await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'watch', runIds: ['7'] })
+    f.s.store.patch({
+      collection: 'tasks',
+      id: f.taskId,
+      changes: { archived: { before: undefined, after: true } },
+    })
+    if (action === 'archive')
+      f.s.store.updateTask(f.taskId, (task) => ({ ...task, archivedAt: new Date().toISOString() }))
+    expect(await f.status()).toEqual({ watch: null })
+    expect(await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'status' })).toEqual({
+      watches: [],
+    })
+    expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+    f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: false, archivedAt: undefined }))
+    expect(await f.status()).toEqual({ watch: null })
+    f.read.mockResolvedValue(detail({ comments: [comment('new')] }))
+    await f.s.pullRequestWatch.tick()
+    await f.s.pipelineWatch.tick()
+    expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
+  },
+)
+
+it('keeps Waiting for a pipeline after the PR watcher ends, and cancels registrations during settlement', async () => {
+  const f = await setup()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  await f.watch()
+  f.s.preferences.save({ enablePipelineWatching: true })
+  vi.spyOn(f.s.forgeWork, 'request').mockResolvedValue({
+    run: {
+      id: '7',
+      title: 'Build',
+      url: 'https://github.com/team/project/actions/runs/7',
+      ref: 'main',
+      sha: 'a'.repeat(40),
+      actor: 'author',
+      status: 'running',
+      createdAt: '',
+      updatedAt: '',
+    },
+    jobs: [],
+    cachedAt: new Date().toISOString(),
+  })
+  await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'watch', runIds: ['7'] })
+  await f.s.pullRequestWatch.command({ taskId: f.taskId, action: 'stop' })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  let complete!: (value: PullDetail) => void
+  f.read.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve
+      }),
+  )
+  const registration = f.watch()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: true }))
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: false }))
+  complete(detail())
+  await expect(registration).rejects.toThrow('replaced or stopped')
+  expect(await f.status()).toEqual({ watch: null })
+})
+
+it('rolls back watch removal and Waiting together when settlement cannot commit', async () => {
+  const f = await setup()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  await f.watch()
+  expect(() =>
+    f.s.store.transaction(() => {
+      f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: true }))
+      throw new Error('settlement failed')
+    }),
+  ).toThrow('settlement failed')
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  expect(f.s.store.task(f.taskId).archived).not.toBe(true)
+  expect(await f.status()).toMatchObject({ watch: { status: 'watching' } })
 })

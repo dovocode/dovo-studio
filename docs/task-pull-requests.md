@@ -28,12 +28,14 @@ deliveries after a restart. Failed reads retain progress and show an error in wa
 unavailable sections cannot generate notifications. Cache refreshes can add one polling interval to
 delivery latency.
 
-Paused queues remain paused, and archived, settled or read-only threads are not awakened. Disabling
-the feature pauses existing watches and rejects calls from older harness sessions; enabling it again
-resumes them. A watch ends when the PR closes or merges, or is stopped explicitly. Changing the
-thread’s project stops the watch. Deleted threads’ watch records are cleaned up by the watcher.
-Agents are instructed to use this tool for requested ongoing monitoring and finish their turn,
-rather than keeping their own polling loop alive. Creating a PR alone does not start a watch.
+Paused queues remain paused, and read-only threads are not awakened. Finished threads with active
+watches move into **Waiting**. New actionable feedback revives them through the normal message
+queue. Settling or archiving removes their watches; restoring a thread does not restore a watch.
+Disabling the feature pauses existing watches and rejects calls from older harness sessions;
+enabling it again resumes them. A watch ends when the PR closes or merges, or is stopped explicitly.
+Changing the thread’s project stops the watch. Deleted threads’ watch records are cleaned up by the
+watcher. Agents are instructed to use this tool for requested ongoing monitoring and finish their
+turn, rather than keeping their own polling loop alive. Creating a PR alone does not start a watch.
 
 ## Linking and lifecycle
 
@@ -90,3 +92,31 @@ choose an agent and send it, the agent is instructed to restack parent-first, re
 merged parents, run checks and update PRs. The instructions preserve local work, stop on conflicts,
 require explicit remote-tip leases for rewritten branches and prohibit merging or closing PRs. Dovo
 does not automatically rewrite branches when the button is clicked.
+
+## Experimental pipeline watching
+
+Enable **Pipeline watcher (experimental)** in the computer’s runtime settings on desktop/web or
+mobile. This is independent of PR feedback watching and off by default. Writable agents then have
+`dovo_task pipeline_watch` beside `pull_request_watch` when both features are enabled.
+
+Use `action: watch` with `runIds` containing one or more provider run IDs from the thread’s project.
+Dovo uses that project’s configured forge and account. Registration adds runs without replacing
+existing watches, accepts at most 20 active runs per thread, and returns current run details.
+Already-finished runs are returned immediately without queuing another message. Re-registering an
+active run preserves its watch. This watches explicit runs only, never a branch or future runs.
+
+Every two minutes, the runtime checks watched runs using the existing forge adapters and caches.
+When a run fails or finishes with an actionable warning, Dovo queues its result once in the same
+thread, with available job context and links. Successful, skipped and cancelled runs finish
+silently. Completion and queue admission commit together. Watches survive turns and runtime
+restarts. Unavailable or stale reads retain progress and expose an error in status. Agents should
+finish their turn after registration instead of keeping a polling loop alive.
+
+Use `action: status` or `action: stop` with optional `runIds` to select runs; omit them to select
+all watches. Finished threads with active watches move into **Waiting** on desktop/web and mobile.
+Failed runs revive them; success leaves Waiting only when no active watches remain. Paused queues
+remain paused, and read-only threads are not awakened. Settling or archiving removes both PR and
+pipeline watches; restoring a thread does not resume them. Disabling the feature pauses existing
+watches and rejects calls from older sessions; re-enabling resumes monitoring. Changing the thread’s
+project stops its watches; deleting the thread removes its watch records. Provider content is
+external data and does not override thread instructions.

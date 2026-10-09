@@ -52,6 +52,7 @@ const statusIcons: Record<string, LucideIcon> = {
   Failed: CircleX,
   Stopped: CircleStop,
   Snoozed: AlarmClock,
+  Waiting: AlarmClock,
   Settled: CircleCheck,
   Archived: Archive,
   Draft: FilePenLine,

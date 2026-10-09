@@ -35,8 +35,7 @@ const built = await build({
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {TaskList} from './src/list/task-list.tsx';import {taskCollectionKey} from './src/list/task-collection.ts';
 window.requests=[];
 const tasks=['A','B','C'].map(title=>({id:title,title,repositoryId:'r',agentId:'',status:'completed',messages:[],files:[],draft:'',createdAt:'',turns:[{id:'turn-'+title,status:'completed'}]}));
-const sources=[{runtimeId:null,name:'Local',online:true,snapshot:null,workspace:{tasks,repositories:[],agents:[]}}];
-function App(){const [selected,setSelected]=useState(taskCollectionKey(null,'A'));return <TaskList projectId="" onProjectChange={()=>{}} selectedId={selected} onSelect={entry=>setSelected(entry.key)} onCreate={()=>{}} onCreateNoProject={()=>{}} onDeselect={()=>setSelected('')} sources={sources} activeRuntimeId={null} busy={false} error=""/>;}
+function App(){const [selected,setSelected]=useState(taskCollectionKey(null,'A'));const [waiting,setWaiting]=useState(true);window.reviveWaiting=()=>setWaiting(false);const watched={...tasks[0],id:'watched',title:'Watched thread',status:'review',waitingForFeedback:waiting};const sources=[{runtimeId:null,name:'Local',online:true,snapshot:null,workspace:{tasks:[...tasks,watched],repositories:[],agents:[]}}];return <TaskList projectId="" onProjectChange={()=>{}} selectedId={selected} onSelect={entry=>setSelected(entry.key)} onCreate={()=>{}} onCreateNoProject={()=>{}} onDeselect={()=>setSelected('')} sources={sources} activeRuntimeId={null} busy={false} error=""/>;}
 createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: root,
     loader: 'tsx',
@@ -144,9 +143,25 @@ try {
     throw new Error('The explicit selection-mode icon must be removed.')
   if (await page.getByRole('button', { name: 'Archive', exact: true }).count())
     throw new Error('Bulk actions must stay inside the context menu.')
+  const waitingGroup = page
+    .locator('details')
+    .filter({ has: page.locator('summary').filter({ hasText: /^Waiting/ }) })
+  await waitingGroup.waitFor()
+  if (await page.getByRole('button', { name: 'Watched thread', exact: true }).isVisible())
+    throw new Error('Waiting threads should start in the collapsed Waiting area.')
+  await waitingGroup.locator('summary').click()
+  await waitingGroup.getByRole('button', { name: 'Watched thread', exact: true }).waitFor()
+  await page.evaluate(() => window.reviveWaiting())
+  await page.waitForFunction(
+    () =>
+      ![...document.querySelectorAll('summary')].some((element) =>
+        element.textContent.startsWith('Waiting'),
+      ),
+  )
+  await page.getByRole('button', { name: 'Watched thread', exact: true }).waitFor()
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Modifier and range selection, right-click retention, all six bulk actions and their requests for all selected threads passed.',
+    'Modifier and range selection, right-click retention, all six bulk actions, and the Waiting area with revival passed.',
   )
 } finally {
   await browser.close()

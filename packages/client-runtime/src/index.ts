@@ -25,3 +25,5 @@ export { startReconnecting } from './effects/reconnecting.js'
 export { startSocketHeartbeat } from './effects/socket-heartbeat.js'
 
 export { startMcpAppTools } from './effects/mcp-app-tools.js'
+
+export { DiscoveryCache } from './effects/discovery-cache.js'

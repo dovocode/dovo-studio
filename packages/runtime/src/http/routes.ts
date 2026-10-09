@@ -1,3 +1,4 @@
+import { pipelineWatchRequestSchema } from '../scm/tasks/pipeline-watch.js'
 import { runtimeDiagnostics } from './diagnostics.js'
 import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
 import { pullRequestWatchRequestSchema } from '../scm/tasks/pull-request-watch.js'
@@ -157,6 +158,12 @@ export function route(
         return yield* serviceResult(
           path === '/api/runtime/backup' ? s.backups.create() : runtimeDiagnostics(s),
         )
+      }
+      if (method === 'POST' && path === '/api/pipeline-watch') {
+        if (!device.owner)
+          throw new HttpError(403, 'Pipeline watches are controlled by the thread’s agent')
+        const input = decode(pipelineWatchRequestSchema, yield* serviceResult(body(request, 8192)))
+        return yield* serviceResult(s.pipelineWatch.command(input))
       }
       if (method === 'POST' && path === '/api/pull-request-watch') {
         if (!device.owner)

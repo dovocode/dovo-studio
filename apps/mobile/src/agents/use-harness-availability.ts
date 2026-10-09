@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { DiscoveryCache } from '@dovo/client-runtime'
+import { useEffect, useSyncExternalStore } from 'react'
 import {
   harnessAvailabilitySchema,
   modelDiscoveryInput,
@@ -7,6 +8,8 @@ import {
 } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/state/application-state'
 import { useRuntime } from '../runtime/connection/provider'
+
+const cache = new DiscoveryCache<HarnessAvailability>(30_000)
 
 export function useHarnessAvailability(repositoryId: string, agents: readonly Agent[]) {
   const { profile, connected, readRuntime, snapshot } = useRuntime()
@@ -17,38 +20,41 @@ export function useHarnessAvailability(repositoryId: string, agents: readonly Ag
     agents.map(modelDiscoveryInput),
     snapshot?.acpInstallations,
   ])
+  const choices = useSyncExternalStore(
+    cache.subscribe,
+    () => cache.peek(key),
+    () => null,
+  )
   const [state, setState] = useApplicationState<{
     key: string
-    choices: HarnessAvailability
     loading: boolean
     error: string
-  }>({ key: '', choices: [], loading: false, error: '' })
+  }>({ key: '', loading: false, error: '' })
   useEffect(() => {
     if (!profile || !connected) return
     let stopped = false
-    setState({ key, choices: [], loading: true, error: '' })
-    void readRuntime(
-      profile,
-      '/api/agents/availability',
-      { repositoryId },
-      harnessAvailabilitySchema,
-    )
-      .then((choices) => {
-        if (!stopped) setState({ key, choices, loading: false, error: '' })
+    setState({ key, loading: !cache.isFresh(key), error: '' })
+    void cache
+      .load(key, () =>
+        readRuntime(
+          profile,
+          '/api/agents/availability',
+          { repositoryId },
+          harnessAvailabilitySchema,
+        ),
+      )
+      .then(() => {
+        if (!stopped) setState({ key, loading: false, error: '' })
       })
       .catch((error: unknown) => {
-        if (!stopped) setState({ key, choices: [], loading: false, error: String(error) })
+        if (!stopped) setState({ key, loading: false, error: String(error) })
       })
     return () => {
       stopped = true
     }
   }, [key, connected, readRuntime])
   return {
-    available: new Set(
-      (state.key === key ? state.choices : [])
-        .filter((item) => item.available)
-        .map((item) => item.id),
-    ),
+    available: new Set((choices ?? []).filter((item) => item.available).map((item) => item.id)),
     loading: connected && (state.key !== key || state.loading),
     error: state.key === key ? state.error : '',
   }

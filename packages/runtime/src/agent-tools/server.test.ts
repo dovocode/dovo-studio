@@ -603,3 +603,160 @@ it('isolates agent commands from the user shell and closes only terminals opened
     await f.cleanup()
   }
 }, 15000)
+
+it('offers pipeline watches beside PR watches, scopes IDs and enforces runtime opt-in and authentication', async () => {
+  const f = await fixture()
+  const token = 'pipeline-tools-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  const client = new Client({ name: 'pipeline-watch-test', version: '1' })
+  let transport: StdioClientTransport | undefined
+  try {
+    const s = runtime.services
+    s.store.update(() => f.workspace)
+    const task = s.tasks.create({
+      title: 'Watch runs',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: '',
+    })
+    const read = vi
+      .spyOn(s.forgeWork, 'request')
+      .mockImplementation(async (_repo, _operation, input) => {
+        const { id } = decode(mutableStruct({ id: Schema.String }), input)
+        return {
+          run: {
+            id,
+            title: 'Build',
+            url: `https://github.com/team/project/actions/runs/${id}`,
+            ref: 'main',
+            sha: 'a'.repeat(40),
+            actor: 'author',
+            status: 'running',
+            createdAt: '',
+            updatedAt: '',
+          },
+          jobs: [],
+          cachedAt: new Date().toISOString(),
+        }
+      })
+    s.preferences.save({ enablePipelineWatching: true, enablePullRequestWatching: true })
+    const server = taskToolsServer(
+      task.id,
+      runtime.port,
+      token,
+      '127.0.0.1',
+      false,
+      false,
+      undefined,
+      true,
+      true,
+    )
+    transport = new StdioClientTransport({
+      command: server.command,
+      args: server.args,
+      env: { ...server.envValues },
+      stderr: 'ignore',
+    })
+    await client.connect(transport)
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(['pipeline_watch', 'pull_request_watch']),
+    )
+    const result = await client.callTool({
+      name: 'pipeline_watch',
+      arguments: { action: 'watch', runIds: ['7', '8'], taskId: 'another' },
+    })
+    expect(result.isError).not.toBe(true)
+    expect(JSON.parse(decodeToolText(result))).toMatchObject({
+      watches: [
+        { runId: '7', status: 'watching' },
+        { runId: '8', status: 'watching' },
+      ],
+    })
+    expect(read).toHaveBeenCalledWith('repo', 'pipelines/detail', { id: '7', refresh: true })
+    expect(s.db.prepare('SELECT DISTINCT task_id FROM task_pipeline_watches').all()).toEqual([
+      { task_id: task.id },
+    ])
+    for (const arguments_ of [
+      { action: 'watch' },
+      { action: 'watch', runIds: [] },
+      { action: 'watch', runIds: [7] },
+      { action: 'invalid' },
+    ]) {
+      expect(
+        (await client.callTool({ name: 'pipeline_watch', arguments: arguments_ })).isError,
+      ).toBe(true)
+    }
+    s.preferences.save({ enablePipelineWatching: false })
+    expect(
+      decodeToolText(
+        await client.callTool({ name: 'pipeline_watch', arguments: { action: 'status' } }),
+      ),
+    ).toContain('Enable the experimental pipeline watcher')
+    expect(
+      (
+        await fetch(`http://127.0.0.1:${runtime.port}/api/pipeline-watch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId: task.id, action: 'status' }),
+        })
+      ).status,
+    ).toBe(401)
+    const pairedToken = 'paired-pipeline-watch-test-token'
+    s.devices.add('Paired phone', pairedToken)
+    expect(
+      (
+        await fetch(`http://127.0.0.1:${runtime.port}/api/pipeline-watch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pairedToken}` },
+          body: JSON.stringify({ taskId: task.id, action: 'status' }),
+        })
+      ).status,
+    ).toBe(403)
+  } finally {
+    await client.close()
+    await transport?.close()
+    await runtime.close()
+    await f.cleanup()
+  }
+})
+
+it.each([
+  { readOnly: true, enabled: true },
+  { readOnly: false, enabled: false },
+])('hides pipeline watches when access or opt-in is absent: %j', async ({ readOnly, enabled }) => {
+  const server = taskToolsServer(
+    'task',
+    1,
+    'unused-token',
+    '127.0.0.1',
+    readOnly,
+    false,
+    undefined,
+    false,
+    enabled,
+  )
+  const client = new Client({ name: 'pipeline-gating-test', version: '1' })
+  const transport = new StdioClientTransport({
+    command: server.command,
+    args: server.args,
+    env: { ...server.envValues },
+    stderr: 'ignore',
+  })
+  try {
+    await client.connect(transport)
+    expect((await client.listTools()).tools.some((tool) => tool.name === 'pipeline_watch')).toBe(
+      false,
+    )
+    expect(
+      (
+        await client.callTool({
+          name: 'pipeline_watch',
+          arguments: { action: 'watch', runIds: ['7'] },
+        })
+      ).isError,
+    ).toBe(true)
+  } finally {
+    await client.close()
+    await transport.close()
+  }
+})

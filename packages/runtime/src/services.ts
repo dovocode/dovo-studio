@@ -17,6 +17,7 @@ import { TitleGeneration } from './agents/tasks/title-generation.js'
 import { Attachments } from './storage/attachments.js'
 import { Activity } from './storage/activity.js'
 import { PullCache } from './scm/pulls/pull-cache.js'
+import { PipelineWatch } from './scm/tasks/pipeline-watch.js'
 import { PullRequestWatch } from './scm/tasks/pull-request-watch.js'
 import { ForgePullRequests } from './scm/forges/integration/forge-pulls.js'
 import { ForgeCliAccounts } from './scm/forges/integration/forge-cli-accounts.js'
@@ -128,6 +129,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         ? join(tmpdir(), 'dovo-catalog-skills')
         : join(dirname(resolve(db.name)), 'skills'),
       () => preferences.get().enablePullRequestWatching,
+      () => preferences.get().enablePipelineWatching,
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git)
   const mcpApps = new McpApps(db, store, activity, approvals)
@@ -164,8 +166,41 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         })),
     ]
   })
+  const forgeWork = new ForgeWork(db, store, git, forges, pulls, () => commands.get())
+  const pullRequestWatch = new PullRequestWatch(db, {
+    store,
+    preferences,
+    pullCache,
+    tasks,
+    activity,
+  })
+  const pipelineWatch = new PipelineWatch(db, { store, preferences, forgeWork, tasks, activity })
+  // Older runtimes retained watches on settled threads; do not resume those after an upgrade.
+  pullRequestWatch.reconcile(store.get().tasks)
+  pipelineWatch.reconcile(store.get().tasks)
+  store.setTaskWatchLifecycle((entries) => {
+    const pulls = pullRequestWatch.reconcile(entries)
+    const pipelines = pipelineWatch.reconcile(entries)
+    return entries.map((task) => {
+      const waiting =
+        !task.archived &&
+        !task.archivedAt &&
+        (task.status === 'review' || task.status === 'done') &&
+        !task.runPhase &&
+        !task.queue?.length &&
+        !task.draft.trim() &&
+        !task.draftAttachments?.length &&
+        !task.error &&
+        (pulls.has(task.id) || pipelines.has(task.id))
+      return !!task.waitingForFeedback === waiting
+        ? task
+        : { ...task, waitingForFeedback: waiting || undefined }
+    })
+  })
+
   return {
-    pullRequestWatch: new PullRequestWatch(db, { store, preferences, pullCache, tasks, activity }),
+    pipelineWatch,
+    pullRequestWatch,
     backups: new RuntimeBackups(db.name),
     mutations: new MutationReceipts(db),
     instanceId: randomUUID(),
@@ -180,7 +215,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     liveActivities,
     forges,
     forgeCli,
-    forgeWork: new ForgeWork(db, store, git, forges, pulls, () => commands.get()),
+    forgeWork,
     db,
     titles,
     activity,
@@ -211,6 +246,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
 }
 export interface Services {
   backups: RuntimeBackups
+  pipelineWatch: PipelineWatch
   pullRequestWatch: PullRequestWatch
   artifacts: Artifacts
   mutations: MutationReceipts

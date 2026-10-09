@@ -69,6 +69,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => housekeeping.dispose(),
         () => taskPulls.dispose(),
         () => services.pullRequestWatch.dispose(),
+        () => services.pipelineWatch.dispose(),
         () => services.acpInstallations.dispose(),
         () => services.acpController.abort(),
         closeTitles,
@@ -168,6 +169,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         housekeeping.start()
         taskPulls.start()
         services.pullRequestWatch.start()
+        services.pipelineWatch.start()
       })
       return { services, port: address.port }
     }),

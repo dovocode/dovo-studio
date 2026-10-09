@@ -17,11 +17,20 @@ While an agent runs, write a message to reveal **Queue** and **Steer**. **Stop**
 - **Queue** saves the message for a separate turn after current work finishes. Reorder or remove
   pending messages in the queue. Pausing prevents automatic follow-ups; Stop also pauses the queue.
 - **Steer** sends guidance into an active Codex turn, preserving its tools, session and checkpoint.
-  Other harnesses interrupt and resume with that instruction first. A finished turn cannot be
-  steered: send a follow-up instead.
+  Harnesses without native steering interrupt and resume with that instruction first. A finished
+  turn cannot be steered: send a follow-up instead.
 - Message IDs deduplicate retries. When native steering cannot be confirmed, the instruction remains
   queued and paused with an explanation. Check the conversation before explicitly resuming it; a
   lost harness acknowledgement cannot establish whether it received the input.
+
+Steering a queued follow-up keeps its original message ID. Provider acknowledgement moves it into
+the conversation atomically; a failed or unconfirmed handoff leaves the original in a paused queue.
+Desktop and mobile hide queued messages already present in history, including while a newer queue
+snapshot is still in transit.
+
+For Codex 0.161.0 and newer, Dovo enables the experimental `features.instant_interrupt` flag on new
+and resumed threads while using native `turn/steer`. Older or unrecognized Codex versions retain
+their existing native steering behavior.
 
 Codex/Astra choice forms include option descriptions, custom answers and secret fields. The
 harness's `isBlocking` flag determines whether the composer waits for an answer. Non-blocking

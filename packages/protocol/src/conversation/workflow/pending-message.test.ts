@@ -86,3 +86,11 @@ it('keeps paused, failed and follow-up inputs in the queue', () => {
     startingConversationMessage({ ...task, messages: [{ ...first, id: 'previous' }] }),
   ).toBeUndefined()
 })
+
+it('does not show a handed-off message in the queue while its history arrives before the queue snapshot', () => {
+  const handedOff = { id: 'steered', role: 'user' as const, text: 'Direction', createdAt: '' }
+  const later = { ...handedOff, id: 'later', text: 'Later' }
+  expect(
+    pendingMessageQueue({ id: 'task', messages: [handedOff], queue: [handedOff, later] }, null),
+  ).toEqual([later])
+})

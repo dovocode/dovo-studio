@@ -54,20 +54,27 @@ it('refreshes harness sessions when optional MCP features change and favors repl
     runs[index]?.agent.resources?.mcpServers.find((server) => server.name === 'dovo_task')
   expect(tools(0)?.envValues).toMatchObject({
     DOVO_TASK_PR_WATCHING_ENABLED: '0',
+    DOVO_TASK_PIPELINE_WATCHING_ENABLED: '0',
     DOVO_TASK_ARTIFACTS_ENABLED: '0',
   })
   expect(runs[0]?.agent.instructions).not.toContain('Experimental PR watching')
-  s.preferences.save({ enablePullRequestWatching: true, enableArtifacts: true })
+  s.preferences.save({
+    enablePullRequestWatching: true,
+    enablePipelineWatching: true,
+    enableArtifacts: true,
+  })
   await (
     await s.tasks.start(task.id)
   ).done
   expect(runs[1]?.sessionId).toBeUndefined()
   expect(tools(1)?.envValues).toMatchObject({
     DOVO_TASK_PR_WATCHING_ENABLED: '1',
+    DOVO_TASK_PIPELINE_WATCHING_ENABLED: '1',
     DOVO_TASK_ARTIFACTS_ENABLED: '1',
   })
   expect(runs[1]?.agent.instructions).toContain('instead of running your own polling loops')
   expect(runs[1]?.agent.instructions).toContain('Prefer normal replies and repository files')
+  expect(runs[1]?.agent.instructions).toContain('dovo_task pipeline_watch')
   await (
     await s.tasks.start(task.id)
   ).done
@@ -79,6 +86,13 @@ it('refreshes harness sessions when optional MCP features change and favors repl
   expect(runs[3]?.sessionId).toBeUndefined()
   expect(tools(3)?.envValues?.DOVO_TASK_PR_WATCHING_ENABLED).toBe('0')
   expect(runs[3]?.agent.instructions).not.toContain('Experimental PR watching')
+  s.preferences.save({ enablePipelineWatching: false })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[4]?.sessionId).toBeUndefined()
+  expect(tools(4)?.envValues?.DOVO_TASK_PIPELINE_WATCHING_ENABLED).toBe('0')
+  expect(runs[4]?.agent.instructions).not.toContain('Experimental pipeline watching')
 })
 it('publishes the first provider text immediately and batches subsequent tokens', async () => {
   const s = await setup()
@@ -663,42 +677,55 @@ it('applies task permission overrides and starts a fresh provider session', asyn
   expect(runs[1].sessionId).toBeUndefined()
   expect(s.store.get().agents[0].permission).toBe('ask')
 })
-it.each([false, true])('steers ahead of queued input and preserves paused=%s', async (paused) => {
-  const s = await setup()
-  const runs: AgentRun[] = []
-  vi.spyOn(s.agents, 'get').mockResolvedValue({
-    probe: vi.fn<AgentAdapter['probe']>(),
-    run: async (run) => {
-      runs.push(run)
-      run.onSession('steering-session')
-      if (runs.length === 1) await run.approve('Wait', 'Steering fixture')
-      run.signal.throwIfAborted()
-      run.onText('Done')
-    },
-  })
-  const task = s.tasks.create({
-    title: 'Steer',
-    repositoryId: 'repo',
-    agentId: 'agent',
-    objective: 'Original',
-  })
-  const first = await s.tasks.start(task.id)
-  await waitForTask(() => expect(s.approvals.list()).toHaveLength(1))
-  await s.tasks.send(task.id, 'later', 'Do this later')
-  if (paused) s.tasks.queue.change(task.id, 'pause')
-  await s.tasks.steer(task.id, 'steering', 'Change direction now')
-  await expect(first.done).rejects.toThrow('Interrupted to apply steering')
-  await waitForTask(() => expect(s.store.task(task.id).status).toBe('review'))
-  expect(runs[1].sessionId).toBe('steering-session')
-  expect(runs[1].prompt).toContain('Change direction now')
-  expect(runs[1].prompt).not.toContain('Do this later')
-  expect(s.store.task(task.id).turns?.[0].checkpoint?.after).toBeTruthy()
-  await waitForTask(() => expect(runs).toHaveLength(paused ? 2 : 3))
-  expect(s.store.task(task.id).queue?.map((m) => m.id)).toEqual(paused ? ['later'] : [])
-  expect(runs.at(-1)?.prompt).toContain(paused ? 'Change direction now' : 'Do this later')
-  await s.tasks.steer(task.id, 'steering', 'Change direction now')
-  expect(s.store.task(task.id).messages.filter((m) => m.id === 'steering')).toHaveLength(1)
-})
+it.each([
+  { paused: false, fromQueue: false },
+  { paused: true, fromQueue: false },
+  { paused: false, fromQueue: true },
+  { paused: true, fromQueue: true },
+])(
+  'steers ahead of queued input and preserves its identity and pause state: %j',
+  async ({ paused, fromQueue }) => {
+    const { runClientEffect } = await import('@dovo/client-runtime')
+    const s = await setup()
+    const runs: AgentRun[] = []
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        runs.push(run)
+        run.onSession('steering-session')
+        if (runs.length === 1) await run.approve('Wait', 'Steering fixture')
+        run.signal.throwIfAborted()
+        run.onText('Done')
+      },
+    })
+    const task = s.tasks.create({
+      title: 'Steer',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Original',
+    })
+    const first = await s.tasks.start(task.id)
+    await waitForTask(() => expect(s.approvals.list()).toHaveLength(1))
+    if (fromQueue) s.tasks.queue.add(task.id, 'steering', 'Change direction now')
+    await s.tasks.send(task.id, 'later', 'Do this later')
+    if (paused) s.tasks.queue.change(task.id, 'pause')
+    const runId = s.store.task(task.id).activeRunId
+    if (!runId) throw new Error('Expected an active run')
+    if (fromQueue) await runClientEffect(s.tasks.steerQueuedEffect(task.id, 'steering', runId))
+    else await s.tasks.steer(task.id, 'steering', 'Change direction now')
+    await expect(first.done).rejects.toThrow('Interrupted to apply steering')
+    await waitForTask(() => expect(s.store.task(task.id).status).toBe('review'))
+    expect(runs[1].sessionId).toBe('steering-session')
+    expect(runs[1].prompt).toContain('Change direction now')
+    expect(runs[1].prompt).not.toContain('Do this later')
+    expect(s.store.task(task.id).turns?.[0].checkpoint?.after).toBeTruthy()
+    await waitForTask(() => expect(runs).toHaveLength(paused ? 2 : 3))
+    expect(s.store.task(task.id).queue?.map((m) => m.id)).toEqual(paused ? ['later'] : [])
+    expect(runs.at(-1)?.prompt).toContain(paused ? 'Change direction now' : 'Do this later')
+    await s.tasks.steer(task.id, 'steering', 'Change direction now')
+    expect(s.store.task(task.id).messages.filter((m) => m.id === 'steering')).toHaveLength(1)
+  },
+)
 it('rejects steering after the active turn has finished without queuing input', async () => {
   const s = await setup()
   const task = s.tasks.create({
@@ -2001,3 +2028,72 @@ it('persists session-owned native agents after a reply while keeping late output
   )
   expect(s.store.version()).toBe(revision)
 })
+
+it.each(['accept', 'reject'] as const)(
+  'steers the original queued message once without a temporary duplicate: %s',
+  async (outcome) => {
+    const s = await setup()
+    const { runClientEffect } = await import('@dovo/client-runtime')
+    let acknowledge = () => {},
+      finish = () => {},
+      ready = false
+    const ack = new Promise<void>((resolve) => {
+      acknowledge = resolve
+    })
+    const completed = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const steer = vi.fn<AgentSteer>(async () => {
+      await ack
+      if (outcome === 'reject') throw new Error('not accepted')
+    })
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        run.onSteer?.(steer)
+        ready = true
+        await completed
+      },
+    })
+    const task = s.tasks.create({
+      title: 'Queued steering',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Original',
+    })
+    const execution = await s.tasks.start(task.id)
+    await waitForTask(() => expect(ready).toBe(true))
+    s.tasks.queue.add(task.id, 'queued-input', 'New direction')
+    s.tasks.queue.add(task.id, 'later-input', 'Later')
+    const runId = s.store.task(task.id).activeRunId!
+    const handoff = runClientEffect(s.tasks.steerQueuedEffect(task.id, 'queued-input', runId))
+    await waitForTask(() => expect(steer).toHaveBeenCalledTimes(1))
+    expect(steer.mock.calls[0]?.[0].id).toBe('queued-input')
+    expect(s.store.task(task.id).queue?.map((message) => message.id)).toEqual([
+      'queued-input',
+      'later-input',
+    ])
+    expect(
+      s.store.task(task.id).messages.filter((message) => message.text === 'New direction'),
+    ).toHaveLength(0)
+    // A lost HTTP response retried during acknowledgement must not reinject the message.
+    await runClientEffect(s.tasks.steerQueuedEffect(task.id, 'queued-input', runId))
+    acknowledge()
+    await handoff
+    expect(s.store.task(task.id).queue?.map((message) => message.id)).toEqual(
+      outcome === 'accept' ? ['later-input'] : ['queued-input', 'later-input'],
+    )
+    expect(
+      s.store
+        .task(task.id)
+        .messages.filter((message) => message.text === 'New direction')
+        .map((message) => message.id),
+    ).toEqual(outcome === 'accept' ? ['queued-input'] : [])
+    expect(s.store.task(task.id).queuePaused).toBe(outcome === 'reject')
+    await runClientEffect(s.tasks.steerQueuedEffect(task.id, 'queued-input', runId))
+    expect(steer).toHaveBeenCalledTimes(1)
+    s.tasks.queue.change(task.id, 'pause')
+    finish()
+    await execution.done
+  },
+)

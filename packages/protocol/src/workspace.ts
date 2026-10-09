@@ -659,6 +659,8 @@ export const taskSchema = mutableStruct({
   ),
   pinned: Schema.optional(Schema.Boolean),
   autoSettled: Schema.optional(Schema.Boolean),
+  /** Runtime-owned idle lifecycle: finished work with active feedback watches. */
+  waitingForFeedback: Schema.optional(Schema.Boolean),
   // Legacy archived flag means Settled; archivedAt hides the thread from normal lists.
   archived: Schema.optional(Schema.Boolean),
   archivedAt: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
@@ -796,7 +798,7 @@ export function latestCompletedTaskTurn(task: Task): TaskTurn | undefined {
   return turn?.status === 'completed' ? turn : undefined
 }
 export function hasUnviewedTaskCompletion(task: Task): boolean {
-  if (task.archived || task.archivedAt) return false
+  if (task.archived || task.archivedAt || task.waitingForFeedback) return false
   const turn = latestCompletedTaskTurn(task)
   return !!turn && turn.id !== task.lastViewedTurnId
 }

@@ -31,10 +31,13 @@ export function pendingMessageQueue(
   task: Pick<Task, 'id' | 'messages' | 'queue'>,
   pending: PendingMessage | null,
 ): NonNullable<Task['queue']> {
+  // History events can arrive before the next queue snapshot during a steering handoff.
+  const delivered = new Set(task.messages.map((message) => message.id))
+  const queue = (task.queue ?? []).filter((message) => !delivered.has(message.id))
   const visible = visiblePendingMessage(task, pending)
-  if (visible?.destination !== 'queue' || visible.message.role !== 'user') return task.queue ?? []
+  if (visible?.destination !== 'queue' || visible.message.role !== 'user') return queue
   return [
-    ...(task.queue ?? []),
+    ...queue,
     { ...visible.message, role: 'user', createdAt: visible.message.createdAt ?? '' },
   ]
 }

@@ -78,8 +78,24 @@ export function RuntimePreferences() {
           </View>
           <Text style={styles.muted}>
             Let agents hand PR monitoring to this computer. New comments, reviews and failing checks
-            wake the thread. Watches survive turns and restarts; paused queues and archived threads
-            stay paused.
+            wake the thread. Finished watched threads move to Waiting. Paused queues stay paused;
+            settling or archiving cancels watches.
+          </Text>
+        </View>
+        <View style={{ gap: 6 }}>
+          <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
+            <Text style={[styles.text, { flex: 1 }]}>Pipeline watcher (experimental)</Text>
+            <Switch
+              accessibilityLabel="Enable experimental pipeline watcher"
+              value={value?.enablePipelineWatching ?? false}
+              disabled={disabled}
+              onValueChange={(enablePipelineWatching) => save({ enablePipelineWatching })}
+            />
+          </View>
+          <Text style={styles.muted}>
+            Let agents hand pipeline monitoring to this computer. Failed runs wake the thread;
+            successful runs finish silently. Finished watched threads move to Waiting. Paused queues
+            stay paused; settling or archiving cancels watches.
           </Text>
         </View>
         <View style={{ gap: 6 }}>

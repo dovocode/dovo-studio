@@ -12,6 +12,7 @@ it('defaults new preferences and accepts only Git-safe branch prefixes', () => {
     activityRetentionDays: 90,
     enableArtifacts: false,
     enablePullRequestWatching: false,
+    enablePipelineWatching: false,
     settledArtifactRetention: 'forever',
     archivedArtifactRetention: 'forever',
   })

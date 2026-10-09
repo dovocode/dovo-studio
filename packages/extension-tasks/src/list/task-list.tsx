@@ -301,7 +301,11 @@ export function TaskList({
   }
   const groups = useMemo(() => {
     const active = tasks.filter(
-      ({ task }) => !task.archived && !task.archivedAt && !isSnoozed(task, now),
+      ({ task, needsInput }) =>
+        !task.archived &&
+        !task.archivedAt &&
+        !isSnoozed(task, now) &&
+        (!task.waitingForFeedback || needsInput),
     )
     const statusGroups = [
       {
@@ -333,6 +337,19 @@ export function TaskList({
           ]
         : []),
       {
+        id: 'waiting',
+        name: 'Waiting',
+        tasks: tasks.filter(
+          ({ task, needsInput }) =>
+            task.waitingForFeedback &&
+            !needsInput &&
+            !task.archived &&
+            !task.archivedAt &&
+            !isSnoozed(task, now),
+        ),
+        open: false,
+      },
+      {
         id: 'snoozed',
         name: 'Snoozed',
         tasks: tasks.filter(
@@ -348,7 +365,13 @@ export function TaskList({
       },
     ].filter((group) => group.tasks.length)
     const collapsedGroups = statusGroups
-      .filter((group) => group.id === 'snoozed' || group.id === 'settled' || group.id === 'working')
+      .filter(
+        (group) =>
+          group.id === 'waiting' ||
+          group.id === 'snoozed' ||
+          group.id === 'settled' ||
+          group.id === 'working',
+      )
       .map((group) => ({
         ...group,
         open: expanded[group.id] ?? false,
@@ -722,6 +745,7 @@ export function TaskList({
             )
           })
           return grouping === 'none' &&
+            group.id !== 'waiting' &&
             group.id !== 'settled' &&
             group.id !== 'snoozed' &&
             group.id !== 'working' ? (

@@ -28,16 +28,18 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
         ? 'Snoozed'
         : needsInput
           ? 'Needs input'
-          : hasUnviewedTaskCompletion(task)
-            ? 'Done'
-            : {
-                draft: 'Draft',
-                running: task.runPhase === 'finalizing' ? 'Saving changes' : 'Working',
-                review: 'Review',
-                done: 'Finished',
-                failed: 'Failed',
-                cancelled: 'Stopped',
-              }[task.status]
+          : task.waitingForFeedback
+            ? 'Waiting'
+            : hasUnviewedTaskCompletion(task)
+              ? 'Done'
+              : {
+                  draft: 'Draft',
+                  running: task.runPhase === 'finalizing' ? 'Saving changes' : 'Working',
+                  review: 'Review',
+                  done: 'Finished',
+                  failed: 'Failed',
+                  cancelled: 'Stopped',
+                }[task.status]
   const compactLabel =
     state === 'Working'
       ? `Working ${time}`.trim()
@@ -48,6 +50,7 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
             'Done',
             'Archived',
             'Settled',
+            'Waiting',
             'Snoozed',
             'Saving changes',
           ].includes(state)

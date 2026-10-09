@@ -38,6 +38,7 @@ export function inactiveTaskIds(
           !ids.has(member.id) ||
           (!member.pinned &&
             member.status !== 'running' &&
+            !member.waitingForFeedback &&
             !busy(member) &&
             now - lastTaskActivity(member) > days * day),
       )

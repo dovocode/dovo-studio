@@ -492,6 +492,11 @@ export class WorkspaceStore {
               ),
     }
   }
+  private taskWatchLifecycle?: (tasks: Task[]) => Task[]
+  /** Reconcile watch cancellation and the Waiting projection inside the workspace transaction. */
+  setTaskWatchLifecycle(reconcile: (tasks: Task[]) => Task[]) {
+    this.taskWatchLifecycle = reconcile
+  }
   update(
     fn: (workspace: Workspace) => Workspace,
     submission?: {
@@ -659,6 +664,7 @@ export class WorkspaceStore {
             .prepare('INSERT OR IGNORE INTO documents VALUES (?, ?)')
             .run('workspace-before-history-v2', decode(rowSchema, old).value)
       }
+      if (this.taskWatchLifecycle) next.tasks = this.taskWatchLifecycle(next.tasks)
       this.conversations.record(next.tasks, previousTasks, this.seedHistory)
       if (action) this.providerActions.record(action)
       this.usage.record(next.tasks, previousTasks)
@@ -863,6 +869,7 @@ export class WorkspaceStore {
           record.worktreeSubmodulesComplete !== undefined ||
           record.quotaContinuation !== undefined ||
           record.autoSettled !== undefined ||
+          record.waitingForFeedback !== undefined ||
           record.lastViewedTurnId !== undefined ||
           record.viewedRevision !== undefined ||
           record.turns !== undefined ||

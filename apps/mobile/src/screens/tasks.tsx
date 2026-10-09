@@ -137,11 +137,14 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     const projects = new Map(allTasks.map((row) => [row.key, row.projectName]))
     return allTasks
       .filter(
-        ({ task, projectName, runtimeName, runtimeId }) =>
+        ({ task, needsInput, projectName, runtimeName, runtimeId }) =>
           !task.delegation &&
           (!project || projectMembers.has(JSON.stringify([runtimeId, task.repositoryId]))) &&
           (archived ? !!task.archivedAt : !task.archivedAt) &&
-          (!car || (!task.archived && !isSnoozed(task, now))) &&
+          (!car ||
+            (!task.archived &&
+              !isSnoozed(task, now) &&
+              (!task.waitingForFeedback || needsInput))) &&
           (!query ||
             [
               task.title,
@@ -172,7 +175,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   }, [allTasks, car, now, query, sort, project, projectMembers, archived])
   const listItems = useMemo(() => {
     if (archived || car) return tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))
-    const active = tasks.filter(({ task }) => !task.archived && !isSnoozed(task, now))
+    const active = tasks.filter(
+      ({ task, needsInput }) =>
+        !task.archived && !isSnoozed(task, now) && (!task.waitingForFeedback || needsInput),
+    )
     const working = preferences.workingSection
       ? active.filter(
           ({ task, needsInput }) => !task.pinned && task.status === 'running' && !needsInput,
@@ -186,6 +192,18 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           ...(collapsed.has('working')
             ? []
             : working.map((entry): TaskListItem => ({ kind: 'task', entry }))),
+        ]
+      : []
+    const waiting = tasks.filter(
+      ({ task, needsInput }) =>
+        task.waitingForFeedback && !needsInput && !task.archived && !isSnoozed(task, now),
+    )
+    const waitingItems: TaskListItem[] = waiting.length
+      ? [
+          { kind: 'group', key: 'waiting', name: 'Waiting', count: waiting.length },
+          ...(collapsed.has('waiting')
+            ? []
+            : waiting.map((entry): TaskListItem => ({ kind: 'task', entry }))),
         ]
       : []
     const snoozed = tasks.filter(({ task }) => !task.archived && isSnoozed(task, now))
@@ -210,6 +228,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       return [
         ...unsettled.map((entry): TaskListItem => ({ kind: 'task', entry })),
         ...workingItems,
+        ...waitingItems,
         ...snoozedItems,
         ...settledItems,
       ]
@@ -259,6 +278,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             : group.tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))),
         ]),
       ...workingItems,
+      ...waitingItems,
       ...snoozedItems,
       ...settledItems,
     ]

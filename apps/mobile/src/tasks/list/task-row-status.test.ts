@@ -160,3 +160,10 @@ it('shows change capture separately from provider work', () => {
     taskRowStatus({ ...task, status: 'running', runPhase: 'finalizing' }, false, true, now),
   ).toBe('Saving changes · 4m')
 })
+
+it('presents finished watched threads as Waiting while preserving input priority', () => {
+  const waiting = { ...task, waitingForFeedback: true, lastViewedTurnId: undefined }
+  expect(taskRowStatus(waiting, false, true, now)).toBe('Waiting · 4m')
+  expect(showTaskDone(waiting, false, now)).toBe(false)
+  expect(taskRowStatus(waiting, true, true, now)).toBe('Needs input')
+})

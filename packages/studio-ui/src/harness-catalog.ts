@@ -1,3 +1,4 @@
+import { DiscoveryCache } from '@dovo/studio-core'
 import { createModelLabels, type ModelLabelHarness } from './model-labels'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useSyncExternalStore } from 'react'
@@ -23,66 +24,50 @@ export function useModelLabel(address: string | undefined, harness: ModelLabelHa
     () => undefined,
   )
 }
-const cachedCatalogs = new Map<string, { value: ModelCatalog; expires: number }>()
+const cachedCatalogs = new DiscoveryCache<ModelCatalog>(5 * 60_000)
 export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
-  const { request, connected, connection } = useWorkspace()
+  const { request, connected, connection, snapshot } = useWorkspace()
   const savedModelName = useModelLabel(connection?.address, harness)
-  const [catalog, setCatalog] = useApplicationState<{
-    key: string
-    value: ModelCatalog
-  } | null>(null)
-  const [error, setError] = useApplicationState('')
-  const [loading, setLoading] = useApplicationState(false)
+  const [state, setState] = useApplicationState({ key: '', loading: false, error: '' })
   const input = modelDiscoveryInput(harness)
   const model = harness.model
-  const key = JSON.stringify([connection?.address, connection?.token, input])
+  const key = JSON.stringify([
+    connection?.address,
+    connection?.token,
+    snapshot?.runtimeInstanceId,
+    snapshot?.acpInstallations,
+    input,
+  ])
+  const catalog = useSyncExternalStore(
+    cachedCatalogs.subscribe,
+    () => cachedCatalogs.peek(key),
+    () => null,
+  )
   useEffect(() => {
     if (!active) return
     let stopped = false
-    const cached = cachedCatalogs.get(key)
-    if (cached && cached.expires > Date.now()) {
-      setCatalog({ key, value: cached.value })
-      setError('')
-      setLoading(false)
-      return
-    }
-    setCatalog(null)
-    setError('')
-    setLoading(connected)
+    setState({ key, error: '', loading: connected && !cachedCatalogs.isFresh(key) })
     if (!connected) return
-    void request('/api/agents/models', input, modelCatalogSchema)
-      .then((value) => {
-        if (!stopped) {
-          modelLabels.save(connection?.address, harness, value)
-          cachedCatalogs.delete(key)
-          cachedCatalogs.set(key, { value, expires: Date.now() + 5 * 60_000 })
-          if (cachedCatalogs.size > 64) {
-            const oldest = cachedCatalogs.keys().next().value
-            if (oldest !== undefined) cachedCatalogs.delete(oldest)
-          }
-          setCatalog({
-            key,
-            value,
-          })
-        }
+    void cachedCatalogs
+      .load(key, async () => {
+        const value = await request('/api/agents/models', input, modelCatalogSchema)
+        modelLabels.save(connection?.address, harness, value)
+        return value
       })
       .catch((error) => {
-        if (!stopped) setError(String(error))
+        if (!stopped) setState({ key, error: String(error), loading: false })
       })
       .finally(() => {
-        if (!stopped) setLoading(false)
+        if (!stopped) setState((previous) => ({ ...previous, loading: false }))
       })
     return () => {
       stopped = true
     }
   }, [active, connected, request, key])
   return {
-    catalog: catalog?.key === key ? catalog.value : (cachedCatalogs.get(key)?.value ?? null),
-    modelName:
-      (catalog?.key === key ? catalog.value : cachedCatalogs.get(key)?.value)?.models.find(
-        (item) => item.id === model,
-      )?.name ?? savedModelName,
-    error,
-    loading,
+    catalog,
+    modelName: catalog?.models.find((item) => item.id === model)?.name ?? savedModelName,
+    error: state.key === key ? state.error : '',
+    loading: active && connected && (state.key !== key || state.loading),
   }
 }

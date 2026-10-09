@@ -297,6 +297,10 @@ export const runtimePreferencesSchema = mutableStruct({
   enablePullRequestWatching: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
+  /** Experimental: let agents hand pipeline run monitoring to this runtime. */
+  enablePipelineWatching: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
   browserProfiles: browserProfilesSchema.pipe(
     Schema.withDecodingDefaultType(Effect.sync(defaultBrowserProfiles)),
   ),

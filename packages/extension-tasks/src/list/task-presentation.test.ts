@@ -198,3 +198,12 @@ it('shows seconds only below one minute and rounds down thereafter', () => {
   ] as const)
     expect(taskPresentation(running, false, start + seconds * 1000).time).toBe(time)
 })
+
+it('presents finished watched threads as Waiting while preserving input priority', () => {
+  const waiting = { ...task('review'), waitingForFeedback: true, lastViewedTurnId: undefined }
+  expect(taskPresentation(waiting, false, now)).toMatchObject({
+    state: 'Waiting',
+    compactLabel: 'Waiting',
+  })
+  expect(taskPresentation(waiting, true, now).state).toBe('Needs input')
+})

@@ -11,6 +11,7 @@ import {
   resolveTaskAgent,
   verifyPullUrl,
   type PullDetail,
+  type Task,
 } from '@dovo/protocol'
 import { z } from 'zod'
 import type { Services } from '../../services.js'
@@ -87,6 +88,31 @@ export class PullRequestWatch {
       .prepare('INSERT OR REPLACE INTO task_pull_watches VALUES (?,?)')
       .run(state.taskId, JSON.stringify(state))
   }
+  private readAll() {
+    return z
+      .array(z.object({ value: z.string() }))
+      .parse(this.db.prepare('SELECT value FROM task_pull_watches').all())
+      .map((row) => stateSchema.parse(JSON.parse(row.value)))
+  }
+  reconcile(tasks: readonly Task[]) {
+    const available = new Map(tasks.map((task) => [task.id, task]))
+    const watching = new Set<string>()
+    for (const taskId of this.registrations.keys()) {
+      const task = available.get(taskId)
+      if (!task || task.archived || task.archivedAt) this.registrations.delete(taskId)
+    }
+    for (const state of this.readAll()) {
+      const task = available.get(state.taskId)
+      if (!task || task.archived || task.archivedAt) {
+        this.registrations.delete(state.taskId)
+        this.db.prepare('DELETE FROM task_pull_watches WHERE task_id=?').run(state.taskId)
+      } else if (task.repositoryId !== state.repositoryId && state.status === 'watching') {
+        this.registrations.delete(state.taskId)
+        this.save({ ...state, status: 'stopped', error: 'The thread’s project changed' })
+      } else if (state.status === 'watching') watching.add(state.taskId)
+    }
+    return watching
+  }
   private enabled() {
     if (!this.s.preferences.get().enablePullRequestWatching)
       throw new HttpError(
@@ -112,7 +138,12 @@ export class PullRequestWatch {
     if (input.action === 'status') return { watch: previous ? watchSummary(previous) : null }
     if (input.action === 'stop') {
       this.registrations.delete(input.taskId)
-      if (previous) this.save({ ...previous, status: 'stopped' })
+      if (previous) {
+        this.s.store.transaction(() => {
+          this.save({ ...previous, status: 'stopped' })
+          this.s.store.updateTask(task.id, (task) => task)
+        })
+      }
       return { watch: previous ? watchSummary({ ...previous, status: 'stopped' }) : null }
     }
     if (task.example || task.delegation || task.archived || task.archivedAt)
@@ -179,7 +210,10 @@ export class PullRequestWatch {
       seenComments: detail.comments.filter(submittedComment).map(commentKey),
       failedChecks: failedChecks(detail).map((check) => checkKey(detail, check)),
     }
-    this.save(state)
+    this.s.store.transaction(() => {
+      this.save(state)
+      this.s.store.updateTask(task.id, (task) => task)
+    })
     this.s.activity.add('task', task.id, `Watching feedback on PR #${state.number}`)
     return { watch: watchSummary(state), failedChecks: failedChecks(detail) }
   }
@@ -300,6 +334,7 @@ export class PullRequestWatch {
           this.s.store.transaction(() => {
             if (chunks.length) this.s.tasks.queue.add(state.taskId, messageId, text)
             this.save(next)
+            this.s.store.updateTask(state.taskId, (task) => task)
           })
           if (chunks.length) await this.s.tasks.send(state.taskId, messageId, text)
         } catch (error) {

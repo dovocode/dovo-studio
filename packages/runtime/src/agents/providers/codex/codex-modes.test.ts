@@ -361,3 +361,30 @@ it('retains native RPC handlers and the loaded process under pressure across fol
     pressure.mockRestore()
   }
 })
+
+it.each(['0.160.0', '0.161.0', '0.162.0'])(
+  'enables instant interruption only on verified Codex versions: %s',
+  async (version) => {
+    const { run, requests } = await fixture(version)
+    await codexAdapter.run(run)
+    run.sessionId = 'thread'
+    await codexAdapter.run(run)
+    const threads = (await requests()).filter(
+      (row) => row.method === 'thread/start' || row.method === 'thread/resume',
+    )
+    expect(threads).toHaveLength(2)
+    for (const row of threads) {
+      const params = decode(
+        mutableStruct({
+          config: Schema.optional(
+            mutableStruct({ 'features.instant_interrupt': Schema.optional(Schema.Boolean) }),
+          ),
+        }),
+        row.params,
+      )
+      expect(params.config?.['features.instant_interrupt']).toBe(
+        version === '0.160.0' ? undefined : true,
+      )
+    }
+  },
+)

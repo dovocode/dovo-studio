@@ -68,7 +68,7 @@ export function ComposerModelPicker({
   const { snapshot, request } = useWorkspace()
   const installations = snapshot?.acpInstallations ?? []
   const [open, setOpen] = useApplicationState(false)
-  const availability = useHarnessAvailability(repositoryId, open, agents)
+  const availability = useHarnessAvailability(repositoryId, open, agents, true)
   const [provider, setProvider] = useApplicationState(value.provider)
   const [installationId, setInstallationId] = useApplicationState(value.acpInstallationId)
   const [mode, setMode] = useApplicationState<'models' | 'favorites' | 'agents'>('models')
