@@ -3,6 +3,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { repository } from '../components/site-links'
 import './globals.css'
+import { SiteEffects } from '../components/site-effects'
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://dovo.studio'),
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
   icons: { icon: '/dovo-logo.png', apple: '/dovo-logo.png' },
   openGraph: {
     title: 'Dovo Studio',
-    description: 'Your agents. Your projects. Your workspace.',
+    description: 'Build big. Own the process.',
     type: 'website',
     siteName: 'Dovo Studio',
     images: [{ url: '/dovo-logo.png', width: 96, height: 96, alt: 'Dovo Studio' }],
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
+        <SiteEffects />
         <a className="skip-link" href="#main">
           Skip to content
         </a>
@@ -40,6 +42,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </span>
           </Link>
           <nav aria-label="Main navigation">
+            <Link className="product-nav" href="/#features">
+              Product
+            </Link>
             <Link href="/docs/">Docs</Link>
             <a href={repository}>
               GitHub <span aria-hidden="true">↗</span>
@@ -53,7 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer className="site-footer wrap">
           <div>
             <strong>Dovo Studio</strong>
-            <p>A little more space to build.</p>
+            <p>Your agents. Your code. Your rules.</p>
           </div>
           <nav aria-label="Footer navigation">
             <Link href="/download/">Downloads</Link>

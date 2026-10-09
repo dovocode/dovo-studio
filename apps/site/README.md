@@ -23,8 +23,10 @@ the public GitHub releases API in the browser, with a link to browse releases if
 iPhone app is marked work in progress and Android is marked coming soon. The iPhone guide describes
 local builds, not an App Store release. Detailed guides link to the repository documentation so
 there is one maintained full manual. The homepage uses real screenshots of the production workbench
-with an isolated demo runtime. The site uses the Dovo graphite-and-blue palette from
-`packages/studio-core/src/themes.ts`.
+with an isolated demo runtime. The site extends the Dovo graphite-and-blue palette with violet and
+mint accents, luminous backgrounds, an interactive product tour and expandable FAQs. Entrance and
+scroll animations respect reduced-motion preferences; all content remains available without
+JavaScript.
 
 Stable and Nightly Linux setup commands are shown directly on the homepage, downloads and docs,
 including service installation, pairing, and the separate Nightly launcher name. Commands use the

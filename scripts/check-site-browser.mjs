@@ -154,7 +154,35 @@ try {
       (image) => image.complete && image.naturalWidth > 0,
     ),
   )
-  assert.equal(await page.locator('.product-screenshot img').count(), 2)
+  assert.equal(await page.locator('.product-screenshot img').count(), 3)
+  await page.getByRole('button', { name: 'Automations', exact: false }).click()
+  await page.getByRole('heading', { name: 'Make your good workflows repeatable.' }).waitFor()
+  assert.equal(
+    await page.locator('.product-tour img').getAttribute('src'),
+    '/screenshots/automations.png',
+  )
+  await page.getByRole('button', { name: 'Code & review', exact: false }).click()
+  await page.getByRole('heading', { name: 'Stay in the loop. All the way to ship.' }).waitFor()
+  await page.getByRole('button', { name: 'Agent workspace', exact: false }).click()
+  await page.getByText('Do I need a Dovo account?', { exact: true }).click()
+  assert.equal(await page.locator('.faq details[open]').count(), 1)
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.reload()
+  await page.waitForFunction(() => document.querySelectorAll('.reveal').length > 0)
+  assert.equal(
+    await page
+      .locator('.hero-stage')
+      .evaluate((element) => getComputedStyle(element, '::before').animationName),
+    'ambient-drift',
+  )
+  await page.locator('.ownership').scrollIntoViewIfNeeded()
+  await page.waitForFunction(() =>
+    document.querySelector('.ownership')?.classList.contains('is-visible'),
+  )
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.reload()
+  assert.equal(await page.locator('.reveal').count(), 0)
+  await page.evaluate(() => document.fonts.ready)
   await page.screenshot({ path: '/tmp/dovo-site-desktop.png', fullPage: true })
   await page.setViewportSize({ width: 375, height: 812 })
   await page.screenshot({ path: '/tmp/dovo-site-mobile.png', fullPage: true })
