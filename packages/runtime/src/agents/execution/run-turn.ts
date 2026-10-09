@@ -22,7 +22,7 @@ import { estimatedTurnCost } from '../tasks/estimated-cost.js'
 import { completedCompaction } from '../tasks/compaction.js'
 import { updateSubagents } from './subagents.js'
 import { ReasoningEvents, safeReasoningEvent } from './reasoning-event.js'
-import type { AgentSteer, AgentRun } from './types.js'
+import type { AgentSteer, AgentRun, NativeAgentSession } from './types.js'
 import {
   REVIEW_MODE_INSTRUCTION,
   mentionedResources,
@@ -32,6 +32,7 @@ import {
   mergeResources,
   reportedPlanLimits,
   mergePlanLimits,
+  nativeAgentWorking,
 } from '@dovo/protocol'
 import { hostname } from 'node:os'
 import type { Attachments } from '../../storage/attachments.js'
@@ -62,6 +63,19 @@ export class TurnStoreFailure extends Error {
 }
 
 export class TaskTurnRunner {
+  private toolBindings = new Map<string, { id: string; fingerprint: string }>()
+  private onNativeSession?: (
+    taskId: string,
+    sessionId: string,
+    session: NativeAgentSession | undefined,
+    directories: string[],
+  ) => void
+  setNativeSessions(callback: NonNullable<TaskTurnRunner['onNativeSession']>) {
+    this.onNativeSession = callback
+  }
+  ownsToolBinding(taskId: string, bindingId: string) {
+    return this.toolBindings.get(taskId)?.id === bindingId
+  }
   private linkedCheckouts?: LinkedCheckouts
   setLinkedCheckouts(checkouts: LinkedCheckouts) {
     this.linkedCheckouts = checkouts
@@ -300,6 +314,22 @@ ${
             )
             .digest('hex')
         const sessionId = task.sessionAgentId === fingerprint ? task.sessionId : undefined
+        // Warm providers retain MCP connections with their native children. Bind tools to
+        // the provider session; resolve the active attempt at admission without a restart.
+        let toolBinding: { id: string; fingerprint: string } | undefined
+        if (
+          ['claude', 'codex', 'acp', 'muse', 'opencode'].includes(agent.provider) &&
+          this.taskTools
+        ) {
+          const existing = this.toolBindings.get(id)
+          toolBinding =
+            sessionId && existing?.fingerprint === fingerprint
+              ? existing
+              : { id: `native-session:${randomUUID()}`, fingerprint }
+          this.toolBindings.set(id, toolBinding)
+          const server = resources.mcpServers.find((server) => server.name === 'dovo_task')
+          if (server) server.envValues = { ...server.envValues, DOVO_TASK_RUN_ID: toolBinding.id }
+        }
         const currentMessages = this.store.task(id).messages
         const lastAssistant = currentMessages
           .map((message) => message.role)
@@ -533,6 +563,23 @@ ${
           promptAccepted = true
         }
         const acceptsProviderEvents = () => providerOpen && !controller.signal.aborted
+        let nativeSessionOpen = true
+        let nativeParentOpen = true
+        let nativeSessionId = sessionId
+        const acceptsNativeInteractions = () => {
+          const current = this.store.get().tasks.find((task) => task.id === id)
+          return (
+            nativeSessionOpen &&
+            !controller.signal.aborted &&
+            !!nativeSessionId &&
+            !!current &&
+            !current.archived &&
+            (current.status === 'running' || current.status === 'review') &&
+            current.sessionId === nativeSessionId &&
+            current.sessionAgentId === fingerprint &&
+            resolveTaskAgent(current, this.store.get().agents)?.permission === configured.permission
+          )
+        }
         const tokens = turnTokenCounter(agent.provider, () => this.store.task(id).sessionId)
         const tokenField = () => {
           const total = tokens.total()
@@ -793,6 +840,16 @@ ${
                   })
                 },
                 onSubagentEvent: (name, payload, ownerSessionId) => {
+                  if (
+                    name === 'dovo/session/closed' &&
+                    ownerSessionId &&
+                    ownerSessionId === nativeSessionId
+                  ) {
+                    nativeSessionOpen = false
+                    if (toolBinding && this.toolBindings.get(id) === toolBinding)
+                      this.toolBindings.delete(id)
+                    this.onNativeSession?.(id, ownerSessionId, undefined, [])
+                  }
                   const current = this.store.get().tasks.find((task) => task.id === id)
                   if (
                     !current ||
@@ -806,7 +863,7 @@ ${
                   )
                     return
                   const records = current.subagents ?? []
-                  const subagents = updateSubagents(
+                  let subagents = updateSubagents(
                     records,
                     agent.provider,
                     payload,
@@ -814,11 +871,47 @@ ${
                     name,
                     ownerSessionId,
                   )
+                  if (subagents === records) return
+                  subagents = subagents.map((record) => {
+                    const previous = records.find(
+                      (old) =>
+                        old.id === record.id &&
+                        old.provider === record.provider &&
+                        old.source !== 'dovo' &&
+                        old.sessionId === record.sessionId,
+                    )
+                    if (
+                      record.source === 'dovo' ||
+                      record.completion ||
+                      !record.finishedAt ||
+                      !(previous && nativeAgentWorking(previous))
+                    )
+                      return record
+                    return {
+                      ...record,
+                      completionId: `native-result:${record.provider}:${ownerSessionId}:${record.id}:${record.startedAt}`,
+                      completion:
+                        providerOpen && nativeParentOpen ? ('read' as const) : ('pending' as const),
+                    }
+                  })
                   if (subagents !== records)
                     this.store.updateTask(id, (task) => ({ ...task, subagents }))
                 },
+                onNativeSession: (session, sessionId) => {
+                  nativeSessionId = sessionId
+                  this.onNativeSession?.(id, sessionId, session, [
+                    cwd,
+                    ...linked
+                      .filter((link) => link.access === 'edit')
+                      .map((link) => link.directory),
+                  ])
+                },
+                onNativeTurnEnd: () => {
+                  nativeParentOpen = false
+                },
                 onSession: (sessionId) => {
                   if (!acceptsProviderEvents()) return
+                  nativeSessionId = sessionId
                   if (
                     this.store.task(id).sessionId !== sessionId ||
                     this.store.task(id).sessionAgentId !== fingerprint
@@ -1006,6 +1099,34 @@ ${
                   if (!acceptsProviderEvents()) return
                   this.activity?.add('agent', id, `${agent.provider} activity`, { text })
                   this.store.updateTask(id, (t) => ({ ...t, activity: text }))
+                },
+                nativeAgentInteractions: {
+                  approve: (title, detail, signal) =>
+                    acceptsNativeInteractions()
+                      ? this.approvals.request(
+                          id,
+                          title,
+                          detail,
+                          AbortSignal.any([controller.signal, signal]),
+                        )
+                      : Promise.resolve(false),
+                  ask: (prompt, signal, validate) =>
+                    acceptsNativeInteractions()
+                      ? this.questions.request(
+                          id,
+                          prompt,
+                          signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
+                          validate,
+                          (_answers, receipt) =>
+                            this.store.acceptQuestionResponse(id, receipt, {
+                              id: `answer:${turnId}:${receipt.id}`,
+                              taskId: id,
+                              attemptId: turnId,
+                              kind: 'answer',
+                              state: 'dispatched',
+                            }),
+                        )
+                      : Promise.resolve(null),
                 },
                 approve: (title, detail) =>
                   acceptsProviderEvents()

@@ -1,5 +1,5 @@
 import { legacyAcpModels } from './acp-models.js'
-import { mutableStruct } from '@dovo/protocol'
+import { mutableStruct, nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { acpMcpServers } from '../../configuration/mcp-settings.js'
 import { isImageAttachment } from '@dovo/protocol'
@@ -13,8 +13,9 @@ import {
   type ResumeSessionResponse,
   type LoadSessionResponse,
   type PromptRequest,
+  type SubagentUpdate,
 } from '@agentclientprotocol/sdk'
-import type { AgentAdapter } from '../../execution/types.js'
+import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { executableAvailable } from '../../../process.js'
 import {
   acpControl,
@@ -24,6 +25,7 @@ import {
   type AcpInitialization,
 } from './acp-connection.js'
 import { acpClientTools } from './acp-client-tools.js'
+import { updateSubagents } from '../../execution/subagents.js'
 import { releaseIdleProvider } from '../../execution/warm-processes.js'
 type AcpConnection = ReturnType<typeof openAcpConnection>
 type AcpSession = NewSessionResponse | ResumeSessionResponse | LoadSessionResponse
@@ -36,10 +38,24 @@ type WarmAcp = {
   launchKey: string
   cwd: string
   compactAvailable: boolean
+  native: {
+    agents: Subagent[]
+    children: Map<string, SubagentUpdate>
+    tools: Awaited<ReturnType<typeof acpClientTools>>
+    toolRun: AgentRun
+    lifetime: AbortController
+    owner: AgentRun
+    prompting: boolean
+  }
 }
 export function createAcpAdapter(): AgentAdapter {
   const idle = new Map<string, WarmAcp>()
-  const close = (value: WarmAcp) => value.connection.close()
+  const close = async (value: WarmAcp) => {
+    value.native.lifetime.abort()
+    await value.connection.close()
+    await value.native.tools.close()
+    value.native.owner.onSubagentEvent?.('dovo/session/closed', {}, value.sessionId)
+  }
   return {
     models: acpModels,
     probe: async (agent, launch) => ({
@@ -71,20 +87,64 @@ export function createAcpAdapter(): AgentAdapter {
         !previous.connection.signal.aborted
           ? previous
           : undefined
-      if (previous && !reusable) await close(previous)
+      if (previous && !reusable) {
+        if (previous.native.agents.some(nativeAgentWorking)) {
+          if (run.taskId) idle.set(run.taskId, previous)
+          throw new Error('Stop native ACP agents before changing their session configuration')
+        }
+        await close(previous)
+      }
       let cancelling = false
       let loading = !!run.sessionId && !reusable
       let sessionId: string | undefined = reusable?.sessionId
       let compactAvailable = reusable?.compactAvailable ?? false
-      const tools = await acpClientTools(run, () => sessionId).catch(async (error) => {
-        if (reusable) await close(reusable)
-        throw error
+      const children = reusable?.native.children ?? new Map<string, SubagentUpdate>()
+      const lifetime = reusable?.native.lifetime ?? new AbortController()
+      const native = reusable?.native
+      let nativeAgents = native?.agents ?? []
+      let nativeState: WarmAcp['native'] | undefined = native
+      const ownsChild = (id: string) =>
+        (nativeState?.agents ?? nativeAgents).some(
+          (agent) => agent.id === id && nativeAgentWorking(agent),
+        )
+      const requestRun = (id: string): AgentRun | undefined => {
+        if (id === sessionId) return prompting ? run : undefined
+        const interactions = run.nativeAgentInteractions
+        if (!ownsChild(id) || !interactions) return
+        return {
+          ...run,
+          approve: (title, detail) => interactions.approve(title, detail, lifetime.signal),
+          ask: interactions.ask,
+        }
+      }
+      const toolRun: AgentRun = native?.toolRun ?? { ...run, signal: lifetime.signal }
+      Object.assign(toolRun, {
+        ...run,
+        signal: lifetime.signal,
+        approve: (title: string, detail: string) =>
+          prompting
+            ? run.approve(title, detail)
+            : (run.nativeAgentInteractions?.approve(title, detail, lifetime.signal) ??
+              Promise.resolve(false)),
       })
+      const tools =
+        native?.tools ??
+        (await acpClientTools(
+          toolRun,
+          () => sessionId,
+          (id) => (id === sessionId && (nativeState?.prompting ?? prompting)) || ownsChild(id),
+        ))
+      let prompting = false
       const handlers: Client = {
         ...tools.client,
         createElicitation: async (params) => {
-          if (run.signal.aborted || ('sessionId' in params && params.sessionId !== sessionId))
-            return { action: 'cancel' }
+          const owner =
+            'sessionId' in params && typeof params.sessionId === 'string'
+              ? requestRun(params.sessionId)
+              : prompting
+                ? run
+                : undefined
+          if (lifetime.signal.aborted || !owner) return { action: 'cancel' }
           run.onEvent?.('elicitation/create', params)
           const form = decodeResult(
             mutableStruct({
@@ -100,7 +160,12 @@ export function createAcpAdapter(): AgentAdapter {
               action: 'cancel',
             }
           }
-          const content = await formQuestions(form.data.message, form.data.requestedSchema, run)
+          const content = await formQuestions(
+            form.data.message,
+            form.data.requestedSchema,
+            owner,
+            lifetime.signal,
+          )
           return content
             ? {
                 action: 'accept',
@@ -111,7 +176,8 @@ export function createAcpAdapter(): AgentAdapter {
               }
         },
         requestPermission: async (params) => {
-          if (cancelling || run.signal.aborted || params.sessionId !== sessionId)
+          const owner = requestRun(params.sessionId)
+          if (cancelling || lifetime.signal.aborted || !owner)
             return { outcome: { outcome: 'cancelled' } }
           if (prompting) run.onPromptAccepted?.()
           run.onEvent?.('permission', params)
@@ -120,7 +186,7 @@ export function createAcpAdapter(): AgentAdapter {
             run.tools !== 'none' &&
             (run.agent.permission === 'full-access' ||
               (run.agent.permission === 'workspace-write' && params.toolCall.kind === 'edit') ||
-              (await run.approve(
+              (await owner.approve(
                 params.toolCall.title ?? 'ACP tool request',
                 JSON.stringify(params.toolCall, null, 2),
               )))
@@ -141,13 +207,33 @@ export function createAcpAdapter(): AgentAdapter {
         },
         sessionUpdate: (params) => {
           if (
+            params.update.sessionUpdate === 'subagent_update' &&
+            (params.sessionId === sessionId || children.has(params.sessionId))
+          ) {
+            const child = params.update
+            children.set(child.sessionId, { ...children.get(child.sessionId), ...child })
+          }
+          if (params.sessionId === sessionId || children.has(params.sessionId)) {
+            nativeAgents = updateSubagents(
+              nativeAgents,
+              'acp',
+              params,
+              new Date().toISOString(),
+              params.update.sessionUpdate,
+              sessionId,
+            )
+            if (nativeState) nativeState.agents = nativeAgents
+            run.onSubagentEvent?.(params.update.sessionUpdate, params, sessionId)
+          }
+
+          if (
             params.sessionId === (sessionId ?? run.sessionId) &&
             params.update.sessionUpdate === 'available_commands_update'
           )
             compactAvailable = params.update.availableCommands.some(
               (command) => command.name === 'compact',
             )
-          if (loading) return
+          if (loading || !prompting) return
           if (params.sessionId !== sessionId) return
           if (
             prompting &&
@@ -167,16 +253,32 @@ export function createAcpAdapter(): AgentAdapter {
           if (update.sessionUpdate === 'tool_call') run.onActivity(update.title)
         },
       }
+      nativeState = reusable?.native ?? {
+        agents: nativeAgents,
+        children,
+        tools,
+        toolRun,
+        lifetime,
+        owner: run,
+        prompting: false,
+      }
+      nativeState.owner = run
+      const state = nativeState
       const client = reusable?.client ?? handlers
       if (reusable) Object.assign(client, handlers)
       const connection = reusable?.connection ?? openAcpConnection(launch, client, run.cwd)
       if (!reusable)
-        void connection.exited.catch(() => {
-          for (const [taskId, value] of idle)
-            if (value.connection === connection) idle.delete(taskId)
-        })
+        void connection.exited
+          .catch(async () => {
+            lifetime.abort()
+            await connection.close()
+            await tools.close()
+            if (sessionId) run.onSubagentEvent?.('dovo/session/closed', {}, sessionId)
+            for (const [taskId, value] of idle)
+              if (value.connection === connection) idle.delete(taskId)
+          })
+          .catch((error) => console.error('Could not drain exited ACP process:', error))
       const { rpc, exited } = connection
-      let prompting = false
       let succeeded = false
       let canCloseSession =
         reusable?.initialization.agentCapabilities?.sessionCapabilities?.close ?? false
@@ -202,6 +304,7 @@ export function createAcpAdapter(): AgentAdapter {
             ...tools.capabilities,
             session: { configOptions: { boolean: {} } },
             elicitation: { form: {} },
+            subagents: {},
           }))
         canCloseSession = !!initialization.agentCapabilities?.sessionCapabilities?.close
         canDeleteSession = !!initialization.agentCapabilities?.sessionCapabilities?.delete
@@ -262,6 +365,37 @@ export function createAcpAdapter(): AgentAdapter {
         if (!id) throw new Error('ACP agent did not return a session id')
         sessionId = id
         run.onSession(id)
+        run.onNativeSession?.(
+          {
+            stop: async (childId) => {
+              const selected = state.agents.filter(
+                (agent) => nativeAgentWorking(agent) && (!childId || agent.id === childId),
+              )
+              if (selected.some((agent) => !children.get(agent.id)?.capabilities?.cancel)) {
+                if (childId || state.prompting)
+                  throw new Error(
+                    'This ACP agent does not advertise cancellation for this child; stop the thread instead',
+                  )
+                await close({
+                  connection,
+                  client,
+                  initialization,
+                  session,
+                  sessionId: id,
+                  launchKey,
+                  cwd: run.cwd,
+                  compactAvailable,
+                  native: state,
+                })
+                if (run.taskId) idle.delete(run.taskId)
+                return
+              }
+              for (const agent of selected)
+                await rpc.notify(methods.agent.session.cancel, { sessionId: agent.id })
+            },
+          },
+          id,
+        )
         if (!reusable) {
           const restrictive = run.agent.permission === 'read-only' || run.tools === 'none'
           if (restrictive || run.agent.acpMode) {
@@ -382,6 +516,7 @@ export function createAcpAdapter(): AgentAdapter {
             'This ACP agent does not accept image input; images are available as attached files only.',
           )
         prompting = true
+        state.prompting = true
         const prompt: PromptRequest = {
           sessionId: id,
           prompt: [
@@ -409,6 +544,7 @@ export function createAcpAdapter(): AgentAdapter {
         if (result.stopReason !== 'end_turn' && !(cancelling && result.stopReason === 'cancelled'))
           throw new Error(`ACP stopped: ${result.stopReason}`)
         if (run.compact) run.onEvent?.('dovo/compaction/completed', { sessionId: id })
+        run.onNativeTurnEnd?.()
         succeeded = true
         if (run.taskId && run.tools !== 'none' && !run.signal.aborted) {
           idle.set(run.taskId, {
@@ -420,9 +556,12 @@ export function createAcpAdapter(): AgentAdapter {
             launchKey,
             cwd: run.cwd,
             compactAvailable,
+            native: state,
           })
           if (releaseIdleProvider()) {
-            const oldest = idle.keys().next().value
+            const oldest = [...idle.entries()].find(
+              ([, value]) => !value.native.agents.some(nativeAgentWorking),
+            )?.[0]
             if (oldest) {
               const stale = idle.get(oldest)
               idle.delete(oldest)
@@ -434,6 +573,9 @@ export function createAcpAdapter(): AgentAdapter {
           }
         }
       } finally {
+        prompting = false
+        state.prompting = false
+        if (sessionId) await tools.stopSession(sessionId)
         run.signal.removeEventListener('abort', abort)
         if (
           (!succeeded || !run.taskId || run.tools === 'none' || run.signal.aborted) &&
@@ -472,27 +614,12 @@ export function createAcpAdapter(): AgentAdapter {
             console.error('Could not delete ephemeral ACP session:', error)
           }
         }
-        try {
+        if (!succeeded || !run.taskId || run.tools === 'none' || run.signal.aborted) {
+          lifetime.abort()
+          await connection.close()
           await tools.close()
-        } catch (error) {
-          if (run.taskId) idle.delete(run.taskId)
-          await connection.close()
-          console.error('Could not close ACP client tools:', error)
+          if (sessionId) run.onSubagentEvent?.('dovo/session/closed', {}, sessionId)
         }
-        Object.assign(client, {
-          readTextFile: undefined,
-          writeTextFile: undefined,
-          createTerminal: undefined,
-          terminalOutput: undefined,
-          waitForTerminalExit: undefined,
-          killTerminal: undefined,
-          releaseTerminal: undefined,
-          createElicitation: async () => ({ action: 'cancel' as const }),
-          requestPermission: async () => ({ outcome: { outcome: 'cancelled' as const } }),
-          sessionUpdate: () => {},
-        })
-        if (!succeeded || !run.taskId || run.tools === 'none' || run.signal.aborted)
-          await connection.close()
       }
       if (cleanupError) throw cleanupError
     },

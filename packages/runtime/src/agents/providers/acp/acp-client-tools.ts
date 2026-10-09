@@ -9,6 +9,7 @@ import { processEnvironment } from '../../../process.js'
 import { stopAcpChild } from './acp-process.js'
 
 type Terminal = {
+  sessionId: string
   child: ChildProcess
   output: string
   truncated: boolean
@@ -27,11 +28,16 @@ function inside(root: string, path: string) {
   )
 }
 
-export async function acpClientTools(run: AgentRun, session: () => string | undefined) {
+export async function acpClientTools(
+  run: AgentRun,
+  session: () => string | undefined,
+  acceptsSession?: (id: string) => boolean,
+) {
   const root = await realpath(run.cwd)
   const fullAccess = run.agent.permission === 'full-access'
   const terminals = new Map<string, Terminal>()
-  const writes = new Set<Promise<void>>()
+  const writes = new Map<Promise<void>, string>()
+  const stoppingSessions = new Set<string>()
   let closing = false
   let closePromise: Promise<void> | undefined
   const toolsAllowed = run.tools !== 'none'
@@ -48,14 +54,16 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
   }
 
   function checkSession(id: string) {
-    if (closing) throw new Error('ACP client tools are closed')
-    if (id !== session()) throw new Error('ACP session does not match this task')
+    if (closing || stoppingSessions.has(id)) throw new Error('ACP client tools are closed')
+    if (!(acceptsSession ? acceptsSession(id) : id === session()))
+      throw new Error('ACP session does not match this task')
     if (run.signal.aborted) throw new Error('Task cancelled')
   }
 
-  function getTerminal(id: string) {
+  function getTerminal(id: string, sessionId: string) {
     const terminal = terminals.get(id)
-    if (!terminal) throw new Error('ACP terminal is unavailable')
+    if (!terminal || terminal.sessionId !== sessionId)
+      throw new Error('ACP terminal is unavailable')
     return terminal
   }
 
@@ -133,7 +141,7 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
               await handle.close()
             }
           })()
-          writes.add(writing)
+          writes.set(writing, params.sessionId)
           try {
             await writing
           } finally {
@@ -178,6 +186,7 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
           })
           const id = randomUUID()
           const terminal: Terminal = {
+            sessionId: params.sessionId,
             child,
             output: '',
             truncated: false,
@@ -213,7 +222,7 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
     terminalOutput: canUseTerminal
       ? (params) => {
           checkSession(params.sessionId)
-          const terminal = getTerminal(params.terminalId)
+          const terminal = getTerminal(params.terminalId, params.sessionId)
           return {
             output: terminal.output,
             truncated: terminal.truncated,
@@ -224,20 +233,20 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
     waitForTerminalExit: canUseTerminal
       ? async (params) => {
           checkSession(params.sessionId)
-          const terminal = getTerminal(params.terminalId)
+          const terminal = getTerminal(params.terminalId, params.sessionId)
           return terminal.exit
         }
       : undefined,
     killTerminal: canUseTerminal
       ? (params) => {
           checkSession(params.sessionId)
-          return stopAcpChild(getTerminal(params.terminalId).child)
+          return stopAcpChild(getTerminal(params.terminalId, params.sessionId).child)
         }
       : undefined,
     releaseTerminal: canUseTerminal
       ? async (params) => {
           checkSession(params.sessionId)
-          await stopAcpChild(getTerminal(params.terminalId).child)
+          await stopAcpChild(getTerminal(params.terminalId, params.sessionId).child)
           terminals.delete(params.terminalId)
         }
       : undefined,
@@ -249,13 +258,28 @@ export async function acpClientTools(run: AgentRun, session: () => string | unde
   return {
     client,
     capabilities,
+    stopSession: async (id: string) => {
+      stoppingSessions.add(id)
+      try {
+        await Promise.allSettled(
+          [...writes].filter(([, owner]) => owner === id).map(([writing]) => writing),
+        )
+        const selected = [...terminals.entries()].filter(
+          ([, terminal]) => terminal.sessionId === id,
+        )
+        await Promise.all(selected.map(([, terminal]) => stopAcpChild(terminal.child)))
+        for (const [terminalId] of selected) terminals.delete(terminalId)
+      } finally {
+        stoppingSessions.delete(id)
+      }
+    },
     close: () => {
       if (!closePromise) {
         closing = true
         closePromise = (async () => {
           // Approval/path waits can no longer admit writes or processes. Already-started
           // file writes must finish before the provider releases checkout ownership.
-          await Promise.allSettled([...writes])
+          await Promise.allSettled([...writes.keys()])
           await Promise.all([...terminals.values()].map((terminal) => stopAcpChild(terminal.child)))
           terminals.clear()
         })()

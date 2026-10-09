@@ -2,6 +2,8 @@ import { decode, mcpServerSchema } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { rm } from 'node:fs/promises'
 import { createMuseAdapter } from './muse.js'
+import * as warmProcesses from '../../execution/warm-processes.js'
+import type { AgentRun } from '../../execution/types.js'
 import { providerFixture } from '../shared/provider-fixture.js'
 const directories: string[] = []
 afterEach(async () => {
@@ -24,6 +26,7 @@ createInterface({input:process.stdin}).on('line',line=>{
  if(v.method==='session/start'||v.method==='session/resume')return reply(v.id,{session:{sessionId:'s'},viewCursor:'0'});
  if(v.method==='turn/start'){
   turn=p.commandId;reply(v.id,{commandId:turn,status:'accepted',disposition:'started',startedNewTurn:true,turnId:turn});event('turn/started',{turnId:turn,commandId:turn});
+  if(p.input[0].text==='native'){event('item/started',{item:{itemId:'child-item',kind:'subagent',subagentId:'child',agentPath:'child',controlStatus:'running',status:'inProgress',revision:1,turnId:turn}});event('turn/completed',{turnId:turn,terminal:'completed'});setTimeout(()=>event('approval/requested',{approvalId:'approve',itemId:'tool',taskId:'task',toolCallId:'tool',judgeEscalated:false,protectedWrite:false,rawArgs:'pwd',currentRequirementId:'requirement',subagentOrigin:{subagentId:'child',childSessionId:'child-session',agentPath:'child'},subject:{kind:'shell',command:'pwd'},availableChoices:[{choiceId:'once',decision:'approved',scope:'once',label:'Allow'},{choiceId:'deny',decision:'denied',scope:'once',label:'Deny'}]}),30);return}
   if(p.input[0].text==='hold')return;
   if(p.input[0].text==='disconnect')return setTimeout(()=>process.exit(0),10);
   if(p.input[0].text==='approval'){event('approval/requested',{approvalId:'approve',itemId:'tool',taskId:'task',toolCallId:'tool',judgeEscalated:false,protectedWrite:false,rawArgs:'pwd',currentRequirementId:'requirement',subject:{kind:'shell',command:'pwd'},availableChoices:[{choiceId:'once',decision:'approved',scope:'once',label:'Allow'},{choiceId:'deny',decision:'denied',scope:'once',label:'Deny'}]});return}
@@ -31,6 +34,7 @@ createInterface({input:process.stdin}).on('line',line=>{
   if(p.input[0].text==='fail'){event('turn/completed',{turnId:turn,terminal:'failed',error:{kind:'providerError',message:'Model failed',retryable:false}});return}
   finish();return;
  }
+ if(v.method==='subagent/stop'){reply(v.id,{commandId:p.commandId,status:'accepted'});event('item/completed',{item:{itemId:'child-item',kind:'subagent',subagentId:'child',controlStatus:'closed',status:'completed',revision:2,turnId:turn}});return}
  if(v.method==='turn/steer'){reply(v.id,{commandId:p.commandId,status:'accepted',turnId:turn});finish();return}
  if(v.method==='approval/decide'||v.method==='userInput/answer'){reply(v.id,{commandId:p.commandId,status:'accepted'});finish();return}
  if(v.method==='session/compact'){reply(v.id,{commandId:p.commandId,status:'accepted'});event('item/completed',{item:{itemId:'compact',kind:'compaction',turnId:null,status:'completed',revision:1,outcome:'compacted'}});return}
@@ -144,4 +148,44 @@ it('routes SDK approvals and native question commands', async () => {
   expect(
     (await f.messages()).find((frame) => frame.method === 'userInput/answer')?.params,
   ).toMatchObject({ answers: [{ questionId: 'answer', selectedLabel: 'yes' }] })
+})
+
+it('retains native children and approvals after a reply, reuses the host, and exposes stop', async () => {
+  const f = await fixture()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(true)
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const approve = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
+    async () => true,
+  )
+  let controls: Parameters<NonNullable<AgentRun['onNativeSession']>>[0] | undefined
+  const run = {
+    ...f.run,
+    taskId: 'native-muse',
+    prompt: 'native',
+    onSubagentEvent: native,
+    onNativeSession: (session: NonNullable<typeof controls>) => {
+      controls = session
+    },
+    nativeAgentInteractions: { approve, ask: f.run.ask },
+  }
+  try {
+    await f.adapter.run(run)
+    await vi.waitFor(() => expect(approve).toHaveBeenCalledOnce())
+    expect(native).not.toHaveBeenCalledWith('dovo/session/closed', {}, 's')
+    await f.adapter.run({ ...run, prompt: 'hello', sessionId: 's' })
+    expect((await f.messages()).filter((frame) => frame.method === 'initialize')).toHaveLength(1)
+    await controls?.stop('child')
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith(
+        'item/completed',
+        expect.objectContaining({
+          item: expect.objectContaining({ subagentId: 'child', controlStatus: 'closed' }),
+        }),
+        's',
+      ),
+    )
+  } finally {
+    await f.adapter.dispose?.()
+    pressure.mockRestore()
+  }
 })

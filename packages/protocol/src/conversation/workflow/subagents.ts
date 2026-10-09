@@ -7,6 +7,11 @@ export const subagentSchema = mutableStruct({
   /** Native metadata belongs to a live provider session, including between parent turns. */
   sessionLive: Schema.optional(Schema.Boolean),
   background: Schema.optional(Schema.Boolean),
+  sessionId: Schema.optional(Schema.String),
+  result: Schema.optional(Schema.String),
+  /** Durable delivery of a native result; provider events remain the source of its outcome. */
+  completionId: Schema.optional(Schema.String),
+  completion: Schema.optional(Schema.Literals(['pending', 'queued', 'read', 'disposed'])),
   id: Schema.String,
   provider: Schema.String,
   name: Schema.String,
@@ -31,6 +36,14 @@ export const subagentSchema = mutableStruct({
   finishedAt: Schema.optional(Schema.String),
 })
 export type Subagent = Schema.Schema.Type<typeof subagentSchema>
+export function nativeAgentWorking(agent: Subagent) {
+  return (
+    agent.source !== 'dovo' &&
+    agent.sessionLive === true &&
+    !agent.finishedAt &&
+    (agent.status === 'working' || agent.status === 'unknown')
+  )
+}
 export function subagentElapsed(agent: Subagent, now: number) {
   const ms =
     agent.durationMs ??

@@ -86,7 +86,7 @@ export function TaskAgents({ task }: { task: Task }) {
             />
           </View>
         </View>
-        {[...activeAgents].some((agent) => agent.source === 'dovo') && (
+        {activeAgents.size > 0 && (
           <Action
             secondary
             label={cancellation.busy ? 'Stopping…' : 'Stop agents'}
@@ -123,6 +123,7 @@ export function TaskAgents({ task }: { task: Task }) {
           const child = childId
             ? snapshot?.workspace.tasks.find((item) => item.id === childId)
             : undefined
+          const owner = snapshot?.workspace.tasks.find((item) => item.subagents?.includes(agent))
           const state =
             !active && agent.status === 'working'
               ? 'Last seen working'
@@ -221,6 +222,11 @@ export function TaskAgents({ task }: { task: Task }) {
                       {agent.prompt}
                     </Text>
                   )}
+                  {!!agent.result && (
+                    <Text selectable style={styles.muted}>
+                      {agent.result}
+                    </Text>
+                  )}
                   {!!agent.activity && (
                     <Text selectable style={styles.muted}>
                       {agent.activity}
@@ -231,6 +237,29 @@ export function TaskAgents({ task }: { task: Task }) {
                       secondary
                       label={`Open child thread · ${agent.provider}`}
                       onPress={() => navigate('tasks', childId, profile?.id)}
+                    />
+                  )}
+                  {active && agent.source !== 'dovo' && owner && (
+                    <Action
+                      secondary
+                      label="Stop child"
+                      disabled={cancellation.busy}
+                      onPress={() =>
+                        cancellation.act(() =>
+                          callEffect(
+                            '/api/tasks/stop-agents',
+                            {
+                              id: owner.id,
+                              childId: agent.id,
+                              runToken: taskFamilyRunToken(
+                                snapshot?.workspace.tasks ?? [],
+                                owner.id,
+                              ),
+                            },
+                            responses.ok,
+                          ),
+                        )
+                      }
                     />
                   )}
                   {active && child?.activeRunId && (

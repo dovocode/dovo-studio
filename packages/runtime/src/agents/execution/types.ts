@@ -6,6 +6,10 @@ export type AgentInput = {
   attachments?: AgentRun['attachments']
 }
 export type AgentSteer = (input: AgentInput) => Promise<void>
+export type NativeAgentSession = {
+  /** Stop one native child, or all children owned by this session, and await cleanup. */
+  stop: (id?: string) => Promise<void>
+}
 export interface AcpLaunch {
   /** Built-in headless authentication; custom ACP installs keep their own flow. */
   authentication?: 'grok'
@@ -45,6 +49,13 @@ export interface AgentRun {
   onEvent?: (name: string, payload: unknown) => void
   /** Session-owned native-agent metadata; may arrive after the parent provider turn ends. */
   onSubagentEvent?: (name: string, payload: unknown, sessionId?: string) => void
+  onNativeSession?: (session: NativeAgentSession, sessionId: string) => void
+  onNativeTurnEnd?: () => void
+  /** Session-owned interactions for native agents that outlive the parent turn. */
+  nativeAgentInteractions?: {
+    approve: (title: string, detail: string, signal: AbortSignal) => Promise<boolean>
+    ask: AgentRun['ask']
+  }
   approve: (title: string, detail: string) => Promise<boolean>
   ask: (
     prompt: QuestionPrompt,

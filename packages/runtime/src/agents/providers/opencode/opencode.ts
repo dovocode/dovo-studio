@@ -1,3 +1,4 @@
+import { opencodeNative } from './opencode-native.js'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
@@ -252,6 +253,28 @@ const remoteAdapter: AgentAdapter = {
         once: true,
       })
       if (run.signal.aborted) abort()
+      const native = opencodeNative(
+        run,
+        sessionID,
+        async (id) => {
+          await api.session.abort(
+            { sessionID: id, directory: run.cwd },
+            { throwOnError: true, signal: AbortSignal.timeout(5000) },
+          )
+        },
+        async () => {
+          const states = await api.session.status(
+            { directory: run.cwd },
+            { throwOnError: true, signal: AbortSignal.timeout(5000) },
+          )
+          return new Set(
+            Object.entries(states.data)
+              .filter(([, state]) => state.type !== 'idle')
+              .map(([id]) => id),
+          )
+        },
+      )
+      let succeeded = false
       let prompting = false
       let streamed = false
       const textParts = new Set<string>()
@@ -265,6 +288,7 @@ const remoteAdapter: AgentAdapter = {
       )
       const consume = (async () => {
         for await (const event of events.stream) {
+          native.update(event.type, event)
           const scope = decodeResult(
             mutableStruct({
               sessionID: Schema.optional(Schema.String),
@@ -283,6 +307,7 @@ const remoteAdapter: AgentAdapter = {
             event.properties,
           )
           if (
+            prompting &&
             scope.success &&
             (scope.data.sessionID === sessionID ||
               scope.data.info?.sessionID === sessionID ||
@@ -300,12 +325,14 @@ const remoteAdapter: AgentAdapter = {
             run.onEvent?.(event.type, event)
           }
           if (
+            prompting &&
             event.type === 'message.part.updated' &&
             event.properties.sessionID === sessionID &&
             event.properties.part.type === 'text'
           )
             textParts.add(event.properties.part.id)
           if (
+            prompting &&
             event.type === 'message.part.delta' &&
             event.properties.sessionID === sessionID &&
             event.properties.field === 'text' &&
@@ -315,17 +342,23 @@ const remoteAdapter: AgentAdapter = {
             run.onText(event.properties.delta)
           }
           if (
+            prompting &&
             event.type === 'message.part.updated' &&
             event.properties.sessionID === sessionID &&
             event.properties.part.type === 'text' &&
             event.properties.part.time?.end !== undefined
           )
             run.onTextBoundary?.()
-          if (event.type === 'permission.asked' && event.properties.sessionID === sessionID) {
+          if (
+            event.type === 'permission.asked' &&
+            (event.properties.sessionID === sessionID || native.owns(event.properties.sessionID))
+          ) {
             const allow =
               run.agent.permission !== 'read-only' &&
               (await untilAborted(
-                run.approve(event.properties.permission, event.properties.patterns.join('\n')),
+                !prompting && event.properties.sessionID === sessionID
+                  ? Promise.resolve(false)
+                  : run.approve(event.properties.permission, event.properties.patterns.join('\n')),
                 eventsController.signal,
               ))
             await api.permission.reply(
@@ -342,22 +375,25 @@ const remoteAdapter: AgentAdapter = {
           }
           if (
             (event.type === 'question.asked' || event.type === 'question.v2.asked') &&
-            event.properties.sessionID === sessionID
+            (event.properties.sessionID === sessionID || native.owns(event.properties.sessionID))
           ) {
-            const answers = await run.ask(
-              decode(questionPromptSchema, {
-                title: 'Agent needs your input',
-                questions: event.properties.questions.map((q, i) => ({
-                  ...q,
-                  id: String(i),
-                  options: q.options.map((o) => ({
-                    ...o,
-                    value: o.label,
-                  })),
-                })),
-              }),
-              eventsController.signal,
-            )
+            const answers =
+              !prompting && event.properties.sessionID === sessionID
+                ? null
+                : await run.ask(
+                    decode(questionPromptSchema, {
+                      title: 'Agent needs your input',
+                      questions: event.properties.questions.map((q, i) => ({
+                        ...q,
+                        id: String(i),
+                        options: q.options.map((o) => ({
+                          ...o,
+                          value: o.label,
+                        })),
+                      })),
+                    }),
+                    eventsController.signal,
+                  )
             if (eventsController.signal.aborted) break
             const parameters = {
               requestID: event.properties.id,
@@ -365,7 +401,7 @@ const remoteAdapter: AgentAdapter = {
             }
             if (event.type === 'question.v2.asked') {
               const target = {
-                sessionID,
+                sessionID: event.properties.sessionID,
                 requestID: event.properties.id,
               }
               if (answers)
@@ -467,11 +503,18 @@ const remoteAdapter: AgentAdapter = {
               run.onText(part.text)
               run.onTextBoundary?.()
             }
+        prompting = false
+        await native.drain(consume)
+        succeeded = true
       } catch (error) {
         abort()
         throw error
       } finally {
-        eventsController.abort()
+        try {
+          await native.close(!succeeded)
+        } finally {
+          eventsController.abort()
+        }
         run.signal.removeEventListener('abort', abort)
         await consume.catch((error) => {
           if (!eventsController.signal.aborted) throw error

@@ -136,6 +136,7 @@ export function cursorSession(emit: (event: CursorEvent) => void, factory: Curso
       const agent = input.sessionId
         ? await factory.resume(input.sessionId, options)
         : await factory.create(options)
+      let succeeded = false
       let boundary = false,
         emitted = false,
         usageIndex = 0,
@@ -198,9 +199,10 @@ export function cursorSession(emit: (event: CursorEvent) => void, factory: Curso
         if (result.status !== 'finished')
           throw new Error(result.error?.message || `Cursor run ${result.status}`)
         if (!emitted && result.result) emit({ type: 'text', text: result.result })
+        succeeded = true
       } finally {
         try {
-          await active?.cancel()
+          if (!succeeded) await active?.cancel()
         } finally {
           active = undefined
           await agent[Symbol.asyncDispose]()

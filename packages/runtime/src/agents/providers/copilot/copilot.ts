@@ -285,7 +285,11 @@ export function createCopilotAdapter(): AgentAdapter {
             if (event.type === 'tool.execution_start')
               run.onActivity(`Using ${event.data.toolName}`)
             if (event.type === 'session.error') reject(new Error(event.data.message))
-            if (event.type === 'session.idle') resolve()
+            if (event.type === 'session.idle') {
+              // The SDK's idle contract includes background agents and attached shells.
+              run.onNativeTurnEnd?.()
+              resolve()
+            }
           } catch (error) {
             reject(error)
           }

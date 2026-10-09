@@ -1,3 +1,4 @@
+import { opencodeNative } from './opencode-native.js'
 import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
 import { waitForMcpConnection } from './mcp-readiness.js'
@@ -252,6 +253,17 @@ export const opencodeV2Adapter: AgentAdapter = {
       const cancelDone = () => rejectDone(new Error('Task cancelled'))
       run.signal.addEventListener('abort', cancelDone, { once: true })
       if (run.signal.aborted) cancelDone()
+      const native = opencodeNative(
+        run,
+        sessionID,
+        async (id) => {
+          await api.session.interrupt({ sessionID: id }, { signal: AbortSignal.timeout(5000) })
+        },
+        async () =>
+          new Set(Object.keys(await api.session.active({ signal: AbortSignal.timeout(5000) }))),
+      )
+      let succeeded = false
+      let parentFinished = false
       let accepted = false
       let awaitingStart = !run.compact
       let submitted = false
@@ -276,6 +288,7 @@ export const opencodeV2Adapter: AgentAdapter = {
       }
       const consume = (async () => {
         for await (const event of api.event.subscribe({ signal: streamController.signal })) {
+          native.update(event.type, event)
           if (event.type === 'server.connected') {
             resolveConnected()
             continue
@@ -288,10 +301,13 @@ export const opencodeV2Adapter: AgentAdapter = {
               : event.type === 'form.created'
                 ? event.data.form.sessionID
                 : undefined
-          if (eventSession !== sessionID || !submitted) continue
+          const child = typeof eventSession === 'string' && native.owns(eventSession)
+          if ((!child && eventSession !== sessionID) || !submitted) continue
+          if (child && event.type !== 'permission.asked' && event.type !== 'form.created') continue
+          if (parentFinished && !child) continue
           // Session-only terminal events can belong to a retired execution. Admission
           // starts at the new execution's start, never at the HTTP acknowledgement.
-          if (awaitingStart) {
+          if (awaitingStart && !child) {
             if (event.type !== 'session.execution.started') continue
             awaitingStart = false
           }
@@ -466,8 +482,15 @@ export const opencodeV2Adapter: AgentAdapter = {
         await Promise.race([task, done])
         run.onPromptAccepted?.()
         await done
+        parentFinished = true
+        await native.drain(consume)
+        succeeded = true
       } finally {
-        streamController.abort()
+        try {
+          await native.close(!succeeded)
+        } finally {
+          streamController.abort()
+        }
         run.signal.removeEventListener('abort', abort)
         run.signal.removeEventListener('abort', cancelDone)
         const drained = consume.catch((error) => {

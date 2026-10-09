@@ -1,6 +1,12 @@
 import { expect, it } from 'vite-plus/test'
 import type { Task, Subagent } from '../index.js'
-import { taskFamilyIds, taskSubagents, indexTaskSubagents } from './delegation.js'
+import {
+  taskFamilyIds,
+  taskSubagents,
+  indexTaskSubagents,
+  taskFamilyWorking,
+  taskFamilyRunToken,
+} from './delegation.js'
 
 const task = (id: string, parentTaskId?: string): Task => ({
   id,
@@ -79,4 +85,54 @@ it('keeps live native agents in an idle thread and drops liveness when the provi
   expect(taskSubagents(parent, [parent], true)).toEqual([native])
   const closed: Task = { ...parent, subagents: [{ ...native, sessionLive: false }] }
   expect(taskSubagents(closed, [closed], true)).toEqual([])
+})
+
+it('holds the full family for native work and pending results and guards native stop snapshots', () => {
+  const native: Subagent = {
+    ...agent('native'),
+    source: undefined,
+    taskId: undefined,
+    sessionId: 'session',
+    sessionLive: true,
+    status: 'unknown',
+  }
+  const parent = { ...task('parent'), status: 'review' as const }
+  const child = { ...task('child', 'parent'), status: 'review' as const, subagents: [native] }
+  const before = [parent, child]
+  expect(taskFamilyWorking(before, parent.id)).toBe(true)
+  expect(taskSubagents(parent, before, true)).toEqual([native])
+  const pending = {
+    ...child,
+    subagents: [
+      {
+        ...native,
+        status: 'completed' as const,
+        finishedAt: 'now',
+        completion: 'pending' as const,
+        completionId: 'result',
+      },
+    ],
+  }
+  expect(taskFamilyWorking([parent, pending], parent.id)).toBe(true)
+  const settled = {
+    ...pending,
+    subagents: [{ ...pending.subagents[0], completion: 'read' as const }],
+  }
+  expect(taskFamilyWorking([parent, settled], parent.id)).toBe(false)
+  expect(taskFamilyRunToken(before, parent.id)).not.toBe(
+    taskFamilyRunToken([parent, pending], parent.id),
+  )
+})
+
+it('changes the stop guard when a native child is reused in the same session', () => {
+  const native: Subagent = {
+    ...agent('native'),
+    source: undefined,
+    sessionId: 'session',
+    sessionLive: true,
+    startedAt: 'first',
+  }
+  const parent = { ...task('parent'), status: 'review' as const, subagents: [native] }
+  const newer = { ...parent, subagents: [{ ...native, startedAt: 'second' }] }
+  expect(taskFamilyRunToken([parent], parent.id)).not.toBe(taskFamilyRunToken([newer], parent.id))
 })

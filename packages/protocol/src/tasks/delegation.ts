@@ -1,7 +1,7 @@
 import { Schema } from 'effect'
 import { mutableStruct, maxValue, minValue } from '../shared/schema.js'
 import { agentSchema, providerSchema, type Task } from '../workspace.js'
-import type { Subagent } from '../conversation/workflow/subagents.js'
+import { nativeAgentWorking, type Subagent } from '../conversation/workflow/subagents.js'
 const id = maxValue(minValue(Schema.String, 1), 200)
 export const subagentScopeSchema = mutableStruct({ taskId: id, parentRunId: Schema.optional(id) })
 export const subagentSpawnSchema = mutableStruct({
@@ -67,6 +67,9 @@ export function indexTaskFamilyWorking(tasks: readonly Task[]) {
       task.activeRunId ||
       task.status === 'running' ||
       task.status === 'draft' ||
+      task.subagents?.some(
+        (agent) => nativeAgentWorking(agent) || agent.completion === 'pending',
+      ) ||
       task.queue?.some((message) => message.subagentResultId)
     )
       mark(task)
@@ -81,7 +84,22 @@ export function taskFamilyRunToken(tasks: readonly Task[], id: string) {
   return JSON.stringify(
     tasks
       .filter((task) => ids.has(task.id))
-      .map((task) => [task.id, task.activeRunId ?? null, task.status])
+      .map((task) => [
+        task.id,
+        task.activeRunId ?? null,
+        task.status,
+        task.subagents
+          ?.filter((agent) => agent.source !== 'dovo')
+          .map((agent) => [
+            agent.provider,
+            agent.sessionId,
+            agent.id,
+            agent.startedAt,
+            agent.status,
+            agent.sessionLive,
+            agent.completionId,
+          ]),
+      ])
       .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
   )
 }
@@ -127,9 +145,12 @@ export function indexTaskSubagents(tasks: readonly Task[]) {
       for (const record of owner?.subagents ?? []) {
         if (
           workingOnly &&
-          (record.status !== 'working' ||
-            record.finishedAt ||
-            (record.source !== 'dovo' && !record.sessionLive && owner?.status !== 'running'))
+          !(
+            nativeAgentWorking(record) ||
+            (record.status === 'working' &&
+              !record.finishedAt &&
+              (record.source === 'dovo' || owner?.status === 'running'))
+          )
         )
           continue
         const child = record.source === 'dovo' ? (record.taskId ?? record.id) : undefined

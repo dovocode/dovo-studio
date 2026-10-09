@@ -2,7 +2,7 @@ import type { AgentAdapter, AgentRun } from './types.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 
 /** A physical execution owns transcript/interaction callbacks and its durable dispatch record.
- * onSubagentEvent is intentionally session-owned and persists only native metadata. */
+ * Native metadata and interactions are session-owned and survive a parent reply. */
 export function journalProvider(
   adapter: Pick<AgentAdapter, 'run'>,
   store: WorkspaceStore,

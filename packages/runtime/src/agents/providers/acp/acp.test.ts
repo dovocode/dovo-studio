@@ -17,6 +17,7 @@ async function fixture(
   lifecycle = false,
   compactCommand = false,
   permissionKinds: string[] = [],
+  nativeChildren = false,
 ) {
   const cwd = await mkdtemp(join(tmpdir(), 'dovo-acp-run-'))
   dirs.push(cwd)
@@ -32,6 +33,7 @@ const respond = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: '
 const update = (text) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: {
   sessionId: 'session', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } }
 } }) + '\\n')
+const native = (state) => process.stdout.write(JSON.stringify({ jsonrpc:'2.0',method:'session/update',params:{sessionId:'session',update:{sessionUpdate:'subagent_update',sessionId:'native-child',title:'Native',state:{state},capabilities:{cancel:{}}}}})+'\\n')
 const commands = () => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: {
   sessionId: 'session', update: { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'compact', description: 'Compact context' }] }
 } }) + '\\n')
@@ -58,8 +60,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (input.method === 'session/delete') respond(input.id, {})
   if (input.method === 'session/set_mode') respond(input.id, {})
   if (input.method === 'session/set_config_option') respond(input.id, { configOptions })
-  if (input.method === 'session/prompt') { update('new'); if (${holdPrompt} || permissionKinds.length) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }); if (permissionKinds.length) requestPermission() }
+  if (input.method === 'session/prompt') { if (${nativeChildren}) native('running'); update('new'); if (${holdPrompt} || permissionKinds.length) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }); if (permissionKinds.length) requestPermission() }
   if (input.id === 'permission-' + permissionIndex && input.method === undefined) { permissionIndex++; if (permissionIndex < permissionKinds.length) requestPermission(); else respond(pendingPrompt, { stopReason: 'end_turn' }) }
+  if (input.method === 'session/prompt' && ${nativeChildren}) setTimeout(() => process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:'native-approval',method:'session/request_permission',params:{sessionId:'native-child',toolCall:{toolCallId:'native-tool',kind:'execute',title:'Child command'},options:[{optionId:'allow',name:'Allow',kind:'allow_once'},{optionId:'reject',name:'Reject',kind:'reject_once'}]}})+'\\n'),30)
+  if (input.method === 'session/cancel' && input.params.sessionId === 'native-child') native('idle')
   if (input.method === 'session/cancel' && pendingPrompt !== undefined) respond(pendingPrompt, { stopReason: 'cancelled' })
 })`,
   )
@@ -233,4 +237,43 @@ it('sends session/cancel and accepts the cancelled stop reason', async () => {
   await running
   const messages = JSON.parse(await readFile(record, 'utf8'))
   expect(messages.some((item: { method: string }) => item.method === 'session/cancel')).toBe(true)
+})
+
+it('keeps ACP child traffic and controls connected after the parent returns and under pressure', async () => {
+  const f = await fixture(false, false, false, [], true)
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(true)
+  const approve = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
+    async () => true,
+  )
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  let control: Parameters<NonNullable<AgentRun['onNativeSession']>>[0] | undefined
+  const input = run(f.cwd, f.launch, {
+    taskId: 'native-acp',
+    onSubagentEvent: native,
+    onNativeSession: (session) => {
+      control = session
+    },
+    nativeAgentInteractions: { approve, ask: async () => null },
+  })
+  try {
+    await acpAdapter.run(input.run)
+    await vi.waitFor(() => expect(approve).toHaveBeenCalledOnce())
+    expect(native).not.toHaveBeenCalledWith('dovo/session/closed', {}, 'session')
+    await acpAdapter.run({ ...input.run, sessionId: 'session' })
+    const frames = JSON.parse(await readFile(f.record, 'utf8')) as Array<{ method: string }>
+    expect(frames.filter((frame) => frame.method === 'initialize')).toHaveLength(1)
+    await control?.stop('native-child')
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith(
+        'subagent_update',
+        expect.objectContaining({
+          update: expect.objectContaining({ sessionId: 'native-child', state: { state: 'idle' } }),
+        }),
+        'session',
+      ),
+    )
+  } finally {
+    await acpAdapter.dispose?.()
+    pressure.mockRestore()
+  }
 })

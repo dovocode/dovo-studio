@@ -1,4 +1,5 @@
-import { mutableStruct } from '@dovo/protocol'
+import { mutableStruct, nativeAgentWorking, type Subagent } from '@dovo/protocol'
+import { updateSubagents } from '../../execution/subagents.js'
 import { decodeResult, decode } from '@dovo/protocol'
 import { codexMcpServers } from '../../configuration/mcp-settings.js'
 import { isImageAttachment, serviceTierValue } from '@dovo/protocol'
@@ -36,16 +37,27 @@ type CodexConnection = {
   initialized: unknown
   stderr: string
   onSubagentEvent?: AgentRun['onSubagentEvent']
+  nativeAgents: Subagent[]
+  lifetime: AbortController
+  requests?: { dispose: () => void }
+  closing?: Promise<void>
   consumeNotification?: (method: string, params: unknown) => void
 }
 export function createCodexAdapter(): AgentAdapter {
   const idle = new Map<string, CodexConnection>()
-  const close = async (connection: CodexConnection) => {
-    connection.onSubagentEvent?.('dovo/session/closed', {}, connection.sessionId)
-    connection.onSubagentEvent = undefined
-    connection.rpc.dispose()
-    await stopOwnedChild(connection.child)
+  const close = (connection: CodexConnection): Promise<void> => {
+    if (connection.closing) return connection.closing
+    connection.closing = (async () => {
+      connection.lifetime.abort()
+      connection.requests?.dispose()
+      connection.rpc.dispose()
+      await stopOwnedChild(connection.child)
+      connection.onSubagentEvent?.('dovo/session/closed', {}, connection.sessionId)
+      connection.onSubagentEvent = undefined
+    })()
+    return connection.closing
   }
+
   return {
     models: codexModels,
     probe: async (agent) => ({
@@ -60,8 +72,8 @@ export function createCodexAdapter(): AgentAdapter {
         run.tools !== 'none' && run.agent.resources?.mcpServers.length
           ? codexMcpServers(run.agent.resources.mcpServers)
           : undefined
-      // Resuming a loaded Codex thread retains its MCP connections. Restart on binding
-      // changes so follow-up turns cannot keep the previous Dovo parent attempt.
+      // A loaded Codex thread retains its MCP connections. Dovo supplies a session
+      // binding; an external configuration change still requires a fresh process.
       const launchConfig = JSON.stringify([run.agent.args, run.agent.env, mcpServers])
       const previous = run.taskId ? idle.get(run.taskId) : undefined
       if (run.taskId) idle.delete(run.taskId)
@@ -75,7 +87,13 @@ export function createCodexAdapter(): AgentAdapter {
         !run.signal.aborted
           ? previous
           : undefined
-      if (previous && !reusable) await close(previous)
+      if (previous && !reusable) {
+        if (previous.nativeAgents.some(nativeAgentWorking)) {
+          if (run.taskId) idle.set(run.taskId, previous)
+          throw new Error('Stop native Codex agents before changing their session configuration')
+        }
+        await close(previous)
+      }
       const child =
         reusable?.child ??
         spawn(endpoint, ['app-server', '--listen', 'stdio://', ...(run.agent.args ?? [])], {
@@ -100,10 +118,20 @@ export function createCodexAdapter(): AgentAdapter {
         cwd: run.cwd,
         initialized: undefined,
         stderr: '',
+        nativeAgents: [],
+        lifetime: new AbortController(),
       }
       transport.onSubagentEvent = run.onSubagentEvent
       if (!reusable)
         rpc.onNotification((method, params) => {
+          transport.nativeAgents = updateSubagents(
+            transport.nativeAgents,
+            'codex',
+            params,
+            new Date().toISOString(),
+            method,
+            transport.sessionId || undefined,
+          )
           transport.onSubagentEvent?.(method, params, transport.sessionId)
           transport.consumeNotification?.(method, params)
         })
@@ -113,8 +141,11 @@ export function createCodexAdapter(): AgentAdapter {
         })
       if (!reusable)
         child.on('exit', () => {
-          transport.onSubagentEvent?.('dovo/session/closed', {}, transport.sessionId)
-          transport.onSubagentEvent = undefined
+          transport.lifetime.abort()
+          if (!transport.closing)
+            void close(transport).catch((error) =>
+              console.error('Could not drain exited Codex process:', error),
+            )
           for (const [taskId, connection] of idle) if (connection === transport) idle.delete(taskId)
           rpc.dispose()
         })
@@ -165,9 +196,35 @@ export function createCodexAdapter(): AgentAdapter {
             new Promise((resolve) => setTimeout(() => resolve(error), 1000)),
           ])
         })
+      transport.requests?.dispose()
       const requests = rpc.onRequest(async (method, params: unknown, token) => {
-        if (!run.compact) {
-          const scope = decodeResult(object, params).data
+        const scope = decodeResult(object, params).data
+        const native =
+          typeof scope?.threadId === 'string' &&
+          scope.threadId !== threadId &&
+          transport.nativeAgents.some(
+            (agent) => agent.id === scope.threadId && nativeAgentWorking(agent),
+          )
+        if (typeof scope?.threadId === 'string' && scope.threadId !== threadId && !native)
+          throw new Error('Unknown Codex child request')
+        const interactions = run.nativeAgentInteractions
+        const requestRun: AgentRun =
+          native && interactions
+            ? {
+                ...run,
+                approve: (title, detail) =>
+                  interactions.approve(title, detail, transport.lifetime.signal),
+                ask: (prompt, signal, validate) =>
+                  interactions.ask(
+                    prompt,
+                    signal
+                      ? AbortSignal.any([signal, transport.lifetime.signal])
+                      : transport.lifetime.signal,
+                    validate,
+                  ),
+              }
+            : run
+        if (!run.compact && !native) {
           const root =
             !threadId || typeof scope?.threadId !== 'string' || scope.threadId === threadId
           const execution = method.startsWith('item/')
@@ -183,14 +240,14 @@ export function createCodexAdapter(): AgentAdapter {
           )
             throw new Error('This Codex request belongs to a retired turn')
         }
-        run.onEvent?.(method, params)
+        if (!native) run.onEvent?.(method, params)
         if (
           method === 'item/commandExecution/requestApproval' ||
           method === 'item/fileChange/requestApproval'
         ) {
           const allowed =
-            run.agent.permission !== 'read-only' &&
-            (await run.approve(
+            requestRun.agent.permission !== 'read-only' &&
+            (await requestRun.approve(
               method.includes('command') ? 'Run command' : 'Apply file changes',
               JSON.stringify(params, null, 2),
             ))
@@ -209,7 +266,7 @@ export function createCodexAdapter(): AgentAdapter {
           if (token.isCancellationRequested) controller.abort()
           try {
             if (method === 'item/tool/requestUserInput')
-              return await codexQuestions(params, run, controller.signal)
+              return await codexQuestions(params, requestRun, controller.signal)
             const form = decodeResult(
               mutableStruct({
                 mode: Schema.Literal('form'),
@@ -229,7 +286,7 @@ export function createCodexAdapter(): AgentAdapter {
             const content = await formQuestions(
               form.data.message,
               form.data.requestedSchema,
-              run,
+              requestRun,
               controller.signal,
             )
             return {
@@ -243,6 +300,7 @@ export function createCodexAdapter(): AgentAdapter {
         }
         throw new Error(`Unsupported Codex request: ${method}`)
       })
+      transport.requests = requests
       const consumeNotification = (method: string, params: unknown) => {
         const execution = method.startsWith('turn/') || method.startsWith('item/')
         if (!run.compact && execution) {
@@ -304,6 +362,7 @@ export function createCodexAdapter(): AgentAdapter {
         }
         if (method === 'turn/completed') {
           turnFinished = true
+          run.onNativeTurnEnd?.()
           run.onSteer?.(undefined)
           const turn = decodeResult(
             mutableStruct({
@@ -472,6 +531,38 @@ export function createCodexAdapter(): AgentAdapter {
         threadId = thread.id
         transport.sessionId = thread.id
         run.onSession(thread.id)
+        run.onNativeSession?.(
+          {
+            stop: async (id) => {
+              if (!id && turnFinished) {
+                if (run.taskId) idle.delete(run.taskId)
+                await close(transport)
+                return
+              }
+              for (const agent of transport.nativeAgents.filter(
+                (agent) => nativeAgentWorking(agent) && (!id || agent.id === id),
+              )) {
+                const response = decodeResult(
+                  object,
+                  await rpc.sendRequest('thread/read', { threadId: agent.id, includeTurns: true }),
+                ).data
+                const turns = response
+                  ? decodeResult(
+                      Schema.mutable(Schema.Array(object)),
+                      decodeResult(object, response.thread).data?.turns,
+                    ).data
+                  : undefined
+                const turn = turns
+                  ?.slice()
+                  .reverse()
+                  .find((turn) => turn.status === 'inProgress' && typeof turn.id === 'string')
+                if (!turn) throw new Error('Codex has not reported a cancellable child turn yet')
+                await rpc.sendRequest('turn/interrupt', { threadId: agent.id, turnId: turn.id })
+              }
+            },
+          },
+          thread.id,
+        )
         if (
           run.tools !== 'none' &&
           (program || (supportsCodexDaybreak(initialized) && thread.daybreakEnabled === true))
@@ -557,7 +648,6 @@ export function createCodexAdapter(): AgentAdapter {
         run.onSteer?.(undefined)
         clearTimeout(timeout)
         run.signal.removeEventListener('abort', abort)
-        requests.dispose()
         transport.consumeNotification = undefined
         child.off('error', rejectTurn)
         child.off('exit', onExit)
@@ -567,7 +657,9 @@ export function createCodexAdapter(): AgentAdapter {
           idle.set(run.taskId, transport)
           // Keep active threads warm; shed only idle processes when the server is under pressure.
           if (releaseIdleProvider()) {
-            const oldest = idle.keys().next().value
+            const oldest = [...idle.entries()].find(
+              ([, value]) => !value.nativeAgents.some(nativeAgentWorking),
+            )?.[0]
             if (oldest) {
               const stale = idle.get(oldest)
               idle.delete(oldest)

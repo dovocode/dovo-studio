@@ -94,6 +94,7 @@ export function createCursorAdapter(openWorker = openCursorWorker): AgentAdapter
           'Cursor SDK supports read-only, Auto-review, and full access; choose a native mode',
         )
       const directory = run.ephemeral ? await mkdtemp(join(tmpdir(), 'dovo-cursor-')) : undefined
+      let succeeded = false
       let worker: ReturnType<typeof openCursorWorker> | undefined
       try {
         const input = cursorInputSchema.parse({
@@ -156,12 +157,14 @@ export function createCursorAdapter(openWorker = openCursorWorker): AgentAdapter
           }
         })
         await nativeWait(host.rpc.sendRequest('run', input), signal)
+        succeeded = true
       } finally {
         run.onSteer?.(undefined)
         try {
           if (worker) {
             try {
-              await nativeWait(worker.rpc.sendRequest('cancel'), worker.signal, 2000)
+              if (!succeeded)
+                await nativeWait(worker.rpc.sendRequest('cancel'), worker.signal, 2000)
             } catch (error) {
               if (!worker.signal.aborted)
                 run.onActivity(

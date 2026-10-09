@@ -7,11 +7,15 @@ import {
   mutableStruct,
   questionPromptSchema,
   isImageAttachment,
+  nativeAgentWorking,
+  type Subagent,
 } from '@dovo/protocol'
 import type { AgentDiscovery } from '@dovo/protocol'
-import type { AgentAdapter } from '../../execution/types.js'
+import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
+import { updateSubagents } from '../../execution/subagents.js'
+import { releaseIdleProvider } from '../../execution/warm-processes.js'
 import { nativeObject as object, nativeText as text, nativeWait } from '../shared/native.js'
 
 const rows = mutableStruct({
@@ -65,7 +69,22 @@ export function museSelection(model: string) {
   }
 }
 export function createMuseAdapter(): AgentAdapter {
+  const idle = new Map<
+    string,
+    {
+      sessionId: string
+      config: string
+      resume: (run: AgentRun) => Promise<void>
+      close: () => Promise<void>
+      working: () => boolean
+    }
+  >()
   return {
+    dispose: async () => {
+      const sessions = [...idle.values()]
+      idle.clear()
+      await Promise.all(sessions.map((session) => session.close()))
+    },
     async models(agent) {
       const host = launch(agent, homedir())
       try {
@@ -132,7 +151,20 @@ export function createMuseAdapter(): AgentAdapter {
         await host.close()
       }
     },
-    async run(run) {
+    async run(inputRun) {
+      let run = inputRun
+      const config = JSON.stringify([run.agent, run.cwd, run.tools], (key, value: unknown) =>
+        key === 'DOVO_TASK_RUN_ID' ? undefined : value,
+      )
+      const previous = run.taskId ? idle.get(run.taskId) : undefined
+      if (previous && previous.sessionId === run.sessionId && previous.config === config)
+        return previous.resume(run)
+      if (previous) {
+        if (previous.working())
+          throw new Error('Stop native Muse agents before changing their session configuration')
+        await previous.close()
+        if (run.taskId) idle.delete(run.taskId)
+      }
       run.signal.throwIfAborted()
       if (run.tools === 'none' || run.agent.permission === 'read-only')
         throw new Error(
@@ -140,11 +172,13 @@ export function createMuseAdapter(): AgentAdapter {
         )
       const host = launch(run.agent, run.cwd),
         lifetime = new AbortController()
-      const signal = AbortSignal.any([run.signal, lifetime.signal])
+      let signal = AbortSignal.any([run.signal, lifetime.signal])
       let session: Session | undefined,
         turnId = '',
         active = false,
         current = ''
+      let nativeAgents: Subagent[] = []
+      let succeeded = false
       let connection: Awaited<ReturnType<typeof host.initialize>> | undefined
       const sent = new Map<string, string>(),
         waitingInputs = new Map<string, AbortController>()
@@ -154,9 +188,6 @@ export function createMuseAdapter(): AgentAdapter {
         reject = no
       })
       void failed.catch(() => {})
-      const compacted = new Promise<void>((yes) => {
-        resolveCompact = yes
-      })
       const buffered: Array<{ method: string; params?: unknown }> = []
       const answer = async (raw: unknown) => {
         const params = decode(promptSchema, raw)
@@ -165,7 +196,9 @@ export function createMuseAdapter(): AgentAdapter {
         waitingInputs.set(params.userInputId, controller)
         const scoped = AbortSignal.any([signal, controller.signal])
         try {
-          const answers = await run.ask(
+          const ask = active ? run.ask : run.nativeAgentInteractions?.ask
+          if (!ask) return
+          const answers = await ask(
             decode(questionPromptSchema, {
               title: 'Muse needs your input',
               questions: params.questions.map((question) => ({
@@ -195,7 +228,7 @@ export function createMuseAdapter(): AgentAdapter {
               }
             },
           )
-          if (controller.signal.aborted || signal.aborted) return
+          if (controller.signal.aborted || lifetime.signal.aborted) return
           await nativeWait(
             connection.connection.command(answers ? 'userInput/answer' : 'userInput/cancel', {
               sessionId: session.sessionId,
@@ -236,14 +269,32 @@ export function createMuseAdapter(): AgentAdapter {
           return
         }
         const params = object(event.params)
-        if (params.sessionId !== session.sessionId || signal.aborted) return
+        if (params.sessionId !== session.sessionId || lifetime.signal.aborted) return
         try {
           session.apply(event)
           if (event.method === 'userInput/settled')
             waitingInputs.get(text(params.userInputId))?.abort()
+          const itemId = text(params.itemId) || text(object(params.item).itemId)
+          const folded = session.fold.items.get(itemId)
+          if (folded?.kind === 'subagent') {
+            const payload = { ...params, item: folded }
+            nativeAgents = updateSubagents(
+              nativeAgents,
+              'muse',
+              payload,
+              new Date().toISOString(),
+              event.method,
+              session.sessionId,
+            )
+            run.onSubagentEvent?.(event.method, payload, session.sessionId)
+          }
+          if (
+            event.method === 'userInput/requested' &&
+            (active || nativeAgents.some(nativeAgentWorking))
+          )
+            void answer(event.params).catch(reject)
           if (!active) return
           run.onEvent?.(event.method, event.params)
-          if (event.method === 'userInput/requested') void answer(event.params).catch(reject)
           if (event.method.startsWith('item/')) {
             const itemId = text(params.itemId) || text(object(params.item).itemId)
             const item = session.fold.items.get(itemId)
@@ -337,20 +388,42 @@ export function createMuseAdapter(): AgentAdapter {
           durability: readSessionDurability(connection.initializeResult),
           connection: connection.connection,
         })
-        void connection.connection.closed.then(() => {
-          session?.hostExited({ kind: 'transportEof' })
-          reject(new Error('Muse connection closed before the turn completed'))
-        })
+        void connection.connection.closed
+          .then(async () => {
+            session?.hostExited({ kind: 'transportEof' })
+            const error = new Error('Muse connection closed before the turn completed')
+            lifetime.abort(error)
+            reject(error)
+            await host.close()
+            if (session) run.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
+            if (run.taskId) idle.delete(run.taskId)
+          })
+          .catch((error) => console.error('Could not drain exited Muse host:', error))
         void host.exited.then((exit) =>
           reject(new Error(`Muse host exited (${exit.code ?? exit.signal})`)),
         )
         run.onSession(identity)
+
         session.onApproval(async (request) => {
           const automatic = run.agent.permission === 'full-access'
+          const interactions = run.nativeAgentInteractions
+          const native =
+            request.subagentOrigin &&
+            nativeAgents.some(
+              (agent) =>
+                agent.id === request.subagentOrigin?.subagentId && nativeAgentWorking(agent),
+            )
+          const approve = native
+            ? interactions &&
+              ((title: string, detail: string) =>
+                interactions.approve(title, detail, lifetime.signal))
+            : active
+              ? run.approve
+              : undefined
           const allowed =
-            !signal.aborted &&
-            (automatic ||
-              (await nativeWait(run.approve('Muse tool request', request.rawArgs), signal)))
+            !lifetime.signal.aborted &&
+            approve !== undefined &&
+            (automatic || (await nativeWait(approve('Muse tool request', request.rawArgs), signal)))
           const choice = request.availableChoices.find((choice) =>
             allowed
               ? choice.decision === 'approved' && choice.scope === 'once'
@@ -401,63 +474,128 @@ export function createMuseAdapter(): AgentAdapter {
             signal,
             30000,
           )
-        active = true
-        if (run.compact) {
-          const result = await nativeWait(
-            connection.connection.command('session/compact', { sessionId: identity }),
-            signal,
-            30000,
-          )
-          if (result.status === 'noop')
-            throw new Error(text(result.reason) || 'Muse has no compactable history')
-          await nativeWait(Promise.race([compacted, failed]), signal)
-        } else {
-          const input = (prompt: string, attachments = run.attachments) => [
-            { type: 'text' as const, text: prompt },
-            ...(attachments ?? []).filter(isImageAttachment).map((file) => ({
-              type: 'image' as const,
-              mediaType: file.mime,
-              base64Data: file.data,
-            })),
-          ]
-          const turn = await nativeWait(
-            session.sendUserTurn({
-              input: input([run.agent.instructions, run.prompt].filter(Boolean).join('\n\n')),
-              ifBusy: 'queue',
-            }),
-            signal,
-            30000,
-          )
-          turnId = turn.turnId
-          run.onPromptAccepted?.()
-          const rpc = connection.connection
-          run.onSteer?.(async (value) => {
-            if (!active || signal.aborted) throw new Error('This Muse turn has ended')
-            const result = await nativeWait(
-              rpc.command('turn/steer', {
+        const stopNative = async (id?: string) => {
+          if (!connection) throw new Error('Muse connection is unavailable')
+          for (const agent of nativeAgents.filter(
+            (agent) => nativeAgentWorking(agent) && (!id || agent.id === id),
+          ))
+            await nativeWait(
+              connection.connection.command('subagent/stop', {
                 sessionId: identity,
-                expectedTurnId: turnId,
-                input: input(value.prompt, value.attachments ?? []),
+                subagentId: agent.id,
               }),
-              signal,
+              lifetime.signal,
               30000,
             )
-            if (result.turnId !== turnId || result.status !== 'accepted')
-              throw new Error('Muse did not accept steering for this turn')
+        }
+        const turnSession = session
+        const turnConnection = connection
+        const execute = async (next: AgentRun) => {
+          run = next
+          run.onNativeSession?.({ stop: stopNative }, identity)
+          signal = AbortSignal.any([run.signal, lifetime.signal])
+          const compactCompletion = new Promise<void>((yes) => {
+            resolveCompact = yes
           })
-          const outcome = await nativeWait(Promise.race([turn.completed, failed]), signal)
-          if (outcome.kind !== 'completed' || outcome.params.terminal !== 'completed')
-            throw new Error(
-              outcome.kind === 'completed'
-                ? outcome.params.error?.message || `Muse turn ${outcome.params.terminal}`
-                : `Muse turn ${outcome.kind}`,
-            )
+          sent.clear()
+          current = ''
+          turnId = ''
+          active = true
+          if (next !== inputRun) run.onSession(identity)
+          try {
+            if (run.compact) {
+              const result = await nativeWait(
+                turnConnection.connection.command('session/compact', { sessionId: identity }),
+                signal,
+                30000,
+              )
+              if (result.status === 'noop')
+                throw new Error(text(result.reason) || 'Muse has no compactable history')
+              await nativeWait(Promise.race([compactCompletion, failed]), signal)
+            } else {
+              const input = (prompt: string, attachments = run.attachments) => [
+                { type: 'text' as const, text: prompt },
+                ...(attachments ?? []).filter(isImageAttachment).map((file) => ({
+                  type: 'image' as const,
+                  mediaType: file.mime,
+                  base64Data: file.data,
+                })),
+              ]
+              const turn = await nativeWait(
+                turnSession.sendUserTurn({
+                  input: input([run.agent.instructions, run.prompt].filter(Boolean).join('\n\n')),
+                  ifBusy: 'queue',
+                }),
+                signal,
+                30000,
+              )
+              turnId = turn.turnId
+              run.onPromptAccepted?.()
+              const rpc = turnConnection.connection
+              run.onSteer?.(async (value) => {
+                if (!active || signal.aborted) throw new Error('This Muse turn has ended')
+                const result = await nativeWait(
+                  rpc.command('turn/steer', {
+                    sessionId: identity,
+                    expectedTurnId: turnId,
+                    input: input(value.prompt, value.attachments ?? []),
+                  }),
+                  signal,
+                  30000,
+                )
+                if (result.turnId !== turnId || result.status !== 'accepted')
+                  throw new Error('Muse did not accept steering for this turn')
+              })
+              const outcome = await nativeWait(Promise.race([turn.completed, failed]), signal)
+              if (outcome.kind !== 'completed' || outcome.params.terminal !== 'completed')
+                throw new Error(
+                  outcome.kind === 'completed'
+                    ? outcome.params.error?.message || `Muse turn ${outcome.params.terminal}`
+                    : `Muse turn ${outcome.kind}`,
+                )
+            }
+          } finally {
+            active = false
+            run.onNativeTurnEnd?.()
+            run.onSteer?.(undefined)
+          }
+        }
+        await execute(run)
+        succeeded = true
+        if (run.taskId) {
+          const taskId = run.taskId
+          const warm = {
+            sessionId: identity,
+            config,
+            working: () => nativeAgents.some(nativeAgentWorking),
+            close: async () => {
+              idle.delete(taskId)
+              lifetime.abort()
+              for (const question of waitingInputs.values()) question.abort()
+              await host.close()
+              run.onSubagentEvent?.('dovo/session/closed', {}, identity)
+            },
+            resume: async (next: AgentRun) => {
+              try {
+                await execute(next)
+              } catch (error) {
+                await warm.close()
+                throw error
+              }
+            },
+          }
+          idle.set(taskId, warm)
+          if (releaseIdleProvider()) {
+            const stale = [...idle.values()].find((session) => !session.working())
+            if (stale) await stale.close()
+          }
         }
       } finally {
         active = false
-        lifetime.abort()
+        if (!succeeded || !run.taskId) lifetime.abort()
         run.onSteer?.(undefined)
-        for (const question of waitingInputs.values()) question.abort()
+        if (!succeeded || !run.taskId)
+          for (const question of waitingInputs.values()) question.abort()
         if (run.signal.aborted && connection && session && turnId)
           await nativeWait(
             connection.connection.command('turn/interrupt', {
@@ -471,7 +609,10 @@ export function createMuseAdapter(): AgentAdapter {
               `Muse interrupt: ${error instanceof Error ? error.message : String(error)}`,
             ),
           )
-        await host.close()
+        if (!succeeded || !run.taskId) {
+          await host.close()
+          if (session) run.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
+        }
       }
     },
   }

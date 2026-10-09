@@ -15,13 +15,15 @@ configuration or subsequent editor changes. Read-only parents can delegate read-
 `key`, `name`, `prompt`, either `provider` or `agentId`, and optional model, reasoning and
 permission. A stable key reuses the child for retries within the same parent attempt; different
 requests using the same key are rejected. There can be four active children per parent thread across
-attempts and three levels of nesting. Tool connections are bound to the parent attempt so a stale
-connection cannot launch children in a later turn. ACP requires a named configuration selecting its
-installed integration.
+attempts and three levels of nesting. Warm tool connections are bound to their provider session.
+Child launches still require an active parent attempt and are attributed to that attempt; retired
+session bindings are rejected. ACP requires a named configuration selecting its installed
+integration.
 
-Follow-up Codex turns restart the provider connection when the task-tool binding changes, then
-resume the existing conversation. Dovo child controls use Dovo's ownership and access checks, so
-read-only parents can launch and receive read-only children without a Codex approval prompt.
+Follow-up turns reuse their warm provider and MCP connections, preserving native children. Session
+configuration changes require live native children to finish or stop first. Dovo child controls use
+Dovo's ownership and access checks, so read-only parents can launch and receive read-only children
+without a Codex approval prompt.
 
 `subagent_wait` waits up to 20 seconds. If `running` is still true, the child keeps working; wait
 again or finish your turn and receive its completion asynchronously. A finished result contains the
@@ -49,13 +51,28 @@ same checkout.
 Desktop and mobile thread lists show active subagents as pills under their main thread, including
 nested children. Child threads remain navigable through those pills and the Agents panel rather than
 appearing as separate list rows. Exited agents disappear from the pills; their saved results remain
-in Agents, with links to the child conversation and back to the parent. Claude and Codex
-native-agent metadata stays connected to its provider session between parent turns. Codex
-child-thread activity can recover a missed spawn event. Claude's complete background roster recovers
-missed starts and reconciles membership; shell and ambient tasks are excluded. Task updates and
-terminal notifications update the saved outcome. Closing or restarting a provider process clears
-native liveness, preserving its last known result. Native agents are still owned by their harness;
-Dovo's durable completion queue and Stop agents controls apply to Dovo children.
+in Agents, with links to the child conversation and back to the parent. Native child work also keeps
+its checkout owned after a parent reply and blocks independent work, settings changes and archive.
+
+Claude, Codex, Muse and ACP retain their native event and request handlers between parent turns.
+Live native sessions are excluded from memory-pressure eviction. Child approvals and questions use
+the owning session while retired parent requests remain disabled. Known child events update saved
+outcomes and results. Late native results enter the same durable completion queue, with paused
+queues and duplicate notifications handled as for Dovo children. Native work interrupted by a
+runtime restart is recorded as stopped and returned for manual continuation; it is not relaunched.
+
+Stop agents and individual Stop child controls include these native agents on desktop and mobile.
+Stops use provider cancellation and wait for confirmation before releasing checkout ownership. ACP
+child cancellation requires the child's advertised capability; a whole idle ACP session can be
+closed when child cancellation is unavailable. Client-owned ACP terminals and writes drain during
+cleanup.
+
+OpenCode v1/v2 child sessions execute in the server. Dovo drains their native work before releasing
+its event subscription and managed MCP connections; the parent text remains visible while it waits.
+Copilot's `session.idle` already guarantees no background agents or attached shells remain. Cursor
+waits for both the run outcome and stream completion and only sends cancellation on failure or Stop.
+Hermes' gateway exposes root turn completion, without a separate background-child lifecycle
+contract; use Dovo delegation for durable asynchronous children there.
 
 The Agents panel hides finished agents by default on desktop and mobile. Turn off **Hide finished**
 to view completed, failed and stopped agents and open their saved results. Each device remembers

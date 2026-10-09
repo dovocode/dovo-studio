@@ -1043,10 +1043,14 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/stop-agents') {
         const input = decode(
-          mutableStruct({ id: idSchema, runToken: maxValue(Schema.String, 100000) }),
+          mutableStruct({
+            id: idSchema,
+            runToken: maxValue(Schema.String, 100000),
+            childId: Schema.optional(idSchema),
+          }),
           yield* serviceResult(body(request)),
         )
-        s.tasks.stopAgents(input.id, input.runToken)
+        yield* serviceResult(s.tasks.stopAgents(input.id, input.runToken, input.childId))
         return yield* serviceResult({ ok: true })
       }
       if (method === 'POST' && path === '/api/tasks/cancel') {

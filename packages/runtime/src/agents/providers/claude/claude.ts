@@ -16,11 +16,17 @@ import {
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
 import { releaseIdleProvider } from '../../execution/warm-processes.js'
+import { updateSubagents } from '../../execution/subagents.js'
+import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
 function claudeStream(
   run: AgentRun,
   controller: AbortController,
   prompt: string | AsyncIterable<SDKUserMessage>,
-  activeRun: () => AgentRun,
+  activeRun: (
+    agentId?: string,
+    signal?: AbortSignal,
+    sessionRequest?: boolean,
+  ) => AgentRun | undefined,
   command: string,
 ) {
   return query({
@@ -89,8 +95,10 @@ function claudeStream(
       settingSources: run.tools === 'none' ? [] : ['user', 'project', 'local'],
       includePartialMessages: true,
       onElicitation: async (request, options) => {
+        const current = activeRun(undefined, options.signal, true)
+        if (!current) return { action: 'decline' }
         if (request.mode !== 'form' && request.mode !== undefined) {
-          activeRun().onActivity('This Claude MCP input request is not a supported form')
+          current.onActivity('This Claude MCP input request is not a supported form')
           return {
             action: 'cancel',
           }
@@ -98,7 +106,7 @@ function claudeStream(
         const content = await formQuestions(
           request.message,
           request.requestedSchema,
-          activeRun(),
+          current,
           options.signal,
         )
         return content
@@ -121,11 +129,14 @@ function claudeStream(
             behavior: 'deny',
             message: 'Tools are disabled for text cleanup',
           }
-        if (name === 'AskUserQuestion') return claudeQuestions(input, activeRun(), options.signal)
+        const current = activeRun(options.agentID, options.signal)
+        if (!current)
+          return { behavior: 'deny', message: 'This Claude request has no active owner' }
+        if (name === 'AskUserQuestion') return claudeQuestions(input, current, options.signal)
         const allowed =
-          activeRun().agent.permission === 'read-only'
+          current.agent.permission === 'read-only'
             ? ['Read', 'Glob', 'Grep'].includes(name)
-            : await activeRun().approve(name, JSON.stringify(input, null, 2))
+            : await current.approve(name, JSON.stringify(input, null, 2))
         return allowed
           ? {
               behavior: 'allow',
@@ -206,17 +217,32 @@ type WarmClaude = {
   closing?: Promise<void>
   accountInfo?: Promise<AccountInfo | undefined>
   onSubagentEvent?: AgentRun['onSubagentEvent']
+  owner: AgentRun
+  nativeAgents: Subagent[]
 }
 
 export function createClaudeAdapter(): AgentAdapter {
   const idle = new Map<string, WarmClaude>()
   const active = new Set<WarmClaude>()
+  const publish = (session: WarmClaude, owner: AgentRun) => {
+    if (session.sessionId)
+      owner.onNativeSession?.(
+        {
+          stop: async (id) => {
+            for (const agent of session.nativeAgents.filter(
+              (agent) => nativeAgentWorking(agent) && (!id || agent.id === id),
+            ))
+              await session.stream.stopTask(agent.id)
+          },
+        },
+        session.sessionId,
+      )
+  }
   const close = (session: WarmClaude): Promise<void> => {
     if (session.closing) return session.closing
     idle.delete(session.taskId)
     active.delete(session)
     session.closed = true
-    session.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
     session.input.close()
     session.closing = (async () => {
       let closeError: unknown
@@ -228,6 +254,7 @@ export function createClaudeAdapter(): AgentAdapter {
         session.controller.abort()
       }
       await session.consumer.catch(() => {})
+      session.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
       if (closeError) throw closeError
     })()
     return session.closing
@@ -252,16 +279,52 @@ export function createClaudeAdapter(): AgentAdapter {
       !previous.controller.signal.aborted
         ? previous
         : undefined
-    if (previous && !reusable) await close(previous)
+    if (previous && !reusable) {
+      if (previous.nativeAgents.some(nativeAgentWorking)) {
+        idle.set(run.taskId, previous)
+        throw new Error('Stop native Claude agents before changing their session configuration')
+      }
+      await close(previous)
+    }
     let session: WarmClaude
     if (reusable) session = reusable
     else {
       const input = new MessageQueue()
       const controller = new AbortController()
-      // The callback reads the current turn, so an idle provider cannot authorize tools.
-      const currentRun = () => {
-        if (!session.turn) throw new Error('Claude has no active turn')
-        return session.turn.run
+      const currentRun = (
+        agentId?: string,
+        signal?: AbortSignal,
+        sessionRequest = false,
+      ): AgentRun | undefined => {
+        if (session.closed || session.controller.signal.aborted || signal?.aborted) return
+        if (session.turn) return session.turn.run
+        const owner = session.owner
+        if (
+          (!agentId && (!sessionRequest || !session.nativeAgents.some(nativeAgentWorking))) ||
+          !signal ||
+          !owner.nativeAgentInteractions ||
+          (agentId &&
+            !session.nativeAgents.some(
+              (agent) => agent.id === agentId && nativeAgentWorking(agent),
+            ))
+        )
+          return
+        const interactions = owner.nativeAgentInteractions
+        return {
+          ...owner,
+          approve: (title: string, detail: string) =>
+            interactions.approve(
+              title,
+              detail,
+              AbortSignal.any([session.controller.signal, signal]),
+            ),
+          ask: (prompt, questionSignal, validate) =>
+            interactions.ask(
+              prompt,
+              AbortSignal.any([session.controller.signal, questionSignal ?? signal]),
+              validate,
+            ),
+        }
       }
       const stream = claudeStream(run, controller, input, currentRun, command)
       session = {
@@ -277,6 +340,8 @@ export function createClaudeAdapter(): AgentAdapter {
         consumer: Promise.resolve(),
         closed: false,
         onSubagentEvent: run.onSubagentEvent,
+        owner: run,
+        nativeAgents: [],
       }
       active.add(session)
       session.consumer = (async () => {
@@ -287,7 +352,16 @@ export function createClaudeAdapter(): AgentAdapter {
             if (message.session_id) {
               session.sessionId = message.session_id
               turn?.run.onSession(message.session_id)
+              if (turn) publish(session, turn.run)
             }
+            session.nativeAgents = updateSubagents(
+              session.nativeAgents,
+              'claude',
+              message,
+              new Date().toISOString(),
+              message.type,
+              session.sessionId,
+            )
             session.onSubagentEvent?.(message.type, message, session.sessionId)
             if (!turn) continue
             try {
@@ -295,6 +369,7 @@ export function createClaudeAdapter(): AgentAdapter {
               if (message.type === 'result') {
                 if (turn.run.compact && !turn.compacted)
                   throw new Error('Claude did not report a completed compaction')
+                turn.run.onNativeTurnEnd?.()
                 session.turn = undefined
                 turn.resolve()
               }
@@ -323,6 +398,8 @@ export function createClaudeAdapter(): AgentAdapter {
       void session.consumer.catch((error) => console.error('Claude stream failed:', error))
     }
     session.onSubagentEvent = run.onSubagentEvent
+    session.owner = run
+    publish(session, run)
     const completion = new Promise<void>((resolve, reject) => {
       session.turn = { run, compacted: false, resolve, reject }
     })
@@ -381,7 +458,9 @@ export function createClaudeAdapter(): AgentAdapter {
       if (session.sessionId && !session.closed && !session.controller.signal.aborted) {
         idle.set(run.taskId, session)
         if (releaseIdleProvider()) {
-          const oldest = idle.values().next().value
+          const oldest = [...idle.values()].find(
+            (candidate) => !candidate.nativeAgents.some(nativeAgentWorking),
+          )
           if (oldest)
             await close(oldest).catch((error) =>
               console.error('Could not release idle Claude process:', error),

@@ -29,6 +29,7 @@ import {
   resolveTaskAgent,
   delegatedAccess,
   taskFamilyIds,
+  nativeAgentWorking,
   workspaceSchema,
   patchSchema,
   type Workspace,
@@ -181,7 +182,20 @@ export class WorkspaceStore {
               : {
                   ...agent,
                   sessionLive: false,
-                  status: agent.status === 'working' ? ('unknown' as const) : agent.status,
+                  status: nativeAgentWorking(agent) ? ('stopped' as const) : agent.status,
+                  finishedAt: nativeAgentWorking(agent)
+                    ? new Date().toISOString()
+                    : agent.finishedAt,
+                  ...(nativeAgentWorking(agent)
+                    ? {
+                        result: 'The runtime restarted before this native child finished.',
+                        completion:
+                          agent.completion === 'disposed'
+                            ? ('disposed' as const)
+                            : ('pending' as const),
+                        completionId: `native-result:${agent.provider}:${agent.sessionId}:${agent.id}:${agent.startedAt}`,
+                      }
+                    : {}),
                 },
           ),
         }))
@@ -318,7 +332,13 @@ export class WorkspaceStore {
         409,
         'Choose another configuration in automations before deleting this one',
       )
-    if (this.workspace.tasks.some((task) => task.agentId === id && task.status === 'running'))
+    if (
+      this.workspace.tasks.some(
+        (task) =>
+          task.agentId === id &&
+          (task.status === 'running' || task.subagents?.some(nativeAgentWorking)),
+      )
+    )
       throw new HttpError(409, 'Stop running threads before deleting their configuration')
     const harness = decode(taskHarnessSchema, agent)
     this.update((workspace) => ({
@@ -963,7 +983,10 @@ export class WorkspaceStore {
         throw new HttpError(409, 'Choose the working directory before sending the first message')
       if (
         patch.collection === 'tasks' &&
-        current.status === 'running' &&
+        (current.status === 'running' ||
+          this.workspace.tasks
+            .find((task) => task.id === patch.id)
+            ?.subagents?.some(nativeAgentWorking)) &&
         [
           'agentId',
           'agentOverrides',
@@ -1059,7 +1082,11 @@ export class WorkspaceStore {
       family &&
       patch.changes.archived &&
       this.workspace.tasks.some(
-        (task) => family.has(task.id) && (task.status === 'running' || !!task.activeRunId),
+        (task) =>
+          family.has(task.id) &&
+          (task.status === 'running' ||
+            !!task.activeRunId ||
+            task.subagents?.some(nativeAgentWorking)),
       )
     )
       throw new HttpError(409, 'Stop active child agents before settling or reopening this thread')

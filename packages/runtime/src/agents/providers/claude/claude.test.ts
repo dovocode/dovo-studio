@@ -3,10 +3,13 @@ import { taskToolsServer } from '../../../agent-tools/config.js'
 import * as warmProcesses from '../../execution/warm-processes.js'
 import { expect, it, vi } from 'vite-plus/test'
 import type { AgentRun } from '../../execution/types.js'
-import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
 const mocks = vi.hoisted(() => ({
-  query: vi.fn<(input: { prompt: string | AsyncIterable<SDKUserMessage> }) => unknown>(),
+  query:
+    vi.fn<
+      (input: { prompt: string | AsyncIterable<SDKUserMessage>; options: Options }) => unknown
+    >(),
 }))
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: mocks.query }))
 vi.mock('../../configuration/claude-command.js', () => ({
@@ -280,6 +283,207 @@ it('continues native-agent discovery after a warm parent turn ends and rebinds i
     expect(rebound).toHaveBeenCalledWith('dovo/session/closed', {}, 'session')
   } finally {
     release()
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
+
+it.each(['task_started', 'background_tasks_changed'] as const)(
+  'keeps native Claude agents alive under memory pressure after %s and releases the finished session',
+  async (subtype) => {
+    const adapter = createClaudeAdapter()
+    const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(true)
+    let finishChild = () => {}
+    const childFinished = new Promise<void>((resolve) => {
+      finishChild = resolve
+    })
+    const close = vi.fn<() => void>(finishChild)
+    mocks.query.mockImplementation(({ prompt }) => ({
+      async *[Symbol.asyncIterator]() {
+        if (typeof prompt === 'string') throw new Error('Expected streaming input')
+        let first = true
+        for await (const _message of prompt) {
+          if (first) {
+            yield {
+              type: 'system',
+              subtype,
+              session_id: 'session',
+              task_id: 'native-child',
+              task_type: 'local_agent',
+              subagent_type: 'Explore',
+              description: 'Explore',
+              tasks: [
+                { task_id: 'native-child', task_type: 'local_agent', description: 'Explore' },
+              ],
+            }
+          }
+          yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+          if (first) {
+            first = false
+            await childFinished
+            yield {
+              type: 'system',
+              subtype: 'task_notification',
+              task_id: 'native-child',
+              status: 'completed',
+              session_id: 'session',
+            }
+          }
+        }
+      },
+      close,
+    }))
+    const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+    const run = nativeRun(native)
+    try {
+      await adapter.run(run)
+      expect(close).not.toHaveBeenCalled()
+      expect(native).not.toHaveBeenCalledWith('dovo/session/closed', {}, 'session')
+      finishChild()
+      await vi.waitFor(() =>
+        expect(native).toHaveBeenCalledWith(
+          'system',
+          expect.objectContaining({ subtype: 'task_notification', status: 'completed' }),
+          'session',
+        ),
+      )
+      await adapter.run({ ...run, sessionId: 'session', prompt: 'Second' })
+      expect(close).toHaveBeenCalled()
+      expect(native).toHaveBeenCalledWith('dovo/session/closed', {}, 'session')
+    } finally {
+      finishChild()
+      await adapter.dispose?.()
+      pressure.mockRestore()
+    }
+  },
+)
+
+function nativeRun(onSubagentEvent: AgentRun['onSubagentEvent']): AgentRun {
+  return {
+    taskId: 'native-claude',
+    agent: {
+      id: 'agent',
+      name: 'Claude',
+      provider: 'claude',
+      endpoint: '',
+      model: '',
+      instructions: '',
+      permission: 'ask',
+    },
+    cwd: '/tmp',
+    prompt: 'First',
+    signal: new AbortController().signal,
+    onSession: () => {},
+    onText: () => {},
+    onActivity: () => {},
+    onSubagentEvent,
+    approve: vi.fn<AgentRun['approve']>(async () => false),
+    ask: vi.fn<AgentRun['ask']>(async () => null),
+  }
+}
+
+it('routes only live native-agent approvals and questions through the session after a reply', async () => {
+  const adapter = createClaudeAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  let finishChild = () => {}
+  const childFinished = new Promise<void>((resolve) => {
+    finishChild = resolve
+  })
+  let options: Options | undefined
+  mocks.query.mockImplementation(({ prompt, options: current }) => {
+    options = current
+    return {
+      async *[Symbol.asyncIterator]() {
+        if (typeof prompt === 'string') throw new Error('Expected streaming input')
+        for await (const _message of prompt) {
+          yield {
+            type: 'system',
+            subtype: 'task_started',
+            task_id: 'native-child',
+            task_type: 'local_agent',
+            description: 'Explore',
+            session_id: 'session',
+          }
+          yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+          await childFinished
+          yield {
+            type: 'system',
+            subtype: 'task_notification',
+            task_id: 'native-child',
+            status: 'completed',
+            session_id: 'session',
+          }
+        }
+      },
+      close: finishChild,
+    }
+  })
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const run = nativeRun(native)
+  const approve = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
+    async () => true,
+  )
+  const ask = vi.fn<AgentRun['ask']>(async () => ({ '0': ['Small change'] }))
+  run.nativeAgentInteractions = { approve, ask }
+  const controller = new AbortController()
+  const request = {
+    signal: controller.signal,
+    agentID: 'native-child',
+    toolUseID: 'tool',
+    requestId: 'request',
+  }
+  try {
+    await adapter.run(run)
+    if (!options?.canUseTool) throw new Error('Expected a permission handler')
+    await expect(options.canUseTool('Bash', { command: 'pwd' }, request)).resolves.toMatchObject({
+      behavior: 'allow',
+    })
+    expect(approve).toHaveBeenCalledWith(
+      'Bash',
+      expect.stringContaining('pwd'),
+      expect.any(AbortSignal),
+    )
+    await expect(
+      options.canUseTool(
+        'AskUserQuestion',
+        {
+          questions: [
+            {
+              question: 'How should we proceed?',
+              header: 'Direction',
+              options: [{ label: 'Small change', description: 'Focused' }],
+            },
+          ],
+        },
+        request,
+      ),
+    ).resolves.toMatchObject({
+      behavior: 'allow',
+      updatedInput: { answers: { 'How should we proceed?': 'Small change' } },
+    })
+    expect(ask).toHaveBeenCalledOnce()
+    await expect(
+      options.canUseTool('Bash', {}, { ...request, agentID: undefined }),
+    ).resolves.toMatchObject({ behavior: 'deny' })
+    await expect(
+      options.canUseTool('Bash', {}, { ...request, agentID: 'unknown' }),
+    ).resolves.toMatchObject({ behavior: 'deny' })
+    expect(run.approve).not.toHaveBeenCalled()
+    expect(run.ask).not.toHaveBeenCalled()
+    finishChild()
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith(
+        'system',
+        expect.objectContaining({ subtype: 'task_notification' }),
+        'session',
+      ),
+    )
+    await expect(options.canUseTool('Bash', {}, request)).resolves.toMatchObject({
+      behavior: 'deny',
+    })
+    expect(approve).toHaveBeenCalledOnce()
+  } finally {
+    finishChild()
     await adapter.dispose?.()
     pressure.mockRestore()
   }

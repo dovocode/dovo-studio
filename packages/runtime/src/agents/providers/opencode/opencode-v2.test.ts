@@ -12,6 +12,8 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
   })
   const requests: Array<{ path: string; body: unknown }> = []
   let mcpName = ''
+  let childFinished = false
+  let mcpRemovedBeforeChild = false
   let mcpReads = 0
   const server = createServer((request, response) => {
     const path = new URL(request.url ?? '/', 'http://localhost').pathname
@@ -30,6 +32,7 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
       requests.push({ path, body })
       response.setHeader('Content-Type', 'application/json')
       if (path.startsWith('/api/experimental/mcp/')) {
+        if (request.method === 'DELETE' && !childFinished) mcpRemovedBeforeChild = true
         mcpName = decodeURIComponent(path.split('/').at(-1) ?? '')
         return response.writeHead(204).end()
       }
@@ -42,7 +45,8 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
         )
       }
       if (path === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
-      if (path === '/api/session/active') return response.end(JSON.stringify({ data: {} }))
+      if (path === '/api/session/active')
+        return response.end(JSON.stringify({ data: childFinished ? {} : { 'native-child': {} } }))
       if (path.endsWith('/session') && request.method === 'POST') {
         return response.end(JSON.stringify({ data: { id: 'session' } }))
       }
@@ -95,7 +99,17 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
           content: [{ type: 'text', text: 'ok' }],
           executed: true,
         })
+        emit('session.created', {
+          sessionID: 'native-child',
+          parentID: 'session',
+          title: 'Explore',
+        })
+        emit('session.execution.started', { sessionID: 'native-child' })
         emit('session.execution.succeeded', { sessionID: 'session' })
+        setTimeout(() => {
+          childFinished = true
+          emit('session.execution.succeeded', { sessionID: 'native-child' })
+        }, 60)
         return
       }
       response.end('{}')
@@ -142,6 +156,8 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
       approve: async () => false,
       ask: async () => null,
     })
+    expect(childFinished).toBe(true)
+    expect(mcpRemovedBeforeChild).toBe(false)
     expect(mcpReads).toBe(2)
     expect(requests.filter(({ path }) => path.endsWith('/prompt'))).toHaveLength(1)
     expect(text).toEqual(['Hello', 'boundary'])

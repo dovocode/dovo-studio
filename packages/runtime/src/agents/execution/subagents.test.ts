@@ -258,6 +258,6 @@ it('clears native liveness when a provider process closes without modifying Dovo
   )[0]
   const owned = { ...native, id: 'dovo-child', source: 'dovo' as const }
   const closed = updateSubagents([native, owned], 'codex', {}, now, 'dovo/session/closed')
-  expect(closed[0]).toMatchObject({ status: 'unknown', sessionLive: false })
+  expect(closed[0]).toMatchObject({ status: 'stopped', sessionLive: false, finishedAt: now })
   expect(closed[1]).toBe(owned)
 })

@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { Schema } from 'effect'
 import type { AgentRun } from '../../execution/types'
 import * as warmProcesses from '../../execution/warm-processes'
-import { codexAdapter } from './codex'
+import { codexAdapter, createCodexAdapter } from './codex'
 const cleanups: string[] = []
 afterEach(async () => {
   for (const dir of cleanups.splice(0))
@@ -23,6 +23,7 @@ async function fixture(
   slowShutdown = false,
   compactBeforeResponse = false,
   lateChild = false,
+  nativeRequests = false,
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-codex-modes-'))
   cleanups.push(directory)
@@ -41,6 +42,7 @@ let mcpServers;
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);if(m.id===undefined)return;
  fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({...m,pid:process.pid})+'\\n');
+ if(m.method===undefined)return;
  let result={};
  if(m.method==='initialize')result={userAgent:'codex/${version}'};
  if(m.method==='thread/start'||m.method==='thread/resume') {
@@ -52,7 +54,12 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
  send({id:m.id,result});
  if(m.method==='turn/start') {
    send({method:'item/agentMessage/delta',params:{delta:JSON.stringify(mcpServers.dovo_task?.env ?? {})}});
+   if (${nativeRequests})send({method:'item/started',params:{threadId:'native-child',item:{type:'commandExecution'}}});
    send({method:'turn/completed',params:{turn:{status:'completed'}}});
+   if (${nativeRequests})setTimeout(()=>{
+    send({id:'child-approval',method:'item/commandExecution/requestApproval',params:{threadId:'native-child',turnId:'child-turn'}});
+    send({id:'parent-approval',method:'item/commandExecution/requestApproval',params:{threadId:'thread',turnId:'old'}});
+   },30);
    if (${lateChild}) setTimeout(() => send({method:'item/started',params:{threadId:'native-child',item:{type:'commandExecution'}}}), 50);
  }
  if(m.method==='thread/compact/start' && !${compactBeforeResponse})send({method:'item/completed',params:{threadId:'thread',item:{type:'contextCompaction',id:'compact'}}});
@@ -88,9 +95,14 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
       .map((line) =>
         decode(
           mutableStruct({
-            method: Schema.String,
+            method: Schema.optional(Schema.String),
+            id: Schema.optional(Schema.Union([Schema.String, Schema.Number])),
+            result: Schema.optional(Schema.Unknown),
+            error: Schema.optional(Schema.Unknown),
             pid: Schema.Number,
-            params: Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
+            params: Schema.optional(
+              Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
+            ),
           }),
           JSON.parse(line),
         ),
@@ -157,7 +169,7 @@ it('rebinds Dovo task tools before a follow-up turn while resuming the same conv
     const rows = await requests()
     expect(new Set(rows.map((row) => row.pid)).size).toBe(2)
     expect(rows.filter((row) => row.method === 'thread/start')).toHaveLength(1)
-    expect(rows.filter((row) => row.method === 'thread/resume').at(-1)?.params.threadId).toBe(
+    expect(rows.filter((row) => row.method === 'thread/resume').at(-1)?.params?.threadId).toBe(
       'thread',
     )
 
@@ -208,7 +220,7 @@ it('enables advertised Fast per run, then explicitly resets a resumed thread and
     serviceTier: 'default',
   })
   expect(
-    rows.filter((row) => row.method === 'turn/start').map((row) => row.params.serviceTier),
+    rows.filter((row) => row.method === 'turn/start').map((row) => row.params?.serviceTier),
   ).toEqual(['priority', 'default'])
 })
 it.each(['daybreakBlue', 'daybreakRed', 'standard'] as const)(
@@ -227,7 +239,9 @@ it.each(['daybreakBlue', 'daybreakRed', 'standard'] as const)(
       threadId: 'thread',
       daybreakEnabled: program !== 'standard',
     })
-    expect(rows.find((row) => row.method === 'turn/start')?.params.cyberAccessProgram).toBe(program)
+    expect(rows.find((row) => row.method === 'turn/start')?.params?.cyberAccessProgram).toBe(
+      program,
+    )
   },
 )
 it('leaves Automatic omitted and never inherits a custom agent Daybreak override in utility turns', async () => {
@@ -241,7 +255,7 @@ it('leaves Automatic omitted and never inherits a custom agent Daybreak override
   expect(
     rows
       .filter((row) => row.method === 'turn/start')
-      .every((row) => !('cyberAccessProgram' in row.params)),
+      .every((row) => !('cyberAccessProgram' in (row.params ?? {}))),
   ).toBe(true)
 })
 it('starts a title-style utility turn as an ephemeral Codex thread even with tools available', async () => {
@@ -249,7 +263,7 @@ it('starts a title-style utility turn as an ephemeral Codex thread even with too
   run.ephemeral = true
   await codexAdapter.run(run)
   const rows = await requests()
-  expect(rows.find((row) => row.method === 'thread/start')?.params.ephemeral).toBe(true)
+  expect(rows.find((row) => row.method === 'thread/start')?.params?.ephemeral).toBe(true)
 })
 it('fails before a turn on older harnesses that could silently ignore Daybreak', async () => {
   const { run, requests } = await fixture('0.150.0')
@@ -306,6 +320,44 @@ it('keeps native-agent notifications subscribed after the root turn finishes', a
     expect(native).toHaveBeenCalledWith('dovo/session/closed', {}, 'thread')
   } finally {
     await codexAdapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
+
+it('retains native RPC handlers and the loaded process under pressure across follow-ups', async () => {
+  const f = await fixture('0.155.1', false, false, false, false, true)
+  const adapter = createCodexAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(true)
+  const approve = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
+    async () => true,
+  )
+  const rootApprove = vi.fn<AgentRun['approve']>(async () => {
+    throw new Error('Retired root approval')
+  })
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const run = {
+    ...f.run,
+    taskId: 'native-rpc',
+    onSubagentEvent: native,
+    approve: rootApprove,
+    nativeAgentInteractions: { approve, ask: f.run.ask },
+  }
+  try {
+    await adapter.run(run)
+    await vi.waitFor(async () => {
+      const rows = await f.requests()
+      expect(rows.find((row) => row.id === 'child-approval')).toMatchObject({
+        result: { decision: 'accept' },
+      })
+      expect(rows.find((row) => row.id === 'parent-approval')).toHaveProperty('error')
+    })
+    expect(rootApprove).not.toHaveBeenCalled()
+    expect(approve).toHaveBeenCalledOnce()
+    expect(native).not.toHaveBeenCalledWith('dovo/session/closed', {}, 'thread')
+    await adapter.run({ ...run, sessionId: 'thread' })
+    expect(new Set((await f.requests()).map((row) => row.pid)).size).toBe(1)
+  } finally {
+    await adapter.dispose?.()
     pressure.mockRestore()
   }
 })

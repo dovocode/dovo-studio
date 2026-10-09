@@ -287,3 +287,39 @@ it('refuses symlink and hard-link file writes', async () => {
   expect(await readFile(original, 'utf8')).toBe('untouched')
   await tools.close()
 })
+
+it('keeps child terminals isolated and drains only the stopped child session', async () => {
+  const { run } = await setup('workspace-write')
+  const tools = await acpClientTools(
+    run,
+    () => 'session',
+    (id) => ['session', 'child'].includes(id),
+  )
+  const create = tools.client.createTerminal
+  const output = tools.client.terminalOutput
+  if (!create || !output) throw new Error('Expected ACP terminal access')
+  try {
+    const root = await create({
+      sessionId: 'session',
+      command: process.execPath,
+      args: ['-e', 'setInterval(() => {}, 1000)'],
+    })
+    const child = await create({
+      sessionId: 'child',
+      command: process.execPath,
+      args: ['-e', 'setInterval(() => {}, 1000)'],
+    })
+    expect(() => output({ sessionId: 'session', terminalId: child.terminalId })).toThrow(
+      'unavailable',
+    )
+    await tools.stopSession('child')
+    expect(() => output({ sessionId: 'child', terminalId: child.terminalId })).toThrow(
+      'unavailable',
+    )
+    expect(output({ sessionId: 'session', terminalId: root.terminalId })).toMatchObject({
+      output: '',
+    })
+  } finally {
+    await tools.close()
+  }
+})

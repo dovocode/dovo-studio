@@ -18,7 +18,7 @@ export function TaskAgents({ task }: { task: Task }) {
   const { hideFinishedSubagents } = useAppPreferences()
   const [stopping, setStopping] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
-  const stopAgents = async (target = task, stopTurn = false) => {
+  const stopAgents = async (target = task, stopTurn = false, childId?: string) => {
     setStopping(true)
     setError('')
     try {
@@ -26,7 +26,7 @@ export function TaskAgents({ task }: { task: Task }) {
         stopTurn ? '/api/tasks/cancel' : '/api/tasks/stop-agents',
         stopTurn
           ? { id: target.id, runId: target.activeRunId }
-          : { id: target.id, runToken: taskFamilyRunToken(workspace.tasks, target.id) },
+          : { id: target.id, runToken: taskFamilyRunToken(workspace.tasks, target.id), childId },
         responses.ok,
       )
     } catch (error) {
@@ -76,7 +76,7 @@ export function TaskAgents({ task }: { task: Task }) {
           />
         </div>
       </div>
-      {[...activeAgents].some((agent) => agent.source === 'dovo') && (
+      {activeAgents.size > 0 && (
         <Button
           className="mx-4 mb-3"
           variant="outline"
@@ -109,6 +109,7 @@ export function TaskAgents({ task }: { task: Task }) {
           const active = live && activeAgents.has(agent)
           const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
           const child = childId ? workspace.tasks.find((item) => item.id === childId) : undefined
+          const owner = workspace.tasks.find((item) => item.subagents?.includes(agent))
           const state =
             !active && agent.status === 'working'
               ? 'Last seen working'
@@ -159,6 +160,7 @@ export function TaskAgents({ task }: { task: Task }) {
               </summary>
               <div className="ml-3.5 mt-3 space-y-2 break-words text-xs text-muted-foreground">
                 {agent.prompt && <p className="whitespace-pre-wrap">{agent.prompt}</p>}
+                {agent.result && <p className="whitespace-pre-wrap">{agent.result}</p>}
                 {agent.activity && <p className="whitespace-pre-wrap">{agent.activity}</p>}
                 {childId && (
                   <Button
@@ -167,6 +169,16 @@ export function TaskAgents({ task }: { task: Task }) {
                     onClick={() => host.navigate({ viewId: 'tasks', entityId: childId })}
                   >
                     Open child thread · {agent.provider}
+                  </Button>
+                )}
+                {active && agent.source !== 'dovo' && owner && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={stopping}
+                    onClick={() => stopAgents(owner, false, agent.id)}
+                  >
+                    Stop child
                   </Button>
                 )}
                 {active && child?.activeRunId && (
