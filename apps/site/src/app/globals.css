@@ -2665,3 +2665,32 @@ summary:focus-visible {
 .fleet-dovo-orchestrator {
   z-index: 1;
 }
+.fleet-nested-team {
+  margin-top: 9px;
+  padding-top: 7px;
+  border-top: 1px solid #7cc9ff25;
+}
+.fleet-nested-team > span {
+  color: #8db7d2;
+  font:
+    7px ui-monospace,
+    monospace;
+}
+.fleet-nested-team > div {
+  display: flex;
+  gap: 5px;
+  margin-top: 6px;
+}
+.fleet-worker {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #7cc9ff;
+  box-shadow: 0 0 5px #7cc9ff33;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .fleet[data-running='true'] .fleet-worker {
+    animation: fleet-node-pulse 1.6s ease-in-out infinite;
+  }
+}

@@ -68,18 +68,18 @@ const stages = [
     ],
   },
   {
-    name: 'Dovo orchestrates',
-    title: 'One goal. Dovo leads the fleet.',
+    name: 'Do',
+    title: 'One goal. Do leads the fleet.',
     description:
-      'Coming soon: give Dovo your goal. The Dovo agent plans the work, delegates to agents across your runtimes, gathers their findings and coordinates the next steps. You keep the direction and final approval.',
-    count: 'Coming soon · Dovo + 64 agents',
+      'Coming soon: give Do your goal. The Do agent plans the work, coordinates a possible fleet of 256 agents across your runtimes, gathers their findings and coordinates the next steps. You keep the direction and final approval.',
+    count: 'Coming soon · Do + 256 possible agents',
     event: [
-      'You give Dovo the goal',
-      'Dovo breaks the goal into focused work',
-      'Dovo dispatches agents across runtimes',
+      'You give Do the goal',
+      'Do breaks the goal into focused work',
+      'Do dispatches agents across runtimes',
       'Agents delegate implementation and checks',
-      'Findings return to Dovo',
-      'Dovo coordinates the next steps',
+      'Findings return to Do',
+      'Do coordinates the next steps',
       'You review what ships',
     ],
   },
@@ -156,7 +156,7 @@ const activities = [
   'Applying feedback',
   'Preparing handoff',
 ]
-const fleetSize = [1, 4, 16, 64, 65]
+const fleetSize = [1, 4, 16, 64, 256]
 
 function FleetThread({
   index,
@@ -227,6 +227,22 @@ function FleetThread({
                   <i />
                   <i />
                 </div>
+                {stage === 4 && (
+                  <div className="fleet-nested-team" aria-label="Four nested agents">
+                    <span>↓ 4 agents</span>
+                    <div>
+                      {Array.from({ length: 4 }, (_, worker) => (
+                        <i
+                          className="fleet-worker"
+                          key={worker}
+                          style={{
+                            animationDelay: `${-(sequence * 4 + childIndex + worker) * 0.17}s`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -287,15 +303,9 @@ function MobileFleet({ stage, beat, running }: { stage: number; beat: number; ru
         {stage === 4 && (
           <g className="mobile-dovo-orchestrator">
             <rect x="110" y="66" width="140" height="40" rx="8" fill="#19394d" stroke="#bcefff" />
-            <circle
-              className="mobile-fleet-node orchestrator"
-              cx="127"
-              cy="86"
-              r="5"
-              fill="#bcefff"
-            />
+            <circle className="mobile-do-node orchestrator" cx="127" cy="86" r="5" fill="#bcefff" />
             <text x="180" y="84" textAnchor="middle" className="mobile-flow-you">
-              DOVO
+              DO
             </text>
             <text x="180" y="98" textAnchor="middle" className="mobile-flow-detail">
               Plan · Coordinate
@@ -335,18 +345,26 @@ function MobileFleet({ stage, beat, running }: { stage: number; beat: number; ru
               {stage >= 3 ? (
                 <>
                   <path d="M26 56V120M59 56V120M92 56V120M125 56V120" stroke="#7cc9ff33" />
-                  {Array.from({ length: 16 }, (_, node) => (
+                  {Array.from({ length: stage === 4 ? 64 : 16 }, (_, node) => (
                     <circle
                       key={node}
-                      className={`mobile-fleet-node ${node < 4 ? 'parent' : 'child'}`}
-                      cx={26 + (node % 4) * 33}
-                      cy={56 + Math.floor(node / 4) * 21}
-                      r={node < 4 ? 6 : 4}
+                      className={`mobile-fleet-node ${stage === 4 ? (node % 16 === 0 ? 'parent' : 'child') : node < 4 ? 'parent' : 'child'}`}
+                      cx={
+                        stage === 4
+                          ? 17 + (Math.floor(node / 16) % 2) * 70 + (node % 4) * 14
+                          : 26 + (node % 4) * 33
+                      }
+                      cy={
+                        stage === 4
+                          ? 46 + Math.floor(node / 32) * 42 + Math.floor((node % 16) / 4) * 10
+                          : 56 + Math.floor(node / 4) * 21
+                      }
+                      r={stage === 4 ? (node % 16 === 0 ? 3.5 : 2.5) : node < 4 ? 6 : 4}
                       style={{ animationDelay: `${-(node + index) * 0.13}s` }}
                     />
                   ))}
                   <text x="12" y="137" className="mobile-flow-detail">
-                    4 threads + 12 subagents
+                    {stage === 4 ? '64 agents / runtime' : '4 threads + 12 subagents'}
                   </text>
                 </>
               ) : (
@@ -392,7 +410,7 @@ function MobileFleet({ stage, beat, running }: { stage: number; beat: number; ru
         })}
         <text x="180" y={415 + offset} textAnchor="middle" className="mobile-flow-detail">
           {stage === 4
-            ? 'Your goal → Dovo → Fleet → Your review'
+            ? 'Your goal → Do → Fleet → Your review'
             : stage === 3
               ? 'Brief → Build → Test → Review → Handoff'
               : stage === 2
@@ -413,7 +431,7 @@ function MobileFleet({ stage, beat, running }: { stage: number; beat: number; ru
             Subagent
           </span>
         )}
-        <span>→ {stage === 4 ? 'Dovo coordinates' : stage === 3 ? 'Handoffs' : 'Direction'}</span>
+        <span>→ {stage === 4 ? 'Do coordinates' : stage === 3 ? 'Handoffs' : 'Direction'}</span>
       </div>
     </div>
   )
@@ -531,7 +549,7 @@ export function AgentFleet() {
             {stage >= 3 && (
               <span className="fleet-future">
                 {stage === 4
-                  ? 'Coming soon · Dovo fleet orchestration'
+                  ? 'Coming soon · Do fleet orchestration'
                   : 'Coming soon · Experimental cross-runtime orchestration'}
               </span>
             )}
@@ -574,8 +592,8 @@ export function AgentFleet() {
             <div className="fleet-scale">
               <strong>{fleetSize[stage]}</strong>
               <span>
-                active {stage === 0 ? 'agent' : 'agents'}
-                <small>{stage === 4 ? 'Dovo + 64 agents' : '1 → 4 → 16 → 64'}</small>
+                {stage === 4 ? 'possible agents' : `active ${stage === 0 ? 'agent' : 'agents'}`}
+                <small>{stage === 4 ? '1 → 4 → 16 → 64 → 256' : '1 → 4 → 16 → 64'}</small>
               </span>
             </div>
           </div>
@@ -585,7 +603,7 @@ export function AgentFleet() {
               <div className="fleet-dovo-orchestrator">
                 <span className="status-dot" />
                 <div>
-                  <strong>Dovo</strong>
+                  <strong>Do</strong>
                   <small>Plan the work · Delegate across runtimes · Gather findings</small>
                 </div>
                 <span className="fleet-dovo-status">
@@ -679,7 +697,9 @@ export function AgentFleet() {
                       {stage === 0
                         ? '01'
                         : stage >= 3
-                          ? '16'
+                          ? stage === 4
+                            ? '64'
+                            : '16'
                           : String(fleetSize[stage]).padStart(2, '0')}{' '}
                       AGENTS
                     </span>
@@ -700,7 +720,7 @@ export function AgentFleet() {
             </div>
             <div className="fleet-handoff-label">
               {stage === 4
-                ? 'YOU SET THE GOAL → DOVO COORDINATES → THE FLEET EXECUTES'
+                ? 'YOU SET THE GOAL → DO COORDINATES → THE FLEET EXECUTES'
                 : stage === 3
                   ? 'BRIEF → DELEGATE → BUILD → TEST → REVIEW → HAND OFF'
                   : stage >= 2
