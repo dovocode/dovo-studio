@@ -179,15 +179,75 @@ try {
   await page.waitForFunction(() =>
     document.querySelector('.ownership')?.classList.contains('is-visible'),
   )
+  const fleet = page.getByRole('region', { name: 'Start small. Think in fleets.' })
+  await fleet.scrollIntoViewIfNeeded()
+  await page.waitForFunction(
+    () => document.querySelector('.fleet')?.getAttribute('data-running') === 'true',
+  )
+  await page.waitForFunction(() =>
+    document.querySelector('.fleet-event')?.textContent?.includes('Build the API'),
+  )
+  await fleet.getByRole('button', { name: 'Pause animation', exact: true }).click()
+  assert.equal(await fleet.getAttribute('data-running'), 'false')
+  const pausedEvent = await fleet.locator('.fleet-event').textContent()
+  await page.waitForTimeout(1100)
+  assert.equal(await fleet.locator('.fleet-event').textContent(), pausedEvent)
+  await fleet.getByRole('button', { name: '02 Parallel threads' }).click()
+  assert.equal(await fleet.locator('.fleet-runtime.active').count(), 3)
+  await fleet.getByRole('button', { name: '03 Threads + subagents' }).click()
+  assert.equal(await fleet.locator('.fleet-subagents.expanded').count(), 3)
+  assert.equal(await fleet.locator('.fleet-child:visible').count(), 6)
+  await fleet.getByRole('button', { name: /04 Connected runtimes/ }).click()
+  assert.equal(await fleet.getAttribute('data-stage'), '3')
+  assert.equal(
+    await fleet
+      .getByText('Coming soon · Experimental cross-runtime orchestration', { exact: true })
+      .isVisible(),
+    true,
+  )
+  assert.equal(await fleet.getByText('Lead agent', { exact: true }).isVisible(), true)
+  assert.equal(
+    await fleet.locator('.fleet-runtime-header').filter({ hasText: 'Build server' }).isVisible(),
+    true,
+  )
+  assert.equal(await fleet.locator('.fleet-exchange').count(), 1)
+  await fleet.getByRole('button', { name: 'Play animation', exact: true }).click()
+  await fleet.getByRole('button', { name: 'Pause animation', exact: true }).waitFor()
+  await fleet.getByRole('button', { name: 'Play animation', exact: true }).waitFor()
+  assert.equal(await fleet.getAttribute('data-stage'), '3')
+  assert.match(await fleet.locator('.fleet-event').textContent(), /You review what ships/)
+  await fleet.getByRole('button', { name: 'Replay from start', exact: true }).click()
+  assert.equal(await fleet.getAttribute('data-stage'), '0')
+  await page.locator('.hero').scrollIntoViewIfNeeded()
+  await page.waitForFunction(
+    () => document.querySelector('.fleet')?.getAttribute('data-running') === 'false',
+  )
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.reload()
   assert.equal(await page.locator('.reveal').count(), 0)
+  await page.locator('.fleet').scrollIntoViewIfNeeded()
+  assert.equal(await page.locator('.fleet').getAttribute('data-running'), 'false')
+  assert.equal(await page.getByRole('button', { name: 'Pause animation' }).count(), 0)
+  await page.getByRole('button', { name: /04 Connected runtimes/ }).click()
+  assert.equal(await page.locator('.fleet').getAttribute('data-stage'), '3')
+  await page.locator('.fleet').screenshot({ path: '/tmp/dovo-fleet-desktop.png' })
   await page.evaluate(() => document.fonts.ready)
   await page.screenshot({ path: '/tmp/dovo-site-desktop.png', fullPage: true })
   await page.setViewportSize({ width: 375, height: 812 })
   await page.screenshot({ path: '/tmp/dovo-site-mobile.png', fullPage: true })
+  await page.locator('.fleet').screenshot({ path: '/tmp/dovo-fleet-mobile.png' })
+  assert.equal(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    true,
+  )
+  assert.equal(
+    await page
+      .locator('.fleet-canvas')
+      .evaluate((element) => element.scrollWidth > element.clientWidth),
+    true,
+  )
   console.log(
-    'Dovo site: production routes, canonical URLs, responsive layouts, navigation, stable/nightly selection, published release filtering, API failure fallback, actual screenshots and copyable stable/nightly server setup passed.',
+    'Dovo site: production routes, canonical URLs, responsive layouts, navigation, stable/nightly selection, published release filtering, API failure fallback, actual screenshots, fleet playback/stages/reduced motion and copyable stable/nightly server setup passed.',
   )
 } finally {
   await browser.close()

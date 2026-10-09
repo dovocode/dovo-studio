@@ -28,6 +28,12 @@ the app, with bold typography, actual product screenshots, an interactive produc
 expandable FAQs. Entrance and scroll animations respect reduced-motion preferences; all content
 remains available without JavaScript.
 
+The homepage fleet animation illustrates serial threads, parallel threads in separate checkouts,
+nested subagents and a clearly labelled coming-soon stage for experimental cross-runtime
+orchestration. Playback starts in view, pauses offscreen or in hidden tabs, and stops after one
+cycle. Visitors can pause, replay or select any stage; reduced-motion settings disable autoplay. The
+wide diagram scrolls inside its panel on small screens and can receive keyboard focus.
+
 Stable and Nightly Linux setup commands are shown directly on the homepage, downloads and docs,
 including service installation, pairing, and the separate Nightly launcher name. Commands use the
 maintained `scripts/install-linux-server.sh`; HTTP LAN/VPN access and device pairing stay supported.

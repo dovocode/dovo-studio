@@ -4,6 +4,7 @@ import { WorkspaceScreenshot } from '../components/workspace-screenshots'
 import { MobileAvailability } from '../components/mobile-availability'
 import { ServerQuickStart } from '../components/server-quick-start'
 import { ProductTour } from '../components/product-tour'
+import { AgentFleet } from '../components/agent-fleet'
 
 export const metadata: Metadata = { alternates: { canonical: '/' } }
 
@@ -153,6 +154,7 @@ export default function Home() {
           <WorkspaceScreenshot automation />
         </div>
       </section>
+      <AgentFleet />
       <section className="ownership wrap">
         <div>
           <p className="eyebrow">03 / LOCAL AT THE CORE</p>
