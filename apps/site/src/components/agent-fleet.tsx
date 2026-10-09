@@ -67,6 +67,22 @@ const stages = [
       'You review what ships',
     ],
   },
+  {
+    name: 'Dovo orchestrates',
+    title: 'One goal. Dovo leads the fleet.',
+    description:
+      'Coming soon: give Dovo your goal. The Dovo agent plans the work, delegates to agents across your runtimes, gathers their findings and coordinates the next steps. You keep the direction and final approval.',
+    count: 'Coming soon · Dovo + 64 agents',
+    event: [
+      'You give Dovo the goal',
+      'Dovo breaks the goal into focused work',
+      'Dovo dispatches agents across runtimes',
+      'Agents delegate implementation and checks',
+      'Findings return to Dovo',
+      'Dovo coordinates the next steps',
+      'You review what ships',
+    ],
+  },
 ] as const
 
 const threads = [
@@ -140,7 +156,7 @@ const activities = [
   'Applying feedback',
   'Preparing handoff',
 ]
-const fleetSize = [1, 4, 16, 64]
+const fleetSize = [1, 4, 16, 64, 65]
 
 function FleetThread({
   index,
@@ -169,7 +185,7 @@ function FleetThread({
           <span className="fleet-node-status">● WORKING</span>
         </div>
         <p>
-          {stage === 3
+          {stage >= 3
             ? runtimes[runtime].tasks[index]
             : stage === 0
               ? thread.task
@@ -222,22 +238,35 @@ function FleetThread({
 
 function MobileFleet({ stage, beat, running }: { stage: number; beat: number; running: boolean }) {
   const groups = stage === 0 ? 1 : 4
+  const offset = stage === 4 ? 60 : 0
   const paths =
     stage === 0
       ? ['M180 46V125']
-      : [
-          'M180 46V64H88V86',
-          'M180 64H272V86',
-          ...(stage === 3
-            ? ['M88 230V254', 'M272 230V254']
-            : ['M180 64V242H88V254', 'M180 242H272V254']),
-          ...(stage === 3
-            ? ['M164 156H196', 'M164 324H196', 'M164 216L196 266', 'M196 216L164 266']
-            : []),
-        ]
+      : stage === 4
+        ? [
+            'M180 46V66',
+            'M180 106V124H88V146',
+            'M180 124H272V146',
+            'M88 290V314',
+            'M272 290V314',
+            'M164 216H196',
+            'M164 384H196',
+            'M164 276L196 326',
+            'M196 276L164 326',
+          ]
+        : [
+            'M180 46V64H88V86',
+            'M180 64H272V86',
+            ...(stage === 3
+              ? ['M88 230V254', 'M272 230V254']
+              : ['M180 64V242H88V254', 'M180 242H272V254']),
+            ...(stage === 3
+              ? ['M164 156H196', 'M164 324H196', 'M164 216L196 266', 'M196 216L164 266']
+              : []),
+          ]
   return (
     <div className="fleet-mobile-flow" aria-hidden="true" data-agents={fleetSize[stage]}>
-      <svg viewBox="0 0 360 420" fill="none">
+      <svg viewBox={stage === 4 ? '0 0 360 480' : '0 0 360 420'} fill="none">
         <defs>
           <marker
             id="fleet-mobile-arrow"
@@ -255,6 +284,24 @@ function MobileFleet({ stage, beat, running }: { stage: number; beat: number; ru
         <text x="180" y="33" textAnchor="middle" className="mobile-flow-you">
           YOU
         </text>
+        {stage === 4 && (
+          <g className="mobile-dovo-orchestrator">
+            <rect x="110" y="66" width="140" height="40" rx="8" fill="#19394d" stroke="#bcefff" />
+            <circle
+              className="mobile-fleet-node orchestrator"
+              cx="127"
+              cy="86"
+              r="5"
+              fill="#bcefff"
+            />
+            <text x="180" y="84" textAnchor="middle" className="mobile-flow-you">
+              DOVO
+            </text>
+            <text x="180" y="98" textAnchor="middle" className="mobile-flow-detail">
+              Plan · Coordinate
+            </text>
+          </g>
+        )}
         {paths.map((path, index) => (
           <g key={path}>
             <path d={path} className="fleet-link" markerEnd="url(#fleet-mobile-arrow)" />
@@ -271,10 +318,10 @@ function MobileFleet({ stage, beat, running }: { stage: number; beat: number; ru
         ))}
         {Array.from({ length: groups }, (_, index) => {
           const x = stage === 0 ? 80 : index % 2 === 0 ? 12 : 196
-          const y = stage === 0 ? 125 : index < 2 ? 86 : 254
+          const y = (stage === 0 ? 125 : index < 2 ? 86 : 254) + offset
           const width = stage === 0 ? 200 : 152
           const label =
-            stage === 3
+            stage >= 3
               ? ['Your laptop', 'Build server', 'Workstation', 'Test runner'][index]
               : stage === 0
                 ? threads[beat < 3 ? 0 : beat < 5 ? 1 : 2].agent
@@ -285,7 +332,7 @@ function MobileFleet({ stage, beat, running }: { stage: number; beat: number; ru
               <text x="12" y="23" className="mobile-flow-label">
                 {label}
               </text>
-              {stage === 3 ? (
+              {stage >= 3 ? (
                 <>
                   <path d="M26 56V120M59 56V120M92 56V120M125 56V120" stroke="#7cc9ff33" />
                   {Array.from({ length: 16 }, (_, node) => (
@@ -343,14 +390,16 @@ function MobileFleet({ stage, beat, running }: { stage: number; beat: number; ru
             </g>
           )
         })}
-        <text x="180" y="415" textAnchor="middle" className="mobile-flow-detail">
-          {stage === 3
-            ? 'Brief → Build → Test → Review → Handoff'
-            : stage === 2
-              ? 'Four threads. Twelve focused subagents.'
-              : stage === 1
-                ? 'Four independent threads working together.'
-                : 'Start with an idea. Keep the direction.'}
+        <text x="180" y={415 + offset} textAnchor="middle" className="mobile-flow-detail">
+          {stage === 4
+            ? 'Your goal → Dovo → Fleet → Your review'
+            : stage === 3
+              ? 'Brief → Build → Test → Review → Handoff'
+              : stage === 2
+                ? 'Four threads. Twelve focused subagents.'
+                : stage === 1
+                  ? 'Four independent threads working together.'
+                  : 'Start with an idea. Keep the direction.'}
         </text>
       </svg>
       <div className="mobile-flow-legend">
@@ -364,7 +413,7 @@ function MobileFleet({ stage, beat, running }: { stage: number; beat: number; ru
             Subagent
           </span>
         )}
-        <span>→ {stage === 3 ? 'Handoffs' : 'Direction'}</span>
+        <span>→ {stage === 4 ? 'Dovo coordinates' : stage === 3 ? 'Handoffs' : 'Direction'}</span>
       </div>
     </div>
   )
@@ -384,7 +433,7 @@ export function AgentFleet() {
   const current = stages[stage]
   const running = playing && visible && foreground && !reduced
   const activeThread = beat < 3 ? 0 : beat < 5 ? 1 : 2
-  const runtimeCount = stage === 3 ? 4 : 1
+  const runtimeCount = stage >= 3 ? 4 : 1
 
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -459,7 +508,7 @@ export function AgentFleet() {
             >
               <span>0{index + 1}</span>
               {item.name}
-              {index === 3 && <small className="fleet-soon">Soon</small>}
+              {index >= 3 && <small className="fleet-soon">Soon</small>}
               <i
                 aria-hidden="true"
                 className={index < stage ? 'complete' : ''}
@@ -479,9 +528,11 @@ export function AgentFleet() {
           <div>
             <p className="eyebrow">0{stage + 1} / FLEET EVOLUTION</p>
             <h3>{current.title}</h3>
-            {stage === 3 && (
+            {stage >= 3 && (
               <span className="fleet-future">
-                Coming soon · Experimental cross-runtime orchestration
+                {stage === 4
+                  ? 'Coming soon · Dovo fleet orchestration'
+                  : 'Coming soon · Experimental cross-runtime orchestration'}
               </span>
             )}
             <p>{current.description}</p>
@@ -524,13 +575,35 @@ export function AgentFleet() {
               <strong>{fleetSize[stage]}</strong>
               <span>
                 active {stage === 0 ? 'agent' : 'agents'}
-                <small>1 → 4 → 16 → 64</small>
+                <small>{stage === 4 ? 'Dovo + 64 agents' : '1 → 4 → 16 → 64'}</small>
               </span>
             </div>
           </div>
           <MobileFleet stage={stage} beat={beat} running={running} />
           <div className="fleet-diagram">
-            {stage === 3 && (
+            {stage === 4 && (
+              <div className="fleet-dovo-orchestrator">
+                <span className="status-dot" />
+                <div>
+                  <strong>Dovo</strong>
+                  <small>Plan the work · Delegate across runtimes · Gather findings</small>
+                </div>
+                <span className="fleet-dovo-status">
+                  {
+                    [
+                      'Planning',
+                      'Delegating',
+                      'Coordinating',
+                      'Reviewing findings',
+                      'Routing feedback',
+                      'Assembling results',
+                      'Awaiting your review',
+                    ][beat]
+                  }
+                </span>
+              </div>
+            )}
+            {stage >= 3 && (
               <svg
                 className="fleet-connections"
                 viewBox="0 0 1400 800"
@@ -552,6 +625,7 @@ export function AgentFleet() {
                   </marker>
                 </defs>
                 {[
+                  ...(stage === 4 ? ['M700 60V105H350V155', 'M700 105H1050V155'] : []),
                   'M620 190H780',
                   'M620 610H780',
                   'M350 360V440',
@@ -604,7 +678,7 @@ export function AgentFleet() {
                     <span>
                       {stage === 0
                         ? '01'
-                        : stage === 3
+                        : stage >= 3
                           ? '16'
                           : String(fleetSize[stage]).padStart(2, '0')}{' '}
                       AGENTS
@@ -625,11 +699,13 @@ export function AgentFleet() {
               ))}
             </div>
             <div className="fleet-handoff-label">
-              {stage === 3
-                ? 'BRIEF → DELEGATE → BUILD → TEST → REVIEW → HAND OFF'
-                : stage >= 2
-                  ? 'FOCUSED SUBTASKS. SIMULTANEOUS PROGRESS.'
-                  : 'EVERY THREAD HAS ITS OWN CONTEXT.'}
+              {stage === 4
+                ? 'YOU SET THE GOAL → DOVO COORDINATES → THE FLEET EXECUTES'
+                : stage === 3
+                  ? 'BRIEF → DELEGATE → BUILD → TEST → REVIEW → HAND OFF'
+                  : stage >= 2
+                    ? 'FOCUSED SUBTASKS. SIMULTANEOUS PROGRESS.'
+                    : 'EVERY THREAD HAS ITS OWN CONTEXT.'}
             </div>
           </div>
           <div className="fleet-activity" aria-hidden="true">
@@ -641,7 +717,7 @@ export function AgentFleet() {
                 <div key={index}>
                   <span>+{String(beat * 3 + index).padStart(2, '0')}s</span>
                   <strong>
-                    {stage === 3 ? runtimes[index % 4].name : threads[(beat + index) % 4].agent}
+                    {stage >= 3 ? runtimes[index % 4].name : threads[(beat + index) % 4].agent}
                   </strong>
                   <span>{activities[(beat + index * 2) % activities.length]}</span>
                   <i>●</i>

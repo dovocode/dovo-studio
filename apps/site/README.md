@@ -35,7 +35,8 @@ cycle. Visitors can pause, replay or select any stage; reduced-motion settings d
 expanded animation grows from 1 to 4 to 16 to 64 illustrated agents, with concurrent activity
 streams and animated handoffs between four runtimes. On small screens, a compact topology shows the
 entire fleet and its handoffs together, using individual nodes for all 64 agents without horizontal
-scrolling.
+scrolling. A fifth coming-soon stage adds Dovo as the coordinating agent above the fleet, with your
+goal flowing into Dovo and delegation flowing out to all four runtimes.
 
 Stable and Nightly Linux setup commands are shown directly on the homepage, downloads and docs,
 including service installation, pairing, and the separate Nightly launcher name. Commands use the

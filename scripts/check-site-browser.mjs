@@ -217,11 +217,19 @@ try {
   assert.equal(await fleet.locator('.fleet-agent').count(), 16)
   assert.equal(await fleet.locator('.fleet-child:visible').count(), 48)
   assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '64')
+  await fleet.getByRole('button', { name: /05 Dovo orchestrates/ }).click()
+  assert.equal(await fleet.getAttribute('data-stage'), '4')
+  assert.equal(await fleet.locator('.fleet-dovo-orchestrator strong').textContent(), 'Dovo')
+  assert.equal(
+    await fleet.getByText('Coming soon · Dovo fleet orchestration', { exact: true }).isVisible(),
+    true,
+  )
+  assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '65')
   await fleet.getByRole('button', { name: 'Play animation', exact: true }).click()
   await fleet.getByRole('button', { name: 'Pause animation', exact: true }).waitFor()
-  assert.equal(await fleet.locator('.fleet-diagram animateMotion').count(), 12)
+  assert.equal(await fleet.locator('.fleet-diagram animateMotion').count(), 16)
   await fleet.getByRole('button', { name: 'Play animation', exact: true }).waitFor()
-  assert.equal(await fleet.getAttribute('data-stage'), '3')
+  assert.equal(await fleet.getAttribute('data-stage'), '4')
   assert.match(await fleet.locator('.fleet-event').textContent(), /You review what ships/)
   await fleet.getByRole('button', { name: 'Replay from start', exact: true }).click()
   assert.equal(await fleet.getAttribute('data-stage'), '0')
@@ -235,15 +243,15 @@ try {
   await page.locator('.fleet').scrollIntoViewIfNeeded()
   assert.equal(await page.locator('.fleet').getAttribute('data-running'), 'false')
   assert.equal(await page.getByRole('button', { name: 'Pause animation' }).count(), 0)
-  await page.getByRole('button', { name: /04 Connected runtimes/ }).click()
-  assert.equal(await page.locator('.fleet').getAttribute('data-stage'), '3')
+  await page.getByRole('button', { name: /05 Dovo orchestrates/ }).click()
+  assert.equal(await page.locator('.fleet').getAttribute('data-stage'), '4')
   for (const width of [320, 375, 768, 1000, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     assert.equal(await page.locator('.fleet-agent').count(), 16)
     assert.equal(await page.locator('.fleet-child').count(), 48)
     assert.equal(await page.locator('.fleet-mobile-flow').isVisible(), width <= 800)
     if (width <= 800) {
-      assert.equal(await page.locator('.mobile-fleet-node').count(), 64)
+      assert.equal(await page.locator('.mobile-fleet-node').count(), 65)
       assert.ok(
         await page
           .locator('.fleet-mobile-flow')
@@ -268,7 +276,7 @@ try {
   await page.screenshot({ path: '/tmp/dovo-site-desktop.png', fullPage: true })
   await page.setViewportSize({ width: 375, height: 812 })
   await page.screenshot({ path: '/tmp/dovo-site-mobile.png', fullPage: true })
-  for (const [stage, count] of [1, 4, 16, 64].entries()) {
+  for (const [stage, count] of [1, 4, 16, 64, 65].entries()) {
     await page.locator('.fleet-stages button').nth(stage).click()
     assert.equal(await page.locator('.mobile-fleet-node').count(), count)
     assert.equal(
