@@ -2476,3 +2476,113 @@ summary:focus-visible {
     padding-left: 8px;
   }
 }
+
+/* Mobile shows the topology in one view; detailed work stays in the desktop canvas. */
+.fleet-mobile-flow {
+  display: none;
+}
+.mobile-fleet-node.parent {
+  fill: #7cc9ff;
+  stroke: #bcefff;
+  stroke-width: 1.5;
+}
+.mobile-fleet-node.child {
+  fill: #245577;
+  stroke: #7cc9ff;
+  stroke-width: 1;
+}
+.mobile-flow-you {
+  fill: #bcefff;
+  font:
+    600 12px ui-monospace,
+    monospace;
+  letter-spacing: 2px;
+}
+.mobile-flow-label {
+  fill: #ededed;
+  font:
+    550 12px ui-sans-serif,
+    sans-serif;
+}
+.mobile-flow-detail {
+  fill: #a5b9c9;
+  font:
+    9px ui-monospace,
+    monospace;
+}
+.mobile-flow-legend {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  color: #a5b9c9;
+  font-size: 9px;
+  padding: 12px 0 18px;
+}
+.mobile-flow-legend > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.mobile-flow-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.mobile-flow-legend > span:nth-child(2) i {
+  background: #245577;
+  border: 1px solid var(--accent);
+}
+@media (max-width: 800px) {
+  .fleet-mobile-flow {
+    display: block;
+    width: min(100%, 400px);
+    margin-inline: auto;
+  }
+  .fleet-mobile-flow svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .fleet-diagram,
+  .fleet-activity {
+    display: none;
+  }
+  .fleet-scene-top {
+    padding: 18px 20px;
+  }
+  .fleet-you > span:last-child {
+    display: none;
+  }
+  .fleet-caption p:last-child {
+    min-height: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .fleet[data-running='true'] .mobile-fleet-node {
+    animation: fleet-node-pulse 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes fleet-node-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (max-width: 800px) {
+  .fleet-scene-top .fleet-you {
+    display: none;
+  }
+  .fleet-scene-top::before {
+    content: 'YOUR GROWING FLEET';
+    color: var(--accent);
+    font:
+      9px ui-monospace,
+      monospace;
+    letter-spacing: 1px;
+  }
+}

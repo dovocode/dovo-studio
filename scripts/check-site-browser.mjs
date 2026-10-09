@@ -219,7 +219,7 @@ try {
   assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '64')
   await fleet.getByRole('button', { name: 'Play animation', exact: true }).click()
   await fleet.getByRole('button', { name: 'Pause animation', exact: true }).waitFor()
-  assert.equal(await fleet.locator('animateMotion').count(), 12)
+  assert.equal(await fleet.locator('.fleet-diagram animateMotion').count(), 12)
   await fleet.getByRole('button', { name: 'Play animation', exact: true }).waitFor()
   assert.equal(await fleet.getAttribute('data-stage'), '3')
   assert.match(await fleet.locator('.fleet-event').textContent(), /You review what ships/)
@@ -240,7 +240,17 @@ try {
   for (const width of [320, 375, 768, 1000, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     assert.equal(await page.locator('.fleet-agent').count(), 16)
-    assert.equal(await page.locator('.fleet-child:visible').count(), 48)
+    assert.equal(await page.locator('.fleet-child').count(), 48)
+    assert.equal(await page.locator('.fleet-mobile-flow').isVisible(), width <= 800)
+    if (width <= 800) {
+      assert.equal(await page.locator('.mobile-fleet-node').count(), 64)
+      assert.ok(
+        await page
+          .locator('.fleet-mobile-flow')
+          .evaluate((element) => element.getBoundingClientRect().height < 520),
+      )
+      assert.equal(await page.locator('.fleet-diagram').isVisible(), false)
+    }
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       true,
@@ -258,6 +268,19 @@ try {
   await page.screenshot({ path: '/tmp/dovo-site-desktop.png', fullPage: true })
   await page.setViewportSize({ width: 375, height: 812 })
   await page.screenshot({ path: '/tmp/dovo-site-mobile.png', fullPage: true })
+  for (const [stage, count] of [1, 4, 16, 64].entries()) {
+    await page.locator('.fleet-stages button').nth(stage).click()
+    assert.equal(await page.locator('.mobile-fleet-node').count(), count)
+    assert.equal(
+      await page.locator('.fleet-mobile-flow').getAttribute('data-agents'),
+      String(count),
+    )
+    assert.ok(
+      await page
+        .locator('.fleet-mobile-flow')
+        .evaluate((element) => element.getBoundingClientRect().height < 520),
+    )
+  }
   await page.locator('.fleet').screenshot({ path: '/tmp/dovo-fleet-mobile.png' })
   assert.equal(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

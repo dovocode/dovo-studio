@@ -220,6 +220,156 @@ function FleetThread({
   )
 }
 
+function MobileFleet({ stage, beat, running }: { stage: number; beat: number; running: boolean }) {
+  const groups = stage === 0 ? 1 : 4
+  const paths =
+    stage === 0
+      ? ['M180 46V125']
+      : [
+          'M180 46V64H88V86',
+          'M180 64H272V86',
+          ...(stage === 3
+            ? ['M88 230V254', 'M272 230V254']
+            : ['M180 64V242H88V254', 'M180 242H272V254']),
+          ...(stage === 3
+            ? ['M164 156H196', 'M164 324H196', 'M164 216L196 266', 'M196 216L164 266']
+            : []),
+        ]
+  return (
+    <div className="fleet-mobile-flow" aria-hidden="true" data-agents={fleetSize[stage]}>
+      <svg viewBox="0 0 360 420" fill="none">
+        <defs>
+          <marker
+            id="fleet-mobile-arrow"
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="5"
+            markerHeight="5"
+            orient="auto"
+          >
+            <path d="m2 2 6 3-6 3" stroke="#7cc9ff" />
+          </marker>
+        </defs>
+        <rect x="133" y="10" width="94" height="36" rx="7" fill="#102432" stroke="#7cc9ff77" />
+        <text x="180" y="33" textAnchor="middle" className="mobile-flow-you">
+          YOU
+        </text>
+        {paths.map((path, index) => (
+          <g key={path}>
+            <path d={path} className="fleet-link" markerEnd="url(#fleet-mobile-arrow)" />
+            {running && (
+              <circle r="3" fill="#bcefff">
+                <animateMotion
+                  dur={`${1.2 + index * 0.15}s`}
+                  repeatCount="indefinite"
+                  path={path}
+                />
+              </circle>
+            )}
+          </g>
+        ))}
+        {Array.from({ length: groups }, (_, index) => {
+          const x = stage === 0 ? 80 : index % 2 === 0 ? 12 : 196
+          const y = stage === 0 ? 125 : index < 2 ? 86 : 254
+          const width = stage === 0 ? 200 : 152
+          const label =
+            stage === 3
+              ? ['Your laptop', 'Build server', 'Workstation', 'Test runner'][index]
+              : stage === 0
+                ? threads[beat < 3 ? 0 : beat < 5 ? 1 : 2].agent
+                : ['API', 'Interface', 'Review', 'Delivery'][index]
+          return (
+            <g key={`${stage}-${index}`} transform={`translate(${x} ${y})`}>
+              <rect width={width} height="144" rx="9" fill="#101923" stroke="#7cc9ff44" />
+              <text x="12" y="23" className="mobile-flow-label">
+                {label}
+              </text>
+              {stage === 3 ? (
+                <>
+                  <path d="M26 56V120M59 56V120M92 56V120M125 56V120" stroke="#7cc9ff33" />
+                  {Array.from({ length: 16 }, (_, node) => (
+                    <circle
+                      key={node}
+                      className={`mobile-fleet-node ${node < 4 ? 'parent' : 'child'}`}
+                      cx={26 + (node % 4) * 33}
+                      cy={56 + Math.floor(node / 4) * 21}
+                      r={node < 4 ? 6 : 4}
+                      style={{ animationDelay: `${-(node + index) * 0.13}s` }}
+                    />
+                  ))}
+                  <text x="12" y="137" className="mobile-flow-detail">
+                    4 threads + 12 subagents
+                  </text>
+                </>
+              ) : (
+                <>
+                  <circle className="mobile-fleet-node parent" cx={width / 2} cy="57" r="9" />
+                  {stage === 2 && (
+                    <>
+                      <path
+                        d="M76 66V78M40 78H112M40 78V94M76 78V94M112 78V94"
+                        stroke="#7cc9ff55"
+                      />
+                      {[40, 76, 112].map((cx, node) => (
+                        <circle
+                          className="mobile-fleet-node child"
+                          key={cx}
+                          cx={cx}
+                          cy="99"
+                          r="5"
+                          style={{ animationDelay: `${-(node + index) * 0.2}s` }}
+                        />
+                      ))}
+                    </>
+                  )}
+                  <text
+                    x={width / 2}
+                    y={stage === 2 ? 128 : 95}
+                    textAnchor="middle"
+                    className="mobile-flow-detail"
+                  >
+                    {stage === 0
+                      ? 'One thread at a time'
+                      : stage === 1
+                        ? activities[(beat + index) % activities.length]
+                            .split(' ')
+                            .slice(0, 2)
+                            .join(' ')
+                        : 'Delegate ↓ Results ↑'}
+                  </text>
+                </>
+              )}
+            </g>
+          )
+        })}
+        <text x="180" y="415" textAnchor="middle" className="mobile-flow-detail">
+          {stage === 3
+            ? 'Brief → Build → Test → Review → Handoff'
+            : stage === 2
+              ? 'Four threads. Twelve focused subagents.'
+              : stage === 1
+                ? 'Four independent threads working together.'
+                : 'Start with an idea. Keep the direction.'}
+        </text>
+      </svg>
+      <div className="mobile-flow-legend">
+        <span>
+          <i />
+          Thread agent
+        </span>
+        {stage >= 2 && (
+          <span>
+            <i />
+            Subagent
+          </span>
+        )}
+        <span>→ {stage === 3 ? 'Handoffs' : 'Direction'}</span>
+      </div>
+    </div>
+  )
+}
+
 const stageLength = 7
 
 export function AgentFleet() {
@@ -378,6 +528,7 @@ export function AgentFleet() {
               </span>
             </div>
           </div>
+          <MobileFleet stage={stage} beat={beat} running={running} />
           <div className="fleet-diagram">
             {stage === 3 && (
               <svg
