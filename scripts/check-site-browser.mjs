@@ -34,7 +34,10 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const address = server.address()
 assert.ok(address && typeof address === 'object')
 const origin = `http://127.0.0.1:${address.port}`
-const browser = await chromium.launch({ headless: true })
+const browser = await chromium.launch({
+  headless: true,
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+})
 const release = (tag, date, extra = {}) => ({
   tag_name: tag,
   html_url: `https://github.com/dovocode/dovo-studio/releases/tag/${tag}`,
@@ -190,14 +193,17 @@ try {
   await fleet.getByRole('button', { name: 'Pause animation', exact: true }).click()
   assert.equal(await fleet.getAttribute('data-running'), 'false')
   const pausedEvent = await fleet.locator('.fleet-event').textContent()
+  await page.waitForTimeout(100)
+  const pausedFrames = await fleet.locator('.fleet-webgl canvas').getAttribute('data-frames')
   await page.waitForTimeout(1100)
   assert.equal(await fleet.locator('.fleet-event').textContent(), pausedEvent)
+  assert.equal(await fleet.locator('.fleet-webgl canvas').getAttribute('data-frames'), pausedFrames)
   await fleet.getByRole('button', { name: '02 Parallel threads' }).click()
   assert.equal(await fleet.locator('.fleet-agent').count(), 4)
   assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '4')
   await fleet.getByRole('button', { name: '03 Threads + subagents' }).click()
   assert.equal(await fleet.locator('.fleet-subagents.expanded').count(), 4)
-  assert.equal(await fleet.locator('.fleet-child:visible').count(), 12)
+  assert.equal(await fleet.locator('.fleet-child').count(), 12)
   assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '16')
   await fleet.getByRole('button', { name: /04 Connected runtimes/ }).click()
   assert.equal(await fleet.getAttribute('data-stage'), '3')
@@ -207,15 +213,15 @@ try {
       .isVisible(),
     true,
   )
-  assert.equal(await fleet.getByText('Lead agent', { exact: true }).isVisible(), true)
+  assert.equal(await fleet.getByText('Lead agent', { exact: true }).count(), 1)
   assert.equal(
-    await fleet.locator('.fleet-runtime-header').filter({ hasText: 'Build server' }).isVisible(),
-    true,
+    await fleet.locator('.fleet-runtime-header').filter({ hasText: 'Build server' }).count(),
+    1,
   )
   assert.equal(await fleet.locator('.fleet-exchange').count(), 6)
   assert.equal(await fleet.locator('.fleet-runtime').count(), 4)
   assert.equal(await fleet.locator('.fleet-agent').count(), 16)
-  assert.equal(await fleet.locator('.fleet-child:visible').count(), 48)
+  assert.equal(await fleet.locator('.fleet-child').count(), 48)
   assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '64')
   await fleet.getByRole('button', { name: /05 Do/ }).click()
   assert.equal(await fleet.getAttribute('data-stage'), '4')
@@ -227,7 +233,11 @@ try {
   assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '256')
   await fleet.getByRole('button', { name: 'Play animation', exact: true }).click()
   await fleet.getByRole('button', { name: 'Pause animation', exact: true }).waitFor()
-  assert.equal(await fleet.locator('.fleet-diagram animateMotion').count(), 16)
+  await page.waitForFunction(
+    () => Number(document.querySelector('.fleet-webgl canvas')?.getAttribute('data-frames')) > 2,
+  )
+  assert.equal(await fleet.getAttribute('data-webgl'), 'true')
+  assert.equal(await fleet.locator('.fleet-webgl canvas').getAttribute('data-agents'), '256')
   await fleet.getByRole('button', { name: 'Play animation', exact: true }).waitFor()
   assert.equal(await fleet.getAttribute('data-stage'), '4')
   assert.match(await fleet.locator('.fleet-event').textContent(), /You review what ships/)
@@ -250,7 +260,8 @@ try {
     assert.equal(await page.locator('.fleet-agent').count(), 16)
     assert.equal(await page.locator('.fleet-child').count(), 48)
     assert.equal(await page.locator('.fleet-worker').count(), 192)
-    assert.equal(await page.locator('.fleet-mobile-flow').isVisible(), width <= 800)
+    assert.equal(await page.locator('.fleet-mobile-flow').isVisible(), false)
+    assert.equal(await page.locator('.fleet-webgl').isVisible(), true)
     if (width <= 800) {
       assert.equal(await page.locator('.mobile-fleet-node').count(), 256)
       assert.ok(
@@ -290,6 +301,43 @@ try {
         .evaluate((element) => element.getBoundingClientRect().height < 520),
     )
   }
+  await page.waitForFunction(
+    () => document.querySelector('.fleet-webgl canvas')?.getAttribute('data-agents') === '256',
+  )
+  await page.locator('.fleet-webgl').screenshot({ path: '/tmp/dovo-fleet-webgl-mobile.png' })
+  await page.locator('.fleet-webgl canvas').evaluate((canvas) => {
+    const gl = canvas.getContext('webgl')
+    const extension = gl?.getExtension('WEBGL_lose_context')
+    if (!extension) throw new Error('WebGL context loss extension unavailable')
+    extension.loseContext()
+    setTimeout(() => extension.restoreContext(), 800)
+  })
+  await page.waitForFunction(
+    () => document.querySelector('.fleet')?.getAttribute('data-webgl') === 'false',
+  )
+  assert.equal(await page.locator('.fleet-mobile-flow').isVisible(), true)
+  await page.waitForFunction(
+    () => document.querySelector('.fleet')?.getAttribute('data-webgl') === 'true',
+  )
+  await page.waitForFunction(
+    () => document.querySelector('.fleet-webgl canvas')?.getAttribute('data-agents') === '256',
+  )
+
+  const fallback = await browser.newPage({ viewport: { width: 375, height: 812 } })
+  await fallback.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext
+    HTMLCanvasElement.prototype.getContext = function (type, ...args) {
+      if (type === 'webgl') return null
+      return original.call(this, type, ...args)
+    }
+  })
+  await fallback.emulateMedia({ reducedMotion: 'reduce' })
+  await fallback.goto(origin + '/')
+  await fallback.getByRole('button', { name: /05 Do/ }).click()
+  assert.equal(await fallback.locator('.fleet').getAttribute('data-webgl'), 'false')
+  assert.equal(await fallback.locator('.fleet-mobile-flow').isVisible(), true)
+  assert.equal(await fallback.locator('.mobile-fleet-node').count(), 256)
+  await fallback.close()
   await page.locator('.fleet').screenshot({ path: '/tmp/dovo-fleet-mobile.png' })
   assert.equal(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
@@ -302,7 +350,7 @@ try {
     true,
   )
   console.log(
-    'Dovo site: production routes, canonical URLs, responsive layouts, navigation, stable/nightly selection, published release filtering, API failure fallback, actual screenshots, fleet playback/stages/reduced motion and copyable stable/nightly server setup passed.',
+    'Dovo site: production routes, canonical URLs, responsive layouts, navigation, stable/nightly selection, published release filtering, API failure fallback, actual screenshots, WebGL rendering/pause/context recovery/fallback and fleet playback/stages/reduced motion and copyable stable/nightly server setup passed.',
   )
 } finally {
   await browser.close()

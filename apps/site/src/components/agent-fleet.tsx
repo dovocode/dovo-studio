@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { FleetWebGL } from './fleet-webgl'
 
 const stages = [
   {
@@ -446,6 +447,7 @@ export function AgentFleet() {
   const [visible, setVisible] = useState(false)
   const [foreground, setForeground] = useState(true)
   const [reduced, setReduced] = useState(false)
+  const [webglReady, setWebglReady] = useState(false)
   const stage = Math.floor(tick / stageLength)
   const beat = tick % stageLength
   const current = stages[stage]
@@ -488,6 +490,7 @@ export function AgentFleet() {
       aria-labelledby="fleet-heading"
       data-stage={stage}
       data-running={running}
+      data-webgl={webglReady}
     >
       <div className="section-heading">
         <p className="eyebrow">FROM FIRST THREAD TO FULL FLEET</p>
@@ -597,7 +600,8 @@ export function AgentFleet() {
               </span>
             </div>
           </div>
-          <MobileFleet stage={stage} beat={beat} running={running} />
+          <FleetWebGL stage={stage} running={running} reduced={reduced} onReady={setWebglReady} />
+          <MobileFleet stage={stage} beat={beat} running={running && !webglReady} />
           <div className="fleet-diagram">
             {stage === 4 && (
               <div className="fleet-dovo-orchestrator">
@@ -657,7 +661,7 @@ export function AgentFleet() {
                       d={path}
                       markerEnd="url(#fleet-arrow)"
                     />
-                    {running && (
+                    {running && !webglReady && (
                       <>
                         <circle r="4" fill="#7cc9ff">
                           <animateMotion

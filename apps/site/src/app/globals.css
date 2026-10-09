@@ -2694,3 +2694,147 @@ summary:focus-visible {
     animation: fleet-node-pulse 1.6s ease-in-out infinite;
   }
 }
+
+/* GPU constellation with a readable HTML/SVG fallback when WebGL is unavailable. */
+.fleet-webgl {
+  display: none;
+  position: relative;
+  height: clamp(520px, 48vw, 720px);
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 45%, #12314955, transparent 60%),
+    radial-gradient(ellipse at 20% 35%, #143b4b55, transparent 28%), #060b10;
+}
+.fleet[data-webgl='true'] .fleet-webgl {
+  display: block;
+}
+.fleet[data-webgl='true'] .fleet-diagram,
+.fleet[data-webgl='true'] .fleet-mobile-flow {
+  display: none;
+}
+.fleet-webgl canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+}
+.webgl-you,
+.webgl-do,
+.webgl-single {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  text-align: center;
+  color: #d1eeff;
+  font:
+    600 12px ui-monospace,
+    monospace;
+  letter-spacing: 2px;
+  text-shadow: 0 0 20px #7cc9ff88;
+}
+.webgl-you {
+  top: 5%;
+}
+.webgl-do {
+  top: 39%;
+  font:
+    650 34px ui-sans-serif,
+    sans-serif;
+  letter-spacing: -0.04em;
+}
+.webgl-single {
+  top: 54%;
+}
+.webgl-you > span,
+.webgl-do > span,
+.webgl-single > span {
+  display: block;
+  color: #88b2cb;
+  font:
+    10px ui-monospace,
+    monospace;
+  letter-spacing: 0;
+  margin-top: 7px;
+  white-space: nowrap;
+}
+.webgl-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.webgl-labels > span {
+  position: absolute;
+  width: 180px;
+  text-align: center;
+  color: #c0deef;
+  font-size: 14px;
+  font-weight: 500;
+}
+.webgl-labels > span:nth-child(1) {
+  left: 22%;
+  top: 21%;
+  transform: translateX(-50%);
+}
+.webgl-labels > span:nth-child(2) {
+  left: 78%;
+  top: 21%;
+  transform: translateX(-50%);
+}
+.webgl-labels > span:nth-child(3) {
+  left: 22%;
+  top: 80%;
+  transform: translateX(-50%);
+}
+.webgl-labels > span:nth-child(4) {
+  left: 78%;
+  top: 80%;
+  transform: translateX(-50%);
+}
+.webgl-labels small {
+  display: block;
+  color: #739ab2;
+  font:
+    10px ui-monospace,
+    monospace;
+  margin-top: 7px;
+}
+.webgl-legend {
+  position: absolute;
+  bottom: 3%;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 25px;
+  color: #7ba9c4;
+  font:
+    10px ui-monospace,
+    monospace;
+  pointer-events: none;
+}
+@media (max-width: 800px) {
+  .fleet-webgl {
+    height: 460px;
+  }
+  .webgl-labels > span {
+    width: 120px;
+    font-size: 11px;
+  }
+  .webgl-labels small {
+    font-size: 8px;
+  }
+  .webgl-do {
+    font-size: 26px;
+  }
+  .webgl-do > span {
+    font-size: 8px;
+  }
+  .webgl-you > span {
+    font-size: 8px;
+  }
+  .webgl-legend {
+    gap: 15px;
+    font-size: 8px;
+  }
+}
