@@ -46,6 +46,7 @@ async function bundle(mobile) {
     '../../runtime/preferences/app-preferences': `import {useFixture} from 'fixture';export const useCarMode=()=>false;export const useMobilePreferences=()=>useFixture().preferences;export const formatTime=()=>'';`,
     '../../runtime/connection/provider': `export const useRuntime=()=>({connected:true});`,
     '../../ui/theme': `export const styles={},colors={};export const useTheme=()=>({styles,colors,mode:'dark'});`,
+    '../../../ui/content/server-image': `export const ServerImage=({label})=><div data-image>{label}</div>;`,
     '../../ui/content/text': `export {Text} from 'react-native';`,
     '../../ui/controls/icon': `export const Icon=()=>null;`,
     '../../ui/controls/icon-button': `export const IconButton=()=>null;`,
