@@ -231,3 +231,5 @@ export { WorkspaceScope } from './workspace/scope'
 export * from './fonts'
 
 export { DiscoveryCache } from '@dovo/client-runtime'
+
+export { terminalInputFrames } from '@dovo/client-runtime'

@@ -1,7 +1,7 @@
 import { build } from 'esbuild'
 import { readFileSync, readdirSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const built = await build({
   stdin: {
@@ -15,6 +15,10 @@ createRoot(document.getElementById('app')).render(<Usage/>);`,
     {
       name: 'usage-fixture',
       setup(builder) {
+        builder.onResolve({ filter: /^@dovo\/studio-ui$/ }, () => ({
+          path: 'usage-ui',
+          namespace: 'fixture',
+        }))
         builder.onResolve({ filter: /^@dovo\/studio-core$/ }, ({ path }) => ({
           path,
           namespace: 'fixture',
@@ -28,9 +32,11 @@ createRoot(document.getElementById('app')).render(<Usage/>);`,
         }))
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
           contents:
-            path === './reset-credits'
-              ? 'export const ResetCredits=()=>null;'
-              : `
+            path === 'usage-ui'
+              ? `export {Button} from '${root}packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}packages/studio-ui/src/components/ui/input.tsx';export * from '${root}packages/studio-ui/src/components/ui/select.tsx';export {ChoicePicker} from '${root}packages/studio-ui/src/choice-picker.tsx';`
+              : path === './reset-credits'
+                ? 'export const ResetCredits=()=>null;'
+                : `
 export * from '@dovo/protocol';
 const now=Date.now();
 const turn=(id,age)=>({id,assistantId:id,agentId:'agent',provider:'codex',model:'gpt-6.1-sol',status:'completed',startedAt:new Date(now-age*86400000).toISOString(),finishedAt:new Date(now-age*86400000+60000).toISOString(),usageAccount:{id:'account',label:'Personal',subscription:'Pro'}});
@@ -78,7 +84,8 @@ try {
   await page.getByText('Models by agent time', { exact: true }).waitFor()
   await page.getByRole('radio', { name: 'Threads', exact: true }).click()
   await page.getByText('Improve composer', { exact: true }).waitFor()
-  await page.getByRole('radio', { name: 'Last 30 days', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Period', exact: true }).click()
+  await page.getByRole('option', { name: 'Last 30 days', exact: true }).click()
   await page.getByText('1 of 3 turns reported', { exact: true }).waitFor()
   await page.getByText('Custom API-equivalent prices', { exact: true }).click()
   await page.getByRole('spinbutton', { name: 'Input', exact: true }).fill('2')

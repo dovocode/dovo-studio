@@ -28,7 +28,10 @@ apps/api → runtime → protocol
                  └→ client-runtime
 apps/desktop + apps/web → extension-* → studio-core → protocol + client-runtime
                             extension-* → studio-ui → studio-core
-apps/mobile → protocol + client-runtime
+apps/mobile → protocol + client-runtime + studio-core/fonts + studio-core/themes
+apps/desktop (Electron only) → api public process/connection helpers
+extension-tasks → extension-scm
+extension-agents → extension-tasks
 ```
 
 Arrows mean “depends on”; the table above lists additional direct edges. Keep `protocol` free of

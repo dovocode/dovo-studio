@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
-import { build } from 'esbuild'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium, bundleBrowser } from './browser/harness.mjs'
 import { startRuntime } from '../packages/runtime/dist/index.js'
 import { fixture } from '../packages/runtime/dist/testing/fixture.js'
 
@@ -22,39 +21,32 @@ const mocks = {
     `\nexport * from '${ui}/settings-layout.tsx';export * from '${ui}/choice-picker.tsx';export * from '${ui}/components/form-field.tsx';export * from '${ui}/components/ai-elements/conversation.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const MessageResponse=({children})=>children;`,
   './host-page': `export const HostPage=({children})=>children;`,
 }
-const built = await build({
-  stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import {RunningTaskPreferences,PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {Segmented} from '${ui}/settings-layout.tsx';const components={memory:Memory,worktrees:Worktrees,running:RunningTaskPreferences,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={connected:true,request:async(path,input,schema)=>decode(schema,await window.callRuntime(path,input)),requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<Component key={name}/>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
-    loader: 'tsx',
-    resolveDir: root,
-  },
-  bundle: true,
-  write: false,
-  format: 'iife',
-  platform: 'browser',
-  jsx: 'automatic',
-  alias: {
-    react: `${root}/packages/studio-ui/node_modules/react`,
-    '@dovo/protocol': `${root}/packages/protocol/src/index.ts`,
-    '@dovo/client-runtime': `${root}/packages/client-runtime/src/index.ts`,
-  },
-  nodePaths: [`${root}/packages/studio-ui/node_modules`],
-  plugins: [
-    {
-      name: 'runtime-context',
-      setup(b) {
-        b.onResolve({ filter: /.*/ }, ({ path }) =>
-          mocks[path] ? { path, namespace: 'mock' } : undefined,
-        )
-        b.onLoad({ filter: /.*/, namespace: 'mock' }, ({ path }) => ({
-          contents: mocks[path],
-          loader: 'tsx',
-          resolveDir: root,
-        }))
-      },
+const built = await bundleBrowser(
+  {
+    stdin: {
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import {RunningTaskPreferences,PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {Segmented} from '${ui}/settings-layout.tsx';const components={memory:Memory,worktrees:Worktrees,running:RunningTaskPreferences,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={connected:true,request:async(path,input,schema)=>decode(schema,await window.callRuntime(path,input)),requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<Component key={name}/>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
+      loader: 'tsx',
+      resolveDir: root,
     },
-  ],
-})
+    bundle: true,
+    write: false,
+    format: 'iife',
+    platform: 'browser',
+    jsx: 'automatic',
+    alias: {
+      react: `${root}/packages/studio-ui/node_modules/react`,
+      '@dovo/protocol': `${root}/packages/protocol/src/index.ts`,
+      '@dovo/client-runtime': `${root}/packages/client-runtime/src/index.ts`,
+    },
+    nodePaths: [`${root}/packages/studio-ui/node_modules`],
+  },
+  Object.entries(mocks).map(([path, contents]) => ({
+    path,
+    contents,
+    ...(path.startsWith('.') ? { importer: `${root}/packages/extension-runtime/src/` } : {}),
+  })),
+)
+
 const browser = await chromium.launch()
 try {
   const page = await browser.newPage()

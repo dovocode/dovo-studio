@@ -1,4 +1,4 @@
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 import { build } from 'esbuild'
 import { readFile } from 'node:fs/promises'
 const host = JSON.parse(await readFile('packages/studio-ui/mcp-apps/host.json', 'utf8'))

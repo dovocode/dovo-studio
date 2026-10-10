@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const environment = `
@@ -24,6 +24,7 @@ return <Context.Provider value={value}>CONTENT</Context.Provider>};createRoot(do
 `
 async function bundle(mobile) {
   const mocks = {
+    './server-image': `export const ServerImage=()=>null;`,
     '@dovo/studio-core': environment,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
     '@dovo/client-runtime': `import {TooltipProvider} from '@radix-ui/react-tooltip';import {Effect} from 'effect';export const runClientEffect=Effect.runPromise;`,

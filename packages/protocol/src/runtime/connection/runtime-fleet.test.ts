@@ -459,7 +459,9 @@ it('does not reuse a live snapshot after its saved address changes', async () =>
     connection: { ...profile.connection, address: 'http://moved.local:8787' },
   }
   await Effect.runPromise(loadRuntimeOverviewEffect(moved, overview, undefined, false, true))
-  expect(fetch.mock.calls[0]![0]).toEqual(new URL('http://moved.local:8787/api/snapshot'))
+  expect(fetch.mock.calls[0]![0]).toEqual(
+    new URL('http://moved.local:8787/api/snapshot?scope=threads&history=paged'),
+  )
 })
 
 it('refreshes task snapshots without a per-project PR sweep, retaining approximate cached counts', async () => {

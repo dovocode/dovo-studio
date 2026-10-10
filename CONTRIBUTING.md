@@ -53,7 +53,12 @@ pnpm build
 
 Use `pnpm exec vp fmt <paths>` to format selected files. `pnpm check` is the repository's combined
 Vite+ check; `pnpm typecheck`, `pnpm lint`, and `pnpm build` run their named workspace tasks.
-Package-specific checks can be run with `pnpm --filter @dovo/<package> typecheck`.
+Package-specific checks can be run with `pnpm --filter @dovo/<package> typecheck`. Run
+`pnpm test:browser` for all registered browser suites, or an individual `test:*:browser` script for
+a focused check. CI runs the same registry in four shards. Register new browser checks in
+`package.json`; the runner rejects unregistered `check-*-browser.mjs` files. New browser fixtures
+should use `scripts/browser/harness.mjs`, which checks for unused stubs and requires an importer for
+relative module replacements.
 
 Task, recovery, and automation integration tests share the bounded budgets in
 `packages/runtime/src/testing/integration.ts` because they run real Git commands. Use state

@@ -91,7 +91,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     forgeCli,
     (fn) => store.transaction(fn),
   )
+  const mutations = new MutationReceipts(db)
   const devices = new Devices(db, ownerToken, (id) => {
+      mutations.revoke(id)
       deviceHostUploads.cancelDevice(id)
       void simulators
         .closeForeignDevice(id)
@@ -231,7 +233,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     pipelineWatch,
     pullRequestWatch,
     backups: new RuntimeBackups(db.name),
-    mutations: new MutationReceipts(db),
+    mutations,
     instanceId: randomUUID(),
     mcpApps,
     artifacts,

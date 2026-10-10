@@ -1,14 +1,15 @@
+import { readListenAddress, writeListenAddress } from '@dovo/api/listen-address'
 import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { runtimeRequest, RUNTIME_PROTOCOL_VERSION, mutableStruct } from '@dovo/protocol'
 import { homedir } from 'node:os'
 import { ensureBackgroundRuntime, stopBackgroundRuntimeForUpdate } from './background-runtime.js'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { readFileSync, writeFileSync, renameSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, dialog } from 'electron'
 import { Effect, Exit, Scope, Schema, Semaphore } from 'effect'
-import { readConnection } from '../../api/src/connection.js'
-import { runtimeOwnerToken } from '../../api/src/owner-token.js'
+import { readConnection } from '@dovo/api/connection'
+import { runtimeOwnerToken } from '@dovo/api/owner-token'
 import {
   readWindowsRuntimeChoice,
   startWslRuntime,
@@ -32,6 +33,7 @@ let owned:
   | undefined
 let relaunches = 0
 let relaunchTimer: ReturnType<typeof setTimeout> | undefined
+let relaunchAfter = 0
 let quitting = false
 const failure = (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause)))
 const exited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null
@@ -218,27 +220,12 @@ const runtimeOptions = () =>
           }
         | undefined
       for (const path of [listenPath, join(desktopRuntimeDirectory(), 'runtime-connection.json')]) {
-        let value: unknown
         try {
-          value = JSON.parse(readFileSync(path, 'utf8'))
+          const value = readListenAddress(path)
+          saved = { port: String(value.port), host: value.host }
         } catch (error) {
           if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue
           throw error
-        }
-        if (
-          typeof value !== 'object' ||
-          !value ||
-          !('address' in value) ||
-          typeof value.address !== 'string'
-        )
-          throw new Error('Invalid saved runtime listening address')
-        const address = new URL(value.address)
-        saved = {
-          port: address.port || (address.protocol === 'https:' ? '443' : '80'),
-          host:
-            'bindHost' in value && typeof value.bindHost === 'string'
-              ? value.bindHost
-              : address.hostname,
         }
         break
       }
@@ -321,6 +308,7 @@ function launch(directory: string) {
       // backs off from two seconds to a minute so a bad port or lock does not spin.
       if (Date.now() - startedAt > 60_000) relaunches = 0
       if (relaunches >= 6) {
+        relaunchAfter = Infinity
         console.error('Local runtime keeps exiting; not relaunching. Restart Dovo Studio.')
         void dialog.showMessageBox({
           type: 'error',
@@ -332,6 +320,7 @@ function launch(directory: string) {
         return
       }
       const delay = Math.min(60_000, 2_000 * 2 ** relaunches)
+      relaunchAfter = Date.now() + delay
       relaunches++
       clearTimeout(relaunchTimer)
       relaunchTimer = setTimeout(() => {
@@ -380,12 +369,7 @@ function launch(directory: string) {
                   ? value.address
                   : `http://${host}:${port}`
               if (env.DOVO_DESKTOP_DUAL_LISTENER !== '1') {
-                writeFileSync(
-                  listenPath + '.tmp',
-                  JSON.stringify({ address, bindHost: env.DOVO_HOST }),
-                  { mode: 0o600 },
-                )
-                renameSync(listenPath + '.tmp', listenPath)
+                writeListenAddress(listenPath, { address, bindHost: env.DOVO_HOST })
               }
               return {
                 address,
@@ -425,6 +409,7 @@ export function startLocalRuntime(
   return Effect.runPromise(
     lifecycle.withPermits(1)(
       Effect.gen(function* () {
+        if (quitting) return yield* Effect.fail(new Error('Dovo Studio is shutting down.'))
         if (updateOwner)
           return yield* Effect.fail(
             new Error(
@@ -440,6 +425,12 @@ export function startLocalRuntime(
             })
         }
         if (owned && !exited(owned.child)) return owned.connection
+        if (Date.now() < relaunchAfter)
+          return yield* Effect.fail(
+            new Error(
+              'Local runtime recovery is paused after a crash. Wait for automatic recovery or restart Dovo Studio.',
+            ),
+          )
         if (owned) {
           owned.stopping = true
           yield* Scope.close(owned.scope, Exit.void)
@@ -462,7 +453,7 @@ export function startLocalRuntime(
             host: env.DOVO_HOST ?? '127.0.0.1',
             port: env.PORT ?? '8787',
             ownerToken: process.env.DOVO_OWNER_TOKEN,
-            environment: process.env,
+            environment: env,
             path: env.PATH ?? '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin',
           })
           return yield* Effect.gen(function* () {
@@ -687,15 +678,10 @@ export async function setLocalRuntimeNetwork(
     return localRuntimeNetwork(directory, address)
   const path = join(desktopRuntimeDirectory(), 'runtime-listen.json')
   try {
-    writeFileSync(
-      path + '.tmp',
-      JSON.stringify({
-        address: `http://127.0.0.1:${next.port}`,
-        bindHost: enabled ? next.host : '127.0.0.1',
-      }),
-      { mode: 0o600 },
-    )
-    renameSync(path + '.tmp', path)
+    writeListenAddress(path, {
+      address: `http://127.0.0.1:${next.port}`,
+      bindHost: enabled ? next.host : '127.0.0.1',
+    })
   } catch (cause) {
     try {
       await runtimeRequest(

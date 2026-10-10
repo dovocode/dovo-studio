@@ -27,7 +27,8 @@ import { ScreenHeader } from '../ui/layout/screen-header'
 export default function DevicesScreen() {
   const { colors, styles } = useTheme()
 
-  const { profiles, overviews, activeId, error: runtimeError } = useRuntime()
+  const runtime = useRuntime()
+  const { profiles, overviews, activeId, error: runtimeError } = runtime
   const [adding, setAdding] = useApplicationState(false)
   // Saved before pairing completes: by then the new computer is already in the list.
   const firstPairing = useRef(false)
@@ -120,6 +121,9 @@ export default function DevicesScreen() {
           <Text accessibilityRole="alert" style={styles.error}>
             {runtimeError}
           </Text>
+        )}
+        {!runtime.registryLoaded && !!runtimeError && (
+          <Action label="Retry loading saved computers" onPress={() => runtime.refreshAll()} />
         )}
         {!!invitationError && (
           <Text accessibilityRole="alert" style={styles.error}>

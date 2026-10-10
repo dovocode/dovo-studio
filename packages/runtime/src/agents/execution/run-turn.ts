@@ -1357,22 +1357,27 @@ ${
               const continuation = cancelled
                 ? undefined
                 : quotaContinuation(errorMessage(error), turnLimits, policy, turnId)
-              const captured =
+              const shutdownUnconfirmed =
                 error instanceof RuntimeOperationError &&
                 error.cause instanceof OwnedProcessShutdownError
-                  ? {
-                      before,
-                      files: [],
-                      omitted: [],
-                      error: 'Change capture skipped because provider shutdown was not confirmed.',
-                    }
-                  : yield* checkpoint()
+              const captured = shutdownUnconfirmed
+                ? {
+                    before,
+                    files: [],
+                    omitted: [],
+                    error: 'Change capture skipped because provider shutdown was not confirmed.',
+                  }
+                : yield* checkpoint()
               this.store.updateTask(id, (t) => ({
                 ...t,
                 status,
                 quotaContinuation: continuation,
                 ...(continuation && policy?.quotaSnooze ? { snoozedUntil: continuation.at } : {}),
-                runPhase: undefined,
+                runPhase: captured.error && !shutdownUnconfirmed ? 'finalizing' : undefined,
+                restartRecovery:
+                  captured.error && !shutdownUnconfirmed
+                    ? { kind: 'turn', automatic: false }
+                    : t.restartRecovery,
                 error: errorMessage(controller.signal.reason ?? error),
                 activity: undefined,
                 queuePaused: true,

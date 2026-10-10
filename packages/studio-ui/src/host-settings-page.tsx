@@ -1,5 +1,5 @@
 import { PageHeader } from './page-header'
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   useConfirmSettingsNavigation,
@@ -8,6 +8,7 @@ import {
   WorkspaceScope,
 } from '@dovo/studio-core'
 import { ChoicePicker } from './choice-picker'
+import { Button } from './components/ui/button'
 
 /** A settings page for one computer, with a picker like Codex's host selector. Pages list
  * every saved computer; a linked host takes precedence over the active one. */
@@ -24,13 +25,38 @@ export function HostSettingsPage({
 }) {
   const sources = useRuntimeSources()
   const confirmNavigation = useConfirmSettingsNavigation()
-  const { activeRuntimeId } = useWorkspace()
+  const { activeRuntimeId, refreshRuntime } = useWorkspace()
   const [chosen, setChosen] = useApplicationState(initialRuntimeId ?? '')
+  const [refreshing, setRefreshing] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const generation = useRef(0)
   useEffect(() => setChosen(initialRuntimeId ?? ''), [initialRuntimeId, setChosen])
   const source =
     sources.find((entry) => entry.profile.id === chosen) ??
     sources.find((entry) => entry.profile.id === activeRuntimeId) ??
     sources[0]
+  useEffect(() => {
+    generation.current++
+    setRefreshing(false)
+    setError('')
+    return () => {
+      generation.current++
+    }
+  }, [source?.scope, setRefreshing, setError])
+  const retry = async () => {
+    if (!source || refreshing) return
+    const current = generation.current
+    setRefreshing(true)
+    setError('')
+    try {
+      await refreshRuntime(source.profile)
+    } catch (failure) {
+      if (current === generation.current)
+        setError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      if (current === generation.current) setRefreshing(false)
+    }
+  }
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <PageHeader title={title} description={description}>
@@ -42,6 +68,7 @@ export function HostSettingsPage({
             aria-label="Computer"
             className="h-8 min-w-48 rounded-md px-2 text-xs"
             value={source.profile.id}
+            disabled={refreshing}
             onValueChange={(value) => {
               if (confirmNavigation()) setChosen(value)
             }}
@@ -64,9 +91,24 @@ export function HostSettingsPage({
           ) : (
             <WorkspaceScope key={source.scope} profile={source.profile}>
               {!source.connected && (
-                <p role="status" className="text-xs text-muted-foreground">
-                  {source.name} is offline. Reconnect it to view or change these settings.
-                </p>
+                <div className="space-y-3">
+                  <p role="status" className="text-xs text-muted-foreground">
+                    {source.name} is offline. Reconnect it to view or change these settings.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={refreshing}
+                    onClick={() => void retry()}
+                  >
+                    {refreshing ? 'Connecting…' : 'Retry connection'}
+                  </Button>
+                  {error && (
+                    <p role="alert" className="text-xs text-destructive">
+                      {error}
+                    </p>
+                  )}
+                </div>
               )}
               {source.connected && children}
             </WorkspaceScope>

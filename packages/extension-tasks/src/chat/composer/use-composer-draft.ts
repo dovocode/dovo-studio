@@ -20,6 +20,13 @@ export function useComposerDraft(task: Task, immediate = false) {
       report,
     ),
   )
+  useEffect(() => {
+    controller.rebind((draft) => {
+      setWorkspace((workspace) =>
+        updateTask(workspace, task.id, (current) => ({ ...current, draft })),
+      )
+    })
+  }, [controller, setWorkspace, task.id])
   const hasText = useSyncExternalStore(
     controller.subscribe,
     () => !!controller.text.trim(),

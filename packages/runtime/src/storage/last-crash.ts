@@ -1,10 +1,24 @@
-import { readFileSync, unlinkSync } from 'node:fs'
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { decodeResult, mutableStruct } from '@dovo/protocol'
 import { Schema } from 'effect'
 
 const recordSchema = mutableStruct({ at: Schema.String, message: Schema.String })
 const cache = new Map<string, { at: string; message: string } | null>()
+export function recordLastCrash(databasePath: string, error: unknown) {
+  if (databasePath === ':memory:') return
+  const record = {
+    at: new Date().toISOString(),
+    message: (error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(
+      0,
+      1000,
+    ),
+    stack: error instanceof Error ? error.stack?.slice(0, 4000) : undefined,
+  }
+  const file = lastCrashFile(databasePath)
+  writeFileSync(file, JSON.stringify(record), { mode: 0o600 })
+  cache.set(file, record)
+}
 /** The runtime process writes this file when it exits on an uncaught exception. It is read
  * once per start and shown in Devices & runtime until dismissed. */
 export function lastCrashFile(databasePath: string) {

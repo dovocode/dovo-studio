@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 
 // Ordinary HTTP is intentional: Web Locks/WebCrypto must not be prerequisites.
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -11,6 +11,11 @@ const built = await build({
       import { Effect, Schema } from 'effect';
       import { RuntimeMutations } from './packages/protocol/src/runtime/connection/mutations.ts';
       import { browserMutationStorage, browserReadCache, readWorkspaceOutbox, writeWorkspaceOutbox } from './packages/studio-core/src/workspace/read-cache.ts';
+      import { readRuntimeRegistry, writeRuntimeRegistry } from './packages/studio-core/src/workspace/runtime-registry.ts';
+      import { runtimeProfile, upsertRuntime } from '@dovo/protocol';
+      window.readRegistry = async () => { window.registry = await readRuntimeRegistry(); return window.registry; };
+      window.addComputer = async address => { window.registry = await writeRuntimeRegistry(upsertRuntime(window.registry, runtimeProfile({address,token:'registry-test-token-at-least-32-characters'}))); };
+      window.clearSelection = async () => { window.registry = await writeRuntimeRegistry({...window.registry,activeId:null}); };
       import { WorkspaceSynchronization } from './packages/studio-core/src/runtime/synchronization.ts';
       import { createTask } from './packages/studio-core/src/workspace/actions.ts';
       window.connection = {address:'http://runtime.lan:4310',token:'test-device'};
@@ -97,6 +102,14 @@ try {
   }
   const first = await open(),
     second = await open()
+  await first.evaluate(() => window.readRegistry())
+  await first.evaluate(() => window.addComputer('http://first-runtime.lan:8787'))
+  await Promise.all([first, second].map((page) => page.evaluate(() => window.readRegistry())))
+  await first.evaluate(() => window.addComputer('http://new-runtime.lan:8787'))
+  await second.evaluate(() => window.clearSelection())
+  const savedRegistry = await first.evaluate(() => window.readRegistry())
+  assert.equal(savedRegistry.profiles.length, 2, 'A stale tab must preserve another tab pairing')
+  assert.equal(savedRegistry.activeId, null)
   assert.equal(await first.evaluate(() => window.isSecureContext), false)
   assert.equal(await first.evaluate(() => typeof crypto.randomUUID), 'undefined')
   const task = await first.evaluate(() => window.createTask())

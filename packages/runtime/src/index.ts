@@ -9,6 +9,7 @@ import { ExternalListener } from './http/external-listener.js'
 export { RuntimeBackups, restoreRuntimeBackup, verifyRuntimeBackup } from './storage/backups.js'
 export { exportRuntimeRecovery } from './storage/recovery.js'
 export { rotateRuntimeLogs } from './storage/log-rotation.js'
+export { recordLastCrash } from './storage/last-crash.js'
 export { backupRuntimeDatabase } from './storage/backup.js'
 export { checkAdapterUpdates, type AdapterDiagnostic } from './agents/execution/diagnostics.js'
 
@@ -65,6 +66,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       const closeTasks = () => (tasksClosing ??= services.tasks.dispose())
       const housekeeping = new Housekeeping(services)
       const taskPulls = new TaskPullWatcher(services)
+      let network: ExternalListener | undefined
       const finalizers = [
         () => housekeeping.dispose(),
         () => taskPulls.dispose(),
@@ -108,6 +110,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                 Effect.exit(
                   release(() => (http.server.listening ? http.close() : http.closeSockets())),
                 ),
+                Effect.exit(release(() => network?.close())),
                 Effect.exit(release(() => services.jobs.shutdown())),
                 Effect.exit(release(() => services.acpInstallations.dispose())),
                 Effect.exit(release(closeTitles)),
@@ -146,12 +149,12 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         )
       const external = options.external
       if (external) {
-        const network = new ExternalListener(services, external.host, external.port)
-        services.network = network
-        yield* Effect.addFinalizer(() => release(() => network.close()))
+        const listener = new ExternalListener(services, external.host, external.port)
+        network = listener
+        services.network = listener
         if (external.enabled)
           yield* Effect.promise(() =>
-            network.set(external.host, external.port, true).catch((error) => {
+            listener.set(external.host, external.port, true).catch((error) => {
               console.error('External listener could not start:', error)
             }),
           )

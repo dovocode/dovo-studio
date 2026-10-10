@@ -6,7 +6,7 @@ import {
   type JobRun,
   type RuntimeOverview,
 } from '@dovo/studio-core'
-import { createWorkspace } from '../../studio-core/src/workspace/seed'
+import { createWorkspace } from '@dovo/studio-core/testing'
 import { aggregateAutomations } from './fleet'
 const workspace = createWorkspace()
 const flow = workspace.automations[0]

@@ -7,7 +7,7 @@ declare global {
   }
 }
 import { fontStack, nerdFontFamily, systemMonoFont } from '@dovo/studio-core/fonts'
-import { startSocketHeartbeat } from '@dovo/client-runtime'
+import { startSocketHeartbeat, terminalInputFrames } from '@dovo/client-runtime'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 const terminal = new Terminal({
@@ -60,7 +60,8 @@ window.setTerminalFont = (family, size) => {
 }
 new ResizeObserver(resize).observe(document.body)
 terminal.onData((data) => {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'input', data }))
+  if (socket?.readyState === WebSocket.OPEN)
+    for (const frame of terminalInputFrames(data)) socket.send(JSON.stringify(frame))
 })
 const keys: Array<[string, string | null]> = [
   ['Keyboard', null],

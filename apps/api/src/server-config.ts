@@ -1,4 +1,7 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { writePrivateJson } from './private-json.js'
+export { writePrivateJson } from './private-json.js'
+import { readListenAddress } from './listen-address.js'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { isIP } from 'node:net'
@@ -87,18 +90,6 @@ export function readServerConfig(directory: string): ServerConfig {
     )
   return validateServerConfig(JSON.parse(readFileSync(path, 'utf8')), directory)
 }
-export function writePrivateJson(path: string, value: unknown) {
-  mkdirSync(dirname(path), {
-    recursive: true,
-    mode: 0o700,
-  })
-  const temporary = `${path}.${process.pid}.tmp`
-  writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', {
-    mode: 0o600,
-  })
-  chmodSync(temporary, 0o600)
-  renameSync(temporary, path)
-}
 export function setupServer(
   directory: string,
   options: {
@@ -111,24 +102,8 @@ export function setupServer(
   let saved: Partial<ServerConfig> = {}
   if (existsSync(join(directory, 'server.json'))) saved = readServerConfig(directory)
   else if (existsSync(join(directory, 'runtime-listen.json'))) {
-    const listen: unknown = JSON.parse(readFileSync(join(directory, 'runtime-listen.json'), 'utf8'))
-    if (
-      !listen ||
-      typeof listen !== 'object' ||
-      !('address' in listen) ||
-      typeof listen.address !== 'string'
-    )
-      throw new Error(
-        'Invalid runtime-listen.json. Correct the saved listening address before setup.',
-      )
-    const address = new URL(listen.address)
-    saved = {
-      port: Number(address.port || (address.protocol === 'https:' ? 443 : 80)),
-      host:
-        'bindHost' in listen && typeof listen.bindHost === 'string'
-          ? listen.bindHost
-          : address.hostname.replace(/^\[|\]$/g, ''),
-    }
+    const listen = readListenAddress(join(directory, 'runtime-listen.json'))
+    saved = { host: listen.host, port: listen.port }
   }
   const config = validateServerConfig(
     {

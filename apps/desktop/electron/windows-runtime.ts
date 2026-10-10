@@ -184,7 +184,15 @@ for (const key of ['DOVO_OWNER_TOKEN', 'ELECTRON_RUN_AS_NODE', 'DOVO_RUNTIME_ENV
 // expose user-installed Linux tools (including acli/Claude) and bundled Node.
 environment.PATH = [...(environment.PATH ? [environment.PATH] : []), join(homedir(), '.local', 'bin'), dirname(process.execPath)].join(':');
 let listen = { port: '8787', host: '127.0.0.1' };
-try { const saved = JSON.parse(readFileSync(join(directory, 'runtime-listen.json'), 'utf8')); listen = { port: new URL(saved.address).port, host: saved.bindHost }; }
+try {
+  const saved = JSON.parse(readFileSync(join(directory, 'runtime-listen.json'), 'utf8'));
+  if (!saved || typeof saved.address !== 'string') throw new Error('Invalid runtime listen address');
+  const address = new URL(saved.address);
+  if (!['http:', 'https:'].includes(address.protocol) || address.username || address.password || address.search || address.hash || address.pathname !== '/') throw new Error('Invalid runtime listen address');
+  const host = (typeof saved.bindHost === 'string' ? saved.bindHost : address.hostname).replace(/^\\[|\\]$/g, '');
+  if (!host.trim()) throw new Error('Invalid runtime bind host');
+  listen = { port: address.port || (address.protocol === 'https:' ? '443' : '80'), host };
+}
 catch (error) { if (error.code !== 'ENOENT') throw error; }
 const child = spawn(process.execPath, [entry], { cwd: homedir(), stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { ...environment, DOVO_DATABASE_PATH: join(directory, 'runtime.sqlite'), DOVO_DESKTOP_DUAL_LISTENER: '1', DOVO_RELEASE_DISTRIBUTION: 'desktop', PORT: listen.port, DOVO_HOST: listen.host } });
 child.stdout.pipe(process.stderr); child.stderr.pipe(process.stderr);

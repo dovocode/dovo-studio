@@ -1,7 +1,7 @@
 import { expect, it } from 'vite-plus/test'
 import { parsePatchFiles } from '@pierre/diffs'
 import { pullFilePatch } from '@dovo/studio-core'
-import { suggestionComment } from '../../../../studio-ui/src/suggestion'
+import { suggestionComment } from '@dovo/studio-ui/suggestion'
 import { selectedPatchCode } from './selected-code'
 it('extracts multiline replacements using original patch coordinates and rejects missing context', () => {
   const diff = parsePatchFiles(

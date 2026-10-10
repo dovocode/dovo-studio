@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const fixture = `

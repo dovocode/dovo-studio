@@ -1,3 +1,4 @@
+import { terminalInputFrames } from '@dovo/studio-core'
 import {
   startReconnecting,
   startSocketHeartbeat,
@@ -79,12 +80,7 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
     observer.observe(container.current)
     const input = terminal.onData((data) => {
       if (socket?.readyState === WebSocket.OPEN)
-        socket.send(
-          JSON.stringify({
-            type: 'input',
-            data,
-          }),
-        )
+        for (const frame of terminalInputFrames(data)) socket.send(JSON.stringify(frame))
     })
     const reconnect = startReconnecting(
       async (signal, connected) => {

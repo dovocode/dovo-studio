@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { createWorkspace } from '../../studio-core/src/workspace/seed'
+import { createWorkspace } from '@dovo/studio-core/testing'
 import { canConnect, validateGraph } from './graph'
 describe('automation validation', () => {
   it('accepts a connected configured workflow', () => {

@@ -12,17 +12,26 @@ type HandoffServices = Pick<
  * or undefined when the checkout is clean. The stash entry stays until it is applied. */
 async function stashAll(s: HandoffServices, cwd: string, label: string) {
   if (!(await s.git.command(cwd, ['status', '--porcelain'])).trim()) return undefined
-  await s.git.command(cwd, ['stash', 'push', '--include-untracked', '-m', label])
-  return (await s.git.command(cwd, ['rev-parse', '--verify', 'refs/stash'])).trim()
+  const marker = `${label} ${randomUUID()}`
+  await s.git.command(cwd, ['stash', 'push', '--include-untracked', '-m', marker])
+  const entries = await s.git.command(cwd, ['stash', 'list', '--format=%H %gs'])
+  const entry = entries.split('\n').find((line) => line.endsWith(marker))
+  if (!entry)
+    throw new HttpError(
+      409,
+      `Could not identify the saved changes. They remain in the stash named "${marker}".`,
+    )
+  return entry.split(' ')[0]
 }
+class StashRecoveryError extends HttpError {}
 /** Applies a stash commit (restoring the index too) and drops its entry once it succeeded. */
 async function applyStash(s: HandoffServices, cwd: string, stash: string) {
   try {
     await s.git.command(cwd, ['stash', 'apply', '--index', stash])
   } catch (error) {
-    throw new HttpError(
+    throw new StashRecoveryError(
       409,
-      `The task moved, but its uncommitted changes could not be applied. They are safe in stash ${stash.slice(0, 12)}; run "git stash apply ${stash.slice(0, 12)}" in ${cwd}. ${error instanceof Error ? error.message : String(error)}`,
+      `Uncommitted changes could not be applied. They are safe in stash ${stash.slice(0, 12)}; run "git stash apply ${stash.slice(0, 12)}" in ${cwd}. ${error instanceof Error ? error.message : String(error)}`,
     )
   }
   const entries = (await s.git.command(cwd, ['stash', 'list', '--format=%H'])).split('\n')
@@ -96,8 +105,7 @@ export async function handoffTask(s: HandoffServices, id: string, target: 'workt
             worktreeSetupComplete: previous.worktreeSetupComplete,
           }))
         }
-        if (stash && !(error instanceof HttpError && error.message.includes('are safe in stash')))
-          await applyStash(s, root, stash).catch(() => undefined)
+        if (stash && !(error instanceof StashRecoveryError)) await applyStash(s, root, stash)
         throw error
       }
     })
@@ -127,7 +135,7 @@ export async function handoffTask(s: HandoffServices, id: string, target: 'workt
       try {
         await s.git.command(root, ['worktree', 'remove', cwd])
       } catch (error) {
-        if (stash) await applyStash(s, cwd, stash).catch(() => undefined)
+        if (stash) await applyStash(s, cwd, stash)
         throw new HttpError(
           409,
           `Could not remove the task’s worktree. ${error instanceof Error ? error.message : String(error)}`,

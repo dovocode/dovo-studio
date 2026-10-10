@@ -125,6 +125,7 @@ type Runtime = {
   legacyDraftRuntimeId: string | null
   connected: boolean
   ready: boolean
+  registryLoaded: boolean
   /** Saved pairings are being checked after launch; connections wait for the result. */
   recovering: boolean
   error: string
@@ -197,6 +198,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [legacyDraftRuntimeId, setLegacyDraftRuntimeId] = useApplicationState<string | null>(null)
   const [previews, setPreviews] = useApplicationState<OptimisticTask[]>([])
   const [appActive, setAppActive] = useApplicationState(AppState.currentState === 'active')
+  const [registryLoaded, setRegistryLoaded, registryWritable] = useApplicationState(false)
+  const [restoreAttempt, setRestoreAttempt] = useApplicationState(0)
   const { computerRefresh } = useMobilePreferences()
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) =>
@@ -391,10 +394,15 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const persistRegistryEffect = useCallback(
     (next: RuntimeRegistry) =>
       Effect.tryPromise({
-        try: () =>
-          SecureStore.setItemAsync(registryKey, JSON.stringify(next), {
+        try: () => {
+          if (!registryWritable.current)
+            throw new Error(
+              'Saved computers could not be loaded. Retry loading before pairing or editing connections.',
+            )
+          return SecureStore.setItemAsync(registryKey, JSON.stringify(next), {
             keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-          }),
+          })
+        },
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
       }).pipe(
         Effect.tap(() =>
@@ -610,6 +618,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const connectEffect = useCallback(
     (value: RuntimeConnection, name?: string, proof?: PairingProof, replaceId?: string) => {
       return mobileWorkflow(function* () {
+        if (!registryWritable.current)
+          return yield* Effect.fail(
+            new Error(
+              'Saved computers could not be loaded. Retry loading before pairing or editing connections.',
+            ),
+          )
         const previous = current.current.profiles.find((item) => item.id === replaceId)
         if (replaceId && (!previous || !proof))
           return yield* Effect.fail(
@@ -826,6 +840,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       if (!disposed) setLegacyDraftRuntimeId(draftRuntimeId)
       if (disposed) return
       setRegistry(saved)
+      setRegistryLoaded(true)
+      setStorageError('')
       yield* Effect.forEach(
         saved.profiles,
         (profile) =>
@@ -882,7 +898,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       disposed = true
       void commands.stop()
     }
-  }, [cacheFor, updateEntry, persistRegistryEffect])
+  }, [cacheFor, updateEntry, persistRegistryEffect, restoreAttempt])
   useEffect(() => {
     if (!ready) return
     const commands = clientTaskScope()
@@ -1177,6 +1193,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         snapshot: overviews.find((entry) => entry.profile.id === profile?.id)?.snapshot ?? null,
         connected: active?.connected ?? false,
         ready,
+        registryLoaded,
         recovering,
         error:
           storageError ||
@@ -1194,7 +1211,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         renameRuntime,
         disconnect,
         refresh,
-        refreshAll,
+        refreshAll: async () => {
+          if (!registryWritable.current) {
+            setRestoreAttempt((attempt) => attempt + 1)
+            return
+          }
+          await refreshAll()
+        },
         refreshRuntime: refreshProfile,
         call,
         callEffect,

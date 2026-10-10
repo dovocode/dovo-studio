@@ -2,9 +2,11 @@ import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 const webRequire = createRequire(new URL('../packages/studio-ui/package.json', import.meta.url))
 const mocks = {
+  '../../ui/layout/sheet': `export const Sheet=({children})=><div>{children}</div>;`,
+  '../screens/settings-controls': `export {Choice as SettingsChoice} from '../ui/controls/choice';export {Field as SettingsField} from '../ui/controls/field';export {Action as SettingsAction} from '../ui/controls/action';`,
   'react-native': `export const View=({children})=><div>{children}</div>;`,
   '@react-native-async-storage/async-storage': `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,
   'expo-crypto': `export const CryptoDigestAlgorithm={SHA256:'SHA-256'};export const digestStringAsync=async(_,text)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('');`,
@@ -24,10 +26,10 @@ const built = await build({
   },
   stdin: {
     contents: `
-import {useState} from 'react';import {createRoot} from 'react-dom/client';import {defaultTaskHarness} from '@dovo/protocol';import {ModelSettings} from './src/agents/model-settings.tsx';import {Context} from '../runtime/connection/provider';
+import {useState} from 'react';import {createRoot} from 'react-dom/client';import {defaultTaskHarness,decode,taskSchema} from '@dovo/protocol';import {Effect} from 'effect';import {HarnessSettings} from './src/tasks/detail/harness-settings.tsx';import {ModelSettings} from './src/agents/model-settings.tsx';import {Context} from '../runtime/connection/provider';
 window.requests=[];window.finishes=[];
 const readRuntime=async(profile,path,input)=>new Promise(resolve=>{window.requests.push({host:profile.id,path,input});window.finishes.push(resolve)});
-function App(){const[host,setHost]=useState('one');const[agent,setAgent]=useState({...defaultTaskHarness('codex'),id:'agent',name:'Agent',model:''});const[online,setOnline]=useState(true);window.host=value=>setHost(value);window.harness=provider=>setAgent({...defaultTaskHarness(provider),id:'agent',name:'Agent',model:''});window.online=setOnline;const value={profile:{id:host,name:host,connection:{address:'http://'+host,token:'private-token'}},connected:online,readRuntime,snapshot:{defaults:{}},refresh:async()=>{}};return <Context.Provider value={value}><ModelSettings agent={agent} onChange={setAgent}/></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[task,setTask]=useState(null);window.openTask=()=>setTask(decode(taskSchema,{id:'task',repositoryId:'repo',agentId:'',title:'Task',status:'draft',createdAt:'2026-09-23T10:00:00Z',messages:[],files:[],draft:'',example:false,harness:defaultTaskHarness('codex')}));const[host,setHost]=useState('one');const[agent,setAgent]=useState({...defaultTaskHarness('codex'),id:'agent',name:'Agent',model:''});const[online,setOnline]=useState(true);window.host=value=>setHost(value);window.harness=provider=>setAgent({...defaultTaskHarness(provider),id:'agent',name:'Agent',model:''});window.online=setOnline;const value={profile:{id:host,name:host,connection:{address:'http://'+host,token:'private-token'}},connected:online,readRuntime,snapshot:{defaults:{},workspace:{agents:[],repositories:[]},acpInstallations:[]},callEffect:(path,input,schema,method)=>Effect.sync(()=>{window.saved={path,input,method};return {revision:1}}),refresh:async()=>{}};return <Context.Provider value={value}>{task?<HarnessSettings task={task} onClose={()=>setTask(null)}/>:<ModelSettings agent={agent} onChange={setAgent}/>}</Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../apps/mobile/', import.meta.url)),
     loader: 'tsx',
@@ -36,9 +38,13 @@ function App(){const[host,setHost]=useState('one');const[agent,setAgent]=useStat
     {
       name: 'native-environment',
       setup(builder) {
-        builder.onResolve({ filter: /.*/ }, ({ path }) =>
-          Object.hasOwn(mocks, path) ? { path, namespace: 'native-environment' } : undefined,
-        )
+        builder.onResolve({ filter: /.*/ }, ({ path }) => {
+          const canonical = path.startsWith('../../') ? path.slice(3) : path
+          const mocked = Object.hasOwn(mocks, path) ? path : canonical
+          return Object.hasOwn(mocks, mocked)
+            ? { path: mocked, namespace: 'native-environment' }
+            : undefined
+        })
         builder.onLoad({ filter: /.*/, namespace: 'native-environment' }, ({ path }) => ({
           contents: mocks[path],
           resolveDir: fileURLToPath(new URL('../packages/studio-ui/', import.meta.url)),
@@ -190,9 +196,40 @@ try {
     await page.getByRole('option', { name, exact: true }).waitFor({ state: 'attached' })
     await page.evaluate(() => window.online(true))
   }
+  // Exercise the task editor and its real availability hook, not only local picker state.
+  const beforeTask = await page.evaluate(() => window.requests.length)
+  await page.evaluate(() => window.openTask())
+  await page.waitForFunction(() =>
+    window.requests.some((request) => request.path === '/api/agents/availability'),
+  )
+  const availabilityIndex = await page.evaluate(() =>
+    window.requests.findIndex((request) => request.path === '/api/agents/availability'),
+  )
+  await finish(availabilityIndex, [])
+  await page.waitForFunction((count) => window.requests.length >= count, beforeTask + 2)
+  const modelIndex = await page.evaluate(() =>
+    window.requests.findLastIndex((request) => request.path === '/api/agents/models'),
+  )
+  await finish(modelIndex, {
+    models: [{ id: 'task-model', name: 'Task Model', reasoning: [{ id: 'high', name: 'High' }] }],
+    reasoning: [],
+  })
+  await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('task-model')
+  await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).selectOption('high')
+  await page.getByRole('button', { name: 'Save agent & model', exact: true }).click()
+  await page.waitForFunction(() => window.saved)
+  const saved = await page.evaluate(() => window.saved)
+  if (
+    saved.method !== 'PATCH' ||
+    saved.input.changes.harness.after.model !== 'task-model' ||
+    saved.input.changes.harness.after.reasoning !== 'high'
+  )
+    throw new Error(
+      'Task model/reasoning selection was not saved after failed availability discovery',
+    )
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse/Cursor model selection, reasoning and OpenCode v1/v2 labels passed.',
+    'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse/Cursor model selection, reasoning, OpenCode v1/v2 labels, and task model/reasoning saves with unavailable provider discovery passed.',
   )
 } finally {
   await browser.close()

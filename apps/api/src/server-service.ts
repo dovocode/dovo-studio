@@ -86,7 +86,14 @@ function readService(directory: string): ServiceRecord {
   return value as ServiceRecord
 }
 async function run(command: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) {
-  const child = spawn(command, args, { stdio: 'inherit', cwd, ...(env ? { env } : {}) })
+  const child = spawn(command, args, {
+    stdio: 'inherit',
+    cwd,
+    ...(env ? { env } : {}),
+    ...(command === 'launchctl'
+      ? { timeout: args[0] === 'bootout' ? 40000 : 10000, killSignal: 'SIGKILL' as const }
+      : {}),
+  })
   const code = await new Promise<number>((resolve, reject) => {
     child.once('error', reject)
     child.once('exit', (exit) => resolve(exit ?? 1))
@@ -94,7 +101,10 @@ async function run(command: string, args: string[], cwd?: string, env?: NodeJS.P
   if (code !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${code}`)
 }
 async function output(command: string, args: string[]) {
-  const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'inherit'] })
+  const child = spawn(command, args, {
+    stdio: ['ignore', 'pipe', 'inherit'],
+    ...(command === 'launchctl' ? { timeout: 10000, killSignal: 'SIGKILL' as const } : {}),
+  })
   let text = ''
   child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
     text += chunk
@@ -107,10 +117,17 @@ async function output(command: string, args: string[]) {
   return text.trim()
 }
 async function launchdLoaded(target: string) {
-  const child = spawn('launchctl', ['print', target], { stdio: 'ignore' })
+  const child = spawn('launchctl', ['print', target], {
+    stdio: 'ignore',
+    timeout: 10000,
+    killSignal: 'SIGKILL',
+  })
   return new Promise<boolean>((resolve, reject) => {
     child.once('error', reject)
-    child.once('exit', (code) => resolve(code === 0))
+    child.once('exit', (code, signal) => {
+      if (signal) reject(new Error(`launchctl print ${target} terminated by ${signal}`))
+      else resolve(code === 0)
+    })
   })
 }
 async function control(

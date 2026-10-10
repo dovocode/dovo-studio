@@ -2,7 +2,7 @@ import { build } from 'esbuild'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 const require = createRequire(new URL('../packages/studio-ui/package.json', import.meta.url))
 const mocks = {
   'react-native': `export const Platform={OS:'ios'};export const AppState={currentState:'active',addEventListener:(_,fn)=>{window.foreground=()=>fn('active');return{remove(){}}}};`,

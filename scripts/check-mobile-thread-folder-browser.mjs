@@ -8,7 +8,7 @@ const mocks = {
   'react-native': `export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityValue,accessibilityState})=><button aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress}>{children}</button>;`,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../runtime/connection/provider': `import {createContext,useContext} from 'react'; export const Context=createContext(null);export const useRuntime=()=>useContext(Context);export const RuntimeScope=({runtimeId,children})=>{const root=useRuntime();return <Context.Provider value={{...root,scope:runtimeId}}>{children}</Context.Provider>};`,
-  '../../ui/layout/sheet': `export const Sheet=({title,children,onClose})=><div role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close sheet</button></div>;`,
+  '../../ui/layout/sheet': `export const Sheet=({title,children,onClose,headerAction})=><div role="dialog" aria-label={title}>{headerAction&&<button disabled={headerAction.disabled} onClick={headerAction.onPress}>{headerAction.label}</button>}{children}<button onClick={onClose}>Close sheet</button></div>;`,
   '../../ui/controls/field': `export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;`,
   '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   '../../ui/controls/choice': `export const Choice=({label,value,onChange,items,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id} disabled={item.disabled}>{item.name}</option>)}</select>;`,
@@ -61,28 +61,27 @@ try {
   }
   await load()
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
-  assert.equal(await page.getByRole('button', { name: 'Chat', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'No project', exact: true }).count(), 1)
   assert.equal(
     await page.getByRole('button', { name: 'Broken folder', exact: true }).isDisabled(),
     true,
   )
-  await page.getByLabel('Search folders').fill('local')
-  assert.equal(await page.getByRole('button', { name: 'Chat', exact: true }).count(), 0)
+  await page.getByLabel('Search projects').fill('local')
+  assert.equal(await page.getByRole('button', { name: 'No project', exact: true }).count(), 1)
   await page.getByRole('button', { name: 'Local folder', exact: true }).click()
   assert.equal(await page.getByText('Draft local').count(), 1)
   await load()
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
-  await page.getByRole('button', { name: 'Other machine', exact: true }).click()
-  assert.equal(await page.getByRole('button', { name: 'Local folder', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Local folder', exact: true }).count(), 1)
   assert.equal(await page.getByRole('button', { name: 'Remote folder', exact: true }).count(), 1)
   await page.getByRole('button', { name: 'Add project', exact: true }).click()
+  await page.getByRole('button', { name: 'Other machine', exact: true }).click()
   assert.equal(await page.evaluate(() => window.addScope), 'b')
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   assert.equal(await page.getByText('Draft added').count(), 1)
   await page.evaluate(() => window.transfer(false))
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
-  await page.getByRole('button', { name: 'Other', exact: true }).click()
-  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  await page.getByRole('button', { name: 'No project', exact: true }).click()
   await page.waitForFunction(() => window.navigation)
   assert.deepEqual(
     await page.evaluate(() =>
@@ -102,9 +101,8 @@ try {
   assert.deepEqual(await page.evaluate(() => window.savedDraft), ['b', 'task', 'Current draft'])
   await load()
   await page.evaluate(() => window.transfer(true))
-  await page.getByRole('button', { name: 'Folder', exact: true }).click()
+  await page.getByRole('button', { name: 'Task server', exact: true }).click()
   await page.getByRole('button', { name: 'Other', exact: true }).click()
-  await page.getByRole('button', { name: 'Chat', exact: true }).click()
   await page.waitForFunction(() => window.navigation)
   assert.deepEqual(
     await page.evaluate(() =>

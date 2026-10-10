@@ -1,7 +1,7 @@
 import { build } from 'esbuild'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 const mocks = {
   './pull-link-actions': `export const PullLinkActions=()=>null;`,
   '@dovo/studio-core': `export * from '@dovo/protocol'; const store={workspace:{tasks:[]},connected:true,request:async()=>({ok:true})}; export const useWorkspace=()=>store; export const useStudioHost=()=>({}); export const formatDateTime=()=>'';export const useAppPreferences=()=>({responseStreaming:'tokens'});export const completedStreamingText=text=>text;`,

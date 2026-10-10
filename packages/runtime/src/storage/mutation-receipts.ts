@@ -16,6 +16,7 @@ const outcomeSchema = Schema.Union([
  * An interrupted in-flight action is uncertain after restart and must never run blindly. */
 export class MutationReceipts {
   private pending = new Map<string, Promise<unknown>>()
+  private failed = new Set<string>()
   constructor(private db: Database.Database) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS mutation_receipts (device_id TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT, PRIMARY KEY(device_id,id))',
@@ -63,7 +64,9 @@ export class MutationReceipts {
       if (!safelyRepeat)
         throw new HttpError(
           409,
-          'The runtime restarted while applying this action. Check its current state and discard the saved action before trying again.',
+          this.failed.has(key)
+            ? 'The previous attempt failed on the runtime and may have partially applied. Check its current state and discard the saved action before trying again.'
+            : 'The runtime restarted while applying this action. Check its current state and discard the saved action before trying again.',
         )
     } else
       this.db
@@ -73,6 +76,7 @@ export class MutationReceipts {
       .then(run)
       .then(
         (value) => {
+          this.failed.delete(key)
           this.db
             .prepare('UPDATE mutation_receipts SET result=? WHERE device_id=? AND id=?')
             .run(JSON.stringify({ ok: true, value }), deviceId, id)
@@ -82,6 +86,7 @@ export class MutationReceipts {
           // A gateway/runtime failure may be transient. Preserve uncertainty rather than recording a false rejection.
           const status =
             error instanceof HttpError ? error.status : error instanceof ValidationError ? 400 : 500
+          if (status >= 500) this.failed.add(key)
           if (status < 500)
             this.db.prepare('UPDATE mutation_receipts SET result=? WHERE device_id=? AND id=?').run(
               JSON.stringify({
@@ -101,5 +106,11 @@ export class MutationReceipts {
       .finally(() => this.pending.delete(key))
     this.pending.set(key, pending)
     return pending
+  }
+  revoke(deviceId: string) {
+    this.db.prepare('DELETE FROM mutation_receipts WHERE device_id=?').run(deviceId)
+    for (const key of this.failed) {
+      if (JSON.parse(key)[0] === deviceId) this.failed.delete(key)
+    }
   }
 }

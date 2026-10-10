@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vite-plus/test'
-import { defineStudioExtension, type StudioHostApi, type StudioView } from './frontend'
-import { createExtensionCatalog } from '../../studio-shell/src/extension-catalog'
+import { defineStudioExtension, type StudioHostApi, type StudioView } from '@dovo/studio-core'
+import { createExtensionCatalog } from './extension-catalog'
 it('contributes views before loading and disposes activated commands', async () => {
   const unregister = vi.fn<() => void>()
   const api: StudioHostApi = {

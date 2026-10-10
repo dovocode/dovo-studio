@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./fonts": "./src/fonts.ts",
     "./themes": "./src/themes.ts",
-    "./state": "./src/runtime/application-state.ts"
+    "./state": "./src/runtime/application-state.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

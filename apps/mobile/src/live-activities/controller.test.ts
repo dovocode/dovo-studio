@@ -43,6 +43,13 @@ vi.mock('./task-activity', () => ({
   },
 }))
 import { createActivityController } from './controller'
+it('retires a native activity created before its ownership record was persisted', async () => {
+  native.instances = [native.instance]
+  const controller = await runClientEffect(createActivityController(vi.fn()))
+  await runClientEffect(controller.sync([], read, false))
+  expect(native.instance.end).toHaveBeenCalledWith('immediate')
+  await controller.dispose()
+})
 beforeEach(() => {
   native.instances = []
   native.saved = null

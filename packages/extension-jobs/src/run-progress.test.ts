@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
 import type { JobRun } from '@dovo/studio-core'
-import { createWorkspace } from '../../studio-core/src/workspace/seed'
+import { createWorkspace } from '@dovo/studio-core/testing'
 import { elapsed, runSteps } from './run-progress'
 const flow = createWorkspace().automations[0]
 const run: JobRun = {

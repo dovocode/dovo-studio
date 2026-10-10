@@ -33,6 +33,7 @@ export function taskHarnessChoices(
   installations: readonly AcpInstallation[] = [],
   preferences: RuntimeDefaults['modelPreferences'] = {},
   available?: ReadonlySet<string>,
+  retainCurrent = false,
 ) {
   const unlocked = canChangeTaskProvider(task)
   const provider = lockedTaskProvider(task, agents)
@@ -57,7 +58,13 @@ export function taskHarnessChoices(
     })),
   ]
     .filter((choice) => {
-      if (available && !available.has(choice.id)) return false
+      // Discovery gates switching harnesses, not editing the task's existing configuration.
+      if (
+        available &&
+        !available.has(choice.id) &&
+        !(retainCurrent && choice.id === taskHarnessSelection(task))
+      )
+        return false
       if (unlocked) return true
       if (choice.provider !== provider) return false
       if (installationId === undefined) return true

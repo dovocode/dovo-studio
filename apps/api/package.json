@@ -6,6 +6,32 @@
     "dist"
   ],
   "type": "module",
+  "exports": {
+    "./connection": {
+      "types": "./src/connection.ts",
+      "development": "./src/connection.ts",
+      "import": "./dist/connection.js",
+      "default": "./dist/connection.js"
+    },
+    "./owner-token": {
+      "types": "./src/owner-token.ts",
+      "development": "./src/owner-token.ts",
+      "import": "./dist/owner-token.js",
+      "default": "./dist/owner-token.js"
+    },
+    "./runtime-environment": {
+      "types": "./src/runtime-environment.ts",
+      "development": "./src/runtime-environment.ts",
+      "import": "./dist/runtime-environment.js",
+      "default": "./dist/runtime-environment.js"
+    },
+    "./listen-address": {
+      "types": "./src/listen-address.ts",
+      "development": "./src/listen-address.ts",
+      "import": "./dist/listen-address.js",
+      "default": "./dist/listen-address.js"
+    }
+  },
   "scripts": {
     "dev": "tsx watch src/dev.ts",
     "build": "tsc -p tsconfig.build.json",

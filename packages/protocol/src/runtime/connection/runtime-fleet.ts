@@ -3,6 +3,7 @@ import { decode, minValue, refine } from '../../shared/schema.js'
 import { Effect, Result, Schema } from 'effect'
 import { RuntimeRequestError, runtimeRequestEffect } from '../../shared/client.js'
 import { connectionSchema, snapshotSchema } from './runtime.js'
+import { runtimeSnapshotPath } from './live-sync.js'
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
 import { pullPageSchema } from '../../scm/pulls/pulls.js'
 import type { PullSummary } from '../../scm/pulls/pulls.js'
@@ -169,7 +170,7 @@ export function loadRuntimeOverviewEffect(
   profile: RuntimeProfile,
   previous?: RuntimeOverview,
   onSnapshot?: (overview: RuntimeOverview) => void,
-  compact = false,
+  compact = true,
   useLiveSnapshot = false,
   options: { loadPulls?: boolean } = {},
 ): Effect.Effect<RuntimeOverview> {
@@ -186,7 +187,7 @@ export function loadRuntimeOverviewEffect(
         : runtimeRequestEffect(
             profile.connection,
             profile.connection.address,
-            compact ? '/api/snapshot?scope=overview' : '/api/snapshot',
+            compact ? '/api/snapshot?scope=overview' : runtimeSnapshotPath(profile.connection),
             undefined,
             snapshotSchema,
             'GET',

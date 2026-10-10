@@ -72,7 +72,12 @@ import {
 } from '@dovo/protocol'
 import { createWorkspace } from './seed'
 import { decodeWorkspace, encodeWorkspace, storageKey } from './persistence'
-import { emptyRegistry, readRuntimeRegistry, writeRuntimeRegistry } from './runtime-registry'
+import {
+  emptyRegistry,
+  readRuntimeRegistry,
+  writeRuntimeRegistry,
+  subscribeRuntimeRegistry,
+} from './runtime-registry'
 import type { Workspace } from './schema'
 import { runtimeRequest } from '../runtime/client'
 import { WorkspaceSynchronization, type WorkspaceOutbox } from '../runtime/synchronization'
@@ -129,6 +134,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [settingsSyncError, setSettingsSyncError] = useApplicationState('')
   const settingsRequests = useRef(new Set<string>())
   const failedSettingsRequests = useRef(new Map<string, string>())
+  const [settingsRetry, setSettingsRetry] = useState(0)
   const presetRequests = useRef(new Set<string>())
   const failedPresetRequests = useRef(new Map<string, string>())
   const [presetSyncError, setPresetSyncError] = useApplicationState<string | null>(null)
@@ -341,9 +347,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         },
         catch: connectionError,
       }).pipe(
-        Effect.tap(() =>
+        Effect.tap((saved) =>
           Effect.sync(() => {
-            setRegistry(value)
+            setRegistry(saved)
             setStorageError('')
           }),
         ),
@@ -352,6 +358,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             setStorageError(`Could not save runtime connections. ${error.message}`),
           ),
         ),
+        Effect.asVoid,
       ),
     [],
   )
@@ -364,6 +371,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       )
     },
     [storageLock, persistRegistryEffect],
+  )
+  useEffect(
+    () =>
+      subscribeRuntimeRegistry(() => {
+        void runClientEffect(
+          storageLock.withPermits(1)(
+            Effect.tryPromise({
+              try: readRuntimeRegistry,
+              catch: connectionError,
+            }).pipe(Effect.tap((saved) => Effect.sync(() => setRegistry(saved)))),
+          ),
+        ).catch((error: unknown) =>
+          setStorageError(`Could not reload saved computers. ${String(error)}`),
+        )
+      }),
+    [storageLock],
   )
   const cancelPairing = useCallback(
     (address: string, proof: PairingProof) =>
@@ -839,6 +862,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const check = Effect.try({ try: () => assertProfile(profile), catch: connectionError })
         yield* check
         if (
+          method !== 'GET' &&
           connectionRef.current?.address === profile.connection.address &&
           connectionRef.current.token === profile.connection.token
         ) {
@@ -882,7 +906,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         })
         yield* check
         if (!target) return yield* Effect.fail(new Error('Connect to a runtime first'))
-        yield* synchronization.flushEffect()
+        if (method !== 'GET') yield* synchronization.flushEffect()
         yield* check
         const value = yield* mutations.requestEffect(target, path, input, schema, method)
         yield* check
@@ -931,7 +955,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       synchronization.checkpoint().version !== checkpoint.version
     )
       throw new Error('The workspace changed while backing up. Review changes before reloading.')
-    await runClientEffect(mutations.discardEffect(target))
     await synchronization.discard(checkpoint)
     if (target !== connectionRef.current || attempt !== connecting.current)
       throw new Error('Runtime connection changed while reloading.')
@@ -944,7 +967,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       lastSeen: new Date().toISOString(),
       error: null,
     })
-  }, [adopt, connection, synchronization, updateOverview, mutations])
+  }, [adopt, connection, synchronization, updateOverview])
   const refreshRuntime = useCallback(
     async (profile: RuntimeProfile) => {
       assertProfile(profile)
@@ -1006,7 +1029,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           registryRef.current.profiles,
           (profile) =>
             Effect.gen(function* () {
-              if (busyHosts.current.has(profile.id)) return
+              // The active connection has its own scoped stream and fallback poller. Fleet
+              // discovery must not supersede their reads or publish a competing offline state.
+              if (profile.id === registryRef.current.activeId || busyHosts.current.has(profile.id))
+                return
               busyHosts.current.add(profile.id)
               const checkpoint = synchronization.checkpoint()
               const order = (snapshotOrder.current.get(profile.id) ?? 0) + 1
@@ -1037,7 +1063,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   profile,
                   overviewsRef.current[profile.id],
                   receiveSnapshot,
-                  false,
+                  true,
                   runtimeSyncOnline(profile.connection),
                   { loadPulls: false },
                 )
@@ -1108,10 +1134,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (connection !== connectionRef.current) throw new Error('Runtime connection changed')
     failedPresetRequests.current.clear()
     setPresetSyncError(null)
+    failedSettingsRequests.current.clear()
+    setSettingsSyncError('')
     if (connection) await runClientEffect(mutations.recoverEffect(connection, true))
     await synchronization.retry()
+    setSettingsRetry((attempt) => attempt + 1)
+    const profile = registryRef.current.profiles.find(
+      (item) => item.id === registryRef.current.activeId,
+    )
+    if (profile) await refreshRuntime(profile)
     await refreshRuntimes()
-  }, [connection, synchronization, refreshRuntimes, mutations])
+  }, [connection, synchronization, refreshRuntimes, refreshRuntime, mutations])
   useEffect(() => {
     if (bootstrapped.current) return
     bootstrapped.current = true
@@ -1706,7 +1739,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         })
         .finally(() => settingsRequests.current.delete(entry.profile.id))
     }
-  }, [sharedScopedSettings, visibleRuntimes, readRuntime, refreshRuntime])
+  }, [sharedScopedSettings, visibleRuntimes, readRuntime, refreshRuntime, settingsRetry])
   const readCache = useMemo(
     () =>
       connection

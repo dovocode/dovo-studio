@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mocks = {
   'react-native': `import React from 'react';const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,listener)=>{listeners.add(listener);return {remove:()=>listeners.delete(listener)}}};window.setAppState=state=>{AppState.currentState=state;for(const listener of listeners)listener(state)};export const Platform={OS:'ios'};export const View=({children})=><div>{children}</div>;`,

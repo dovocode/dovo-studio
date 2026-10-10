@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { connect, type Socket } from 'node:net'
 import { once } from 'node:events'
+import { createServer } from 'node:http'
 import { createRuntimeServer } from './server'
 import { startRuntime } from '../index'
 import { createServices } from '../services'
@@ -124,38 +125,84 @@ it('releases remaining resources and SQLite when one service cleanup fails', asy
   expect(runtime.services.db.open).toBe(false)
 })
 
-it('aborts a title worker while its accepted HTTP request is draining', async () => {
-  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
-  cleanups.push(() => runtime.close())
-  let entered = () => {}
-  const started = new Promise<void>((resolve) => {
-    entered = resolve
+it.each([false, true])(
+  'aborts a title worker while its accepted HTTP request drains (external=%s)',
+  async (external) => {
+    const reservation = createServer()
+    reservation.listen(0, '127.0.0.1')
+    await once(reservation, 'listening')
+    const address = reservation.address()
+    if (!address || typeof address === 'string') throw new Error('Missing reserved port')
+    await new Promise<void>((resolve, reject) =>
+      reservation.close((error) => (error ? reject(error) : resolve())),
+    )
+    const runtime = await startRuntime({
+      databasePath: ':memory:',
+      ownerToken: token,
+      port: 0,
+      ...(external ? { external: { enabled: true, host: '0.0.0.0', port: address.port } } : {}),
+    })
+    cleanups.push(() => runtime.close())
+    let entered = () => {}
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let aborted = false
+    vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+      probe: async () => ({ provider: 'codex', available: true, detail: 'Fixture' }),
+      run: async ({ signal }) => {
+        entered()
+        await new Promise<void>((resolve) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              aborted = true
+              resolve()
+            },
+            { once: true },
+          )
+        })
+      },
+    })
+    const response = fetch(
+      `http://127.0.0.1:${external ? address.port : runtime.port}/api/tasks/title`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'A title request held until shutdown' }),
+      },
+    )
+    await started
+    await runtime.close()
+    expect(aborted).toBe(true)
+    expect((await response).ok).toBe(false)
+    expect(runtime.services.db.open).toBe(false)
+  },
+)
+
+it('keeps serving after a listener error once startup has completed', async () => {
+  const db = openDatabase(':memory:')
+  cleanups.push(() => {
+    db.close()
   })
-  let aborted = false
-  vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
-    probe: async () => ({ provider: 'codex', available: true, detail: 'Fixture' }),
-    run: async ({ signal }) => {
-      entered()
-      await new Promise<void>((resolve) => {
-        signal.addEventListener(
-          'abort',
-          () => {
-            aborted = true
-            resolve()
-          },
-          { once: true },
-        )
-      })
-    },
-  })
-  const response = fetch(`http://127.0.0.1:${runtime.port}/api/tasks/title`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: 'A title request held until shutdown' }),
-  })
-  await started
-  await runtime.close()
-  expect(aborted).toBe(true)
-  expect((await response).ok).toBe(false)
-  expect(runtime.services.db.open).toBe(false)
+  const http = createRuntimeServer(createServices(db, token))
+  cleanups.push(() => http.close())
+  http.server.listen(0, '127.0.0.1')
+  await once(http.server, 'listening')
+  const address = http.server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing server address')
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    http.server.emit('error', Object.assign(new Error('Too many open files'), { code: 'EMFILE' }))
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/snapshot`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(response.ok).toBe(true)
+    expect(logged).toHaveBeenCalledWith(
+      'Runtime listener error',
+      expect.objectContaining({ code: 'EMFILE' }),
+    )
+  } finally {
+    logged.mockRestore()
+  }
 })

@@ -147,7 +147,7 @@ it('shares concurrent startup and releases startup listeners after readiness', a
   expect(child.listenerCount('error')).toBe(0)
 })
 
-it('recognizes a signal-terminated child and allows a fresh startup', async () => {
+it('recognizes a signal-terminated child and refuses startup after desktop shutdown', async () => {
   const { child, kill, startLocalRuntime, stopLocalRuntime } = await childFixture()
   const first = startLocalRuntime('/unused')
   await vi.waitFor(() => expect(child.listenerCount('message')).toBe(1))
@@ -157,13 +157,8 @@ it('recognizes a signal-terminated child and allows a fresh startup', async () =
   child.emit('exit', null, 'SIGTERM')
   await stopLocalRuntime()
   expect(kill).not.toHaveBeenCalled()
-  Object.defineProperty(child, 'signalCode', { value: null, configurable: true })
-  const second = startLocalRuntime('/unused')
-  await vi.waitFor(() => expect(child.listenerCount('message')).toBe(1))
-  child.emit('message', { type: 'ready', port: 8787 })
-  await second
-  await stopLocalRuntime()
-  expect(kill).toHaveBeenCalledTimes(1)
+  await expect(startLocalRuntime('/unused')).rejects.toThrow('shutting down')
+  expect(kill).not.toHaveBeenCalled()
 })
 
 it('cleans up a failed spawn and lets the next attempt run', async () => {
@@ -309,6 +304,11 @@ it('provisions a supervised runtime for packaged Mac installs and leaves it runn
     expect.objectContaining({
       directory: fixture.directory,
       node: join('/fixture/resources', 'runtime/bin/node'),
+      environment: expect.objectContaining({
+        DOVO_RELEASE_DISTRIBUTION: 'desktop',
+        DOVO_RELEASE_VERSION: '0.0.7',
+        DOVO_DESKTOP_DUAL_LISTENER: '1',
+      }),
     }),
   )
 })
@@ -600,4 +600,17 @@ it('serializes the idle-work check with a concurrent startup', async () => {
   await pausing
   expect(f.kill).not.toHaveBeenCalled()
   await f.stopLocalRuntime()
+})
+
+it('rejects renderer recovery during the crash cooldown', async () => {
+  const { child, spawn, startLocalRuntime, stopLocalRuntime } = await childFixture()
+  const starting = startLocalRuntime('/unused')
+  await vi.waitFor(() => expect(child.listenerCount('message')).toBe(1))
+  child.emit('message', { type: 'ready', port: 8787 })
+  await starting
+  Object.defineProperty(child, 'exitCode', { value: 1, configurable: true })
+  child.emit('exit', 1, null)
+  await expect(startLocalRuntime('/unused')).rejects.toThrow('recovery is paused')
+  expect(spawn).toHaveBeenCalledOnce()
+  await stopLocalRuntime()
 })

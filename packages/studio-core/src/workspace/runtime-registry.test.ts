@@ -1,6 +1,29 @@
-import { expect, it } from 'vite-plus/test'
-import { decodeRuntimeRegistry } from './runtime-registry'
+import { expect, it, vi } from 'vite-plus/test'
+import { decodeRuntimeRegistry, mergeRuntimeRegistry } from './runtime-registry'
+vi.mock('./read-cache', () => ({
+  readWorkspaceDocument: async (key: string) => localStorage.getItem(key),
+}))
 const connection = { address: 'http://remote:8787/', token: 'a-valid-runtime-token-123456' }
+it("preserves another tab's pairing when a stale tab changes selection", () => {
+  const before = decodeRuntimeRegistry(null, JSON.stringify(connection))
+  const other = decodeRuntimeRegistry(
+    null,
+    JSON.stringify({ ...connection, address: 'http://other:8787' }),
+  ).profiles[0]
+  const current = { ...before, profiles: [...before.profiles, other], activeId: other.id }
+  expect(mergeRuntimeRegistry(current, before, { ...before, activeId: null })).toEqual({
+    ...current,
+    activeId: null,
+  })
+  expect(mergeRuntimeRegistry(current, before, before)).toEqual(current)
+})
+it("rejects competing edits rather than overwriting another tab's computer", () => {
+  const before = decodeRuntimeRegistry(null, JSON.stringify(connection))
+  const current = { ...before, profiles: [{ ...before.profiles[0], name: 'Other window' }] }
+  expect(() => mergeRuntimeRegistry(current, before, { ...before, profiles: [] })).toThrow(
+    'another window',
+  )
+})
 it('migrates one saved connection into a selected runtime without losing credentials', () => {
   const migrated = decodeRuntimeRegistry(null, JSON.stringify(connection))
   expect(migrated.profiles).toHaveLength(1)

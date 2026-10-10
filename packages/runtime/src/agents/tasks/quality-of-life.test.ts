@@ -344,6 +344,40 @@ it('moves a task into its own worktree with its uncommitted changes, and back', 
   expect(s.store.task(task.id).execution).toBe('main')
   expect(s.store.task(task.id).messages.at(-1)?.text).toContain('moved this task back')
 })
+it('reports the recoverable stash when handoff removal and rollback both fail', async () => {
+  const { f, s, call } = await setup()
+  const task = s.tasks.create({
+    title: 'Rollback',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: 'Work',
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: async () => ({ provider: 'codex', available: true, detail: '' }),
+    run: async () => {},
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  const moved = await call('/api/tasks/handoff', { id: task.id, target: 'worktree' })
+  expect(moved.status).toBe(200)
+  const cwd = String(moved.body.cwd)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  await writeFile(join(cwd, 'hello.txt'), 'Keep my edits\n')
+  const command = s.git.command.bind(s.git)
+  vi.spyOn(s.git, 'command').mockImplementation(async (directory, args) => {
+    if (args[0] === 'worktree' && args[1] === 'remove') throw new Error('Locked file')
+    if (args[0] === 'stash' && args[1] === 'apply') throw new Error('Rollback failed')
+    return command(directory, args)
+  })
+  const result = await call('/api/tasks/handoff', { id: task.id, target: 'main' })
+  expect(result.status).toBe(409)
+  expect(result.body.error).toContain('safe in stash')
+  expect(result.body.error).toContain('Rollback failed')
+  expect((await exec('git', ['stash', 'list'], { cwd: f.directory })).stdout).toContain(
+    'dovo: move task',
+  )
+})
 
 it('adds a mentioned skill to that turn’s prompt even when it is not enabled', async () => {
   const { f, s } = await setup()

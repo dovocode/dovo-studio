@@ -31,8 +31,11 @@ export async function executeHook(
   child.stdout.on('data', collect)
   child.stderr.on('data', collect)
   let timedOut = false
+  let cleanup: Promise<void> | undefined
+  let failWait: (error: unknown) => void = () => {}
   const stop = () => {
-    void stopOwnedChild(child)
+    cleanup ??= stopOwnedChild(child)
+    void cleanup.catch((error: unknown) => failWait(error))
   }
   signal.addEventListener('abort', stop, { once: true })
   const timer = setTimeout(() => {
@@ -41,8 +44,10 @@ export async function executeHook(
   }, hook.timeoutSeconds * 1000)
   try {
     const code = await new Promise<number | null>((resolve, reject) => {
+      failWait = reject
       child.once('error', reject)
       child.once('close', resolve)
+      if (signal.aborted) stop()
     })
     signal.throwIfAborted()
     return {
@@ -53,7 +58,7 @@ export async function executeHook(
   } finally {
     clearTimeout(timer)
     signal.removeEventListener('abort', stop)
-    await stopOwnedChild(child)
+    await (cleanup ??= stopOwnedChild(child))
   }
 }
 

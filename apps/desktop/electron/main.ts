@@ -40,7 +40,7 @@ import {
   selectDesktopDataDirectory,
 } from './data-directory.js'
 import { backgroundRuntimeLabel } from './background-runtime.js'
-import { readConnection } from '../../api/src/connection.js'
+import { readConnection } from '@dovo/api/connection'
 import { execFileSync } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -79,6 +79,11 @@ const selectedDirectory = selectDesktopDataDirectory({
   legacy: desktopProfile(join(app.getPath('appData'), '@dovo', 'desktop')),
   ...(nightly ? { shared: desktopProfile(join(app.getPath('appData'), 'Dovo Studio')) } : {}),
 })
+// Keep the existing Electron lock identity, and acquire it before any migration.
+app.setName('dovo-studio')
+app.setPath('userData', currentDirectory)
+app.setPath('sessionData', currentDirectory)
+const ownsInstance = app.requestSingleInstanceLock()
 const stopRuntimeForMigration = (directory: string) => {
   const discovery = join(directory, 'runtime-connection.json')
   if (!existsSync(discovery)) return
@@ -90,9 +95,10 @@ const stopRuntimeForMigration = (directory: string) => {
     if (error instanceof Error && 'code' in error && error.code === 'ESRCH') alive = false
     else throw error
   }
+  // Keep the old directory while a runtime is alive. Migration must never stop work.
+  if (alive) throw new Error('Stop the existing runtime before moving desktop data')
   const uid = process.getuid?.()
   if (process.platform !== 'darwin' || uid === undefined) {
-    if (alive) throw new Error('Stop the existing runtime before moving desktop data')
     return
   }
   const label = backgroundRuntimeLabel(directory)
@@ -101,34 +107,18 @@ const stopRuntimeForMigration = (directory: string) => {
   try {
     description = execFileSync('launchctl', ['print', target], { encoding: 'utf8' })
   } catch {
-    if (alive) throw new Error('The running runtime is not managed by this desktop profile')
+    // A stopped service may already have been unloaded.
   }
   if (description) {
     const servicePid = Number(description.match(/(?:^|\n)\s*pid = (\d+)/)?.[1])
     if (Number.isFinite(servicePid) && servicePid > 0 && servicePid !== pid)
       throw new Error('The running service does not match this desktop profile')
     execFileSync('launchctl', ['bootout', target])
-    if (alive) {
-      let stopped = false
-      for (let attempt = 0; attempt < 140; attempt++) {
-        try {
-          process.kill(pid, 0)
-        } catch (error) {
-          if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
-            stopped = true
-            break
-          }
-          throw error
-        }
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250)
-      }
-      if (!stopped) throw new Error('The old runtime did not stop before migration')
-    }
   }
   rmSync(join(homedir(), 'Library', 'LaunchAgents', `${label}.plist`), { force: true })
 }
 let dataDirectory = selectedDirectory
-if (!explicitDirectory) {
+if (ownsInstance && !explicitDirectory) {
   try {
     dataDirectory = migrateDesktopDataDirectory(
       selectedDirectory,
@@ -140,19 +130,16 @@ if (!explicitDirectory) {
   }
 }
 // Preserve the established Keychain identity while restoring native Electron storage.
-app.setName('dovo-studio')
 configureDesktopRuntimeDirectory(dataDirectory)
 process.env.DOVO_DATA_ROOT = dataRoot
 process.env.DOVO_SETTINGS_PATH = join(dataRoot, 'settings.json')
-if (!explicitDirectory) {
+if (ownsInstance && !explicitDirectory) {
   try {
     restoreElectronProfile(dataDirectory, currentDirectory)
   } catch (error) {
     console.error('Could not restore Electron profile; existing files have been preserved.', error)
   }
 }
-app.setPath('userData', currentDirectory)
-app.setPath('sessionData', currentDirectory)
 registerLinuxDesktop(nightly, appName, rendererPath)
 registerConnectionStorage(join(__dirname, '../dist/index.html'))
 const inputPreview = registerInputPreview(rendererPath, join(__dirname, 'preload.mjs'))
@@ -529,7 +516,7 @@ const startup = Effect.gen(function* () {
   })
 })
 
-if (!app.requestSingleInstanceLock()) app.quit()
+if (!ownsInstance) app.quit()
 else
   void runDesktop(startup).catch((error: unknown) => {
     console.error('Desktop startup failed:', error)

@@ -1,5 +1,5 @@
 import { build } from 'esbuild'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync, mkdirSync } from 'node:fs'
 const root = fileURLToPath(new URL('../', import.meta.url))

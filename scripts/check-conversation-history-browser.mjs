@@ -2,7 +2,7 @@ import { build } from 'esbuild'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const environment = `export const AppState={addEventListener:(_event,handler)=>{window.background=handler;return {remove:()=>{}}}};export const useWorkspace=()=>window.connection;export const useRuntime=()=>({...window.connection,profile:{connection:window.connection.connection},read:window.connection.request,readCache:window.cache});`

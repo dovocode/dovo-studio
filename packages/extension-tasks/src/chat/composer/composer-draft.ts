@@ -24,6 +24,9 @@ export function createComposerDraft(
     dirty = false
   }
   return {
+    rebind(writer: (text: string) => void) {
+      write = writer
+    },
     subscribe: (listener: () => void) => {
       listeners.add(listener)
       return () => {

@@ -666,6 +666,38 @@ it('does not start provider work without a baseline and reports after-snapshot f
     ],
   })
 })
+it('retries failed-turn capture without sending another provider prompt', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async () => {
+    throw new Error('Provider failed')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const task = s.tasks.create({
+    title: 'Failed capture',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  const snapshot = s.git.snapshot.bind(s.git)
+  const capture = vi
+    .spyOn(s.git, 'snapshot')
+    .mockImplementationOnce(snapshot)
+    .mockRejectedValueOnce(new Error('Capture unavailable'))
+    .mockImplementation(snapshot)
+  await expect((await s.tasks.start(task.id)).done).rejects.toThrow('Provider failed')
+  expect(s.store.task(task.id)).toMatchObject({
+    status: 'failed',
+    runPhase: 'finalizing',
+    restartRecovery: { automatic: false },
+  })
+  await (
+    await s.tasks.start(task.id, true)
+  ).done
+  expect(run).toHaveBeenCalledOnce()
+  expect(s.store.task(task.id)).toMatchObject({ status: 'failed', runPhase: undefined })
+  expect(s.store.task(task.id).turns?.at(-1)?.checkpoint?.error).toBeUndefined()
+  capture.mockRestore()
+})
 it('applies task permission overrides and starts a fresh provider session', async () => {
   const s = await setup()
   const runs: AgentRun[] = []

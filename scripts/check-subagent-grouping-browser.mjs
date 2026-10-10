@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,set]=useState(initial);const ref=useRef(value);ref.current=value;return [value,set,ref]}`

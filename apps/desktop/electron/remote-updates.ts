@@ -117,6 +117,7 @@ export async function registerRemoteUpdates(
   })
   server.requestTimeout = 5000
   await new Promise<void>((resolve, reject) => {
+    server.on('error', (error) => console.error('Desktop update listener error', error))
     server.once('error', reject)
     server.listen(0, '127.0.0.1', () => {
       server.removeListener('error', reject)

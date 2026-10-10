@@ -162,3 +162,19 @@ it('keeps idle owner checks query-free and invalidates revisions at provisional 
     db.close()
   }
 })
+it('invalidates an active code after failures across rotating addresses', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const pairing = new Pairing(new Devices(db, 'test-owner'))
+    const { code } = pairing.createCode(true)
+    for (let index = 0; index < 10; index++)
+      expect(() => pairing.request('wrong', 'Phone', `2001:db8::${index}`)).toThrow(
+        'invalid or expired',
+      )
+    expect(() => pairing.request(code, 'Phone', 'fresh')).toThrow('invalid or expired')
+    const next = pairing.createCode(true)
+    expect(pairing.request(next.code, 'Phone', 'fresh').id).toBeTruthy()
+  } finally {
+    db.close()
+  }
+})

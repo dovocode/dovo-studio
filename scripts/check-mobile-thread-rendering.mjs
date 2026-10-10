@@ -2,7 +2,7 @@ import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 
 const mobileRequire = createRequire(new URL('../apps/mobile/package.json', import.meta.url))
 const coreRequire = createRequire(mobileRequire.resolve('@assistant-ui/core/react'))

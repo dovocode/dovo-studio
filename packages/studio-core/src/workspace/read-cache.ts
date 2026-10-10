@@ -99,15 +99,44 @@ export async function readWorkspaceDocument(key: string) {
   const value = await storage.getItem(key)
   if (value !== null) return value
   const legacy = localStorage.getItem(key)
-  if (legacy !== null) {
-    await storage.setItem(key, legacy)
-    localStorage.removeItem(key)
-  }
-  return legacy
+  // Another tab can commit a newer document between the read and migration.
+  if (legacy !== null) return updateWorkspaceDocument(key, (current) => current ?? legacy)
+  return null
 }
 export async function writeWorkspaceDocument(key: string, value: string) {
   await storage.setItem(key, value)
   localStorage.removeItem(key)
+}
+/** Serializable browser document update; the callback runs inside the write transaction. */
+export async function updateWorkspaceDocument(
+  key: string,
+  change: (current: string | null) => string,
+) {
+  const db = await open()
+  return new Promise<string>((resolve, reject) => {
+    const tx = db.transaction('entries', 'readwrite')
+    const entries = tx.objectStore('entries')
+    const request = entries.get(key)
+    let encoded = ''
+    let failure: unknown
+    request.onsuccess = () => {
+      try {
+        const raw: unknown = request.result
+        if (raw !== undefined && typeof raw !== 'string') throw new Error('Invalid saved document')
+        encoded = change(raw === undefined ? localStorage.getItem(key) : raw)
+        entries.put(encoded, key)
+      } catch (error) {
+        failure = error
+        tx.abort()
+      }
+    }
+    tx.oncomplete = () => {
+      localStorage.removeItem(key)
+      resolve(encoded)
+    }
+    tx.onerror = tx.onabort = () =>
+      reject(failure ?? tx.error ?? new Error('Document write interrupted'))
+  })
 }
 function outboxKey(connection: RuntimeConnection) {
   const host = bytesToHex(sha256(utf8ToBytes(new URL(connection.address).origin)))

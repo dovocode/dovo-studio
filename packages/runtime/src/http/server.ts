@@ -99,6 +99,7 @@ export function createRuntimeServer(services: Services, internal = false) {
   // Mobile clients reuse idle sockets; closing them sooner than the client's pool races new
   // requests into "network connection was lost". TCP keepalive detects peers that left the LAN/VPN.
   server.keepAliveTimeout = 65_000
+  server.on('error', (error) => console.error('Runtime listener error', error))
   server.on('connection', (socket) => {
     socket.setKeepAlive(true, 30_000)
     connections.add(socket)
@@ -303,6 +304,11 @@ export function createRuntimeServer(services: Services, internal = false) {
         client.on('message', (raw) => {
           try {
             services.devices.authenticate(ticket.token)
+          } catch {
+            client.close(1008, 'Device authentication required')
+            return
+          }
+          try {
             const input = decode(
               terminalInputSchema,
               JSON.parse(
@@ -322,7 +328,7 @@ export function createRuntimeServer(services: Services, internal = false) {
               services.terminals.input(ticket.resourceId, input.data)
             } else services.terminals.resize(ticket.resourceId, input.cols, input.rows)
           } catch {
-            client.close(1008, 'Invalid terminal request or revoked device')
+            client.close(1008, 'Invalid terminal request')
           }
         })
         client.on('error', () => {

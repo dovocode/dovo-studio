@@ -1,7 +1,7 @@
 import { build } from 'esbuild'
 import { readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 const built = await build({
   stdin: {
     contents: `

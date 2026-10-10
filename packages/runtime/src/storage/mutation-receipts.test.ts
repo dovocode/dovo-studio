@@ -4,6 +4,32 @@ import { MutationReceipts } from './mutation-receipts.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+it('retries explicitly repeatable saves after 5xx without repeating uncertain side effects', async () => {
+  const db = openDatabase(':memory:')
+  try {
+    const receipts = new MutationReceipts(db)
+    const save = vi
+      .fn<() => Promise<unknown>>()
+      .mockRejectedValueOnce(new Error('Database busy'))
+      .mockResolvedValue({ ok: true })
+    await expect(receipts.execute('phone', 'save', {}, save, true)).rejects.toThrow('Database busy')
+    expect(await receipts.execute('phone', 'save', {}, save, true)).toEqual({ ok: true })
+    const write = vi.fn<() => Promise<unknown>>(async () => {
+      throw new Error('Git failed')
+    })
+    await expect(receipts.execute('phone', 'write', {}, write)).rejects.toThrow('Git failed')
+    await expect(receipts.execute('phone', 'write', {}, write)).rejects.toThrow(
+      'previous attempt failed',
+    )
+    expect(write).toHaveBeenCalledOnce()
+    receipts.revoke('phone')
+    expect(db.prepare('SELECT count(*) AS count FROM mutation_receipts').get()).toEqual({
+      count: 0,
+    })
+  } finally {
+    db.close()
+  }
+})
 it('compacts acknowledged results while retaining deduplication and unresolved receipts', async () => {
   const db = openDatabase(':memory:')
   try {

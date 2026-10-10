@@ -71,6 +71,30 @@ it('offers all providers and custom agents before the first input', () => {
     'agent:reviewer',
   ])
 })
+it('allows editing the current task configuration when availability discovery fails', () => {
+  const choices = taskHarnessChoices(sent, agents, [], {}, new Set(), true)
+  expect(choices.map((choice) => choice.id)).toEqual(['harness:codex'])
+  const agent = resolveTaskAgent(sent, agents)!
+  const changes = taskHarnessChanges(sent, 'harness:codex', {
+    ...agent,
+    model: 'replacement-model',
+    reasoning: 'high',
+  })
+  expect(changes.harness.after).toMatchObject({ model: 'replacement-model', reasoning: 'high' })
+  expect(taskHarnessChoices(draft, agents, [], {}, new Set())).toEqual([])
+})
+it('retains a custom task agent without offering unavailable alternatives', () => {
+  const task = { ...sent, agentId: 'builder' }
+  expect(
+    taskHarnessChoices(task, agents, [], {}, new Set(), true).map((choice) => choice.id),
+  ).toEqual(['agent:builder'])
+  const changed = agents.map((agent) =>
+    agent.id === 'builder' ? { ...agent, provider: 'claude' as const } : agent,
+  )
+  expect(
+    taskHarnessChoices({ ...task, providerLock: 'codex' }, changed, [], {}, new Set(), true),
+  ).toEqual([])
+})
 it('offers installed ACP agents directly and saves the selected installation in the task harness', () => {
   const installations = [
     {

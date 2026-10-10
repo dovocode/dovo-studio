@@ -233,6 +233,15 @@ it('keeps a failed provider interrupt uncertain and does not snapshot a still-ru
   expect(s.store.task(r.task.id).turns?.[0]?.checkpoint?.error).toContain(
     'shutdown was not confirmed',
   )
+  await expect(s.tasks.start(r.task.id)).rejects.toThrow('already running')
+  const competing = s.tasks.create({
+    title: 'Competing task',
+    repositoryId: r.task.repositoryId,
+    agentId: r.task.agentId,
+    objective: 'Do not write concurrently',
+  })
+  await expect(s.tasks.start(competing.id)).rejects.toThrow('Another task is running')
+  expect(() => s.tasks.requireIdle(r.task.id)).toThrow('Stop the active turn')
 })
 it('persists acceptance across restart without resending a lost acknowledgement', async () => {
   const r = await replay(),

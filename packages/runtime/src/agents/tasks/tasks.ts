@@ -44,6 +44,7 @@ type Running = {
   id: string
   runId: string
   retiring?: boolean
+  shutdownUnconfirmed?: boolean
   controller: AbortController
   fiber?: Fiber.Fiber<void, RuntimeFailure>
   cwd?: string
@@ -885,6 +886,13 @@ export class Tasks {
           : Effect.gen({ self: this }, function* () {
               run.controller.abort(new Error('Interrupted to apply steering'))
               if (run.fiber) yield* Fiber.await(run.fiber)
+              if (run.shutdownUnconfirmed)
+                return yield* Effect.fail(
+                  new HttpError(
+                    409,
+                    'Provider shutdown was not confirmed. The checkout remains reserved; confirm the agent stopped before restarting the runtime.',
+                  ),
+                )
               if (
                 this.steering.get(id) === token &&
                 this.store.task(id).queue?.[0]?.id === messageId
@@ -1256,6 +1264,7 @@ export class Tasks {
                   error instanceof RuntimeOperationError &&
                   error.cause instanceof OwnedProcessShutdownError
                 ) {
+                  run.shutdownUnconfirmed = true
                   const interrupt = this.store.providerActions.state(`interrupt:${run.id}`)
                   if (interrupt)
                     this.store.providerActions.transition(`interrupt:${run.id}`, 'uncertain')
@@ -1308,6 +1317,9 @@ export class Tasks {
                       ? undefined
                       : run.id,
                   )
+                  // A settled fiber does not prove the provider stopped. Keep its directory
+                  // reservation until the runtime is explicitly recovered.
+                  if (run.shutdownUnconfirmed) return
                   this.running.delete(id)
                   const interrupt = this.store.providerActions.state(`interrupt:${run.id}`)
                   if (interrupt && interrupt !== 'uncertain')

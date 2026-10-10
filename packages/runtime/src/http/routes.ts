@@ -145,6 +145,7 @@ export function route(
         })
       }
       if (method === 'POST' && path === '/api/mcp-apps/proxy') {
+        s.mcpApps.authenticateProxy(token)
         const input = decode(
           mutableStruct({ method: Schema.String, params: Schema.optional(Schema.Unknown) }),
           yield* serviceResult(body(request, 256 * 1024)),
@@ -295,7 +296,19 @@ export function route(
                   Effect.provideService(RuntimeServices, s),
                 ),
               ),
-            ['/api/tasks/message', '/api/tasks/steer'].includes(path),
+            [
+              '/api/tasks/message',
+              '/api/tasks/steer',
+              '/api/tasks/viewed',
+              '/api/runtime/preferences/save',
+              '/api/agents/defaults/save',
+              '/api/agents/settings/save',
+              '/api/agents/settings/sync',
+              '/api/agents/setup/save',
+              '/api/agents/title-settings/save',
+              '/api/previews/browser/profiles/save',
+            ].includes(path) ||
+              (method === 'PATCH' && path === '/api/workspace'),
           ),
         )
       }

@@ -303,7 +303,7 @@ export class McpApps {
       throw error
     }
   }
-  async proxy(token: string, method: string, params: unknown) {
+  authenticateProxy(token: string) {
     const scope = this.scopes.get(token)
     if (!scope) throw new HttpError(401, 'Invalid MCP bridge credential')
     const current = this.current(scope.taskId, scope.server.name)
@@ -312,6 +312,10 @@ export class McpApps {
       current.permission !== scope.permission
     )
       throw new HttpError(403, 'MCP configuration changed; start a new turn')
+    return scope
+  }
+  async proxy(token: string, method: string, params: unknown) {
+    const scope = this.authenticateProxy(token)
     return this.rpc(
       scope,
       method,

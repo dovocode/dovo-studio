@@ -67,6 +67,13 @@ export function createActivityController(onError: (message: string) => void) {
         const instances = new Map(
           TaskActivity.getInstances().map((instance) => [instance.getId(), instance]),
         )
+        // Native creation can outlive a crash before its ownership record was saved.
+        const ownedIds = new Set([...records.values()].map((record) => record.id))
+        for (const [id, instance] of instances) {
+          if (ownedIds.has(id)) continue
+          yield* nativeEffect(() => instance.end('immediate'))
+          instances.delete(id)
+        }
         const remove = (record: Record) => {
           return Effect.sync(() => {
             const source = overviews.find((entry) => entry.profile.id === record.runtimeId)

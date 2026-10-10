@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { readFile, readdir } from 'node:fs/promises'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 const root = new URL('../', import.meta.url).pathname.replace(/\/$/, '')
 const mocks = {
   '@dovo/studio-core': `export * from '@dovo/protocol';export const updateTask=(workspace)=>workspace;export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyFile=()=>false;export const useWorkspace=()=>({workspace:{repositories:[]},connected:false,setWorkspace:()=>{},request:async()=>({})});export const defaultAppPreferences={diffFilesSidebarWidth:260};export const readAppPreferences=()=>defaultAppPreferences;export const updateAppPreferences=()=>{};`,

@@ -76,6 +76,7 @@ export function HarnessSettings({
     installations,
     snapshot?.defaults?.modelPreferences,
     availability.available,
+    true,
   )
   const lockedProvider = lockedTaskProvider(task, agents)
   const providerLocked = !canChangeTaskProvider(task)

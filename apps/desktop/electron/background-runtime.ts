@@ -1,7 +1,4 @@
-import {
-  persistRuntimeEnvironment,
-  readRuntimeEnvironment,
-} from '../../api/src/runtime-environment.js'
+import { persistRuntimeEnvironment, readRuntimeEnvironment } from '@dovo/api/runtime-environment'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdir, open, writeFile, rename } from 'node:fs/promises'
@@ -45,7 +42,9 @@ export function backgroundRuntimeDefinition(options: BackgroundRuntimeOptions) {
     PATH: options.path,
     DOVO_DATABASE_PATH: join(options.directory, 'runtime.sqlite'),
     DOVO_DESKTOP_DUAL_LISTENER: '1',
-    DOVO_SETTINGS_PATH: join(options.home, '.dovo', 'settings.json'),
+    DOVO_SETTINGS_PATH:
+      options.environment?.DOVO_SETTINGS_PATH ??
+      join(options.environment?.DOVO_DATA_ROOT ?? join(options.home, '.dovo'), 'settings.json'),
     DOVO_HOST: options.host,
     PORT: options.port,
     DOVO_RUNTIME_ENV_FILE: join(options.directory, 'runtime-environment.json'),

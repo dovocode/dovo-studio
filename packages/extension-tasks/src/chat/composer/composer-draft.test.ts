@@ -2,6 +2,19 @@ import { afterEach, expect, test, vi } from 'vite-plus/test'
 import { createComposerDraft } from './composer-draft'
 
 afterEach(() => vi.useRealTimers())
+test('address recovery saves pending text with the replacement writer', () => {
+  vi.useFakeTimers()
+  const old = vi.fn<(text: string) => void>(() => {
+    throw new Error('Runtime connection changed')
+  })
+  const next = vi.fn<(text: string) => void>()
+  const draft = createComposerDraft('', old)
+  draft.update('Keep pending text')
+  draft.rebind(next)
+  vi.runAllTimers()
+  expect(old).not.toHaveBeenCalled()
+  expect(next).toHaveBeenCalledExactlyOnceWith('Keep pending text')
+})
 
 test('acceptance cancels the old debounce and cleanup cannot restore submitted text', () => {
   vi.useFakeTimers()

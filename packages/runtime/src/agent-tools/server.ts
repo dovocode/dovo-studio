@@ -1,3 +1,4 @@
+import { terminalInputFrames } from '@dovo/client-runtime'
 import {
   decode,
   mutableArray,
@@ -715,7 +716,7 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
         return text(
           await socket(
             path,
-            name === 'terminal_input' ? [{ type: 'input', data: string(input.data, 'data') }] : [],
+            name === 'terminal_input' ? terminalInputFrames(string(input.data, 'data')) : [],
             name === 'terminal_read',
           ),
         )

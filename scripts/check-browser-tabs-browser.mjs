@@ -1,5 +1,5 @@
 import { build } from 'esbuild'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync, mkdirSync } from 'node:fs'
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -42,6 +42,9 @@ const built = await build({
 import {createContext,createElement,useContext,useState} from 'react';
 import {resolveSettingsTarget} from '@dovo/protocol';
 export * from '@dovo/protocol';
+export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
+export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';
+export {useSettingsDraft,useConfirmSettingsNavigation,useOptionalSettingsTarget} from '${root}packages/studio-core/src/settings-target.tsx';
 export const providers=[];export const useResolvedTheme=()=> 'dark';
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return {ok:true,ticket:body.tabId,tabId:body.tabId,profileId:body.profileId}};
@@ -49,6 +52,7 @@ const browser=async(command)=>{window.calls.push(command)};
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
 const snapshot={workspace:{tasks:[],repositories:[]}};
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot}];
+export const useRuntimeSources=()=>sources;
 const workspace={activeRuntimeId:profile.id,connection:profile.connection,request,connected:true,snapshot,runtimes:sources};
 const WorkspaceContext=createContext(null);
 export const useWorkspace=()=>useContext(WorkspaceContext)||workspace;

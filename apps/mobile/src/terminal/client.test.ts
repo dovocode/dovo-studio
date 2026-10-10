@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { fontStack, nerdFontFamily, systemMonoFont } from '@dovo/studio-core/fonts'
-import { startSocketHeartbeat } from '@dovo/client-runtime'
+import { terminalInputFrames, startSocketHeartbeat } from '@dovo/client-runtime'
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
@@ -51,6 +51,7 @@ function fixture() {
   runInNewContext(source, {
     window,
     startSocketHeartbeat,
+    terminalInputFrames,
     fontStack,
     nerdFontFamily,
     systemMonoFont,

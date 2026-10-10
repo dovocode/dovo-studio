@@ -1,6 +1,6 @@
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url))
 const mocks = {
   '@dovo/studio-core/state': `import {useState,useRef} from 'react'; export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref];}`,

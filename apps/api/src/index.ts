@@ -1,12 +1,13 @@
 import { readRuntimeEnvironment } from './runtime-environment.js'
 import { Cause, Data, Effect, Exit } from 'effect'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { discoverNetworks, resolveBindHost } from './network.js'
 import { publishConnection } from './connection.js'
-import { writePrivateJson } from './server-config.js'
-import { RuntimeHost, runtimeLayer, initializeAgentDefaults } from '@dovo/runtime'
+import { writeListenAddress } from './listen-address.js'
+import { RuntimeHost, runtimeLayer, initializeAgentDefaults, recordLastCrash } from '@dovo/runtime'
+import { shutdownSignal } from './shutdown-signal.js'
 import { acquireProcessLock } from './process-lock.js'
 import { runtimeOwnerToken } from './owner-token.js'
 import { knownToolDirectories, loginShellPath, mergePath } from './login-path.js'
@@ -61,20 +62,7 @@ process.on('uncaughtException', (error) => {
   console.error('Uncaught exception in the Dovo runtime', error)
   try {
     const databasePath = process.env.DOVO_DATABASE_PATH
-    if (databasePath)
-      writeFileSync(
-        join(dirname(databasePath), 'last-crash.json'),
-        JSON.stringify({
-          at: new Date().toISOString(),
-          message:
-            `${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`.slice(
-              0,
-              1000,
-            ),
-          stack: error instanceof Error ? error.stack?.slice(0, 4000) : undefined,
-        }),
-        { mode: 0o600 },
-      )
+    if (databasePath) recordLastCrash(databasePath, error)
   } catch {
     // The crash record is best effort; exiting is not.
   }
@@ -82,21 +70,9 @@ process.on('uncaughtException', (error) => {
 })
 
 // Agents are spawned by name (codex, claude, gh); resolve them like the user's terminal does.
+const shutdown = shutdownSignal(process)
 if (process.env.DOVO_LOGIN_PATH !== 'off')
   process.env.PATH = mergePath(process.env.PATH, loginShellPath(), knownToolDirectories())
-
-const waitForShutdown = Effect.callback<void>((resume) => {
-  const signals = ['SIGINT', 'SIGTERM', 'disconnect'] as const
-  const cleanup = () => {
-    for (const signal of signals) process.removeListener(signal, stop)
-  }
-  const stop = () => {
-    cleanup()
-    resume(Effect.void)
-  }
-  for (const signal of signals) process.once(signal, stop)
-  return Effect.sync(cleanup)
-})
 
 const program = Effect.scoped(
   Effect.gen(function* () {
@@ -163,14 +139,14 @@ const program = Effect.scoped(
       )
       yield* Effect.sync(() => {
         if (desktopDualListener)
-          writePrivateJson(join(directory, 'runtime-listen.json'), {
+          writeListenAddress(join(directory, 'runtime-listen.json'), {
             address: `http://127.0.0.1:${externalPort}`,
             bindHost,
           })
         console.log(`Dovo runtime listening on ${clientHost}:${runtime.port}`)
         process.send?.({ type: 'ready', port: runtime.port, address })
       })
-      yield* waitForShutdown
+      yield* Effect.never
     }).pipe(
       Effect.provide(
         runtimeLayer({
@@ -194,13 +170,14 @@ const program = Effect.scoped(
 ).pipe(
   Effect.ensuring(
     Effect.sync(() => {
+      shutdown.dispose()
       if (process.connected) process.disconnect?.()
     }),
   ),
 )
 
-const result = await Effect.runPromiseExit(program)
-if (Exit.isFailure(result)) {
+const result = await Effect.runPromiseExit(program, { signal: shutdown.signal })
+if (Exit.isFailure(result) && !Cause.hasInterruptsOnly(result.cause)) {
   console.error('Runtime failed', Cause.pretty(result.cause))
   process.exitCode = 1
 }

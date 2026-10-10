@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
-import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
+import { chromium } from './browser/harness.mjs'
 const built = await build({
   alias: {
     'react-dom': dirname(

@@ -35,6 +35,10 @@ jobs:
       - run: node --test scripts/packaging/*.test.mjs
   # Bounded browser gate for shared hooks that render in both desktop and mobile bundles.
   browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -46,35 +50,9 @@ jobs:
         with:
           store: ${{ steps.setup.outputs.store }}
           key: ${{ steps.setup.outputs.store-key }}
-      # The history harness bundles against the published protocol entry point.
-      - run: pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build
       - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
-      # Browser suites retry once; the job summary names any suite that only passed on retry.
-      - run: node scripts/retry-browser.mjs pnpm test:startup-draft:browser
-      - run: node scripts/retry-browser.mjs pnpm test:conversation-history:browser
-      - run: node scripts/retry-browser.mjs pnpm test:turn-grouping:browser
-      - run: node scripts/retry-browser.mjs pnpm test:artifacts:browser
-      - run: node scripts/retry-browser.mjs pnpm test:scoped-settings:browser
-      - run: node scripts/retry-browser.mjs pnpm test:shared-storage:browser
-      - run: node scripts/retry-browser.mjs pnpm test:remote-browser-recovery:browser
-      - run: node scripts/retry-browser.mjs pnpm test:mobile-composer:browser
-      - run: node scripts/retry-browser.mjs pnpm test:mobile-startup-thread:browser
-      - run: node scripts/retry-browser.mjs pnpm test:mobile-energy:browser
-      - run: node scripts/retry-browser.mjs pnpm test:mobile-appearance:browser
-      - run: node scripts/retry-browser.mjs pnpm test:composer-send:browser
-      - run: node scripts/retry-browser.mjs pnpm test:composer-providers:browser
-      - run: node scripts/retry-browser.mjs pnpm test:composer-project:browser
-      - run: node scripts/retry-browser.mjs pnpm test:git-primary-action:browser
-      - run: node scripts/retry-browser.mjs pnpm test:task-lifecycle:browser
-      - run: node scripts/retry-browser.mjs pnpm test:composer-unification:browser
-      # The next four suites load apps/desktop/dist, which composer-unification builds above.
-      - run: node scripts/retry-browser.mjs pnpm test:pull-workspace:browser
-      - run: node scripts/retry-browser.mjs pnpm test:pull-stability:browser
-      - run: node scripts/retry-browser.mjs pnpm test:section-thread:browser
-      - run: node scripts/retry-browser.mjs pnpm test:manual-model:browser
-      - run: node scripts/retry-browser.mjs pnpm test:thread-startup:browser
-      - run: node scripts/retry-browser.mjs pnpm test:settings-target:browser
-      - run: node scripts/retry-browser.mjs pnpm test:subagent-grouping:browser
+      # All registered suites run; four jobs keep each shard bounded.
+      - run: node scripts/run-browser-suites.mjs ${{ matrix.shard }} 4
   # The full suite above covers Linux. Keep real macOS native/process behavior exercised too.
   runtime-mac:
     runs-on: macos-15

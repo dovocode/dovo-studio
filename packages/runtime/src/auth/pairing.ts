@@ -13,7 +13,7 @@ type Request = {
   confirmed?: boolean
 }
 export class Pairing {
-  private code?: { value: string; expiresAt: number; autoApprove: boolean }
+  private code?: { value: string; expiresAt: number; autoApprove: boolean; failures: number }
   private requests = new Map<string, Request>()
   private attempts = new Map<string, { count: number; until: number }>()
   constructor(
@@ -25,6 +25,7 @@ export class Pairing {
       value: String(randomInt(10000000, 100000000)),
       expiresAt: this.now() + 120000,
       autoApprove,
+      failures: 0,
     }
     return { code: this.code.value, expiresAt: new Date(this.code.expiresAt).toISOString() }
   }
@@ -34,8 +35,10 @@ export class Pairing {
     attempts.count++
     this.attempts.set(address, attempts)
     if (attempts.count > 5) throw new HttpError(429, 'Too many pairing attempts. Wait one minute.')
-    if (!this.code || this.code.expiresAt <= this.now() || !equalSecret(code, this.code.value))
+    if (!this.code || this.code.expiresAt <= this.now() || !equalSecret(code, this.code.value)) {
+      if (this.code && ++this.code.failures >= 10) this.code = undefined
       throw new HttpError(400, 'Pairing code is invalid or expired')
+    }
     this.attempts.delete(address)
     const autoApprove = this.code.autoApprove
     this.code = undefined
