@@ -4,6 +4,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import {
   jetbrainsOpenTargets,
   repositoryOpenTargets,
+  isRepositoryOpenTarget,
   type RepositoryOpenTarget,
 } from '@dovo/protocol'
 import { responses, useWorkspace } from '@dovo/studio-core'
@@ -31,7 +32,7 @@ export function RepositoryOpenItems({
     setState({ targets: null, error: '' })
     void request('/api/scm/open-targets', {}, responses.repositoryOpenTargets).then(
       ({ targets }) => {
-        if (!cancelled) setState({ targets, error: '' })
+        if (!cancelled) setState({ targets: targets.filter(isRepositoryOpenTarget), error: '' })
       },
       (error: unknown) => {
         if (!cancelled)

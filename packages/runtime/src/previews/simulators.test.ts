@@ -136,3 +136,108 @@ it('rejects disconnected phones and opens connected Android phones with the phys
   expect(create).toHaveBeenCalledOnce()
   await sessions.close(id)
 })
+
+it('shares physical phone reservations across local and foreign controllers without trusting task names', async () => {
+  const physical = await import('./physical-device')
+  const close = vi.fn<native.NativeSimulator['close']>(async () => {})
+  vi.spyOn(physical, 'physicalDevice').mockResolvedValue({
+    input: async () => {},
+    start: () => () => {},
+    release: async () => {},
+    close,
+  })
+  vi.spyOn(discovery, 'previewDevices').mockResolvedValue({
+    host: 'phone-host',
+    diagnostics: [],
+    devices: [
+      {
+        id: 'physical-ios:phone',
+        kind: 'physical',
+        name: 'iPhone',
+        state: 'booted',
+        platform: 'ios',
+        runtime: 'phone',
+      },
+    ],
+  })
+  const sessions = new SimulatorPreviews()
+  const scope = 'device-host:["paired-a","task"]'
+  try {
+    const foreign = await sessions.open(scope, 'physical-ios:phone', 'paired-a')
+    expect(sessions.taskId(foreign.id, 'paired-a')).toBe(scope)
+    expect(() => sessions.taskId(foreign.id)).toThrow('another paired device')
+    expect(() => sessions.taskId(foreign.id, 'paired-b')).toThrow('another paired device')
+    await expect(sessions.open(scope, 'physical-ios:phone')).rejects.toThrow(
+      'already being controlled',
+    )
+    await sessions.closeTask(scope)
+    await sessions.closeDevice(scope, 'physical-ios:phone')
+    expect(close).not.toHaveBeenCalled()
+    await sessions.close(foreign.id)
+    const local = await sessions.open('local-task', 'physical-ios:phone')
+    await expect(sessions.open(scope, 'physical-ios:phone', 'paired-a')).rejects.toThrow(
+      'already being controlled',
+    )
+    await sessions.close(local.id)
+  } finally {
+    await sessions.dispose()
+  }
+})
+
+it('does not fail host cleanup when a pending preview open rejects', async () => {
+  let reject = (_error: Error) => {}
+  const pending = new Promise<native.NativeSimulator>((_resolve, rejectPromise) => {
+    reject = rejectPromise
+  })
+  const device = {
+    id: 'remote:mac:ios:device',
+    name: 'Remote',
+    platform: 'ios' as const,
+    state: 'booted' as const,
+    runtime: 'iOS',
+  }
+  const previews = new SimulatorPreviews({
+    devices: async () => ({ host: 'Mac', devices: [device], diagnostics: [] }),
+    driver: async () => pending,
+  })
+  const outcome = previews.open('task', device.id).catch((error: unknown) => error)
+  await Promise.resolve()
+  const cleanup = previews.closeHost('mac')
+  reject(new Error('Remote open failed'))
+  expect(await outcome).toMatchObject({ message: 'Remote open failed' })
+  await expect(cleanup).resolves.toBeUndefined()
+  await previews.dispose()
+})
+
+it('refreshes idle reservations when reopening a foreign preview near expiry', async () => {
+  vi.useFakeTimers()
+  const close = vi.fn<native.NativeSimulator['close']>().mockResolvedValue()
+  const device = {
+    id: 'ios:device',
+    name: 'Simulator',
+    platform: 'ios' as const,
+    state: 'booted' as const,
+    runtime: 'iOS',
+  }
+  const previews = new SimulatorPreviews({
+    devices: async () => ({ host: 'Mac', devices: [device], diagnostics: [] }),
+    driver: async () => ({
+      input: async () => {},
+      release: async () => {},
+      close,
+      start: () => () => {},
+    }),
+  })
+  try {
+    const opened = await previews.open('foreign-task', device.id, 'paired')
+    await vi.advanceTimersByTimeAsync(29000)
+    expect((await previews.open('foreign-task', device.id, 'paired')).id).toBe(opened.id)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(close).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(28000)
+    expect(close).toHaveBeenCalledOnce()
+  } finally {
+    await previews.dispose()
+    vi.useRealTimers()
+  }
+})

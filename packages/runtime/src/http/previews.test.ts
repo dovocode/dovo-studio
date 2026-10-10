@@ -13,6 +13,7 @@ it('authenticates preview controls and requires a task on this runtime before in
   const action = vi.spyOn(previews, 'previewDeviceAction').mockResolvedValue({ ok: true })
   const token = 'preview-owner-token-at-least-thirty-two-characters'
   const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  runtime.services.deviceHosts.settings.save({ enabled: true, hosts: [] })
   cleanups.push(() => runtime.close())
   const call = (path: string, body: unknown, credential = token) =>
     fetch(`http://127.0.0.1:${runtime.port}${path}`, {

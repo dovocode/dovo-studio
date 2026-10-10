@@ -15,7 +15,7 @@ import {
 import { Alert, View } from 'react-native'
 import { settingsScopeLabels, type SettingsScope } from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
-import { Action } from '../../ui/controls/action'
+import { SettingsAction as Action } from '../../screens/settings-controls'
 import { useTheme } from '../../ui/theme'
 
 const overrideName = (entry: SettingOverride) =>
@@ -132,7 +132,7 @@ export function SettingSource({
       <Text
         style={[
           styles.muted,
-          { flex: 1, fontSize: 12, color: overridden ? colors.accent : colors.muted },
+          { flex: 1, fontSize: 13, color: overridden ? colors.accent : colors.muted },
         ]}
       >
         {overridden ? `Set here · ${name}` : `Inherited · ${name}`}
@@ -205,7 +205,7 @@ export function SettingSource({
       )}
       {showOverrides && setting && overrides.length > 0 && (
         <View style={{ width: '100%', gap: 8 }}>
-          <Text style={[styles.muted, { fontSize: 12, lineHeight: 17 }]}>
+          <Text style={[styles.muted, { fontSize: 13, lineHeight: 17 }]}>
             These levels keep their own value when {settingsScopeLabels[setting.scope]} changes.
             Open one to edit it, or reset them all to inherit again.
           </Text>

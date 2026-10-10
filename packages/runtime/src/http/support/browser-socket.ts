@@ -16,8 +16,13 @@ export function attachBrowserSocket(
   binary = false,
   simulatorId?: string,
   browserId = taskId,
+  foreignAuthorize?: () => void,
 ) {
-  const source = simulatorId ? services.simulators : services.browsers
+  const source = simulatorId
+    ? foreignAuthorize
+      ? services.hostSimulators
+      : services.simulators
+    : services.browsers
   const resourceId = simulatorId ?? browserId
   let visible = true
   let closed = false
@@ -98,7 +103,8 @@ export function attachBrowserSocket(
   const authorize = () => {
     if (client.readyState !== WebSocket.OPEN) throw new Error('Browser controller disconnected')
     services.devices.authenticate(token)
-    services.store.task(taskId)
+    if (foreignAuthorize) foreignAuthorize()
+    else services.store.task(taskId)
   }
   let count = 0,
     windowStart = Date.now()

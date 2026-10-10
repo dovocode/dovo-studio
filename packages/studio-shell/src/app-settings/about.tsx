@@ -10,7 +10,7 @@ export default function AboutSettings() {
     <SettingsPage
       local
       title="Updates & about"
-      description="Application version, release channel and update preferences."
+      description="Check your version, choose a release channel and manage update checks."
     >
       <SettingsGroup title="Dovo Studio">
         <SettingRow
@@ -28,11 +28,11 @@ export default function AboutSettings() {
       <UpdateSettings />
       <SettingsGroup title="Provider updates">
         <SettingRow
-          label="Provider update checks"
-          description="Check installed provider versions when opening diagnostics. Updates use each provider’s installer."
+          label="Check for provider updates"
+          description="Check installed agent providers when opening diagnostics. Install updates using each provider’s installer."
         >
           <Toggle
-            label="Provider update checks"
+            label="Check for provider updates"
             checked={preferences.providerUpdateChecks}
             onChange={(providerUpdateChecks) => updateAppPreferences({ providerUpdateChecks })}
           />

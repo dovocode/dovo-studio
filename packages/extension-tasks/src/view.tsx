@@ -156,6 +156,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const [listOpen, setListOpen] = useApplicationState(false)
   const [sidebar, setSidebar] = useApplicationState(true)
   const [codeReference, setCodeReference] = useState<CodeReference | null>(null)
+  const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{
     taskId: string
     id: string
@@ -968,6 +969,14 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 <SideQuestion
                   key={task.id}
                   task={task}
+                  drafts={sideChatDrafts[threadKey] ?? {}}
+                  setDrafts={(update) =>
+                    setSideChatDrafts((current) => {
+                      const previous = current[threadKey] ?? {}
+                      const next = typeof update === 'function' ? update(previous) : update
+                      return next === previous ? current : { ...current, [threadKey]: next }
+                    })
+                  }
                   onAddToComposer={(text) => {
                     setComposerInsert({ taskId: task.id, id: randomUUID(), text })
                     selectSurface('chat', true)

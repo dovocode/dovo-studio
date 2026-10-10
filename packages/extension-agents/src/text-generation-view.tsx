@@ -6,7 +6,7 @@ export default function TextGenerationView({ entityId }: { entityId?: string }) 
     <HostSettingsPage
       initialRuntimeId={entityId}
       title="Titles & dictation"
-      description="Choose the model used for task titles and dictation on each computer."
+      description="The model each computer uses to name new tasks and clean up dictation."
     >
       <TitleSettings />
     </HostSettingsPage>

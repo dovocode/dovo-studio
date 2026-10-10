@@ -3,7 +3,7 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { adapterDiagnosticsSchema, type AdapterDiagnostic } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/state/application-state'
 import { useRuntime } from '../runtime/connection/provider'
-import { Action } from '../ui/controls/action'
+import { SettingsAction as Action } from '../screens/settings-controls'
 import { Text } from '../ui/content/text'
 export function HarnessUpdates() {
   const { connected, callEffect } = useRuntime()

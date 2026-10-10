@@ -34,6 +34,31 @@ export const jiraBindingSchema = mutableStruct({
     .pipe(Schema.check(Schema.isPattern(/^[A-Z][A-Z0-9_]{1,49}$/))),
 })
 export type JiraBinding = Schema.Schema.Type<typeof jiraBindingSchema>
+const jiraFilterValue = refine(
+  maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 100),
+  (value) => !/[\p{Cc}]/u.test(value),
+)
+export const jiraIssueFiltersSchema = mutableStruct({
+  assignee: Schema.optional(Schema.Literals(['all', 'mine', 'unassigned'])),
+  priority: Schema.optional(jiraFilterValue),
+  type: Schema.optional(jiraFilterValue),
+  label: Schema.optional(jiraFilterValue),
+  statusCategory: Schema.optional(Schema.Literals(['todo', 'in-progress', 'done'])),
+})
+export type JiraIssueFilters = Schema.Schema.Type<typeof jiraIssueFiltersSchema>
+/** Canonical identity: only assignee uses "all" as an unfiltered sentinel. */
+export function jiraIssueFilterKey(filters?: JiraIssueFilters) {
+  return [
+    filters?.assignee === 'all' ? undefined : filters?.assignee,
+    filters?.priority,
+    filters?.type,
+    filters?.label,
+    filters?.statusCategory,
+  ]
+}
+export function hasJiraIssueFilters(filters?: JiraIssueFilters) {
+  return jiraIssueFilterKey(filters).some((value) => value !== undefined)
+}
 export const jiraProjectsSchema = mutableStruct({
   site: jiraBindingSchema.fields.site,
   projects: mutableArray(

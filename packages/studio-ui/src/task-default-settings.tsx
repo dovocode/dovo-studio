@@ -36,6 +36,13 @@ import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { Textarea } from './components/ui/textarea'
 import { ChoicePicker } from './choice-picker'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './components/ui/select'
 import { ModelSettings } from './model-settings'
 import { SettingsGroup, SettingRow, Toggle } from './settings-layout'
 import { SettingSource } from './setting-source'
@@ -227,8 +234,7 @@ function TaskDefaultSettingsForm({
       {!selectedScope && (
         <div className="space-y-2">
           <p className="text-xs font-medium">Settings scope</p>
-          <ChoicePicker
-            aria-label="Settings scope"
+          <Select
             value={scope}
             disabled={busy}
             onValueChange={(value) => {
@@ -236,39 +242,44 @@ function TaskDefaultSettingsForm({
                 setScope(settingsScopes.find((entry) => entry === value) ?? 'environment')
             }}
           >
-            {settingsScopes
-              .filter(
-                (value) => repository || (value !== 'project' && value !== 'environment-project'),
-              )
-              .filter((value) => value !== 'project' || !!repository?.gitIdentity)
-              .map((value) => (
-                <option key={value} value={value}>
-                  {settingsScopeLabels[value]}
-                </option>
-              ))}
-          </ChoicePicker>
+            <SelectTrigger aria-label="Settings scope">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {settingsScopes
+                .filter(
+                  (value) => repository || (value !== 'project' && value !== 'environment-project'),
+                )
+                .filter((value) => value !== 'project' || !!repository?.gitIdentity)
+                .map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {settingsScopeLabels[value]}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
       <fieldset disabled={disabled} className="min-w-0 space-y-6">
         <SettingsGroup
           title="New tasks"
-          description="Choose the agent and access for new tasks. Existing conversations keep their launch settings."
+          description="Applies when you create a task. Existing conversations keep their agent and permissions."
         >
           {repository && scope === 'project' && (
             <SettingRow
-              label="Default server"
-              description="Use this server when choosing the project. If it is offline, use another online copy. You can change servers in the composer."
+              label="Preferred computer"
+              description="Prefer this computer for the project. If it is offline, use another online copy."
               source={source('defaultServerId')}
             >
               <ChoicePicker
-                aria-label="Default server"
+                aria-label="Preferred computer"
                 value={draft.defaultServerId ?? ''}
                 onValueChange={(value) => change({ ...draft, defaultServerId: value || undefined })}
               >
-                <option value="">Automatic · prefer current server</option>
+                <option value="">Automatic · prefer current computer</option>
                 {draft.defaultServerId &&
                   !projectServers.some((entry) => entry.profile.id === draft.defaultServerId) && (
-                    <option value={draft.defaultServerId}>Unavailable server</option>
+                    <option value={draft.defaultServerId}>Unavailable computer</option>
                   )}
                 {projectServers.map((entry) => (
                   <option key={entry.profile.id} value={entry.profile.id}>
@@ -322,8 +333,7 @@ function TaskDefaultSettingsForm({
             description="Access for new tasks, whichever agent you choose."
             source={source('permission')}
           >
-            <ChoicePicker
-              aria-label="Default permissions"
+            <Select
               value={draft.permission ?? 'inherit'}
               onValueChange={(value) =>
                 change({
@@ -333,36 +343,45 @@ function TaskDefaultSettingsForm({
                 })
               }
             >
-              <option value="inherit">
-                Inherit ({accessLabel(inherited.permission ?? 'full-access')})
-              </option>
-              {selectableAccessModes(draft.permission).map((mode) => (
-                <option key={mode.id} value={mode.id}>
-                  {mode.name}
-                </option>
-              ))}
-            </ChoicePicker>
+              <SelectTrigger aria-label="Default permissions">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="inherit">
+                  Inherit ({accessLabel(inherited.permission ?? 'full-access')})
+                </SelectItem>
+                {selectableAccessModes(draft.permission).map((mode) => (
+                  <SelectItem key={mode.id} value={mode.id}>
+                    {mode.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </SettingRow>
         </SettingsGroup>
         {harness && (
           <SettingsGroup
             title="Custom agent defaults"
-            description="The provider, model and instructions are overridden together at this level."
+            description="Customize the inherited agent. Provider, model and instructions are saved together."
           >
             <SettingRow label="Provider">
-              <ChoicePicker
-                aria-label="Harness"
+              <Select
                 value={harness.provider}
                 onValueChange={(value) =>
                   change({ ...draft, harness: defaultTaskHarness(decode(providerSchema, value)) })
                 }
               >
-                {providerSchema.literals.map((provider) => (
-                  <option key={provider} value={provider}>
-                    {providerDisplayName(provider)}
-                  </option>
-                ))}
-              </ChoicePicker>
+                <SelectTrigger aria-label="Provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {providerSchema.literals.map((provider) => (
+                    <SelectItem key={provider} value={provider}>
+                      {providerDisplayName(provider)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </SettingRow>
             <div className="p-4">
               <ModelSettings
@@ -433,8 +452,7 @@ function TaskDefaultSettingsForm({
               description="Use your checkout or give each task an isolated worktree."
               source={source('execution')}
             >
-              <ChoicePicker
-                aria-label="Working directory"
+              <Select
                 value={draft.execution ?? 'inherit'}
                 onValueChange={(value) =>
                   change({
@@ -443,12 +461,17 @@ function TaskDefaultSettingsForm({
                   })
                 }
               >
-                <option value="inherit">
-                  Inherit ({inherited.execution === 'worktree' ? 'Worktree' : 'Local checkout'})
-                </option>
-                <option value="main">Local checkout</option>
-                <option value="worktree">New worktree</option>
-              </ChoicePicker>
+                <SelectTrigger aria-label="Working directory">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inherit">
+                    Inherit ({inherited.execution === 'worktree' ? 'Worktree' : 'Local checkout'})
+                  </SelectItem>
+                  <SelectItem value="main">Local checkout</SelectItem>
+                  <SelectItem value="worktree">New worktree</SelectItem>
+                </SelectContent>
+              </Select>
             </SettingRow>
             <SettingRow
               label="Start from origin"
@@ -470,8 +493,7 @@ function TaskDefaultSettingsForm({
               description="Choose which submodules to initialize before setup."
               source={source('submodules')}
             >
-              <ChoicePicker
-                aria-label="Submodules"
+              <Select
                 disabled={!snapshot?.taskBehaviorSupported}
                 value={draft.submodules ?? 'inherit'}
                 onValueChange={(value) =>
@@ -484,11 +506,24 @@ function TaskDefaultSettingsForm({
                   })
                 }
               >
-                <option value="inherit">Inherit ({inherited.submodules ?? 'none'})</option>
-                <option value="none">None</option>
-                <option value="direct">Direct</option>
-                <option value="recursive">Recursive</option>
-              </ChoicePicker>
+                <SelectTrigger aria-label="Submodules">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inherit">
+                    Inherit (
+                    {inherited.submodules === 'recursive'
+                      ? 'All levels'
+                      : inherited.submodules === 'direct'
+                        ? 'Top level only'
+                        : 'None'}
+                    )
+                  </SelectItem>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="direct">Top level only</SelectItem>
+                  <SelectItem value="recursive">All levels</SelectItem>
+                </SelectContent>
+              </Select>
             </SettingRow>
             <SettingRow
               label="Worktree setup"
@@ -499,8 +534,7 @@ function TaskDefaultSettingsForm({
               }
               source={source('setupCommand')}
             >
-              <ChoicePicker
-                aria-label="Worktree setup"
+              <Select
                 value={
                   draft.setupCommand === undefined
                     ? 'inherit'
@@ -521,12 +555,17 @@ function TaskDefaultSettingsForm({
                   })
                 }}
               >
-                <option value="inherit">
-                  Inherit{inherited.setupCommand ? ' command' : ' (no setup)'}
-                </option>
-                <option value="custom">Custom command</option>
-                <option value="disabled">Disable setup</option>
-              </ChoicePicker>
+                <SelectTrigger aria-label="Worktree setup">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inherit">
+                    Inherit{inherited.setupCommand ? ' command' : ' (no setup)'}
+                  </SelectItem>
+                  <SelectItem value="custom">Custom command</SelectItem>
+                  <SelectItem value="disabled">Disable setup</SelectItem>
+                </SelectContent>
+              </Select>
             </SettingRow>
             {draft.setupCommand !== undefined && showSetupCommand && (
               <div className="space-y-2 p-4">
@@ -647,7 +686,9 @@ function TaskDefaultSettingsForm({
             <Button variant="ghost" size="sm" onClick={() => change({})}>
               Reset task defaults to inherited settings
             </Button>
-            <Button onClick={() => void save()}>{busy ? 'Saving…' : 'Save defaults'}</Button>
+            <Button disabled={!dirty} onClick={() => void save()}>
+              {busy ? 'Saving…' : 'Save defaults'}
+            </Button>
           </div>
         </div>
       </fieldset>

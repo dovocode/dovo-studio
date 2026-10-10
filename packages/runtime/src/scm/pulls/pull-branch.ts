@@ -101,7 +101,7 @@ export async function createPullBranchWorktree(
     restoring,
   )
   if (restoring && local) {
-    if (local[2] !== directory) await git.command(root, ['worktree', 'add', directory, branch])
+    if (local[2] !== directory) await git.addWorktree(root, directory, [directory, branch])
     return branch
   }
   const head = await fetchPullHead(git, root, source, key)
@@ -117,11 +117,10 @@ export async function createPullBranchWorktree(
     await git.command(root, ['remote', 'add', remote, url])
   }
   if (local?.[2] !== directory)
-    await git.command(
+    await git.addWorktree(
       root,
-      local
-        ? ['worktree', 'add', directory, branch]
-        : ['worktree', 'add', '--no-track', '-b', branch, directory, head],
+      directory,
+      local ? [directory, branch] : ['--no-track', '-b', branch, directory, head],
     )
   await git.command(root, ['update-ref', `refs/remotes/${remote}/${branch}`, head])
   await git.command(root, ['config', `branch.${branch}.remote`, remote])

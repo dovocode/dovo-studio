@@ -3,14 +3,14 @@ import { router } from 'expo-router'
 import { View, ScrollView } from 'react-native'
 import { useApplicationState } from '../runtime/state/application-state'
 import { SettingsGroup, SettingsRow } from './settings-group'
-import { SearchField } from '../ui/controls/field'
+import { SettingsSearchField as SearchField } from './settings-controls'
 import { Text } from '../ui/content/text'
-import { useTheme } from '../ui/theme'
+import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { useRuntime } from '../runtime/connection/provider'
 import { useSettingsTargetState } from '../runtime/preferences/settings-target'
 import { settingsScopeLabels } from '@dovo/protocol'
 import { ScreenHeader } from '../ui/layout/screen-header'
-import { Action } from '../ui/controls/action'
+import { SettingsAction as Action } from './settings-controls'
 import { useEffect } from 'react'
 import { clearLastCrash, readLastCrash, type CrashRecord } from '../runtime/diagnostics/crash-log'
 
@@ -75,8 +75,7 @@ export default function SettingsScreen() {
     },
     {
       title: 'Agents',
-      footer:
-        'Marked pages inherit Global → Computer → Project → Project on computer and follow the target above.',
+      footer: 'Agents, tools and task defaults share the selected scope.',
       items: [
         {
           title: 'Agents',
@@ -140,7 +139,7 @@ export default function SettingsScreen() {
     {
       title: 'Computers',
       footer: profiles.length
-        ? 'Open a computer for installations, CLI commands, worktrees, computer use and activity.'
+        ? 'Open a computer for task behavior, PRs & pipelines, artifacts, memory, worktrees and runtime tools.'
         : 'Pair a computer to configure agents and project defaults.',
       items: [
         {
@@ -154,7 +153,16 @@ export default function SettingsScreen() {
           path: '/settings/devices',
           local: true,
           keywords:
-            'pair runtime devices network address tailscale netbird shell commands installations accounts titles dictation worktrees logs',
+            'pair runtime devices network address tailscale netbird shell commands installations accounts titles dictation worktrees logs memory notes artifacts retention experimental pr pull requests pipeline pipelines watcher child agents subagent concurrent limit',
+        },
+        {
+          title: 'Device previews',
+          subtitle: 'Remote simulators and phones over SSH',
+          icon: 'device',
+          path: '/settings/device-hosts',
+          storage: 'computer',
+          keywords:
+            'ssh device hosts simulator emulator ios android iphone install deploy forwarding',
         },
       ],
     },
@@ -185,10 +193,10 @@ export default function SettingsScreen() {
     }))
     .filter((group) => group.items.length)
   return (
-    <View style={styles.screen}>
+    <SettingsPage>
       <ScreenHeader title="Settings" testID="Settings heading" />
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: 8, gap: 24 }]}
+        contentContainerStyle={[styles.content, { paddingTop: 8, gap: 28 }]}
         keyboardShouldPersistTaps="handled"
       >
         <SearchField
@@ -220,17 +228,16 @@ export default function SettingsScreen() {
           </View>
         )}
         {!needle && profiles.length > 0 && (
-          <View accessibilityLabel="Inherited settings target" style={[styles.card, { gap: 4 }]}>
-            <Text style={[styles.muted, { fontSize: 12 }]}>Applying inherited settings for</Text>
-            <Text style={[styles.text, { fontSize: 15, fontWeight: '600' }]}>
-              {target.projectName} · {target.computerName}
-            </Text>
-            <Text style={[styles.muted, { fontSize: 12, lineHeight: 17 }]}>
-              {settingsScopeLabels[target.scope]} level, kept while you move between pages. Change
-              it on Agents, MCP & skills or Task defaults. Pages with a stack mark use it; pages
-              with a computer mark save per computer; other pages save on this device.
-            </Text>
-          </View>
+          <SettingsGroup>
+            <SettingsRow
+              title="Settings scope"
+              subtitle={`${target.projectName} · ${target.computerName}`}
+              value={settingsScopeLabels[target.scope]}
+              icon="stack"
+              onPress={() => router.push('/settings/agents')}
+              last
+            />
+          </SettingsGroup>
         )}
         {matches.map((group) => (
           <SettingsGroup
@@ -242,7 +249,13 @@ export default function SettingsScreen() {
               <SettingsRow
                 key={item.path}
                 title={item.title}
-                subtitle={item.subtitle}
+                value={
+                  item.path === '/settings/devices'
+                    ? `${overviews.filter((entry) => entry.connected).length} online`
+                    : item.path === '/settings/archived'
+                      ? String(archived)
+                      : undefined
+                }
                 icon={item.icon}
                 label={'label' in item ? item.label : undefined}
                 tint={'tint' in item ? item.tint : undefined}
@@ -265,6 +278,6 @@ export default function SettingsScreen() {
           {appChannel ? ` · ${appChannel}` : ''}
         </Text>
       </ScrollView>
-    </View>
+    </SettingsPage>
   )
 }

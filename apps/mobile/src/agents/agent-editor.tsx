@@ -7,14 +7,14 @@ import { selectableAccessModes, supportsAccess } from '@dovo/protocol'
 import { ModelSettings } from './model-settings'
 import { AcpRegistry } from './acp-registry'
 import { Alert, View } from 'react-native'
-import { Sheet } from '../ui/layout/sheet'
+import { SettingsSheet as Sheet } from '../screens/settings-theme'
 import { Text } from '../ui/content/text'
 import { agentSchema, providerSchema, type Agent } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
-import { Action } from '../ui/controls/action'
-import { Choice } from '../ui/controls/choice'
-import { Field } from '../ui/controls/field'
-import { useTheme } from '../ui/theme'
+import { SettingsAction as Action } from '../screens/settings-controls'
+import { SettingsChoice as Choice } from '../screens/settings-controls'
+import { SettingsField as Field } from '../screens/settings-controls'
+import { useSettingsTheme as useTheme } from '../screens/settings-theme'
 import { useAction } from '../ui/controls/use-action'
 export function AgentEditor({
   original,
@@ -220,6 +220,7 @@ export function AgentEditor({
       )}
       <View style={styles.row}>
         <Action
+          wide
           label="Save agent"
           disabled={
             !connected ||

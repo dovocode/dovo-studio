@@ -196,11 +196,17 @@ export function scmRoute(request: IncomingMessage, path: string) {
         return yield* worktreeChoicesEffect(s, repositoryId)
       }
       if (method === 'POST' && path === '/api/scm/worktrees/remove') {
-        const { path: worktree } = decode(
-          mutableStruct({ path: maxValue(minValue(Schema.String, 1), 4096) }),
+        const { path: worktree, orphanOnly } = decode(
+          mutableStruct({
+            path: maxValue(minValue(Schema.String, 1), 4096),
+            orphanOnly: Schema.optional(Schema.Boolean),
+          }),
           yield* serviceResult(body(request)),
         )
-        return yield* removeWorktreeEffect(s, worktree)
+        return yield* s.tasks.withCheckoutMutationEffect(
+          worktree,
+          removeWorktreeEffect(s, worktree, orphanOnly),
+        )
       }
       if (method === 'POST' && path === '/api/scm/jira/projects/read')
         return yield* serviceResult(listJiraProjects(s.commands.get().acli, homedir()))

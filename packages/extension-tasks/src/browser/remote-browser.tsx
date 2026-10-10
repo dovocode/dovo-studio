@@ -57,8 +57,7 @@ export function RemoteBrowser({
       post({
         type: 'configure',
         device: {
-          platform:
-            deviceId.startsWith('ios:') || deviceId.startsWith('physical-ios:') ? 'ios' : 'android',
+          platform: /(?:^|:)(?:ios|physical-ios):/.test(deviceId) ? 'ios' : 'android',
         },
       })
     try {

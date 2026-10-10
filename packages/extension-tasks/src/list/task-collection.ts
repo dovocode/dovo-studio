@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, taskFamilyInputIds } from '@dovo/protocol'
 import type { RuntimeOverview, RuntimeSnapshot, Task, Workspace } from '@dovo/studio-core'
 
 export type TaskSource = {
@@ -68,7 +68,8 @@ export function taskSources({
 
 export function collectTasks(sources: readonly TaskSource[]): TaskEntry[] {
   return sources.flatMap((source) => {
-    const input = new Set(
+    const input = taskFamilyInputIds(
+      source.workspace.tasks,
       [...(source.snapshot?.questions ?? []), ...(source.snapshot?.approvals ?? [])].map(
         (request) => request.taskId,
       ),

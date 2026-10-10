@@ -223,7 +223,7 @@ export class TaskCheckout {
       // Drop stale registrations first; git refuses to re-add a branch a prunable entry holds.
       await this.git.command(root, ['worktree', 'prune'])
       signal?.throwIfAborted()
-      await this.git.command(root, ['worktree', 'add', directory, kept])
+      await this.git.addWorktree(root, directory, [directory, kept])
       // A fresh checkout lacks installed dependencies; run the setup command again.
       this.store.updateTask(id, (current) => ({
         ...current,
@@ -268,7 +268,7 @@ export class TaskCheckout {
       : (task.forkedFrom?.head ?? base ?? 'HEAD')
     this.progress(id, steps, 'worktree', branch)
     signal?.throwIfAborted()
-    await this.git.command(root, ['worktree', 'add', '-b', branch, directory, head])
+    await this.git.addWorktree(root, directory, ['-b', branch, directory, head])
     // A fork starts from the files of the turn it was forked at, not the branch tip.
     const snapshot = task.forkedFrom?.snapshot
     if (snapshot) {

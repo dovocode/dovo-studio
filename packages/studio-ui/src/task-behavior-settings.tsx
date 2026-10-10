@@ -10,7 +10,13 @@ import {
 } from '@dovo/protocol'
 import { useSettingsDraft, useWorkspace } from '@dovo/studio-core'
 import { SettingsGroup, SettingRow } from './settings-layout'
-import { ChoicePicker } from './choice-picker'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './components/ui/select'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { SettingSource } from './setting-source'
@@ -63,10 +69,9 @@ export function TaskBehaviorSettings({
   const [saved, setSaved] = useState(false)
   const [legacy, setLegacy] = useState<typeof runtimePreferencesSchema.Type | null>(null)
   const [retry, setRetry] = useState(0)
-  useSettingsDraft(
-    !!loaded && JSON.stringify(draft) !== JSON.stringify(loaded.value.taskBehavior ?? {}),
-    busy,
-  )
+  const dirty =
+    !!loaded && JSON.stringify(draft) !== JSON.stringify(loaded.value.taskBehavior ?? {})
+  useSettingsDraft(dirty, busy)
   function load() {
     return request(
       '/api/agents/settings/read',
@@ -84,7 +89,7 @@ export function TaskBehaviorSettings({
           if (active) setLegacy(value)
         },
         (cause) => {
-          if (active) setError(String(cause))
+          if (active) setError(cause instanceof Error ? cause.message : String(cause))
         },
       )
     if (connected)
@@ -101,7 +106,7 @@ export function TaskBehaviorSettings({
           }
         },
         (cause) => {
-          if (active) setError(String(cause))
+          if (active) setError(cause instanceof Error ? cause.message : String(cause))
         },
       )
     return () => {
@@ -149,7 +154,7 @@ export function TaskBehaviorSettings({
       setDraft(value.value.taskBehavior ?? {})
       setSaved(true)
     } catch (cause) {
-      setError(String(cause))
+      setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setBusy(false)
     }
@@ -164,7 +169,7 @@ export function TaskBehaviorSettings({
       <fieldset disabled={!supported || !connected || !loaded || busy}>
         <SettingsGroup
           title="Task lifecycle"
-          description="These rules apply to existing tasks too. Inherit follows the earlier level; Off explicitly overrides On."
+          description="Applies to existing tasks as well as new ones. Choose Inherit to follow the earlier settings level."
         >
           {fields.map(([key, label, description]) => (
             <SettingRow
@@ -194,17 +199,21 @@ export function TaskBehaviorSettings({
                 />
               }
             >
-              <ChoicePicker
-                aria-label={label}
+              <Select
                 value={draft[key] === undefined ? 'inherit' : draft[key] ? 'on' : 'off'}
                 onValueChange={(value) =>
                   change({ ...draft, [key]: value === 'inherit' ? undefined : value === 'on' })
                 }
               >
-                <option value="inherit">Inherit ({fallback(key) ? 'On' : 'Off'})</option>
-                <option value="on">On</option>
-                <option value="off">Off</option>
-              </ChoicePicker>
+                <SelectTrigger aria-label={label}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inherit">Inherit ({fallback(key) ? 'On' : 'Off'})</SelectItem>
+                  <SelectItem value="on">On</SelectItem>
+                  <SelectItem value="off">Off</SelectItem>
+                </SelectContent>
+              </Select>
             </SettingRow>
           ))}
           <SettingRow
@@ -252,6 +261,11 @@ export function TaskBehaviorSettings({
           </SettingRow>
         </SettingsGroup>
       </fieldset>
+      {connected && supported && !loaded && !error && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Loading lifecycle settings…
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error}{' '}
@@ -260,15 +274,20 @@ export function TaskBehaviorSettings({
           </Button>
         </p>
       )}
-      <div className="flex items-center gap-3">
-        <Button disabled={!supported || !loaded || busy || !connected} onClick={() => void save()}>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3">
+        <p role="status" className="text-xs text-muted-foreground">
+          {saved
+            ? 'Lifecycle settings saved.'
+            : dirty
+              ? 'Unsaved lifecycle changes'
+              : 'Changes apply to existing tasks too'}
+        </p>
+        <Button
+          disabled={!supported || !loaded || busy || !connected || !dirty}
+          onClick={() => void save()}
+        >
           {busy ? 'Saving…' : 'Save lifecycle settings'}
         </Button>
-        {saved && (
-          <span role="status" className="text-xs text-muted-foreground">
-            Saved
-          </span>
-        )}
       </div>
     </div>
   )

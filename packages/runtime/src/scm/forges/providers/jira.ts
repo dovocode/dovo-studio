@@ -13,13 +13,14 @@ import { gfmToMarkdown } from 'mdast-util-gfm'
 import { markdownToAdf } from 'marklassian'
 import type {
   JiraBinding,
+  JiraIssueFilters,
   ForgeIssue,
   ForgeIssueCreate,
   ForgeIssueAction,
   ForgeWorkOptions,
   ForgePipelineAction,
 } from '@dovo/protocol'
-import { jiraBindingSchema, jiraProjectsSchema } from '@dovo/protocol'
+import { jiraBindingSchema, jiraProjectsSchema, jiraIssueFiltersSchema } from '@dovo/protocol'
 import type { ForgeWorkProvider } from '../../work/forge-work-types.js'
 import { runForgeCli } from '../integration/forge-cli.js'
 import { HttpError } from '../../../errors.js'
@@ -329,14 +330,15 @@ export class JiraWork implements ForgeWorkProvider {
       bodyFormat: 'markdown',
     }
   }
-  async issues(state: string, cursor?: string, query?: string) {
+  async issues(state: string, cursor?: string, query?: string, jiraFilters?: JiraIssueFilters) {
     const offset = jiraOffset(cursor)
-    const rows = await this.issueRows(state, query, offset + 31)
+    const rows = await this.issueRows(state, query, offset + 31, jiraFilters)
     return jiraIssuePage(rows, offset)
   }
   /** The newest `limit` matching issues in the server's order. ACLI exposes a result limit but
    * no page token, so pages are slices of one prefix read. */
-  async issueRows(state: string, query?: string, limit = 31) {
+  async issueRows(state: string, query?: string, limit = 31, jiraFilters?: JiraIssueFilters) {
+    const filters = decode(jiraIssueFiltersSchema, jiraFilters ?? {})
     await this.verify()
     const status =
       state === 'all'
@@ -347,6 +349,23 @@ export class JiraWork implements ForgeWorkProvider {
             ? ' AND statusCategory = Done'
             : ` AND status = ${JSON.stringify(state)}`
     const text = query?.trim()
+    const clauses: string[] = []
+    if (filters.assignee === 'mine') clauses.push('assignee = currentUser()')
+    if (filters.assignee === 'unassigned') clauses.push('assignee IS EMPTY')
+    for (const [field, value] of [
+      ['priority', filters.priority],
+      ['issuetype', filters.type],
+      ['labels', filters.label],
+    ]) {
+      if (value !== undefined) clauses.push(`${field} = ${JSON.stringify(value)}`)
+    }
+    if (filters.statusCategory) {
+      const category = { todo: 'To Do', 'in-progress': 'In Progress', done: 'Done' }[
+        filters.statusCategory
+      ]
+      clauses.push(`statusCategory = ${JSON.stringify(category)}`)
+    }
+    const structured = clauses.map((clause) => ` AND ${clause}`).join('')
     const search = !text
       ? ''
       : /^[A-Z][A-Z0-9_]*-\d+$/i.test(text)
@@ -356,7 +375,7 @@ export class JiraWork implements ForgeWorkProvider {
       'workitem',
       'search',
       '--jql',
-      `project = ${this.binding.project}${status}${search} ORDER BY updated DESC, key DESC`,
+      `project = ${this.binding.project}${status}${search}${structured} ORDER BY updated DESC, key DESC`,
       '--limit',
       String(Math.min(limit, 10021)),
       '--fields',

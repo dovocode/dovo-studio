@@ -21,8 +21,8 @@ import {
   selectedTaskHarness,
 } from '../tasks/creation/harness-choices'
 import type { AutomationData, Workspace } from '@dovo/protocol'
-import { Choice } from '../ui/controls/choice'
-import { Field } from '../ui/controls/field'
+import { SettingsChoice as Choice } from '../screens/settings-controls'
+import { SettingsField as Field } from '../screens/settings-controls'
 import { useTheme } from '../ui/theme'
 
 export function StepFields({

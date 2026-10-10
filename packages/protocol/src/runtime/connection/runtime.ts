@@ -1,3 +1,4 @@
+import { memorySettingsSchema } from '../memory.js'
 import { browserProfilesSchema, defaultBrowserProfiles } from '../previews/browser-profiles.js'
 import { artifactRetentionSchema } from '../../conversation/artifacts.js'
 import { repositoryOpenTargetsSchema } from '../../scm/repositories/repository-tools.js'
@@ -85,6 +86,7 @@ export const snapshotSchema = mutableStruct({
   artifactsEnabled: Schema.optional(Schema.Boolean),
   scopedAgentsSupported: Schema.optional(Schema.Boolean),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
+  worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
   taskBehaviorSupported: Schema.optional(Schema.Boolean),
   /** Present on scoped replicas; only these threads contain authoritative history. */
   detailTaskIds: Schema.optional(mutableArray(Schema.String)),
@@ -280,6 +282,15 @@ export const responses = {
 }
 
 export const runtimePreferencesSchema = mutableStruct({
+  memory: memorySettingsSchema.pipe(
+    Schema.withDecodingDefaultType(
+      Effect.sync(() => ({
+        systemEnabled: false,
+        projectlessEnabled: false,
+        projectRepositoryIds: [],
+      })),
+    ),
+  ),
   /** Host-local root for new worktrees. Empty uses the launcher's default. */
   worktreesRoot: Schema.String.pipe(
     Schema.check(Schema.isMaxLength(4096)),
@@ -304,6 +315,12 @@ export const runtimePreferencesSchema = mutableStruct({
   browserProfiles: browserProfilesSchema.pipe(
     Schema.withDecodingDefaultType(Effect.sync(defaultBrowserProfiles)),
   ),
+  /** Maximum active child families per parent thread; existing children are never stopped. */
+  maxActiveChildAgents: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isBetween({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+    Schema.withDecodingDefaultType(Effect.sync(() => 4)),
+  ),
   autoContinueAfterRestart: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
@@ -325,6 +342,10 @@ export const runtimePreferencesSchema = mutableStruct({
   ),
   /** Housekeeping removes clean worktrees of archived tasks; branches are always kept. */
   removeArchivedWorktrees: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
+  /** Remove clean Dovo worktrees when their last referencing thread is deleted. */
+  removeWorktreesOnThreadDelete: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
   /** Delete activity history older than this many days; 0 keeps everything. Defaults to 90 so

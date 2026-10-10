@@ -9,9 +9,9 @@ import { FlatList, Keyboard, View } from 'react-native'
 import { router } from 'expo-router'
 import { Text } from '../ui/content/text'
 import { useRuntime } from '../runtime/connection/provider'
-import { useTheme } from '../ui/theme'
+import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { CreationTarget } from '../runtime/connection/creation-target'
-import { SearchField } from '../ui/controls/field'
+import { SettingsSearchField as SearchField } from './settings-controls'
 import { AutomationEditor } from '../jobs/automation-editor'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Icon } from '../ui/controls/icon'
@@ -50,7 +50,7 @@ export default function JobsScreen() {
     focused,
   )
   return (
-    <View style={styles.screen}>
+    <SettingsPage>
       <ScreenHeader
         title="Automations"
         testID="Automations heading"
@@ -104,20 +104,32 @@ export default function JobsScreen() {
             />
           </View>
         }
-        renderItem={({ item }) => (
-          <AutomationRow
-            flow={item.flow}
-            snapshot={item.snapshot}
-            runtimeName={item.runtimeName}
-            online={item.connected}
-            disabled={!focused}
-            onOpen={() => {
-              if (!focused) return
-              retainPosition()
-              Keyboard.dismiss()
-              router.push(automationHref(item.runtimeId, item.flow.id))
+        renderItem={({ item, index }) => (
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              paddingHorizontal: 16,
+              borderTopLeftRadius: index === 0 ? 24 : 0,
+              borderTopRightRadius: index === 0 ? 24 : 0,
+              borderBottomLeftRadius: index === visible.length - 1 ? 24 : 0,
+              borderBottomRightRadius: index === visible.length - 1 ? 24 : 0,
+              overflow: 'hidden',
             }}
-          />
+          >
+            <AutomationRow
+              flow={item.flow}
+              snapshot={item.snapshot}
+              runtimeName={item.runtimeName}
+              online={item.connected}
+              disabled={!focused}
+              onOpen={() => {
+                if (!focused) return
+                retainPosition()
+                Keyboard.dismiss()
+                router.push(automationHref(item.runtimeId, item.flow.id))
+              }}
+            />
+          </View>
         )}
         ListEmptyComponent={
           !flows.length ? (
@@ -162,6 +174,6 @@ export default function JobsScreen() {
           {() => <AutomationEditor onClose={() => setCreating(false)} />}
         </CreationTarget>
       )}
-    </View>
+    </SettingsPage>
   )
 }

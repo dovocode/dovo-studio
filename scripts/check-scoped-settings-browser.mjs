@@ -4,7 +4,7 @@ import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 import assert from 'node:assert/strict'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState} from 'react';export const useApplicationState=useState;`
-const controls = `import {useState,cloneElement,isValidElement} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)?cloneElement(children,{"aria-label":label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,disabled,...props})=><select aria-label={props["aria-label"]} value={value} disabled={disabled} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const Text=({children})=><div>{children}</div>;export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Alert={alert:(title,message,buttons)=>buttons.at(-1).onPress?.()};export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} disabled={disabled} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} disabled={editable===false} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} disabled={editable===false} value={value} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);setError('');try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}}`
+const controls = `import {useState,cloneElement,isValidElement,createContext,useContext} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)?cloneElement(children,{"aria-label":label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,disabled,...props})=><select aria-label={props["aria-label"]} value={value} disabled={disabled} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children})=><div>{children}</div>;export const Platform={OS:'ios'};export const Sheet=({children})=>children;export const useInsideSheet=()=>false;export const Icon=()=> <span aria-hidden='true'/>;export const StyleSheet={create:value=>value,hairlineWidth:1};export const useWindowDimensions=()=>({width:390,height:844,fontScale:1});export const SearchField=props=><input aria-label={props.label} value={props.value} onChange={e=>props.onChangeText?.(e.target.value)}/>;export const styles={};export const MobileThemeContext=createContext({styles,colors:{text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'},mode:'dark'});export const useTheme=()=>useContext(MobileThemeContext);export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Alert={alert:(title,message,buttons)=>buttons.at(-1).onPress?.()};export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} disabled={disabled} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} disabled={editable===false} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} disabled={editable===false} value={value} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);setError('');try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}}`
 const mocks = {
   '@dovo/studio-core': `export const useWorkspace=()=>window.store;export const useSettingsDraft=()=>{};export const useOptionalSettingsTarget=()=>null;`,
   '@dovo/studio-core/state': state,
@@ -37,9 +37,10 @@ try {
           name: 'mocks',
           setup(b) {
             b.onResolve({ filter: /.*/ }, ({ path }) => {
+              if (/ui\/layout\/sheet$/.test(path)) return { path: 'controls', namespace: 'mock' }
               if (mocks[path]) return { path, namespace: 'mock' }
               if (
-                /components\/ui\/(button|input|textarea)$|components\/form-field$|choice-picker$|model-settings$|ui\/controls\/(choice|field|action|switch|use-action)$|ui\/content\/text$|ui\/theme$/.test(
+                /components\/ui\/(button|input|textarea)$|components\/form-field$|choice-picker$|model-settings$|ui\/controls\/(choice|field|action|switch|use-action|icon)$|ui\/content\/text$|ui\/theme$/.test(
                   path,
                 )
               )
@@ -63,8 +64,29 @@ try {
     if (mobile) await page.getByRole('button', { name: 'Task defaults', exact: true }).click()
     const scopes = page.getByLabel('Settings scope', { exact: true })
     await scopes.waitFor()
-    assert.equal(await scopes.locator('option').count(), 4)
-    assert.equal(await scopes.inputValue(), 'environment-project')
+    const choose = async (control, value, name) => {
+      if (mobile) await control.selectOption(value)
+      else {
+        await control.click()
+        await page.getByRole('option', { name, exact: true }).click()
+      }
+    }
+    const scopeNames = {
+      global: 'Global',
+      environment: 'Computer',
+      project: 'Project',
+      'environment-project': 'Project on computer',
+    }
+    const chooseScope = (value) => choose(scopes, value, scopeNames[value])
+    if (mobile) {
+      assert.equal(await scopes.locator('option').count(), 4)
+      assert.equal(await scopes.inputValue(), 'environment-project')
+    } else {
+      assert.equal(await scopes.textContent(), 'Project on computer')
+      await scopes.click()
+      assert.equal(await page.getByRole('option').count(), 4)
+      await page.keyboard.press('Escape')
+    }
     const origin = page.getByRole(mobile ? 'checkbox' : 'switch', {
       name: 'Start from origin',
       exact: true,
@@ -80,33 +102,48 @@ try {
       .filter({ hasText: /^(?:✓ )?New worktree(?: · Computer)?$/ })
       .last()
       .waitFor()
-    await page.getByLabel('Working directory', { exact: true }).selectOption('main')
+    await choose(
+      page.getByRole('combobox', { name: 'Working directory', exact: true }),
+      'main',
+      'Local checkout',
+    )
     if (mobile)
       await page
         .getByRole('button', { name: 'Use inherited working directory', exact: true })
         .click()
-    else await page.getByRole('button', { name: 'Reset current override', exact: true }).click()
+    else {
+      await page.getByRole('button', { name: 'Sources for working directory', exact: true }).click()
+      await page.getByRole('button', { name: 'Reset current override', exact: true }).click()
+    }
     assert.equal(
-      await page.getByLabel('Working directory', { exact: true }).inputValue(),
-      'inherit',
+      mobile
+        ? await page.getByRole('combobox', { name: 'Working directory', exact: true }).inputValue()
+        : await page
+            .getByRole('combobox', { name: 'Working directory', exact: true })
+            .textContent(),
+      mobile ? 'inherit' : 'Inherit (Local checkout)',
     )
     if (mobile) await page.getByRole('button', { name: 'Hide sources', exact: true }).click()
     else await page.keyboard.press('Escape')
-    await scopes.selectOption('global')
+    await chooseScope('global')
     assert.equal(await originOn(), true)
     await origin.click()
     assert.equal(await originOn(), false)
     await page.getByLabel('Setup command', { exact: true }).fill('global new setup')
     await page.getByLabel('Prompt text', { exact: true }).fill('Updated shared review')
     await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
-    await page.getByText('Defaults saved for new tasks.', { exact: true }).waitFor()
+    await page
+      .getByText(mobile ? /^Settings saved at / : 'Defaults saved for new tasks.', {
+        exact: !mobile,
+      })
+      .waitFor()
     let write = await page.evaluate(() => window.writes.at(-1))
     assert.equal(write.scope, 'global')
     assert.equal(write.after.taskDefaults.worktreeFromOrigin, false)
     assert.equal(write.after.taskDefaults.setupCommand, 'global new setup')
     assert.equal(write.after.prompts[0].text, 'Updated shared review')
     assert.deepEqual(write.after.resources, { mcpServers: [], skills: [] })
-    await scopes.selectOption('environment-project')
+    await chooseScope('environment-project')
     await page.getByRole('button', { name: 'Override inherited #review', exact: true }).click()
     assert.equal(await originOn(), false)
     await page.getByLabel('Prompt text', { exact: true }).fill('Local override')
@@ -114,50 +151,68 @@ try {
       .getByRole('button', { name: 'Reset task defaults to inherited settings', exact: true })
       .click()
     await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
-    await page.getByText('Defaults saved for new tasks.', { exact: true }).waitFor()
+    await page
+      .getByText(mobile ? /^Settings saved at / : 'Defaults saved for new tasks.', {
+        exact: !mobile,
+      })
+      .waitFor()
     write = await page.evaluate(() => window.writes.at(-1))
     assert.equal(write.scope, 'environment-project')
     assert.deepEqual(write.after.taskDefaults, {})
     assert.equal(await originOn(), false)
     assert.equal(write.after.prompts[0].text, 'Local override')
     assert.equal(write.repositoryId, 'project')
-    await scopes.selectOption('project')
-    const defaultServer = page.getByLabel('Default server', { exact: true })
+    await chooseScope('project')
+    const computerLabel = mobile ? 'Default server' : 'Preferred computer'
+    const defaultServer = page.getByRole('combobox', { name: computerLabel, exact: true })
     await defaultServer.waitFor()
     await page.waitForFunction(
-      () => !document.querySelector('[aria-label="Default server"]').disabled,
+      (label) => !document.querySelector(`[aria-label="${label}"]`).disabled,
+      computerLabel,
     )
     await defaultServer.selectOption('remote')
     await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
-    await page.getByText('Defaults saved for new tasks.', { exact: true }).waitFor()
+    await page
+      .getByText(mobile ? /^Settings saved at / : 'Defaults saved for new tasks.', {
+        exact: !mobile,
+      })
+      .waitFor()
     write = await page.evaluate(() => window.writes.at(-1))
     assert.equal(write.scope, 'project')
     assert.equal(write.after.taskDefaults.defaultServerId, 'remote')
     assert.equal(write.projectKey, 'project:github.com/team/repo')
-    await scopes.selectOption('global')
-    await scopes.selectOption('project')
+    await chooseScope('global')
+    await chooseScope('project')
     await page.waitForFunction(
-      () => document.querySelector('[aria-label="Default server"]')?.value === 'remote',
+      (label) => document.querySelector(`[aria-label="${label}"]`)?.value === 'remote',
+      computerLabel,
     )
     await defaultServer.selectOption('')
     await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
-    await page.getByText('Defaults saved for new tasks.', { exact: true }).waitFor()
+    await page
+      .getByText(mobile ? /^Settings saved at / : 'Defaults saved for new tasks.', {
+        exact: !mobile,
+      })
+      .waitFor()
     assert.equal(
       await page.evaluate(() => window.writes.at(-1).after.taskDefaults.defaultServerId),
       undefined,
     )
-    await scopes.selectOption('global')
+    await chooseScope('global')
     await page.evaluate(() => (window.delayProject = true))
-    await scopes.selectOption('project')
+    await chooseScope('project')
     await page.waitForFunction(() => !!window.releaseProject)
     assert.equal(
       await page.getByRole('button', { name: 'Save defaults', exact: true }).isDisabled(),
       true,
     )
-    await scopes.selectOption('global')
+    await chooseScope('global')
     await page.getByLabel('Setup command', { exact: true }).waitFor()
     await page.evaluate(() => window.releaseProject())
-    assert.equal(await scopes.inputValue(), 'global')
+    assert.equal(
+      mobile ? await scopes.inputValue() : await scopes.textContent(),
+      mobile ? 'global' : 'Global',
+    )
     assert.equal(
       await page.getByLabel('Setup command', { exact: true }).inputValue(),
       'global new setup',

@@ -21,7 +21,7 @@ export const settingsScopeIcons = {
 } as const
 
 /** Retained across scoped settings pages; app-only preferences have no target header. The
- * target bar stays visible above the scrolling page, like T3 Code's "Applying settings for". */
+ * target bar stays visible above the scrolling page. */
 export function SettingsScopePage({
   title,
   description,
@@ -50,7 +50,7 @@ export function SettingsScopePage({
         <div className={`mx-auto ${width} space-y-2.5 px-4 py-3 sm:px-6`}>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-xs">
             <Layers className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span className="font-medium">Applying settings for</span>
+            <span className="font-medium">Apply to</span>
             <ChoicePicker
               aria-label="Settings project"
               className="h-8 w-auto min-w-40 max-w-full bg-background/60"
@@ -126,7 +126,6 @@ export function SettingsScopePage({
                     >
                       <Icon className="size-3.5 shrink-0" aria-hidden="true" />
                       <span className="min-w-0">{settingsScopeLabels[level]}</span>
-                      <span className="text-[10px] opacity-60">{index + 1}</span>
                     </button>
                     {index < settingsScopes.length - 1 && (
                       <ChevronRight
@@ -143,11 +142,10 @@ export function SettingsScopePage({
                 How inheritance works
               </summary>
               <p className="mt-2 max-w-xl leading-relaxed">
-                Settings flow from Global → Computer → Project → Project on computer. A value set at
-                a later level wins; each control shows where its value comes from and which later
-                levels override it. Choose “Inherit” or reset an override to use the earlier value.
-                Shared defaults sync to paired computers. Sync changes the shared layer; your other
-                overrides stay saved.
+                Global defaults apply everywhere. Computer and project settings override them;
+                Project on computer is the most specific level. Each control shows its source.
+                Choose “Inherit” or reset an override to use the earlier value. Global and project
+                defaults sync to paired computers; computer overrides stay on their computer.
               </p>
             </details>
           </div>

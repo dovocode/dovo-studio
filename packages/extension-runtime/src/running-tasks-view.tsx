@@ -6,7 +6,7 @@ export default function RunningTasksView({ entityId }: { entityId?: string }) {
     <HostPage
       initialRuntimeId={entityId}
       title="Running tasks"
-      description="What this computer does with tasks on its own: resuming, staying awake and tidying up."
+      description="Control task recovery, child agent limits and automatic archiving."
     >
       <RunningTaskPreferences />
     </HostPage>

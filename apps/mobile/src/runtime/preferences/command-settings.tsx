@@ -20,8 +20,8 @@ import {
   type CommandSettings as Settings,
 } from '@dovo/protocol'
 import { useRuntime } from '../connection/provider'
-import { Field } from '../../ui/controls/field'
-import { Action } from '../../ui/controls/action'
+import { SettingsField as Field } from '../../screens/settings-controls'
+import { SettingsAction as Action } from '../../screens/settings-controls'
 import { useAction } from '../../ui/controls/use-action'
 import { useTheme } from '../../ui/theme'
 export function CommandSettings({ computerUse = false }: { computerUse?: boolean }) {
@@ -37,9 +37,11 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
   const [cua, setCua] = useApplicationState<CuaCheck | null>(null)
   const [output, setOutput] = useApplicationState('')
   const [saved, setSaved] = useApplicationState(false)
+  const [retry, setRetry] = useApplicationState(0)
   useEffect(() => {
     let stopped = false
     const generation = ++cuaGeneration.current
+    setSaved(false)
     setSettings(null)
     setBaseline(null)
     setLoadError('')
@@ -86,7 +88,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
       stopped = true
       cuaGeneration.current++
     }
-  }, [read, connected, computerUse])
+  }, [read, connected, computerUse, retry])
   const runAction = (action: CuaAction) =>
     act(() =>
       mobileWorkflow(function* () {
@@ -104,7 +106,12 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
         }
       }),
     )
-  if (!connected) return null
+  if (!connected)
+    return (
+      <Text accessibilityRole="alert" style={styles.muted}>
+        This computer is offline. Reconnect to load its command settings.
+      </Text>
+    )
   return (
     <View style={styles.card}>
       <Text style={styles.text}>{computerUse ? 'Computer use' : 'CLI commands & shell'}</Text>
@@ -113,6 +120,11 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
           ? 'Set up CuaDriver on this runtime host. CuaDriver owns OS permissions; Dovo connects agents through MCP.'
           : 'Host executable names or paths, without shell quoting. Agent overrides take precedence. New terminals use these shell settings.'}
       </Text>
+      {!settings && !loadError && (
+        <Text accessibilityLiveRegion="polite" style={styles.muted}>
+          Loading {computerUse ? 'computer-use' : 'command'} settings…
+        </Text>
+      )}
       {settings && (
         <>
           {commandFields
@@ -123,6 +135,8 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                 label={field.label}
                 value={settings[field.id]}
                 editable={!busy}
+                autoCapitalize="none"
+                autoCorrect={false}
                 placeholder={field.id === 'shell' ? defaultShell : field.placeholder}
                 onChangeText={(value) => {
                   if (field.id === 'cua') {
@@ -312,8 +326,15 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
             </>
           )}
           <Action
-            label={computerUse ? 'Save computer-use settings' : 'Save command settings'}
-            disabled={busy || !baseline}
+            wide
+            label={
+              busy
+                ? 'Saving…'
+                : computerUse
+                  ? 'Save computer-use settings'
+                  : 'Save command settings'
+            }
+            disabled={busy || !baseline || JSON.stringify(settings) === JSON.stringify(baseline)}
             onPress={() =>
               act(() =>
                 mobileWorkflow(function* () {
@@ -335,7 +356,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
             }
           />
           {saved && (
-            <Text style={styles.muted}>
+            <Text accessibilityLiveRegion="polite" style={styles.muted}>
               {computerUse
                 ? 'Computer-use settings saved. Applies to new turns.'
                 : 'Command settings saved.'}
@@ -343,7 +364,20 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
           )}
         </>
       )}
-      {!!(error || loadError) && <Text style={styles.error}>{error || loadError}</Text>}
+      {!!(error || loadError) && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error || loadError}
+        </Text>
+      )}
+      {!!loadError && (
+        <Action
+          wide
+          secondary
+          label="Retry command settings"
+          disabled={busy}
+          onPress={() => setRetry(retry + 1)}
+        />
+      )}
     </View>
   )
 }

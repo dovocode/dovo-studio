@@ -9,7 +9,8 @@ import {
   type StudioThemeColors,
 } from '@dovo/studio-core'
 import { ChoicePicker, Input } from '@dovo/studio-ui'
-import { SettingRow, SettingsGroup, SettingsPage, Segmented } from './layout'
+import { SettingRow, SettingsGroup, SettingsPage } from './layout'
+import { SettingsSelect } from './settings-select'
 
 export default function AppearanceSettings() {
   const {
@@ -26,14 +27,11 @@ export default function AppearanceSettings() {
   return (
     <SettingsPage local title="Appearance" description="How Dovo looks on this device.">
       <SettingsGroup title="Theme">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
-          <div className="min-w-48 flex-1">
-            <p className="text-[0.8125rem] font-medium">Color scheme</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              System follows your computer’s light or dark mode.
-            </p>
-          </div>
-          <Segmented
+        <SettingRow
+          label="Color scheme"
+          description="System follows your computer’s light or dark mode."
+        >
+          <SettingsSelect
             label="Color scheme"
             value={theme}
             options={[
@@ -43,11 +41,12 @@ export default function AppearanceSettings() {
             ]}
             onChange={(theme) => updateAppPreferences({ theme })}
           />
-        </div>
+        </SettingRow>
         <fieldset className="min-w-0 p-4">
           <legend className="sr-only">Color palette</legend>
+          <p className="mb-1 text-[0.8125rem] font-medium">Color palette</p>
           <p className="mb-3 text-xs text-muted-foreground">
-            Every palette includes a dark and light mode. Dovo uses our signature graphite and blue.
+            Each palette includes light and dark colors.
           </p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {studioThemeIds.map((id) => {
@@ -76,7 +75,7 @@ export default function AppearanceSettings() {
                       <span className="text-[10px] text-muted-foreground">Default</span>
                     )}
                   </span>
-                  <span className="mt-1 block text-[11px] text-muted-foreground">
+                  <span className="mt-1 block text-xs text-muted-foreground">
                     {palette.description}
                   </span>
                 </label>
@@ -106,7 +105,7 @@ export default function AppearanceSettings() {
       <SettingsGroup title="Text">
         <SettingRow
           label="App font"
-          description="Choose a font or enter an installed font’s family name. Leave empty for the default."
+          description="Enter an installed font’s family name, or choose a suggestion. Empty uses the default."
         >
           <Input
             aria-label="App font"
@@ -119,7 +118,7 @@ export default function AppearanceSettings() {
         </SettingRow>
         <SettingRow
           label="Code font"
-          description="Used in code blocks and diffs. JetBrains Mono Nerd Font is bundled; other fonts need to be installed on this device."
+          description="For code blocks and diffs. JetBrains Mono Nerd Font is included; other fonts must be installed."
         >
           <Input
             aria-label="Code font"
@@ -131,7 +130,7 @@ export default function AppearanceSettings() {
           />
         </SettingRow>
         <SettingRow label="Text size" description="Scales text and spacing across the app.">
-          <Segmented
+          <SettingsSelect
             label="Text size"
             value={textSize}
             options={[
@@ -149,7 +148,7 @@ export default function AppearanceSettings() {
       >
         <SettingRow
           label="Terminal font"
-          description="JetBrains Mono Nerd Font includes shell and developer icons and works offline. Leave empty for system monospace."
+          description="JetBrains Mono Nerd Font includes developer icons. Empty uses system monospace."
         >
           <Input
             aria-label="Terminal font"
@@ -174,7 +173,7 @@ export default function AppearanceSettings() {
           </ChoicePicker>
         </SettingRow>
         <div
-          className="overflow-x-auto px-4 py-4 text-sm"
+          className="overflow-x-auto bg-muted/30 px-4 py-4 text-sm"
           aria-label="Terminal font preview"
           style={{
             fontFamily: fontStack(terminalFontFamily, systemMonoFont),
@@ -186,7 +185,7 @@ export default function AppearanceSettings() {
       </SettingsGroup>
       <SettingsGroup title="Conversation">
         <SettingRow label="Chat width" description="How wide conversations grow on large screens.">
-          <Segmented
+          <SettingsSelect
             label="Chat width"
             value={chatWidth}
             options={[
@@ -203,7 +202,7 @@ export default function AppearanceSettings() {
           label="Animations"
           description="System follows your computer’s Reduce motion setting."
         >
-          <Segmented
+          <SettingsSelect
             label="Animations"
             value={motion}
             options={[

@@ -3,7 +3,7 @@ import { Effect, Schema } from 'effect'
 import { decode, decodeResult, mutableStruct } from '@dovo/protocol'
 import { clientTaskScope, connectionSchema, useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { Button } from '@dovo/studio-ui'
+import { Button, Input } from '@dovo/studio-ui'
 const statusSchema = mutableStruct({
   local: Schema.Boolean,
   host: Schema.String,
@@ -131,14 +131,14 @@ export function DesktopNetwork({ onChanged }: { onChanged: (moved: boolean) => P
             <div className="flex flex-wrap items-end gap-2">
               <label className="text-xs text-muted-foreground">
                 Port
-                <input
+                <Input
                   type="number"
                   min={1}
                   max={65535}
                   value={portInput}
                   disabled={busy}
                   onChange={(event) => setPortInput(event.target.value)}
-                  className="mt-1 block h-8 w-24 rounded border border-input bg-background px-2 text-sm text-foreground"
+                  className="mt-1 w-24"
                 />
               </label>
               <Button

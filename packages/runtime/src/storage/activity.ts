@@ -93,6 +93,12 @@ export class Activity {
       )
     this.revision++
   }
+  imagePayload(scope: string, id: string) {
+    return decode(
+      Schema.UndefinedOr(record),
+      this.db.prepare('SELECT * FROM activity WHERE scope=? AND id=?').get(scope, id),
+    )?.payload
+  }
   workspace(before: Workspace, after: Workspace) {
     if (before.tasks === after.tasks) return
     const previousTasks = new Map(before.tasks.map((task) => [task.id, task]))

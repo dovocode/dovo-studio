@@ -1,3 +1,4 @@
+import { router } from 'expo-router'
 import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -6,6 +7,7 @@ import { useEffect, useRef } from 'react'
 import { Image, Platform, ScrollView, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import {
+  deviceHostSettingsResultSchema,
   previewDevicesSchema,
   previewResultSchema,
   previewUrl,
@@ -22,6 +24,8 @@ import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
 import { RemoteBrowser } from './remote-browser'
 import { PhysicalControls } from './physical-controls'
+import { DeviceActions, type DeviceForward } from './device-actions'
+import { deviceHostMessage } from '../../screens/device-host-form'
 const addresses = new Map<string, string>()
 type PreviewProps = { taskId: string; expanded: boolean; onExpand: (value: boolean) => void }
 export function BrowserPane(props: PreviewProps) {
@@ -133,7 +137,7 @@ function BrowserContent({
 }) {
   const { colors, styles } = useTheme()
 
-  const { profile, connected, callEffect } = useRuntime(),
+  const { profile, profiles, connected, read, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
   const [input, setInput] = useApplicationState(addresses.get(scope) ?? 'http://localhost:3000'),
     [url, setUrl] = useApplicationState(addresses.get(scope) ?? '')
@@ -143,6 +147,16 @@ function BrowserContent({
     [diagnostics, setDiagnostics] = useApplicationState<string[]>([])
   const [liveDevice, setLiveDevice] = useApplicationState<PreviewDevice | undefined>(undefined)
   const [setupDevice, setSetupDevice] = useApplicationState<PreviewDevice | undefined>(undefined)
+  const [actionDevice, setActionDevice] = useApplicationState<PreviewDevice | null>(null)
+  const [forward, setForward] = useApplicationState<DeviceForward | null>(null)
+  const [hubEnabled, setHubEnabled] = useApplicationState<boolean | null>(null)
+  const listGeneration = useRef(0)
+  useEffect(
+    () => () => {
+      listGeneration.current++
+    },
+    [],
+  )
   const [image, setImage] = useApplicationState(''),
     [loadError, setLoadError] = useApplicationState('')
   const web = useRef<WebView>(null)
@@ -156,8 +170,23 @@ function BrowserContent({
   })
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
   const load = () => {
+    const generation = ++listGeneration.current
     return runClientEffect(
       mobileWorkflow(function* () {
+        const settings = yield* nativeEffect(() =>
+          read('/api/device-hosts', {}, deviceHostSettingsResultSchema, 'GET'),
+        )
+        if (generation !== listGeneration.current) return
+        setHubEnabled(settings.enabled === true)
+        if (settings.enabled !== true) {
+          setDevices([])
+          setDiagnostics([])
+          setLiveDevice(undefined)
+          setSetupDevice(undefined)
+          setActionDevice(null)
+          setForward(null)
+          return
+        }
         const result = yield* callEffect(
           '/api/previews/devices',
           {
@@ -165,13 +194,18 @@ function BrowserContent({
           },
           previewDevicesSchema,
         )
-        setDevices(result.devices)
-        setDiagnostics(result.diagnostics)
+        if (generation === listGeneration.current) {
+          setDevices(result.devices)
+          setDiagnostics(result.diagnostics)
+        }
       }),
     )
   }
   useEffect(() => {
     if (mode === 'devices' && connected) act(load)
+    return () => {
+      listGeneration.current++
+    }
   }, [mode, connected])
   const navigate = () =>
     act(() =>
@@ -202,6 +236,7 @@ function BrowserContent({
           {
             taskId,
             id: device.id,
+            hostId: device.hostId,
             action,
             url: input,
           },
@@ -211,6 +246,17 @@ function BrowserContent({
         yield* nativeEffect(() => load())
       }),
     )
+  const actions = actionDevice ? (
+    <DeviceActions
+      key={actionDevice.id}
+      taskId={taskId}
+      device={actionDevice}
+      forward={forward}
+      onForward={setForward}
+      onUrl={setInput}
+      onClose={() => setActionDevice(null)}
+    />
+  ) : null
   const setup = setupDevice ? (
     <PhysicalControls
       taskId={taskId}
@@ -226,6 +272,7 @@ function BrowserContent({
         }}
       >
         {setup}
+        {actions}
         <View
           style={{
             display: expanded ? 'none' : 'flex',
@@ -251,11 +298,19 @@ function BrowserContent({
             ]}
           >
             {liveDevice.name}
+            {liveDevice.hostName ? ` · ${liveDevice.hostName}` : ' · Local runtime'}
           </Text>
-          {liveDevice.kind === 'physical' && (
+          <IconButton
+            icon="settings"
+            label="Install app / URL forwards"
+            disabled={!connected || busy}
+            onPress={() => setActionDevice(liveDevice)}
+          />
+          {liveDevice.kind === 'physical' && liveDevice.platform === 'ios' && (
             <IconButton
               icon="settings"
               label="Device controls"
+              disabled={!connected || busy}
               onPress={() => setSetupDevice(liveDevice)}
             />
           )}
@@ -264,6 +319,7 @@ function BrowserContent({
           key={`${scope}:${liveDevice.id}`}
           taskId={taskId}
           deviceId={liveDevice.id}
+          devicePlatform={liveDevice.platform}
           expanded={expanded}
         />
       </View>
@@ -372,7 +428,7 @@ function BrowserContent({
               color: colors.error,
             }}
           >
-            {error || loadError}
+            {deviceHostMessage(error || loadError, profiles)}
           </Text>
         )}
       </View>
@@ -475,10 +531,22 @@ function BrowserContent({
           />
           {diagnostics.map((d) => (
             <Text key={d} style={styles.muted}>
-              {d}
+              {deviceHostMessage(d, profiles)}
             </Text>
           ))}
-          {!devices.length && !busy && (
+          {hubEnabled === false && (
+            <View style={{ gap: 12 }}>
+              <Text style={styles.muted}>
+                Device Hub is off for this computer. Enable it in Device previews settings to
+                discover simulators and connected phones.
+              </Text>
+              <Action
+                label="Enable in Device previews settings"
+                onPress={() => router.push('/settings/device-hosts')}
+              />
+            </View>
+          )}
+          {hubEnabled === true && !devices.length && !busy && (
             <Text style={styles.muted}>
               No devices found. Connect a phone to the host or create a simulator.
             </Text>
@@ -489,9 +557,9 @@ function BrowserContent({
               testID={`Simulator ${device.id}`}
               style={{
                 gap: 8,
-                paddingBottom: 12,
-                borderBottomWidth: 0.5,
-                borderColor: colors.border,
+                padding: 16,
+                borderRadius: 20,
+                backgroundColor: colors.surface,
               }}
             >
               {(index === 0 || devices[index - 1].kind !== device.kind) && (
@@ -510,10 +578,11 @@ function BrowserContent({
                 </Text>
               )}
               <Text style={styles.text}>{device.name}</Text>
+              <Text style={styles.muted}>{device.hostName ?? 'Local runtime'}</Text>
               <Text style={styles.muted}>
                 {device.kind === 'physical'
                   ? `Physical ${device.platform === 'ios' ? 'iPhone / iPad' : 'Android'} · ${device.connection}`
-                  : `Simulator · ${device.state}`}
+                  : `${device.platform === 'ios' ? 'iOS simulator' : 'Android emulator'} · ${device.state}`}
                 {device.kind === 'physical' && device.state === 'booted' && ' · Direct control'}
               </Text>
               <View
@@ -535,12 +604,27 @@ function BrowserContent({
                   }
                   onPress={() => setLiveDevice(device)}
                 />
+                <Action
+                  secondary
+                  label="Install app / URL forwards"
+                  disabled={!connected || busy}
+                  onPress={() => setActionDevice(device)}
+                />
                 {device.kind === 'physical' && (
                   <>
+                    {device.platform === 'android' && (
+                      <Action
+                        secondary
+                        label="Open URL"
+                        disabled={!connected || busy || device.state !== 'booted'}
+                        onPress={() => deviceAction(device, 'open')}
+                      />
+                    )}
                     {device.platform === 'ios' && (
                       <Action
                         secondary
                         label="Device controls"
+                        disabled={!connected || busy}
                         onPress={() => setSetupDevice(device)}
                       />
                     )}
@@ -579,6 +663,7 @@ function BrowserContent({
             </View>
           ))}
           {setup}
+          {actions}
           {image && (
             <>
               <Text style={styles.muted}>Captured screenshot · refresh with Screenshot</Text>

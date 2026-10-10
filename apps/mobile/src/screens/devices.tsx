@@ -1,4 +1,5 @@
 import { runtimeComputerName } from '@dovo/protocol'
+import { DeviceHostSettings } from './device-host-settings'
 import { ComputerUpdates } from './computer-updates'
 import { TaskDefaultSettings } from '../runtime/preferences/task-default-settings'
 import { RuntimePreferences } from '../runtime/connection/runtime-preferences'
@@ -16,10 +17,10 @@ import { PairComputer } from '../runtime/connection/pair-computer'
 import { ConnectionHelp } from '../runtime/connection/connection-help'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { Text } from '../ui/content/text'
-import { Sheet } from '../ui/layout/sheet'
-import { Action } from '../ui/controls/action'
-import { Field } from '../ui/controls/field'
-import { useTheme } from '../ui/theme'
+import { SettingsSheet as Sheet } from './settings-theme'
+import { SettingsAction as Action } from './settings-controls'
+import { SettingsField as Field } from './settings-controls'
+import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { useAction } from '../ui/controls/use-action'
 import { SettingsGroup, SettingsRow } from './settings-group'
 import { ScreenHeader } from '../ui/layout/screen-header'
@@ -84,7 +85,7 @@ export default function DevicesScreen() {
       clientScopeKey(entry.profile.connection) === clientScopeKey(editing.connection),
   )
   return (
-    <View style={styles.screen}>
+    <SettingsPage>
       <ScreenHeader
         title="Computers"
         buttons={
@@ -267,7 +268,7 @@ export default function DevicesScreen() {
           </Text>
         </Sheet>
       )}
-    </View>
+    </SettingsPage>
   )
 }
 function ComputerSettings({ onClose }: { onClose: () => void }) {
@@ -288,15 +289,32 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
   const [help, setHelp] = useApplicationState(false)
   const [changingAddress, setChangingAddress] = useApplicationState(false)
   const [pairingBusy, setPairingBusy] = useApplicationState(false)
-  const [panel, setPanel] = useApplicationState<'commands' | 'computer-use' | 'activity' | null>(
-    null,
-  )
+  const [deviceHostsBusy, setDeviceHostsBusy] = useApplicationState(false)
+  const [deviceHostsDirty, setDeviceHostsDirty] = useApplicationState(false)
+  const leaveDeviceHosts = (leave: () => void) => {
+    if (deviceHostsBusy) return
+    if (!deviceHostsDirty) return leave()
+    Alert.alert('Discard device host draft?', 'Your unsaved host changes will be discarded.', [
+      { text: 'Keep editing', style: 'cancel' },
+      {
+        text: 'Discard',
+        style: 'destructive',
+        onPress: () => {
+          setDeviceHostsDirty(false)
+          leave()
+        },
+      },
+    ])
+  }
+  const [panel, setPanel] = useApplicationState<
+    'commands' | 'computer-use' | 'activity' | 'device-hosts' | null
+  >(null)
   if (!profile) return null
   return (
     <Sheet
       title={runtimeComputerName({ profile, snapshot })}
-      busy={busy || pairingBusy}
-      onClose={onClose}
+      busy={busy || pairingBusy || deviceHostsBusy}
+      onClose={() => leaveDeviceHosts(onClose)}
     >
       {changingAddress ? (
         <>
@@ -315,8 +333,19 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
         </>
       ) : panel ? (
         <>
-          <Action secondary label="Back to computer" onPress={() => setPanel(null)} />
-          {panel === 'activity' ? (
+          <Action
+            secondary
+            label="Back to computer"
+            disabled={deviceHostsBusy}
+            onPress={() => leaveDeviceHosts(() => setPanel(null))}
+          />
+          {panel === 'device-hosts' ? (
+            <DeviceHostSettings
+              key={profile.id}
+              onBusyChange={setDeviceHostsBusy}
+              onDirtyChange={setDeviceHostsDirty}
+            />
+          ) : panel === 'activity' ? (
             <ActivityLog />
           ) : (
             <CommandSettings computerUse={panel === 'computer-use'} />
@@ -352,6 +381,12 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
           <RuntimePreferences />
           <TaskDefaultSettings />
           <SettingsGroup title="On this computer">
+            <SettingsRow
+              title="Device previews"
+              subtitle="Remote SSH device hosts"
+              icon="device"
+              onPress={() => setPanel('device-hosts')}
+            />
             <SettingsRow
               title="CLI commands & shell"
               icon="terminal"

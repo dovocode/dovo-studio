@@ -11,7 +11,16 @@ import {
   type WindowsRuntimeBridge,
   type WindowsSecurityReport,
 } from '@dovo/protocol'
-import { Button } from '@dovo/studio-ui'
+import {
+  Button,
+  ChoicePicker,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  FormField,
+} from '@dovo/studio-ui'
 import { connectionSchema } from '@dovo/studio-core'
 
 const bridgeSchema = Schema.Struct({
@@ -232,29 +241,29 @@ function WindowsRuntimeControl({
         Choose where your projects, agents, Git and terminals run. Each environment keeps its own
         threads, settings and saved logins. Finish active runs before switching.
       </p>
-      <label className="block text-sm">
-        Environment
-        <select
-          aria-label="Execution environment"
-          className="ml-3 rounded border bg-background p-2"
+      <FormField label="Environment">
+        <Select
           value={mode}
           disabled={busy}
-          onChange={(event) => setMode(event.target.value === 'wsl' ? 'wsl' : 'native')}
+          onValueChange={(value) => setMode(value === 'wsl' ? 'wsl' : 'native')}
         >
-          <option value="native">Native Windows (recommended)</option>
-          <option value="wsl">WSL 2</option>
-        </select>
-      </label>
+          <SelectTrigger aria-label="Execution environment" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="native">Native Windows (recommended)</SelectItem>
+            <SelectItem value="wsl">WSL 2</SelectItem>
+          </SelectContent>
+        </Select>
+      </FormField>
       {mode === 'wsl' && (
         <>
-          <label className="block text-sm">
-            Distribution
-            <select
+          <FormField label="Distribution">
+            <ChoicePicker
               aria-label="WSL distribution"
-              className="ml-3 rounded border bg-background p-2"
               value={distribution}
               disabled={busy}
-              onChange={(event) => setDistribution(event.target.value)}
+              onValueChange={setDistribution}
             >
               <option value="">Choose a distribution</option>
               {status?.distributions
@@ -264,8 +273,8 @@ function WindowsRuntimeControl({
                     {entry.name}
                   </option>
                 ))}
-            </select>
-          </label>
+            </ChoicePicker>
+          </FormField>
           <p className="text-xs text-muted-foreground">
             Dovo installs the matching Linux runtime in this distribution. Install and sign in to
             your agent CLIs there. Keep Linux projects under /home for best performance. LAN/VPN
@@ -280,12 +289,17 @@ function WindowsRuntimeControl({
           )}
         </>
       )}
+      {!status && !error && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Loading execution environments…
+        </p>
+      )}
       {error && (
         <p role="alert" className="break-words text-sm text-destructive [overflow-wrap:anywhere]">
           {error}
         </p>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           disabled={
             busy ||

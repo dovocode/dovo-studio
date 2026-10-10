@@ -29,6 +29,7 @@ import {
   resolveTaskAgent,
   delegatedAccess,
   taskFamilyIds,
+  taskFamilyWorking,
   nativeAgentWorking,
   workspaceSchema,
   patchSchema,
@@ -140,6 +141,29 @@ export class WorkspaceStore {
   readonly usageTranscripts = new UsageTranscripts()
   private revision = 0
   private projected?: { revision: number; workspace: Workspace }
+  /** Host-local inventory survives thread deletion and changes to the worktree folder. */
+  managedWorktrees(common: string): string[] {
+    const row = decode(
+      Schema.UndefinedOr(rowSchema),
+      this.db.prepare('SELECT value FROM documents WHERE id = ?').get(`worktrees:${common}`),
+    )
+    return row ? decode(mutableArray(Schema.String), JSON.parse(row.value)) : []
+  }
+  rememberWorktree(common: string, path: string) {
+    const paths = this.managedWorktrees(common)
+    if (paths.includes(path)) return
+    this.db
+      .prepare('INSERT OR REPLACE INTO documents (id, value) VALUES (?, ?)')
+      .run(`worktrees:${common}`, JSON.stringify([...paths, path]))
+  }
+  forgetWorktree(common: string, path: string) {
+    this.db
+      .prepare('INSERT OR REPLACE INTO documents (id, value) VALUES (?, ?)')
+      .run(
+        `worktrees:${common}`,
+        JSON.stringify(this.managedWorktrees(common).filter((item) => item !== path)),
+      )
+  }
   constructor(
     private readonly db: Database.Database,
     private onUpdate?: (before: Workspace, after: Workspace) => void,
@@ -991,6 +1015,12 @@ export class WorkspaceStore {
       if (
         patch.collection === 'tasks' &&
         (current.status === 'running' ||
+          (key !== 'archived' &&
+            this.workspace.tasks.some(
+              (child) =>
+                child.delegation?.parentTaskId === patch.id &&
+                taskFamilyWorking(this.workspace.tasks, child.id),
+            )) ||
           this.workspace.tasks
             .find((task) => task.id === patch.id)
             ?.subagents?.some(nativeAgentWorking)) &&

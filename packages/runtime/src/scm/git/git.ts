@@ -1,3 +1,4 @@
+import { includedWorktreeFiles, copyWorktreeFiles } from './worktree-include.js'
 import { stopOwnedChild } from '../../agents/execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
@@ -23,6 +24,7 @@ import {
   mkdtemp,
   rm,
   copyFile,
+  realpath,
 } from 'node:fs/promises'
 import { join, dirname, basename } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
@@ -145,6 +147,7 @@ export class GitService {
       cwd: string,
     ) => string | Promise<string>,
     private repositoryGithubEnvironment?: (cwd: string) => Promise<Record<string, string>>,
+    private worktreeCreated?: (common: string, directory: string) => void,
   ) {}
   async githubEnvironment(cwd: string) {
     return this.repositoryGithubEnvironment?.(cwd) ?? {}
@@ -251,6 +254,30 @@ export class GitService {
   }
   command(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
     return this.run(cwd, this.settings().git, args, 30000, 12 * 1024 * 1024, env)
+  }
+  /** Copy project-local files only into freshly created checkouts, before setup runs. */
+  async addWorktree(root: string, directory: string, args: string[]) {
+    const files = await includedWorktreeFiles(root)
+    await this.command(root, ['worktree', 'add', ...args])
+    try {
+      const canonicalDirectory = await realpath(directory)
+      await copyWorktreeFiles(root, canonicalDirectory, files)
+      if (this.worktreeCreated) {
+        const common = (
+          await this.command(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+        ).trim()
+        this.worktreeCreated(common, canonicalDirectory)
+      }
+    } catch (error) {
+      // A failed copy must not leave a checkout that subsequent attempts treat as prepared.
+      // The branch is retained, so retrying can reattach it.
+      try {
+        await this.command(root, ['worktree', 'remove', '--force', directory])
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'Worktree file copy and cleanup failed')
+      }
+      throw error
+    }
   }
   // Credential helpers answer or fail; git must never wait on a terminal prompt.
   private nonInteractive() {
@@ -363,20 +390,17 @@ export class GitService {
   async openTargets() {
     const installed = detectInstalledOpeners()
     this.installedOpeners = installed
-    try {
-      return { targets: (await installed).map((opener) => opener.target) }
-    } catch (error) {
+    // Registered first, so a failed scan is uncached before any waiting open resumes.
+    installed.catch(() => {
       if (this.installedOpeners === installed) this.installedOpeners = undefined
-      throw error
-    }
+    })
+    return { targets: (await installed).map((opener) => opener.target) }
   }
   async openFolder(path: string, target: RepositoryOpenTarget) {
     const cwd = await repositoryPath(path)
-    const { executable, args, detached } = await folderOpenCommand(
-      cwd,
-      target,
-      this.installedOpeners ? await this.installedOpeners : undefined,
-    )
+    // A pending listing that fails must not fail this open; it rescans and reports its own error.
+    const cached = await this.installedOpeners?.catch(() => undefined)
+    const { executable, args, detached } = await folderOpenCommand(cwd, target, cached)
     if (!detached) {
       await this.run(cwd, executable, args, 10000, 1024 * 1024)
       return

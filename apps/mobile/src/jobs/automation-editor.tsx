@@ -14,13 +14,13 @@ import {
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { useRuntime } from '../runtime/connection/provider'
-import { Sheet } from '../ui/layout/sheet'
-import { Field } from '../ui/controls/field'
-import { Choice } from '../ui/controls/choice'
-import { Action } from '../ui/controls/action'
+import { SettingsSheet as Sheet } from '../screens/settings-theme'
+import { SettingsField as Field } from '../screens/settings-controls'
+import { SettingsChoice as Choice } from '../screens/settings-controls'
+import { SettingsAction as Action } from '../screens/settings-controls'
 import { Icon } from '../ui/controls/icon'
 import { IconButton } from '../ui/controls/icon-button'
-import { useTheme } from '../ui/theme'
+import { useSettingsTheme as useTheme } from '../screens/settings-theme'
 import { useAction } from '../ui/controls/use-action'
 import { linearNodes, newAutomationNode, withLinearNodes, scheduleChoices } from './linear-flow'
 import { StepFields } from './step-fields'
@@ -434,6 +434,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
             </Text>
           )}
           <Action
+            wide
             label="Save automation"
             disabled={!connected || busy}
             onPress={() => {

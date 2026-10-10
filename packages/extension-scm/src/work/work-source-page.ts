@@ -4,6 +4,9 @@ import {
   forgePipelinePageSchema,
   forgeWorkOptionsSchema,
   mutableStruct,
+  jiraIssueFilterKey,
+  hasJiraIssueFilters,
+  type JiraIssueFilters,
   type ForgeIssue,
   type ForgePipeline,
   type ForgeWorkOptions,
@@ -58,6 +61,7 @@ export const workSourceCacheKey = (
   kind: 'list' | 'options',
   query = '',
   state = 'all',
+  jiraFilters?: JiraIssueFilters,
 ) =>
   JSON.stringify([
     'work',
@@ -70,6 +74,9 @@ export const workSourceCacheKey = (
     undefined,
     kind === 'list' ? state : undefined,
     kind === 'list' ? query || undefined : undefined,
+    ...(kind === 'list' && source.jira && hasJiraIssueFilters(jiraFilters)
+      ? [jiraIssueFilterKey(jiraFilters)]
+      : []),
   ])
 
 export function reusableOptions<T>(
@@ -122,6 +129,7 @@ export function loadWorkSourcePage(
   state: string,
   refresh: boolean,
   previous?: WorkSourcePage,
+  jiraFilters?: JiraIssueFilters,
 ) {
   return Effect.gen(function* () {
     const options =
@@ -152,7 +160,14 @@ export function loadWorkSourcePage(
           mode === 'issues'
             ? yield* source.requestEffect(
                 '/api/scm/work/issues/list',
-                { ...source.input, state, query, cursor: response.next, refresh },
+                {
+                  ...source.input,
+                  state,
+                  query,
+                  cursor: response.next,
+                  refresh,
+                  ...(source.jira && jiraFilters ? { jiraFilters } : {}),
+                },
                 forgeIssuePageSchema,
               )
             : yield* source.requestEffect(

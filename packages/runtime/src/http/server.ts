@@ -1,3 +1,4 @@
+import { assertForeignDeviceScope } from '../previews/device-hosts.js'
 import { attachRuntimeSync } from './support/runtime-sync.js'
 import { pairingAddresses } from './support/pairing-addresses.js'
 import { ValidationError, safeValidationIssues, safeValidationMessage } from '@dovo/protocol'
@@ -227,7 +228,36 @@ export function createRuntimeServer(services: Services, internal = false) {
         })
         return
       }
+      if (url.pathname === '/ws/device-host/simulator') {
+        services.deviceHosts.assertEnabled()
+        const ticket = services.deviceHostTickets.consume(url.searchParams.get('ticket') ?? '')
+        const device = services.devices.authenticate(ticket.token)
+        const scope = services.hostSimulators.taskId(ticket.resourceId, device.id)
+        const authorize = () => {
+          services.devices.authenticate(ticket.token)
+          assertForeignDeviceScope(
+            services.hostSimulators.taskId(ticket.resourceId, device.id),
+            device.id,
+          )
+        }
+        authorize()
+        sockets.handleUpgrade(request, socket, head, (client) => {
+          track(client, ticket.token)
+          attachBrowserSocket(
+            client,
+            scope,
+            ticket.token,
+            services,
+            true,
+            ticket.resourceId,
+            scope,
+            authorize,
+          )
+        })
+        return
+      }
       if (url.pathname === '/ws/simulator') {
+        services.deviceHosts.assertEnabled()
         const ticket = services.simulatorTickets.consume(url.searchParams.get('ticket') ?? '')
         services.devices.authenticate(ticket.token)
         const taskId = services.simulators.taskId(ticket.resourceId)

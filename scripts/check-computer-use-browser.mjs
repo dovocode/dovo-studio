@@ -6,17 +6,17 @@ import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `export {useState as useApplicationState} from 'react';`
-const controls = `import {useState} from 'react';
-export const View=({children})=><div>{children}</div>;
+const controls = `import {useState,createContext,useContext} from 'react';
+export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button disabled={disabled} aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;
 export const Text=({children})=><p>{children}</p>;
 export const Linking={openURL:async()=>{}};
 export const Alert={alert:(title,message,buttons)=>{if(window.confirm(message))buttons.at(-1).onPress()}};
-export const styles={};export const useTheme=()=>({styles,colors:{},mode:'dark'});
+export const Platform={OS:'ios'};export const StyleSheet={create:value=>value,hairlineWidth:1};export const useWindowDimensions=()=>({width:390,height:844,fontScale:1});export const SearchField=props=><input aria-label={props.label} value={props.value} onChange={e=>props.onChangeText?.(e.target.value)}/>;export const styles={};export const MobileThemeContext=createContext({styles,colors:{},mode:'dark'});export const useTheme=()=>useContext(MobileThemeContext);
 export const Field=({label,value,onChangeText,editable})=><label>{label}<input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/></label>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;`
 const core = `export {commandFields,commandSettingsResponse,cuaCheckResponse} from '${root}/packages/protocol/src/shared/commands.ts';export const useWorkspace=()=>({request:window.request,connected:true});`
-const ui = `export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {Toggle} from '${root}/packages/studio-ui/src/settings-layout.tsx';`
+const ui = `export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {Toggle,SettingRow,SettingsGroup} from '${root}/packages/studio-ui/src/settings-layout.tsx';`
 const runtime = `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,read:window.request,readEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error}),callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`
 const browser = await chromium.launch()
 try {
@@ -33,10 +33,18 @@ try {
       '../../ui/controls/switch': controls,
       '../../ui/content/text': controls,
       '../../ui/theme': controls,
+      '../ui/theme': controls,
+      '../ui/layout/sheet':
+        'export const Sheet=({children})=>children;export const useInsideSheet=()=>false;',
+      '../ui/controls/field': controls,
+      '../ui/controls/action': controls,
+      '../ui/controls/choice':
+        'export const Choice=({label,value,items,onChange})=><select aria-label={label} value={value} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select>;',
+      '../ui/content/text': controls,
     }
     const built = await build({
       stdin: {
-        contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';
+        contents: `import {useState,createContext,useContext} from 'react';import {createRoot} from 'react-dom/client';
 import {decode,commandsSchema} from '@dovo/protocol';
 import {CommandSettings} from '${root}/${mobile ? 'apps/mobile/src/runtime/preferences' : 'packages/extension-runtime/src'}/command-settings.tsx';
 window.commands=decode(commandsSchema,{git:'/custom/git',shellArgs:['-l',''],cuaEnabled:false});
@@ -117,7 +125,12 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         },
       }
     })
-    await page.getByRole('button', { name: 'Detect / check Cua Driver', exact: true }).click()
+    await page
+      .getByRole('button', {
+        name: mobile ? 'Detect / check Cua Driver' : 'Check Cua Driver',
+        exact: true,
+      })
+      .click()
     const enable = page.getByRole('button', { name: 'Enable Computer History', exact: true })
     await enable.waitFor()
     assert.equal(
@@ -173,6 +186,10 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     await page.evaluate(() => {
       window.fail = false
     })
+    if (mobile)
+      await page
+        .getByRole('checkbox', { name: 'Enable agent computer use on this computer', exact: true })
+        .check()
     await page.getByRole('button', { name: 'Save computer-use settings', exact: true }).click()
     await page
       .getByText('Computer-use settings saved. Applies to new turns.', { exact: true })

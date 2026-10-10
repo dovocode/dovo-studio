@@ -1,3 +1,4 @@
+import type { MemoryScope } from '@dovo/protocol'
 import { OwnedProcessShutdownError } from '../execution/stop-owned-child.js'
 import type { McpApps } from '../../mcp-apps/bridge.js'
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'effect'
@@ -8,6 +9,7 @@ import {
   resolveTaskAgent,
   taskHarnessSchema,
   delegatedAccess,
+  resolveProviderAccess,
   taskFamilyIds,
   taskFamilyWorking,
   taskFamilyRunToken,
@@ -78,6 +80,9 @@ export class Tasks {
     skillCacheDirectory?: string,
     pullRequestWatchingEnabled: () => boolean = () => false,
     pipelineWatchingEnabled: () => boolean = () => false,
+    memoryScopes: (taskId: string) => MemoryScope[] = () => [],
+    private maxActiveChildAgents: () => number = () => 4,
+    deviceHubEnabled: () => boolean = () => false,
   ) {
     this.runner = new TaskTurnRunner(
       store,
@@ -92,6 +97,8 @@ export class Tasks {
       skillCacheDirectory,
       pullRequestWatchingEnabled,
       pipelineWatchingEnabled,
+      memoryScopes,
+      deviceHubEnabled,
     )
     this.runner.setLinkedCheckouts(checkouts.linked)
     this.runner.setNativeSessions((taskId, sessionId, control, directories) => {
@@ -969,6 +976,36 @@ export class Tasks {
               return Effect.fail(
                 new HttpError(409, 'This delegation was stopped. Launch a fresh child.'),
               )
+            let family = task
+            const visited = new Set<string>()
+            while (family.delegation) {
+              if (visited.has(family.id))
+                return Effect.fail(new HttpError(409, 'Invalid child family'))
+              visited.add(family.id)
+              const ancestor = this.store.task(family.delegation.parentTaskId)
+              if (ancestor.archived || ancestor.archivedAt)
+                return Effect.fail(
+                  new HttpError(409, 'Restore the parent thread before running its children'),
+                )
+              if (
+                !this.hasWorkingFamily(family.id) &&
+                this.store
+                  .get()
+                  .tasks.filter(
+                    (child) =>
+                      child.id !== family.id &&
+                      child.delegation?.parentTaskId === ancestor.id &&
+                      this.hasWorkingFamily(child.id),
+                  ).length >= this.maxActiveChildAgents()
+              )
+                return Effect.fail(
+                  new HttpError(
+                    409,
+                    `Wait for a child to finish before launching another (maximum ${this.maxActiveChildAgents()} active children)`,
+                  ),
+                )
+              family = ancestor
+            }
             const parent = this.store.task(task.delegation.parentTaskId)
             const parentAgent = resolveTaskAgent(parent, this.store.get().agents)
             const childAgent = resolveTaskAgent(task, this.store.get().agents)
@@ -1346,6 +1383,17 @@ export class Tasks {
     void done.catch(() => undefined)
     return { done }
   }
+  requireCheckoutReferencesAvailable(task: Task) {
+    const paths = [
+      task.existingWorktreePath,
+      ...(task.linkedCheckouts ?? []).map((link) => link.existingWorktreePath),
+    ]
+    if (paths.some((path) => path && this.checkoutMutations.has(path)))
+      throw new HttpError(
+        409,
+        'Wait for the checkout operation to finish before linking this worktree',
+      )
+  }
   withCheckoutMutationEffect<A, E>(cwd: string, action: Effect.Effect<A, E>) {
     return Effect.acquireUseRelease(
       Effect.try({
@@ -1380,11 +1428,27 @@ export class Tasks {
   withCheckoutMutation<A>(cwd: string, action: () => Promise<A>): Promise<A> {
     return runClientEffect(this.withCheckoutMutationEffect(cwd, runtimeOperation(action)))
   }
+  private disposeDelegation(id: string) {
+    const child = this.store.task(id)
+    if (!child.delegation) return
+    const parentId = child.delegation.parentTaskId
+    this.store.transaction(() => {
+      this.store.updateTask(id, (task) => ({
+        ...task,
+        delegation: task.delegation ? { ...task.delegation, completion: 'disposed' } : undefined,
+      }))
+      this.store.updateTask(parentId, (task) => ({
+        ...task,
+        queue: task.queue?.filter((message) => message.subagentResultId !== id),
+      }))
+    })
+  }
   cancel(id: string, expectedRunId?: string) {
     const run = this.running.get(id)
     if (!run) throw new HttpError(409, 'Task is not running')
     if (expectedRunId !== undefined && run.id !== expectedRunId)
       throw new HttpError(409, 'This run ended. Refresh before stopping the current run.')
+    this.disposeDelegation(id)
     this.stopChildren(id)
     void this.stopNativeFamily(id).catch((error: unknown) =>
       console.error('Could not stop native agents:', error),
@@ -1736,6 +1800,7 @@ export class Tasks {
   }
   subagentCancel(taskId: string, id: string, parentRunId?: string) {
     this.subagentResult(taskId, id, false, parentRunId)
+    this.disposeDelegation(id)
     this.stopChildren(id)
     void this.stopNativeFamily(id).catch((error: unknown) =>
       console.error('Could not stop native descendants:', error),
@@ -1797,17 +1862,18 @@ export class Tasks {
         throw new HttpError(409, 'This child key was already used for a different request')
       return this.subagentResult(parent.id, existing.id, false)
     }
+    const maxActiveChildren = this.maxActiveChildAgents()
     if (
       this.store
         .get()
         .tasks.filter(
           (child) =>
             child.delegation?.parentTaskId === parent.id && this.hasWorkingFamily(child.id),
-        ).length >= 4
+        ).length >= maxActiveChildren
     )
       throw new HttpError(
         409,
-        'Wait for a child to finish before launching another (maximum four active children)',
+        `Wait for a child to finish before launching another (maximum ${maxActiveChildren} active children)`,
       )
     let ancestor = parent
     let depth = 0
@@ -1825,43 +1891,69 @@ export class Tasks {
       throw new HttpError(400, 'The selected configuration uses another harness')
     if (!preset && (!input.provider || input.provider === 'acp'))
       throw new HttpError(400, 'Choose a built-in harness or a named ACP configuration')
-    const base = preset ?? defaultTaskHarness(input.provider ?? parentAgent.provider)
+    const provider = input.provider ?? parentAgent.provider
+    const inherited = [parentAgent, this.store.taskDefaults(parent.repositoryId).harness].find(
+      (agent) => agent.provider === provider,
+    )
+    const base = preset ?? {
+      ...defaultTaskHarness(provider),
+      ...(inherited
+        ? {
+            endpoint: inherited.endpoint,
+            executablePath: inherited.executablePath,
+            configDirectory: inherited.configDirectory,
+            args: inherited.args,
+            env: inherited.env,
+            serviceTier: inherited.serviceTier,
+          }
+        : {}),
+    }
     const selectedCheckout = input.checkoutId
       ? parent.linkedCheckouts?.find((item) => item.id === input.checkoutId)
       : undefined
     if (input.checkoutId && !selectedCheckout) throw new HttpError(404, 'Linked checkout not found')
+    const ceiling = selectedCheckout?.access === 'read-only' ? 'read-only' : parentAgent.permission
+    const permission = resolveProviderAccess(
+      base.provider,
+      delegatedAccess(ceiling, input.permission ?? preset?.permission ?? parentAgent.permission),
+    )
+    if (delegatedAccess(ceiling, permission) !== permission)
+      throw new HttpError(
+        400,
+        `${base.provider} has no access mode within the parent's ${ceiling} access`,
+      )
     const harness = decode(taskHarnessSchema, {
       ...base,
       model: input.model ?? base.model,
       reasoning: input.reasoning ?? base.reasoning,
-      permission: delegatedAccess(
-        selectedCheckout?.access === 'read-only' ? 'read-only' : parentAgent.permission,
-        input.permission ?? preset?.permission ?? parentAgent.permission,
-      ),
+      permission,
     })
-    const child = this.create({
-      title: input.name,
-      repositoryId: parent.repositoryId,
-      execution: parent.execution,
-      linkedCheckouts: parent.linkedCheckouts,
-      agentId: preset?.id ?? '',
-      objective: input.prompt,
-      harness,
-      origin: 'dovo-subagent',
+    const child = this.store.transaction(() => {
+      const child = this.create({
+        title: input.name,
+        repositoryId: parent.repositoryId,
+        execution: parent.execution,
+        linkedCheckouts: parent.linkedCheckouts,
+        agentId: preset?.id ?? '',
+        objective: input.prompt,
+        harness,
+        origin: 'dovo-subagent',
+      })
+      this.store.updateTask(child.id, (task) => ({
+        ...task,
+        setupCommand: undefined,
+        worktreeFromOrigin: undefined,
+        delegation: {
+          parentTaskId: parent.id,
+          parentRunId: run.id,
+          checkoutId: input.checkoutId,
+          key: input.key,
+          fingerprint,
+          completion: 'pending',
+        },
+      }))
+      return child
     })
-    this.store.updateTask(child.id, (task) => ({
-      ...task,
-      setupCommand: undefined,
-      worktreeFromOrigin: undefined,
-      delegation: {
-        parentTaskId: parent.id,
-        parentRunId: run.id,
-        checkoutId: input.checkoutId,
-        key: input.key,
-        fingerprint,
-        completion: 'pending',
-      },
-    }))
     // Register through the normal executor. Admission closes the race with parent cancellation.
     void runClientEffect(
       this.startEffect(
@@ -1894,6 +1986,14 @@ export class Tasks {
   ) {
     // Draft children never reached a running turn, so storage recovery gives them no
     // restart marker. Settle every orphan before a resumed parent can wait on it.
+    const interruptedChildren = new Set(
+      this.store
+        .get()
+        .tasks.filter(
+          (task) => task.delegation && (task.status === 'draft' || task.restartRecovery),
+        )
+        .map((task) => task.id),
+    )
     for (const task of this.store.get().tasks) {
       if (!task.delegation || (task.status !== 'draft' && !task.restartRecovery)) continue
       const parent = this.running.get(task.delegation.parentTaskId)
@@ -1907,6 +2007,11 @@ export class Tasks {
         ...current,
         status: 'cancelled',
         queuePaused: true,
+        queue: current.queue?.filter((message) => !message.subagentResultId),
+        delegation:
+          current.delegation && interruptedChildren.has(current.delegation.parentTaskId)
+            ? { ...current.delegation, completion: 'read' }
+            : current.delegation,
         restartRecovery: undefined,
         error: current.delegation?.completion
           ? 'Child interrupted by runtime restart; launch a fresh child if this work is still needed'
@@ -2055,6 +2160,7 @@ export class Tasks {
       draft: '',
       example: false,
     }
+    this.requireCheckoutReferencesAvailable(task)
     this.store.update((w) => ({
       ...w,
       tasks: [...w.tasks, task],

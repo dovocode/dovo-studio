@@ -1,3 +1,4 @@
+import type { JiraIssueFilters } from '@dovo/protocol'
 import { Effect, Semaphore } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
@@ -25,6 +26,7 @@ export function useWorkSources(
   sourceKind: 'issues' | 'jira' = 'issues',
   sourceKey = '',
   state = 'all',
+  jiraFilters?: JiraIssueFilters,
 ) {
   const issueSources = useIssueSources(mode === 'issues')
   const sources = useMemo(
@@ -41,7 +43,7 @@ export function useWorkSources(
   const [stored, setStored, pagesRef] = useApplicationState<Record<string, WorkSourcePage>>({})
   const generation = useRef(0)
   const moreRef = useRef<(key: string) => Promise<void>>(async () => {})
-  const collection = JSON.stringify([mode, search, state])
+  const collection = JSON.stringify([mode, search, state, jiraFilters])
   const lastCollection = useRef(collection)
   const [busy, setBusy] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
@@ -78,11 +80,11 @@ export function useWorkSources(
                 ),
                 mode === 'issues'
                   ? source.readCache.readEffect(
-                      workSourceCacheKey(source, mode, 'list', search, state),
+                      workSourceCacheKey(source, mode, 'list', search, state, jiraFilters),
                       cachedWorkIssuePageSchema,
                     )
                   : source.readCache.readEffect(
-                      workSourceCacheKey(source, mode, 'list', search, state),
+                      workSourceCacheKey(source, mode, 'list', search, state, jiraFilters),
                       cachedWorkPipelinePageSchema,
                     ),
               ])
@@ -125,7 +127,15 @@ export function useWorkSources(
         (source) =>
           Effect.gen(function* () {
             const previous = pagesRef.current[source.key]
-            const page = yield* loadWorkSourcePage(source, mode, search, state, refresh, previous)
+            const page = yield* loadWorkSourcePage(
+              source,
+              mode,
+              search,
+              state,
+              refresh,
+              previous,
+              jiraFilters,
+            )
             update(source, page)
             yield* Effect.gen(function* () {
               yield* source.readCache.writeEffect(
@@ -133,7 +143,7 @@ export function useWorkSources(
                 page.options,
               )
               yield* source.readCache.writeEffect(
-                workSourceCacheKey(source, mode, 'list', search, state),
+                workSourceCacheKey(source, mode, 'list', search, state, jiraFilters),
                 workPageCacheValue(page),
               )
             }).pipe(
@@ -184,6 +194,7 @@ export function useWorkSources(
                   {
                     ...source.input,
                     state,
+                    ...(source.jira && jiraFilters ? { jiraFilters } : {}),
                     query: previous.query,
                     cursor: previous.next,
                   },
@@ -207,7 +218,7 @@ export function useWorkSources(
           update(source, page)
           yield* source.readCache
             .writeEffect(
-              workSourceCacheKey(source, mode, 'list', search, state),
+              workSourceCacheKey(source, mode, 'list', search, state, jiraFilters),
               workPageCacheValue(page),
             )
             .pipe(

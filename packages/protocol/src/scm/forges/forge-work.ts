@@ -2,6 +2,7 @@ import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { minValue, maxValue, refine, urlSchema } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
 import { forgeProviderSchema } from './forges.js'
+import { jiraIssueFiltersSchema } from './jira.js'
 const id = refine(
   maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 300),
   (value) => !/[\p{Cc}]/u.test(value) && !['.', '..'].includes(value),
@@ -25,6 +26,7 @@ const cached = {
   refreshError: Schema.optional(Schema.String),
 }
 export const forgeWorkQuerySchema = mutableStruct({
+  jiraFilters: Schema.optional(jiraIssueFiltersSchema),
   cursor: Schema.optional(maxValue(Schema.String, 4000)),
   query: Schema.optional(maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 300)),
   state: maxValue(Schema.String, 100).pipe(

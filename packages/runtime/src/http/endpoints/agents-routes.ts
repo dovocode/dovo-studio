@@ -1,3 +1,4 @@
+import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
 import { runtimeOperation } from '../../errors.js'
 import { linkedCheckoutsSchema } from '@dovo/protocol'
 import { settingsScopeSchema, settingsScopes, scopedAgentEntries } from '@dovo/protocol'
@@ -324,6 +325,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.task.worktreeSetupComplete !== undefined
         )
           throw new HttpError(400, 'Only unsent drafts can change machines')
+        s.tasks.requireCheckoutReferencesAvailable(input.task)
         const existing = s.store.get().tasks.find((task) => task.id === input.task.id)
         if (existing) {
           if (!canChangeTaskCheckout(existing))
@@ -397,10 +399,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         return { ok: true }
       }
       if (method === 'POST' && path === '/api/tasks/lifecycle') {
-        const { id, action } = decode(
+        const { id, action, removeWorktrees } = decode(
           strictStruct({
             id: idSchema,
             action: Schema.Literals(['archive', 'restore', 'delete']),
+            removeWorktrees: Schema.optional(Schema.Boolean),
           }),
           yield* serviceResult(body(request)),
         )
@@ -427,8 +430,14 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         requireIdle()
         if (action !== 'restore') {
           for (const taskId of ids) {
-            yield* serviceResult(s.browsers.closeTask(taskId))
-            yield* serviceResult(s.simulators.closeTask(taskId))
+            const cleanup = yield* serviceResult(
+              Promise.allSettled([
+                s.browsers.closeTask(taskId),
+                s.simulators.closeTask(taskId),
+                s.deviceHosts.closeTask(taskId),
+              ]),
+            )
+            for (const result of cleanup) if (result.status === 'rejected') throw result.reason
           }
           const latestIds = taskFamilyIds(s.store.get().tasks, id)
           if (latestIds.size !== ids.size || [...latestIds].some((taskId) => !ids.has(taskId)))
@@ -437,6 +446,17 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         }
         if (action !== 'restore') for (const taskId of ids) s.titles.cancelSideChats(taskId)
         if (action === 'delete') {
+          const cleanup = removeWorktrees ?? s.preferences.get().removeWorktreesOnThreadDelete
+          // Retain older checkout identities before their owning threads disappear, even when cleanup is off.
+          const worktrees = (yield* listWorktreesEffect(s)).worktrees
+          const candidates = cleanup
+            ? worktrees.filter((entry) => entry.threadIds.some((threadId) => ids.has(threadId)))
+            : []
+          // Listing involves Git I/O; make sure the family is unchanged and idle before deletion.
+          const currentIds = taskFamilyIds(s.store.get().tasks, id)
+          if (currentIds.size !== ids.size || [...currentIds].some((taskId) => !ids.has(taskId)))
+            throw new HttpError(409, 'This thread’s child agents changed. Refresh and retry.')
+          requireIdle()
           for (const terminal of s.terminals.list())
             if (ids.has(terminal.taskId)) yield* serviceResult(s.terminals.close(terminal.id))
           s.store.transaction(() => {
@@ -449,6 +469,29 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             }))
           })
           yield* serviceResult(s.attachments.prune())
+          for (const entry of candidates) {
+            if (
+              entry.dirty ||
+              entry.threadIds.some((threadId) =>
+                s.store.get().tasks.some((task) => task.id === threadId),
+              )
+            )
+              continue
+            const result = yield* Effect.result(
+              s.tasks.withCheckoutMutationEffect(
+                entry.path,
+                removeWorktreeEffect(s, entry.path, true),
+              ),
+            )
+            if (result._tag === 'Failure') {
+              console.error(`Could not remove orphaned worktree ${entry.path}`, result.failure)
+              s.activity.add(
+                'command',
+                entry.path,
+                'Worktree kept: cleanup after thread deletion failed',
+              )
+            }
+          }
         } else {
           const now = new Date().toISOString()
           s.store.update((workspace) => ({

@@ -8,8 +8,9 @@ import {
   useAppPreferences,
   useStudioHost,
 } from '@dovo/studio-core'
-import { Button, ChoicePicker, Input } from '@dovo/studio-ui'
-import { SettingRow, SettingsGroup, SettingsPage, Segmented, Toggle } from './layout'
+import { Button, Input } from '@dovo/studio-ui'
+import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
+import { SettingsSelect } from './settings-select'
 
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const mod = mac ? '⌘' : 'Ctrl'
@@ -61,12 +62,12 @@ export default function GeneralSettings() {
             type="button"
             key={id}
             onClick={() => host.navigate({ viewId: id })}
-            className="flex items-center gap-3 rounded-xl border bg-card/30 p-4 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex items-center gap-3 rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Icon className="size-5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1">
-              <span className="block text-xs font-medium">{title}</span>
-              <span className="mt-1 block text-[11px] leading-relaxed text-muted-foreground">
+              <span className="block text-sm font-medium">{title}</span>
+              <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
                 {description}
               </span>
             </span>
@@ -74,84 +75,84 @@ export default function GeneralSettings() {
           </button>
         ))}
       </div>
-      <SettingsGroup
-        title="Organization"
-        description="Arrange projects and tasks in your workspace."
-      >
+      <SettingsGroup title="Projects" description="Arrange projects in the project picker.">
         <SettingRow
-          label="Project grouping"
+          label="Group matching projects"
           description="Combine matching repositories across computers."
         >
           <Toggle
-            label="Project grouping"
+            label="Group matching projects"
             checked={preferences.projectGrouping}
             onChange={(projectGrouping) => updateAppPreferences({ projectGrouping })}
           />
         </SettingRow>
         <SettingRow label="Project order" description="Order of projects in the project picker.">
-          <ChoicePicker
-            aria-label="Project order"
+          <SettingsSelect
+            label="Project order"
             value={preferences.projectOrder}
-            onValueChange={(value) => {
-              if (value === 'name' || value === 'activity' || value === 'user-message')
-                updateAppPreferences({ projectOrder: value })
-            }}
-          >
-            <option value="name">Name</option>
-            <option value="activity">Last activity</option>
-            <option value="user-message">Last user message</option>
-          </ChoicePicker>
+            options={[
+              ['name', 'Name'],
+              ['activity', 'Last activity'],
+              ['user-message', 'Last user message'],
+            ]}
+            onChange={(projectOrder) => updateAppPreferences({ projectOrder })}
+          />
         </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup title="Task list">
         <SettingRow
-          label="Working section"
-          description="Group running tasks in a collapsed section. They return to the main list when they need input or finish. Pinned tasks stay visible."
+          label="Group running tasks"
+          description="Keep running tasks in a collapsed Working section. Tasks needing input and pinned tasks stay visible."
         >
           <Toggle
-            label="Working section"
+            label="Group running tasks"
             checked={preferences.workingSection}
             onChange={(workingSection) => updateAppPreferences({ workingSection })}
           />
         </SettingRow>
         <SettingRow
-          label="Default sort"
+          label="Default task sort"
           description="How the task sidebar is ordered when Dovo opens."
         >
-          <ChoicePicker
-            aria-label="Default task sort"
+          <SettingsSelect
+            label="Default task sort"
             value={preferences.taskSort}
-            onValueChange={(value) => {
-              const sort = taskSortOptions.find((entry) => entry.id === value)
-              if (sort && sort.id !== 'status') updateAppPreferences({ taskSort: sort.id })
-            }}
-          >
-            {taskSortOptions
+            options={taskSortOptions
               .filter((option) => option.id !== 'status')
-              .map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
-              ))}
-          </ChoicePicker>
+              .map((option) => [option.id, option.name])}
+            onChange={(taskSort) => updateAppPreferences({ taskSort })}
+          />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup title="Navigation">
+      <SettingsGroup title="Navigation & shortcuts">
         {taskLauncher && (
           <SettingRow
             label="Global new task shortcut"
-            description={shortcutError || 'Open the task launcher from any app.'}
+            description={
+              shortcutError ? (
+                <span role="alert" className="text-destructive">
+                  {shortcutError}
+                </span>
+              ) : (
+                'Open the task launcher from any app.'
+              )
+            }
           >
-            <ChoicePicker
-              aria-label="Global new task shortcut"
-              value={preferences.taskLauncherShortcut}
-              onValueChange={(value) => {
-                const shortcut = taskLauncherShortcuts.find((entry) => entry === value)
+            <SettingsSelect
+              label="Global new task shortcut"
+              value={preferences.taskLauncherShortcut || 'disabled'}
+              options={[
+                ['CommandOrControl+Shift+Space', `${mod} + Shift + Space`],
+                ['CommandOrControl+Alt+N', `${mod} + Alt + N`],
+                ['disabled', 'Disabled'],
+              ]}
+              onChange={(value) => {
+                const shortcut = taskLauncherShortcuts.find(
+                  (entry) => entry === (value === 'disabled' ? '' : value),
+                )
                 if (shortcut !== undefined) updateAppPreferences({ taskLauncherShortcut: shortcut })
               }}
-            >
-              <option value="CommandOrControl+Shift+Space">{mod} + Shift + Space</option>
-              <option value="CommandOrControl+Alt+N">{mod} + Alt + N</option>
-              <option value="">Disabled</option>
-            </ChoicePicker>
+            />
           </SettingRow>
         )}
         <SettingRow label="Issues" description="Show code-host issues in the sidebar.">
@@ -185,7 +186,7 @@ export default function GeneralSettings() {
           label="Time format"
           description={`Example: ${formatDateTime(new Date(2026, 8, 25, 21, 30))}`}
         >
-          <Segmented
+          <SettingsSelect
             label="Time format"
             value={preferences.timeFormat}
             options={[
@@ -213,10 +214,10 @@ export default function GeneralSettings() {
               'Confirm before stopping a running task',
               'Ends the current turn and pauses queued messages.',
             ],
-            ['confirmUnpin', 'Unpin confirmation', 'Ask before removing a task from Pinned.'],
+            ['confirmUnpin', 'Confirm before unpinning a task', 'Remove a task from Pinned.'],
             [
               'confirmDelete',
-              'Delete confirmation',
+              'Confirm before deleting a task',
               'Ask before permanently deleting a task and its conversation.',
             ],
           ] as const
@@ -233,9 +234,9 @@ export default function GeneralSettings() {
       <SettingsGroup title="Application">
         <SettingRow
           label="Background activity"
-          description="Balanced pauses refreshes in hidden windows. Reduced also slows refreshes while visible."
+          description="Balanced pauses refreshes in hidden windows. Reduced also refreshes less often in visible windows."
         >
-          <Segmented
+          <SettingsSelect
             label="Background activity"
             value={preferences.backgroundActivity}
             options={[
@@ -248,9 +249,9 @@ export default function GeneralSettings() {
         {host.appInfo && (
           <SettingRow
             label="Quit shortcut"
-            description="Hold for 600 ms or press twice quickly to quit in Hold mode."
+            description="In Hold mode, hold for 600 ms or press twice quickly to quit."
           >
-            <Segmented
+            <SettingsSelect
               label="Quit shortcut"
               value={preferences.quitShortcut}
               options={[

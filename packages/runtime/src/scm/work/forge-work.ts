@@ -16,6 +16,8 @@ import {
   forgeIssueCreateSchema,
   forgePipelineActionSchema,
   forgeWorkQuerySchema,
+  jiraIssueFilterKey,
+  hasJiraIssueFilters,
   forgeWorkOptionsSchema,
   forgeIssuePageSchema,
   forgeIssueDetailSchema,
@@ -164,6 +166,8 @@ export class ForgeWork {
     }
   }
   async request(repositoryId: string, operation: string, input: unknown) {
+    if (decode(forgeWorkQuerySchema, input).jiraFilters !== undefined)
+      throw new HttpError(400, 'Jira filters require a Jira issue source')
     const selected = this.store.get().repositories.find((repo) => repo.id === repositoryId)
     if (!selected) throw new HttpError(404, 'Project not found')
     if (selected.forge) await this.forges.reconcileCli(selected.forge.connectionId, selected.path)
@@ -245,6 +249,9 @@ export class ForgeWork {
       input,
     )
     const query = decode(forgeWorkQuerySchema, input)
+    if (query.jiraFilters !== undefined && operation !== 'issues/list')
+      throw new HttpError(400, 'Jira filters are only supported for issue lists')
+    const filterKey = jiraIssueFilterKey(query.jiraFilters)
     const area =
       operation === 'options'
         ? (data.area ?? 'issues')
@@ -282,10 +289,16 @@ export class ForgeWork {
     const key = JSON.stringify([source, operation, data.id, query.state, query.cursor, query.query])
     if (operation === 'issues/list' && provider instanceof JiraWork) {
       // ACLI has no page token: every page is a slice of one ordered prefix. Cache the prefix
-      // per state and search so later pages do not read the earlier rows again.
+      // per state, search and filters so later pages do not read the earlier rows again.
       const offset = jiraOffset(query.cursor)
       const required = Math.max(offset + 31, JIRA_PREFIX_MINIMUM)
-      const prefixKey = JSON.stringify([source, 'issues/prefix', query.state, query.query])
+      const prefixKey = JSON.stringify([
+        source,
+        'issues/prefix',
+        query.state,
+        query.query,
+        ...(hasJiraIssueFilters(query.jiraFilters) ? [filterKey] : []),
+      ])
       const known = this.cache.peek(prefixKey, jiraPrefixSchema)
       const limit = Math.max(required, known?.value.limit ?? 0)
       const prefix = await runClientEffect(
@@ -295,7 +308,7 @@ export class ForgeWork {
           schema: jiraPrefixSchema,
           refresh: query.refresh || (known?.value.limit ?? 0) < required,
           load: async (): Promise<typeof jiraPrefixSchema.Type> => ({
-            items: await provider.issueRows(query.state, query.query, limit),
+            items: await provider.issueRows(query.state, query.query, limit, query.jiraFilters),
             limit,
           }),
           validateSource,

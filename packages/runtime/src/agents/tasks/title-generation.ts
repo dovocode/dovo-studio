@@ -191,7 +191,7 @@ export class TitleGeneration {
       value,
     )
     const task = this.store.task(input.id)
-    if (task.archived)
+    if (task.archived || task.archivedAt)
       throw new HttpError(409, 'Restore this thread before changing its side chats')
     const chats = task.sideChats ?? []
     const id = input.chatId ?? randomUUID()
@@ -234,7 +234,7 @@ export class TitleGeneration {
           value,
         )
         const task = this.store.task(input.id)
-        if (task.archived)
+        if (task.archived || task.archivedAt)
           throw new HttpError(409, 'Restore this thread before asking a side question')
         const chat = task.sideChats?.find((item) => item.id === input.chatId)
         if (!chat) throw new HttpError(404, 'Side chat not found')
@@ -274,7 +274,10 @@ export class TitleGeneration {
               ? {
                   ...item,
                   draft: '',
-                  title: item.messages.length ? item.title : input.question.slice(0, 100),
+                  title:
+                    item.messages.length || item.title !== 'Side chat'
+                      ? item.title
+                      : input.question.slice(0, 100),
                   messages: [
                     ...item.messages,
                     {
@@ -301,11 +304,7 @@ export class TitleGeneration {
           return this.runEffect(
             JSON.stringify({
               transcript: taskTranscript(task).slice(-60000),
-              history: JSON.stringify(
-                chat.messages
-                  .filter((item) => item.answer)
-                  .map((item) => ({ question: item.question, answer: item.answer })),
-              ).slice(-40000),
+              history: JSON.stringify(sideChatHistory(chat.messages)),
               question: input.question,
             }),
             controller,
@@ -598,4 +597,19 @@ function cleanGenerated(output: string) {
     .replace(/^```[\w-]*\n([\s\S]*?)\n```$/, '$1')
     .replace(/^["'`]+|["'`]+$/g, '')
     .trim()
+}
+
+/** Keep complete recent exchanges within the side-chat context budget. */
+function sideChatHistory(messages: readonly { question: string; answer?: string }[]) {
+  const history: { question: string; answer: string }[] = []
+  let size = 2
+  for (const message of [...messages].reverse()) {
+    if (!message.answer) continue
+    const pair = { question: message.question, answer: message.answer }
+    const length = JSON.stringify(pair).length + (history.length ? 1 : 0)
+    if (size + length > 40000) break
+    history.unshift(pair)
+    size += length
+  }
+  return history
 }

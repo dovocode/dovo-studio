@@ -513,3 +513,41 @@ it('accepts an unset Jira priority without inventing a severity', async () => {
   const detail = await new JiraWork('acli', binding, run).issue(raw.key)
   expect(detail.issue.priority).toBeUndefined()
 })
+
+it('quotes structured filter values without allowing JQL injection', async () => {
+  const run = vi
+    .fn<typeof runForgeCli>()
+    .mockResolvedValueOnce(auth)
+    .mockResolvedValueOnce(JSON.stringify(project))
+    .mockResolvedValueOnce('[]')
+  const payload = 'High" OR project = OTHER OR priority = "Low\\'
+  await new JiraWork('acli', binding, run).issues('all', undefined, undefined, {
+    assignee: 'mine',
+    priority: payload,
+    type: payload,
+    label: payload,
+    statusCategory: 'in-progress',
+  })
+  const args = run.mock.calls[2]![1]
+  expect(args[args.indexOf('--jql') + 1]).toBe(
+    `project = TEAM AND assignee = currentUser() AND priority = ${JSON.stringify(payload)} AND issuetype = ${JSON.stringify(payload)} AND labels = ${JSON.stringify(payload)} AND statusCategory = "In Progress" ORDER BY updated DESC, key DESC`,
+  )
+})
+it.each(['todo', 'done'] as const)(
+  'combines %s category with existing state and search',
+  async (statusCategory) => {
+    const run = vi
+      .fn<typeof runForgeCli>()
+      .mockResolvedValueOnce(auth)
+      .mockResolvedValueOnce(JSON.stringify(project))
+      .mockResolvedValueOnce('[]')
+    await new JiraWork('acli', binding, run).issues('open', undefined, 'team-1', {
+      assignee: 'unassigned',
+      statusCategory,
+    })
+    const args = run.mock.calls[2]![1]
+    expect(args[args.indexOf('--jql') + 1]).toBe(
+      `project = TEAM AND statusCategory != Done AND key = "TEAM-1" AND assignee IS EMPTY AND statusCategory = "${statusCategory === 'todo' ? 'To Do' : 'Done'}" ORDER BY updated DESC, key DESC`,
+    )
+  },
+)

@@ -19,9 +19,12 @@ import { useApplicationState } from '../runtime/state/application-state'
 import { mobileWorkflow, nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useRuntime } from '../runtime/connection/provider'
-import { Action } from '../ui/controls/action'
-import { Choice } from '../ui/controls/choice'
-import { SearchField, Field } from '../ui/controls/field'
+import { SettingsAction as Action } from '../screens/settings-controls'
+import { SettingsChoice as Choice } from '../screens/settings-controls'
+import {
+  SettingsSearchField as SearchField,
+  SettingsField as Field,
+} from '../screens/settings-controls'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'

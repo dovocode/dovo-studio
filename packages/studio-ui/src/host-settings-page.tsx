@@ -1,7 +1,12 @@
 import { PageHeader } from './page-header'
 import { useEffect, type ReactNode } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useRuntimeSources, useWorkspace, WorkspaceScope } from '@dovo/studio-core'
+import {
+  useConfirmSettingsNavigation,
+  useRuntimeSources,
+  useWorkspace,
+  WorkspaceScope,
+} from '@dovo/studio-core'
 import { ChoicePicker } from './choice-picker'
 
 /** A settings page for one computer, with a picker like Codex's host selector. Pages list
@@ -18,6 +23,7 @@ export function HostSettingsPage({
   children: ReactNode
 }) {
   const sources = useRuntimeSources()
+  const confirmNavigation = useConfirmSettingsNavigation()
   const { activeRuntimeId } = useWorkspace()
   const [chosen, setChosen] = useApplicationState(initialRuntimeId ?? '')
   useEffect(() => setChosen(initialRuntimeId ?? ''), [initialRuntimeId, setChosen])
@@ -36,7 +42,9 @@ export function HostSettingsPage({
             aria-label="Computer"
             className="h-8 min-w-48 rounded-md px-2 text-xs"
             value={source.profile.id}
-            onValueChange={setChosen}
+            onValueChange={(value) => {
+              if (confirmNavigation()) setChosen(value)
+            }}
           >
             {sources.map((entry) => (
               <option key={entry.profile.id} value={entry.profile.id}>
@@ -57,10 +65,10 @@ export function HostSettingsPage({
             <WorkspaceScope key={source.scope} profile={source.profile}>
               {!source.connected && (
                 <p role="status" className="text-xs text-muted-foreground">
-                  {source.name} is offline. Showing saved settings; reconnect it to make changes.
+                  {source.name} is offline. Reconnect it to view or change these settings.
                 </p>
               )}
-              {children}
+              {source.connected && children}
             </WorkspaceScope>
           )}
         </div>

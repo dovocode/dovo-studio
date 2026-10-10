@@ -8,7 +8,7 @@ import { backToCollection } from '../shell/source-route'
 import { IconButton } from '../ui/controls/icon-button'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
-import { useTheme } from '../ui/theme'
+import { useSettingsTheme as useTheme, SettingsPage } from '../screens/settings-theme'
 import { AutomationCard } from './automation-card'
 import { AutomationEditor } from './automation-editor'
 export function AutomationRouteScreen() {
@@ -29,7 +29,7 @@ function AutomationDetail({ automationId }: { automationId: string }) {
   const [editing, setEditing] = useApplicationState(false)
   const flow = snapshot?.workspace.automations.find((flow) => flow.id === automationId)
   return (
-    <View style={styles.screen}>
+    <SettingsPage>
       <ScreenHeader
         title={flow?.name ?? 'Automation unavailable'}
         subtitle={runtimeComputerName({ profile, snapshot })}
@@ -63,6 +63,6 @@ function AutomationDetail({ automationId }: { automationId: string }) {
         </View>
       )}
       {flow && editing && <AutomationEditor flow={flow} onClose={() => setEditing(false)} />}
-    </View>
+    </SettingsPage>
   )
 }

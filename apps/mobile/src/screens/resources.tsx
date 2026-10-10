@@ -26,10 +26,10 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { runClientEffect } from '@dovo/client-runtime'
-import { Sheet } from '../ui/layout/sheet'
+import { SettingsSheet as Sheet } from './settings-theme'
 import { SettingsGroup, SettingsRow } from './settings-group'
-import { Action } from '../ui/controls/action'
-import { useTheme } from '../ui/theme'
+import { SettingsAction as Action } from './settings-controls'
+import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { useAction } from '../ui/controls/use-action'
 import { ResourceEditor } from '../resources/editor'
 import { CatalogPicker } from '../resources/catalog-picker'
@@ -38,16 +38,21 @@ export default function ResourcesScreen() {
   const { styles } = useTheme()
 
   return (
-    <View style={styles.screen}>
+    <SettingsPage>
       <ScreenHeader title="MCP servers & skills" />
-      <ScopedSettings>
-        {({ scope, repository }) => (
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
+      >
+        <ScopedSettings>
+          {({ scope, repository }) => (
             <ComputerResources selectedScope={scope} repositoryId={repository?.id} />
-          </ScrollView>
-        )}
-      </ScopedSettings>
-    </View>
+          )}
+        </ScopedSettings>
+      </ScrollView>
+    </SettingsPage>
   )
 }
 function ComputerResources({
@@ -78,6 +83,10 @@ function ComputerResources({
         gap: 12,
       }}
     >
+      <Text style={styles.muted}>
+        Open a scope or agent to manage its tools. Changes save automatically and apply on the next
+        turn.
+      </Text>
       <SettingsGroup title={connected ? 'Tools at this scope' : 'Saved tools · Offline'}>
         {visibleScopes.map((scope, index) => {
           const resources = decode(resourceSettingsSchema, scope.item.resources ?? {})
@@ -94,8 +103,11 @@ function ComputerResources({
           )
         })}
       </SettingsGroup>
-      {!scopes.length && (
-        <Text style={styles.muted}>Add a project or custom agent to manage its resources.</Text>
+      {!visibleScopes.length && (
+        <Text style={styles.muted}>
+          No tools are available at this level. Choose another scope, or add a project or custom
+          agent.
+        </Text>
       )}
       {current && (
         <Sheet title={current.item.name} scrollable={false} onClose={() => setSelected('')}>
@@ -111,6 +123,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
   const { snapshot, connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   const [catalog, setCatalog] = useApplicationState<'mcp' | 'skill' | null>(null)
+  const [saved, setSaved] = useApplicationState(false)
   const [editing, setEditing] = useApplicationState<
     | {
         kind: 'mcp'
@@ -136,6 +149,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
         .resources
     : undefined
   const save = (update: (value: ResourceSettings) => ResourceSettings) => {
+    setSaved(false)
     return runClientEffect(
       mobileWorkflow(function* () {
         if (!scope) return yield* Effect.fail(new Error('Choose a project or custom agent'))
@@ -180,6 +194,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
             'PATCH',
           )
         }
+        setSaved(true)
       }),
     )
   }
@@ -274,6 +289,11 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                 onPress={() => setCatalog('mcp')}
               />
             </View>
+            {!resources.mcpServers.length && (
+              <Text style={styles.muted}>
+                No MCP servers set here. Add a server, or override an inherited tool above.
+              </Text>
+            )}
             {resources.mcpServers.map((server) => (
               <View
                 key={server.name}
@@ -368,6 +388,11 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                 onPress={() => setCatalog('skill')}
               />
             </View>
+            {!resources.skills.length && (
+              <Text style={styles.muted}>
+                No skills set here. Add instructions, import SKILL.md or browse the catalog.
+              </Text>
+            )}
             {resources.skills.map((skill) => (
               <View
                 key={skill.name}
@@ -442,6 +467,21 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
             ))}
           </View>
         </>
+      )}
+      {saved && !busy && !error && (
+        <Text accessibilityLiveRegion="polite" style={styles.muted}>
+          Tools saved. Changes apply on the next turn.
+        </Text>
+      )}
+      {busy && (
+        <Text accessibilityLiveRegion="polite" style={styles.muted}>
+          Saving tools…
+        </Text>
+      )}
+      {!connected && (
+        <Text accessibilityRole="alert" style={styles.muted}>
+          This computer is offline. Showing saved tools; reconnect to make changes.
+        </Text>
       )}
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>

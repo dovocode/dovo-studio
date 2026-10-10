@@ -3,6 +3,8 @@ import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   decode,
+  taskFamilyWorking,
+  nativeAgentWorking,
   linkedCheckoutsSchema,
   type LinkedCheckout,
   type LinkedCheckpoint,
@@ -59,7 +61,7 @@ export class LinkedCheckouts {
     await mkdir(dirname(target), { recursive: true })
     await this.git.command(root, ['worktree', 'prune'])
     // Reattach only the saved branch; never reset another checkout or invent a replacement branch.
-    await this.git.command(root, ['worktree', 'add', target, checkpoint.branch])
+    await this.git.addWorktree(root, target, [target, checkpoint.branch])
     return target
   }
 
@@ -88,7 +90,19 @@ export class LinkedCheckouts {
     const task = this.store.task(id)
     if (task.delegation)
       throw new HttpError(400, 'Child agents inherit their parent’s linked projects')
-    if (task.status === 'running' || task.queue?.length || task.archivedAt)
+    if (
+      task.status === 'running' ||
+      task.queue?.length ||
+      task.archivedAt ||
+      task.subagents?.some(nativeAgentWorking) ||
+      this.store
+        .get()
+        .tasks.some(
+          (child) =>
+            child.delegation?.parentTaskId === id &&
+            taskFamilyWorking(this.store.get().tasks, child.id),
+        )
+    )
       throw new HttpError(409, 'Finish or stop pending work before changing linked projects')
     const links = this.validate(value)
     if (isDeepStrictEqual(task.linkedCheckouts ?? [], links)) return { ok: true }
@@ -193,7 +207,7 @@ export class LinkedCheckouts {
           if (kept) {
             await this.git.command(root, ['worktree', 'prune'])
             signal?.throwIfAborted()
-            await this.git.command(root, ['worktree', 'add', directory, kept])
+            await this.git.addWorktree(root, directory, [directory, kept])
           } else {
             const refs = await listBranches({ git: this.git }, root)
             const selection =
@@ -205,7 +219,7 @@ export class LinkedCheckouts {
             if (!base)
               throw new HttpError(400, 'Choose an existing base branch for the linked worktree')
             signal?.throwIfAborted()
-            await this.git.command(root, ['worktree', 'add', '-b', branch, directory, base])
+            await this.git.addWorktree(root, directory, ['-b', branch, directory, base])
           }
         }
       }

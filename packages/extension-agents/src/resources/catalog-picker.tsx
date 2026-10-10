@@ -11,15 +11,20 @@ import {
   type RegistryEntry,
   type SkillCatalogEntry,
 } from '@dovo/studio-core'
+import { ArrowLeft } from 'lucide-react'
 import {
   Button,
-  ChoicePicker,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@dovo/studio-ui'
 export function CatalogPicker({
   kind,
@@ -147,16 +152,20 @@ export function CatalogPicker({
       <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{kind === 'mcp' ? 'MCP Registry' : 'skills.sh'}</DialogTitle>
-          <DialogDescription>{scope} · Review before saving</DialogDescription>
+          <DialogDescription>
+            Pick an entry to add at {scope}. You can review and edit it before saving.
+          </DialogDescription>
         </DialogHeader>
         {selected ? (
           <div className="grid gap-4 overflow-y-auto">
             <Button
               variant="ghost"
+              size="sm"
               className="justify-self-start"
               onClick={() => setSelected(undefined)}
             >
-              ← Search results
+              <ArrowLeft className="size-3.5" />
+              Back to results
             </Button>
             <div>
               <h3 className="text-sm font-medium break-all">{selected.name}</h3>
@@ -167,17 +176,19 @@ export function CatalogPicker({
             </div>
             {selected.variants.length ? (
               <>
-                <ChoicePicker
-                  aria-label="Installation variant"
-                  value={variantId}
-                  onValueChange={setVariantId}
-                >
-                  {selected.variants.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </ChoicePicker>
+                <Select value={variantId} onValueChange={setVariantId}>
+                  <SelectTrigger aria-label="Installation variant" className="h-9 text-xs">
+                    <SelectValue placeholder="Choose how to run this server" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selected.variants.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.label}
+                        {item.server ? '' : ' · Not supported'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <ul className="space-y-2 text-xs text-muted-foreground">
                   {variant?.notes.map((note, i) => (
                     <li key={i}>{note}</li>
@@ -264,7 +275,7 @@ export function CatalogPicker({
                 </div>
               ))}
               {!loading && !servers.length && !skills.length && (
-                <p className="py-6 text-center text-xs text-muted-foreground">
+                <p role="status" className="py-6 text-center text-xs text-muted-foreground">
                   {kind === 'skill' && query.trim().length < 2
                     ? 'Type at least two characters to search skills.sh.'
                     : error

@@ -46,7 +46,7 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
         <div>
           <h2 className="text-sm font-medium">Trusted devices</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Phones and clients allowed to access this host.
+            Phones and clients paired with this computer. Revoking a device removes its access.
           </p>
         </div>
         {snapshot?.owner && (
@@ -82,6 +82,7 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
           <div className="flex gap-2">
             <Button
               size="sm"
+              aria-label={`Approve ${device.name}`}
               disabled={!connected || busy}
               onClick={() =>
                 act(() =>
@@ -104,6 +105,7 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
             <Button
               size="sm"
               variant="outline"
+              aria-label={`Deny ${device.name}`}
               disabled={!connected || busy}
               onClick={() =>
                 act(() =>
@@ -149,6 +151,7 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
             <Button
               size="sm"
               variant="ghost"
+              aria-label={`Revoke access for ${device.name}`}
               title="Remove this device’s permission to access the host"
               disabled={!connected || busy}
               onClick={() =>

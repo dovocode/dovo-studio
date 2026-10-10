@@ -48,9 +48,11 @@ export const repositoryOpenTargetSchema = Schema.Literals([
 ])
 export const openRepositorySchema = mutableStruct({ target: repositoryOpenTargetSchema })
 export const repositoryOpenTargetsSchema = mutableStruct({
-  targets: mutableArray(repositoryOpenTargetSchema),
+  // A newer runtime may discover editors this client does not yet support.
+  targets: mutableArray(Schema.String),
 })
 export type RepositoryOpenTarget = typeof repositoryOpenTargetSchema.Type
+export const isRepositoryOpenTarget = Schema.is(repositoryOpenTargetSchema)
 export function repositoryOpenTargets(folderOpener: typeof folderOpenerSchema.Type = 'finder') {
   return [
     [

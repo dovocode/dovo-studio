@@ -1,5 +1,6 @@
+import { Switch } from './components/ui/switch'
 import { PageHeader } from './page-header'
-import type { ReactNode } from 'react'
+import { useId, useRef, type ReactNode } from 'react'
 
 /** Settings page frame and row, in the label-left / control-right style of Codex and T3 Code. */
 export function SettingsPage({
@@ -37,17 +38,20 @@ export function SettingsGroup({
   description?: string
   children: ReactNode
 }) {
+  const id = useId()
   return (
-    <section className="space-y-3">
+    <section aria-labelledby={id} className="space-y-3">
       <div>
-        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+        <h2 id={id} className="text-sm font-semibold tracking-tight">
+          {title}
+        </h2>
         {description && (
           <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">
             {description}
           </p>
         )}
       </div>
-      <div className="divide-y rounded-xl border bg-card/30">{children}</div>
+      <div className="divide-y rounded-lg border bg-card">{children}</div>
     </section>
   )
 }
@@ -62,18 +66,29 @@ export function SettingRow({
   source?: ReactNode
   children: ReactNode
 }) {
+  const id = useId()
   return (
     <div className="flex flex-col items-stretch justify-between gap-3 px-4 py-4 sm:flex-row sm:items-center sm:gap-6">
       <div className="min-w-0 flex-1">
-        <p className="text-[0.8125rem] font-medium">{label}</p>
+        <p id={`${id}-label`} className="text-[0.8125rem] font-medium">
+          {label}
+        </p>
         {description && (
-          <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">
+          <p
+            id={`${id}-description`}
+            className="mt-1 break-words text-xs leading-relaxed text-muted-foreground"
+          >
             {description}
           </p>
         )}
         {source && <div className="mt-2">{source}</div>}
       </div>
-      <div className="flex w-full max-w-full items-center justify-end sm:w-auto sm:min-w-36 sm:max-w-[50%] sm:shrink-0">
+      <div
+        role="group"
+        aria-labelledby={`${id}-label`}
+        aria-describedby={description ? `${id}-description` : undefined}
+        className="flex w-full max-w-full items-center justify-end sm:w-auto sm:min-w-36 sm:max-w-[50%] sm:shrink-0"
+      >
         {children}
       </div>
     </div>
@@ -91,11 +106,39 @@ export function Segmented<T extends string>({
   options: readonly [T, string][]
   onChange: (value: T) => void
 }) {
+  const buttons = useRef<Array<HTMLButtonElement | null>>([])
   return (
     <div role="radiogroup" aria-label={label} className="flex rounded-md border p-0.5">
-      {options.map(([id, name]) => (
+      {options.map(([id, name], index) => (
         <button
           key={id}
+          ref={(button) => {
+            buttons.current[index] = button
+          }}
+          tabIndex={value === id ? 0 : -1}
+          onKeyDown={(event) => {
+            if (
+              !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(
+                event.key,
+              )
+            )
+              return
+            event.preventDefault()
+            const next =
+              event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? options.length - 1
+                  : (index +
+                      (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1) +
+                      options.length) %
+                    options.length
+            const option = options[next]
+            if (option) {
+              onChange(option[0])
+              buttons.current[next]?.focus()
+            }
+          }}
           type="button"
           role="radio"
           aria-checked={value === id}
@@ -124,20 +167,6 @@ export function Toggle({
   disabled?: boolean
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-label={label}
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative h-5 w-9 shrink-0 rounded-full p-0 transition-colors disabled:opacity-40 ${checked ? 'bg-action' : 'bg-muted-foreground/35'}`}
-    >
-      <span
-        className={`absolute left-0.5 top-0.5 size-4 rounded-full shadow transition-transform ${
-          checked ? 'translate-x-4 bg-action-foreground' : 'translate-x-0 bg-foreground'
-        }`}
-      />
-    </button>
+    <Switch aria-label={label} checked={checked} disabled={disabled} onCheckedChange={onChange} />
   )
 }

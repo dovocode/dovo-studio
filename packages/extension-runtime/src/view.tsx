@@ -1,3 +1,4 @@
+import { runtimeExtension } from './index'
 import { RuntimeDiagnosticsPanel } from './runtime-diagnostics'
 import { PageHeader } from '@dovo/studio-ui'
 import { Schema } from 'effect'
@@ -32,7 +33,7 @@ export default function RuntimeView() {
     <section className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Devices & runtime"
-        description="Manage every connected computer in one place."
+        description="Connect computers and phones, manage trusted devices and check runtime health."
       />
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-4xl space-y-4">
@@ -56,8 +57,8 @@ export default function RuntimeView() {
           )}
           <PairingClient onManage={setManaging} />
           <p className="text-xs leading-6 text-muted-foreground">
-            Tasks, projects and tools appear together across your computers. Each item keeps its own
-            execution host. Connect using a reachable LAN, Tailscale or NetBird address.
+            Tasks and projects appear together; each runs on its own computer. Use a reachable LAN,
+            Tailscale or NetBird address. HTTP and optional HTTPS are supported.
           </p>
         </div>
       </div>
@@ -100,27 +101,34 @@ export default function RuntimeView() {
                 <DeviceManager key={managing.id} />
                 {source.snapshot?.owner && <RuntimeDiagnosticsPanel />}
                 {/* Per-computer settings live on their own pages, like Codex and T3 Code. */}
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    ['running-tasks', 'Running tasks'],
-                    ['task-defaults', 'Task defaults'],
-                    ['worktrees', 'Worktrees'],
-                    ['commands', 'CLI commands & shell'],
-                    ['activity', 'Activity & message history'],
-                  ].map(([viewId, label]) => (
-                    <Button
-                      key={viewId}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setManaging(null)
-                        studio.navigate({ viewId, entityId: managing.id })
-                      }}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </div>
+                <section className="space-y-3 border-t pt-4">
+                  <h2 className="text-sm font-semibold">Computer settings</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Open a page to change settings saved on this computer.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {runtimeExtension.views
+                      .filter(
+                        (view) =>
+                          view.id !== 'runtime' &&
+                          (view.settingsScope === 'computer' || view.id === 'task-defaults'),
+                      )
+                      .sort((a, b) => a.order - b.order)
+                      .map(({ id: viewId, title: label }) => (
+                        <Button
+                          key={viewId}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setManaging(null)
+                            studio.navigate({ viewId, entityId: managing.id })
+                          }}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                  </div>
+                </section>
               </WorkspaceScope>
             ) : (
               <Button onClick={() => setManaging(null)}>Close</Button>
@@ -137,6 +145,7 @@ function LastCrashNotice({ source }: { source: ReturnType<typeof useRuntimeSourc
   const crash = source.snapshot?.lastCrash
   const { readRuntime, refreshRuntime } = useWorkspace()
   const [busy, setBusy] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
   if (!crash) return null
   return (
     <article
@@ -152,6 +161,11 @@ function LastCrashNotice({ source }: { source: ReturnType<typeof useRuntimeSourc
         <pre className="mt-2 whitespace-pre-wrap break-words text-xs [overflow-wrap:anywhere]">
           {crash.message}
         </pre>
+        {error && (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            {error}
+          </p>
+        )}
       </div>
       <Button
         variant="outline"
@@ -159,6 +173,7 @@ function LastCrashNotice({ source }: { source: ReturnType<typeof useRuntimeSourc
         disabled={busy || !source.connected}
         onClick={() => {
           setBusy(true)
+          setError('')
           void readRuntime(
             source.profile,
             '/api/runtime/crash/dismiss',
@@ -167,11 +182,13 @@ function LastCrashNotice({ source }: { source: ReturnType<typeof useRuntimeSourc
             'POST',
           )
             .then(() => refreshRuntime(source.profile))
-            .catch((error: unknown) => console.error('Could not dismiss the crash record', error))
+            .catch((cause: unknown) =>
+              setError(cause instanceof Error ? cause.message : String(cause)),
+            )
             .finally(() => setBusy(false))
         }}
       >
-        Dismiss
+        {busy ? 'Dismissing…' : 'Dismiss'}
       </Button>
     </article>
   )

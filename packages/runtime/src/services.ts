@@ -1,3 +1,7 @@
+import { DeviceHosts, splitDeviceId } from './previews/device-hosts.js'
+import { previewDevices } from './previews/devices.js'
+import { DeviceHostUploads } from './previews/device-host-install.js'
+import { Memory } from './memory/memory.js'
 import { RuntimeBackups } from './storage/backups.js'
 import { MutationReceipts } from './storage/mutation-receipts.js'
 import { McpApps } from './mcp-apps/bridge.js'
@@ -44,6 +48,21 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   const activity = new Activity(db)
   const commands = new Commands(db)
   const preferences = new RuntimePreferences(db)
+  const deviceHostUploads = new DeviceHostUploads()
+  const deviceHosts = new DeviceHosts(
+    db,
+    (id) => simulators.closeHost(id),
+    () => simulators.closeAll(),
+    () => deviceHostUploads.cancelAll(),
+  )
+  const simulators = new SimulatorPreviews({
+    authorize: () => deviceHosts.assertEnabled(),
+    devices: (taskId, deviceId, foreignOwner) =>
+      foreignOwner || !splitDeviceId(deviceId).hostId
+        ? previewDevices()
+        : deviceHosts.list(taskId, splitDeviceId(deviceId).hostId),
+    driver: (taskId, device) => deviceHosts.driver(taskId, device),
+  })
   const defaults = new RuntimeDefaults(db)
   const acpInstallations = new AcpInstallations(
     db,
@@ -72,7 +91,12 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     forgeCli,
     (fn) => store.transaction(fn),
   )
-  const devices = new Devices(db, ownerToken),
+  const devices = new Devices(db, ownerToken, (id) => {
+      deviceHostUploads.cancelDevice(id)
+      void simulators
+        .closeForeignDevice(id)
+        .catch((error) => console.warn('Revoked device preview cleanup failed', error))
+    }),
     pairing = new Pairing(devices),
     git: GitService = new GitService(
       () => commands.get(),
@@ -85,6 +109,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         ),
       (connectionId, remote, cwd) => forges.gitAuthorization(connectionId, remote, cwd),
       (cwd) => pulls.githubEnvironment(cwd),
+      (common, directory) => store.rememberWorktree(common, directory),
     ),
     pulls: ForgePullRequests = new ForgePullRequests(git, forges, store),
     terminals = new Terminals(() => commands.get(), activity),
@@ -113,6 +138,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     scratch,
     () => preferences.worktreesRoot(),
   )
+  const memory = new Memory(db, store, preferences, checkouts)
   const titles = new TitleGeneration(db, store, agents)
   const tasks = new Tasks(
       store,
@@ -130,6 +156,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         : join(dirname(resolve(db.name)), 'skills'),
       () => preferences.get().enablePullRequestWatching,
       () => preferences.get().enablePipelineWatching,
+      (taskId) => memory.availableScopes(taskId),
+      () => preferences.get().maxActiveChildAgents,
+      () => deviceHosts.settings.get().enabled ?? false,
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git)
   const mcpApps = new McpApps(db, store, activity, approvals)
@@ -206,6 +235,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     instanceId: randomUUID(),
     mcpApps,
     artifacts,
+    memory,
     scratch,
     pushNotifications,
     acpInstallations,
@@ -234,7 +264,11 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     tasks,
     jobs,
     tickets,
-    simulators: new SimulatorPreviews(),
+    simulators,
+    deviceHosts,
+    hostSimulators: simulators,
+    deviceHostTickets: new SocketTickets(),
+    deviceHostUploads,
     simulatorTickets: new SocketTickets(),
     browsers: new RemoteBrowsers(
       db.name === ':memory:' ? undefined : join(dirname(resolve(db.name)), 'browser-profiles'),
@@ -245,6 +279,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  memory: Memory
   backups: RuntimeBackups
   pipelineWatch: PipelineWatch
   pullRequestWatch: PullRequestWatch
@@ -282,6 +317,10 @@ export interface Services {
   tasks: Tasks
   jobs: Jobs
   tickets: SocketTickets
+  deviceHosts: DeviceHosts
+  hostSimulators: SimulatorPreviews
+  deviceHostTickets: SocketTickets
+  deviceHostUploads: DeviceHostUploads
   simulators: SimulatorPreviews
   simulatorTickets: SocketTickets
   browsers: RemoteBrowsers

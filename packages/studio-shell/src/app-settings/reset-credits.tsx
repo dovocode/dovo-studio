@@ -102,7 +102,7 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
       <Button
         variant="outline"
         size="sm"
-        className="mt-3 h-7 text-xs"
+        className="mt-3"
         disabled={!profile || !window.account || (!source?.taskId && !source?.agentId)}
         onClick={() => void check()}
       >
@@ -117,7 +117,7 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
           </DialogDescription>
           {sources.length > 1 && (
             <ChoicePicker
-              aria-label="Server for reset"
+              aria-label="Computer for reset"
               value={profile?.id ?? ''}
               disabled={busy}
               onValueChange={(id) => {
@@ -134,7 +134,11 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
               ))}
             </ChoicePicker>
           )}
-          {busy && <p className="text-xs text-muted-foreground">Contacting provider…</p>}
+          {busy && (
+            <p role="status" className="text-xs text-muted-foreground">
+              Contacting provider…
+            </p>
+          )}
           {credits && (
             <div className="space-y-2 text-xs">
               <p>
@@ -166,7 +170,11 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
               )}
             </div>
           )}
-          {!!outcome && <p className="text-xs">{outcome}</p>}
+          {!!outcome && (
+            <p role="status" className="text-xs">
+              {outcome}
+            </p>
+          )}
           {!!error && (
             <p role="alert" className="text-xs text-destructive">
               {error}

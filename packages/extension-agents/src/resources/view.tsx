@@ -14,7 +14,8 @@ import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { resourceError } from './error'
 import { Schema } from 'effect'
-import { Plus, Pencil, Trash2, Undo2 } from 'lucide-react'
+import { useId, type ReactNode } from 'react'
+import { Plus, Pencil, Search, Trash2, Undo2 } from 'lucide-react'
 import {
   resourceSettingsSchema,
   useWorkspace,
@@ -23,15 +24,28 @@ import {
   type AgentHook,
   type ResourceSettings,
 } from '@dovo/studio-core'
-import { SettingsScopePage, Button, Checkbox, SettingSource } from '@dovo/studio-ui'
+import {
+  SettingsScopePage,
+  Button,
+  FormField,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SettingSource,
+  Switch,
+  type SettingOrigin,
+} from '@dovo/studio-ui'
 import { McpEditor } from './mcp-editor'
 import { CatalogPicker } from './catalog-picker'
 import { SkillEditor } from './skill-editor'
 export default function ResourcesView() {
   return (
     <SettingsScopePage
-      title="Agent resources & hooks"
-      description="MCP servers, skills and hooks. Matching names override inherited tools; changes apply on the next turn."
+      title="MCP, skills & hooks"
+      description="Tools, reusable instructions and checks available to your agents. Changes apply from the next turn."
     >
       {({ scope, repository }) => (
         <ComputerResources selectedScope={scope} repositoryId={repository?.id} />
@@ -55,31 +69,46 @@ function ComputerResources({
   )
   return (
     <div className="space-y-3">
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Entries set at {settingsScopeLabels[selectedScope]} replace inherited entries with the same
+        name. Reset an override to use the inherited one again. MCP credentials shared across
+        computers must reference environment variables on each computer.
+      </p>
       {!scopes.length && (
-        <p className="text-xs text-muted-foreground">
+        <p className="rounded-md border p-4 text-xs text-muted-foreground">
           Add a project or custom agent to manage its resources.
         </p>
       )}
       {scopes.map(({ item, collection, label, scope, repository, namedAgentId }) => {
         const resources = decode(resourceSettingsSchema, item.resources ?? {})
+        const total =
+          resources.mcpServers.length + resources.skills.length + (resources.hooks?.length ?? 0)
+        const title = namedAgentId
+          ? `${item.name} profile only`
+          : collection === 'settings'
+            ? 'All agents'
+            : `${label} · ${item.name}`
+        const where =
+          collection === 'settings' && scope
+            ? `${settingsScopeLabels[scope]}${repository ? ` · ${repository.name}` : ''}`
+            : undefined
         return (
           <details
             key={`${collection}:${scope ?? 'agent'}:${item.id}`}
-            className="rounded-md border"
-            open={
-              !!scope ||
-              resources.mcpServers.length +
-                resources.skills.length +
-                (resources.hooks?.length ?? 0) >
-                0 ||
-              undefined
-            }
+            className="rounded-lg border"
+            open={(!!scope && !namedAgentId) || total > 0 || undefined}
           >
             <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-              {label} · {item.name}
-              <span className="ml-3 text-xs font-normal text-muted-foreground">
-                {resources.mcpServers.length} MCP · {resources.skills.length} skills ·{' '}
-                {resources.hooks?.length ?? 0} hooks
+              {title}
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {[
+                  where,
+                  count(resources.mcpServers.length, 'MCP server'),
+                  count(resources.skills.length, 'skill'),
+                  count(resources.hooks?.length ?? 0, 'hook'),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
             </summary>
             <ResourceScopeView
@@ -95,6 +124,7 @@ function ComputerResources({
     </div>
   )
 }
+const count = (value: number, noun: string) => `${value} ${noun}${value === 1 ? '' : 's'}`
 function ResourceScopeView({
   collection,
   id,
@@ -154,7 +184,14 @@ function ResourceScopeView({
         item,
         collection,
         label: settingsScope
-          ? `${settingsScopeLabels[settingsScope]} · ${item.name}`
+          ? [
+              settingsScopeLabels[settingsScope],
+              repository?.name,
+              namedAgentId &&
+                `${scopedValue?.agents?.find((agent) => agent.id === namedAgentId)?.name ?? 'Agent'} profile`,
+            ]
+              .filter(Boolean)
+              .join(' · ')
           : `${collection === 'agents' ? 'Agent' : 'Project'} · ${item.name}`,
       }
     : undefined
@@ -229,372 +266,192 @@ function ResourceScopeView({
       /* The error is displayed above the resource lists. */
     })
   }
+  const inheritedServers = (inherited?.mcpServers ?? []).filter(
+    (server) => !settings.mcpServers.some((item) => item.name === server.name),
+  )
+  const inheritedSkills = (inherited?.skills ?? []).filter(
+    (skill) => !settings.skills.some((item) => item.name === skill.name),
+  )
+  const disabled = !connected || busy
+  const origin = (kind: 'mcpServers' | 'skills' | 'hooks', name: string): SettingOrigin['source'] =>
+    resourceOrigin(snapshot?.defaults, repository, settingsScope ?? 'environment', kind, name)
   return (
-    <div className="px-4 pb-4">
+    <div className="space-y-4 px-4 pb-4">
       {!scope ? (
         <p className="text-sm text-muted-foreground">
           Add a project or custom agent to manage its resources.
         </p>
       ) : (
         <>
-          {settingsScope && (
-            <p className="mb-4 text-xs text-muted-foreground">
-              Edit entries owned by this scope. Remove an override to inherit its earlier
-              definition. Shared MCP credentials must reference host environment variables.
-            </p>
-          )}
           {(error || syncError) && (
-            <p role="alert" className="mb-4 text-xs text-destructive">
+            <p role="alert" className="text-xs text-destructive">
               {error || syncError}
             </p>
           )}
           {!connected && (
-            <p className="mb-4 text-xs text-muted-foreground">
-              Connect to the runtime to manage resources.
+            <p role="status" className="text-xs text-muted-foreground">
+              Connect to this computer to manage resources.
             </p>
           )}
-          {inherited &&
-            [...inherited.mcpServers, ...inherited.skills, ...(inherited.hooks ?? [])].length >
-              0 && (
-              <section className="mb-4 space-y-2">
-                <h3 className="text-sm font-medium">Inherited tools & hooks</h3>
-                {inherited.mcpServers
-                  .filter(
-                    (server) => !settings.mcpServers.some((item) => item.name === server.name),
-                  )
-                  .map((server) => (
-                    <div
-                      key={`mcp:${server.name}`}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 p-3"
-                    >
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium">
-                          {server.name}
-                          {server.enabled ? '' : ' · Disabled'}
-                        </p>
-                        <SettingSource
-                          label={server.name}
-                          origin={{
-                            source: resourceOrigin(
-                              snapshot?.defaults,
-                              repository,
-                              settingsScope ?? 'environment',
-                              'mcpServers',
-                              server.name,
-                            ),
-                            overridden: false,
-                          }}
-                        />
-                      </div>
-                      <Button
-                        key={`mcp:${server.name}`}
-                        size="sm"
-                        variant="ghost"
-                        disabled={!connected || busy}
-                        onClick={() => setEditing({ kind: 'mcp', value: server })}
-                      >
-                        Override MCP · {server.name}
-                        {server.enabled ? '' : ' · Disabled'}
-                      </Button>
-                    </div>
-                  ))}
-                {inherited.skills
-                  .filter((skill) => !settings.skills.some((item) => item.name === skill.name))
-                  .map((skill) => (
-                    <div
-                      key={`skill:${skill.name}`}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 p-3"
-                    >
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium">
-                          {skill.name}
-                          {skill.enabled ? '' : ' · Disabled'}
-                        </p>
-                        <SettingSource
-                          label={skill.name}
-                          origin={{
-                            source: resourceOrigin(
-                              snapshot?.defaults,
-                              repository,
-                              settingsScope ?? 'environment',
-                              'skills',
-                              skill.name,
-                            ),
-                            overridden: false,
-                          }}
-                        />
-                      </div>
-                      <Button
-                        key={`skill:${skill.name}`}
-                        size="sm"
-                        variant="ghost"
-                        disabled={!connected || busy}
-                        onClick={() =>
-                          act((value) => ({ ...value, skills: [...value.skills, skill] }))
-                        }
-                      >
-                        Override skill · {skill.name}
-                        {skill.enabled ? '' : ' · Disabled'}
-                      </Button>
-                    </div>
-                  ))}
-                {(inherited.hooks ?? [])
-                  .filter((hook) => !settings.hooks?.some((entry) => entry.name === hook.name))
-                  .map((hook) => (
-                    <div
-                      key={`hook:${hook.name}`}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 p-3"
-                    >
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium">
-                          {hook.name}
-                          {hook.enabled ? '' : ' · Disabled'}
-                        </p>
-                        <SettingSource
-                          label={hook.name}
-                          origin={{
-                            source: resourceOrigin(
-                              snapshot?.defaults,
-                              repository,
-                              settingsScope ?? 'environment',
-                              'hooks',
-                              hook.name,
-                            ),
-                            overridden: false,
-                          }}
-                        />
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={!connected || busy}
-                        onClick={() =>
-                          act((value) => ({ ...value, hooks: [...(value.hooks ?? []), hook] }))
-                        }
-                      >
-                        Override hook · {hook.name}
-                      </Button>
-                    </div>
-                  ))}
-              </section>
-            )}
-          <div className="grid gap-6 xl:grid-cols-2">
-            <HookSettings
-              hooks={settings.hooks ?? []}
-              inherited={inherited?.hooks ?? []}
-              scope={settingsScope}
-              disabled={!connected || busy}
-              change={act}
-            />
-            <section className="rounded-md border p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-medium">MCP servers</h3>
+          {busy && (
+            <p role="status" className="text-xs text-muted-foreground">
+              Saving…
+            </p>
+          )}
+          <ResourceSection
+            title="MCP servers"
+            description="Tool servers the agent can call: local commands or Streamable HTTP endpoints."
+            actions={
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() => setCatalog('mcp')}
+                >
+                  <Search className="size-3" />
+                  Browse MCP Registry
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!connected || busy}
-                  onClick={() =>
-                    setEditing({
-                      kind: 'mcp',
-                    })
-                  }
+                  disabled={disabled}
+                  onClick={() => setEditing({ kind: 'mcp' })}
                 >
                   <Plus className="size-3" />
                   Add MCP server
                 </Button>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mb-3"
-                disabled={!connected || busy}
-                onClick={() => setCatalog('mcp')}
-              >
-                Browse MCP Registry
-              </Button>
-              {!settings.mcpServers.length && (
-                <p className="text-xs text-muted-foreground">
-                  Connect local commands or Streamable HTTP MCP servers.
-                </p>
-              )}
-              {settings.mcpServers.map((server) => (
-                <div key={server.name} className="flex items-center gap-3 border-t py-3">
-                  <Checkbox
-                    aria-label={`Enable MCP ${server.name}`}
-                    checked={server.enabled}
-                    disabled={!connected || busy}
-                    onCheckedChange={(checked) =>
-                      act((value) => ({
-                        ...value,
-                        mcpServers: value.mcpServers.map((item) =>
-                          item.name === server.name
-                            ? {
-                                ...item,
-                                enabled: checked === true,
-                              }
-                            : item,
-                        ),
-                      }))
-                    }
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words text-sm">{server.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {server.transport === 'stdio' ? server.command : server.url}
-                    </p>
-                    {settingsScope && (
-                      <div className="mt-1">
-                        <SettingSource
-                          label={server.name}
-                          origin={{ source: settingsScope, overridden: true }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`Edit MCP ${server.name}`}
-                    disabled={!connected || busy}
-                    onClick={() =>
-                      setEditing({
-                        kind: 'mcp',
-                        value: server,
-                      })
-                    }
-                  >
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`Remove MCP ${server.name}`}
-                    title={
-                      inherited?.mcpServers.some((entry) => entry.name === server.name)
-                        ? 'Reset to inherited definition'
-                        : 'Remove MCP server'
-                    }
-                    disabled={!connected || busy}
-                    onClick={() =>
-                      act((value) => ({
-                        ...value,
-                        mcpServers: value.mcpServers.filter((item) => item.name !== server.name),
-                      }))
-                    }
-                  >
-                    {inherited?.mcpServers.some((entry) => entry.name === server.name) ? (
-                      <Undo2 className="size-3.5" />
-                    ) : (
-                      <Trash2 className="size-3.5" />
-                    )}
-                  </Button>
-                </div>
-              ))}
-            </section>
-            <section className="rounded-md border p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-medium">Skills</h3>
+              </>
+            }
+            empty={
+              !settings.mcpServers.length && !inheritedServers.length
+                ? 'No MCP servers yet.'
+                : undefined
+            }
+          >
+            {settings.mcpServers.map((server) => {
+              const overrides = !!inherited?.mcpServers.some((entry) => entry.name === server.name)
+              return (
+                <ResourceRow
+                  key={`own:${server.name}`}
+                  kind="MCP"
+                  name={server.name}
+                  detail={server.transport === 'stdio' ? server.command : server.url}
+                  enabled={server.enabled}
+                  source={settingsScope}
+                  overrides={overrides}
+                  disabled={disabled}
+                  onToggle={(checked) =>
+                    act((value) => ({
+                      ...value,
+                      mcpServers: value.mcpServers.map((item) =>
+                        item.name === server.name ? { ...item, enabled: checked } : item,
+                      ),
+                    }))
+                  }
+                  onEdit={() => setEditing({ kind: 'mcp', value: server })}
+                  onRemove={() =>
+                    act((value) => ({
+                      ...value,
+                      mcpServers: value.mcpServers.filter((item) => item.name !== server.name),
+                    }))
+                  }
+                />
+              )
+            })}
+            {inheritedServers.map((server) => (
+              <InheritedRow
+                key={`inherited:${server.name}`}
+                kind="MCP"
+                name={server.name}
+                detail={server.transport === 'stdio' ? server.command : server.url}
+                enabled={server.enabled}
+                source={origin('mcpServers', server.name)}
+                disabled={disabled}
+                onOverride={() => setEditing({ kind: 'mcp', value: server })}
+              />
+            ))}
+          </ResourceSection>
+          <ResourceSection
+            title="Skills"
+            description="Reusable instructions. Enabled skills are offered to the agent, which applies them when relevant."
+            actions={
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() => setCatalog('skill')}
+                >
+                  <Search className="size-3" />
+                  Browse skills.sh
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!connected || busy}
-                  onClick={() =>
-                    setEditing({
-                      kind: 'skill',
-                    })
-                  }
+                  disabled={disabled}
+                  onClick={() => setEditing({ kind: 'skill' })}
                 >
                   <Plus className="size-3" />
                   Add skill
                 </Button>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mb-3"
-                disabled={!connected || busy}
-                onClick={() => setCatalog('skill')}
-              >
-                Browse skills.sh
-              </Button>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Enabled skill instructions are supplied to the task harness to apply when relevant.
-              </p>
-              {settings.skills.map((skill) => (
-                <div key={skill.name} className="flex items-center gap-3 border-t py-3">
-                  <Checkbox
-                    aria-label={`Enable skill ${skill.name}`}
-                    checked={skill.enabled}
-                    disabled={!connected || busy}
-                    onCheckedChange={(checked) =>
-                      act((value) => ({
-                        ...value,
-                        skills: value.skills.map((item) =>
-                          item.name === skill.name
-                            ? {
-                                ...item,
-                                enabled: checked === true,
-                              }
-                            : item,
-                        ),
-                      }))
-                    }
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words text-sm">{skill.name}</p>
-                    <p className="line-clamp-2 text-xs text-muted-foreground">
-                      {skill.description}
-                    </p>
-                    {settingsScope && (
-                      <div className="mt-1">
-                        <SettingSource
-                          label={skill.name}
-                          origin={{ source: settingsScope, overridden: true }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`Edit skill ${skill.name}`}
-                    disabled={!connected || busy}
-                    onClick={() =>
-                      setEditing({
-                        kind: 'skill',
-                        value: skill,
-                      })
-                    }
-                  >
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`Remove skill ${skill.name}`}
-                    title={
-                      inherited?.skills.some((entry) => entry.name === skill.name)
-                        ? 'Reset to inherited definition'
-                        : 'Remove skill'
-                    }
-                    disabled={!connected || busy}
-                    onClick={() =>
-                      act((value) => ({
-                        ...value,
-                        skills: value.skills.filter((item) => item.name !== skill.name),
-                      }))
-                    }
-                  >
-                    {inherited?.skills.some((entry) => entry.name === skill.name) ? (
-                      <Undo2 className="size-3.5" />
-                    ) : (
-                      <Trash2 className="size-3.5" />
-                    )}
-                  </Button>
-                </div>
-              ))}
-            </section>
-          </div>
+              </>
+            }
+            empty={
+              !settings.skills.length && !inheritedSkills.length ? 'No skills yet.' : undefined
+            }
+          >
+            {settings.skills.map((skill) => {
+              const overrides = !!inherited?.skills.some((entry) => entry.name === skill.name)
+              return (
+                <ResourceRow
+                  key={`own:${skill.name}`}
+                  kind="skill"
+                  name={skill.name}
+                  detail={skill.description}
+                  enabled={skill.enabled}
+                  source={settingsScope}
+                  overrides={overrides}
+                  disabled={disabled}
+                  onToggle={(checked) =>
+                    act((value) => ({
+                      ...value,
+                      skills: value.skills.map((item) =>
+                        item.name === skill.name ? { ...item, enabled: checked } : item,
+                      ),
+                    }))
+                  }
+                  onEdit={() => setEditing({ kind: 'skill', value: skill })}
+                  onRemove={() =>
+                    act((value) => ({
+                      ...value,
+                      skills: value.skills.filter((item) => item.name !== skill.name),
+                    }))
+                  }
+                />
+              )
+            })}
+            {inheritedSkills.map((skill) => (
+              <InheritedRow
+                key={`inherited:${skill.name}`}
+                kind="skill"
+                name={skill.name}
+                detail={skill.description}
+                enabled={skill.enabled}
+                source={origin('skills', skill.name)}
+                disabled={disabled}
+                onOverride={() => act((value) => ({ ...value, skills: [...value.skills, skill] }))}
+              />
+            ))}
+          </ResourceSection>
+          <HookSettings
+            hooks={settings.hooks ?? []}
+            inherited={inherited?.hooks ?? []}
+            scope={settingsScope}
+            origin={(name) => origin('hooks', name)}
+            disabled={disabled}
+            change={act}
+          />
         </>
       )}
       {catalog && (
@@ -664,22 +521,34 @@ function ResourceScopeView({
   )
 }
 
+const hookEvents: readonly { id: AgentHook['event']; name: string }[] = [
+  { id: 'before-turn', name: 'Before each turn' },
+  { id: 'after-turn', name: 'After each turn' },
+]
+const hookEventName = (event: AgentHook['event']) =>
+  hookEvents.find((entry) => entry.id === event)?.name ?? event
+
 function HookSettings({
   hooks,
   inherited,
   scope,
+  origin,
   disabled,
   change,
 }: {
   hooks: AgentHook[]
   inherited: readonly AgentHook[]
   scope?: SettingsScope
+  origin: (name: string) => SettingOrigin['source']
   disabled: boolean
   change: (update: (value: ResourceSettings) => ResourceSettings) => void
 }) {
   const [draft, setDraft] = useApplicationState<AgentHook | null>(null)
   const [previousName, setPreviousName] = useApplicationState<string | null>(null)
   const [validation, setValidation] = useApplicationState('')
+  const inheritedHooks = inherited.filter(
+    (hook) => !hooks.some((entry) => entry.name === hook.name),
+  )
   const save = () => {
     if (!draft) return
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(draft.name)) {
@@ -708,15 +577,17 @@ function HookSettings({
     setValidation('')
   }
   return (
-    <section className="rounded-md border p-4">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium">Agent loop hooks</h3>
+    <ResourceSection
+      title="Agent loop hooks"
+      description="Commands that run in the task checkout before or after each agent turn. If an after-turn check fails, the agent is asked to fix the result, up to two times."
+      actions={
         <Button
           size="sm"
           variant="outline"
-          disabled={disabled}
+          disabled={disabled || !!draft}
           onClick={() => {
             setPreviousName(null)
+            setValidation('')
             setDraft({
               name: '',
               enabled: true,
@@ -728,110 +599,113 @@ function HookSettings({
         >
           <Plus className="size-3" /> Add hook
         </Button>
-      </div>
-      <p className="mb-3 text-xs text-muted-foreground">
-        Run commands in the task checkout. Failed after-turn checks ask the agent to repair the
-        result, up to two times.
-      </p>
+      }
+      empty={!hooks.length && !inheritedHooks.length && !draft ? 'No hooks yet.' : undefined}
+    >
       {hooks.map((hook) => (
-        <div key={hook.name} className="flex items-center gap-2 border-t py-2">
-          <Checkbox
-            aria-label={`Enable hook ${hook.name}`}
-            checked={hook.enabled}
-            disabled={disabled}
-            onCheckedChange={(checked) =>
-              change((value) => ({
-                ...value,
-                hooks: (value.hooks ?? []).map((item) =>
-                  item.name === hook.name ? { ...item, enabled: checked === true } : item,
-                ),
-              }))
-            }
-          />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm">
-              {hook.name} · {hook.event}
-            </p>
-            <p className="truncate text-xs text-muted-foreground">{hook.command}</p>
-            {scope && (
-              <div className="mt-1">
-                <SettingSource label={hook.name} origin={{ source: scope, overridden: true }} />
-              </div>
-            )}
-          </div>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label={`Edit hook ${hook.name}`}
-            disabled={disabled}
-            onClick={() => {
-              setPreviousName(hook.name)
-              setDraft(hook)
-            }}
-          >
-            <Pencil className="size-3.5" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label={`Remove hook ${hook.name}`}
-            title={
-              inherited.some((entry) => entry.name === hook.name)
-                ? 'Reset to inherited definition'
-                : 'Remove hook'
-            }
-            disabled={disabled}
-            onClick={() =>
-              change((value) => ({
-                ...value,
-                hooks: (value.hooks ?? []).filter((item) => item.name !== hook.name),
-              }))
-            }
-          >
-            {inherited.some((entry) => entry.name === hook.name) ? (
-              <Undo2 className="size-3.5" />
-            ) : (
-              <Trash2 className="size-3.5" />
-            )}
-          </Button>
-        </div>
+        <ResourceRow
+          key={`own:${hook.name}`}
+          kind="hook"
+          name={hook.name}
+          meta={hookEventName(hook.event)}
+          detail={hook.command}
+          mono
+          enabled={hook.enabled}
+          source={scope}
+          overrides={inherited.some((entry) => entry.name === hook.name)}
+          disabled={disabled}
+          onToggle={(checked) =>
+            change((value) => ({
+              ...value,
+              hooks: (value.hooks ?? []).map((item) =>
+                item.name === hook.name ? { ...item, enabled: checked } : item,
+              ),
+            }))
+          }
+          onEdit={() => {
+            setPreviousName(hook.name)
+            setValidation('')
+            setDraft(hook)
+          }}
+          onRemove={() =>
+            change((value) => ({
+              ...value,
+              hooks: (value.hooks ?? []).filter((item) => item.name !== hook.name),
+            }))
+          }
+        />
+      ))}
+      {inheritedHooks.map((hook) => (
+        <InheritedRow
+          key={`inherited:${hook.name}`}
+          kind="hook"
+          name={hook.name}
+          meta={hookEventName(hook.event)}
+          detail={hook.command}
+          mono
+          enabled={hook.enabled}
+          source={origin(hook.name)}
+          disabled={disabled}
+          onOverride={() =>
+            change((value) => ({ ...value, hooks: [...(value.hooks ?? []), hook] }))
+          }
+        />
       ))}
       {draft && (
-        <div className="space-y-2 border-t pt-3 text-sm">
-          <label className="block">
-            Name
-            <input
-              className="mt-1 w-full rounded border bg-background p-2"
-              value={draft.name}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-            />
-          </label>
-          <label className="block">
-            When
-            <select
-              className="mt-1 w-full rounded border bg-background p-2"
-              value={draft.event}
-              onChange={(event) =>
-                setDraft({ ...draft, event: event.target.value as AgentHook['event'] })
-              }
-            >
-              <option value="before-turn">Before each turn</option>
-              <option value="after-turn">After each turn</option>
-            </select>
-          </label>
-          <label className="block">
-            Command
-            <input
-              className="mt-1 w-full rounded border bg-background p-2 font-mono"
+        <form
+          aria-label={previousName ? `Edit hook ${previousName}` : 'New hook'}
+          className="space-y-4 border-t bg-muted/20 p-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            save()
+          }}
+        >
+          <h4 className="text-xs font-semibold">
+            {previousName ? `Edit hook · ${previousName}` : 'New hook'}
+          </h4>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Name">
+              <Input
+                autoFocus
+                required
+                value={draft.name}
+                placeholder="lint"
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+              />
+            </FormField>
+            <FormField label="When">
+              <Select
+                value={draft.event}
+                onValueChange={(value) => {
+                  const event = hookEvents.find((entry) => entry.id === value)
+                  if (event) setDraft({ ...draft, event: event.id })
+                }}
+              >
+                <SelectTrigger aria-label="When" className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {hookEvents.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>
+                      {entry.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FormField>
+          </div>
+          <FormField label="Command">
+            <Input
+              required
+              className="font-mono"
               value={draft.command}
               onChange={(event) => setDraft({ ...draft, command: event.target.value })}
               placeholder="pnpm lint"
             />
-          </label>
-          <label className="block">
-            Timeout (seconds)
-            <input
-              className="mt-1 w-full rounded border bg-background p-2"
+          </FormField>
+          <FormField label="Timeout (seconds, 1–600)">
+            <Input
+              className="w-32"
               type="number"
               min={1}
               max={600}
@@ -840,29 +714,189 @@ function HookSettings({
                 setDraft({ ...draft, timeoutSeconds: Number(event.target.value) })
               }
             />
-          </label>
+          </FormField>
           {validation && (
-            <p role="alert" className="text-destructive">
+            <p role="alert" className="text-xs text-destructive">
               {validation}
             </p>
           )}
-          <div className="flex gap-2">
-            <Button size="sm" disabled={disabled} onClick={save}>
-              Save hook
-            </Button>
+          <div className="flex justify-end gap-2">
             <Button
+              type="button"
               size="sm"
               variant="ghost"
               onClick={() => {
                 setDraft(null)
+                setPreviousName(null)
                 setValidation('')
               }}
             >
               Cancel
             </Button>
+            <Button type="submit" size="sm" disabled={disabled}>
+              Save hook
+            </Button>
           </div>
-        </div>
+        </form>
       )}
+    </ResourceSection>
+  )
+}
+
+function ResourceSection({
+  title,
+  description,
+  actions,
+  empty,
+  children,
+}: {
+  title: string
+  description: string
+  actions: ReactNode
+  empty?: string
+  children: ReactNode
+}) {
+  const id = useId()
+  return (
+    <section aria-labelledby={id} className="overflow-hidden rounded-lg border bg-card">
+      <div className="flex flex-wrap items-start justify-between gap-3 p-4">
+        <div className="min-w-0 flex-1 basis-60">
+          <h3 id={id} className="text-sm font-medium">
+            {title}
+          </h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+      </div>
+      {empty && <p className="border-t px-4 py-3 text-xs text-muted-foreground">{empty}</p>}
+      {children}
     </section>
+  )
+}
+
+function ResourceRow({
+  kind,
+  name,
+  meta,
+  detail,
+  mono = false,
+  enabled,
+  source,
+  overrides,
+  disabled,
+  onToggle,
+  onEdit,
+  onRemove,
+}: {
+  kind: string
+  name: string
+  meta?: string
+  detail: string
+  mono?: boolean
+  enabled: boolean
+  source?: SettingsScope
+  overrides: boolean
+  disabled: boolean
+  onToggle: (checked: boolean) => void
+  onEdit: () => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="flex items-center gap-3 border-t px-4 py-3">
+      <Switch
+        aria-label={`Enable ${kind} ${name}`}
+        checked={enabled}
+        disabled={disabled}
+        onCheckedChange={onToggle}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm">
+          {name}
+          {meta && <span className="text-xs text-muted-foreground"> · {meta}</span>}
+        </p>
+        <p
+          className={`line-clamp-2 break-words text-xs text-muted-foreground ${mono ? 'font-mono' : ''}`}
+        >
+          {detail}
+        </p>
+        {source && (
+          <div className="mt-1.5">
+            <SettingSource label={name} origin={{ source, overridden: true }} />
+          </div>
+        )}
+      </div>
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={`Edit ${kind} ${name}`}
+        title="Edit"
+        disabled={disabled}
+        onClick={onEdit}
+      >
+        <Pencil className="size-3.5" />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={overrides ? `Reset ${kind} ${name} to inherited` : `Remove ${kind} ${name}`}
+        title={overrides ? 'Reset to the inherited definition' : `Remove ${kind}`}
+        disabled={disabled}
+        onClick={onRemove}
+      >
+        {overrides ? <Undo2 className="size-3.5" /> : <Trash2 className="size-3.5" />}
+      </Button>
+    </div>
+  )
+}
+
+function InheritedRow({
+  kind,
+  name,
+  meta,
+  detail,
+  mono = false,
+  enabled,
+  source,
+  disabled,
+  onOverride,
+}: {
+  kind: string
+  name: string
+  meta?: string
+  detail: string
+  mono?: boolean
+  enabled: boolean
+  source: SettingOrigin['source']
+  disabled: boolean
+  onOverride: () => void
+}) {
+  return (
+    <div className="flex items-center gap-3 border-t bg-muted/20 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm text-muted-foreground">
+          {name}
+          {meta && <span className="text-xs"> · {meta}</span>}
+          {!enabled && <span className="text-xs"> · Off</span>}
+        </p>
+        <p
+          className={`line-clamp-2 break-words text-xs text-muted-foreground ${mono ? 'font-mono' : ''}`}
+        >
+          {detail}
+        </p>
+        <div className="mt-1.5">
+          <SettingSource label={name} origin={{ source, overridden: false }} />
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        aria-label={`Override ${kind} ${name}`}
+        title="Copy to this level so you can change it here"
+        disabled={disabled}
+        onClick={onOverride}
+      >
+        Override
+      </Button>
+    </div>
   )
 }

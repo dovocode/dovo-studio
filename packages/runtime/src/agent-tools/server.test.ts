@@ -24,6 +24,7 @@ afterEach(() => vi.restoreAllMocks())
 it('offers task-scoped simulator controls through a provider MCP connection', async () => {
   const token = 'task-tools-owner-token-at-least-thirty-two-characters'
   const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  runtime.services.deviceHosts.settings.save({ enabled: true, hosts: [] })
   const client = new Client({ name: 'task-tools-test', version: '1.0.0' })
   let transport: StdioClientTransport | undefined
   try {
@@ -53,7 +54,19 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
       .spyOn(previews, 'previewDeviceAction')
       .mockResolvedValue({ ok: true, image: 'data:image/png;base64,aGVsbG8=' })
     runtime.services.preferences.save({ enableArtifacts: true })
-    const server = taskToolsServer('task', runtime.port, token, '127.0.0.1', false, true)
+    const server = taskToolsServer(
+      'task',
+      runtime.port,
+      token,
+      '127.0.0.1',
+      false,
+      true,
+      undefined,
+      false,
+      false,
+      [],
+      true,
+    )
     transport = new StdioClientTransport({
       command: server.command,
       args: server.args,
@@ -142,6 +155,7 @@ function decodeToolText(result: Awaited<ReturnType<Client['callTool']>>) {
 it('taps the point corresponding to a full-resolution iOS screenshot', async () => {
   const token = 'task-tools-owner-token-at-least-thirty-two-characters'
   const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  runtime.services.deviceHosts.settings.save({ enabled: true, hosts: [] })
   const client = new Client({ name: 'task-tap-test', version: '1.0.0' })
   let transport: StdioClientTransport | undefined
   try {
@@ -185,7 +199,19 @@ it('taps the point corresponding to a full-resolution iOS screenshot', async () 
       release: async () => {},
       close: async () => {},
     })
-    const server = taskToolsServer('task', runtime.port, token, '127.0.0.1')
+    const server = taskToolsServer(
+      'task',
+      runtime.port,
+      token,
+      '127.0.0.1',
+      false,
+      false,
+      undefined,
+      false,
+      false,
+      [],
+      true,
+    )
     transport = new StdioClientTransport({
       command: server.command,
       args: server.args,
@@ -217,7 +243,19 @@ it('taps the point corresponding to a full-resolution iOS screenshot', async () 
 })
 
 it('keeps read-only providers from sending task terminal or device input', async () => {
-  const server = taskToolsServer('task', 1, 'unused-token', '127.0.0.1', true, true)
+  const server = taskToolsServer(
+    'task',
+    1,
+    'unused-token',
+    '127.0.0.1',
+    true,
+    true,
+    undefined,
+    false,
+    false,
+    [],
+    true,
+  )
   const client = new Client({ name: 'read-only-test', version: '1.0.0' })
   const transport = new StdioClientTransport({
     command: server.command,
@@ -755,6 +793,107 @@ it.each([
         })
       ).isError,
     ).toBe(true)
+  } finally {
+    await client.close()
+    await transport.close()
+  }
+})
+
+it('rejects every subagent operation from a retired MCP turn', async () => {
+  const f = await fixture()
+  const token = 'retired-subagent-tools-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  const client = new Client({ name: 'retired-parent-tools', version: '1.0.0' })
+  let transport: StdioClientTransport | undefined
+  let configuration: ReturnType<typeof taskToolsServer> | undefined
+  let childId = ''
+  try {
+    const s = runtime.services
+    s.store.update(() => f.workspace)
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        if (run.agent.provider === 'claude') {
+          run.onText('Child answer')
+          return
+        }
+        if (!run.taskId) throw new Error('Expected parent')
+        configuration = taskToolsServer(
+          run.taskId,
+          runtime.port,
+          token,
+          '127.0.0.1',
+          false,
+          false,
+          s.store.task(run.taskId).activeRunId,
+        )
+        childId = s.tasks.subagentSpawn({
+          taskId: run.taskId,
+          key: 'retired',
+          name: 'Child',
+          prompt: 'Work',
+          provider: 'claude',
+        }).id
+        await s.tasks.subagentWait(run.taskId, childId)
+        run.onText('Parent complete')
+      },
+    })
+    const parent = s.tasks.create({
+      title: 'Parent',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Work',
+    })
+    await (
+      await s.tasks.start(parent.id)
+    ).done
+    if (!configuration) throw new Error('Expected tool configuration')
+    transport = new StdioClientTransport({
+      command: configuration.command,
+      args: configuration.args,
+      env: { ...configuration.envValues },
+      stderr: 'ignore',
+    })
+    await client.connect(transport)
+    for (const name of ['subagent_list', 'subagent_read', 'subagent_wait', 'subagent_cancel']) {
+      const result = await client.callTool({
+        name,
+        arguments: { id: childId, timeoutMs: 1, parentRunId: s.store.task(parent.id).activeRunId },
+      })
+      expect(result.isError).toBe(true)
+      expect(decodeToolText(result)).toContain('parent turn has ended')
+    }
+    expect(s.store.task(childId).delegation?.completion).toBe('read')
+  } finally {
+    await client.close()
+    await transport?.close()
+    await runtime.close()
+    await f.cleanup()
+  }
+}, 30000)
+
+it('keeps device tools hidden while Device Hub is off', async () => {
+  const configuration = taskToolsServer('task', 1, 'unused-token', '127.0.0.1')
+  const client = new Client({ name: 'disabled-device-hub-test', version: '1' })
+  const transport = new StdioClientTransport({
+    command: configuration.command,
+    args: configuration.args,
+    env: { ...configuration.envValues },
+    stderr: 'ignore',
+  })
+  try {
+    await client.connect(transport)
+    const names = (await client.listTools()).tools.map((tool) => tool.name)
+    for (const name of [
+      'devices',
+      'device',
+      'device_install',
+      'device_forward',
+      'simulator_tap',
+      'simulator_text',
+    ])
+      expect(names).not.toContain(name)
+    expect((await client.callTool({ name: 'devices', arguments: {} })).isError).toBe(true)
   } finally {
     await client.close()
     await transport.close()

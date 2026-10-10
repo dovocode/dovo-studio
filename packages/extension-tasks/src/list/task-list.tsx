@@ -236,7 +236,9 @@ export function TaskList({
     if (action === 'snooze' && hours === undefined) throw new Error('Choose a snooze duration.')
     if (
       action === 'delete' &&
-      !window.confirm(`Delete ${selectedEntries.length} selected threads? This cannot be undone.`)
+      !window.confirm(
+        `Delete ${selectedEntries.length} selected threads? This cannot be undone. Clean Dovo-created worktrees follow each computer’s cleanup setting.`,
+      )
     )
       return
     if (

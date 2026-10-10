@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useStudioHost } from '@dovo/studio-core'
 import type { DesktopUpdateState } from '@dovo/protocol'
 import { SettingRow, SettingsGroup } from './layout'
+import { SettingsSelect } from './settings-select'
 export function UpdateSettings() {
   const { updates, appInfo } = useStudioHost()
   const [state, setState] = useState<DesktopUpdateState | null>(null)
@@ -30,19 +31,25 @@ export function UpdateSettings() {
     }
   }, [updates])
   if (!updates) return null
+  const statusLabels: Record<DesktopUpdateState['status'], string> = {
+    idle: 'Check for the latest version.',
+    available: 'Update available.',
+    downloading: 'Downloading update…',
+    downloaded: 'Update ready. Restart Dovo to install it.',
+    restarting: 'Restarting Dovo…',
+    error: 'Could not check for updates. Try again.',
+  }
+  const description =
+    appInfo?.channel === 'dev'
+      ? 'Development builds do not receive automatic application updates.'
+      : !state
+        ? error
+          ? 'Update status unavailable.'
+          : 'Loading update status…'
+        : `${state.version ? `Version ${state.version} · ` : ''}${statusLabels[state.status]}`
   return (
-    <SettingsGroup title="Updates">
-      <SettingRow
-        label="Application updates"
-        description={
-          state?.error ||
-          (state?.version
-            ? `Version ${state.version} · ${state.status}`
-            : state?.status === 'idle'
-              ? 'Check for the latest version.'
-              : state?.status)
-        }
-      >
+    <SettingsGroup title="Application updates">
+      <SettingRow label="Update status" description={<span role="status">{description}</span>}>
         <Button
           variant="outline"
           disabled={
@@ -60,30 +67,35 @@ export function UpdateSettings() {
               .finally(() => setBusy(false))
           }}
         >
-          {busy
-            ? 'Checking…'
-            : state?.status === 'downloaded'
-              ? 'Restart to update'
-              : 'Check for updates'}
+          {state?.status === 'restarting' || (busy && state?.status === 'downloaded')
+            ? 'Restarting…'
+            : state?.status === 'downloading'
+              ? 'Downloading…'
+              : busy
+                ? 'Checking…'
+                : state?.status === 'downloaded'
+                  ? 'Restart to update'
+                  : 'Check for updates'}
         </Button>
       </SettingRow>
       <SettingRow
         label="Release channel"
-        description="Defaults to this build’s channel. Changes are saved only when you choose a channel here. Nightly includes the newest changes and may be less stable."
+        description="Stable is recommended. Nightly includes newer changes and may be less stable. Uses this build’s channel until you choose another."
       >
-        <select
-          aria-label="Release channel"
-          className="min-w-32 rounded-md border bg-background p-2 text-xs"
+        <SettingsSelect
+          label="Release channel"
           value={state?.channel ?? (appInfo?.channel === 'nightly' ? 'nightly' : 'stable')}
+          options={[
+            ['stable', 'Stable'],
+            ['nightly', 'Nightly'],
+          ]}
           disabled={
             !state ||
             busy ||
             appInfo?.channel === 'dev' ||
             ['downloading', 'downloaded', 'restarting'].includes(state.status)
           }
-          onChange={(event) => {
-            const channel = event.target.value
-            if (channel !== 'stable' && channel !== 'nightly') return
+          onChange={(channel) => {
             setBusy(true)
             setError('')
             void updates
@@ -93,14 +105,11 @@ export function UpdateSettings() {
               )
               .finally(() => setBusy(false))
           }}
-        >
-          <option value="stable">Stable</option>
-          <option value="nightly">Nightly</option>
-        </select>
+        />
       </SettingRow>
-      {error && (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
+      {(error || state?.error) && (
+        <p role="alert" className="px-4 py-3 text-xs text-destructive">
+          {error || state?.error}
         </p>
       )}
     </SettingsGroup>

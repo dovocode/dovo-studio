@@ -20,6 +20,7 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Automations](automations.md): triggers, execution, reviews, and recovery.
 - [Scoped settings](scoped-settings.md): global, environment, shared project and local project
   inheritance.
+- [Memory](memory.md): optional project, system-wide and projectless notes shared across threads.
 - [General settings](general-settings.md): organized device preferences, task defaults and lifecycle
   policies.
 - [Chat interactions](chat-interactions.md): queues, steering, questions, and approvals.

@@ -8,11 +8,14 @@ import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { directoryPageSchema, type DirectoryPage } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
-import { Action } from '../../ui/controls/action'
-import { Field, SearchField } from '../../ui/controls/field'
+import { SettingsAction as Action } from '../../screens/settings-controls'
+import {
+  SettingsField as Field,
+  SettingsSearchField as SearchField,
+} from '../../screens/settings-controls'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
-import { Choice } from '../../ui/controls/choice'
+import { SettingsChoice as Choice } from '../../screens/settings-controls'
 import { useTheme } from '../../ui/theme'
 type Props = {
   initialPath: string

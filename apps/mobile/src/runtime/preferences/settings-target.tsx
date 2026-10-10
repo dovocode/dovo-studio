@@ -14,9 +14,9 @@ import {
 } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { RuntimeScope, useRuntime } from '../connection/provider'
-import { Choice } from '../../ui/controls/choice'
+import { SettingsChoice as Choice } from '../../screens/settings-controls'
 import { Text } from '../../ui/content/text'
-import { Action } from '../../ui/controls/action'
+import { SettingsAction as Action } from '../../screens/settings-controls'
 import { useTheme } from '../../ui/theme'
 
 const Context = createContext<{
@@ -97,17 +97,15 @@ export function ScopedSettings({
   const [expanded, setExpanded] = useApplicationState(false)
   const selectedIndex = settingsScopes.indexOf(scope)
   return (
-    <View style={{ flex: 1, gap: 12 }}>
-      <View
-        accessibilityLabel="Settings target"
-        style={[styles.card, { gap: 10, marginHorizontal: 12 }]}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+    <View style={{ gap: 28 }}>
+      <View accessibilityLabel="Settings target" style={[styles.card, { gap: 10 }]}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
           <Text style={[styles.muted, { flex: 1, fontSize: 13, lineHeight: 18 }]}>
-            Applying settings for{' '}
-            <Text style={{ color: colors.text, fontWeight: '600' }}>{projectName}</Text>
-            {' on '}
-            <Text style={{ color: colors.text, fontWeight: '600' }}>{computerName}</Text>
+            <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
+              {settingsScopeLabels[scope]}
+            </Text>
+            {'\n'}
+            {projectName} · {computerName}
           </Text>
           <Action
             secondary
@@ -115,58 +113,58 @@ export function ScopedSettings({
             onPress={() => setExpanded(!expanded)}
           />
         </View>
-        <View
-          accessibilityLabel="Settings inheritance"
-          style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}
-        >
-          {settingsScopes.map((level, index) => {
-            const next = settingsTargetAtScope(overviews, target, level, activeId)
-            const selected = scope === level
-            const passed = index < selectedIndex
-            return (
-              <Pressable
-                key={level}
-                accessibilityRole="button"
-                accessibilityLabel={`Edit ${settingsScopeLabels[level]} settings`}
-                accessibilityHint={settingsScopeDescriptions[level]}
-                accessibilityState={{ selected, disabled: !next }}
-                disabled={!next}
-                onPress={() => next && setTarget(next)}
-                style={({ pressed }) => ({
-                  width: expanded ? '48%' : undefined,
-                  flexGrow: expanded ? 1 : 0,
-                  gap: 4,
-                  paddingHorizontal: 10,
-                  paddingVertical: expanded ? 10 : 7,
-                  minHeight: expanded ? 76 : 34,
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: selected ? colors.accent : colors.border,
-                  backgroundColor: selected || pressed ? colors.selection : undefined,
-                  opacity: next ? 1 : 0.4,
-                })}
-              >
-                <Text
-                  style={[
-                    styles.text,
-                    {
-                      fontSize: 12,
-                      fontWeight: '600',
-                      color: selected ? colors.accent : passed ? colors.text : colors.muted,
-                    },
-                  ]}
+        {expanded && (
+          <View
+            accessibilityLabel="Settings inheritance"
+            style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}
+          >
+            {settingsScopes.map((level, index) => {
+              const next = settingsTargetAtScope(overviews, target, level, activeId)
+              const selected = scope === level
+              const passed = index < selectedIndex
+              return (
+                <Pressable
+                  key={level}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${settingsScopeLabels[level]} settings`}
+                  accessibilityHint={settingsScopeDescriptions[level]}
+                  accessibilityState={{ selected, disabled: !next }}
+                  disabled={!next}
+                  onPress={() => next && setTarget(next)}
+                  style={({ pressed }) => ({
+                    width: expanded ? '48%' : undefined,
+                    flexGrow: expanded ? 1 : 0,
+                    gap: 4,
+                    paddingHorizontal: 10,
+                    paddingVertical: expanded ? 10 : 7,
+                    minHeight: expanded ? 76 : 44,
+                    borderRadius: 10,
+                    backgroundColor: selected || pressed ? colors.selection : undefined,
+                    opacity: next ? 1 : 0.4,
+                  })}
                 >
-                  {index + 1} · {settingsScopeLabels[level]}
-                </Text>
-                {expanded && (
-                  <Text style={[styles.muted, { fontSize: 11, lineHeight: 15 }]}>
-                    {settingsScopeDescriptions[level]}
+                  <Text
+                    style={[
+                      styles.text,
+                      {
+                        fontSize: 17,
+                        fontWeight: '600',
+                        color: selected ? colors.accent : passed ? colors.text : colors.muted,
+                      },
+                    ]}
+                  >
+                    {index + 1} · {settingsScopeLabels[level]}
                   </Text>
-                )}
-              </Pressable>
-            )
-          })}
-        </View>
+                  {expanded && (
+                    <Text style={[styles.muted, { fontSize: 13, lineHeight: 18 }]}>
+                      {settingsScopeDescriptions[level]}
+                    </Text>
+                  )}
+                </Pressable>
+              )
+            })}
+          </View>
+        )}
         {expanded && (
           <>
             <Choice
@@ -201,14 +199,16 @@ export function ScopedSettings({
             />
           </>
         )}
-        <Text style={[styles.muted, { fontSize: 12, lineHeight: 17 }]}>
-          <Text style={{ color: colors.text, fontWeight: '600' }}>
-            Editing {settingsScopeLabels[scope]}.
-          </Text>{' '}
-          Later levels override earlier ones; each setting shows its source and which later levels
-          override it.
-          {!target.environmentId ? ' Shared defaults sync to paired computers.' : ''}
-        </Text>
+        {expanded && (
+          <Text style={[styles.muted, { fontSize: 13, lineHeight: 18 }]}>
+            <Text style={{ color: colors.text, fontWeight: '600' }}>
+              Editing {settingsScopeLabels[scope]}.
+            </Text>{' '}
+            Later levels override earlier ones; each setting shows its source and which later levels
+            override it.
+            {!target.environmentId ? ' Shared defaults sync to paired computers.' : ''}
+          </Text>
+        )}
       </View>
       {!source ? (
         <Text style={[styles.muted, { padding: 16 }]}>

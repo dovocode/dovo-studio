@@ -11,6 +11,7 @@ import { Field } from '../../ui/controls/field'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
+import { deviceHostMessage } from '../../screens/device-host-form'
 export function PhysicalControls({
   taskId,
   device,
@@ -22,7 +23,7 @@ export function PhysicalControls({
 }) {
   const { styles } = useTheme()
 
-  const { profile, callEffect } = useRuntime(),
+  const { profile, profiles, connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   const [apps, setApps] = useApplicationState<
     Array<{
@@ -33,8 +34,11 @@ export function PhysicalControls({
   const [selected, setSelected] = useApplicationState(''),
     [url, setUrl] = useApplicationState(''),
     [message, setMessage] = useApplicationState('')
+  const [retry, setRetry] = useApplicationState(0)
+  const disabled = busy || !connected
   useEffect(() => {
     let live = true
+    if (!connected) return
     act(() =>
       mobileWorkflow(function* () {
         const result = yield* callEffect(
@@ -42,6 +46,7 @@ export function PhysicalControls({
           {
             taskId,
             id: device.id,
+            hostId: device.hostId,
             action: 'apps',
           },
           previewResultSchema,
@@ -55,7 +60,7 @@ export function PhysicalControls({
     return () => {
       live = false
     }
-  }, [device.id, taskId])
+  }, [device.id, taskId, connected, retry])
   const command = (action: string) =>
     act(() =>
       mobileWorkflow(function* () {
@@ -65,6 +70,7 @@ export function PhysicalControls({
           {
             taskId,
             id: device.id,
+            hostId: device.hostId,
             action,
             bundleId: selected || undefined,
             url: action === 'open' ? previewUrl(url, profile?.connection.address) : undefined,
@@ -75,7 +81,11 @@ export function PhysicalControls({
       }),
     )
   return (
-    <Sheet title="Device controls" onClose={onClose}>
+    <Sheet
+      title={`Device controls · ${device.hostName ?? 'Local runtime'}`}
+      busy={busy}
+      onClose={onClose}
+    >
       <View
         style={{
           padding: 16,
@@ -85,6 +95,11 @@ export function PhysicalControls({
         <Text style={styles.muted}>
           Tap, swipe, hold, and type directly on the phone preview. No Device Hub window needed.
         </Text>
+        {!connected && (
+          <Text style={styles.muted}>
+            The current runtime is offline. Reconnect to control this device.
+          </Text>
+        )}
         <Choice
           label="Developer app"
           value={selected}
@@ -93,7 +108,13 @@ export function PhysicalControls({
             name: app.name,
           }))}
           onChange={setSelected}
-          disabled={busy}
+          disabled={disabled}
+        />
+        <Action
+          secondary
+          label="Refresh developer apps"
+          disabled={disabled}
+          onPress={() => setRetry((value) => value + 1)}
         />
         {!apps.length && !busy && <Text style={styles.muted}>No developer apps installed.</Text>}
         <View
@@ -103,11 +124,15 @@ export function PhysicalControls({
             gap: 8,
           }}
         >
-          <Action label="Launch" disabled={busy || !selected} onPress={() => command('launch')} />
+          <Action
+            label="Launch"
+            disabled={disabled || !selected}
+            onPress={() => command('launch')}
+          />
           <Action
             label="Relaunch"
             secondary
-            disabled={busy || !selected}
+            disabled={disabled || !selected}
             onPress={() => command('relaunch')}
           />
         </View>
@@ -115,14 +140,15 @@ export function PhysicalControls({
           label="Open URL on phone"
           value={url}
           onChangeText={setUrl}
-          placeholder="https:// or your Mac’s LAN address"
+          editable={!disabled}
+          placeholder="HTTP or HTTPS URL reachable from the phone"
           autoCapitalize="none"
           keyboardType="url"
         />
         <Action
           label="Open URL"
           secondary
-          disabled={busy || !url.trim()}
+          disabled={disabled || !url.trim()}
           onPress={() => command('open')}
         />
         <View
@@ -137,14 +163,14 @@ export function PhysicalControls({
               key={action}
               label={action[0].toUpperCase() + action.slice(1)}
               secondary
-              disabled={busy}
+              disabled={disabled}
               onPress={() => command(action)}
             />
           ))}
         </View>
         {!!error && (
           <Text accessibilityRole="alert" style={styles.error}>
-            {error}
+            {deviceHostMessage(error, profiles)}
           </Text>
         )}
         {!!message && <Text style={styles.muted}>{message}</Text>}

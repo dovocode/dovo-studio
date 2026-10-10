@@ -14,11 +14,11 @@ import {
   type SkillCatalogEntry,
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
-import { Sheet } from '../ui/layout/sheet'
-import { Action } from '../ui/controls/action'
-import { Field } from '../ui/controls/field'
-import { Choice } from '../ui/controls/choice'
-import { useTheme } from '../ui/theme'
+import { SettingsSheet as Sheet } from '../screens/settings-theme'
+import { SettingsAction as Action } from '../screens/settings-controls'
+import { SettingsField as Field } from '../screens/settings-controls'
+import { SettingsChoice as Choice } from '../screens/settings-controls'
+import { useSettingsTheme as useTheme } from '../screens/settings-theme'
 import { useAction } from '../ui/controls/use-action'
 import type { ResourceSelection } from './editor'
 export function CatalogPicker({

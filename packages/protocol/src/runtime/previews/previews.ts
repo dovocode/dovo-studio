@@ -46,6 +46,8 @@ export const previewPresets = [
 export const previewDeviceSchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,
+  hostId: Schema.optional(Schema.String),
+  hostName: Schema.optional(Schema.String),
   kind: Schema.optional(Schema.Literals(['simulator', 'physical'])),
   connection: Schema.optional(Schema.String),
   liveSupported: Schema.optional(Schema.Boolean),
@@ -61,7 +63,8 @@ export const previewDevicesSchema = mutableStruct({
 })
 export const previewActionSchema = mutableStruct({
   taskId: maxValue(minValue(Schema.String, 1), 200),
-  id: maxValue(minValue(Schema.String, 1), 200),
+  id: maxValue(minValue(Schema.String, 1), 500),
+  hostId: Schema.optional(maxValue(minValue(Schema.String, 1), 80)),
   action: Schema.Literals([
     'boot',
     'shutdown',
@@ -81,7 +84,7 @@ export const previewActionSchema = mutableStruct({
   url: Schema.optional(maxValue(Schema.String, 4096)),
   bundleId: Schema.optional(
     maxValue(minValue(Schema.String, 1), 255).pipe(
-      Schema.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/)),
+      Schema.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/)),
     ),
   ),
 })

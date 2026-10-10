@@ -20,6 +20,22 @@ const built = await build({
     {
       name: 'fixture',
       setup(builder) {
+        builder.onResolve({ filter: /^@dovo\/studio-ui$/ }, () => ({
+          path: 'ui',
+          namespace: 'app-settings-ui',
+        }))
+        builder.onLoad({ filter: /.*/, namespace: 'app-settings-ui' }, () => ({
+          loader: 'tsx',
+          resolveDir: root + 'packages/studio-ui',
+          contents: `
+export * from '${root}packages/studio-ui/src/settings-layout.tsx';
+export * from '${root}packages/studio-ui/src/components/ui/button.tsx';
+export * from '${root}packages/studio-ui/src/components/ui/input.tsx';
+export * from '${root}packages/studio-ui/src/components/ui/select.tsx';
+export * from '${root}packages/studio-ui/src/components/ui/tooltip.tsx';
+export * from '${root}packages/studio-ui/src/choice-picker.tsx';
+`,
+        }))
         builder.onResolve({ filter: /^@dovo\/studio-core$|^\.\/workspace\/context$/ }, () => ({
           path: 'core',
           namespace: 'fixture',
@@ -60,19 +76,19 @@ try {
     }),
   )
   await page.goto('http://localhost/')
-  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+  for (const file of readdirSync(root + 'apps/web/dist/client/assets').filter((file) =>
     file.endsWith('.css'),
   ))
     await page.addStyleTag({
-      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+      content: readFileSync(root + 'apps/web/dist/client/assets/' + file, 'utf8'),
     })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const local = page
     .getByRole('heading', { name: 'Local browser profiles', exact: true })
-    .locator('..')
+    .locator('xpath=ancestor::section[1]')
   const remote = page
     .getByRole('heading', { name: 'Remote browser profiles', exact: true })
-    .locator('..')
+    .locator('xpath=ancestor::section[1]')
   await local.getByRole('textbox', { name: 'New profile name' }).fill('Local Work')
   await local.getByRole('button', { name: 'Add profile', exact: true }).click()
   await local.getByRole('textbox', { name: 'Name for Local Work' }).waitFor()
@@ -97,10 +113,16 @@ try {
   const calls = await page.evaluate(() => window.calls)
   if (calls.filter((c) => c.path.endsWith('/save')).some((c) => c.id !== 'one') || errors.length)
     throw new Error(JSON.stringify({ calls, errors }))
-  mkdirSync(root + 'work/browser-tabs', { recursive: true })
-  await page.screenshot({ path: root + 'work/browser-tabs/settings.png', fullPage: true })
+  mkdirSync('/tmp/dovo-settings-screenshots/browser-profiles-polished', { recursive: true })
+  await page.screenshot({
+    path: '/tmp/dovo-settings-screenshots/browser-profiles-polished/settings.png',
+    fullPage: true,
+  })
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.screenshot({ path: root + 'work/browser-tabs/settings-narrow.png', fullPage: true })
+  await page.screenshot({
+    path: '/tmp/dovo-settings-screenshots/browser-profiles-polished/settings-narrow.png',
+    fullPage: true,
+  })
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth))
     throw new Error('Browser settings overflowed a narrow window')
   console.log(

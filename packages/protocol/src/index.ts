@@ -185,3 +185,9 @@ export * from './runtime/connection/project-icons.js'
 export * from './runtime/connection/diagnostics.js'
 
 export { gitPrimaryAction } from './scm/git-primary-action.js'
+
+export * from './runtime/memory.js'
+
+export * from './runtime/previews/device-hosts.js'
+
+export * from './conversation/tool-images.js'

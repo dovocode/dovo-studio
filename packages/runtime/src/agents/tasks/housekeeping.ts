@@ -56,6 +56,7 @@ type ArchiveServices = Pick<
   | 'approvals'
   | 'browsers'
   | 'simulators'
+  | 'deviceHosts'
   | 'activity'
 >
 /** Whether a task is doing or waiting for something, so automatic archiving must skip it. */
@@ -96,8 +97,12 @@ export async function archiveTask(
       return false
     const ids = taskFamilyIds(s.store.get().tasks, id)
     for (const member of ids) {
-      await s.browsers.closeTask(member)
-      await s.simulators.closeTask(member)
+      const cleanup = await Promise.allSettled([
+        s.browsers.closeTask(member),
+        s.simulators.closeTask(member),
+        s.deviceHosts.closeTask(member),
+      ])
+      for (const result of cleanup) if (result.status === 'rejected') throw result.reason
     }
     const latest = s.store.get().tasks.find((task) => task.id === id)
     const latestIds = taskFamilyIds(s.store.get().tasks, id)
@@ -158,6 +163,7 @@ export class Housekeeping {
       | 'terminals'
       | 'browsers'
       | 'simulators'
+      | 'deviceHosts'
       | 'questions'
       | 'approvals'
       | 'activity'

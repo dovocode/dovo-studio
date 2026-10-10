@@ -10,6 +10,7 @@ export function DeviceList({
   connected,
   onOpen,
   onAction,
+  onDeploy,
 }: {
   devices: PreviewDevice[]
   host: string
@@ -17,6 +18,7 @@ export function DeviceList({
   connected: boolean
   onOpen: (device: PreviewDevice) => void
   onAction: (device: PreviewDevice, action: Action) => void
+  onDeploy: (device: PreviewDevice) => void
 }) {
   const groups = [
     { name: 'Physical devices', items: devices.filter((d) => d.kind === 'physical') },
@@ -79,7 +81,7 @@ export function DeviceList({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs font-medium">{device.name}</span>
                         <span className="block truncate text-[0.6875rem] text-muted-foreground">
-                          {host} ·{' '}
+                          {device.hostName ?? host} ·{' '}
                           {physical
                             ? (device.connection ?? 'Connected')
                             : device.runtime
@@ -124,6 +126,13 @@ export function DeviceList({
                           sideOffset={4}
                           className="z-[70] min-w-40 rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl"
                         >
+                          <DropdownMenu.Item
+                            disabled={!running}
+                            onSelect={() => onDeploy(device)}
+                            className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                          >
+                            Install or launch app
+                          </DropdownMenu.Item>
                           {actions.map((item) => (
                             <DropdownMenu.Item
                               key={item.action}

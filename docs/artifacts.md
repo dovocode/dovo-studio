@@ -1,8 +1,8 @@
 # Dovo artifacts
 
-Dovo Artifacts is disabled by default. Enable **Dovo Artifacts** in Settings → Computers → Running
-tasks on desktop, or the computer’s **Optional features** settings on mobile. The setting is stored
-on the runtime and shared by all connected devices. Disabling it hides artifact UI and removes the
+Dovo Artifacts is disabled by default. Enable **Dovo Artifacts** in Settings → Tasks & projects →
+Artifacts on desktop, or the computer’s **Artifacts** settings on mobile. The setting is stored on
+the runtime and shared by all connected devices. Disabling it hides artifact UI and removes the
 tools from new agent sessions; existing sessions cannot call the disabled API. Saved artifacts and
 versions remain available when it is enabled again unless a configured retention rule deletes them.
 

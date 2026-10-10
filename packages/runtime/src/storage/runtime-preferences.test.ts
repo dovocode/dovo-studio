@@ -10,9 +10,11 @@ it('persists a host worktree location across partial saves and rejects relative 
   try {
     const preferences = new RuntimePreferences(db)
     const path = join(tmpdir(), 'configured-worktrees')
-    preferences.save({ worktreesRoot: path })
+    expect(preferences.get().removeWorktreesOnThreadDelete).toBe(false)
+    preferences.save({ worktreesRoot: path, removeWorktreesOnThreadDelete: true })
     preferences.save({ autoArchiveDays: 7 })
     expect(new RuntimePreferences(db).worktreesRoot()).toBe(path)
+    expect(new RuntimePreferences(db).get().removeWorktreesOnThreadDelete).toBe(true)
     expect(() => preferences.save({ worktreesRoot: 'relative/path' })).toThrow('absolute path')
     expect(preferences.worktreesRoot()).toBe(path)
   } finally {
@@ -72,6 +74,24 @@ it('keeps remote profile metadata across partial saves and rejects invalid profi
     expect(() => preferences.save({ browserProfiles: [{ id: 'work', name: 'Work' }] })).toThrow(
       /browserProfiles/,
     )
+  } finally {
+    db.close()
+  }
+})
+
+it('defaults child concurrency to four and preserves validated overrides across partial saves', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const preferences = new RuntimePreferences(db)
+    expect(preferences.get().maxActiveChildAgents).toBe(4)
+    preferences.save({ maxActiveChildAgents: 13 })
+    preferences.save({ autoArchiveDays: 7 })
+    expect(new RuntimePreferences(db).get().maxActiveChildAgents).toBe(13)
+    for (const limit of [0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1])
+      expect(() => preferences.save({ maxActiveChildAgents: limit })).toThrow(
+        /maxActiveChildAgents/,
+      )
+    expect(preferences.get().maxActiveChildAgents).toBe(13)
   } finally {
     db.close()
   }

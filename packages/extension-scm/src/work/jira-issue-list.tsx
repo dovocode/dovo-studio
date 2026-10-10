@@ -9,16 +9,51 @@ export const jiraIssueRowKey = (source: WorkSource, id: string) => JSON.stringif
 
 export function JiraIssueList({
   rows,
+  layout = 'list',
   selected,
   opening,
   onOpen,
 }: {
   rows: Row[]
+  layout?: 'list' | 'board'
   selected: { source: WorkSource; id: string } | null
   opening: boolean
   onOpen: (source: WorkSource, id: string, url: string) => Promise<void>
 }) {
   const buttons = useRef(new Map<string, HTMLButtonElement>())
+  if (layout === 'board') {
+    const statuses = [...new Set(rows.map((row) => row.item.state))].sort()
+    return (
+      <div className="space-y-3" aria-label="Jira status board">
+        <p className="text-xs text-muted-foreground">
+          Columns show workflow statuses in loaded results. Open an issue to change its status.
+        </p>
+        <div className="flex items-start gap-3 overflow-x-auto pb-3">
+          {statuses.map((status) => {
+            const issues = rows.filter((row) => row.item.state === status)
+            return (
+              <section
+                key={status}
+                aria-label={`${status} column`}
+                className="w-80 min-w-64 shrink-0 rounded-lg border bg-muted/10"
+              >
+                <h2 className="flex items-center justify-between gap-2 border-b px-3 py-3 text-sm font-medium">
+                  <span className="break-words">{status}</span>
+                  <span className="text-xs text-muted-foreground">{issues.length} loaded</span>
+                </h2>
+                <JiraIssueList
+                  rows={issues}
+                  selected={selected}
+                  opening={opening}
+                  onOpen={onOpen}
+                />
+              </section>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
   const groups = new Map<string, Row[]>()
   for (const row of rows) {
     const group = groups.get(row.source.key) ?? []

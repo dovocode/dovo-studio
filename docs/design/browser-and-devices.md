@@ -2,8 +2,8 @@
 
 Tasks have a Browser surface on desktop, web and mobile, alongside Chat, Changes and Terminal.
 **Host browser** runs Chromium on the task's computer and streams it into a canvas on the viewing
-device. The same task shares its browser session across clients. Device operations also run on the
-task's computer.
+device. The same task shares its browser session across clients. Device operations run locally or on
+a configured SSH device host, independently from the computer running the thread.
 
 ## Host browser
 
@@ -91,13 +91,14 @@ Direct preview's last URL is retained per host/task for the application session.
 have no Node integration or Dovo preload and deny native permission requests. Responsive presets
 change viewport dimensions, not the browser engine or hardware.
 
-Choose **Simulators** to list devices on the host. Start or stop one, open a URL, or capture a
-screenshot. **Live preview** opens a booted device in the same interactive canvas as Host browser,
-including touch drags, text entry and a Home button. Android also provides Back. Frames come from
-native simulator streams, rather than repeated screenshot commands. Closing the preview leaves the
-device running. Streaming pauses immediately when its last viewer disconnects; the native connection
-is retained for 30 seconds to allow a quick reconnect. Up to four live devices can be attached per
-runtime.
+Enable **Device Hub** in **Settings → Computers → Device previews** first. It is off by default on
+each runtime. Choose **Devices** to list devices on the host. Start or stop one, open a URL, or
+capture a screenshot. **Live preview** opens a booted device in the same interactive canvas as Host
+browser, including touch drags, text entry and a Home button. Android also provides Back. Frames
+come from native simulator streams, rather than repeated screenshot commands. Closing the preview
+leaves the device running. Streaming pauses immediately when its last viewer disconnects; the native
+connection is retained for 30 seconds to allow a quick reconnect. Up to four live devices can be
+attached per runtime.
 
 Live iOS previews require the native idb companion on the host:
 
@@ -120,17 +121,21 @@ before sending them (at most 1600 px on the long side) and scrolling is a short 
 
 These previews support a single touch pointer, keyboard input and explicit paste. They do not stream
 audio or implement multitouch gestures. Simulator screen pixels do not expose native accessibility
-semantics to the viewing device. Physical devices are not included.
+semantics to the viewing device. Connected physical iPhones and Android phones have
+platform-specific controls; their setup requirements are shown by the runtime.
 
 ## Device requirements
 
 - iOS: the runtime must run on macOS with Xcode selected and a Simulator runtime installed.
 - Android: install Platform Tools and Emulator, create an AVD, and configure `ANDROID_HOME` or
   `ANDROID_SDK_ROOT` if the SDK is outside the default location. Tools on PATH are also supported.
-- No physical device actions, app installation, erase or reset commands are exposed.
+- App installation accepts built `.apk` files and `.app` bundles from the thread’s checkout. iPhone
+  apps require signing and provisioning; simulator apps must target iPhoneSimulator. Erase and reset
+  commands are not exposed.
 - Only device IDs returned by current discovery are accepted. Authenticated requests must identify a
-  task on that runtime. Actions serialize per device, and starting emulators cannot be started
-  repeatedly while their launch process is still active.
+  local task, or an authenticated foreign-task scope for an SSH device host. Actions serialize per
+  device, and starting emulators cannot be started repeatedly while their launch process is still
+  active.
 - Android emulator URLs using host loopback are translated to `10.0.2.2`.
 - Missing tooling is shown as setup guidance. Unavailable devices are excluded.
 
@@ -252,3 +257,54 @@ Android live control is not implemented and is not offered as available.
 Protocol dependency and copied negotiation helper attribution:
 `packages/runtime/native/ios-device/LICENSE-idevice`. Upstream revision:
 `d32c8189c51c2789496b0768039419c3705498c3` of `jkcoxson/idevice`.
+
+## SSH device hosts
+
+Device Hub is optional and off by default on every runtime. Enable it on both the coding computer
+and each destination under **Settings → Computers → Device previews**. Turning it off closes
+previews, SSH helpers and development-server forwards; it leaves simulators and phones running and
+retains the saved host configuration.
+
+1. Install and run the updated Dovo runtime on the destination, then pair it through **Devices &
+   runtime**. SSH authentication does not replace Dovo pairing.
+2. Select the coding computer on the Device previews settings page and add a device host. Choose the
+   paired destination, then enter the SSH host/alias, user and port. An optional identity path
+   selects a key on the **coding computer**. Otherwise Dovo uses its SSH agent/configuration.
+   Private keys are never uploaded from the app or phone.
+3. Establish the destination’s verified `known_hosts` entry on the coding computer using normal SSH.
+   Dovo requires key authentication and a trusted host key; it never prompts for passwords or
+   silently accepts a new host key.
+4. The destination runtime address is reached from the SSH host. Use its local runtime address when
+   appropriate. **Test connection** checks SSH, the existing runtime, pairing and native devices. It
+   does not install software or boot a device. Device availability and live-preview tooling are
+   advisory; a paired, reachable host can be saved before a phone is connected. If you change the
+   SSH host, user, port or destination runtime address, select a paired destination again before
+   saving.
+5. Open the thread’s Devices panel and choose the device host. Devices are labelled by computer. The
+   thread and its working tree stay on the coding computer; control and streaming run on the
+   destination. Enable the host’s agent device tools separately if needed.
+
+**Run app** installs an existing build from this thread’s checkout. Build using your project’s
+normal command first. Dovo transfers remote artifacts over SSH and installs them using native
+platform tools. An optional app identifier launches the installed app; installed apps can also be
+launched directly. It does not generate signing identities or provisioning profiles. Cross-platform
+iOS builds still require a suitable Mac and your project’s build workflow.
+
+Development-server forwarding exposes a port on the destination’s **loopback interface** by default
+over SSH for a bounded duration. iOS simulators use `localhost`; Android emulators use `10.0.2.2`.
+Physical phones can explicitly enable **Allow phones on the destination network** to bind the
+destination forward on its LAN/VPN interfaces. This requires `GatewayPorts clientspecified` in the
+destination SSH server and suitable firewall rules. Dovo verifies a network interface can reach the
+forwarded port before reporting success. Use a hostname/IP reachable from the phone; SSH aliases may
+not resolve there. Alternatively, use a directly reachable development-server URL or platform USB
+forwarding. Loopback forwarding alone is not reachable through the destination’s LAN IP.
+
+Both computers need SSH tooling. Artifact transfer requires OpenSSH 8.7 or newer on the coding
+computer because Dovo forces SFTP rather than legacy shell-based SCP. The destination needs an SSH
+server, and its SSH user must be the OS user running Dovo so it can write private staging files.
+Native requirements still apply there (Xcode/idb for iOS, Android SDK tools for Android). SSH
+tunnels protect the connection without requiring HTTPS. HTTP remains supported for LAN/VPN runtime
+addresses; pairing tokens remain required and stay in the coding runtime’s private local database.
+Revoking the paired client used to configure a host also revokes that host’s borrowed destination
+token; pair and save it again. Artifact transfers have a 120-second deadline and report a timeout
+separately from SFTP errors.

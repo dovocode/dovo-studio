@@ -10,7 +10,7 @@ export default function TaskDefaultsView({ entityId }: { entityId?: string }) {
   return (
     <SettingsScopePage
       title="Task defaults"
-      description="Agent, server, workspace and lifecycle defaults for your tasks."
+      description="Choose how tasks start, prepare their workspace and continue over time."
     >
       {({ scope, repository }) => (
         <>

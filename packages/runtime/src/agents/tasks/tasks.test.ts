@@ -56,8 +56,18 @@ it('refreshes harness sessions when optional MCP features change and favors repl
     DOVO_TASK_PR_WATCHING_ENABLED: '0',
     DOVO_TASK_PIPELINE_WATCHING_ENABLED: '0',
     DOVO_TASK_ARTIFACTS_ENABLED: '0',
+    DOVO_TASK_MEMORY_SCOPES: '[]',
   })
   expect(runs[0]?.agent.instructions).not.toContain('Experimental PR watching')
+  expect(runs[0]?.agent.instructions).not.toContain('Memory is available')
+  s.memory.configure({ scope: 'system', enabled: true })
+  s.memory.configure({ scope: 'project', repositoryId: 'repo', enabled: true })
+  s.memory.write({
+    scope: 'project',
+    repositoryId: 'repo',
+    key: 'note',
+    content: 'Notes must be explicitly read',
+  })
   s.preferences.save({
     enablePullRequestWatching: true,
     enablePipelineWatching: true,
@@ -71,10 +81,13 @@ it('refreshes harness sessions when optional MCP features change and favors repl
     DOVO_TASK_PR_WATCHING_ENABLED: '1',
     DOVO_TASK_PIPELINE_WATCHING_ENABLED: '1',
     DOVO_TASK_ARTIFACTS_ENABLED: '1',
+    DOVO_TASK_MEMORY_SCOPES: '["system","project"]',
   })
   expect(runs[1]?.agent.instructions).toContain('instead of running your own polling loops')
   expect(runs[1]?.agent.instructions).toContain('Prefer normal replies and repository files')
   expect(runs[1]?.agent.instructions).toContain('dovo_task pipeline_watch')
+  expect(runs[1]?.agent.instructions).toContain('Memory is available')
+  expect(runs[1]?.agent.instructions).not.toContain('Notes must be explicitly read')
   await (
     await s.tasks.start(task.id)
   ).done
@@ -93,6 +106,14 @@ it('refreshes harness sessions when optional MCP features change and favors repl
   expect(runs[4]?.sessionId).toBeUndefined()
   expect(tools(4)?.envValues?.DOVO_TASK_PIPELINE_WATCHING_ENABLED).toBe('0')
   expect(runs[4]?.agent.instructions).not.toContain('Experimental pipeline watching')
+  s.memory.configure({ scope: 'system', enabled: false })
+  s.memory.configure({ scope: 'project', repositoryId: 'repo', enabled: false })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs[5]?.sessionId).toBeUndefined()
+  expect(tools(5)?.envValues?.DOVO_TASK_MEMORY_SCOPES).toBe('[]')
+  expect(runs[5]?.agent.instructions).not.toContain('Memory is available')
 })
 it('publishes the first provider text immediately and batches subsequent tokens', async () => {
   const s = await setup()

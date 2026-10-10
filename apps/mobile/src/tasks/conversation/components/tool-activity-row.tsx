@@ -1,3 +1,6 @@
+import { useMemo } from 'react'
+import { ServerImage } from '../../../ui/content/server-image'
+import { toolImageReferences, toolImages } from '@dovo/protocol'
 import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { mcpAppReferences, artifactReferences } from '@dovo/protocol'
 import { lazy, Suspense } from 'react'
@@ -47,6 +50,11 @@ export function ToolActivityRow({
   const [open, setOpen] = useApplicationState(false)
   const { showToolDetails } = useMobilePreferences()
   const detail = toolPresentation(event.payload, event.summary, event.inputPayload)
+  const references = useMemo(() => toolImageReferences(event.payload), [event.payload])
+  const images = useMemo(
+    () => (references.length ? [] : toolImages(event.payload)),
+    [event.payload, references],
+  )
   const expandable = showToolDetails || (detail.kind === 'command' && !!detail.input)
   const running = pendingActivity(event.status)
   const status = activityStatus(event.status)
@@ -96,6 +104,20 @@ export function ToolActivityRow({
         )}
         {expandable && <Icon name={open ? 'down' : 'next'} size={10} color={colors.muted} />}
       </Pressable>
+      {references.map((reference) => (
+        <ServerImage
+          key={`${reference.eventId}:${reference.index}`}
+          source={{ taskId: event.scope, reference }}
+          label={`${detail.title} image ${reference.index + 1}`}
+        />
+      ))}
+      {images.map((image, index) => (
+        <ServerImage
+          key={index}
+          source={{ uri: image.uri }}
+          label={`${detail.title} image ${index + 1}`}
+        />
+      ))}
       {mcpAppReferences(event.payload).map((reference) => (
         <Suspense key={reference.id} fallback={<Text>Loading app…</Text>}>
           <McpAppView reference={reference} />

@@ -283,8 +283,14 @@ it('resolves scoped ACP configurations, rejects stale attempts and conflicting r
       )
       for (let index = 1; index < 4; index++)
         s.tasks.subagentSpawn({ ...input, key: `registered-${index}`, name: `Registered ${index}` })
-      expect(() => s.tasks.subagentSpawn({ ...input, key: 'too-many' })).toThrow('maximum four')
-      await waitForRuntime(() => expect(children).toHaveLength(4))
+      expect(() => s.tasks.subagentSpawn({ ...input, key: 'too-many' })).toThrow('maximum 4')
+      s.preferences.save({ maxActiveChildAgents: 5 })
+      s.tasks.subagentSpawn({ ...input, key: 'registered-4', name: 'Registered 4' })
+      s.preferences.save({ maxActiveChildAgents: 2 })
+      expect(() => s.tasks.subagentSpawn({ ...input, key: 'still-too-many' })).toThrow('maximum 2')
+      // A retry of the same child is still allowed, and lowering the limit never stops children.
+      expect(s.tasks.subagentSpawn(input).id).toBe(child.id)
+      await waitForRuntime(() => expect(children).toHaveLength(5))
       expect(
         children.every(
           (child) => child.agent.model === 'host-model' && child.agent.permission === 'ask',
@@ -322,11 +328,11 @@ it('resolves scoped ACP configurations, rejects stale attempts and conflicting r
   await (
     await s.tasks.start(parent.id)
   ).done
-  s.tasks.stopAgents(parent.id, taskFamilyRunToken(s.store.get().tasks, parent.id))
+  await s.tasks.stopAgents(parent.id, taskFamilyRunToken(s.store.get().tasks, parent.id))
   await waitForRuntime(() =>
     expect(s.tasks.subagentList(parent.id).every((child) => !child.running)).toBe(true),
   )
-  expect(s.tasks.subagentList(parent.id)).toHaveLength(4)
+  expect(s.tasks.subagentList(parent.id)).toHaveLength(5)
 })
 
 it('keeps children across queued parent turns and drains them on explicit cancellation', async () => {
@@ -581,7 +587,7 @@ it('stops children from an idle parent, rejects stale group stops, and never wak
   ).done
   expect(() => s.tasks.stopAgents(parent.id, stale)).toThrow('Agent state changed')
   expect(s.store.task(childId).status).toBe('running')
-  s.tasks.stopAgents(parent.id, taskFamilyRunToken(s.store.get().tasks, parent.id))
+  await s.tasks.stopAgents(parent.id, taskFamilyRunToken(s.store.get().tasks, parent.id))
   await waitForRuntime(() => expect(s.store.task(childId).activeRunId).toBeUndefined())
   expect(s.store.task(childId).status).toBe('cancelled')
   expect(s.store.task(childId).delegation?.completion).toBe('disposed')
@@ -715,4 +721,218 @@ it('retains a completion when the queue is full and retries delivery once space 
   } finally {
     release.resolve()
   }
+})
+
+it.each([false, true])(
+  'recovers an interrupted nested family without stranding its root (automatic=%s)',
+  async (automatic) => {
+    const s = await setup()
+    const root = s.tasks.create({
+      title: 'Root',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      objective: 'Work',
+    })
+    const child = s.tasks.create({
+      title: 'Child',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      objective: 'Work',
+    })
+    const grandchild = s.tasks.create({
+      title: 'Grandchild',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      objective: 'Work',
+    })
+    for (const [task, parentId] of [
+      [child, root.id],
+      [grandchild, child.id],
+    ] as const) {
+      s.store.updateTask(task.id, (current) => ({
+        ...current,
+        status: 'failed',
+        restartRecovery: { kind: 'turn', automatic },
+        delegation: {
+          parentTaskId: parentId,
+          parentRunId: 'interrupted-run',
+          key: task.id,
+          completion: 'pending',
+        },
+      }))
+    }
+    s.tasks.continueAfterRestart(() => automatic)
+    expect(s.tasks.subagentResult(root.id, child.id, false).running).toBe(false)
+    expect(
+      s.store.task(root.id).queue?.filter((message) => message.subagentResultId === child.id),
+    ).toHaveLength(1)
+    expect(s.store.task(child.id).queue ?? []).toEqual([])
+    expect(s.store.task(grandchild.id).status).toBe('cancelled')
+    s.tasks.continueAfterRestart(() => automatic)
+    expect(
+      s.store.task(root.id).queue?.filter((message) => message.subagentResultId === child.id),
+    ).toHaveLength(1)
+  },
+)
+
+it('preserves same-harness connection settings and blocks parent edits while a child runs', async () => {
+  const s = await setup()
+  const started = barrier()
+  let childId = ''
+  let turns = 0
+  let childAgent: AgentRun['agent'] | undefined
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (++turns === 1) {
+        childId = s.tasks.subagentSpawn({
+          taskId: taskId(run),
+          key: 'connection',
+          name: 'Child',
+          prompt: 'Work',
+          provider: 'codex',
+        }).id
+        await started.promise
+        run.onText('Child continues')
+      } else {
+        started.resolve()
+        childAgent = run.agent
+        await new Promise<void>((resolve) =>
+          run.signal.addEventListener('abort', () => resolve(), { once: true }),
+        )
+      }
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: '',
+    objective: 'Work',
+    harness: {
+      ...defaultTaskHarness('codex'),
+      configDirectory: '/custom/account',
+      env: { DOVO_CUSTOM: 'present' },
+    },
+  })
+  await (
+    await s.tasks.start(parent.id)
+  ).done
+  expect(childAgent?.configDirectory).toBe('/custom/account')
+  expect(childAgent?.env).toMatchObject({ DOVO_CUSTOM: 'present' })
+  expect(() =>
+    s.store.patch({
+      collection: 'tasks',
+      id: parent.id,
+      changes: {
+        harness: {
+          before: s.store.task(parent.id).harness,
+          after: { ...s.store.task(parent.id).harness, permission: 'read-only' },
+        },
+      },
+    }),
+  ).toThrow('Stop the active turn')
+  expect(() => s.checkouts.linked.save(parent.id, [], [])).toThrow('Finish or stop pending work')
+  s.tasks.subagentCancel(parent.id, childId)
+  await waitForRuntime(() => expect(s.store.task(childId).activeRunId).toBeUndefined())
+  expect(s.store.task(childId).delegation?.completion).toBe('disposed')
+  expect(s.store.task(parent.id).queue ?? []).toEqual([])
+  expect(turns).toBe(2)
+})
+
+it('enforces child capacity and archived ancestors during direct admission', async () => {
+  const s = await setup()
+  s.preferences.save({ maxActiveChildAgents: 1 })
+  const root = s.tasks.create({
+    title: 'Root',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: 'Work',
+  })
+  const sibling = s.tasks.create({
+    title: 'Active reservation',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: 'Work',
+  })
+  const child = s.tasks.create({
+    title: 'Ended child',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: 'Work',
+  })
+  for (const task of [sibling, child])
+    s.store.updateTask(task.id, (current) => ({
+      ...current,
+      status: task.id === child.id ? 'review' : 'draft',
+      delegation: {
+        parentTaskId: root.id,
+        parentRunId: 'old-run',
+        key: task.id,
+        completion: 'read',
+      },
+    }))
+  await expect(s.tasks.start(child.id)).rejects.toThrow('maximum 1')
+  s.store.updateTask(sibling.id, (task) => ({ ...task, status: 'review' }))
+  s.store.updateTask(root.id, (task) => ({ ...task, archivedAt: new Date().toISOString() }))
+  await expect(s.tasks.start(child.id)).rejects.toThrow('Restore the parent thread')
+  s.store.updateTask(root.id, (task) => ({ ...task, archivedAt: undefined }))
+  const nested = s.tasks.create({
+    title: 'Nested ended child',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: 'Work',
+  })
+  s.store.updateTask(nested.id, (task) => ({
+    ...task,
+    status: 'review',
+    delegation: {
+      parentTaskId: child.id,
+      parentRunId: 'old-run',
+      key: 'nested',
+      completion: 'read',
+    },
+  }))
+  s.store.updateTask(sibling.id, (task) => ({ ...task, status: 'draft' }))
+  await expect(s.tasks.start(nested.id)).rejects.toThrow('maximum 1')
+})
+
+it('rejects unsupported child access before creation and chooses a safe supported fallback', async () => {
+  const s = await setup()
+  let childId = ''
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (run.agent.provider === 'cursor') {
+        run.onText('Read-only inspection')
+        return
+      }
+      const before = s.store.get().tasks.length
+      const input = {
+        taskId: taskId(run),
+        key: 'access',
+        name: 'Child',
+        prompt: 'Inspect',
+        permission: 'read-only' as const,
+      }
+      expect(() => s.tasks.subagentSpawn({ ...input, provider: 'hermes' })).toThrow(
+        'has no access mode',
+      )
+      expect(s.store.get().tasks).toHaveLength(before)
+      childId = s.tasks.subagentSpawn({ ...input, provider: 'cursor', permission: 'ask' }).id
+      await s.tasks.subagentWait(taskId(run), childId)
+      run.onText('Parent complete')
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Read-only parent',
+    repositoryId: 'repo',
+    agentId: '',
+    objective: 'Work',
+    harness: { ...defaultTaskHarness('codex'), permission: 'read-only' },
+  })
+  await (
+    await s.tasks.start(parent.id)
+  ).done
+  expect(s.store.task(childId).harness?.permission).toBe('read-only')
+  expect(s.store.task(childId).status).toBe('review')
 })

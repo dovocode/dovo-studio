@@ -9,6 +9,8 @@ import { settingsScopeLabels } from '@dovo/protocol'
 import { ChoicePicker, Input } from '@dovo/studio-ui'
 import {
   Archive,
+  Brain,
+  Shapes,
   Bell,
   Bot,
   ChartNoAxesCombined,
@@ -47,9 +49,13 @@ const icons: Record<string, typeof Search> = {
   resources: Wrench,
   'source-control': GitBranch,
   'pull-request-settings': GitPullRequest,
+  'pull-request-monitoring-settings': GitPullRequest,
   'task-defaults': ListTodo,
   commands: Terminal,
   worktrees: HardDrive,
+  memory: Brain,
+  'artifact-settings': Shapes,
+  'computer-use': Monitor,
   runtime: MonitorSmartphone,
   'running-tasks': ListTodo,
   activity: Command,
@@ -101,7 +107,7 @@ export function SettingsNav({
   return (
     <nav
       aria-label="Settings sections"
-      className="flex shrink-0 flex-col border-b bg-sidebar/60 px-4 py-3 md:w-52 md:gap-5 md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-5 lg:w-56"
+      className="flex shrink-0 flex-col border-b bg-sidebar/60 px-4 py-3 md:w-52 md:gap-5 md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-5 lg:w-64"
     >
       <div className="md:hidden">
         <ChoicePicker aria-label="Settings section" value={activeId} onValueChange={select}>
@@ -134,14 +140,14 @@ export function SettingsNav({
               if (event.key === 'Enter' && matches[0]) select(matches[0].id)
               if (event.key === 'Escape') setQuery('')
             }}
-            className="h-9 rounded-lg border-border/70 bg-background/70 pl-8"
+            className="h-9 rounded-md border-border/70 bg-background/70 pl-8 pr-8"
           />
           {query && (
             <button
               type="button"
               aria-label="Clear settings search"
               onClick={() => setQuery('')}
-              className="absolute right-1 top-1 rounded p-1.5 text-muted-foreground hover:text-foreground"
+              className="absolute right-1 top-1 rounded p-1.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <X className="size-3.5" />
             </button>
@@ -181,7 +187,7 @@ export function SettingsNav({
                     aria-hidden="true"
                     className={active ? 'text-primary' : 'text-muted-foreground/70'}
                   />
-                  <span className="min-w-0 flex-1 truncate">{view.title}</span>
+                  <span className="min-w-0 flex-1 py-1.5 leading-snug">{view.title}</span>
                   {Storage && view.settingsScope && (
                     <Storage
                       size={12}
@@ -209,7 +215,7 @@ export function SettingsNav({
       >
         <p className="flex items-center gap-1.5">
           <Layers className="size-3 text-primary/70" aria-hidden="true" />
-          Applying inherited settings for
+          Shared settings target
         </p>
         <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
           {project} · {computer}

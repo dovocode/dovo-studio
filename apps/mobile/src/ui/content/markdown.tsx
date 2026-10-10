@@ -1,9 +1,11 @@
+import { markdownImages, type MarkdownImagePart } from './markdown-images'
+import { ServerImage } from './server-image'
 import { Text } from './text'
 import { openAppLink } from './open-link'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { mermaidBlocks } from './mermaid-blocks'
+import { mermaidBlocks, type MarkdownPart } from './mermaid-blocks'
 import { memo, lazy, Suspense, useMemo } from 'react'
 import { Alert, Platform, View } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
@@ -228,8 +230,10 @@ export const Markdown = memo(function Markdown({
   preserveLineBreaks = false,
   variant = 'default',
   onLinkLongPress,
+  taskId,
 }: {
   text: string
+  taskId?: string
   baseURL?: string
   fileBaseURL?: string
   preserveLineBreaks?: boolean
@@ -242,7 +246,24 @@ export const Markdown = memo(function Markdown({
     () => createMarkdownStyles(theme),
     [theme],
   )
-  const parts = useMemo(() => mermaidBlocks(text), [text])
+  const parts = useMemo(
+    () =>
+      mermaidBlocks(text).flatMap<MarkdownPart | Extract<MarkdownImagePart, { kind: 'image' }>>(
+        (part) =>
+          part.kind === 'mermaid'
+            ? [part]
+            : markdownImages(part.text).map((image) =>
+                image.kind === 'text'
+                  ? {
+                      kind: 'markdown' as const,
+                      text: image.text,
+                      offset: part.offset + image.offset,
+                    }
+                  : { ...image, offset: part.offset + image.offset },
+              ),
+      ),
+    [text],
+  )
   const car = useCarMode()
   const style =
     variant === 'chat'
@@ -262,6 +283,29 @@ export const Markdown = memo(function Markdown({
           >
             <MermaidDiagram chart={part.text} />
           </Suspense>
+        ) : part.kind === 'image' ? (
+          (() => {
+            let uri: string | undefined
+            try {
+              const url = new URL(part.url, fileBaseURL ?? baseURL)
+              if (
+                ['http:', 'https:'].includes(url.protocol) ||
+                /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(part.url)
+              )
+                uri = url.toString()
+            } catch {
+              /* A server-local path is resolved through its thread. */
+            }
+            return uri ? (
+              <ServerImage key={part.offset} source={{ uri }} label={part.alt} />
+            ) : taskId ? (
+              <ServerImage key={part.offset} source={{ taskId, path: part.url }} label={part.alt} />
+            ) : (
+              <Text key={part.offset} style={styles.muted}>
+                Image unavailable: {part.alt}
+              </Text>
+            )
+          })()
         ) : (
           <EnrichedMarkdownText
             key={part.offset}

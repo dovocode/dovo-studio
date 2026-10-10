@@ -2,9 +2,10 @@
 
 ## Experimental PR feedback watcher
 
-Enable **PR feedback watcher (experimental)** under a computer’s **Optional features** settings
-(desktop: Settings → Computers → Running tasks; mobile: the computer settings). It is disabled by
-default. The flag is saved on the runtime and shared by connected devices.
+Enable **PR feedback watcher (experimental)** under a computer’s **Pull requests & pipelines**
+settings (desktop: Settings → Tasks & projects → Pull requests & pipelines; mobile: the computer
+settings). It is disabled by default. The flag is saved on the runtime and shared by connected
+devices.
 
 With the flag enabled, writable harness sessions receive `dovo_task pull_request_watch`:
 

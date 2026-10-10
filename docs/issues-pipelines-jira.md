@@ -159,6 +159,19 @@ scroll stay with the collection. At narrow widths, the preview fills the content
 retaining the list behind it; closing restores the list. Native mobile keeps its existing detail
 routes.
 
+Use **List** for compact browsing or **Board** to group the loaded issues by their actual workflow
+status. Board columns and counts reflect loaded results; use **Load more** for each source to bring
+in additional issues. The board opens the same preview for status changes and other edits.
+
+**Open**, **My issues**, **Unassigned** and **Done** provide quick starting points. They preserve
+search and advanced filters. **My issues** means the signed-in Atlassian CLI account on the computer
+reading each source. **Filters** opens additional controls; active chips remove individual filters.
+Assignment, status category, priority, issue type and label are applied by Jira before pagination.
+Filter suggestions come from loaded issues, and you can type a value that is not suggested. Dovo
+project links still filter loaded results locally. Source and sort choices are kept inside the
+filter panel, leaving the main toolbar compact. Mobile offers the same quick views and filters, with
+an optional grouped status layout instead of horizontal board columns.
+
 The preview offers **Change status**, **Edit details** and **Comment** using the same fresh-detail
 and revision checks as full issue details. Successful changes refresh the collection without
 discarding loaded pages. **Dovo project and linked tasks** remains a secondary disclosure. Source

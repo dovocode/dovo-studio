@@ -9,8 +9,10 @@ export default function ActivityView({ entityId }: { entityId?: string }) {
       title="Activity & message history"
       description="Requests, messages and changes recorded by this computer."
     >
-      <ActivityRetention />
-      <ActivityLog />
+      <div className="space-y-6">
+        <ActivityRetention />
+        <ActivityLog />
+      </div>
     </HostPage>
   )
 }

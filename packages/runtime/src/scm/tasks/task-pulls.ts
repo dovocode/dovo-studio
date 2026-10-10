@@ -18,6 +18,7 @@ type WatcherServices = Pick<
   | 'approvals'
   | 'browsers'
   | 'simulators'
+  | 'deviceHosts'
   | 'activity'
 >
 const same = (a: PullStatus | undefined, b: PullStatus) =>

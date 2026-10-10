@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
-const controls = `import {cloneElement,isValidElement,useState} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)&&children.type!=='div'?cloneElement(children,{'aria-label':label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children})=><span>{children}</span>;export const styles={row:{}};export const useTheme=()=>({styles,colors,mode:'dark'});export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}};export const Dialog=({children})=><div role="dialog">{children}</div>;export const DialogContent=View;export const DialogDescription=Text;export const DialogHeader=View;export const DialogTitle=Text;export const Sheet=({children,title})=><div role="dialog">{title}{children}</div>;export const AgentAvatar=()=>null;export const agentIconChoices={};export const PageHeader=({title})=><h1>{title}</h1>;export const ScreenHeader=PageHeader;export const TaskDefaultSettings=()=> <p>Default agent settings</p>;export const HarnessLabel=({agent})=><span>{agent.provider}</span>;export const ModelLabel=({agent})=><span>{agent.model}</span>;`
+const controls = `import {cloneElement,isValidElement,useState,createContext,useContext} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)&&children.type!=='div'?cloneElement(children,{'aria-label':label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children})=><span>{children}</span>;export const Platform={OS:'ios'};export const StyleSheet={create:value=>value,hairlineWidth:1};export const useWindowDimensions=()=>({width:390,height:844,fontScale:1});export const SearchField=props=><input aria-label={props.label} value={props.value} onChange={e=>props.onChangeText?.(e.target.value)}/>;export const styles={row:{}};export const MobileThemeContext=createContext({styles,colors:{text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'},mode:'dark'});export const useTheme=()=>useContext(MobileThemeContext);export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}};export const Dialog=({children})=><div role="dialog">{children}</div>;export const DialogContent=View;export const DialogDescription=Text;export const DialogHeader=View;export const DialogTitle=Text;export const useInsideSheet=()=>false;export const Sheet=({children,title})=><div role="dialog">{title}{children}</div>;export const AgentAvatar=()=>null;export const agentIconChoices={};export const PageHeader=({title})=><h1>{title}</h1>;export const ScreenHeader=PageHeader;export const TaskDefaultSettings=()=> <p>Default agent settings</p>;export const HarnessLabel=({agent})=><span>{agent.provider}</span>;export const ModelLabel=({agent})=><span>{agent.model}</span>;`
 const state = `export {useState as useApplicationState} from 'react';`
 const browser = await chromium.launch()
 try {
@@ -28,7 +28,7 @@ try {
       'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
       '@dovo/studio-ui':
         controls +
-        `export {SettingSource} from '${root}/packages/studio-ui/src/setting-source.tsx';export {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`,
+        `export {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '${root}/packages/studio-ui/src/components/ui/select.tsx';export {SettingSource} from '${root}/packages/studio-ui/src/setting-source.tsx';export {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`,
     }
     const built = await build({
       stdin: {
@@ -167,14 +167,26 @@ try {
     if (!mobile) await editor.getByRole('button', { name: 'Next', exact: true }).click()
     await editor.getByLabel('Name', { exact: true }).fill('Cursor worker')
     if (!mobile) await editor.getByRole('button', { name: 'Next', exact: true }).click()
-    assert.equal(await editor.getByLabel('Access', { exact: true }).inputValue(), 'read-only')
-    assert.deepEqual(
-      await editor
-        .getByLabel('Access', { exact: true })
-        .locator('option')
-        .evaluateAll((rows) => rows.map((row) => row.value)),
-      ['read-only', 'auto', 'full-access'],
-    )
+    if (mobile) {
+      assert.equal(await editor.getByLabel('Access', { exact: true }).inputValue(), 'read-only')
+      assert.deepEqual(
+        await editor
+          .getByLabel('Access', { exact: true })
+          .locator('option')
+          .evaluateAll((rows) => rows.map((row) => row.value)),
+        ['read-only', 'auto', 'full-access'],
+      )
+    } else {
+      const access = editor.getByRole('combobox', { name: 'Access', exact: true })
+      assert.match(await access.textContent(), /Read/)
+      await access.click()
+      assert.deepEqual(await page.getByRole('option').allTextContents(), [
+        'Read only',
+        'Auto-review',
+        'Full access',
+      ])
+      await page.keyboard.press('Escape')
+    }
     assert.equal(
       await editor
         .getByLabel(mobile ? 'Executable path · blank uses default' : 'Connection / executable', {
@@ -252,7 +264,7 @@ try {
     }
     if (!mobile) {
       await project.selectOption('')
-      await page.getByText('Provider installations · this computer', { exact: true }).click()
+      await page.getByText('Installations & sign-in · this computer', { exact: true }).click()
       await page.getByRole('button', { name: 'Configure titles & dictation', exact: true }).click()
       assert.deepEqual(await page.evaluate(() => window.navigation), {
         viewId: 'text-generation',

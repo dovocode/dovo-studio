@@ -32,7 +32,7 @@ const built = await build({
         }))
         builder.onLoad({ filter: /.*/, namespace: 'windows-test' }, ({ path }) => ({
           contents: path.endsWith('ui')
-            ? 'export const Button=({children,...props})=><button {...props}>{children}</button>;'
+            ? `export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/components/ui/button.tsx';export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/components/ui/select.tsx';export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/components/form-field.tsx';export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/choice-picker.tsx'`
             : "export {connectionSchema} from '@dovo/protocol';",
           loader: 'tsx',
           resolveDir: new URL('../packages/extension-runtime/', import.meta.url).pathname,
@@ -151,10 +151,15 @@ try {
     await page.getByText(text).waitFor()
   }
   await setup(base)
-  await page.getByLabel('Execution environment', { exact: true }).selectOption('wsl')
-  await page.getByLabel('WSL distribution').selectOption('Ubuntu Work')
+  await page.getByRole('combobox', { name: 'Execution environment', exact: true }).click()
+  await page.getByRole('option', { name: 'WSL 2', exact: true }).click()
+  await page.getByRole('button', { name: 'WSL distribution', exact: true }).click()
+  await page.getByRole('option', { name: 'Ubuntu Work', exact: true }).click()
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
-  assert.equal(await page.getByLabel('Execution environment', { exact: true }).inputValue(), 'wsl')
+  assert.equal(
+    await page.getByRole('combobox', { name: 'Execution environment', exact: true }).innerText(),
+    'WSL 2',
+  )
   assert.equal(await page.getByRole('option', { name: 'Legacy', exact: true }).count(), 0)
   await page.evaluate(() => {
     window.failSave = true
@@ -176,7 +181,8 @@ try {
     true,
   )
   await page.getByRole('alert').filter({ hasText: 'Distribution no longer available' }).waitFor()
-  await page.getByLabel('Execution environment', { exact: true }).selectOption('native')
+  await page.getByRole('combobox', { name: 'Execution environment', exact: true }).click()
+  await page.getByRole('option', { name: 'Native Windows (recommended)', exact: true }).click()
   await page.getByRole('button', { name: 'Apply environment', exact: true }).click()
   await page.getByText('Workspace ready').waitFor()
   assert.deepEqual(await page.evaluate(() => window.saved), [{ mode: 'native' }])
@@ -212,14 +218,17 @@ try {
   await page.getByText('Workspace ready').waitFor()
 
   await setup({ ...base, distributions: [], error: 'WSL unavailable' })
-  await page.getByLabel('Execution environment', { exact: true }).selectOption('wsl')
+  await page.getByRole('combobox', { name: 'Execution environment', exact: true }).click()
+  await page.getByRole('option', { name: 'WSL 2', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: 'Continue', exact: true }).isDisabled(), true)
-  await page.getByLabel('Execution environment', { exact: true }).selectOption('native')
+  await page.getByRole('combobox', { name: 'Execution environment', exact: true }).click()
+  await page.getByRole('option', { name: 'Native Windows (recommended)', exact: true }).click()
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await page.getByText('Workspace ready').waitFor()
   // Settings must not reload until the selected runtime connection is verified.
   await setup({ ...base, configured: true }, false, undefined, true)
-  await page.getByLabel('Execution environment', { exact: true }).selectOption('wsl')
+  await page.getByRole('combobox', { name: 'Execution environment', exact: true }).click()
+  await page.getByRole('option', { name: 'WSL 2', exact: true }).click()
   await page.evaluate(() => {
     window.holdConnection = true
   })
@@ -241,7 +250,8 @@ try {
 
   // A settings activation failure stays visible and permits retry without reloading.
   await setup({ ...base, configured: true }, false, undefined, true)
-  await page.getByLabel('Execution environment', { exact: true }).selectOption('wsl')
+  await page.getByRole('combobox', { name: 'Execution environment', exact: true }).click()
+  await page.getByRole('option', { name: 'WSL 2', exact: true }).click()
   await page.evaluate(() => {
     window.failConnection = true
   })

@@ -1,3 +1,6 @@
+import { readTaskImage } from './endpoints/task-images.js'
+import { deviceHostRoute } from './endpoints/device-host-routes.js'
+import { memoryRoute } from './endpoints/memory-routes.js'
 import { pipelineWatchRequestSchema } from '../scm/tasks/pipeline-watch.js'
 import { runtimeDiagnostics } from './diagnostics.js'
 import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
@@ -28,7 +31,6 @@ import { routeProgram, serviceResult } from './support/effect.js'
 import { uuidSchema } from '@dovo/protocol'
 import { mutableStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
-import { previewDevices, previewDeviceAction } from '../previews/devices.js'
 import {
   previewActionSchema,
   browserProfilesResultSchema,
@@ -46,7 +48,7 @@ import { jobsRoute } from './endpoints/jobs-routes.js'
 import { scmRoute } from './endpoints/scm-routes.js'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
-import { patchSchema, workspaceSchema } from '@dovo/protocol'
+import { patchSchema, workspaceSchema, taskSchema } from '@dovo/protocol'
 import { RuntimeServices } from '../services.js'
 import { HttpError, type RuntimeFailure } from '../errors.js'
 import { body } from './support/body.js'
@@ -152,6 +154,13 @@ export function route(
         )
       }
       const device = s.devices.authenticate(token)
+      const agentDeviceAccess = request.headers['x-dovo-agent-access'] === '1'
+      if (
+        path === '/api/device-hosts' ||
+        path.startsWith('/api/device-hosts/') ||
+        path.startsWith('/api/device-host/')
+      )
+        return yield* serviceResult(deviceHostRoute(request, path, s, token, device.id))
       if (method === 'POST' && ['/api/runtime/diagnostics', '/api/runtime/backup'].includes(path)) {
         if (!device.owner)
           throw new HttpError(403, 'Only the runtime host can manage diagnostics and backups')
@@ -318,18 +327,21 @@ export function route(
           s.activity,
           device.id,
           `${method} ${path}`,
-          ![
-            '/api/tasks/answer',
-            '/api/agents/mcp/test',
-            '/api/agents/acp/authenticate',
-            '/api/live-activities/register',
-            '/api/notifications/register',
-            '/api/attachments/upload',
-            '/api/scm/connections/save',
-            '/api/scm/work/pipelines/action',
-          ].includes(path),
+          !path.startsWith('/api/memory/') &&
+            ![
+              '/api/tasks/answer',
+              '/api/agents/mcp/test',
+              '/api/agents/acp/authenticate',
+              '/api/live-activities/register',
+              '/api/notifications/register',
+              '/api/attachments/upload',
+              '/api/scm/connections/save',
+              '/api/scm/work/pipelines/action',
+            ].includes(path),
         )
       }
+      if (method === 'POST' && path.startsWith('/api/memory/'))
+        return yield* memoryRoute(request, path, device.owner)
       if (method === 'GET' && path === '/api/notifications/status')
         return yield* serviceResult(s.pushNotifications.status(device.id))
       if (method === 'POST' && path === '/api/notifications/register')
@@ -359,25 +371,30 @@ export function route(
         })
       }
       if (method === 'POST' && path === '/api/previews/devices') {
-        const { taskId } = decode(
+        const { taskId, hostId } = decode(
           mutableStruct({
             taskId: idSchema,
+            hostId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
         )
         s.store.task(taskId)
-        return yield* serviceResult(previewDevices())
+        return yield* serviceResult(s.deviceHosts.list(taskId, hostId, agentDeviceAccess))
       }
       if (method === 'POST' && path === '/api/previews/simulator/open') {
-        const { taskId, id } = decode(
+        const { taskId, id, hostId } = decode(
           mutableStruct({
             taskId: idSchema,
-            id: idSchema,
+            id: maxValue(minValue(Schema.String, 1), 500),
+            hostId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
         )
         s.store.task(taskId)
-        const result = yield* serviceResult(s.simulators.open(taskId, id))
+        if (agentDeviceAccess) s.deviceHosts.assertAgentDevice(id, hostId)
+        const result = yield* serviceResult(
+          s.simulators.open(taskId, s.deviceHosts.deviceId(id, hostId)),
+        )
         return yield* serviceResult({
           id: result.id,
           ticket: s.simulatorTickets.issue(token, result.id),
@@ -387,15 +404,17 @@ export function route(
         })
       }
       if (method === 'POST' && path === '/api/previews/simulator/close') {
-        const { taskId, id } = decode(
+        const { taskId, id, hostId } = decode(
           mutableStruct({
             taskId: idSchema,
-            id: idSchema,
+            id: maxValue(minValue(Schema.String, 1), 500),
+            hostId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
         )
         s.store.task(taskId)
-        yield* serviceResult(s.simulators.closeDevice(taskId, id))
+        if (agentDeviceAccess) s.deviceHosts.assertAgentDevice(id, hostId)
+        yield* serviceResult(s.simulators.closeDevice(taskId, s.deviceHosts.deviceId(id, hostId)))
         return yield* serviceResult({
           ok: true,
         })
@@ -406,6 +425,12 @@ export function route(
           yield* serviceResult(body(request)),
         )
         s.store.task(taskId)
+        if (agentDeviceAccess)
+          yield* serviceResult(
+            s.simulators.authorizeDevice(id, (deviceId) =>
+              s.deviceHosts.assertAgentDevice(deviceId),
+            ),
+          )
         if (s.simulators.taskId(id) !== taskId)
           throw new HttpError(403, 'Simulator preview belongs to another task')
         yield* serviceResult(
@@ -473,7 +498,7 @@ export function route(
       if (method === 'POST' && path === '/api/previews/action') {
         const input = decode(previewActionSchema, yield* serviceResult(body(request)))
         s.store.task(input.taskId)
-        return yield* serviceResult(previewDeviceAction(input))
+        return yield* serviceResult(s.deviceHosts.action(input, agentDeviceAccess))
       }
       if (method === 'POST' && path === '/api/attachments/upload')
         return yield* serviceResult(s.attachments.upload(yield* serviceResult(body(request))))
@@ -496,6 +521,8 @@ export function route(
           revision: s.store.version(),
         })
       }
+      if (method === 'POST' && path === '/api/tasks/images/read')
+        return yield* serviceResult(readTaskImage(s, yield* serviceResult(body(request, 8192))))
       if (method === 'POST' && path === '/api/activity') {
         const input = decode(
           mutableStruct({
@@ -685,7 +712,10 @@ export function route(
       if (method === 'POST' && path === '/api/runtime/preferences/read')
         return yield* serviceResult(s.preferences.get())
       if (method === 'POST' && path === '/api/runtime/preferences/save') {
-        const settings = s.preferences.save(yield* serviceResult(body(request)))
+        const input = yield* serviceResult(body(request))
+        if (input && typeof input === 'object' && 'memory' in input)
+          throw new HttpError(400, 'Configure memory through its scope settings')
+        const settings = s.preferences.save(input)
         s.artifacts.prune()
         return yield* serviceResult(settings)
       }
@@ -789,6 +819,16 @@ export function route(
             )
           }
         }
+        if (patch.collection === 'tasks') {
+          const current = s.store.get().tasks.find((task) => task.id === patch.id)
+          const next = decode(taskSchema, {
+            ...(patch.create ?? current),
+            ...Object.fromEntries(
+              Object.entries(patch.changes).map(([key, value]) => [key, value.after]),
+            ),
+          })
+          s.tasks.requireCheckoutReferencesAvailable(next)
+        }
         s.store.patch(patch)
         return yield* serviceResult({
           revision: s.store.version(),
@@ -826,14 +866,8 @@ export function route(
       }
       if (method === 'POST' && path === '/api/devices/revoke') {
         owner()
-        s.devices.revoke(
-          decode(
-            mutableStruct({
-              id: idSchema,
-            }),
-            yield* serviceResult(body(request)),
-          ).id,
-        )
+        const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        s.devices.revoke(id)
         return yield* serviceResult({
           ok: true,
         })

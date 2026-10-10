@@ -10,7 +10,7 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { Text } from '../ui/content/text'
-import { Action } from '../ui/controls/action'
+import { SettingsAction as Action } from './settings-controls'
 import { Switch } from '../ui/controls/switch'
 import { useTheme } from '../ui/theme'
 import { SettingsGroup } from './settings-group'

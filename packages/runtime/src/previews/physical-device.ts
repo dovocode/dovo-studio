@@ -27,7 +27,13 @@ let building: Promise<string> | undefined
 async function helper() {
   if (process.env.DOVO_IOS_DEVICE_HELPER) return process.env.DOVO_IOS_DEVICE_HELPER
   building ??= (async () => {
-    const source = fileURLToPath(new URL('./ios-device/', import.meta.url))
+    let source = fileURLToPath(new URL('./ios-device/', import.meta.url))
+    try {
+      await access(join(source, 'Cargo.toml'))
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+      source = fileURLToPath(new URL('../../native/ios-device/', import.meta.url))
+    }
     const hash = createHash('sha256')
     for (const file of ['Cargo.toml', 'Cargo.lock', 'src/main.rs', 'src/media.rs'])
       hash.update(await readFile(join(source, file)))

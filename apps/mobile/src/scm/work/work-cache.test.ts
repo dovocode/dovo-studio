@@ -194,3 +194,67 @@ describe('native work detail cache identity', () => {
     },
   )
 })
+
+describe('Jira filtered list cache identity', () => {
+  const source = { id: 'jira', site: 'https://team.atlassian.net', project: 'APP' }
+  const key = (jiraFilters?: import('@dovo/protocol').JiraIssueFilters) =>
+    workCacheKey(source, 'issues', 'list', { state: 'all', jiraFilters })
+  it('separates every server filter, including literal all values', () => {
+    expect(
+      new Set([
+        key(),
+        key({ assignee: 'mine' }),
+        key({ assignee: 'unassigned' }),
+        key({ priority: 'High' }),
+        key({ type: 'Bug' }),
+        key({ label: 'all' }),
+        key({ label: 'mobile' }),
+        key({ statusCategory: 'done' }),
+      ]).size,
+    ).toBe(8)
+  })
+  it('shares equivalent empty filters and canonicalizes property order', () => {
+    expect(key()).toBe(key({ assignee: 'all' }))
+    expect(key({ priority: 'High', label: 'mobile' })).toBe(
+      key({ label: 'mobile', priority: 'High' }),
+    )
+  })
+  it('does not apply Jira filters to a native issue source', () => {
+    expect(workCacheKey(repository, 'issues', 'list', { jiraFilters: { assignee: 'mine' } })).toBe(
+      workCacheKey(repository, 'issues', 'list'),
+    )
+  })
+  it('keeps search and cursor pages separate within the same view', () => {
+    const query = { jiraFilters: { assignee: 'mine' as const }, state: 'open' }
+    expect(
+      new Set([
+        workCacheKey(source, 'issues', 'list', query),
+        workCacheKey(source, 'issues', 'list', { ...query, query: 'fix' }),
+        workCacheKey(source, 'issues', 'list', { ...query, cursor: 'page-2' }),
+      ]).size,
+    ).toBe(3)
+  })
+})
+
+it('preserves legacy Jira offline keys for unfiltered lists, options and details', () => {
+  const source = { id: 'jira', site: 'https://team.atlassian.net', project: 'APP' }
+  for (const kind of ['list', 'options', 'detail'] as const) {
+    expect(workCacheKey(source, 'issues', kind, { state: 'all' })).toBe(
+      JSON.stringify([
+        'jira-work',
+        source.id,
+        source.site,
+        source.project,
+        'issues',
+        kind,
+        undefined,
+        'all',
+        undefined,
+        undefined,
+      ]),
+    )
+  }
+  expect(workCacheKey(source, 'issues', 'options', { jiraFilters: { label: 'all' } })).toBe(
+    workCacheKey(source, 'issues', 'options'),
+  )
+})

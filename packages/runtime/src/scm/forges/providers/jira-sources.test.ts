@@ -2,7 +2,11 @@ import { decode } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { forgeIssueDetailSchema, forgeWorkOptionsSchema } from '@dovo/protocol'
+import {
+  forgeIssueDetailSchema,
+  forgeIssuePageSchema,
+  forgeWorkOptionsSchema,
+} from '@dovo/protocol'
 import { startRuntime } from '../../../index.js'
 import { JiraWork } from './jira.js'
 import * as forgeCli from '../integration/forge-cli.js'
@@ -124,7 +128,7 @@ it('connects and browses independent Jira sources with no Dovo repositories', as
   ).toMatchObject({
     items: [issue.issue],
   })
-  expect(list).toHaveBeenCalledExactlyOnceWith('open', undefined, 61)
+  expect(list).toHaveBeenCalledExactlyOnceWith('open', undefined, 61, undefined)
   expect(await post('work/issues/list', {})).toMatchObject({
     status: 400,
   })
@@ -540,4 +544,72 @@ it('discovers Jira namespaces in runtime home without requiring a code checkout'
   })
   expect(cli).toHaveBeenCalledTimes(2)
   for (const call of cli.mock.calls) expect(call[3]).toBe(homedir())
+})
+
+it('isolates filtered prefixes, reuses normalized identities and paginates the matching rows', async () => {
+  const { s, post, list, create } = await setup()
+  s.store.update((w) => ({ ...w, jiraSources: [source], repositories: [repository] }))
+  list.mockImplementation(async (_state, _query, limit, filters) =>
+    Array.from(
+      { length: Math.min(limit ?? 31, filters?.assignee === 'mine' ? 75 : 35) },
+      (_, i) => ({
+        ...issue.issue,
+        id: `TEAM-${(filters?.assignee === 'mine' ? 100 : 200) + i}`,
+      }),
+    ),
+  )
+  const input = {
+    jiraSourceId: source.id,
+    state: 'all',
+    query: 'login',
+    jiraFilters: { assignee: 'mine', label: 'release' },
+  }
+  expect(await post('work/issues/list', input)).toMatchObject({
+    status: 200,
+    data: { next: '30', items: [{ id: 'TEAM-100' }, ...Array.from({ length: 29 }, () => ({}))] },
+  })
+  const second = await post('work/issues/list', { ...input, cursor: '30' })
+  expect(second).toMatchObject({ status: 200, data: { next: '60' } })
+  expect(decode(forgeIssuePageSchema, second.data).items[0]?.id).toBe('TEAM-130')
+  expect(list).toHaveBeenCalledTimes(1)
+  const other = await post('work/issues/list', {
+    ...input,
+    cursor: '30',
+    jiraFilters: { assignee: 'unassigned', label: 'release' },
+  })
+  expect(decode(forgeIssuePageSchema, other.data).items.map((item) => item.id)).toEqual([
+    'TEAM-230',
+    'TEAM-231',
+    'TEAM-232',
+    'TEAM-233',
+    'TEAM-234',
+  ])
+  expect(decode(forgeIssuePageSchema, other.data).next).toBeUndefined()
+  await post('work/issues/list', {
+    ...input,
+    jiraFilters: { label: ' release ', assignee: 'mine' },
+  })
+  expect(list).toHaveBeenCalledTimes(2)
+  const third = await post('work/issues/list', { ...input, cursor: '60' })
+  expect(decode(forgeIssuePageSchema, third.data).items).toHaveLength(15)
+  expect(decode(forgeIssuePageSchema, third.data).next).toBeUndefined()
+  expect(list).toHaveBeenLastCalledWith('all', 'login', 91, { assignee: 'mine', label: 'release' })
+  create.mockResolvedValue({
+    id: 'TEAM-99',
+    url: 'https://team.atlassian.net/browse/TEAM-99',
+    message: 'Created',
+  })
+  await s.forgeWork.requestJira(source.id, 'issues/create', { title: 'New', body: '' })
+  await post('work/issues/list', input)
+  await post('work/issues/list', {
+    ...input,
+    jiraFilters: { assignee: 'unassigned', label: 'release' },
+  })
+  expect(list).toHaveBeenCalledTimes(5)
+  expect(
+    await post('work/issues/list', {
+      repositoryId: repository.id,
+      jiraFilters: { assignee: 'mine' },
+    }),
+  ).toMatchObject({ status: 400 })
 })

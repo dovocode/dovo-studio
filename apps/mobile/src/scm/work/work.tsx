@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { hasJiraIssueFilters, type JiraIssueFilters, runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { router } from 'expo-router'
 import { useDeferredValue, useEffect, useRef } from 'react'
@@ -38,6 +38,8 @@ import { WorkSignal } from '../pulls/detail/pipeline-details'
 import { useListScroll } from '../../ui/layout/use-list-scroll'
 import { useWorkCollection, type WorkPage } from './use-work-collection'
 import { matchesPipelineCommit } from './work-list'
+import { startsStatusGroup } from './jira-list'
+import { JiraChip, JiraQuickViews, JiraFilterFields } from './jira-filters'
 type Mode = 'issues' | 'pipelines'
 export function WorkScreen({
   mode,
@@ -58,7 +60,19 @@ export function WorkScreen({
 
   const { overviews, activeId } = useRuntime()
   const { focused, workTarget } = useNavigation()
-  const [state, setState] = useApplicationState('all')
+  const sources = workSources(overviews, mode)
+  const selected = sources.find((source) => source.key === repositoryId)
+  const jiraOnly =
+    mode === 'issues' &&
+    (selected
+      ? selected.kind === 'jira'
+      : sources.length > 0 && sources.every((source) => source.kind === 'jira'))
+  const [jiraFilters, setJiraFilters] = useApplicationState<JiraIssueFilters>({})
+  const [layout, setLayout] = useApplicationState<'list' | 'status'>('list')
+  const [nativeState, setNativeState] = useApplicationState('all')
+  const [jiraState, setJiraState] = useApplicationState('open')
+  const state = jiraOnly ? jiraState : nativeState
+  const setState = jiraOnly ? setJiraState : setNativeState
   const [search, setSearch] = useApplicationState('')
   const query = useDeferredValue(search)
   const [serverQuery, setServerQuery] = useApplicationState('')
@@ -85,8 +99,8 @@ export function WorkScreen({
     repositoryId,
     state,
     mode === 'issues' ? serverQuery : '',
+    jiraOnly ? jiraFilters : undefined,
   )
-  const sources = workSources(overviews, mode)
   const connected = overviews.some((entry) => entry.connected)
   const listOffset = useRef(0)
   useEffect(() => {
@@ -119,9 +133,15 @@ export function WorkScreen({
       )
     })
     .sort((a, b) =>
-      sort === 'title'
-        ? a.row.title.localeCompare(b.row.title)
-        : (b.row.updatedAt ?? '').localeCompare(a.row.updatedAt ?? ''),
+      jiraOnly &&
+      layout === 'status' &&
+      'state' in a.row &&
+      'state' in b.row &&
+      a.row.state !== b.row.state
+        ? a.row.state.localeCompare(b.row.state)
+        : sort === 'title'
+          ? a.row.title.localeCompare(b.row.title)
+          : (b.row.updatedAt ?? '').localeCompare(a.row.updatedAt ?? ''),
     )
   const { retainPosition, ...listScroll } = useListScroll<(typeof visible)[number]>(
     listOffset,
@@ -135,7 +155,6 @@ export function WorkScreen({
     pages.find(
       (page) => workSourceContentIdentity(page.source) === workSourceContentIdentity(formSource),
     )
-  const selected = sources.find((source) => source.key === repositoryId)
   const choose = (page: WorkPage, row: ForgeIssue | ForgePipeline) => {
     if (!focused) return
     retainPosition()
@@ -176,7 +195,11 @@ export function WorkScreen({
                 {
                   icon: 'filters',
                   label: 'Issue filters',
-                  selected: !!repositoryId || state !== 'all' || sort !== 'updated',
+                  selected:
+                    !!repositoryId ||
+                    state !== 'all' ||
+                    sort !== 'updated' ||
+                    (jiraOnly && hasJiraIssueFilters(jiraFilters)),
                   onPress: () => setFilters(true),
                 },
               ]
@@ -216,6 +239,45 @@ export function WorkScreen({
               onChangeText={setSearch}
               placeholder={mode === 'issues' ? 'Search issues…' : 'Search runs…'}
             />
+            {jiraOnly && (
+              <>
+                <JiraQuickViews
+                  state={state}
+                  filters={jiraFilters}
+                  onChange={(next, filters) => {
+                    setState(next)
+                    setJiraFilters(filters)
+                  }}
+                />
+                <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
+                  <JiraChip
+                    label="List"
+                    selected={layout === 'list'}
+                    onPress={() => setLayout('list')}
+                  />
+                  <JiraChip
+                    label="By status"
+                    selected={layout === 'status'}
+                    onPress={() => setLayout('status')}
+                  />
+                  {state !== 'all' && (
+                    <JiraChip label={`Status: ${state} ×`} onPress={() => setState('all')} />
+                  )}
+                  {(['assignee', 'priority', 'type', 'label', 'statusCategory'] as const)
+                    .filter(
+                      (key) =>
+                        jiraFilters[key] && !(key === 'assignee' && jiraFilters[key] === 'all'),
+                    )
+                    .map((key) => (
+                      <JiraChip
+                        key={key}
+                        label={`${key === 'assignee' ? (jiraFilters[key] === 'mine' ? 'Assigned to me' : 'Unassigned') : `${key === 'statusCategory' ? 'Category' : key === 'type' ? 'Type' : key === 'label' ? 'Label' : 'Priority'}: ${jiraFilters[key]}`} ×`}
+                        onPress={() => setJiraFilters({ ...jiraFilters, [key]: undefined })}
+                      />
+                    ))}
+                </View>
+              </>
+            )}
             {mode === 'issues' && (
               <View
                 style={[
@@ -232,32 +294,34 @@ export function WorkScreen({
                     minWidth: 0,
                   }}
                 >
-                  <Choice
-                    compact
-                    hideLabel
-                    label="Issue state"
-                    value={state}
-                    onChange={setState}
-                    items={[
-                      {
-                        id: 'all',
-                        name: 'All states',
-                      },
-                      ...[
-                        ...new Set(
-                          pages.flatMap((page) => [
-                            ...(page.options?.issueStates ?? []),
-                            ...(page.options?.provider === 'jira'
-                              ? page.items.flatMap((row) => ('state' in row ? [row.state] : []))
-                              : []),
-                          ]),
-                        ),
-                      ].map((id) => ({
-                        id,
-                        name: id,
-                      })),
-                    ]}
-                  />
+                  {!jiraOnly && (
+                    <Choice
+                      compact
+                      hideLabel
+                      label="Issue state"
+                      value={state}
+                      onChange={setState}
+                      items={[
+                        {
+                          id: 'all',
+                          name: 'All states',
+                        },
+                        ...[
+                          ...new Set(
+                            pages.flatMap((page) => [
+                              ...(page.options?.issueStates ?? []),
+                              ...(page.options?.provider === 'jira'
+                                ? page.items.flatMap((row) => ('state' in row ? [row.state] : []))
+                                : []),
+                            ]),
+                          ),
+                        ].map((id) => ({
+                          id,
+                          name: id,
+                        })),
+                      ]}
+                    />
+                  )}
                 </View>
                 <Pressable
                   accessibilityRole="button"
@@ -299,115 +363,128 @@ export function WorkScreen({
         }
         data={visible}
         keyExtractor={({ page, row }) => `${page.source.key}:${row.id}`}
-        renderItem={({ item: { page, row } }) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${row.title}, ${'state' in row ? row.state : row.status}, ${workSourceName(page.source)}, ${page.source.computerName}`}
-            testID={`Work item ${row.id}`}
-            onPress={() => choose(page, row)}
-            style={({ pressed }) => ({
-              gap: 5,
-              paddingVertical: 12,
-              borderBottomWidth: 0.5,
-              borderBottomColor: colors.border,
-              opacity: pressed ? 0.55 : 1,
-            })}
-          >
-            <View
-              style={[
-                styles.row,
-                {
-                  flexWrap: 'nowrap',
-                },
-              ]}
+        renderItem={({ item: { page, row }, index }) => (
+          <View>
+            {jiraOnly &&
+              layout === 'status' &&
+              'state' in row &&
+              startsStatusGroup(row, visible[index - 1]?.row) && (
+                <Text
+                  accessibilityRole="header"
+                  style={[styles.text, { fontWeight: '700', paddingTop: 18, paddingBottom: 8 }]}
+                >
+                  {row.state}
+                </Text>
+              )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${row.title}, ${'state' in row ? row.state : row.status}, ${workSourceName(page.source)}, ${page.source.computerName}`}
+              testID={`Work item ${row.id}`}
+              onPress={() => choose(page, row)}
+              style={({ pressed }) => ({
+                gap: 5,
+                paddingVertical: 12,
+                borderBottomWidth: 0.5,
+                borderBottomColor: colors.border,
+                opacity: pressed ? 0.55 : 1,
+              })}
             >
-              <Icon name={mode === 'issues' ? 'tasks' : 'jobs'} size={14} color={colors.muted} />
+              <View
+                style={[
+                  styles.row,
+                  {
+                    flexWrap: 'nowrap',
+                  },
+                ]}
+              >
+                <Icon name={mode === 'issues' ? 'tasks' : 'jobs'} size={14} color={colors.muted} />
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.muted,
+                    {
+                      flex: 1,
+                      minWidth: 0,
+                    },
+                  ]}
+                >
+                  {'state' in row ? issueLabel(row.id) : `Run ${row.number ?? row.id}`} ·{' '}
+                  {workSourceName(page.source)}
+                </Text>
+                <Text
+                  style={[
+                    styles.muted,
+                    {
+                      flexShrink: 0,
+                    },
+                  ]}
+                >
+                  {row.updatedAt && !Number.isNaN(Date.parse(row.updatedAt))
+                    ? formatShortDate(row.updatedAt)
+                    : ''}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.row,
+                  {
+                    flexWrap: 'nowrap',
+                  },
+                ]}
+              >
+                <Text
+                  numberOfLines={2}
+                  style={[
+                    styles.text,
+                    {
+                      flex: 1,
+                      minWidth: 0,
+                      fontWeight: '600',
+                    },
+                  ]}
+                >
+                  {row.title}
+                </Text>
+                <Icon name="next" size={12} color={colors.muted} />
+              </View>
+              {'state' in row ? (
+                <View style={{ gap: 4 }}>
+                  <Text style={styles.muted}>
+                    {row.state} · {row.type}
+                    {row.priority ? ` · ${row.priority} priority` : ''}
+                  </Text>
+                  <Text numberOfLines={2} style={styles.text}>
+                    {(row.assigneeNames ?? row.assignees).length
+                      ? `Assigned to ${(row.assigneeNames ?? row.assignees).join(', ')}`
+                      : 'Unassigned'}
+                  </Text>
+                  {!!row.labels.length && (
+                    <Text numberOfLines={2} style={styles.muted}>
+                      {row.labels.slice(0, 3).join(' · ')}
+                      {row.labels.length > 3 ? ` · +${row.labels.length - 3} labels` : ''}
+                    </Text>
+                  )}
+                </View>
+              ) : (
+                <WorkSignal status={row.status} />
+              )}
               <Text
                 numberOfLines={1}
                 style={[
                   styles.muted,
                   {
-                    flex: 1,
-                    minWidth: 0,
+                    fontSize: 12,
                   },
                 ]}
               >
-                {'state' in row ? issueLabel(row.id) : `Run ${row.number ?? row.id}`} ·{' '}
-                {workSourceName(page.source)}
-              </Text>
-              <Text
-                style={[
-                  styles.muted,
-                  {
-                    flexShrink: 0,
-                  },
-                ]}
-              >
-                {row.updatedAt && !Number.isNaN(Date.parse(row.updatedAt))
-                  ? formatShortDate(row.updatedAt)
+                {page.options?.provider === 'jira'
+                  ? `Jira · ${(page.source.kind === 'jira' ? page.source.jiraSource.project : '') ?? ''} · `
                   : ''}
+                {page.source.computerName}
+                {!page.source.connected ? ' · Offline · Saved' : page.stale ? ' · Saved' : ''}
               </Text>
-            </View>
-            <View
-              style={[
-                styles.row,
-                {
-                  flexWrap: 'nowrap',
-                },
-              ]}
-            >
-              <Text
-                numberOfLines={2}
-                style={[
-                  styles.text,
-                  {
-                    flex: 1,
-                    minWidth: 0,
-                    fontWeight: '600',
-                  },
-                ]}
-              >
-                {row.title}
-              </Text>
-              <Icon name="next" size={12} color={colors.muted} />
-            </View>
-            {'state' in row ? (
-              <View style={{ gap: 4 }}>
-                <Text style={styles.muted}>
-                  {row.state} · {row.type}
-                  {row.priority ? ` · ${row.priority} priority` : ''}
-                </Text>
-                <Text numberOfLines={2} style={styles.text}>
-                  {(row.assigneeNames ?? row.assignees).length
-                    ? `Assigned to ${(row.assigneeNames ?? row.assignees).join(', ')}`
-                    : 'Unassigned'}
-                </Text>
-                {!!row.labels.length && (
-                  <Text numberOfLines={2} style={styles.muted}>
-                    {row.labels.slice(0, 3).join(' · ')}
-                    {row.labels.length > 3 ? ` · +${row.labels.length - 3} labels` : ''}
-                  </Text>
-                )}
-              </View>
-            ) : (
-              <WorkSignal status={row.status} />
-            )}
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.muted,
-                {
-                  fontSize: 12,
-                },
-              ]}
-            >
-              {page.options?.provider === 'jira'
-                ? `Jira · ${(page.source.kind === 'jira' ? page.source.jiraSource.project : '') ?? ''} · `
-                : ''}
-              {page.source.computerName}
-              {!page.source.connected ? ' · Offline · Saved' : page.stale ? ' · Saved' : ''}
-            </Text>
-          </Pressable>
+            </Pressable>
+          </View>
         )}
         ListEmptyComponent={
           !busy ? (
@@ -513,6 +590,17 @@ export function WorkScreen({
               })),
             ]}
           />
+          {jiraOnly && (
+            <JiraFilterFields
+              state={state}
+              filters={jiraFilters}
+              issues={pages.flatMap((page) =>
+                page.items.filter((row): row is ForgeIssue => 'state' in row),
+              )}
+              onState={setState}
+              onFilters={setJiraFilters}
+            />
+          )}
           <Choice
             label="Sort issues"
             value={sort}
@@ -534,6 +622,8 @@ export function WorkScreen({
             onPress={() => {
               onRepositoryChange?.('')
               setState('all')
+              setJiraFilters({})
+              setLayout('list')
               setSort('updated')
               setSearch('')
             }}

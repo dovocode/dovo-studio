@@ -1,5 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { randomUUID, templateFromTask } from '@dovo/protocol'
+import { randomUUID, templateFromTask, runtimePreferencesSchema } from '@dovo/protocol'
 import { conversationPageSchema, taskTranscript, type ConversationPage } from '@dovo/protocol'
 import { useRef, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
@@ -14,6 +14,7 @@ import {
 } from '@dovo/studio-core'
 import {
   Button,
+  Checkbox,
   ContextMenu,
   Dialog,
   DialogContent,
@@ -86,6 +87,8 @@ export function TaskContextMenu({
   const pendingRef = useRef(false)
   const [error, setError] = useApplicationState('')
   const [dialog, setDialog] = useApplicationState<'rename' | 'delete' | 'template' | null>(null)
+  const supportsWorktreeOverride = source.snapshot?.worktreeDeletionOverrideSupported === true
+  const [removeWorktrees, setRemoveWorktrees] = useApplicationState(false)
   const [templateName, setTemplateName] = useApplicationState(task.title)
   const templates = repository?.templates ?? []
   const local = source.runtimeId === store.activeRuntimeId
@@ -460,7 +463,16 @@ export function TaskContextMenu({
               disabled={!canEdit || task.status === 'running'}
               onSelect={() => {
                 setError('')
-                if (readAppPreferences().confirmDelete) setDialog('delete')
+                if (readAppPreferences().confirmDelete)
+                  void run(async () => {
+                    const preferences = await client.request(
+                      '/api/runtime/preferences/read',
+                      {},
+                      runtimePreferencesSchema,
+                    )
+                    setRemoveWorktrees(preferences.removeWorktreesOnThreadDelete)
+                    setDialog('delete')
+                  })
                 else
                   void run(async () => {
                     await client.request(
@@ -618,9 +630,25 @@ export function TaskContextMenu({
         <DialogContent className="max-w-md">
           <DialogTitle>Delete thread?</DialogTitle>
           <DialogDescription>
-            “{task.title}” and its conversation will be permanently deleted. Project files and
-            worktrees stay on disk.
+            “{task.title}” and its conversation will be permanently deleted.
           </DialogDescription>
+          {supportsWorktreeOverride && (
+            <label className="flex items-start gap-3 text-sm">
+              <Checkbox
+                checked={removeWorktrees}
+                disabled={pending}
+                onCheckedChange={(checked) => setRemoveWorktrees(checked === true)}
+              />
+              <span>
+                Remove worktrees when this is their last thread
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Only clean Dovo-created checkouts are removed. Branches, uncommitted changes and
+                  worktrees linked to other threads are kept. Ignored local files in removed
+                  checkouts are deleted.
+                </span>
+              </span>
+            </label>
+          )}
           {error && (
             <p role="alert" className="text-xs text-destructive">
               {error}
@@ -640,6 +668,7 @@ export function TaskContextMenu({
                     {
                       id: task.id,
                       action: 'delete',
+                      ...(supportsWorktreeOverride ? { removeWorktrees } : {}),
                     },
                     responses.ok,
                   )

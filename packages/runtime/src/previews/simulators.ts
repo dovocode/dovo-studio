@@ -30,16 +30,37 @@ type Session = {
   move?: { input: RemoteBrowserInput; authorize: () => void; promise?: Promise<void> }
 }
 type Entry = {
+  foreignOwner?: string
   taskId: string
   deviceId: string
   pending: Promise<Session>
   closing?: Promise<void>
 }
+export type SimulatorProvider = {
+  authorize?: () => void
+  devices(
+    taskId: string,
+    deviceId: string,
+    foreignOwner?: string,
+  ): Promise<{ devices: PreviewDevice[] }>
+  driver(taskId: string, device: PreviewDevice): Promise<NativeSimulator | undefined>
+}
 export class SimulatorPreviews {
+  constructor(private provider?: SimulatorProvider) {}
   private sessions = new Map<string, Entry>()
   private disposed = false
-  taskId(id: string) {
-    return this.get(id).taskId
+  private epoch = 0
+  private taskEpochs = new Map<string, number>()
+  private hostEpochs = new Map<string, number>()
+  private deviceEpochs = new Map<string, number>()
+  taskId(id: string, foreignOwner?: string) {
+    const entry = this.get(id)
+    if (entry.foreignOwner !== foreignOwner)
+      throw new HttpError(403, 'Simulator preview belongs to another paired device')
+    return entry.taskId
+  }
+  async authorizeDevice(id: string, authorize: (deviceId: string) => void) {
+    authorize(this.get(id).deviceId)
   }
   async screenPoints(id: string) {
     return (await this.get(id).pending).driver.screenPoints?.()
@@ -49,17 +70,54 @@ export class SimulatorPreviews {
     if (!entry) throw new HttpError(404, 'Simulator preview expired. Reconnect to continue.')
     return entry
   }
-  async open(taskId: string, deviceId: string): Promise<{ id: string; device: PreviewDevice }> {
+  async open(
+    taskId: string,
+    deviceId: string,
+    foreignOwner?: string,
+  ): Promise<{ id: string; device: PreviewDevice }> {
+    this.provider?.authorize?.()
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
+    const epoch = this.epoch
+    const taskKey = JSON.stringify([taskId, foreignOwner ?? null])
+    const taskEpoch = this.taskEpochs.get(taskKey)
+    const deviceKey = JSON.stringify([taskKey, deviceId])
+    const deviceEpoch = this.deviceEpochs.get(deviceKey)
+    const hostId = /^remote:([^:]+):/.exec(deviceId)?.[1]
+    const hostEpoch = hostId ? this.hostEpochs.get(hostId) : undefined
+    const assertCurrent = () => {
+      this.provider?.authorize?.()
+      if (
+        this.disposed ||
+        this.epoch !== epoch ||
+        this.taskEpochs.get(taskKey) !== taskEpoch ||
+        this.deviceEpochs.get(deviceKey) !== deviceEpoch ||
+        (hostId && this.hostEpochs.get(hostId) !== hostEpoch)
+      )
+        throw new HttpError(409, 'Simulator preview opening was cancelled by cleanup')
+    }
     const existing = [...this.sessions].find(
-      ([, value]) => value.taskId === taskId && value.deviceId === deviceId,
+      ([, value]) =>
+        value.taskId === taskId &&
+        value.deviceId === deviceId &&
+        value.foreignOwner === foreignOwner,
     )
     if (existing?.[1].closing) {
       await existing[1].closing
-      return this.open(taskId, deviceId)
+      assertCurrent()
+      return this.open(taskId, deviceId, foreignOwner)
     }
-    if (existing) return { id: existing[0], device: (await existing[1].pending).device }
-    const device = (await previewDevices()).devices.find((device) => device.id === deviceId)
+    if (existing) {
+      const session = await existing[1].pending
+      assertCurrent()
+      if (!session.listeners.size) this.expire(existing[0], session)
+      return { id: existing[0], device: session.device }
+    }
+    const device = (
+      await (this.provider
+        ? this.provider.devices(taskId, deviceId, foreignOwner)
+        : previewDevices())
+    ).devices.find((device) => device.id === deviceId)
+    assertCurrent()
     if (!device) throw new HttpError(404, 'Simulator is no longer available')
     if (device.kind === 'physical' && device.state !== 'booted')
       throw new HttpError(409, 'Connect and authorize this phone before opening its live preview')
@@ -69,7 +127,9 @@ export class SimulatorPreviews {
     if (
       device.kind === 'physical' &&
       [...this.sessions.values()].some(
-        (entry) => entry.deviceId === deviceId && entry.taskId !== taskId,
+        (entry) =>
+          entry.deviceId === deviceId &&
+          (entry.taskId !== taskId || entry.foreignOwner !== foreignOwner),
       )
     )
       throw new HttpError(
@@ -78,33 +138,50 @@ export class SimulatorPreviews {
       )
     // Discovery is asynchronous; recheck before reserving the session.
     const concurrent = [...this.sessions].find(
-      ([, value]) => value.taskId === taskId && value.deviceId === deviceId,
+      ([, value]) =>
+        value.taskId === taskId &&
+        value.deviceId === deviceId &&
+        value.foreignOwner === foreignOwner,
     )
     if (concurrent?.[1].closing) {
       await concurrent[1].closing
-      return this.open(taskId, deviceId)
+      assertCurrent()
+      return this.open(taskId, deviceId, foreignOwner)
     }
-    if (concurrent) return { id: concurrent[0], device: (await concurrent[1].pending).device }
+    if (concurrent) {
+      const session = await concurrent[1].pending
+      assertCurrent()
+      if (!session.listeners.size) this.expire(concurrent[0], session)
+      return { id: concurrent[0], device: session.device }
+    }
     if (this.sessions.size >= 4)
       throw new HttpError(409, 'Close an unused simulator preview first (maximum 4)')
     const id = randomUUID()
     const pending = (async (): Promise<Session> => ({
       device,
-      driver: await (device.kind === 'physical'
-        ? device.platform === 'ios'
-          ? physicalDevice(device)
-          : physicalAndroid(device)
-        : device.platform === 'ios'
-          ? iosSimulator(device)
-          : androidSimulator(device)),
+      driver:
+        (await this.provider?.driver(taskId, device)) ??
+        (await (device.kind === 'physical'
+          ? device.platform === 'ios'
+            ? physicalDevice(device)
+            : physicalAndroid(device)
+          : device.platform === 'ios'
+            ? iosSimulator(device)
+            : androidSimulator(device))),
       listeners: new Set(),
       closed: false,
       queue: Promise.resolve(),
       queued: 0,
     }))()
-    this.sessions.set(id, { taskId, deviceId, pending })
+    this.sessions.set(id, { taskId, deviceId, foreignOwner, pending })
     try {
       const session = await pending
+      try {
+        assertCurrent()
+      } catch (error) {
+        await this.close(id)
+        throw error
+      }
       this.expire(id, session)
       return { id, device }
     } catch (error) {
@@ -122,6 +199,7 @@ export class SimulatorPreviews {
     session.idle.unref()
   }
   async attach(id: string, listener: Listener) {
+    this.provider?.authorize?.()
     const session = await this.get(id).pending
     if (session.closed) throw new HttpError(404, 'Simulator preview closed')
     clearTimeout(session.idle)
@@ -174,6 +252,7 @@ export class SimulatorPreviews {
     }
   }
   async input(id: string, input: RemoteBrowserInput, authorize: () => void) {
+    this.provider?.authorize?.()
     const session = await this.get(id).pending
     if (session.closed) throw new HttpError(404, 'Simulator preview closed')
     if (input.type === 'resize' || input.type === 'status') return
@@ -219,6 +298,7 @@ export class SimulatorPreviews {
     session.queued++
     const operation = session.queue.then(async () => {
       if (session.move === command) session.move = undefined
+      this.provider?.authorize?.()
       authorize()
       if (session.closed) throw new HttpError(404, 'Simulator preview closed')
       await session.driver.input(command.input)
@@ -243,7 +323,8 @@ export class SimulatorPreviews {
     return entry.closing
   }
   private async closeSession(entry: Entry) {
-    const session = await entry.pending
+    const session = await entry.pending.catch(() => undefined)
+    if (!session) return
     session.closed = true
     clearTimeout(session.idle)
     session.stop?.()
@@ -252,22 +333,69 @@ export class SimulatorPreviews {
     await session.queue
     await session.driver.close()
   }
-  async closeTask(taskId: string) {
-    await Promise.all(
+  async release(id: string) {
+    const session = await this.get(id).pending
+    await session.queue
+    await session.driver.release()
+  }
+  async closeForeignDevice(deviceId: string) {
+    const results = await Promise.allSettled(
       [...this.sessions]
-        .filter(([, entry]) => entry.taskId === taskId)
-        .map(([id]) => this.close(id)),
+        .filter(([, entry]) => entry.foreignOwner === deviceId)
+        .map(async ([id, entry]) => {
+          const session = await entry.pending.catch(() => undefined)
+          // Attached sockets retain their explicit authentication-revoked close code.
+          // The WebSocket revocation watcher closes them; reap idle reservations here.
+          if (!session?.listeners.size) await this.close(id)
+        }),
+    )
+    for (const result of results)
+      if (result.status === 'rejected')
+        console.warn('Foreign preview cleanup failed', result.reason)
+  }
+  private async closeMany(ids: string[]) {
+    const results = await Promise.allSettled(ids.map((id) => this.close(id)))
+    const failures = results.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : [],
+    )
+    if (failures.length)
+      throw new AggregateError(failures, 'Could not close every simulator preview')
+  }
+  async closeHost(hostId: string) {
+    this.hostEpochs.set(hostId, (this.hostEpochs.get(hostId) ?? 0) + 1)
+    await this.closeMany(
+      [...this.sessions]
+        .filter(([, entry]) => entry.deviceId.startsWith(`remote:${hostId}:`))
+        .map(([id]) => id),
+    )
+  }
+  async closeTask(taskId: string) {
+    const key = JSON.stringify([taskId, null])
+    this.taskEpochs.set(key, (this.taskEpochs.get(key) ?? 0) + 1)
+    await this.closeMany(
+      [...this.sessions]
+        .filter(([, entry]) => entry.taskId === taskId && !entry.foreignOwner)
+        .map(([id]) => id),
     )
   }
   async closeDevice(taskId: string, deviceId: string) {
-    await Promise.all(
+    const key = JSON.stringify([JSON.stringify([taskId, null]), deviceId])
+    this.deviceEpochs.set(key, (this.deviceEpochs.get(key) ?? 0) + 1)
+    await this.closeMany(
       [...this.sessions]
-        .filter(([, entry]) => entry.taskId === taskId && entry.deviceId === deviceId)
-        .map(([id]) => this.close(id)),
+        .filter(
+          ([, entry]) =>
+            entry.taskId === taskId && entry.deviceId === deviceId && !entry.foreignOwner,
+        )
+        .map(([id]) => id),
     )
   }
   async dispose() {
     this.disposed = true
+    await this.closeAll()
+  }
+  async closeAll() {
+    this.epoch++
     const results = await Promise.allSettled([...this.sessions.keys()].map((id) => this.close(id)))
     for (const result of results)
       if (result.status === 'rejected')

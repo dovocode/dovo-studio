@@ -1,22 +1,27 @@
-import { ScrollView, View } from 'react-native'
+import { ScrollView } from 'react-native'
 import { ScopedSettings } from '../runtime/preferences/settings-target'
 import { TaskDefaultSettings } from '../runtime/preferences/task-default-settings'
 import { ScreenHeader } from '../ui/layout/screen-header'
-import { useTheme } from '../ui/theme'
+import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 
 export default function TaskDefaultsScreen() {
   const { styles } = useTheme()
 
   return (
-    <View style={styles.screen}>
+    <SettingsPage>
       <ScreenHeader title="Task defaults" />
-      <ScopedSettings>
-        {({ scope, repository }) => (
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
+      >
+        <ScopedSettings>
+          {({ scope, repository }) => (
             <TaskDefaultSettings inline scope={scope} repository={repository} />
-          </ScrollView>
-        )}
-      </ScopedSettings>
-    </View>
+          )}
+        </ScopedSettings>
+      </ScrollView>
+    </SettingsPage>
   )
 }

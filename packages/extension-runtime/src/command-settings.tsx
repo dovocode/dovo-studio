@@ -16,7 +16,15 @@ import {
   useWorkspace,
   type CommandSettings as Settings,
 } from '@dovo/studio-core'
-import { Button, FormField, Input, Textarea, Toggle } from '@dovo/studio-ui'
+import {
+  Button,
+  FormField,
+  Input,
+  Textarea,
+  Toggle,
+  SettingRow,
+  SettingsGroup,
+} from '@dovo/studio-ui'
 export function CommandSettings({ computerUse = false }: { computerUse?: boolean }) {
   const { request, connected } = useWorkspace()
   const [settings, setSettings] = useApplicationState<Settings | null>(null)
@@ -98,8 +106,8 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
     <article className="space-y-4">
       <p className="text-xs text-muted-foreground">
         {computerUse
-          ? 'Set up computer use on the selected runtime host. CuaDriver owns OS permissions; Dovo connects your agents through MCP.'
-          : 'Runtime host defaults. Enter executable names or paths, without shell quoting. Agent overrides take precedence. Changes apply to new processes.'}
+          ? 'CuaDriver runs on this computer and manages desktop permissions.'
+          : 'Enter executable names or paths without shell quoting. Agent overrides take precedence; changes apply to new processes.'}
       </p>
       {settings && (
         <form
@@ -129,71 +137,91 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
               .finally(() => setBusy(false))
           }}
         >
-          <fieldset disabled={busy || !connected} className="grid gap-3 sm:grid-cols-2">
-            {commandFields
-              .filter((field) => (computerUse ? field.id === 'cua' : field.id !== 'cua'))
-              .map((field) => (
-                <FormField key={field.id} label={field.label}>
-                  <Input
-                    aria-label={field.label}
-                    value={settings[field.id]}
-                    placeholder={field.id === 'shell' ? defaultShell : field.placeholder}
-                    onChange={(event) =>
-                      change({
-                        ...settings,
-                        [field.id]: event.target.value,
-                      })
-                    }
-                  />
-                </FormField>
-              ))}
-            {!computerUse && (
-              <FormField label="Shell arguments (one per line)">
-                <Textarea
-                  aria-label="Shell arguments"
-                  value={settings.shellArgs.join('\n')}
-                  onChange={(event) =>
-                    change({
-                      ...settings,
-                      shellArgs: event.target.value.split('\n'),
-                    })
-                  }
-                />
-              </FormField>
-            )}
+          <fieldset disabled={busy || !connected} className="space-y-5">
+            {(computerUse
+              ? [{ title: 'Cua Driver', ids: ['cua'] }]
+              : [
+                  { title: 'Terminal shell', ids: ['shell'] },
+                  {
+                    title: 'Source control tools',
+                    ids: ['git', 'gh', 'az', 'tea', 'bb', 'fj', 'acli'],
+                  },
+                  {
+                    title: 'Agent commands',
+                    ids: ['codex', 'claude', 'hermes', 'copilot', 'grok', 'muse', 'acp'],
+                  },
+                ]
+            ).map((group) => (
+              <section key={group.title} className="space-y-3">
+                <h2 className="text-sm font-semibold">{group.title}</h2>
+                <div className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2">
+                  {commandFields
+                    .filter((field) => group.ids.includes(field.id))
+                    .map((field) => (
+                      <FormField key={field.id} label={field.label}>
+                        <Input
+                          aria-label={field.label}
+                          value={settings[field.id]}
+                          spellCheck={false}
+                          autoCapitalize="off"
+                          placeholder={field.id === 'shell' ? defaultShell : field.placeholder}
+                          onChange={(event) =>
+                            change({ ...settings, [field.id]: event.target.value })
+                          }
+                        />
+                      </FormField>
+                    ))}
+                  {group.ids.includes('shell') && (
+                    <>
+                      <FormField label="Shell arguments (one per line)">
+                        <Textarea
+                          aria-label="Shell arguments"
+                          spellCheck={false}
+                          value={settings.shellArgs.join('\n')}
+                          onChange={(event) =>
+                            change({ ...settings, shellArgs: event.target.value.split('\n') })
+                          }
+                          rows={3}
+                        />
+                      </FormField>
+                      <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2">
+                        Leave the shell empty to use {defaultShell}. Default argument: -l (login
+                        shell). Empty arguments use the shell’s normal interactive startup.
+                      </p>
+                    </>
+                  )}
+                  {computerUse && (
+                    <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2">
+                      Leave the path empty to detect Cua Driver on PATH or in its standard
+                      installation folder.
+                    </p>
+                  )}
+                </div>
+              </section>
+            ))}
           </fieldset>
-          {!computerUse && (
-            <p className="text-xs text-muted-foreground">
-              Automatic shell: {defaultShell}. Default argument: -l (login shell). Empty arguments
-              use the shell’s normal interactive startup.
-            </p>
-          )}
           {computerUse && (
             <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm">
-                <Toggle
+              <SettingsGroup title="Agent access">
+                <SettingRow
                   label="Enable agent computer use on this computer"
-                  checked={settings.cuaEnabled}
-                  disabled={busy || !connected}
-                  onChange={(checked) => change({ ...settings, cuaEnabled: checked })}
-                />
-                Enable agent computer use on this computer
-              </label>
-              <p className="text-xs text-muted-foreground">
-                Grants writable agents access to this computer’s desktop through Cua Driver.
-                Read-only agents are excluded. The user and agents share the desktop and app state.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Cua Driver is configured on this computer. Leave the path empty to detect it on PATH
-                or in its standard installation folder. Changes apply to new agent turns.
-              </p>
+                  description="Writable agents share your desktop and app state. Read-only agents are excluded. Save changes to apply them to new turns."
+                >
+                  <Toggle
+                    label="Enable agent computer use on this computer"
+                    checked={settings.cuaEnabled}
+                    disabled={busy || !connected}
+                    onChange={(checked) => change({ ...settings, cuaEnabled: checked })}
+                  />
+                </SettingRow>
+              </SettingsGroup>
               {cua && (
-                <div className="space-y-2 rounded-md border p-3 text-xs">
+                <div className="space-y-3 rounded-lg border bg-card p-4 text-xs leading-relaxed">
                   <p className="font-medium">1. Install on this computer</p>
                   <p>{cuaInstallHelp(cua.platform).prerequisites}</p>
                   <p>
-                    Run the official installer below on the runtime host, then refresh status. It
-                    downloads and installs CuaDriver; no Cua account is required.
+                    Run the official installer on this computer, then check status below. No Cua
+                    account is required.
                   </p>
                   <pre className="overflow-x-auto whitespace-pre-wrap break-all select-text">
                     {cuaInstallHelp(cua.platform).commands}
@@ -217,6 +245,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                 </a>
                 <Button
                   type="button"
+                  variant="outline"
                   disabled={busy || !connected}
                   onClick={() => {
                     const generation = ++cuaGeneration.current
@@ -240,13 +269,13 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                         })
                   }}
                 >
-                  Detect / check Cua Driver
+                  {busy ? 'Checking…' : 'Check Cua Driver'}
                 </Button>
               </div>
               {cua?.available && (
                 <div className="space-y-3">
                   {(['setup', 'skills', 'history'] as const).map((group) => (
-                    <section key={group} className="space-y-2 rounded-md border p-3">
+                    <section key={group} className="space-y-3 rounded-lg border bg-card p-4">
                       <h3 className="text-sm font-medium">
                         {group === 'setup'
                           ? '2. Permissions & desktop access'
@@ -256,10 +285,10 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                       </h3>
                       <p className="text-xs text-muted-foreground">
                         {group === 'setup'
-                          ? 'Grant Accessibility and Screen Recording to CuaDriver on macOS and accept its relaunch. Test desktop access to list apps without changing them. Starting or stopping the shared daemon affects active computer-use sessions.'
+                          ? 'On macOS, grant Accessibility and Screen Recording and accept the relaunch. Test desktop access lists apps. Starting or stopping the daemon affects active sessions.'
                           : group === 'skills'
-                            ? 'Save the computer-use switch to supply dovo_cua MCP automatically to new writable turns. No manual MCP registration is needed. Install the optional official skill pack for native agent skill discovery; installation links detected agents on this computer.'
-                            : 'History is opt-in, encrypted and metadata-only. Enable may restart the daemon. Disable keeps recorded data; pause temporarily stops recording. Unsupported builds report an error. Data remains on the runtime host; View recent history retrieves up to 20 events here.'}
+                            ? 'Save agent access above to connect new writable turns automatically. The optional official skill pack links detected agents on this computer.'
+                            : 'Opt-in, encrypted metadata stored on this computer. Enabling may restart the daemon. Disabling keeps data; pausing stops recording temporarily. View recent history shows up to 20 events. Unsupported builds report an error.'}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {cuaActions
@@ -273,6 +302,8 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                             <Button
                               key={action.id}
                               type="button"
+                              variant={action.id === 'history-delete' ? 'destructive' : 'outline'}
+                              size="sm"
                               disabled={busy || !connected || cuaActionDisabled(action.id, cua)}
                               onClick={() => {
                                 if (
@@ -336,9 +367,15 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
               )}
             </div>
           )}
-          <Button type="submit" disabled={busy || !connected || !baseline}>
-            {computerUse ? 'Save computer-use settings' : 'Save command settings'}
-          </Button>
+          <div className="flex justify-end border-t pt-4">
+            <Button type="submit" disabled={busy || !connected || !baseline}>
+              {busy
+                ? 'Working…'
+                : computerUse
+                  ? 'Save computer-use settings'
+                  : 'Save command settings'}
+            </Button>
+          </div>
           {saved && (
             <p role="status" className="text-xs text-muted-foreground">
               {computerUse
@@ -348,8 +385,15 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
           )}
         </form>
       )}
+      {connected && !settings && !error && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Loading command settings…
+        </p>
+      )}
       {!connected && (
-        <p className="text-xs text-muted-foreground">Connect to configure the runtime host.</p>
+        <p className="text-xs text-muted-foreground">
+          Reconnect this computer to change command settings.
+        </p>
       )}
       {error && (
         <p role="alert" className="text-xs text-destructive">

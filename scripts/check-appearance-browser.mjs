@@ -126,11 +126,10 @@ try {
   const ready = () => page.getByRole('heading', { name: 'Appearance', exact: true }).waitFor()
   const choose = async (name) =>
     page.getByRole('radio', { name, exact: true }).locator('..').click()
-  const mode = async (name) =>
-    page
-      .getByRole('radiogroup', { name: 'Color scheme' })
-      .getByRole('radio', { name, exact: true })
-      .click()
+  const mode = async (name) => {
+    await page.getByRole('combobox', { name: 'Color scheme', exact: true }).click()
+    await page.getByRole('option', { name, exact: true }).click()
+  }
   await page.goto('http://appearance.local/')
   await ready()
   await page.waitForFunction(() =>
@@ -235,9 +234,13 @@ try {
   await ready()
   assert.equal(await page.getByRole('radio', { name: 'Claude', exact: true }).isChecked(), true)
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light')
-  await page.getByLabel('App font', { exact: true }).fill('Georgia')
-  await page.getByLabel('Code font', { exact: true }).fill('JetBrains Mono Nerd Font')
-  await page.getByLabel('Terminal font', { exact: true }).fill('JetBrains Mono Nerd Font')
+  await page.getByRole('combobox', { name: 'App font', exact: true }).fill('Georgia')
+  await page
+    .getByRole('combobox', { name: 'Code font', exact: true })
+    .fill('JetBrains Mono Nerd Font')
+  await page
+    .getByRole('combobox', { name: 'Terminal font', exact: true })
+    .fill('JetBrains Mono Nerd Font')
   await page.getByRole('button', { name: 'Terminal font size', exact: true }).click()
   await page.getByRole('option', { name: '18 px', exact: true }).click()
   await page.waitForFunction(
@@ -282,25 +285,28 @@ try {
   assert.ok(fontState.buffer.includes('theme session preserved'))
   await page.reload()
   await ready()
-  assert.equal(await page.getByLabel('App font', { exact: true }).inputValue(), 'Georgia')
   assert.equal(
-    await page.getByLabel('Code font', { exact: true }).inputValue(),
+    await page.getByRole('combobox', { name: 'App font', exact: true }).inputValue(),
+    'Georgia',
+  )
+  assert.equal(
+    await page.getByRole('combobox', { name: 'Code font', exact: true }).inputValue(),
     'JetBrains Mono Nerd Font',
   )
   assert.equal(
-    await page.getByLabel('Terminal font', { exact: true }).inputValue(),
+    await page.getByRole('combobox', { name: 'Terminal font', exact: true }).inputValue(),
     'JetBrains Mono Nerd Font',
   )
   await page.waitForFunction(() => window.terminals[0].options.fontSize === 18)
   // A generic family works as CSS, and clearing a field restores the device default.
-  await page.getByLabel('App font', { exact: true }).fill('serif')
+  await page.getByRole('combobox', { name: 'App font', exact: true }).fill('serif')
   assert.ok(
     (
       await page.locator('html').evaluate((element) => getComputedStyle(element).fontFamily)
     ).startsWith('serif'),
   )
-  await page.getByLabel('App font', { exact: true }).fill('')
-  await page.getByLabel('Terminal font', { exact: true }).fill('')
+  await page.getByRole('combobox', { name: 'App font', exact: true }).fill('')
+  await page.getByRole('combobox', { name: 'Terminal font', exact: true }).fill('')
   await page.waitForFunction(() =>
     window.terminals[0].options.fontFamily.startsWith('ui-monospace'),
   )
@@ -319,11 +325,13 @@ try {
       `Appearance fits ${width}px screens`,
     )
     assert.ok(
-      await page.getByRole('radiogroup', { name: 'Color scheme' }).evaluate((control) => {
-        const buttons = control.getBoundingClientRect()
-        const label = control.previousElementSibling.getBoundingClientRect()
-        return buttons.left >= label.right || buttons.top >= label.bottom
-      }),
+      await page
+        .getByRole('combobox', { name: 'Color scheme', exact: true })
+        .evaluate((control) => {
+          const buttons = control.getBoundingClientRect()
+          const label = control.parentElement.previousElementSibling.getBoundingClientRect()
+          return buttons.left >= label.right || buttons.top >= label.bottom
+        }),
       'Color scheme buttons must not overlap their description',
     )
   }

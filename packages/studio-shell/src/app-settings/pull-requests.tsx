@@ -1,5 +1,6 @@
 import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
-import { SettingRow, SettingsGroup, SettingsPage, Segmented, Toggle } from './layout'
+import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
+import { SettingsSelect } from './settings-select'
 
 export default function PullRequestSettings() {
   const preferences = useAppPreferences()
@@ -7,12 +8,12 @@ export default function PullRequestSettings() {
     <SettingsPage
       local
       title="Pull requests"
-      description="How this device creates and merges pull requests. Accounts are in Source control."
+      description="Defaults for creating and merging pull requests from this device."
     >
       <SettingsGroup title="Creating and merging">
         <SettingRow
           label="Create pull requests as drafts"
-          description="Preselects Draft when the forge supports it. You can still change it per pull request."
+          description="Preselect Draft when your code host supports it. You can change this for each pull request."
         >
           <Toggle
             label="Create pull requests as drafts"
@@ -22,16 +23,16 @@ export default function PullRequestSettings() {
         </SettingRow>
         <SettingRow
           label="Merge method"
-          description="Preselected when merging. Falls back to the forge’s default if it isn’t offered."
+          description="Preselect this method when merging. If unavailable, use the code host’s default."
         >
-          <Segmented
+          <SettingsSelect
             label="Merge method"
             value={preferences.mergeMethod}
             options={[
-              ['auto', 'Forge default'],
-              ['merge', 'Merge'],
-              ['squash', 'Squash'],
-              ['rebase', 'Rebase'],
+              ['auto', 'Code host default'],
+              ['merge', 'Merge commit'],
+              ['squash', 'Squash and merge'],
+              ['rebase', 'Rebase and merge'],
             ]}
             onChange={(mergeMethod) => updateAppPreferences({ mergeMethod })}
           />

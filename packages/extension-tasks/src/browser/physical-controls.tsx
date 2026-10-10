@@ -57,7 +57,10 @@ export function PhysicalControls({ taskId, device }: { taskId: string; device: P
           id: device.id,
           action,
           bundleId: selected || undefined,
-          url: action === 'open' ? previewUrl(url, connection?.address) : undefined,
+          url:
+            action === 'open'
+              ? previewUrl(url, device.hostId ? undefined : connection?.address)
+              : undefined,
         },
         previewResultSchema,
       )

@@ -6,7 +6,7 @@ export default function ComputerUseView({ entityId }: { entityId?: string }) {
     <HostPage
       initialRuntimeId={entityId}
       title="Computer use"
-      description="Install CuaDriver, grant desktop permissions, connect agents and manage optional Computer History on this computer."
+      description="Set up desktop access for agents and optional Computer History."
     >
       <CommandSettings computerUse />
     </HostPage>

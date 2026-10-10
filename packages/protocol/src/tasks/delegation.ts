@@ -161,3 +161,17 @@ export function indexTaskSubagents(tasks: readonly Task[]) {
     return [...records.values()]
   }
 }
+
+/** Hidden children surface approvals and questions on each visible ancestor. */
+export function taskFamilyInputIds(tasks: readonly Task[], inputIds: Iterable<string>) {
+  const owners = new Map(tasks.map((task) => [task.id, task]))
+  const input = new Set<string>()
+  for (const id of inputIds) {
+    let current: string | undefined = id
+    while (current && !input.has(current)) {
+      input.add(current)
+      current = owners.get(current)?.delegation?.parentTaskId
+    }
+  }
+  return input
+}

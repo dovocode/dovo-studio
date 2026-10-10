@@ -55,6 +55,53 @@ export const runtimeExtension = defineStudioExtension(
       load: () => import('./computer-use-view'),
     },
     {
+      id: 'device-previews',
+      navigationGroup: 'settings',
+      settingsScope: 'computer',
+      title: 'Device previews',
+      icon: 'runtime',
+      order: 4.15,
+      settingsSection: 'computers',
+      keywords:
+        'simulator emulator iphone android ios device hub ssh remote host key preview install metro',
+      load: () => import('./device-hosts-view'),
+    },
+    {
+      id: 'pull-request-monitoring-settings',
+      navigationGroup: 'settings',
+      settingsScope: 'computer',
+      title: 'Pull requests & pipelines',
+      icon: 'pulls',
+      order: 3.5,
+      settingsSection: 'coding',
+      keywords:
+        'pr feedback watcher watching monitoring experimental pipeline checks linking settle archive merged closed',
+      load: () => import('./pull-request-settings-view'),
+    },
+    {
+      id: 'artifact-settings',
+      navigationGroup: 'settings',
+      settingsScope: 'computer',
+      title: 'Artifacts',
+      icon: 'artifacts',
+      order: 3.9,
+      settingsSection: 'coding',
+      keywords:
+        'artifacts documents diagrams previews retention settled archived versions storage delete',
+      load: () => import('./artifacts-settings-view'),
+    },
+    {
+      id: 'memory',
+      navigationGroup: 'settings',
+      settingsScope: 'computer',
+      title: 'Memory',
+      icon: 'runtime',
+      order: 3.8,
+      settingsSection: 'coding',
+      keywords: 'memory notes remember preferences project global system projectless',
+      load: () => import('./memory-view'),
+    },
+    {
       id: 'worktrees',
       navigationGroup: 'settings',
       settingsScope: 'computer',
@@ -75,7 +122,7 @@ export const runtimeExtension = defineStudioExtension(
       order: 4.2,
       settingsSection: 'computers',
       keywords:
-        'resume continue interrupted restart startup auto archive inactive keep awake sleep caffeinate',
+        'resume continue interrupted restart startup auto archive inactive keep awake sleep caffeinate child agents subagent concurrent parallel limit',
       load: () => import('./running-tasks-view'),
     },
     {

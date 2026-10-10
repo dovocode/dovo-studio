@@ -45,7 +45,10 @@ async function setup() {
 }
 
 it('keeps long linked identities protected and restores saved history after clean removal and a root change', async () => {
-  const { s } = await setup()
+  const { s, secondary } = await setup()
+  await writeFile(join(secondary.directory, '.gitignore'), '.env.local\n')
+  await writeFile(join(secondary.directory, '.worktreeinclude'), '.env.local\n')
+  await writeFile(join(secondary.directory, '.env.local'), 'linked configuration')
   const root = await mkdtemp(join(tmpdir(), 'dovo-linked-history-'))
   cleanups.push(() => rm(root, { recursive: true, force: true }))
   s.preferences.save({ worktreesRoot: join(root, 'first') })
@@ -65,6 +68,8 @@ it('keeps long linked identities protected and restores saved history after clea
     ],
   })
   const [link] = await s.checkouts.linked.resolve(task.id)
+  expect(await readFile(join(link.directory, '.env.local'), 'utf8')).toBe('linked configuration')
+  await writeFile(join(link.directory, '.gitignore'), '.env.local\n')
   expect((await runClientEffect(listWorktreesEffect(s))).worktrees).toContainEqual(
     expect.objectContaining({ path: link.directory, taskId: task.id, state: 'active' }),
   )
@@ -80,7 +85,7 @@ it('keeps long linked identities protected and restores saved history after clea
     after,
     ...(await s.git.checkpointChanges(link.directory, before, after)),
   }
-  await s.git.stage(link.directory, ['hello.txt'])
+  await s.git.stage(link.directory, ['hello.txt', '.gitignore'])
   await s.git.commit(link.directory, 'Save linked work')
   s.store.updateTask(task.id, (current) => ({
     ...current,
@@ -112,6 +117,7 @@ it('keeps long linked identities protected and restores saved history after clea
   await s.tasks.restoreTurn(task.id, 'turn', 'undo')
   const restored = await s.checkouts.linked.checkpointDirectory(checkpoint, true)
   expect(restored.startsWith(join(root, 'second'))).toBe(true)
+  expect(await readFile(join(restored, '.env.local'), 'utf8')).toBe('linked configuration')
   expect(await readFile(join(restored, 'hello.txt'), 'utf8')).toBe('original\n')
   await s.tasks.restoreTurn(task.id, 'turn', 'redo')
   expect(await readFile(join(restored, 'hello.txt'), 'utf8')).toBe('saved history\n')

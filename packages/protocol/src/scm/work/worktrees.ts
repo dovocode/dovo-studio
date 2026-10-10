@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { Effect, Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../../shared/schema.js'
 
 /** Dovo-created task worktrees on one computer (Settings → Coding → Worktrees). */
@@ -13,6 +13,10 @@ export const worktreeListSchema = mutableStruct({
       repositoryName: Schema.String,
       taskId: Schema.optional(Schema.String),
       taskTitle: Schema.optional(Schema.String),
+      /** Every thread referencing this checkout, including archived threads and linked history. */
+      threadIds: mutableArray(Schema.String).pipe(
+        Schema.withDecodingDefaultType(Effect.sync(() => [])),
+      ),
       /** active: its task is in use · archived: task archived · missing: task deleted */
       state: Schema.Literals(['active', 'archived', 'missing']),
       dirty: Schema.Boolean,

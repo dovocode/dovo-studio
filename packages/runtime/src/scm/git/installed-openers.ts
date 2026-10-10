@@ -3,7 +3,12 @@ import { constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { posix, win32 } from 'node:path'
 import { Schema } from 'effect'
-import { decode, jetbrainsOpenTargets, type RepositoryOpenTarget } from '@dovo/protocol'
+import {
+  decode,
+  decodeResult,
+  jetbrainsOpenTargets,
+  type RepositoryOpenTarget,
+} from '@dovo/protocol'
 import { exec, processEnvironment, ProcessError } from '../../process.js'
 import { parse } from 'shell-quote'
 
@@ -145,7 +150,7 @@ const editors: Editor[] = [
         : target === 'pycharm'
           ? ['com.jetbrains.pycharm', 'com.jetbrains.pycharm.ce']
           : []),
-    ],
+    ].flatMap((id) => [id, `${id}-EAP`]),
     binaries: [`${target}64.exe`, `${target}.exe`],
     directories: [name],
     flatpak: [
@@ -158,13 +163,26 @@ const editors: Editor[] = [
     ],
   })),
 ]
-const missing = (error: unknown) =>
-  error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+const jetbrains = (target: RepositoryOpenTarget) =>
+  jetbrainsOpenTargets.some(([candidate]) => candidate === target)
+// Removed, protected (macOS privacy/permissions) or cyclic entries only rule out that candidate;
+// any other filesystem failure still fails discovery instead of hiding installed apps.
+const unusableCodes = new Set<unknown>(['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'ELOOP'])
+const unusable = (error: unknown) =>
+  error instanceof Error && 'code' in error && unusableCodes.has(error.code)
 async function existingFile(path: string) {
   try {
     return (await stat(path)).isFile()
   } catch (error) {
-    if (missing(error)) return false
+    if (unusable(error)) return false
+    throw error
+  }
+}
+async function existingDirectory(path: string) {
+  try {
+    return (await stat(path)).isDirectory()
+  } catch (error) {
+    if (unusable(error)) return false
     throw error
   }
 }
@@ -175,26 +193,63 @@ async function executable(path: string) {
     await access(path, constants.X_OK)
     return true
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'EACCES') return false
+    if (unusable(error)) return false
+    throw error
+  }
+}
+async function entries(path: string) {
+  try {
+    return await readdir(path, { withFileTypes: true })
+  } catch (error) {
+    if (unusable(error)) return []
     throw error
   }
 }
 async function directories(path: string) {
+  return (await entries(path))
+    .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+    .map((entry) => join(path, entry.name))
+}
+type Metadata<T> = { valid: true; value: T } | { valid: false }
+/** Reads one candidate's JSON metadata; malformed files reject only that candidate. */
+async function metadata<S extends Schema.Codec<unknown, unknown>>(
+  schema: S,
+  path: string,
+): Promise<Metadata<S['Type']> | undefined> {
+  let text: string
   try {
-    return (await readdir(path, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
-      .map((entry) => join(path, entry.name))
+    text = await readFile(path, 'utf8')
   } catch (error) {
-    if (missing(error)) return []
+    if (unusable(error)) return undefined
     throw error
   }
-}
-async function optionalJSON(path: string) {
+  let raw: unknown
   try {
-    return JSON.parse(await readFile(path, 'utf8')) as unknown
+    raw = JSON.parse(text)
   } catch (error) {
-    if (missing(error)) return undefined
-    throw error
+    if (!(error instanceof SyntaxError)) throw error
+    console.warn(`Ignoring malformed application metadata ${path}: ${error.message}`)
+    return { valid: false }
+  }
+  const result = decodeResult(schema, raw)
+  if (result.success) return { valid: true, value: result.data }
+  console.warn(`Ignoring malformed application metadata ${path}: ${result.error.message}`)
+  return { valid: false }
+}
+/** Optional discovery sources may be absent or broken without hiding apps found elsewhere. */
+async function optionalCommand(label: string, command: string, args: string[]) {
+  try {
+    return (
+      await exec(command, args, {
+        timeout: 5000,
+        env: processEnvironment(),
+        maxBuffer: 1024 * 1024,
+      })
+    ).stdout
+  } catch (error) {
+    if (!(error instanceof ProcessError)) throw error
+    console.warn(`${label} failed: ${error.message}`)
+    return undefined
   }
 }
 async function* commandsOnPath(names: readonly string[], extra: string[] = []) {
@@ -223,22 +278,118 @@ const productInfoSchema = Schema.Struct({
 const toolboxSettingsSchema = Schema.Struct({
   install_location: Schema.optional(Schema.NullOr(Schema.String)),
   installLocation: Schema.optional(Schema.NullOr(Schema.String)),
+  shell_scripts: Schema.optional(
+    Schema.NullOr(Schema.Struct({ location: Schema.optional(Schema.NullOr(Schema.String)) })),
+  ),
 })
+/** Toolbox installation and generated-script locations, including user-customized ones. */
+async function toolboxLocations(base: string) {
+  const installs: string[] = []
+  const scripts = [join(base, 'scripts')]
+  for (const path of [join(base, '.settings.json'), join(base, 'settings.json')]) {
+    const settings = await metadata(toolboxSettingsSchema, path)
+    if (!settings?.valid) continue
+    const install = settings.value.install_location || settings.value.installLocation
+    if (install) installs.push(install)
+    const script = settings.value.shell_scripts?.location
+    if (script) scripts.push(script)
+  }
+  return { installs, scripts }
+}
+// Toolbox scripts outlive the IDEs they launch; the installed product itself is discovered instead.
+const toolboxScript = (target: EditorTarget, path: string, scripts: readonly string[]) =>
+  path.includes('/JetBrains/Toolbox/scripts/') ||
+  (jetbrains(target) && scripts.some((root) => posix.dirname(path) === posix.resolve(root)))
 const codeProductSchema = Schema.Struct({
   nameShort: Schema.optional(Schema.String),
   nameLong: Schema.optional(Schema.String),
   applicationName: Schema.optional(Schema.String),
 })
-async function codeProduct(path: string) {
-  const actual = await realpath(path)
+const codeProductLocations = (root: string) => [
+  'resources/app/product.json',
+  'Contents/Resources/app/product.json',
+  // macOS CLIs live in Contents/Resources/app/bin, beside the bundle's own product metadata.
+  ...(/[\\/]Contents[\\/]Resources[\\/]app$/.test(root) ? ['product.json'] : []),
+]
+async function codeProduct(
+  path: string,
+): Promise<Metadata<typeof codeProductSchema.Type> | undefined> {
+  let actual: string
+  try {
+    actual = await realpath(path)
+  } catch (error) {
+    if (unusable(error)) return { valid: false }
+    throw error
+  }
   const parent = pathAPI(actual).dirname(actual)
   for (const root of [actual, parent, pathAPI(parent).dirname(parent)]) {
-    for (const product of ['resources/app/product.json', 'Contents/Resources/app/product.json']) {
-      const raw = await optionalJSON(join(root, product))
-      if (raw !== undefined) return decode(codeProductSchema, raw)
+    for (const product of codeProductLocations(root)) {
+      const result = await metadata(codeProductSchema, join(root, product))
+      if (result) return result
     }
   }
   return undefined
+}
+const bundleIdentifiers = (editor: Editor) =>
+  // Windsurf's Devin rebrand can keep either identifier; product metadata then picks the target.
+  editor.target === 'devin' || editor.target === 'windsurf'
+    ? editors
+        .filter((other) => other.target === 'devin' || other.target === 'windsurf')
+        .flatMap((other) => other.bundle)
+    : editor.bundle
+const macBundleSchema = Schema.Struct({
+  CFBundleIdentifier: Schema.String,
+  CFBundleExecutable: Schema.String,
+})
+type MacBundle = typeof macBundleSchema.Type
+async function readMacBundle(app: string, plutil: string): Promise<MacBundle | undefined> {
+  const plist = join(app, 'Contents/Info.plist')
+  if (!(await existingDirectory(app)) || !(await existingFile(plist))) return undefined
+  // macOS plutil handles both XML and binary plists; cache its result for all editor searches.
+  const json = await optionalCommand(`Reading application bundle ${plist}`, plutil, [
+    '-convert',
+    'json',
+    '-o',
+    '-',
+    plist,
+  ])
+  if (!json) return undefined
+  let value: unknown
+  try {
+    value = JSON.parse(json)
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error
+    console.warn(`Ignoring malformed application bundle ${plist}`)
+    return undefined
+  }
+  const result = decodeResult(macBundleSchema, value)
+  if (!result.success) return undefined
+  return result.data
+}
+/** Validate the declared launcher rather than accepting any leftover executable helper. */
+async function macBundle(
+  app: string,
+  editor: Editor,
+  plutil: string | undefined,
+  cache: Map<string, Promise<MacBundle | undefined>>,
+) {
+  if (!plutil) return macAppExists(app)
+  let pending = cache.get(app)
+  if (!pending) {
+    pending = readMacBundle(app, plutil)
+    cache.set(app, pending)
+  }
+  const info = await pending
+  if (
+    !info ||
+    !bundleIdentifiers(editor).some(
+      (id) => id.toLowerCase() === info.CFBundleIdentifier.toLowerCase(),
+    )
+  )
+    return false
+  const name = info.CFBundleExecutable
+  if (!name || /[\\/]/.test(name) || name === '.' || name === '..') return false
+  return executable(join(app, 'Contents/MacOS', name))
 }
 const windowsInfoSchema = Schema.Struct({
   local: Schema.String,
@@ -291,7 +442,9 @@ export async function detectInstalledOpeners() {
     productPath = path,
   ) => {
     if (target === 'devin' || target === 'windsurf' || target === 'antigravity') {
-      const product = await codeProduct(productPath)
+      const metadata = await codeProduct(productPath)
+      if (metadata && !metadata.valid) return false
+      const product = metadata?.value
       const name = product
         ? [product.nameShort, product.nameLong, product.applicationName].join(' ')
         : ''
@@ -305,37 +458,72 @@ export async function detectInstalledOpeners() {
   const home = homedir()
   if (process.platform === 'darwin') {
     if (await executable('/usr/bin/open')) add('finder', '/usr/bin/open')
-    const apps = (
-      await Promise.all(['/Applications', join(home, 'Applications')].map(directories))
-    ).flat()
+    const scanApps = async (root: string, depth: number): Promise<string[]> => {
+      const children = await directories(root)
+      const apps = children.filter((path) => path.endsWith('.app'))
+      if (depth)
+        apps.push(
+          ...(
+            await Promise.all(
+              children
+                .filter((path) => !path.endsWith('.app'))
+                .map((path) => scanApps(path, depth - 1)),
+            )
+          ).flat(),
+        )
+      return apps
+    }
+    const toolboxBase = join(home, 'Library/Application Support/JetBrains/Toolbox')
+    const toolbox = await toolboxLocations(toolboxBase)
+    const apps = [
+      ...new Set(
+        (
+          await Promise.all([
+            scanApps('/Applications', 2),
+            // Toolbox 2 installs here by default.
+            scanApps(join(home, 'Applications'), 2),
+            // Toolbox 1 keeps bundles in apps/<product>/<channel>/<build>.
+            scanApps(join(toolboxBase, 'apps'), 4),
+            ...toolbox.installs.map((root) => scanApps(root, 4)),
+          ])
+        ).flat(),
+      ),
+    ]
     const spotlight = await executable('/usr/bin/mdfind')
+    const plutil = (await executable('/usr/bin/plutil')) ? '/usr/bin/plutil' : undefined
+    const bundleCache = new Map<string, Promise<MacBundle | undefined>>()
     await Promise.all(
       editors.map(async (editor) => {
         for (const app of apps.filter((path) =>
           editor.mac.some((name) => basename(path).toLowerCase() === `${name}.app`.toLowerCase()),
         )) {
-          if (await macAppExists(app)) {
+          if (await macBundle(app, editor, plutil, bundleCache)) {
             if (await addEditor(editor.target, app, 'app')) return
           }
         }
+        // Renamed/versioned bundles are identified by their metadata even with Spotlight off.
+        if (plutil)
+          for (const app of apps)
+            if (
+              (await macBundle(app, editor, plutil, bundleCache)) &&
+              (await addEditor(editor.target, app, 'app'))
+            )
+              return
         if (spotlight) {
           const query = editor.bundle
             .map((id) => `kMDItemCFBundleIdentifier == "${id}"`)
             .join(' || ')
-          const result = await exec('/usr/bin/mdfind', [query], {
-            timeout: 5000,
-            env: processEnvironment(),
-            maxBuffer: 1024 * 1024,
-          })
-          for (const path of result.stdout.split('\n').filter((path) => path.endsWith('.app'))) {
-            try {
-              if ((await stat(path)).isDirectory() && (await macAppExists(path))) {
-                if (await addEditor(editor.target, path, 'app')) return
-              }
-            } catch (error) {
-              if (!missing(error)) throw error
-            }
-          }
+          const result = await optionalCommand(
+            `Spotlight app discovery for ${editor.target}`,
+            '/usr/bin/mdfind',
+            [query],
+          )
+          for (const path of (result ?? '').split('\n').filter((path) => path.endsWith('.app')))
+            if (
+              (await macBundle(path, editor, plutil, bundleCache)) &&
+              (await addEditor(editor.target, path, 'app'))
+            )
+              return
         }
         // Homebrew/custom installations can be outside Spotlight's indexed directories.
         for await (const cli of commandsOnPath(editor.cli, [
@@ -343,7 +531,10 @@ export async function detectInstalledOpeners() {
           '/usr/local/bin',
           join(home, '.local/bin'),
         ]))
-          if (!cli.includes('/JetBrains/Toolbox/scripts/') && (await addEditor(editor.target, cli)))
+          if (
+            !toolboxScript(editor.target, cli, toolbox.scripts) &&
+            (await addEditor(editor.target, cli))
+          )
             return
       }),
     )
@@ -351,12 +542,15 @@ export async function detectInstalledOpeners() {
   }
   if (process.platform !== 'win32' && process.platform !== 'linux') return []
   const wsl = process.platform === 'linux' && !!process.env.WSL_DISTRO_NAME
-  if (process.platform === 'linux') {
+  const linuxToolboxBase = join(home, '.local/share/JetBrains/Toolbox')
+  const linuxToolbox =
+    process.platform === 'linux' ? await toolboxLocations(linuxToolboxBase) : undefined
+  if (linuxToolbox) {
     const extras = [
       join(home, '.local', 'bin'),
       '/snap/bin',
       join(home, '.codeium/windsurf/bin'),
-      join(home, '.local/share/JetBrains/Toolbox/scripts'),
+      join(linuxToolboxBase, 'scripts'),
     ]
     if (wsl) {
       const folder = await commandOnPath(['explorer.exe'])
@@ -367,17 +561,22 @@ export async function detectInstalledOpeners() {
     }
     for (const editor of editors) {
       for await (const cli of commandsOnPath(editor.cli, extras))
-        if (!cli.includes('/JetBrains/Toolbox/scripts/') && (await addEditor(editor.target, cli)))
+        if (
+          !toolboxScript(editor.target, cli, linuxToolbox.scripts) &&
+          (await addEditor(editor.target, cli))
+        )
           break
     }
     const flatpak = await commandOnPath(['flatpak'])
-    if (flatpak) {
-      const list = await exec(flatpak, ['list', '--app', '--columns=application'], {
-        timeout: 5000,
-        env: processEnvironment(),
-        maxBuffer: 1024 * 1024,
-      })
-      const ids = new Set(list.stdout.trim().split(/\s+/))
+    const list =
+      flatpak &&
+      (await optionalCommand('Flatpak app discovery', flatpak, [
+        'list',
+        '--app',
+        '--columns=application',
+      ]))
+    if (flatpak && list) {
+      const ids = new Set(list.trim().split(/\s+/))
       for (const editor of editors) {
         const id = editor.flatpak.find((id) => ids.has(id))
         if (id) add(editor.target, flatpak, 'native', ['run', id])
@@ -391,9 +590,10 @@ export async function detectInstalledOpeners() {
     os: 'Linux' | 'Windows',
     kind: InstalledOpener['kind'],
   ) => {
-    const raw = await optionalJSON(join(root, 'product-info.json'))
-    if (raw !== undefined) {
-      const product = decode(productInfoSchema, raw)
+    const metadataFile = await metadata(productInfoSchema, join(root, 'product-info.json'))
+    if (metadataFile) {
+      if (!metadataFile.valid) return
+      const product = metadataFile.value
       const target = productCodes[product.productCode]
       if (!target) return
       const launches = product.launch.filter((launch) => launch.os === os)
@@ -414,24 +614,18 @@ export async function detectInstalledOpeners() {
     }
     if (depth) for (const child of await directories(root)) await scan(child, depth - 1, os, kind)
   }
-  const toolboxRoots = (base: string) => [join(base, '.settings.json'), join(base, 'settings.json')]
   const scanToolbox = async (
     base: string,
+    installs: readonly string[],
     os: 'Linux' | 'Windows',
     kind: InstalledOpener['kind'],
     convert: (path: string) => Promise<string> = async (path) => path,
   ) => {
     await scan(join(base, 'apps'), 4, os, kind)
-    for (const settings of toolboxRoots(base)) {
-      const raw = await optionalJSON(settings)
-      if (raw === undefined) continue
-      const value = decode(toolboxSettingsSchema, raw)
-      const root = value.install_location || value.installLocation
-      if (root) await scan(await convert(root), 4, os, kind)
-    }
+    for (const root of installs) await scan(await convert(root), 4, os, kind)
   }
-  if (process.platform === 'linux') {
-    await scanToolbox(join(home, '.local/share/JetBrains/Toolbox'), 'Linux', 'native')
+  if (linuxToolbox) {
+    await scanToolbox(linuxToolboxBase, linuxToolbox.installs, 'Linux', 'native')
     for (const parent of ['/opt', '/opt/jetbrains', join(home, 'Applications')]) {
       for (const root of await directories(parent))
         if (
@@ -557,8 +751,10 @@ export async function detectInstalledOpeners() {
   for (const root of info.roots) await scan(await convert(root), 0, 'Windows', kind)
   for (const root of [info.programs, info.programsX86].filter(Boolean))
     await scan(await convert(win32.join(root, 'JetBrains')), 2, 'Windows', kind)
+  const windowsToolbox = await convert(win32.join(info.local, 'JetBrains/Toolbox'))
   await scanToolbox(
-    await convert(win32.join(info.local, 'JetBrains/Toolbox')),
+    windowsToolbox,
+    (await toolboxLocations(windowsToolbox)).installs,
     'Windows',
     kind,
     convert,
@@ -568,13 +764,8 @@ export async function detectInstalledOpeners() {
 
 async function macAppExists(app: string) {
   const root = join(app, 'Contents/MacOS')
-  try {
-    for (const file of await readdir(root)) if (await executable(join(root, file))) return true
-    return false
-  } catch (error) {
-    if (missing(error)) return false
-    throw error
-  }
+  for (const entry of await entries(root)) if (await executable(join(root, entry.name))) return true
+  return false
 }
 
 function desktopRoots() {
@@ -587,7 +778,13 @@ function desktopRoots() {
   ]
 }
 async function desktopSection(path: string) {
-  const contents = await readFile(path, 'utf8')
+  let contents: string
+  try {
+    contents = await readFile(path, 'utf8')
+  } catch (error) {
+    if (unusable(error)) return undefined
+    throw error
+  }
   const section = contents.split(/^\[Desktop Entry\]\s*$/m)[1]?.split(/^\[/m)[0]
   if (
     !section ||
@@ -622,26 +819,28 @@ async function linuxFolderOpener() {
   const mime = await commandOnPath(['xdg-mime'])
   const gio = await commandOnPath(['gio'])
   const xdg = await commandOnPath(['xdg-open'])
-  if (mime && (gio || xdg)) {
-    const result = await exec(mime, ['query', 'default', 'inode/directory'], {
-      timeout: 5000,
-      env: processEnvironment(),
-      maxBuffer: 1024 * 1024,
-    })
-    const name = result.stdout.trim()
-    if (name.endsWith('.desktop') && !/[\\/]/.test(name))
-      for (const root of desktopRoots()) {
-        const path = join(root, name)
-        if (!(await existingFile(path))) continue
-        const section = await desktopSection(path)
-        if (section && (await desktopExecutable(section))) {
-          if (gio) return { executable: gio, prefix: ['launch', path] }
-          if (xdg) return { executable: xdg, prefix: [] }
-        }
-        // A user entry can mask the system entry, including when marked Hidden.
-        break
+  const name =
+    mime && (gio || xdg)
+      ? (
+          await optionalCommand('Default folder handler lookup', mime, [
+            'query',
+            'default',
+            'inode/directory',
+          ])
+        )?.trim()
+      : undefined
+  if (name?.endsWith('.desktop') && !/[\\/]/.test(name))
+    for (const root of desktopRoots()) {
+      const path = join(root, name)
+      if (!(await existingFile(path))) continue
+      const section = await desktopSection(path)
+      if (section && (await desktopExecutable(section))) {
+        if (gio) return { executable: gio, prefix: ['launch', path] }
+        if (xdg) return { executable: xdg, prefix: [] }
       }
-  }
+      // A user entry can mask the system entry, including when marked Hidden.
+      break
+    }
   const binary = await commandOnPath([
     'nautilus',
     'dolphin',
@@ -668,14 +867,9 @@ async function detectDesktopEntries(
   if (!gio) return
   const seen = new Set<string>()
   for (const root of desktopRoots()) {
-    let entries: string[]
-    try {
-      entries = await readdir(root)
-    } catch (error) {
-      if (missing(error)) continue
-      throw error
-    }
-    for (const name of entries.filter((name) => name.endsWith('.desktop'))) {
+    for (const name of (await entries(root))
+      .map((entry) => entry.name)
+      .filter((name) => name.endsWith('.desktop'))) {
       if (seen.has(name)) continue
       seen.add(name)
       const path = join(root, name)

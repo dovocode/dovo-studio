@@ -1,3 +1,4 @@
+import { Schema } from 'effect'
 import { decode } from '@dovo/protocol'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type Database from 'better-sqlite3'
@@ -27,6 +28,7 @@ export class Devices {
   constructor(
     private readonly db: Database.Database,
     private readonly ownerToken: string,
+    private readonly onRevoked: (id: string) => void = () => {},
   ) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS provisional_devices (device_id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)',
@@ -55,17 +57,24 @@ export class Devices {
       nextCheck()
       return
     }
-    const changed = this.db.transaction(() => {
-      const result = this.db
+    const expired = this.db.transaction(() => {
+      const ids = this.db
+        .prepare(
+          'SELECT devices.id FROM devices JOIN provisional_devices ON device_id=devices.id WHERE devices.revoked_at IS NULL AND expires_at<=?',
+        )
+        .all(now)
+        .map((row) => decode(Schema.Struct({ id: Schema.String }), row).id)
+      this.db
         .prepare(
           'UPDATE devices SET revoked_at=? WHERE revoked_at IS NULL AND id IN (SELECT device_id FROM provisional_devices WHERE expires_at<=?)',
         )
         .run(new Date(now).toISOString(), now)
       this.db.prepare('DELETE FROM provisional_devices WHERE expires_at<=?').run(now)
-      return result.changes > 0
+      return ids
     })()
-    if (changed) this.state.revision++
+    if (expired.length) this.state.revision++
     nextCheck()
+    for (const id of expired) this.onRevoked(id)
   }
   confirm(id: string) {
     this.expireProvisional()
@@ -116,5 +125,6 @@ export class Devices {
   revoke(id: string) {
     this.db.prepare('UPDATE devices SET revoked_at=? WHERE id=?').run(new Date().toISOString(), id)
     this.invalidate()
+    this.onRevoked(id)
   }
 }

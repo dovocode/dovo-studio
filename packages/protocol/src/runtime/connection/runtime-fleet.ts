@@ -7,6 +7,7 @@ import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
 import { pullPageSchema } from '../../scm/pulls/pulls.js'
 import type { PullSummary } from '../../scm/pulls/pulls.js'
 import { pullNeedsAttention } from '../../scm/pulls/pull-presentation.js'
+import { taskFamilyInputIds } from '../../tasks/delegation.js'
 import { isSnoozed } from '../../tasks/task-priority.js'
 import { selectPullSources } from '../../scm/pulls/pull-sources.js'
 import type { Repository, Task } from '../../workspace.js'
@@ -370,7 +371,8 @@ export function aggregateRuntimeTasks(
   const tasks = entries.flatMap((entry) => {
     if (!entry.snapshot) return []
     const { snapshot, profile } = entry
-    const needsInput = new Set(
+    const needsInput = taskFamilyInputIds(
+      snapshot.workspace.tasks,
       [...snapshot.approvals, ...snapshot.questions].map((item) => item.taskId),
     )
     const projects = new Map(

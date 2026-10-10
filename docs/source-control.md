@@ -120,3 +120,39 @@ directory tree and local reviewed-file progress. Selecting a tree entry scrolls 
 decisions remain tied to the commit captured when the review form opens. Review/comment editors
 provide formatting insertion and a rendered preview; submissions still use Markdown and the existing
 forge capability and revision checks.
+
+## Copying local files into new worktrees
+
+Add a `.worktreeinclude` file at the registered project's checkout root to copy local files into new
+worktrees before their setup command runs. This also applies to linked projects, PR worktrees, and
+recreated checkouts. Existing worktrees are left alone.
+
+Use one project-relative file, directory or glob pattern per line. Directories copy recursively;
+globs such as `.env*` and `apps/**/.env.local` include matching local files even when Git ignores
+them. Blank lines and lines beginning with `#` are ignored. For example:
+
+```text
+# Local development configuration
+.env.local
+apps/**/.env.local
+local-config/
+```
+
+Missing matches are skipped. Files already present in the new checkout are preserved, so includes
+never replace committed branch content. Only regular files are copied; symbolic links are not
+copied. Paths outside the project and explicit `.git` entries are rejected; broad globs skip Git
+metadata. The manifest can be committed or kept local to the registered project.
+
+## Orphaned worktrees and thread deletion
+
+In **Settings → Coding → Worktrees**, enable **Show orphaned only** to list Dovo-created checkouts
+with no remaining thread reference. This includes dirty checkouts; only clean worktrees can be
+removed. Other worktrees in registered projects are excluded.
+
+**Remove worktrees when deleting their last thread** defaults off and saves on the selected
+computer. The desktop thread deletion dialog uses this setting as its default and lets you change it
+for that deletion. Bulk deletion and deletion from mobile use the computer's setting. Archived
+threads, existing-worktree selections, linked projects and saved linked checkpoints all count as
+references. Cleanup keeps branches and never forces removal of uncommitted changes. Ignored local
+files, including `.worktreeinclude` copies, are deleted with removed checkouts. Dovo remembers
+managed checkout locations after the worktree folder changes or threads are deleted.

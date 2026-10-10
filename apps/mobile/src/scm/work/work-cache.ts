@@ -1,4 +1,10 @@
-import type { JiraSource, Repository } from '@dovo/protocol'
+import {
+  jiraIssueFilterKey,
+  hasJiraIssueFilters,
+  type JiraIssueFilters,
+  type JiraSource,
+  type Repository,
+} from '@dovo/protocol'
 
 // The RuntimeReadCache already separates computers and credentials. Project identity must
 // also include its checkout and integration bindings so changing a provider cannot reuse data.
@@ -6,7 +12,13 @@ export function workCacheKey(
   repository: Pick<Repository, 'id' | 'path' | 'forge' | 'jira'> | JiraSource | undefined,
   area: 'issues' | 'pipelines',
   kind: 'options' | 'list' | 'detail',
-  query: { id?: string; state?: string; cursor?: string; query?: string } = {},
+  query: {
+    id?: string
+    state?: string
+    cursor?: string
+    query?: string
+    jiraFilters?: JiraIssueFilters
+  } = {},
 ) {
   if (repository && 'site' in repository)
     return JSON.stringify([
@@ -20,6 +32,9 @@ export function workCacheKey(
       query.state,
       query.cursor,
       query.query?.trim() || undefined,
+      ...(kind === 'list' && hasJiraIssueFilters(query.jiraFilters)
+        ? [jiraIssueFilterKey(query.jiraFilters)]
+        : []),
     ])
   return JSON.stringify([
     'work',

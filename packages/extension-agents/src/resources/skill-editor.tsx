@@ -34,10 +34,10 @@ export function SkillEditor({
     },
   )
   const [path, setPath] = useApplicationState('')
-  const [busy, setBusy] = useApplicationState(false)
+  const [busy, setBusy] = useApplicationState<'import' | 'save' | null>(null)
   const [error, setError] = useApplicationState('')
   const perform = async (importing: boolean) => {
-    setBusy(true)
+    setBusy(importing ? 'import' : 'save')
     setError('')
     try {
       if (importing)
@@ -54,7 +54,7 @@ export function SkillEditor({
     } catch (error) {
       setError(resourceError(error))
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
   return (
@@ -67,7 +67,9 @@ export function SkillEditor({
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{initial ? 'Edit skill' : 'Add skill'}</DialogTitle>
-          <DialogDescription>{scope}</DialogDescription>
+          <DialogDescription>
+            Saved at {scope}. Write the instructions here or import an existing SKILL.md.
+          </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(event) => {
@@ -75,8 +77,8 @@ export function SkillEditor({
             void perform(false)
           }}
         >
-          <fieldset disabled={busy} className="grid gap-4">
-            <FormField label="Import from runtime">
+          <fieldset disabled={!!busy} className="grid gap-4">
+            <FormField label="Import a SKILL.md from this computer (optional)">
               <div className="flex gap-2">
                 <Input
                   aria-label="SKILL.md path"
@@ -90,13 +92,13 @@ export function SkillEditor({
                   disabled={!path.trim()}
                   onClick={() => void perform(true)}
                 >
-                  Import
+                  {busy === 'import' ? 'Importing…' : 'Import'}
                 </Button>
               </div>
             </FormField>
-            <p className="text-xs text-muted-foreground">
-              Import copies the instructions. Supporting files remain at the source location on the
-              runtime.
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Import copies the instructions into the fields below. Supporting files stay where they
+              are on this computer.
             </p>
             <FormField label="Name">
               <Input
@@ -113,6 +115,7 @@ export function SkillEditor({
             <FormField label="When to use">
               <Textarea
                 required
+                placeholder="Describe when the agent should apply this skill…"
                 value={draft.description}
                 onChange={(event) =>
                   setDraft({
@@ -175,7 +178,12 @@ export function SkillEditor({
                 {error}
               </p>
             )}
-            <Button type="submit">{busy ? 'Working…' : 'Save skill'}</Button>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit">{busy === 'save' ? 'Saving…' : 'Save skill'}</Button>
+            </div>
           </fieldset>
         </form>
       </DialogContent>

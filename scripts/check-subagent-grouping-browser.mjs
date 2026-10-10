@@ -23,6 +23,7 @@ export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabe
 export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent})=><div>{ListHeaderComponent}{data.length?data.map((item,i)=><div key={i}>{renderItem({item})}</div>):ListEmptyComponent}</div>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
+export const SettingsAction=Action;export const SettingsSearchField=SearchField;
 export const ScreenHeader=({title})=><h1>{title}</h1>;
 export const Icon=()=>null;export const IconButton=({label,onPress})=><button onClick={onPress}>{label}</button>;
 export const Sheet=View;export const colors={};export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const Alert={alert:()=>{}};
@@ -107,6 +108,7 @@ async function bundle(contents) {
             if (/use-list-scroll$/.test(path)) return { path: 'scroll', namespace: 'mock' }
             if (/fleet-overview$|project-thread-filter$|lifecycle-actions$/.test(path))
               return { path: 'empty', namespace: 'mock' }
+            if (/settings-controls$/.test(path)) return { path: 'controls', namespace: 'mock' }
             if (/ui\//.test(path) && path.startsWith('.'))
               return { path: 'controls', namespace: 'mock' }
           })

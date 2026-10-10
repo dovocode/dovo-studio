@@ -21,10 +21,14 @@ import {
   type ForgeProvider,
 } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
-import { Sheet } from '../../ui/layout/sheet'
-import { Field } from '../../ui/controls/field'
-import { Choice } from '../../ui/controls/choice'
-import { Action } from '../../ui/controls/action'
+import {
+  SettingsSheet as Sheet,
+  SettingsPage,
+  useSettingsTheme,
+} from '../../screens/settings-theme'
+import { SettingsField as Field } from '../../screens/settings-controls'
+import { SettingsChoice as Choice } from '../../screens/settings-controls'
+import { SettingsAction as Action } from '../../screens/settings-controls'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { SettingsGroup, SettingsRow } from '../../screens/settings-group'
@@ -40,34 +44,36 @@ const ok = mutableStruct({
   ok: Schema.Boolean,
 })
 export default function SourceControlSettings() {
-  const { styles } = useTheme()
+  const { styles } = useSettingsTheme()
 
   const { overviews } = useRuntime()
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <SettingsPage>
       <ScreenHeader title="Source control" />
-      <Text style={styles.muted}>
-        Accounts and linked projects across your computers. Credentials stay on their host.
-      </Text>
-      {!overviews.length && (
-        <Text style={styles.muted}>Connect a computer to manage source-control accounts.</Text>
-      )}
-      {overviews.map((entry) => (
-        <RuntimeScope key={clientScopeKey(entry.profile.connection)} runtimeId={entry.profile.id}>
-          <View
-            style={{
-              gap: 12,
-            }}
-          >
-            <Text style={styles.text}>
-              {runtimeComputerName(entry)}
-              {entry.connected ? '' : ' · Offline'}
-            </Text>
-            <ConnectionsContent />
-          </View>
-        </RuntimeScope>
-      ))}
-    </ScrollView>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Text style={styles.muted}>
+          Accounts and linked projects across your computers. Credentials stay on their host.
+        </Text>
+        {!overviews.length && (
+          <Text style={styles.muted}>Connect a computer to manage source-control accounts.</Text>
+        )}
+        {overviews.map((entry) => (
+          <RuntimeScope key={clientScopeKey(entry.profile.connection)} runtimeId={entry.profile.id}>
+            <View
+              style={{
+                gap: 12,
+              }}
+            >
+              <Text style={styles.text}>
+                {runtimeComputerName(entry)}
+                {entry.connected ? '' : ' · Offline'}
+              </Text>
+              <ConnectionsContent />
+            </View>
+          </RuntimeScope>
+        ))}
+      </ScrollView>
+    </SettingsPage>
   )
 }
 function ConnectionsContent() {
@@ -79,10 +85,12 @@ function ConnectionsContent() {
     [revision, setRevision] = useApplicationState(0)
   const [editing, setEditing] = useApplicationState<ForgeConnection | 'new' | null>(null),
     [project, setProject] = useApplicationState<string | null>(null)
+  const [loading, setLoading] = useApplicationState(false)
   useEffect(() => {
     let active = true
     let received = false
     setError('')
+    setLoading(connected)
     if (readCache)
       void runClientEffect(
         readCache.readEffect('scm-connections', forgeConnectionsSchema).pipe(
@@ -127,6 +135,11 @@ function ConnectionsContent() {
             Effect.catch((cause) =>
               nativeEffect(() => {
                 if (active) setError(String(cause))
+              }),
+            ),
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (active) setLoading(false)
               }),
             ),
           ),
@@ -179,7 +192,17 @@ function ConnectionsContent() {
             Offline · Showing saved accounts. Reconnect this computer to make changes.
           </Text>
         )}
+        {loading && (
+          <Text accessibilityLiveRegion="polite" style={styles.muted}>
+            Loading accounts…
+          </Text>
+        )}
         <SettingsGroup title="Accounts">
+          {!loading && !error && !connections.length && (
+            <Text style={[styles.muted, { padding: 16 }]}>
+              No accounts configured on this computer.
+            </Text>
+          )}
           {connections.map((connection, index) => (
             <SettingsRow
               key={connection.id}
@@ -544,6 +567,7 @@ function ConnectionForm({
         </Text>
       )}
       <Action
+        wide
         label={busy ? 'Saving…' : 'Save account'}
         disabled={busy || !connected}
         onPress={() => void submit()}

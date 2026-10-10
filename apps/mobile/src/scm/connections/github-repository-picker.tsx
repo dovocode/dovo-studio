@@ -11,8 +11,8 @@ import {
   type GithubRepositoryPage,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
-import { Action } from '../../ui/controls/action'
-import { Field } from '../../ui/controls/field'
+import { SettingsAction as Action } from '../../screens/settings-controls'
+import { SettingsField as Field } from '../../screens/settings-controls'
 import { useTheme } from '../../ui/theme'
 export function GithubRepositoryPicker({
   onSelect,

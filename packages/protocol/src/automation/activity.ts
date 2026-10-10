@@ -3,6 +3,7 @@ import { decodeResult } from '../shared/schema.js'
 import { Schema } from 'effect'
 import { toolPresentation } from '../conversation/presentation/tool-presentation.js'
 import { mcpAppReferences } from '../conversation/mcp-apps.js'
+import { toolImages, toolImageReferences } from '../conversation/tool-images.js'
 import { artifactReferences } from '../conversation/artifacts.js'
 export const activityEventSchema = mutableStruct({
   id: Schema.String,
@@ -157,6 +158,7 @@ export function recentTools(events: Event[]): Tool[] {
 export function compactActivityEvents(events: Event[]): Event[] {
   return events.flatMap((event) => {
     if (!['tool', 'reasoning', 'task-activity'].includes(event.kind)) return [event]
+    const originalImages = toolImages(event.payload)
     return splitCalls(event).map((call) => {
       let metadata: unknown
       try {
@@ -168,6 +170,12 @@ export function compactActivityEvents(events: Event[]): Event[] {
       const presentation = toolPresentation(call.payload, call.summary)
       const apps = mcpAppReferences(call.payload)
       const artifacts = artifactReferences(metadata)
+      const images = toolImageReferences(call.payload)
+      if (!images.length)
+        for (const image of toolImages(call.payload)) {
+          const index = originalImages.findIndex((original) => original.uri === image.uri)
+          if (index >= 0) images.push({ eventId: event.id, index, mime: image.mime })
+        }
       return {
         ...call,
         payload: JSON.stringify({
@@ -179,6 +187,7 @@ export function compactActivityEvents(events: Event[]): Event[] {
           },
           ...(apps.length ? { mcpApps: apps } : {}),
           ...(artifacts.length ? { artifacts } : {}),
+          ...(images.length ? { toolImages: images } : {}),
         }),
       }
     })

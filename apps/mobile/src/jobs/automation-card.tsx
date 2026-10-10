@@ -1,14 +1,14 @@
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
-import { View, StyleSheet } from 'react-native'
+import { View } from 'react-native'
 import { Switch } from '../ui/controls/switch'
 import { Text } from '../ui/content/text'
 import { randomUUID } from 'expo-crypto'
 import { Schema } from 'effect'
 import { automationIssues, responses, type Automation } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
-import { Action } from '../ui/controls/action'
+import { SettingsAction as Action } from '../screens/settings-controls'
 import { IconButton } from '../ui/controls/icon-button'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
@@ -42,9 +42,9 @@ export function AutomationCard({ flow, onEdit }: { flow: Automation; onEdit: () 
       testID={`Automation ${flow.id}`}
       style={{
         gap: 8,
-        paddingVertical: 14,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderColor: colors.border,
+        padding: 16,
+        borderRadius: 24,
+        backgroundColor: colors.surface,
       }}
     >
       <View

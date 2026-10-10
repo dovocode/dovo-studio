@@ -58,3 +58,43 @@ it('keeps detail-only views addressable without contributing navigation commands
   )
   await catalog.host.dispose()
 })
+
+it('registers all shipped settings and feature views without ID collisions', async () => {
+  const [
+    { appSettingsExtension },
+    { runtimeExtension },
+    { tasksExtension },
+    { scmExtension },
+    { agentsExtension },
+    { jobsExtension },
+  ] = await Promise.all([
+    import('../../studio-shell/src/app-extension'),
+    import('../../extension-runtime/src/index'),
+    import('../../extension-tasks/src/index'),
+    import('../../extension-scm/src/index'),
+    import('../../extension-agents/src/index'),
+    import('../../extension-jobs/src/index'),
+  ])
+  const api: StudioHostApi = {
+    navigate: vi.fn<StudioHostApi['navigate']>(),
+    registerCommand: vi.fn<StudioHostApi['registerCommand']>(() => () => {}),
+  }
+  const catalog = createExtensionCatalog(
+    [
+      appSettingsExtension,
+      tasksExtension,
+      scmExtension,
+      agentsExtension,
+      jobsExtension,
+      runtimeExtension,
+    ],
+    api,
+  )
+  expect(catalog.views.find((view) => view.id === 'pull-request-settings')?.title).toBe(
+    'Pull requests',
+  )
+  expect(catalog.views.find((view) => view.id === 'pull-request-monitoring-settings')?.title).toBe(
+    'Pull requests & pipelines',
+  )
+  await catalog.host.dispose()
+})

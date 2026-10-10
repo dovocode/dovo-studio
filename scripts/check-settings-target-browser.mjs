@@ -4,7 +4,7 @@ import { build } from 'esbuild'
 import { chromium } from '../packages/runtime/node_modules/playwright/index.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `export {useState as useApplicationState} from 'react';`
-const controls = `import {cloneElement,isValidElement,useState} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)?cloneElement(children,{'aria-label':label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children})=><div>{children}</div>;export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Alert={alert:(title,message,buttons)=>buttons.at(-1).onPress?.()};export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const Switch=({value,onValueChange,disabled})=><input type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}};`
+const controls = `import {cloneElement,isValidElement,useState,createContext,useContext} from 'react';export const Button=({children,onClick,disabled,...props})=><button {...props} disabled={disabled} onClick={onClick}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;export const FormField=({label,children})=><label>{label}{isValidElement(children)?cloneElement(children,{'aria-label':label}):children}</label>;export const ChoicePicker=({value,onValueChange,children,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const ModelSettings=()=>null;export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children})=><div>{children}</div>;export const Platform={OS:'ios'};export const Sheet=({children})=>children;export const useInsideSheet=()=>false;export const Icon=()=> <span aria-hidden='true'/>;export const StyleSheet={create:value=>value,hairlineWidth:1};export const useWindowDimensions=()=>({width:390,height:844,fontScale:1});export const SearchField=props=><input aria-label={props.label} value={props.value} onChange={e=>props.onChangeText?.(e.target.value)}/>;export const styles={};export const MobileThemeContext=createContext({styles,colors:{text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'},mode:'dark'});export const useTheme=()=>useContext(MobileThemeContext);export const colors={text:'#fff',muted:'#aaa',accent:'#9cf',border:'#333'};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Alert={alert:(title,message,buttons)=>buttons.at(-1).onPress?.()};export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;export const Field=({label,value,onChangeText,multiline,editable})=><label>{label}{multiline?<textarea aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>}</label>;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const Switch=({value,onValueChange,disabled})=><input type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:async run=>{setBusy(true);try{await run()}catch(e){setError(String(e))}finally{setBusy(false)}}}};`
 const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
@@ -46,9 +46,10 @@ try {
           name: 'mocks',
           setup(b) {
             b.onResolve({ filter: /.*/ }, ({ path }) => {
+              if (/ui\/layout\/sheet$/.test(path)) return { path: 'controls', namespace: 'mock' }
               if (mocks[path]) return { path, namespace: 'mock' }
               if (
-                /components\/ui\/(button|input|textarea)$|components\/form-field$|choice-picker$|model-settings$|ui\/controls\/(choice|field|action|switch|use-action)$|ui\/content\/text$|ui\/theme$/.test(
+                /components\/ui\/(button|input|textarea)$|components\/form-field$|choice-picker$|model-settings$|ui\/controls\/(choice|field|action|switch|use-action|icon)$|ui\/content\/text$|ui\/theme$/.test(
                   path,
                 )
               )
@@ -78,8 +79,13 @@ try {
     assert.equal(await page.getByLabel('Settings scope', { exact: true }).count(), 0)
     await projects.selectOption('git:github.com/team/repo')
     await environments.selectOption('linux')
+    await page.getByLabel('Setup command', { exact: true }).fill('project setup')
     await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
-    await page.getByText('Defaults saved for new tasks.', { exact: true }).waitFor()
+    await page
+      .getByText(mobile ? /^Settings saved at / : 'Defaults saved for new tasks.', {
+        exact: !mobile,
+      })
+      .waitFor()
     assert.deepEqual(
       await page.evaluate(() => ({
         host: window.writes.at(-1).host,
@@ -106,7 +112,11 @@ try {
     await page.getByRole('button', { name: 'Defaults page', exact: true }).click()
     await page.getByRole('button', { name: 'Use inherited worktree setup', exact: true }).click()
     await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
-    await page.getByText('Defaults saved for new tasks.', { exact: true }).waitFor()
+    await page
+      .getByText(mobile ? /^Settings saved at / : 'Defaults saved for new tasks.', {
+        exact: !mobile,
+      })
+      .waitFor()
     const last = await page.evaluate(() => window.writes.at(-1))
     assert.equal(last.scope, 'global')
     assert.equal(last.after.taskDefaults.setupCommand, undefined)

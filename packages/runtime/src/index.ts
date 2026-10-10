@@ -81,6 +81,8 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.liveActivities.dispose(),
         () => services.pushNotifications.dispose(),
         () => services.liveActivities.flush(),
+        () => services.deviceHosts.dispose(),
+        () => services.deviceHostUploads.dispose(),
         () => services.simulators.dispose(),
         () => services.browsers.dispose(),
         () => services.terminals.dispose(),

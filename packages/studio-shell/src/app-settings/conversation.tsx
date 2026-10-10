@@ -1,5 +1,6 @@
 import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
-import { SettingRow, SettingsGroup, SettingsPage, Segmented, Toggle } from './layout'
+import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
+import { SettingsSelect } from './settings-select'
 
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const mod = mac ? '⌘' : 'Ctrl'
@@ -12,7 +13,7 @@ export default function ConversationSettings() {
       title="Conversation"
       description="How you write messages and read agent responses."
     >
-      <SettingsGroup title="Writing & follow-ups">
+      <SettingsGroup title="Writing messages">
         <SettingRow
           label="Send messages with"
           description={
@@ -21,7 +22,7 @@ export default function ConversationSettings() {
               : `${mod}+Enter sends. Enter adds a new line.`
           }
         >
-          <Segmented
+          <SettingsSelect
             label="Send messages with"
             value={preferences.sendWith}
             options={[
@@ -33,9 +34,9 @@ export default function ConversationSettings() {
         </SettingRow>
         <SettingRow
           label="Follow-ups while a task runs"
-          description="Queue waits for the current turn to finish. Steer guides the running turn right away."
+          description="Queue sends after the current turn finishes. Steer sends immediately to guide the running turn."
         >
-          <Segmented
+          <SettingsSelect
             label="Follow-ups while a task runs"
             value={preferences.followUp}
             options={[
@@ -49,7 +50,7 @@ export default function ConversationSettings() {
           [
             [
               'showSkillsInSlashMenu',
-              'Show skills in slash menu',
+              'Show skills in the / menu',
               'Include skills in the / menu. Skills always appear when you type $.',
             ],
             [
@@ -59,7 +60,7 @@ export default function ConversationSettings() {
             ],
             [
               'collapseComposerOnScroll',
-              'Collapse composer on scroll',
+              'Collapse composer while reading',
               'Collapse when reading older messages. Focus the composer to expand it.',
             ],
           ] as const
@@ -78,7 +79,7 @@ export default function ConversationSettings() {
           label="Response streaming"
           description="Choose when the latest assistant paragraph becomes visible."
         >
-          <Segmented
+          <SettingsSelect
             label="Response streaming"
             value={preferences.responseStreaming}
             options={[
@@ -90,9 +91,9 @@ export default function ConversationSettings() {
         </SettingRow>
         <SettingRow
           label="Tool activity"
-          description="Show commands, edits and searches expanded, collapsed, or keep only replies visible. Ctrl+O switches between them."
+          description="Choose how commands, edits and searches appear. Ctrl+O cycles through these views."
         >
-          <Segmented
+          <SettingsSelect
             label="Tool activity"
             value={preferences.toolActivity}
             options={[
@@ -105,7 +106,7 @@ export default function ConversationSettings() {
         </SettingRow>
         <SettingRow
           label="Show tool call details"
-          description="Include tool output, full inputs and raw events. Commands stay visible when this is off."
+          description="Include full inputs, output and raw events. Command summaries stay visible when off."
         >
           <Toggle
             label="Show tool call details"

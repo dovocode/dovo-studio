@@ -4,6 +4,8 @@ import { useApplicationState } from '../../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
 import {
+  jiraIssueFilterKey,
+  type JiraIssueFilters,
   forgeWorkOptionsSchema,
   forgeIssuePageSchema,
   forgePipelinePageSchema,
@@ -40,12 +42,14 @@ export function useWorkCollection(
   repositoryKey: string,
   state: string,
   query = '',
+  jiraFilters?: JiraIssueFilters,
 ) {
   const { overviews, readRuntimeEffect: readRuntime, cacheForRuntime } = useRuntime()
   const { focused } = useNavigation()
   const sources = workSources(overviews, mode).filter(
     (entry) => !repositoryKey || entry.key === repositoryKey,
   )
+  const filterKey = JSON.stringify(jiraIssueFilterKey(jiraFilters))
   const identity = workSourceIdentity(sources)
   const sourcesRef = useRef(sources)
   sourcesRef.current = sources
@@ -84,6 +88,7 @@ export function useWorkCollection(
           state,
           cursor,
           query,
+          jiraFilters: source.kind === 'jira' ? jiraFilters : undefined,
         },
       )
       let page: WorkPage = base ??
@@ -112,6 +117,7 @@ export function useWorkCollection(
                     'list',
                     {
                       state,
+                      jiraFilters: source.kind === 'jira' ? jiraFilters : undefined,
                     },
                   ),
                   forgeIssuePageSchema,
@@ -198,6 +204,7 @@ export function useWorkCollection(
                 {
                   ...workSourceInput(source),
                   state: sourceState,
+                  ...(source.kind === 'jira' ? { jiraFilters } : {}),
                   ...(options.issueSearch && query
                     ? {
                         query,
@@ -274,10 +281,10 @@ export function useWorkCollection(
   loadRef.current = load
   useEffect(() => {
     const current = ++generation.current
-    const queryKey = JSON.stringify([state, mode, query])
+    const queryKey = JSON.stringify([state, mode, query, filterKey])
     const sweepKeys = new Set(
       sourcesRef.current.map((source) =>
-        JSON.stringify([workSourceContentIdentity(source), mode, state, query]),
+        JSON.stringify([workSourceContentIdentity(source), mode, state, query, filterKey]),
       ),
     )
     for (const key of fullSweepAt.current.keys())
@@ -314,7 +321,13 @@ export function useWorkCollection(
         sourcesRef.current,
         (source) =>
           Effect.gen(function* () {
-            const sweepKey = JSON.stringify([workSourceContentIdentity(source), mode, state, query])
+            const sweepKey = JSON.stringify([
+              workSourceContentIdentity(source),
+              mode,
+              state,
+              query,
+              filterKey,
+            ])
             const lastSweep = fullSweepAt.current.get(sweepKey) ?? Date.now()
             if (!fullSweepAt.current.has(sweepKey)) fullSweepAt.current.set(sweepKey, lastSweep)
             const previous = pageRef.current[source.key]
@@ -387,7 +400,13 @@ export function useWorkCollection(
                 .pipe(Effect.ensuring(done))
               if (loaded && !loaded.error)
                 fullSweepAt.current.set(
-                  JSON.stringify([workSourceContentIdentity(page.source), mode, state, query]),
+                  JSON.stringify([
+                    workSourceContentIdentity(page.source),
+                    mode,
+                    state,
+                    query,
+                    filterKey,
+                  ]),
                   Date.now(),
                 )
             }),
@@ -404,14 +423,14 @@ export function useWorkCollection(
       void polling.stop()
       void commands.stop()
     }
-  }, [identity, state, mode, query, revision, focused])
+  }, [identity, state, mode, query, filterKey, revision, focused])
   const refresh = () => {
     forceNext.current = true
     setRevision((value) => value + 1)
   }
   return {
     pages:
-      lastQuery.current === JSON.stringify([state, mode, query])
+      lastQuery.current === JSON.stringify([state, mode, query, filterKey])
         ? retainWorkPages(Object.values(pages), sources)
         : [],
     sources,

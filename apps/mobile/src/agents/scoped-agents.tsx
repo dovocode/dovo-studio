@@ -16,7 +16,7 @@ import {
 import { runClientEffect } from '@dovo/client-runtime'
 import { useRuntime } from '../runtime/connection/provider'
 import { useApplicationState } from '../runtime/state/application-state'
-import { Action } from '../ui/controls/action'
+import { SettingsAction as Action } from '../screens/settings-controls'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
@@ -40,7 +40,12 @@ export function ScopedAgents({
   const [diagnostics, setDiagnostics] = useApplicationState('')
   const [editing, setEditing] = useApplicationState<Agent | null>(null)
   const [expandedId, setExpandedId] = useApplicationState('')
+  const [retry, setRetry] = useApplicationState(0)
+  const [saved, setSaved] = useApplicationState(false)
   useEffect(() => {
+    setSettings(null)
+    setLoadError('')
+    setSaved(false)
     if (!connected || !snapshot?.scopedAgentsSupported) return
     let current = true
     void runClientEffect(
@@ -62,8 +67,9 @@ export function ScopedAgents({
     return () => {
       current = false
     }
-  }, [callEffect, connected, scope, repository?.id, snapshot?.scopedAgentsSupported])
+  }, [callEffect, connected, scope, repository?.id, snapshot?.scopedAgentsSupported, retry])
   const save = async (agents: Agent[]) => {
+    setSaved(false)
     if (!settings) throw new Error('Reload settings before saving')
     const value = await runClientEffect(
       callEffect(
@@ -80,6 +86,7 @@ export function ScopedAgents({
       ),
     )
     setSettings(value)
+    setSaved(true)
   }
   const own = settings?.value.agents ?? []
   const origins = scopedAgentEntries(
@@ -103,6 +110,13 @@ export function ScopedAgents({
         Built-in providers use your computer’s installation and login. Save an override here, or
         reset to the earlier level.
       </Text>
+      {!settings && !loadError && (
+        <Text accessibilityLiveRegion="polite" style={styles.muted}>
+          {connected
+            ? 'Loading agent profiles…'
+            : 'This computer is offline. Reconnect to load agent profiles.'}
+        </Text>
+      )}
       <Action
         label="New configuration"
         disabled={!connected || !settings || busy}
@@ -233,7 +247,20 @@ export function ScopedAgents({
         <Text style={styles.muted}>No named configurations at this target.</Text>
       )}
       {!!diagnostics && <Text style={styles.muted}>{diagnostics}</Text>}
+      {saved && (
+        <Text accessibilityLiveRegion="polite" style={styles.muted}>
+          Agent profiles saved at {settingsScopeLabels[scope]}.
+        </Text>
+      )}
       {!!(error || loadError) && <Text style={styles.error}>{error || loadError}</Text>}
+      {!!loadError && (
+        <Action
+          secondary
+          label="Retry agent profiles"
+          disabled={!connected || busy}
+          onPress={() => setRetry(retry + 1)}
+        />
+      )}
       {editing && (
         <AgentEditor
           original={editing}

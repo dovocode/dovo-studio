@@ -5,7 +5,7 @@ import { Schema } from 'effect'
 import { projectIcon, projectIconColor, projectIconInitials, type Repository } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
-import { Action } from '../../ui/controls/action'
+import { SettingsAction as Action } from '../../screens/settings-controls'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 

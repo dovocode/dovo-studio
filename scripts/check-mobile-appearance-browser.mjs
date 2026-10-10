@@ -30,6 +30,9 @@ const mocks = {
   '../ui/controls/choice': `export const Choice=({label,value,items,onChange})=><label>{label}<select aria-label={label} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
   '../ui/controls/icon': `export const Icon=({color})=><span style={{color}}>✓</span>;`,
   '../ui/layout/screen-header': `export const ScreenHeader=({title})=><h1>{title}</h1>;`,
+  '../ui/layout/sheet': `export const Sheet=({children})=>children;export const useInsideSheet=()=>false;`,
+  '../ui/controls/field': `export const Field=()=>null;export const SearchField=()=>null;`,
+  '../ui/controls/action': `export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;`,
   './settings-group': `export const SettingsGroup=({title,footer,children})=><section><h2>{title}</h2>{children}<p>{footer}</p></section>;`,
   '../../ui/controls/field': `
     import {useRef,useEffect,useImperativeHandle} from 'react';

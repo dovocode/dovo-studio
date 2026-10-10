@@ -1,6 +1,7 @@
 import { runtimeComputerName } from '@dovo/protocol'
 import { useState } from 'react'
 import { Schema } from 'effect'
+import { Button, ChoicePicker, Input } from '@dovo/studio-ui'
 import { useWorkspace, type UsageRow } from '@dovo/studio-core'
 import { usagePriceInput, type UsageHistoryResult } from '@dovo/protocol'
 const ok = Schema.Struct({ ok: Schema.Boolean })
@@ -27,28 +28,29 @@ export function UsagePrices({
   if (!selected) return null
   const modelId = selected.key.split('\u0000')[1]
   return (
-    <details className="rounded-xl border p-3 text-xs">
-      <summary className="cursor-pointer">Custom API-equivalent prices</summary>
+    <details className="rounded-lg border bg-card p-4 text-xs">
+      <summary className="cursor-pointer rounded font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        Custom API-equivalent prices
+      </summary>
       <p className="mt-2 text-muted-foreground">
         USD per million tokens, saved on selected computers and applied to recorded usage. These
         estimates do not change your subscription allowance.
       </p>
-      <select
-        aria-label="Model to price"
-        className="my-3 rounded-md border bg-background p-2"
-        value={encodeURIComponent(selected.key)}
-        onChange={(event) =>
-          setModel(
-            rows.find((row) => encodeURIComponent(row.key) === event.target.value)?.key ?? '',
-          )
-        }
-      >
-        {rows.map((row) => (
-          <option key={row.key} value={encodeURIComponent(row.key)}>
-            {row.label}
-          </option>
-        ))}
-      </select>
+      <div className="my-3">
+        <ChoicePicker
+          aria-label="Model to price"
+          value={encodeURIComponent(selected.key)}
+          onValueChange={(value) =>
+            setModel(rows.find((row) => encodeURIComponent(row.key) === value)?.key ?? '')
+          }
+        >
+          {rows.map((row) => (
+            <option key={row.key} value={encodeURIComponent(row.key)}>
+              {row.label}
+            </option>
+          ))}
+        </ChoicePicker>
+      </div>
       <PriceForm
         key={`${modelId}:${computer}`}
         model={modelId}
@@ -123,14 +125,17 @@ function PriceForm({
   return (
     <div className="space-y-3">
       <p className="text-muted-foreground">
-        {hosts.length} connected computers will receive these prices. Offline computers are skipped.
+        {hosts.length
+          ? `${hosts.length} connected ${hosts.length === 1 ? 'computer will' : 'computers will'} receive these prices. Offline computers are skipped.`
+          : 'Connect a selected computer to save prices.'}
       </p>
       {mixed && <p className="text-muted-foreground">Mixed prices across selected computers.</p>}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {fields.map((field) => (
           <label key={field} className="space-y-1">
             <span>{labels[field]}</span>
-            <input
+            <Input
+              disabled={busy}
               type="number"
               min="0"
               step="any"
@@ -139,29 +144,18 @@ function PriceForm({
               onChange={(event) =>
                 setValues((previous) => ({ ...previous, [field]: event.target.value }))
               }
-              className="w-full rounded-md border bg-background p-2"
               placeholder={field.startsWith('cache') ? 'Input rate' : ''}
             />
           </label>
         ))}
       </div>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          disabled={busy || !hosts.length}
-          onClick={() => void write()}
-          className="rounded-md border px-3 py-2 disabled:opacity-50"
-        >
-          Save prices
-        </button>
-        <button
-          type="button"
-          disabled={busy || !hosts.length}
-          onClick={() => void write(true)}
-          className="rounded-md border px-3 py-2 disabled:opacity-50"
-        >
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={busy || !hosts.length} onClick={() => void write()}>
+          {busy ? 'Saving…' : 'Save prices'}
+        </Button>
+        <Button variant="outline" disabled={busy || !hosts.length} onClick={() => void write(true)}>
           Use published prices
-        </button>
+        </Button>
       </div>
       {!!message && <p role="status">{message}</p>}
     </div>

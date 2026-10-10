@@ -188,6 +188,58 @@ it('persists separate side chats, includes their history, and follows archive an
     expect(new WorkspaceStore(s.db).task(task.id).sideChats).toEqual(
       s.store.task(task.id).sideChats,
     )
+    await runClientEffect(
+      s.titles.askSideChatEffect({
+        id: task.id,
+        chatId: second.id,
+        question: 'Custom title first question',
+      }),
+    )
+    expect(s.store.task(task.id).sideChats?.find((chat) => chat.id === second.id)?.title).toBe(
+      'Other topic',
+    )
+    s.store.updateTask(task.id, (current) => ({
+      ...current,
+      sideChats: current.sideChats?.map((chat) =>
+        chat.id === first.id
+          ? {
+              ...chat,
+              messages: [
+                {
+                  id: 'large',
+                  question: 'Old question',
+                  answer: 'x'.repeat(39000),
+                  status: 'completed',
+                  createdAt: new Date().toISOString(),
+                },
+                {
+                  id: 'recent',
+                  question: 'Recent question',
+                  answer: 'y'.repeat(2000),
+                  status: 'completed',
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            }
+          : chat,
+      ),
+    }))
+    await runClientEffect(
+      s.titles.askSideChatEffect({ id: task.id, chatId: first.id, question: 'Bounded history' }),
+    )
+    const serializedPrompt = run.mock.calls.at(-1)![0].prompt
+    const prompt = JSON.parse(serializedPrompt.slice(serializedPrompt.indexOf('{')))
+    expect(JSON.parse(prompt.history)).toEqual([
+      { question: 'Recent question', answer: 'y'.repeat(2000) },
+    ])
+    s.store.updateTask(task.id, (current) => ({ ...current, archivedAt: new Date().toISOString() }))
+    expect(() => s.titles.saveSideChat({ id: task.id })).toThrow('Restore this thread')
+    await expect(
+      runClientEffect(
+        s.titles.askSideChatEffect({ id: task.id, chatId: first.id, question: 'Truly archived' }),
+      ),
+    ).rejects.toThrow('Restore this thread')
+    s.store.updateTask(task.id, (current) => ({ ...current, archivedAt: undefined }))
     s.store.updateTask(task.id, (current) => ({ ...current, archived: true }))
     expect(() => s.titles.saveSideChat({ id: task.id })).toThrow('Restore this thread')
     await expect(

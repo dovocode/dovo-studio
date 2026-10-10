@@ -21,9 +21,9 @@ import {
 import { useRuntime } from '../runtime/connection/provider'
 import { AcpRegistry } from './acp-registry'
 import { ModelSettings } from './model-settings'
-import { Choice } from '../ui/controls/choice'
-import { Field } from '../ui/controls/field'
-import { Action } from '../ui/controls/action'
+import { SettingsChoice as Choice } from '../screens/settings-controls'
+import { SettingsField as Field } from '../screens/settings-controls'
+import { SettingsAction as Action } from '../screens/settings-controls'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 export function TitleSettings() {
@@ -36,8 +36,14 @@ export function TitleSettings() {
     ),
     [baseline, setBaseline] = useApplicationState<TitleGenerationSettings | undefined>(undefined),
     [loadError, setLoadError] = useApplicationState('')
+  const [retry, setRetry] = useApplicationState(0)
+  const [saved, setSaved] = useApplicationState(false)
   useEffect(() => {
     let active = true
+    setSettings(undefined)
+    setBaseline(undefined)
+    setLoadError('')
+    setSaved(false)
     if (connected)
       void runClientEffect(
         callEffect('/api/agents/title-settings/read', {}, titleGenerationSettingsSchema)
@@ -62,8 +68,28 @@ export function TitleSettings() {
     return () => {
       active = false
     }
-  }, [call, connected])
-  if (!settings) return <Text style={styles.muted}>{loadError || 'Loading title settings…'}</Text>
+  }, [call, connected, retry])
+  useEffect(() => {
+    if (settings !== baseline) setSaved(false)
+  }, [settings, baseline])
+  if (!settings)
+    return (
+      <View style={{ gap: 12 }}>
+        <Text accessibilityLiveRegion="polite" style={loadError ? styles.error : styles.muted}>
+          {!connected
+            ? 'This computer is offline. Reconnect to load title settings.'
+            : loadError || 'Loading title settings…'}
+        </Text>
+        {!!loadError && (
+          <Action
+            secondary
+            label="Retry title settings"
+            disabled={!connected || busy}
+            onPress={() => setRetry(retry + 1)}
+          />
+        )}
+      </View>
+    )
   const harness = resolveTitleHarness(
     settings,
     snapshot?.workspace.agents ?? [],
@@ -79,7 +105,7 @@ export function TitleSettings() {
   }
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Titles & dictation</Text>
+      <Text style={[styles.title, { fontWeight: '600' }]}>Titles & dictation</Text>
       <Text style={styles.muted}>
         This model names new tasks and lightly cleans up dictated text. Cleanup keeps your wording,
         language and code names; it never sends a message.
@@ -185,8 +211,11 @@ export function TitleSettings() {
         />
       )}
       <Action
-        label="Save title settings"
-        disabled={!connected || busy || !baseline}
+        wide
+        label={busy ? 'Saving…' : 'Save title settings'}
+        disabled={
+          !connected || busy || !baseline || JSON.stringify(settings) === JSON.stringify(baseline)
+        }
         onPress={() =>
           act(() =>
             mobileWorkflow(function* () {
@@ -197,10 +226,16 @@ export function TitleSettings() {
               )
               setSettings(saved)
               setBaseline(saved)
+              setSaved(true)
             }),
           )
         }
       />
+      {saved && (
+        <Text accessibilityLiveRegion="polite" style={styles.muted}>
+          Title settings saved. Applies to new titles and dictation cleanup.
+        </Text>
+      )}
       {!!error && <Text style={styles.error}>{error}</Text>}
     </View>
   )

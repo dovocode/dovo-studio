@@ -33,8 +33,8 @@ import { useListScroll } from '../ui/layout/use-list-scroll'
 import { router } from 'expo-router'
 import { chooseSnoozeDuration } from '../tasks/detail/use-task-lifecycle'
 import { LifecycleActions } from '../tasks/detail/lifecycle-actions'
-import { Action } from '../ui/controls/action'
-import { SearchField } from '../ui/controls/field'
+import { SettingsAction as Action } from './settings-controls'
+import { SettingsSearchField as SearchField } from './settings-controls'
 import { Sheet } from '../ui/layout/sheet'
 import { Icon } from '../ui/controls/icon'
 import { IconButton } from '../ui/controls/icon-button'
@@ -335,7 +335,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     if (action === 'delete')
       Alert.alert(
         'Delete selected threads?',
-        `${selected.size} threads will be deleted. This cannot be undone.`,
+        `${selected.size} threads will be deleted. This cannot be undone. Clean Dovo-created worktrees follow each computer’s cleanup setting.`,
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Delete', style: 'destructive', onPress: () => void bulk(action) },
@@ -592,9 +592,20 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           ) : (
             <View
               style={
-                selecting && selected.has(item.entry.key)
-                  ? { backgroundColor: colors.elevated, borderRadius: 10 }
-                  : undefined
+                archived
+                  ? {
+                      backgroundColor:
+                        selecting && selected.has(item.entry.key)
+                          ? colors.elevated
+                          : colors.surface,
+                      borderRadius: 24,
+                      overflow: 'hidden',
+                      marginBottom: 12,
+                      padding: 4,
+                    }
+                  : selecting && selected.has(item.entry.key)
+                    ? { backgroundColor: colors.elevated, borderRadius: 10 }
+                    : undefined
               }
             >
               <TaskListRow

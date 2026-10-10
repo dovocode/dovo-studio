@@ -186,6 +186,8 @@ function TaskDetailContent({
   const budget = taskBudgetUsage(task)
   const quota = useAction()
   const retry = useAction()
+  const sideChatKey = `${activeId}:${task.id}`
+  const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [asking, setAsking] = useApplicationState(false)
   const [editingInstructions, setEditingInstructions] = useApplicationState(false)
   const review = useAction()
@@ -798,7 +800,20 @@ function TaskDetailContent({
           />
         </View>
         {pane === 'agents' && <TaskAgents task={task} />}
-        {asking && <SideQuestion task={task} onClose={() => setAsking(false)} />}
+        {asking && (
+          <SideQuestion
+            task={task}
+            drafts={sideChatDrafts[sideChatKey] ?? {}}
+            setDrafts={(update) =>
+              setSideChatDrafts((current) => {
+                const previous = current[sideChatKey] ?? {}
+                const next = typeof update === 'function' ? update(previous) : update
+                return next === previous ? current : { ...current, [sideChatKey]: next }
+              })
+            }
+            onClose={() => setAsking(false)}
+          />
+        )}
         {pane === 'browser' && (
           <BrowserPane taskId={task.id} expanded={expandedPreview} onExpand={setExpandedPreview} />
         )}

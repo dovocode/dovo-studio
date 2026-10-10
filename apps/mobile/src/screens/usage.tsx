@@ -2,10 +2,10 @@ import { runtimeComputerName } from '@dovo/protocol'
 import { useForegroundInterval } from '../runtime/state/app-active'
 import { UsagePrices } from './usage-prices'
 import { useUsageData } from './use-usage-data'
-import { Action } from '../ui/controls/action'
+import { SettingsAction as Action } from './settings-controls'
 import { ResetCredits } from './reset-credits'
 import { useMemo, useState, memo } from 'react'
-import { FlatList, View } from 'react-native'
+import { FlatList, StyleSheet, View } from 'react-native'
 import {
   formatUsageCost,
   accountPlanLimits,
@@ -20,10 +20,10 @@ import {
   type UsageRow,
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
-import { Choice } from '../ui/controls/choice'
+import { SettingsChoice as Choice } from './settings-controls'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
-import { useTheme } from '../ui/theme'
+import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { SettingsGroup } from './settings-group'
 
 const periods = { day: 1, week: 7, month: 30, quarter: 90 } as const
@@ -38,7 +38,7 @@ const Row = memo(function Row({ row, first }: { row: UsageRow; first: boolean })
       style={{
         padding: 12,
         gap: 2,
-        borderTopWidth: first ? 0 : 1,
+        borderTopWidth: first ? 0 : StyleSheet.hairlineWidth,
         borderTopColor: colors.border,
       }}
     >
@@ -114,12 +114,25 @@ export default function UsageScreen() {
     now,
   )
   return (
-    <View style={styles.screen}>
+    <SettingsPage>
       <ScreenHeader title="Usage & limits" />
       <FlatList
         data={view === 'limits' ? [] : summary[breakdown]}
         keyExtractor={(row) => row.key}
-        renderItem={({ item, index }) => <Row row={item} first={index === 0} />}
+        renderItem={({ item, index }) => (
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              paddingHorizontal: 4,
+              borderTopLeftRadius: index === 0 ? 24 : 0,
+              borderTopRightRadius: index === 0 ? 24 : 0,
+              borderBottomLeftRadius: index === summary[breakdown].length - 1 ? 24 : 0,
+              borderBottomRightRadius: index === summary[breakdown].length - 1 ? 24 : 0,
+            }}
+          >
+            <Row row={item} first={index === 0} />
+          </View>
+        )}
         initialNumToRender={10}
         contentContainerStyle={[styles.content, { paddingTop: 8, gap: 0 }]}
         ListEmptyComponent={
@@ -130,32 +143,35 @@ export default function UsageScreen() {
           )
         }
         ListHeaderComponent={
-          <View style={{ gap: 24, marginBottom: 12 }}>
+          <View style={{ gap: 28, marginBottom: 28 }}>
             <View style={{ gap: 12 }}>
-              <Choice
-                label="Usage view"
-                value={view}
-                items={[
-                  { id: 'costs', name: 'Costs' },
-                  { id: 'tokens', name: 'Tokens' },
-                  { id: 'limits', name: 'Limits' },
-                ]}
-                onChange={(value) => {
-                  if (value === 'costs' || value === 'tokens' || value === 'limits') setView(value)
-                }}
-              />
-              <Choice
-                label="Computer"
-                value={computer}
-                items={[
-                  { id: 'all', name: 'All computers' },
-                  ...overviews.map((entry) => ({
-                    id: entry.profile.id,
-                    name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
-                  })),
-                ]}
-                onChange={setComputer}
-              />
+              <SettingsGroup>
+                <Choice
+                  label="Usage view"
+                  value={view}
+                  items={[
+                    { id: 'costs', name: 'Costs' },
+                    { id: 'tokens', name: 'Tokens' },
+                    { id: 'limits', name: 'Limits' },
+                  ]}
+                  onChange={(value) => {
+                    if (value === 'costs' || value === 'tokens' || value === 'limits')
+                      setView(value)
+                  }}
+                />
+                <Choice
+                  label="Computer"
+                  value={computer}
+                  items={[
+                    { id: 'all', name: 'All computers' },
+                    ...overviews.map((entry) => ({
+                      id: entry.profile.id,
+                      name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
+                    })),
+                  ]}
+                  onChange={setComputer}
+                />
+              </SettingsGroup>
               <Action
                 label={busy ? 'Refreshing…' : 'Refresh usage'}
                 onPress={refresh}
@@ -394,6 +410,6 @@ export default function UsageScreen() {
           </View>
         }
       />
-    </View>
+    </SettingsPage>
   )
 }

@@ -31,10 +31,22 @@ import {
   responses,
   type PreviewDevice,
 } from '@dovo/studio-core'
-import { Button, IconButton, Input, DropdownMenu } from '@dovo/studio-ui'
+import {
+  Button,
+  IconButton,
+  Input,
+  DropdownMenu,
+  ChoicePicker,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from '@dovo/studio-ui'
 import { RemoteBrowser } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
+import { DeviceDeployment } from './device-deployment'
+import { deviceHostSettingsResultSchema } from '@dovo/protocol'
 const addresses = new Map<string, string>()
 type BrowserTab = {
   id: string
@@ -222,7 +234,21 @@ function BrowserContent({
   ])
   const [devices, setDevices] = useApplicationState<PreviewDevice[]>([]),
     [diagnostics, setDiagnostics] = useApplicationState<string[]>([])
+  const [deviceHost, setDeviceHost] = useApplicationState('all')
+  const filteredDevices = devices.filter(
+    (device) =>
+      deviceHost === 'all' ||
+      (deviceHost === 'local' ? !device.hostId : device.hostId === deviceHost),
+  )
+  const [deviceHosts, setDeviceHosts] = useApplicationState<
+    typeof deviceHostSettingsResultSchema.Type.hosts
+  >([])
+  const [hubEnabled, setHubEnabled] = useApplicationState<boolean | null>(null)
+  const initializedDeviceHost = useRef(false)
   const [liveDevice, setLiveDevice] = useApplicationState<PreviewDevice | undefined>(undefined)
+  const [deploymentDevice, setDeploymentDevice] = useApplicationState<PreviewDevice | undefined>(
+    undefined,
+  )
   const [expanded, setExpanded] = useApplicationState(false)
   const [busy, setBusy] = useApplicationState(false),
     [image, setImage] = useApplicationState('')
@@ -250,13 +276,20 @@ function BrowserContent({
     }
   }
   const loadDevices = async () => {
-    const result = await request(
-      '/api/previews/devices',
-      {
-        taskId,
-      },
-      previewDevicesSchema,
-    )
+    const hosts = await request('/api/device-hosts', {}, deviceHostSettingsResultSchema, 'GET')
+    if (!mount.current) return
+    setHubEnabled(hosts.enabled ?? false)
+    setDeviceHosts(hosts.hosts)
+    if (!initializedDeviceHost.current) {
+      initializedDeviceHost.current = true
+      setDeviceHost(hosts.defaultHostId ?? 'all')
+    }
+    if (!hosts.enabled) {
+      setDevices([])
+      setDiagnostics([])
+      return
+    }
+    const result = await request('/api/previews/devices', { taskId }, previewDevicesSchema)
     if (mount.current) {
       setDevices(result.devices)
       setDiagnostics(result.diagnostics)
@@ -712,6 +745,7 @@ function BrowserContent({
           </IconButton>
           <Smartphone size={14} className="shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{liveDevice.name}</span>
+          <DeviceDeployment key={liveDevice.id} taskId={taskId} device={liveDevice} />
           {liveDevice.kind === 'physical' && liveDevice.platform === 'ios' && (
             <PhysicalControls taskId={taskId} device={liveDevice} />
           )}
@@ -737,6 +771,29 @@ function BrowserContent({
       className="flex h-full min-h-0 flex-col"
       aria-label={initialMode === 'devices' ? 'Device previews' : 'Browser previews'}
     >
+      {deploymentDevice && (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeploymentDevice(undefined)
+          }}
+        >
+          <DialogContent className="max-h-[85vh] overflow-auto">
+            <DialogTitle>Run app · {deploymentDevice.name}</DialogTitle>
+            <DialogDescription>
+              {deploymentDevice.hostName ?? 'This computer'} · Install a build or connect its
+              development server.
+            </DialogDescription>
+            <DeviceDeployment
+              key={deploymentDevice.id}
+              taskId={taskId}
+              device={deploymentDevice}
+              inline
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
       {initialMode !== 'devices' && tabs.length > 1 && (
         <div
           role="tablist"
@@ -959,13 +1016,38 @@ function BrowserContent({
               {d}
             </p>
           ))}
-          {!devices.length && !busy && (
+          {hubEnabled && deviceHosts.length > 0 && (
+            <label className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+              Device host
+              <ChoicePicker
+                aria-label="Device host"
+                value={deviceHost}
+                disabled={busy}
+                onValueChange={setDeviceHost}
+                className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 text-foreground"
+              >
+                <option value="all">All computers</option>
+                <option value="local">This computer</option>
+                {deviceHosts.map((host) => (
+                  <option key={host.id} value={host.id}>
+                    {host.name}
+                  </option>
+                ))}
+              </ChoicePicker>
+            </label>
+          )}
+          {hubEnabled === false && (
+            <p className="mb-3 text-sm text-muted-foreground">
+              Device Hub is off. Enable it in Settings → Computers → Device previews.
+            </p>
+          )}
+          {hubEnabled && !filteredDevices.length && !busy && (
             <p className="text-sm text-muted-foreground">
               No devices found. Connect a phone to the host or create a simulator.
             </p>
           )}
           <DeviceList
-            devices={devices}
+            devices={filteredDevices}
             host={runtimeComputerName({
               profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
               snapshot,
@@ -974,6 +1056,7 @@ function BrowserContent({
             connected={connected}
             onOpen={setLiveDevice}
             onAction={deviceAction}
+            onDeploy={setDeploymentDevice}
           />
           {busy && (
             <p role="status" className="py-2 text-xs">

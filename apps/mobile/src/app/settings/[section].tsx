@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
 import AgentsScreen from '../../screens/agents'
 import DevicesScreen from '../../screens/devices'
+import DeviceHostsScreen from '../../screens/device-host-settings'
 import ResourcesScreen from '../../screens/resources'
 import SourceControlSettings from '../../scm/connections/connections'
 import { WorkbenchDetailRoute } from '../../shell/workbench'
@@ -19,25 +20,27 @@ export default function SettingsSection() {
 
   const { section } = useLocalSearchParams<{ section: string }>()
   const Screen =
-    section === 'appearance'
-      ? AppearanceScreen
-      : section === 'task-defaults'
-        ? TaskDefaultsScreen
-        : section === 'updates'
-          ? AppUpdates
-          : section === 'general'
-            ? GeneralScreen
-            : section === 'devices'
-              ? DevicesScreen
-              : section === 'agents'
-                ? AgentsScreen
-                : section === 'resources'
-                  ? ResourcesScreen
-                  : section === 'source-control'
-                    ? SourceControlSettings
-                    : section === 'usage'
-                      ? UsageScreen
-                      : undefined
+    section === 'device-hosts'
+      ? DeviceHostsScreen
+      : section === 'appearance'
+        ? AppearanceScreen
+        : section === 'task-defaults'
+          ? TaskDefaultsScreen
+          : section === 'updates'
+            ? AppUpdates
+            : section === 'general'
+              ? GeneralScreen
+              : section === 'devices'
+                ? DevicesScreen
+                : section === 'agents'
+                  ? AgentsScreen
+                  : section === 'resources'
+                    ? ResourcesScreen
+                    : section === 'source-control'
+                      ? SourceControlSettings
+                      : section === 'usage'
+                        ? UsageScreen
+                        : undefined
   return (
     <WorkbenchDetailRoute tab="settings" bottomInset>
       {Screen ? (

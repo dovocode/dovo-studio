@@ -18,7 +18,11 @@ import {
 } from '@dovo/studio-core'
 import {
   Button,
-  ChoicePicker,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -204,10 +208,17 @@ function ConnectionForm({
           })
       }}
     >
+      <div>
+        <h3 className="text-sm font-semibold">{value ? 'Edit connection' : 'New connection'}</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Account credentials stay on this computer.
+        </p>
+      </div>
       <fieldset disabled={busy || !connected} className="grid gap-4">
+        <legend className="mb-3 text-sm font-medium">Connection details</legend>
         <FormField label="Provider">
-          <ChoicePicker
-            aria-label="Source control provider"
+          <Select
+            disabled={busy || !connected}
             value={provider}
             onValueChange={(next) => {
               const chosen = decode(forgeProviderSchema, next)
@@ -220,12 +231,17 @@ function ConnectionForm({
               setError('')
             }}
           >
-            {forgeProviderSchema.literals.map((kind) => (
-              <option key={kind} value={kind}>
-                {forgeLabels[kind]}
-              </option>
-            ))}
-          </ChoicePicker>
+            <SelectTrigger aria-label="Source control provider" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {forgeProviderSchema.literals.map((kind) => (
+                <SelectItem key={kind} value={kind}>
+                  {forgeLabels[kind]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </FormField>
         <FormField label="Connection name">
           <Input
@@ -245,6 +261,9 @@ function ConnectionForm({
             spellCheck={false}
           />
         </FormField>
+      </fieldset>
+      <fieldset disabled={busy || !connected} className="grid gap-4 border-t pt-4">
+        <legend className="text-sm font-medium">Authentication</legend>
         {provider === 'bitbucket' && credential !== 'cli' && (
           <FormField label="Atlassian account email">
             <Input
@@ -258,8 +277,8 @@ function ConnectionForm({
         )}
         {provider === 'github' && (
           <FormField label="Authentication">
-            <ChoicePicker
-              aria-label="Authentication method"
+            <Select
+              disabled={busy || !connected}
               value={credential}
               onValueChange={(next) => {
                 if (
@@ -273,11 +292,18 @@ function ConnectionForm({
                 }
               }}
             >
-              <option value="gh">GitHub CLI account</option>
-              <option value="gh-wrapper">GitHub CLI wrapper · environment selector</option>
-              <option value="environment">Token from runtime environment</option>
-              <option value="token">API token</option>
-            </ChoicePicker>
+              <SelectTrigger aria-label="Authentication method" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gh">GitHub CLI account</SelectItem>
+                <SelectItem value="gh-wrapper">
+                  GitHub CLI wrapper · environment selector
+                </SelectItem>
+                <SelectItem value="environment">Token from runtime environment</SelectItem>
+                <SelectItem value="token">API token</SelectItem>
+              </SelectContent>
+            </Select>
           </FormField>
         )}
         {provider === 'github' && (credential === 'gh' || credential === 'gh-wrapper') ? (
@@ -287,8 +313,8 @@ function ConnectionForm({
             {credential === 'gh-wrapper' && (
               <>
                 {' '}
-                Configure the gh wrapper executable in Runtime commands. Selector values are
-                non-secret settings shared with paired clients.
+                Configure the gh wrapper in CLI commands & shell. Selector values are non-secret
+                settings shared with paired clients.
               </>
             )}
           </p>
@@ -296,8 +322,8 @@ function ConnectionForm({
           <>
             {provider !== 'github' && (
               <FormField label="Authentication">
-                <ChoicePicker
-                  aria-label="Authentication method"
+                <Select
+                  disabled={busy || !connected}
                   value={credential}
                   onValueChange={(next) => {
                     if (next === 'token' || next === 'environment' || next === 'cli') {
@@ -306,24 +332,34 @@ function ConnectionForm({
                     }
                   }}
                 >
-                  <option value="cli">Signed-in CLI account</option>
-                  <option value="token">API token</option>
-                  <option value="environment">Runtime environment variable</option>
-                </ChoicePicker>
+                  <SelectTrigger aria-label="Authentication method" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cli">Signed-in CLI account</SelectItem>
+                    <SelectItem value="token">API token</SelectItem>
+                    <SelectItem value="environment">Runtime environment variable</SelectItem>
+                  </SelectContent>
+                </Select>
               </FormField>
             )}
             {credential === 'cli' ? (
               <>
                 {['gitea', 'forgejo'].includes(provider) && (
                   <FormField label="CLI">
-                    <ChoicePicker
-                      aria-label="CLI"
+                    <Select
+                      disabled={busy || !connected}
                       value={cliTool}
                       onValueChange={(v) => setCliTool(v === 'fj' ? 'fj' : 'tea')}
                     >
-                      <option value="fj">Forgejo CLI (fj)</option>
-                      <option value="tea">Gitea CLI (tea)</option>
-                    </ChoicePicker>
+                      <SelectTrigger aria-label="CLI" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fj">Forgejo CLI (fj)</SelectItem>
+                        <SelectItem value="tea">Gitea CLI (tea)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </FormField>
                 )}
 
@@ -446,7 +482,7 @@ function ConnectionsContent({
   return (
     <section className="grid gap-3" aria-label="Source control connections">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">Accounts available on this runtime.</p>
+        <p className="text-xs text-muted-foreground">Saved connections on this computer.</p>
         <Button size="sm" disabled={!connected || busy} onClick={() => setEditing('new')}>
           <Plus className="size-4" />
           Add connection
@@ -468,7 +504,7 @@ function ConnectionsContent({
           Existing GitHub projects continue using the runtime’s GitHub CLI login.
         </p>
       )}
-      <div className="divide-y">
+      <div className={connections.length ? 'divide-y rounded-lg border bg-card px-4' : undefined}>
         {connections.map((connection) => {
           const linked = workspace.repositories.filter(
             (r) => r.forge?.connectionId === connection.id,
@@ -482,7 +518,7 @@ function ConnectionsContent({
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {linked.length
-                    ? `${linked.length} linked project${linked.length === 1 ? '' : 's'}`
+                    ? `${linked.length} linked project${linked.length === 1 ? '' : 's'} · Unlink projects before removing`
                     : 'No linked projects'}{' '}
                   ·{' '}
                   {connection.credential === 'gh'
@@ -501,6 +537,7 @@ function ConnectionsContent({
                   size="sm"
                   variant="ghost"
                   disabled={!connected || busy}
+                  aria-label={`Edit ${connection.name}`}
                   onClick={() => {
                     setEditing(connection)
                     setRemoving(null)
@@ -513,6 +550,7 @@ function ConnectionsContent({
                   size="sm"
                   variant="ghost"
                   disabled={!connected || busy || !!linked.length}
+                  aria-label={`Remove ${connection.name}`}
                   title={
                     linked.length
                       ? 'Disconnect this account from its project settings first'

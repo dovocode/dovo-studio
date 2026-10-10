@@ -161,7 +161,7 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
         <div>
           <h2 className="text-sm font-medium">Your computers</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            All saved computers contribute to your unified workspace.
+            Tasks and projects from these computers appear in your workspace.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -205,7 +205,7 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
         {runtimes.map((entry) => {
           return (
             <div key={entry.profile.id} className="flex flex-wrap items-center gap-3 py-3">
-              <Monitor size={17} className="shrink-0 text-muted-foreground" />
+              <Monitor aria-hidden="true" size={17} className="shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="min-w-0 break-words">{entry.profile.name}</span>
@@ -215,7 +215,7 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                       entry.connected ? 'text-emerald-400' : 'text-muted-foreground',
                     )}
                   >
-                    <Circle size={6} fill="currentColor" />
+                    <Circle aria-hidden="true" size={6} fill="currentColor" />
                     {entry.connected ? 'Online' : 'Offline'}
                   </span>
                 </p>
@@ -242,6 +242,7 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                     size="sm"
                     variant="ghost"
                     disabled={busy}
+                    aria-label={`Update address for ${entry.profile.name}`}
                     onClick={() => {
                       setReplaceId(entry.profile.id)
                       setAddress('')
@@ -274,6 +275,7 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                 <Button
                   size="sm"
                   variant="ghost"
+                  aria-label={`Forget ${entry.profile.name}`}
                   title="Remove this saved connection from this device"
                   disabled={busy}
                   onClick={() => void act(() => forgetRuntime(entry.profile.id))}
@@ -426,11 +428,13 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                 onChange={(event) => setAddress(event.target.value)}
                 placeholder="http://my-desktop:51464"
                 disabled={!!pending || busy}
+                spellCheck={false}
+                autoCapitalize="off"
               />
             </FormField>
             <p className="-mt-2 text-xs text-muted-foreground">
               Use the computer’s LAN or VPN address. 0.0.0.0 is a listening address, not a
-              destination.
+              destination. HTTP and optional HTTPS are supported.
             </p>
             <FormField label="This device’s name">
               <Input

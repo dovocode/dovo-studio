@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { posix, win32 } from 'node:path'
 import { detectInstalledOpeners } from './installed-openers'
-import { exec } from '../../process'
+import { exec, ProcessError } from '../../process'
 const fs = vi.hoisted(() => ({
   files: new Map<string, string>(),
   dirs: new Set<string>(),
   denied: new Set<string>(),
   links: new Map<string, string>(),
+  errors: new Map<string, string>(),
   home: '/home/user',
 }))
 const api = (path: string) => (/^[A-Za-z]:/.test(path) ? win32 : posix)
@@ -26,6 +27,8 @@ vi.mock('node:fs/promises', () => ({
   realpath: async (path: string) => fs.links.get(path) ?? normalized(path),
   stat: async (path: string) => {
     const name = normalized(path)
+    if (fs.errors.has(name))
+      throw Object.assign(new Error('Inaccessible'), { code: fs.errors.get(name) })
     if (!fs.files.has(name) && !fs.dirs.has(name))
       throw Object.assign(new Error('Missing'), { code: 'ENOENT' })
     return { isFile: () => fs.files.has(name), isDirectory: () => fs.dirs.has(name) }
@@ -35,12 +38,16 @@ vi.mock('node:fs/promises', () => ({
       throw Object.assign(new Error('Denied'), { code: 'EACCES' })
   },
   readFile: async (path: string) => {
+    if (fs.errors.has(normalized(path)))
+      throw Object.assign(new Error('Inaccessible'), { code: fs.errors.get(normalized(path)) })
     const value = fs.files.get(normalized(path))
     if (value === undefined) throw Object.assign(new Error('Missing'), { code: 'ENOENT' })
     return value
   },
   readdir: async (path: string, options?: { withFileTypes?: boolean }) => {
     const root = normalized(path)
+    if (fs.errors.has(root))
+      throw Object.assign(new Error('Inaccessible'), { code: fs.errors.get(root) })
     if (!fs.dirs.has(root)) throw Object.assign(new Error('Missing'), { code: 'ENOENT' })
     const names = [
       ...new Set(
@@ -67,6 +74,7 @@ beforeEach(() => {
   fs.dirs.clear()
   fs.denied.clear()
   fs.links.clear()
+  fs.errors.clear()
   fs.home = '/home/user'
   vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
   vi.stubEnv('PATH', '/usr/bin')
@@ -301,6 +309,26 @@ it('detects valid macOS app bundles and ignores uninstalled app folders and stal
   file('/External/VS Code.app/Contents/MacOS/Electron')
   expect((await ids()).sort()).toEqual(['finder', 'vscode', 'webstorm', 'zed'])
 })
+it('keeps macOS apps and CLI fallbacks available when Spotlight fails', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  file('/usr/bin/open')
+  file('/usr/bin/mdfind')
+  file('/Applications/Editors/Zed.app/Contents/MacOS/zed')
+  file('/home/user/Applications/JetBrains/WebStorm.app/Contents/MacOS/webstorm')
+  file('/opt/homebrew/bin/code')
+  vi.mocked(exec).mockRejectedValue(
+    new ProcessError({
+      message: 'Spotlight unavailable',
+      cause: new Error('Spotlight unavailable'),
+      code: 1,
+      stdout: '',
+      stderr: '',
+    }),
+  )
+  expect((await ids()).sort()).toEqual(['finder', 'vscode', 'webstorm', 'zed'])
+  expect(warning).toHaveBeenCalled()
+})
 it('detects VS Code Insiders and VSCodium independently from stable VS Code', async () => {
   file('/usr/bin/code-insiders')
   file('/usr/bin/codium')
@@ -430,4 +458,102 @@ it('propagates failed discovery sources instead of misreporting everything as un
   file(powershell)
   vi.mocked(exec).mockRejectedValue(new Error('Registry query failed'))
   await expect(detectInstalledOpeners()).rejects.toThrow('Registry query failed')
+})
+
+it('keeps macOS apps when nested folders or Spotlight candidates are inaccessible', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+  file('/usr/bin/open')
+  file('/usr/bin/mdfind')
+  file('/opt/homebrew/bin/code')
+  file('/Applications/Zed.app/Contents/MacOS/zed')
+  fs.dirs.add('/Applications/Private')
+  fs.errors.set('/Applications/Private', 'EPERM')
+  fs.dirs.add('/Volumes/Backup/VS Code.app')
+  fs.errors.set('/Volumes/Backup/VS Code.app/Contents/MacOS', 'EACCES')
+  vi.mocked(exec).mockResolvedValue({ stdout: '/Volumes/Backup/VS Code.app\n', stderr: '' })
+  expect((await ids()).sort()).toEqual(['finder', 'vscode', 'zed'])
+})
+
+it('isolates malformed product metadata and failed optional Linux discovery sources', async () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  file('/usr/bin/code')
+  file('/usr/bin/windsurf')
+  file('/usr/bin/flatpak')
+  file('/usr/bin/xdg-mime')
+  file('/usr/bin/gio')
+  file('/usr/bin/nautilus')
+  file('/usr/resources/app/product.json', '{broken')
+  vi.mocked(exec).mockRejectedValue(
+    new ProcessError({
+      message: 'Optional source unavailable',
+      cause: new Error('Unavailable'),
+      code: 1,
+      stdout: '',
+      stderr: '',
+    }),
+  )
+  expect((await ids()).sort()).toEqual(['file-manager', 'vscode'])
+  expect(warning).toHaveBeenCalled()
+})
+
+it('reads macOS bundle CLI product metadata through Homebrew symlinks', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+  file('/opt/homebrew/bin/antigravity')
+  fs.links.set(
+    '/opt/homebrew/bin/antigravity',
+    '/Custom/Antigravity.app/Contents/Resources/app/bin/antigravity',
+  )
+  file(
+    '/Custom/Antigravity.app/Contents/Resources/app/product.json',
+    JSON.stringify({ nameShort: 'Antigravity' }),
+  )
+  file('/usr/local/bin/windsurf')
+  fs.links.set(
+    '/usr/local/bin/windsurf',
+    '/Custom/Windsurf.app/Contents/Resources/app/bin/windsurf',
+  )
+  file(
+    '/Custom/Windsurf.app/Contents/Resources/app/product.json',
+    JSON.stringify({ nameShort: 'Devin' }),
+  )
+  expect((await ids()).sort()).toEqual(['antigravity', 'devin'])
+})
+
+it('validates renamed bundles by plist ID and the declared executable, caching each plist once', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+  file('/usr/bin/plutil')
+  file('/usr/bin/open')
+  const good = '/Applications/Editors/Code 2026.app',
+    bad = '/Applications/Code backup.app'
+  file(`${good}/Contents/Info.plist`, 'binary plist')
+  file(`${good}/Contents/MacOS/Code`)
+  file(`${bad}/Contents/Info.plist`, 'xml plist')
+  file(`${bad}/Contents/MacOS/helper`)
+  vi.mocked(exec).mockImplementation(async (_command, args) => ({
+    stdout: JSON.stringify({
+      CFBundleIdentifier: 'com.microsoft.VSCode',
+      CFBundleExecutable: args?.at(-1)?.startsWith(good) ? 'Code' : 'removed-launcher',
+    }),
+    stderr: '',
+  }))
+  expect((await ids()).sort()).toEqual(['finder', 'vscode'])
+  expect(exec).toHaveBeenCalledTimes(2)
+})
+
+it('finds custom and old macOS Toolbox bundles without trusting stale generated scripts', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+  const base = '/home/user/Library/Application Support/JetBrains/Toolbox'
+  file(`${base}/.settings.json`, JSON.stringify({ install_location: '/Custom IDEs' }))
+  file('/Custom IDEs/2026/WebStorm.app/Contents/MacOS/webstorm')
+  file(`${base}/apps/IDEA/ch-0/2026/IntelliJ IDEA.app/Contents/MacOS/idea`)
+  file(`${base}/scripts/pycharm`)
+  vi.stubEnv('PATH', `${base}/scripts`)
+  expect((await ids()).sort()).toEqual(['idea', 'webstorm'])
+})
+
+it('still reports unexpected macOS discovery failures instead of hiding them', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+  file('/usr/bin/mdfind')
+  vi.mocked(exec).mockRejectedValue(new Error('Unexpected failure'))
+  await expect(ids()).rejects.toThrow('Unexpected failure')
 })

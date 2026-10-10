@@ -12,13 +12,13 @@ export default function ForgeSettings() {
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-4xl space-y-5">
           {!sources.length && (
-            <p className="text-sm text-muted-foreground">
+            <p role="status" className="rounded-lg border p-4 text-sm text-muted-foreground">
               Connect a computer to manage source-control accounts.
             </p>
           )}
           {sources.map((source) => (
             <WorkspaceScope key={source.scope} profile={source.profile}>
-              <section aria-label={`Accounts on ${source.name}`}>
+              <section className="space-y-3" aria-label={`Accounts on ${source.name}`}>
                 <h2 className="mb-3 text-sm font-semibold">
                   {source.name}{' '}
                   <span className="ml-2 font-normal text-muted-foreground">

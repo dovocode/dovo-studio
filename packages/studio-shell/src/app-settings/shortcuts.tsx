@@ -1,14 +1,19 @@
 import { useAppPreferences } from '@dovo/studio-core'
-import { SettingRow, SettingsGroup, SettingsPage } from './layout'
+import { SettingsGroup, SettingsPage } from './layout'
 
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const mod = mac ? '⌘' : 'Ctrl'
 
 function Keys({ keys }: { keys: string }) {
   return (
-    <span className="flex gap-1">
+    <span className="flex flex-wrap justify-end gap-1">
+      <span className="sr-only">{keys.replaceAll('+', ' plus ')}</span>
       {keys.split('+').map((key) => (
-        <kbd key={key} className="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs">
+        <kbd
+          aria-hidden="true"
+          key={key}
+          className="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs"
+        >
           {key}
         </kbd>
       ))}
@@ -27,7 +32,7 @@ export default function KeyboardShortcuts() {
         ...(taskLauncherShortcut
           ? ([
               [
-                'Start task from any app (desktop)',
+                'Open task launcher (desktop)',
                 taskLauncherShortcut.replace('CommandOrControl', mod),
               ],
             ] as [string, string][])
@@ -60,7 +65,7 @@ export default function KeyboardShortcuts() {
         ['Ask a side question', `${mod}+;`],
         ['Close the side-by-side task', `${mod}+\\`],
         ['Show or hide changes', `${mod}+Shift+D`],
-        ['Switch folded steps, every step and replies only', 'Ctrl+O'],
+        ['Cycle tool activity views', 'Ctrl+O'],
         ['Show or hide the terminal', 'Ctrl+`'],
       ],
     ],
@@ -75,15 +80,31 @@ export default function KeyboardShortcuts() {
   return (
     <SettingsPage
       title="Keyboard shortcuts"
-      description="Change how messages send in Conversation → Writing & follow-ups."
+      description="Shortcuts for this device. Message shortcuts follow your Conversation settings; the desktop task launcher follows General."
     >
       {groups.map(([title, rows]) => (
         <SettingsGroup key={title} title={title}>
-          {rows.map(([label, keys]) => (
-            <SettingRow key={`${label}${keys}`} label={label}>
-              <Keys keys={keys} />
-            </SettingRow>
-          ))}
+          <table className="w-full text-xs">
+            <caption className="sr-only">{title} keyboard shortcuts</caption>
+            <thead className="sr-only">
+              <tr>
+                <th scope="col">Action</th>
+                <th scope="col">Shortcut</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {rows.map(([label, keys]) => (
+                <tr key={`${label}${keys}`}>
+                  <th scope="row" className="px-4 py-3 text-left font-normal">
+                    {label}
+                  </th>
+                  <td className="px-4 py-3">
+                    <Keys keys={keys} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </SettingsGroup>
       ))}
     </SettingsPage>

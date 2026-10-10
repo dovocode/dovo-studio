@@ -23,9 +23,9 @@ import {
   type Agent,
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
-import { Choice } from '../ui/controls/choice'
-import { Field } from '../ui/controls/field'
-import { Action } from '../ui/controls/action'
+import { SettingsChoice as Choice } from '../screens/settings-controls'
+import { SettingsField as Field } from '../screens/settings-controls'
+import { SettingsAction as Action } from '../screens/settings-controls'
 import { useTheme } from '../ui/theme'
 export function ModelSettings({
   agent,

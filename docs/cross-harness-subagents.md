@@ -14,11 +14,16 @@ configuration or subsequent editor changes. Read-only parents can delegate read-
 `subagent_list` returns available configurations and this parent's children. `subagent_spawn` takes
 `key`, `name`, `prompt`, either `provider` or `agentId`, and optional model, reasoning and
 permission. A stable key reuses the child for retries within the same parent attempt; different
-requests using the same key are rejected. There can be four active children per parent thread across
-attempts and three levels of nesting. Warm tool connections are bound to their provider session.
-Child launches still require an active parent attempt and are attributed to that attempt; retired
-session bindings are rejected. ACP requires a named configuration selecting its installed
-integration.
+requests using the same key are rejected. The active-child limit defaults to four per parent thread
+across attempts. Configure it per computer in **Settings → Computers → Running tasks → Maximum
+concurrent child agents** (or the computer's settings on mobile). Lowering it prevents new launches
+without stopping existing children. Each active direct child counts once even when its descendants
+are working. The nesting limit remains three levels. Warm tool connections are bound to their
+provider session. Child launches still require an active parent attempt and are attributed to that
+attempt; retired session bindings are rejected. ACP requires a named configuration selecting its
+installed integration. Provider-only children inherit connection/account settings from a matching
+parent harness or project default. Unsupported restricted access is refused before creating a child;
+child access never expands to accommodate a provider.
 
 Follow-up turns reuse their warm provider and MCP connections, preserving native children. Session
 configuration changes require live native children to finish or stop first. Dovo child controls use
@@ -37,7 +42,9 @@ the parent thread and starts a new turn when idle. A running parent receives it 
 turn. Reading/waiting for a finished result removes any unconsumed automatic notification. Generated
 results are labelled **Dovo child result** and do not count as new user activity. Nested children
 must finish and their results be handled before their owner's result is delivered upwards. A paused
-queue stays paused.
+queue stays paused. Individual cancellation suppresses that child's automatic notification. After a
+runtime restart, interrupted nested families report the direct child's interruption to the root;
+saved descendant answers remain readable without restarting interrupted children.
 
 Explicit Stop cancels descendants across parent attempts, drains their writes before the
 cancellation checkpoint, and suppresses queued completion notifications. The Agents panel offers

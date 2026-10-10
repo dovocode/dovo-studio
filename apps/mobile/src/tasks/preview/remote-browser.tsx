@@ -11,6 +11,7 @@ import { remoteBrowserTicketSchema, responses } from '@dovo/protocol'
 import { remoteBrowserHtml } from '@dovo/protocol/browser-viewer'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../../ui/theme'
+import { deviceHostMessage } from '../../screens/device-host-form'
 const bridgeSchema = mutableStruct({
   channel: Schema.Literal('dovo-browser'),
   type: Schema.Literals(['ready', 'reconnect', 'close']),
@@ -18,17 +19,19 @@ const bridgeSchema = mutableStruct({
 export function RemoteBrowser({
   taskId,
   deviceId,
+  devicePlatform,
   expanded = false,
   reloadToken,
 }: {
   taskId: string
   deviceId?: string
+  devicePlatform?: 'ios' | 'android'
   expanded?: boolean
   reloadToken?: number
 }) {
   const { styles } = useTheme()
 
-  const { connection, readEffect } = useRuntime()
+  const { connection, profiles, readEffect } = useRuntime()
   const web = useRef<WebView>(null)
   const [generation, setGeneration] = useApplicationState(0)
   const current = useRef(0)
@@ -59,9 +62,10 @@ export function RemoteBrowser({
             type: 'configure',
             device: {
               platform:
-                deviceId.startsWith('ios:') || deviceId.startsWith('physical-ios:')
+                devicePlatform ??
+                (deviceId.startsWith('ios:') || deviceId.startsWith('physical-ios:')
                   ? 'ios'
-                  : 'android',
+                  : 'android'),
             },
           })
         return yield* mobileWorkflow(function* () {
@@ -92,7 +96,10 @@ export function RemoteBrowser({
               if (version === current.current)
                 post({
                   type: 'error',
-                  message: error instanceof Error ? error.message : String(error),
+                  message: deviceHostMessage(
+                    error instanceof Error ? error.message : String(error),
+                    profiles,
+                  ),
                 })
             }),
           ),
@@ -194,7 +201,7 @@ export function RemoteBrowser({
                   nativeEffect(() =>
                     post({
                       type: 'error',
-                      message: String(error),
+                      message: deviceHostMessage(String(error), profiles),
                     }),
                   ),
                 ),

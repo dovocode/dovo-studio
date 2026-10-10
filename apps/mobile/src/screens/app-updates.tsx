@@ -4,15 +4,14 @@ import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../runtime/state/application-state'
 import { fetchRuntimeReleases, type RuntimeRelease } from '@dovo/protocol'
-import { Platform, ScrollView, View } from 'react-native'
-import { Switch } from '../ui/controls/switch'
+import { Platform, ScrollView } from 'react-native'
 import Constants from 'expo-constants'
 import { Effect } from 'effect'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
-import { Action } from '../ui/controls/action'
-import { useTheme } from '../ui/theme'
-import { SettingsGroup } from './settings-group'
+import { SettingsAction as Action } from './settings-controls'
+import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
+import { SettingsGroup, SettingsSwitchRow } from './settings-group'
 import { useLiveActivities } from '../live-activities/provider'
 export default function AppUpdates() {
   const { styles } = useTheme()
@@ -54,17 +53,19 @@ export default function AppUpdates() {
     )
   }
   return (
-    <View style={styles.screen}>
+    <SettingsPage>
       <ScreenHeader title="App & updates" />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { gap: 24 }]}>
+        <Text style={styles.muted}>This device · notification preferences save automatically</Text>
         <Text style={styles.title}>
           Dovo Studio {Constants.expoConfig?.version ?? 'development'}
         </Text>
         <Text style={styles.muted}>
-          Installed from a local iPhone build. Updates keep your paired computers and saved
-          settings.
+          Native app updates are installed from a local build. Updates keep your paired computers
+          and saved settings.
         </Text>
         <Action
+          wide
           label={busy ? 'Checking…' : 'Check releases'}
           disabled={busy}
           onPress={() => void check()}
@@ -111,15 +112,13 @@ export default function AppUpdates() {
           title="Push notifications"
           footer="Get task completion, failed checks and input requests when Dovo is in the background. Each paired computer needs the separately deployed Dovo notification relay."
         >
-          <View style={[styles.row, { padding: 14, justifyContent: 'space-between' }]}>
-            <Text style={styles.text}>Task notifications</Text>
-            <Switch
-              accessibilityLabel="Enable push notifications"
-              disabled={!notifications.supported || notifications.busy}
-              value={notifications.enabled}
-              onValueChange={notifications.setEnabled}
-            />
-          </View>
+          <SettingsSwitchRow
+            first
+            label="Task notifications"
+            disabled={!notifications.supported || notifications.busy}
+            value={notifications.enabled}
+            onValueChange={notifications.setEnabled}
+          />
         </SettingsGroup>
         {!notifications.supported && (
           <Text style={styles.muted}>Push notifications require a new native app build.</Text>
@@ -133,23 +132,13 @@ export default function AppUpdates() {
           title="Live Activities"
           footer="Shows task titles, projects and devices on your Lock Screen and Dynamic Island. Background updates require APNs setup on each host computer."
         >
-          <View
-            style={[
-              styles.row,
-              {
-                padding: 14,
-                justifyContent: 'space-between',
-              },
-            ]}
-          >
-            <Text style={styles.text}>Show running tasks</Text>
-            <Switch
-              accessibilityLabel="Show task Live Activities"
-              disabled={!activity.supported}
-              value={activity.enabled && activity.supported}
-              onValueChange={activity.setEnabled}
-            />
-          </View>
+          <SettingsSwitchRow
+            first
+            label="Show task Live Activities"
+            disabled={!activity.supported}
+            value={activity.enabled && activity.supported}
+            onValueChange={activity.setEnabled}
+          />
         </SettingsGroup>
         {!activity.supported && (
           <Text style={styles.muted}>
@@ -162,6 +151,6 @@ export default function AppUpdates() {
           </Text>
         )}
       </ScrollView>
-    </View>
+    </SettingsPage>
   )
 }

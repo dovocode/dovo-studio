@@ -17,7 +17,6 @@ import {
 } from '@dovo/studio-core'
 import {
   Button,
-  ChoicePicker,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -25,6 +24,11 @@ import {
   DialogDescription,
   FormField,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Textarea,
 } from '@dovo/studio-ui'
 function bindings(text: string) {
@@ -75,13 +79,13 @@ export function McpEditor({
   const [headerValues, setHeaderValues] = useApplicationState(
     credentialFields(initial?.headerValues ?? {}),
   )
-  const [busy, setBusy] = useApplicationState(false)
+  const [busy, setBusy] = useApplicationState<'test' | 'save' | null>(null)
   const [error, setError] = useApplicationState('')
   const [issues, setIssues] = useApplicationState<readonly { path: string; message: string }[]>([])
   const fieldError = (path: string) => issues.find((issue) => issue.path === path)?.message
   const [result, setResult] = useApplicationState('')
   const perform = async (test: boolean) => {
-    setBusy(true)
+    setBusy(test ? 'test' : 'save')
     setError('')
     setIssues([])
     setResult('')
@@ -112,7 +116,7 @@ export function McpEditor({
       )
       setError(resourceError(error))
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
   return (
@@ -125,7 +129,9 @@ export function McpEditor({
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{initial ? 'Edit MCP server' : 'Add MCP server'}</DialogTitle>
-          <DialogDescription>{scope}</DialogDescription>
+          <DialogDescription>
+            Saved at {scope}. Test the connection before saving to see which tools it offers.
+          </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(event) => {
@@ -133,7 +139,7 @@ export function McpEditor({
             void perform(false)
           }}
         >
-          <fieldset disabled={busy} className="grid gap-4">
+          <fieldset disabled={!!busy} className="grid gap-4">
             {initial?.sourceUrl && (
               <a
                 className="text-xs underline"
@@ -163,9 +169,8 @@ export function McpEditor({
                 }
               />
             </FormField>
-            <FormField label="Transport">
-              <ChoicePicker
-                aria-label="Transport"
+            <FormField label="Connection type">
+              <Select
                 value={draft.transport}
                 onValueChange={(value) =>
                   setDraft({
@@ -174,13 +179,18 @@ export function McpEditor({
                   })
                 }
               >
-                <option value="stdio">Local command (stdio)</option>
-                <option value="http">Streamable HTTP</option>
-              </ChoicePicker>
+                <SelectTrigger aria-label="Transport" className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="stdio">Local command (stdio)</SelectItem>
+                  <SelectItem value="http">Remote server (Streamable HTTP)</SelectItem>
+                </SelectContent>
+              </Select>
             </FormField>
             {draft.transport === 'stdio' ? (
               <>
-                <FormField label="Executable" error={fieldError('command')}>
+                <FormField label="Command" error={fieldError('command')}>
                   <Input
                     required
                     placeholder="npx"
@@ -196,12 +206,16 @@ export function McpEditor({
                 <FormField label="Arguments (one per line)">
                   <Textarea value={args} onChange={(event) => setArgs(event.target.value)} />
                 </FormField>
-                <FormField label="Environment bindings">
+                <FormField label="Environment variables">
                   <Textarea
                     placeholder="API_KEY=MY_API_KEY"
                     value={env}
                     onChange={(event) => setEnv(event.target.value)}
                   />
+                  <span className="font-normal leading-relaxed">
+                    One NAME=COMPUTER_VARIABLE per line. The server receives NAME set to the value
+                    of COMPUTER_VARIABLE on the computer that runs it.
+                  </span>
                 </FormField>
               </>
             ) : (
@@ -221,7 +235,7 @@ export function McpEditor({
                   />
                 </FormField>
                 <FormField
-                  label="Bearer token environment variable"
+                  label="Bearer token variable (optional)"
                   error={fieldError('bearerTokenEnv')}
                 >
                   <Input
@@ -235,19 +249,26 @@ export function McpEditor({
                     }
                   />
                 </FormField>
-                <FormField label="Header bindings">
+                <FormField label="Headers from environment variables">
                   <Textarea
                     placeholder="X-API-Key=MY_API_KEY"
                     value={headers}
                     onChange={(event) => setHeaders(event.target.value)}
                   />
+                  <span className="font-normal leading-relaxed">
+                    One Header-Name=COMPUTER_VARIABLE per line.
+                  </span>
                 </FormField>
               </>
             )}
-            <details>
+            <details className="rounded-md border p-3">
               <summary className="cursor-pointer text-xs text-muted-foreground">
-                Values stored on the runtime
+                Saved secret values (optional)
               </summary>
+              <p className="mb-3 mt-2 text-xs leading-relaxed text-muted-foreground">
+                Store a value on the computer instead of reading it from an environment variable.
+                Saved values stay hidden.
+              </p>
               <FormField
                 label={
                   draft.transport === 'stdio' ? 'Environment credentials' : 'Header credentials'
@@ -256,13 +277,13 @@ export function McpEditor({
                 <CredentialEditor
                   fields={draft.transport === 'stdio' ? envValues : headerValues}
                   onChange={draft.transport === 'stdio' ? setEnvValues : setHeaderValues}
-                  disabled={busy}
+                  disabled={!!busy}
                 />
               </FormField>
             </details>
-            <p className="text-xs text-muted-foreground">
-              Bindings reference environment variables on the runtime host. Testing starts the
-              server and lists tools without calling them.
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Test connection starts the server on the connected computer and lists its tools
+              without calling any of them.
             </p>
             {error && (
               <p role="alert" className="text-xs text-destructive whitespace-pre-wrap">
@@ -274,11 +295,14 @@ export function McpEditor({
                 {result}
               </p>
             )}
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => void perform(true)}>
-                Test connection
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Cancel
               </Button>
-              <Button type="submit">{busy ? 'Working…' : 'Save server'}</Button>
+              <Button type="button" variant="outline" onClick={() => void perform(true)}>
+                {busy === 'test' ? 'Testing…' : 'Test connection'}
+              </Button>
+              <Button type="submit">{busy === 'save' ? 'Saving…' : 'Save server'}</Button>
             </div>
           </fieldset>
         </form>

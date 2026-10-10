@@ -64,6 +64,7 @@ export function runtimeSnapshot(
       scopedAgentsSupported: true,
       settingsScopesSupported: true,
       taskBehaviorSupported: true,
+      worktreeDeletionOverrideSupported: true,
       artifactsEnabled: s.preferences.get().enableArtifacts,
       acpInstallations: s.acpInstallations.list(),
       revision,

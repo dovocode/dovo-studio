@@ -15,9 +15,9 @@ import {
 } from '@dovo/protocol'
 import { Schema, Effect } from 'effect'
 import { useRuntime } from '../../runtime/connection/provider'
-import { Action } from '../../ui/controls/action'
-import { Choice } from '../../ui/controls/choice'
-import { Field } from '../../ui/controls/field'
+import { SettingsAction as Action } from '../../screens/settings-controls'
+import { SettingsChoice as Choice } from '../../screens/settings-controls'
+import { SettingsField as Field } from '../../screens/settings-controls'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 export function JiraProjectForm({

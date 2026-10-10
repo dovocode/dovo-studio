@@ -133,8 +133,8 @@ export function AcpRegistry({
           <h3 className="text-sm font-medium">ACP agents</h3>
           <p className="mt-1 text-xs text-muted-foreground">
             {management
-              ? 'Install and manage agents on this runtime. Installing does not create a custom agent.'
-              : 'Choose an installed agent or use a custom command.'}
+              ? 'Install agents from the ACP registry on this computer. To use one in tasks, add an agent profile for it.'
+              : 'Choose an agent installed on this computer, or run your own ACP command.'}
           </p>
         </div>
         <Button
@@ -198,9 +198,11 @@ export function AcpRegistry({
             )
           }
         >
-          {selected.needsRepair
-            ? 'Repair installation in this runtime'
-            : 'Check installation / update'}
+          {busyId === selected.id
+            ? 'Checking…'
+            : selected.needsRepair
+              ? 'Repair installation'
+              : 'Check installation & updates'}
         </Button>
       )}
       {selected?.needsRepair && (
@@ -222,7 +224,7 @@ export function AcpRegistry({
       {showRegistry && (
         <div className="grid gap-2">
           <div className="flex items-center justify-between gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">Runtime registry</h4>
+            <h4 className="text-xs font-medium text-muted-foreground">ACP registry</h4>
             <Button
               type="button"
               variant="ghost"
@@ -244,7 +246,9 @@ export function AcpRegistry({
                 onChange={(event) => setSearch(event.target.value)}
               />
               {loading && (
-                <p className="text-xs text-muted-foreground">Loading registered agents…</p>
+                <p role="status" className="text-xs text-muted-foreground">
+                  Loading registered agents…
+                </p>
               )}
               {!loading && filtered?.length === 0 && !error && (
                 <p className="text-xs text-muted-foreground">
@@ -297,7 +301,8 @@ export function AcpRegistry({
                             aria-label={`Remove ${entry.name}`}
                             disabled={isBusy || !connected}
                             onClick={() => {
-                              if (!window.confirm(`Remove ${entry.name} from this runtime?`)) return
+                              if (!window.confirm(`Remove ${entry.name} from this computer?`))
+                                return
                               void mutate(
                                 installed.id,
                                 () =>
@@ -347,7 +352,7 @@ export function AcpRegistry({
                     <p className="text-xs leading-5 text-muted-foreground">{entry.description}</p>
                     {!entry.available && !installed && (
                       <p className="text-xs text-muted-foreground">
-                        Not available on this runtime.
+                        Not available on this computer.
                       </p>
                     )}
                   </article>
@@ -543,20 +548,26 @@ function AcpAuthentication({
 
   return (
     <div className="grid gap-2 rounded border p-3">
-      <div className="flex items-center gap-2 text-xs font-medium">
-        <KeyRound size={13} /> Authentication
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="flex items-center gap-2 text-xs font-medium">
+          <KeyRound size={13} aria-hidden="true" /> Sign-in
+        </h4>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Refresh sign-in status"
+          title="Refresh sign-in status"
+          disabled={!connected || !!busyId}
+          onClick={() => void refreshMethods().catch((cause: unknown) => setError(message(cause)))}
+        >
+          <RefreshCw size={14} />
+        </Button>
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        disabled={!connected || !!busyId}
-        onClick={() => void refreshMethods().catch((cause: unknown) => setError(message(cause)))}
-      >
-        Refresh sign-in status
-      </Button>
       {!methods && !error && (
-        <p className="text-xs text-muted-foreground">Checking available sign-in methods…</p>
+        <p role="status" className="text-xs text-muted-foreground">
+          Checking available sign-in methods…
+        </p>
       )}
       {methods &&
         methods.authMethods.length === 0 &&
@@ -701,59 +712,71 @@ function AcpAuthentication({
           Sign out
         </Button>
       )}
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        disabled={disabled || sessionsBusy}
-        onClick={() => void loadSessions()}
-      >
-        {sessions ? 'Refresh' : 'Load'} agent sessions
-      </Button>
-      {sessions && (
-        <div className="grid gap-2">
-          {sessions.sessions.map((session) => (
-            <div
-              key={session.sessionId}
-              className="flex items-start justify-between gap-3 rounded border p-2"
-            >
-              <div className="min-w-0">
-                <p className="break-words text-xs font-medium">
-                  {session.title || session.sessionId}
-                </p>
-                <p className="break-all text-xs text-muted-foreground">{session.cwd}</p>
-              </div>
-              {sessions.canDelete && (
+      <details className="rounded border p-2 text-xs">
+        <summary className="cursor-pointer text-muted-foreground">Saved agent sessions</summary>
+        <div className="mt-2 grid gap-2">
+          <p className="text-muted-foreground">
+            Sessions this agent keeps on the computer, including their saved context.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="justify-self-start"
+            disabled={disabled || sessionsBusy}
+            onClick={() => void loadSessions()}
+          >
+            {sessionsBusy ? 'Loading…' : `${sessions ? 'Refresh' : 'Load'} agent sessions`}
+          </Button>
+          {sessions && !sessions.sessions.length && (
+            <p className="text-muted-foreground">No saved sessions.</p>
+          )}
+          {sessions && (
+            <div className="grid gap-2">
+              {sessions.sessions.map((session) => (
+                <div
+                  key={session.sessionId}
+                  className="flex items-start justify-between gap-3 rounded border p-2"
+                >
+                  <div className="min-w-0">
+                    <p className="break-words text-xs font-medium">
+                      {session.title || session.sessionId}
+                    </p>
+                    <p className="break-all text-xs text-muted-foreground">{session.cwd}</p>
+                  </div>
+                  {sessions.canDelete && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={sessionsBusy || disabled}
+                      onClick={() => void deleteSession(session.sessionId)}
+                    >
+                      Delete
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {!!sessions.nextCursor && (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   disabled={sessionsBusy || disabled}
-                  onClick={() => void deleteSession(session.sessionId)}
+                  onClick={() => void loadSessions(sessions.nextCursor, true)}
                 >
-                  Delete
+                  Load more
                 </Button>
               )}
             </div>
-          ))}
-          {!!sessions.nextCursor && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={sessionsBusy || disabled}
-              onClick={() => void loadSessions(sessions.nextCursor, true)}
-            >
-              Load more
-            </Button>
+          )}
+          {!!sessionsError && (
+            <p role="alert" className="text-xs text-destructive">
+              {sessionsError}
+            </p>
           )}
         </div>
-      )}
-      {!!sessionsError && (
-        <p role="alert" className="text-xs text-destructive">
-          {sessionsError}
-        </p>
-      )}
+      </details>
       {!!terminal && (
         <div className="grid gap-2">
           <p className="text-xs text-muted-foreground">
@@ -784,7 +807,11 @@ function AcpAuthentication({
           {busyId === 'probe' ? 'Checking…' : 'Check connection'}
         </Button>
       )}
-      {!!notice && <p className="text-xs text-muted-foreground">{notice}</p>}
+      {!!notice && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {notice}
+        </p>
+      )}
       {!!error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

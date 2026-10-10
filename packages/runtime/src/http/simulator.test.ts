@@ -29,6 +29,7 @@ it('authorizes task/device access, isolates tickets and releases input when a vi
   })
   const token = 'simulator-owner-token-at-least-thirty-two-characters'
   const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  runtime.services.deviceHosts.settings.save({ enabled: true, hosts: [] })
   cleanups.push(() => runtime.close())
   const call = (taskId: string, id = 'ios:qa', credential = token) =>
     fetch(`http://127.0.0.1:${runtime.port}/api/previews/simulator/open`, {

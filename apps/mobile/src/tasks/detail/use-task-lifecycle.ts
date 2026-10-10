@@ -154,7 +154,7 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
     deleteThread: () =>
       Alert.alert(
         'Delete thread?',
-        `“${task.title}” and its conversation will be permanently deleted. Project files and worktrees stay on disk.`,
+        `“${task.title}” and its conversation will be permanently deleted. Dovo-created worktrees follow the computer’s cleanup setting. Branches and uncommitted changes are kept.`,
         [
           {
             text: 'Cancel',

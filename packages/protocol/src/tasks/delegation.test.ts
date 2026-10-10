@@ -2,6 +2,7 @@ import { expect, it } from 'vite-plus/test'
 import type { Task, Subagent } from '../index.js'
 import {
   taskFamilyIds,
+  taskFamilyInputIds,
   taskSubagents,
   indexTaskSubagents,
   taskFamilyWorking,
@@ -135,4 +136,13 @@ it('changes the stop guard when a native child is reused in the same session', (
   const parent = { ...task('parent'), status: 'review' as const, subagents: [native] }
   const newer = { ...parent, subagents: [{ ...native, startedAt: 'second' }] }
   expect(taskFamilyRunToken([parent], parent.id)).not.toBe(taskFamilyRunToken([newer], parent.id))
+})
+
+it('surfaces nested child input on ancestors without crossing independent families or looping', () => {
+  const tasks = [task('root'), task('child', 'root'), task('nested', 'child'), task('other')]
+  expect(taskFamilyInputIds(tasks, ['nested'])).toEqual(new Set(['nested', 'child', 'root']))
+  tasks[0] = task('root', 'nested')
+  expect(taskFamilyInputIds(tasks, ['nested', 'other'])).toEqual(
+    new Set(['nested', 'child', 'root', 'other']),
+  )
 })

@@ -8,6 +8,7 @@ import {
   settingsScopeLabels,
   scopedAgentEntries,
   modelDisplayName,
+  providerDisplayName,
   runtimeDefaultsSchema,
   builtInAgentDefinition,
   type Agent,
@@ -52,7 +53,7 @@ export function ScopedAgents({
         }
       })
       .catch((error: unknown) => {
-        if (current) setError(String(error))
+        if (current) setError(message(error))
       })
     return () => {
       current = false
@@ -86,8 +87,8 @@ export function ScopedAgents({
   const agents = [...new Map([...inherited, ...own].map((agent) => [agent.id, agent])).values()]
   if (!snapshot?.scopedAgentsSupported)
     return (
-      <p className="text-xs text-muted-foreground">
-        Update this environment to configure named agents at all four scopes.
+      <p role="status" className="rounded-xl border p-4 text-xs text-muted-foreground">
+        Update Dovo on this computer to manage agent profiles at every settings level.
       </p>
     )
   const selected = agents.find((agent) => agent.id === selectedId) ?? agents[0]
@@ -104,9 +105,9 @@ export function ScopedAgents({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold">Agent profiles</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Built-in providers are ready to configure. Use your computer’s installation and login,
-            or add a custom profile.
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Each built-in provider has a profile that uses the computer’s own installation and
+            sign-in. Customize one here, or add your own profile for a different model or role.
           </p>
         </div>
         <Button
@@ -168,6 +169,8 @@ export function ScopedAgents({
             {filtered.map((agent) => {
               const local = own.some((entry) => entry.id === agent.id)
               const origin = origins.find((entry) => entry.agent.id === agent.id)?.scope
+              const provider = providers[agent.provider].short ?? providers[agent.provider].name
+              const model = modelDisplayName(agent.model) || 'Default model'
               return (
                 <button
                   key={agent.id}
@@ -180,7 +183,7 @@ export function ScopedAgents({
                     setNotice('')
                     setSelectedId(agent.id)
                   }}
-                  className={`flex w-full items-start gap-3 border-b border-l-2 px-3 py-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selected?.id === agent.id ? 'border-l-primary bg-primary/8' : 'border-l-transparent'}`}
+                  className={`flex w-full items-start gap-3 border-b border-l-2 px-3 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selected?.id === agent.id ? 'border-l-primary bg-primary/8' : 'border-l-transparent'}`}
                 >
                   <AgentAvatar
                     provider={agent.provider}
@@ -189,16 +192,19 @@ export function ScopedAgents({
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{agent.name}</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">
-                      {providers[agent.provider].short ?? providers[agent.provider].name} ·{' '}
-                      {modelDisplayName(agent.model) || 'Provider default'}
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {agent.name === providerDisplayName(agent.provider)
+                        ? model
+                        : `${provider} · ${model}`}
                     </span>
-                    <span className="mt-1 block text-[11px] text-muted-foreground">
+                    <span
+                      className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-[11px] ${local ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
+                    >
                       {local
-                        ? `Set here · ${settingsScopeLabels[scope]}`
+                        ? 'Customized here'
                         : origin === 'built-in'
-                          ? 'Built-in · provider defaults'
-                          : `Inherited · ${origin ? settingsScopeLabels[origin] : 'Earlier scope'}`}
+                          ? 'Built-in'
+                          : `From ${origin ? settingsScopeLabels[origin] : 'an earlier level'}`}
                     </span>
                   </span>
                 </button>
@@ -206,8 +212,12 @@ export function ScopedAgents({
             })}
           </div>
           {!agents.length && (
-            <p className="p-4 text-xs text-muted-foreground">
-              {settings ? 'No provider configurations yet.' : 'Loading configurations…'}
+            <p role="status" className="p-4 text-xs text-muted-foreground">
+              {settings
+                ? 'No agent profiles yet.'
+                : error
+                  ? 'Profiles unavailable.'
+                  : 'Loading profiles…'}
             </p>
           )}
           {agents.length > 0 && !filtered.length && (
@@ -229,6 +239,7 @@ export function ScopedAgents({
                     size="sm"
                     variant="ghost"
                     aria-label={`Duplicate ${selected.name}`}
+                    title="Duplicate as a new profile"
                     disabled={!connected || busy}
                     onClick={() =>
                       setEditing({ ...selected, id: randomUUID(), name: `${selected.name} copy` })
@@ -240,6 +251,7 @@ export function ScopedAgents({
                     size="sm"
                     variant="ghost"
                     aria-label={`Favorite ${selected.name}`}
+                    title="Favorite: show first in the composer"
                     aria-pressed={
                       !!snapshot?.defaults?.modelPreferences?.[`agent:${selected.id}`]?.favorite
                     }
@@ -257,7 +269,7 @@ export function ScopedAgents({
                         runtimeDefaultsSchema,
                       )
                         .then(() => refreshRuntimes())
-                        .catch((error: unknown) => setError(String(error)))
+                        .catch((error: unknown) => setError(message(error)))
                         .finally(() => setBusy(false))
                     }}
                   >
@@ -273,7 +285,12 @@ export function ScopedAgents({
                   {local && (
                     <Button
                       size="sm"
-                      variant="ghost"
+                      variant="outline"
+                      title={
+                        inheritedSelected
+                          ? `Remove the ${settingsScopeLabels[scope]} override`
+                          : 'Delete this profile'
+                      }
                       disabled={!connected || busy}
                       onClick={() => {
                         if (
@@ -284,8 +301,14 @@ export function ScopedAgents({
                         )
                           return
                         void save(own.filter((entry) => entry.id !== selected.id))
-                          .then(() => setNotice(''))
-                          .catch((error: unknown) => setError(String(error)))
+                          .then(() =>
+                            setNotice(
+                              inheritedSelected
+                                ? `${selected.name} now uses the inherited configuration.`
+                                : '',
+                            ),
+                          )
+                          .catch((error: unknown) => setError(message(error)))
                       }}
                     >
                       {inheritedSelected ? 'Reset' : 'Delete'}
@@ -300,8 +323,8 @@ export function ScopedAgents({
                 />
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   {local
-                    ? `This profile is customized at ${settingsScopeLabels[scope]}. ${inheritedSelected ? 'Reset restores the inherited configuration.' : 'More specific levels can override it.'}`
-                    : `Saving creates an override at ${settingsScopeLabels[scope]}. Reset it to use the inherited configuration.`}
+                    ? `Customized at ${settingsScopeLabels[scope]}. ${inheritedSelected ? 'Reset removes this override and restores the inherited configuration.' : 'This profile was created here; more specific levels can still override it.'}`
+                    : `Using the ${origin === 'built-in' ? 'built-in' : settingsScopeLabels[origin]} configuration. Saving creates an override at ${settingsScopeLabels[scope]}; Reset then restores the inherited one.`}
                 </p>
                 {builtInAgentDefinition(selected.id) && (
                   <p className="text-xs text-muted-foreground">
@@ -329,7 +352,7 @@ export function ScopedAgents({
                 </p>
               )}
               <details className="mt-4 border-t pt-4 text-xs text-muted-foreground">
-                <summary className="cursor-pointer">Provider diagnostics</summary>
+                <summary className="cursor-pointer">Check installation & sign-in</summary>
                 <ProviderCheck
                   key={JSON.stringify(selected)}
                   agent={selected}
@@ -338,6 +361,26 @@ export function ScopedAgents({
                 />
               </details>
             </>
+          ) : !settings ? (
+            <div
+              role="status"
+              className="flex min-h-64 flex-col items-center justify-center gap-2 text-center"
+            >
+              <h3 className="text-sm font-medium">
+                {!connected
+                  ? 'Computer offline'
+                  : error
+                    ? 'Profiles could not be loaded'
+                    : 'Loading agent profiles…'}
+              </h3>
+              <p className="max-w-sm text-xs text-muted-foreground">
+                {!connected
+                  ? 'Reconnect this computer to view and edit its agent profiles.'
+                  : error
+                    ? 'Check the error below, then reload.'
+                    : 'Reading saved profiles for this level.'}
+              </p>
+            </div>
           ) : (
             <div className="flex min-h-64 flex-col items-center justify-center gap-2 text-center">
               <h3 className="text-sm font-medium">Set up your first provider</h3>
@@ -350,10 +393,10 @@ export function ScopedAgents({
         </div>
       </div>
       {error && (
-        <p role="alert" className="text-xs text-destructive">
-          {error}{' '}
+        <p role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+          {error}
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={() => {
               if (!dirty || window.confirm('Discard unsaved configuration changes?'))
@@ -380,3 +423,5 @@ export function ScopedAgents({
     </section>
   )
 }
+
+const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))

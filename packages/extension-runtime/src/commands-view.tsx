@@ -6,7 +6,7 @@ export default function CommandsView({ entityId }: { entityId?: string }) {
     <HostPage
       initialRuntimeId={entityId}
       title="CLI commands & shell"
-      description="Executables and the terminal shell this computer uses for agents, Git and forges."
+      description="Choose the shell and command paths used on this computer."
     >
       <CommandSettings />
     </HostPage>

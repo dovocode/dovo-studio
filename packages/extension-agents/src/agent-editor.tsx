@@ -25,7 +25,6 @@ import {
   AgentAvatar,
   agentIconChoices,
   Button,
-  ChoicePicker,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -33,6 +32,11 @@ import {
   DialogTitle,
   FormField,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Textarea,
 } from '@dovo/studio-ui'
 import { ModelSettings } from './model-settings'
@@ -74,6 +78,12 @@ export function AgentEditor({
   const availableProviders = Object.keys(providers).map((id) =>
     decode(agentSchema.fields.provider, id),
   )
+  const accessModes = selectableAccessModes(agent.permission, agent.provider)
+  const discard = () => {
+    setAgent(initial)
+    setEnvironment(formatAgentEnvironment(initial.env))
+    setError('')
+  }
   return (
     <EditorShell
       inline={inline}
@@ -186,6 +196,7 @@ export function AgentEditor({
           )}
           {(step === 1 || !creating) && (
             <section className="space-y-4">
+              {!creating && <h3 className="text-sm font-semibold">Profile</h3>}
               <FormField layout="settings" label="Name">
                 <Input
                   aria-label="Name"
@@ -197,8 +208,7 @@ export function AgentEditor({
               </FormField>
               {!creating && !fixedProvider && (
                 <FormField layout="settings" label="Provider">
-                  <ChoicePicker
-                    aria-label="Provider"
+                  <Select
                     value={agent.provider}
                     onValueChange={(value) =>
                       setAgent(
@@ -206,12 +216,17 @@ export function AgentEditor({
                       )
                     }
                   >
-                    {availableProviders.map((id) => (
-                      <option key={id} value={id}>
-                        {providerDisplayName(id)}
-                      </option>
-                    ))}
-                  </ChoicePicker>
+                    <SelectTrigger aria-label="Provider" className="h-9 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableProviders.map((id) => (
+                        <SelectItem key={id} value={id}>
+                          {providerDisplayName(id)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </FormField>
               )}
               <details className="text-xs text-muted-foreground" open={creating ? true : undefined}>
@@ -255,8 +270,7 @@ export function AgentEditor({
                 <ModelSettings agent={agent} onChange={setAgent} />
                 <FormField layout="settings" label="Access">
                   <div className="space-y-2">
-                    <ChoicePicker
-                      aria-label="Access"
+                    <Select
                       value={agent.permission}
                       onValueChange={(value) =>
                         setAgent({
@@ -265,23 +279,24 @@ export function AgentEditor({
                         })
                       }
                     >
-                      {selectableAccessModes(agent.permission, agent.provider).map((mode) => (
-                        <option
-                          key={mode.id}
-                          value={mode.id}
-                          disabled={!supportsAccess(agent.provider, mode.id)}
-                        >
-                          {mode.name}
-                          {supportsAccess(agent.provider, mode.id) ? '' : ' · Not supported'}
-                        </option>
-                      ))}
-                    </ChoicePicker>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      {
-                        selectableAccessModes(agent.permission, agent.provider).find(
-                          (mode) => mode.id === agent.permission,
-                        )?.description
-                      }
+                      <SelectTrigger aria-label="Access" className="h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {accessModes.map((mode) => (
+                          <SelectItem
+                            key={mode.id}
+                            value={mode.id}
+                            disabled={!supportsAccess(agent.provider, mode.id)}
+                          >
+                            {mode.name}
+                            {supportsAccess(agent.provider, mode.id) ? '' : ' · Not supported'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs font-normal leading-relaxed text-muted-foreground">
+                      {accessModes.find((mode) => mode.id === agent.permission)?.description}
                     </p>
                   </div>
                 </FormField>
@@ -294,7 +309,7 @@ export function AgentEditor({
                   <Textarea
                     aria-label="Instructions"
                     value={agent.instructions}
-                    placeholder="Additional instructions for this profile…"
+                    placeholder="Optional. Added to every task that uses this profile…"
                     onChange={(event) => setAgent({ ...agent, instructions: event.target.value })}
                   />
                 </FormField>
@@ -305,8 +320,8 @@ export function AgentEditor({
                 </summary>
                 <div className="mt-4 space-y-4">
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    Leave these fields blank to use the computer’s normal provider installation and
-                    account. Custom paths belong to the computer where the agent runs.
+                    Optional. Leave blank to use the provider installed and signed in on the
+                    computer that runs the task. Paths refer to that computer.
                   </p>
                   {agent.provider === 'hermes' && (
                     <p className="text-xs text-muted-foreground">
@@ -359,15 +374,15 @@ export function AgentEditor({
                   ) && (
                     <FormField
                       layout="settings"
-                      label={
+                      label={`Config directory (${
                         agent.provider === 'hermes'
-                          ? 'HERMES_HOME directory'
+                          ? 'HERMES_HOME'
                           : agent.provider === 'copilot'
-                            ? 'COPILOT_HOME directory'
+                            ? 'COPILOT_HOME'
                             : agent.provider === 'codex'
-                              ? 'CODEX_HOME directory'
-                              : 'CLAUDE_CONFIG_DIR directory'
-                      }
+                              ? 'CODEX_HOME'
+                              : 'CLAUDE_CONFIG_DIR'
+                      })`}
                     >
                       <Input
                         value={agent.configDirectory ?? ''}
@@ -392,20 +407,18 @@ export function AgentEditor({
                         />
                       </FormField>
                     )}
-                  <FormField
-                    layout="settings"
-                    label="Environment variables (NAME=value, one per line)"
-                  >
+                  <FormField layout="settings" label="Environment variables">
                     <Textarea
-                      aria-label="Environment variables (NAME=value, one per line)"
+                      aria-label="Environment variables"
                       value={environment}
                       onChange={(event) => setEnvironment(event.target.value)}
                       placeholder="EXAMPLE=value"
                     />
+                    <p className="font-normal leading-relaxed">
+                      One NAME=value per line. Stored as readable settings, so keep secrets in the
+                      computer’s own environment.
+                    </p>
                   </FormField>
-                  <p className="text-xs text-muted-foreground">
-                    Saved as readable configuration. Keep secrets in the computer’s environment.
-                  </p>
                 </div>
               </details>
             </>
@@ -416,11 +429,18 @@ export function AgentEditor({
             </p>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-            <span className="text-xs text-muted-foreground">
+            <span aria-live="polite" className="text-xs text-muted-foreground">
               {!creating &&
-                (dirty ? `Unsaved changes · ${computerName}` : 'Uses this profile on new tasks')}
+                (dirty
+                  ? `Unsaved changes · saves at ${computerName}`
+                  : `No unsaved changes · ${computerName}`)}
             </span>
             <div className="flex gap-2">
+              {!creating && dirty && (
+                <Button type="button" variant="ghost" disabled={busy} onClick={discard}>
+                  Discard changes
+                </Button>
+              )}
               {creating && step > 0 && (
                 <Button
                   type="button"
@@ -483,7 +503,9 @@ function EditorShell({
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto p-6">
         <DialogHeader>
           <DialogTitle>{creating ? 'Add agent profile' : 'Edit agent profile'}</DialogTitle>
-          <DialogDescription>{computerName} · Reusable settings for this scope.</DialogDescription>
+          <DialogDescription>
+            Saved at {computerName} and inherited by more specific settings levels.
+          </DialogDescription>
         </DialogHeader>
         {children}
       </DialogContent>

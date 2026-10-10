@@ -1,8 +1,8 @@
 import type { CredentialField } from '@dovo/protocol'
 import { View } from 'react-native'
-import { Field } from '../ui/controls/field'
+import { SettingsField as Field } from '../screens/settings-controls'
 import { Text } from '../ui/content/text'
-import { Action } from '../ui/controls/action'
+import { SettingsAction as Action } from '../screens/settings-controls'
 import { useTheme } from '../ui/theme'
 export function CredentialEditor({
   fields,

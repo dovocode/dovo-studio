@@ -1,5 +1,12 @@
 import { useAppPreferences, updateAppPreferences } from '@dovo/studio-core'
-import { ChoicePicker, Button } from '@dovo/studio-ui'
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { runtimeDefaultsSchema } from '@dovo/protocol'
 import { useCallback } from 'react'
@@ -10,6 +17,13 @@ import {
   useWorkspace,
 } from '@dovo/studio-core'
 import { ModelSettings as Fields } from '@dovo/studio-ui'
+
+type PreferenceScope = 'server' | 'global'
+const preferenceScopes: readonly { id: PreferenceScope; name: string }[] = [
+  { id: 'server', name: 'This computer' },
+  { id: 'global', name: 'All computers' },
+]
+
 export function ModelSettings({
   agent,
   onChange,
@@ -22,8 +36,9 @@ export function ModelSettings({
     (input: AgentDiscovery) => request('/api/agents/models', input, modelCatalogSchema),
     [request],
   )
-  const [scope, setScope] = useApplicationState('server')
+  const [scope, setScope] = useApplicationState<PreferenceScope>('server')
   const [error, setError] = useApplicationState('')
+  const [resetting, setResetting] = useApplicationState(false)
   const { globalModelPreferences, globalModelPreferencesUpdatedAt } = useAppPreferences()
   const globalPreferences =
     (snapshot?.defaults?.globalModelPreferencesUpdatedAt ?? 0) > globalModelPreferencesUpdatedAt
@@ -61,35 +76,59 @@ export function ModelSettings({
         }}
       />
       <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer">Model library preferences</summary>
-        <div className="mt-3">
-          <ChoicePicker
-            aria-label="Model preference scope"
-            value={scope}
-            onValueChange={setScope}
-            className="h-9 rounded-md border bg-background px-2 text-xs"
-          >
-            <option value="server">Model favorites & visibility · This computer</option>
-            <option value="global">Model favorites & visibility · Global</option>
-          </ChoicePicker>
+        <summary className="cursor-pointer">Where model favorites are saved</summary>
+        <div className="mt-3 grid gap-3 rounded-md border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-sm leading-relaxed">
+              Favorites and hidden models apply to every profile. Save them for this computer only,
+              or share them across all your computers.
+            </p>
+            <Select
+              value={scope}
+              onValueChange={(value) => {
+                const next = preferenceScopes.find((entry) => entry.id === value)
+                if (next) setScope(next.id)
+              }}
+            >
+              <SelectTrigger aria-label="Model preference scope" className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {preferenceScopes.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    {entry.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {scope === 'server' && snapshot?.defaults?.globalModelPreferences && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+              <p className="max-w-sm leading-relaxed">
+                Replace this computer’s favorites and hidden models with the shared list.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!connected || resetting}
+                onClick={() => {
+                  setResetting(true)
+                  setError('')
+                  void request('/api/agents/models/reset', {}, runtimeDefaultsSchema)
+                    .then(refreshRuntimes)
+                    .catch((error: unknown) =>
+                      setError(error instanceof Error ? error.message : String(error)),
+                    )
+                    .finally(() => setResetting(false))
+                }}
+              >
+                {resetting ? 'Switching…' : 'Use shared list here'}
+              </Button>
+            </div>
+          )}
         </div>
       </details>
-      {scope === 'server' && snapshot?.defaults?.globalModelPreferences && (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={!connected}
-          onClick={() => {
-            void request('/api/agents/models/reset', {}, runtimeDefaultsSchema)
-              .then(refreshRuntimes)
-              .catch((error: unknown) =>
-                setError(error instanceof Error ? error.message : String(error)),
-              )
-          }}
-        >
-          Use global model preferences on this server
-        </Button>
-      )}
       {!!error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

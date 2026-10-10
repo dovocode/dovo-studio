@@ -73,6 +73,7 @@
   "devDependencies": {
     "@expo/metro-config": "^57.0.12",
     "@react-native/metro-config": "0.86.3",
+    "@types/mdast": "^4.0.4",
     "@types/react": "~19.2.4",
     "babel-preset-expo": "^57.0.13"
   },

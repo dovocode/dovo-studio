@@ -1,3 +1,5 @@
+import { hasJiraIssueFilters, type JiraIssueFilters } from '@dovo/protocol'
+import { JiraToolbar } from './jira-toolbar'
 import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useLayoutEffect, useRef } from 'react'
@@ -60,12 +62,15 @@ function WorkView({
     return () => clearTimeout(timer)
   }, [mode, search])
   const [state, setState] = useApplicationState(isJira ? 'open' : 'all')
+  const [jiraFilters, setJiraFilters] = useApplicationState<JiraIssueFilters>({})
+  const [jiraLayout, setJiraLayout] = useApplicationState<'list' | 'board'>('list')
   const { sources, pages, busy, refresh, more } = useWorkSources(
     mode,
     query,
     sourceKind,
     isJira ? project : '',
     isJira ? state : 'all',
+    isJira ? jiraFilters : undefined,
   )
   const [sort, setSort] = useApplicationState('updated')
   const [linked, setLinked] = useApplicationState('all')
@@ -102,7 +107,7 @@ function WorkView({
   }, [isJira, compact, selected?.source.scope, selected?.id])
   useEffect(() => {
     if (isJira && list.current) list.current.scrollTop = 0
-  }, [isJira, project, query, state, linked, sort])
+  }, [isJira, project, query, state, linked, sort, jiraFilters, jiraLayout])
   const lastTarget = useRef<string | undefined>(undefined)
   const selectedSource = sources.find(
     (source) => source.key === selected?.source.key && source.scope === selected.source.scope,
@@ -138,14 +143,18 @@ function WorkView({
         : null,
     )
   }, [entityId, activeRuntimeId, sources])
+  const openContext = useRef('')
+  openContext.current = JSON.stringify([entityId, project, search, state, linked, jiraFilters])
   const open = async (source: WorkSource, id: string, url: string) => {
     if (pending.current) return
     pending.current = true
     setOpening(true)
     setError('')
+    const context = openContext.current
     returnScroll.current = isJira && compact ? (list.current?.scrollTop ?? null) : null
     try {
       if (activeRuntimeId !== source.runtimeId) await switchRuntime(source.runtimeId)
+      if (context !== openContext.current) return
       setSelected({
         source,
         id,
@@ -242,7 +251,11 @@ function WorkView({
         : !page.options?.pipelines && page.options?.pipelineNotice),
   )
   const defaultState = isJira ? 'open' : 'all'
-  const hasFilters = !!search || state !== defaultState || linked !== 'all'
+  const hasFilters =
+    !!search ||
+    state !== defaultState ||
+    linked !== 'all' ||
+    (isJira && (!!project || hasJiraIssueFilters(jiraFilters)))
   const closePreview = () => {
     if (isJira && selected) focusAfterClose.current = jiraIssueRowKey(selected.source, selected.id)
     setSelected(null)
@@ -381,95 +394,137 @@ function WorkView({
                 />
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <ChoicePicker
-                aria-label="Issue source"
-                className="h-8 w-auto max-w-72 text-xs"
-                value={project}
-                onValueChange={(value) => {
-                  setProject(value)
-                  if (isJira) setSelected(null)
-                  else setState('all')
-                }}
-              >
-                <option value="">All sources</option>
-                {sources.map((source) => (
-                  <option key={source.key} value={source.key}>
-                    {source.name} · {source.runtimeName}
-                  </option>
-                ))}
-              </ChoicePicker>
-              <ChoicePicker
-                aria-label={mode === 'issues' ? 'Issue state' : 'Pipeline status'}
-                className="h-8 w-auto text-xs"
-                value={state}
-                onValueChange={(value) => {
+            {isJira ? (
+              <JiraToolbar
+                state={state}
+                onState={(value) => {
                   setState(value)
-                  if (isJira) setSelected(null)
+                  setSelected(null)
                 }}
-              >
-                {isJira ? (
-                  <>
-                    <option value="open">Open issues</option>
-                    <option value="all">All issues</option>
-                    <option value="closed">Done issues</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="all">All states</option>
-                    {states.map((state) => (
-                      <option key={state}>{state}</option>
-                    ))}
-                  </>
+                filters={jiraFilters}
+                onFilters={(value) => {
+                  setJiraFilters(value)
+                  setSelected(null)
+                }}
+                view={jiraLayout}
+                onView={setJiraLayout}
+                issues={visiblePages.flatMap((page) =>
+                  page.items.flatMap((item) => ('state' in item ? [item] : [])),
                 )}
-              </ChoicePicker>
-              {mode === 'issues' && (
+                sources={sources}
+                source={project}
+                onSource={(value) => {
+                  setProject(value)
+                  setSelected(null)
+                }}
+                linked={linked}
+                onLinked={setLinked}
+                sort={sort}
+                onSort={setSort}
+                onClear={() => {
+                  setSearch('')
+                  setState(defaultState)
+                  setJiraFilters({})
+                  setProject('')
+                  setLinked('all')
+                  setSelected(null)
+                }}
+              />
+            ) : (
+              <div className="flex flex-wrap gap-2">
                 <ChoicePicker
-                  aria-label="Project links"
-                  className="h-8 w-auto text-xs"
-                  value={linked}
-                  onValueChange={setLinked}
+                  aria-label="Issue source"
+                  className="h-8 w-auto max-w-72 text-xs"
+                  value={project}
+                  onValueChange={(value) => {
+                    setProject(value)
+                    if (isJira) setSelected(null)
+                    else setState('all')
+                  }}
                 >
-                  <option value="all">All project links</option>
-                  <option value="unlinked">Not linked to a project</option>
-                  <option value="linked">Linked to a project</option>
+                  <option value="">All sources</option>
+                  {sources.map((source) => (
+                    <option key={source.key} value={source.key}>
+                      {source.name} · {source.runtimeName}
+                    </option>
+                  ))}
                 </ChoicePicker>
-              )}
-              <ChoicePicker
-                aria-label="Sort results"
-                className="h-8 w-auto text-xs"
-                value={sort}
-                onValueChange={setSort}
-              >
-                <option value="updated">
-                  {isJira ? 'Jira order · per source' : 'Recently updated'}
-                </option>
-                <option value="project">Source</option>
-                <option value="title">Title</option>
-              </ChoicePicker>
-              {mode === 'issues' && (
-                <span className="self-center text-[0.6875rem] text-muted-foreground">
-                  {isJira
-                    ? 'Search and status query Jira · project links filter loaded results'
-                    : 'Search your issue trackers · states filter loaded results'}
-                </span>
-              )}
-              {hasFilters && (
-                <Button
-                  className="h-8 text-xs"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSearch('')
-                    setLinked('all')
-                    setState(defaultState)
+                <ChoicePicker
+                  aria-label={mode === 'issues' ? 'Issue state' : 'Pipeline status'}
+                  className="h-8 w-auto text-xs"
+                  value={state}
+                  onValueChange={(value) => {
+                    setState(value)
                     if (isJira) setSelected(null)
                   }}
                 >
-                  Clear filters
-                </Button>
-              )}
-            </div>
+                  {isJira ? (
+                    <>
+                      <option value="open">Open issues</option>
+                      <option value="all">All issues</option>
+                      <option value="closed">Done issues</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="all">All states</option>
+                      {states.map((state) => (
+                        <option key={state}>{state}</option>
+                      ))}
+                    </>
+                  )}
+                </ChoicePicker>
+                {mode === 'issues' && (
+                  <ChoicePicker
+                    aria-label="Project links"
+                    className="h-8 w-auto text-xs"
+                    value={linked}
+                    onValueChange={setLinked}
+                  >
+                    <option value="all">All project links</option>
+                    <option value="unlinked">Not linked to a project</option>
+                    <option value="linked">Linked to a project</option>
+                  </ChoicePicker>
+                )}
+                <ChoicePicker
+                  aria-label="Sort results"
+                  className="h-8 w-auto text-xs"
+                  value={sort}
+                  onValueChange={setSort}
+                >
+                  <option value="updated">
+                    {isJira ? 'Jira order · per source' : 'Recently updated'}
+                  </option>
+                  <option value="project">Source</option>
+                  <option value="title">Title</option>
+                </ChoicePicker>
+                {mode === 'issues' && (
+                  <span className="self-center text-[0.6875rem] text-muted-foreground">
+                    {isJira
+                      ? 'Search and status query Jira · project links filter loaded results'
+                      : 'Search your issue trackers · states filter loaded results'}
+                  </span>
+                )}
+                {hasFilters && (
+                  <Button
+                    className="h-8 text-xs"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSearch('')
+                      setLinked('all')
+                      setState(defaultState)
+                      if (isJira) {
+                        setJiraFilters({})
+                        setProject('')
+                      }
+                      if (isJira) setSelected(null)
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -486,7 +541,7 @@ function WorkView({
       <div
         className={
           isJira
-            ? 'relative grid min-h-0 min-w-0 flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,42%)]'
+            ? `relative grid min-h-0 min-w-0 flex-1 ${jiraLayout === 'list' || selected ? 'lg:grid-cols-[minmax(0,1fr)_minmax(22rem,42%)]' : ''}`
             : 'flex min-h-0 flex-1 flex-col'
         }
       >
@@ -572,26 +627,34 @@ function WorkView({
               <div className="mx-auto flex max-w-sm flex-col items-center gap-3 py-12 text-center">
                 <CircleDot className="size-7 text-muted-foreground/60" />
                 <p className="text-sm font-medium">
-                  {hasFilters
-                    ? `No matching ${mode}`
-                    : mode === 'issues'
-                      ? project
-                        ? 'No issues found'
-                        : 'Your issues, in one place'
-                      : 'No pipeline runs yet'}
+                  {isJira && !hasFilters
+                    ? 'No open issues found'
+                    : hasFilters
+                      ? `No matching ${mode}`
+                      : mode === 'issues'
+                        ? project
+                          ? 'No issues found'
+                          : 'Your issues, in one place'
+                        : 'No pipeline runs yet'}
                 </p>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  {hasFilters
-                    ? 'Try another search or state, or check your issue sources.'
-                    : mode === 'issues'
-                      ? project
-                        ? 'No issues are available for this source.'
-                        : sourceKind === 'jira'
-                          ? 'Browse Jira issues and link them to code projects when you are ready to work on them.'
-                          : 'Browse issues from your code projects.'
-                      : 'Runs from your connected project will appear here.'}
+                  {isJira && !hasFilters
+                    ? 'Try all statuses to see completed work, or check your issue sources.'
+                    : hasFilters
+                      ? 'Try another search or state, or check your issue sources.'
+                      : mode === 'issues'
+                        ? project
+                          ? 'No issues are available for this source.'
+                          : sourceKind === 'jira'
+                            ? 'Browse Jira issues and link them to code projects when you are ready to work on them.'
+                            : 'Browse issues from your code projects.'
+                        : 'Runs from your connected project will appear here.'}
                 </p>
-                {hasFilters ? (
+                {isJira && !hasFilters ? (
+                  <Button size="sm" variant="outline" onClick={() => setState('all')}>
+                    Show all issues
+                  </Button>
+                ) : hasFilters ? (
                   <Button
                     size="sm"
                     variant="outline"
@@ -599,6 +662,10 @@ function WorkView({
                       setSearch('')
                       setLinked('all')
                       setState(defaultState)
+                      if (isJira) {
+                        setJiraFilters({})
+                        setProject('')
+                      }
                       if (isJira) setSelected(null)
                     }}
                   >
@@ -619,6 +686,7 @@ function WorkView({
             )}
             {isJira ? (
               <JiraIssueList
+                layout={jiraLayout}
                 rows={rows.flatMap((row) =>
                   'state' in row.item ? [{ ...row, item: row.item }] : [],
                 )}
@@ -730,7 +798,7 @@ function WorkView({
             ))}
           </div>
         )}
-        {isJira && (
+        {isJira && (jiraLayout === 'list' || selected) && (
           <aside
             ref={preview}
             tabIndex={-1}

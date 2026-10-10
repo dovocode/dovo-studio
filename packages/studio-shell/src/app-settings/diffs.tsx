@@ -1,11 +1,12 @@
 import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
-import { SettingRow, SettingsGroup, SettingsPage, Segmented, Toggle } from './layout'
+import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
+import { SettingsSelect } from './settings-select'
 
 function DiffSettingsRows() {
   const preferences = useAppPreferences()
   return (
     <>
-      <SettingsGroup title="Conversation">
+      <SettingsGroup title="Changes in conversations">
         <SettingRow
           label="Hide whitespace changes"
           description="Hide files whose only changes are whitespace."
@@ -17,11 +18,11 @@ function DiffSettingsRows() {
           />
         </SettingRow>
         <SettingRow
-          label="Proactive panels"
-          description="Open linked pull requests first, otherwise open Changes for edits to at least 3 files or 50 lines."
+          label="Open review panels automatically"
+          description="Open linked pull requests, or Changes when edits reach 3 files or 50 lines."
         >
           <Toggle
-            label="Proactive panels"
+            label="Open review panels automatically"
             checked={preferences.proactivePanels}
             onChange={(proactivePanels) => updateAppPreferences({ proactivePanels })}
           />
@@ -39,21 +40,21 @@ function DiffSettingsRows() {
       </SettingsGroup>
       <SettingsGroup title="Layout">
         <SettingRow
-          label="Default layout"
-          description="Each diff can still switch between unified and split."
+          label="Default diff layout"
+          description="Unified shows changes inline. Split shows old and new code side by side."
         >
-          <Segmented
+          <SettingsSelect
             label="Default diff layout"
             value={preferences.diffLayout}
             options={[
-              ['unified', 'Unified'],
-              ['split', 'Split'],
+              ['unified', 'Unified (inline)'],
+              ['split', 'Split (side by side)'],
             ]}
             onChange={(diffLayout) => updateAppPreferences({ diffLayout })}
           />
         </SettingRow>
         <SettingRow label="Long lines" description="Wrap to the window, or scroll sideways.">
-          <Segmented
+          <SettingsSelect
             label="Long lines"
             value={preferences.diffOverflow}
             options={[
@@ -63,7 +64,7 @@ function DiffSettingsRows() {
             onChange={(diffOverflow) => updateAppPreferences({ diffOverflow })}
           />
         </SettingRow>
-        <SettingRow label="Line numbers">
+        <SettingRow label="Show line numbers">
           <Toggle
             label="Show line numbers"
             checked={preferences.diffLineNumbers}
@@ -71,12 +72,12 @@ function DiffSettingsRows() {
           />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup title="Highlighting">
+      <SettingsGroup title="Change highlighting">
         <SettingRow
           label="Changes within a line"
           description="Mark exactly what changed inside edited lines."
         >
-          <Segmented
+          <SettingsSelect
             label="Changes within a line"
             value={preferences.diffHighlight}
             options={[

@@ -17,6 +17,8 @@ import {
   useWorkspace,
   type UsageRow,
 } from '@dovo/studio-core'
+import { Button, ChoicePicker } from '@dovo/studio-ui'
+import { SettingsSelect } from './settings-select'
 import { SettingsGroup, SettingsPage, Segmented } from './layout'
 
 const periods = { day: 1, week: 7, month: 30, quarter: 90 } as const
@@ -24,29 +26,44 @@ const periods = { day: 1, week: 7, month: 30, quarter: 90 } as const
 const Rows = memo(function Rows({ rows }: { rows: UsageRow[] }) {
   if (!rows.length)
     return (
-      <p className="py-3 text-xs text-muted-foreground">
+      <p className="p-4 text-xs text-muted-foreground">
         No turns in this period. Try the last 30 days or run a new task.
       </p>
     )
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto p-4">
       <table className="w-full min-w-[32rem] text-xs">
-        <thead className="text-left text-[0.6875rem] text-muted-foreground">
+        <caption className="sr-only">
+          Usage by name, requests, agent time, tokens and estimated cost
+        </caption>
+        <thead className="text-left text-xs text-muted-foreground">
           <tr>
-            <th className="py-1.5 font-normal">Name</th>
-            <th className="py-1.5 text-right font-normal">Turns / requests</th>
-            <th className="py-1.5 text-right font-normal">Agent time</th>
-            <th className="py-1.5 text-right font-normal">Tokens</th>
-            <th className="py-1.5 text-right font-normal">Est. cost</th>
+            <th scope="col" className="py-1.5 font-normal">
+              Name
+            </th>
+            <th scope="col" className="py-1.5 text-right font-normal">
+              Turns / requests
+            </th>
+            <th scope="col" className="py-1.5 text-right font-normal">
+              Agent time
+            </th>
+            <th scope="col" className="py-1.5 text-right font-normal">
+              Tokens
+            </th>
+            <th scope="col" className="py-1.5 text-right font-normal">
+              Est. cost
+            </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.key} className="border-t border-border/60">
               <td className="max-w-64 py-1.5 pr-2">
-                <span className="block truncate">{row.label}</span>
+                <span className="block truncate" title={row.label}>
+                  {row.label}
+                </span>
                 {row.detail && (
-                  <span className="block truncate text-[0.6875rem] text-muted-foreground">
+                  <span title={row.detail} className="block truncate text-xs text-muted-foreground">
                     {row.detail}
                   </span>
                 )}
@@ -167,12 +184,12 @@ export default function UsageSettings() {
           ]}
           onChange={setView}
         />
-        <div className="flex items-center gap-2">
-          <select
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <ChoicePicker
             aria-label="Computer"
             value={computer}
-            onChange={(event) => setComputer(event.target.value)}
-            className="rounded-md border bg-background px-2 py-1 text-xs"
+            onValueChange={setComputer}
+            className="sm:w-48"
           >
             <option value="all">All computers</option>
             {runtimes.map((entry) => (
@@ -181,21 +198,37 @@ export default function UsageSettings() {
                 {entry.connected ? '' : ' · Offline'}
               </option>
             ))}
-          </select>
-          <button
-            type="button"
+          </ChoicePicker>
+          <Button
+            variant="outline"
             disabled={busy || !hosts.some((entry) => entry.connected)}
             onClick={refresh}
-            className="rounded-md border px-3 py-1 text-xs disabled:opacity-50"
           >
             {busy ? 'Refreshing…' : 'Refresh'}
-          </button>
+          </Button>
         </div>
       </div>
+      {!hosts.length && (
+        <p
+          role="status"
+          className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground"
+        >
+          Connect a computer to see recorded usage and account limits.
+        </p>
+      )}
+      {busy && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Refreshing usage and account limits…
+        </p>
+      )}
       {hosts.map(
         (entry) =>
           notices[entry.profile.id] && (
-            <p key={entry.profile.id} role="status" className="text-xs text-muted-foreground">
+            <p
+              key={entry.profile.id}
+              role="status"
+              className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground"
+            >
               {runtimeComputerName(entry)}: {notices[entry.profile.id]}
             </p>
           ),
@@ -206,11 +239,12 @@ export default function UsageSettings() {
             <div>
               <h2 className="text-sm font-medium">Activity overview</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                {runtimes.filter((entry) => entry.snapshot).length} computers with usage data · Dovo
-                turns and CLI requests · Includes running turns
+                {hosts.filter((entry) => entry.snapshot).length}{' '}
+                {hosts.filter((entry) => entry.snapshot).length === 1 ? 'computer' : 'computers'}{' '}
+                with usage data · Includes running turns and CLI requests
               </p>
             </div>
-            <Segmented
+            <SettingsSelect
               label="Period"
               value={period}
               options={[
@@ -245,12 +279,10 @@ export default function UsageSettings() {
                 detail: `${total.pricedTurns} of ${total.turns} turns priced`,
               },
             ].map((metric) => (
-              <div key={metric.label} className="rounded-xl border bg-card/60 p-3">
-                <p className="text-[0.6875rem] text-muted-foreground">{metric.label}</p>
+              <div key={metric.label} className="rounded-lg border bg-card p-3">
+                <p className="text-xs text-muted-foreground">{metric.label}</p>
                 <p className="mt-2 text-xl font-semibold tabular-nums">{metric.value}</p>
-                <p className="mt-1 text-[0.625rem] leading-4 text-muted-foreground">
-                  {metric.detail}
-                </p>
+                <p className="mt-1 text-xs leading-4 text-muted-foreground">{metric.detail}</p>
               </div>
             ))}
           </div>
@@ -259,7 +291,7 @@ export default function UsageSettings() {
               {period === 'day' ? 'Hourly' : 'Daily'}{' '}
               {view === 'tokens' ? 'tokens' : 'API-equivalent cost'}
             </h2>
-            <div className="flex items-end gap-1 rounded-xl border p-3" style={{ height: 128 }}>
+            <div className="flex items-end gap-1 rounded-lg border p-3" style={{ height: 128 }}>
               {chartDays.map((day) => {
                 const value = view === 'tokens' ? day.tokens : day.estimatedCostUsd
                 const maximum = chartMaximum
@@ -306,16 +338,25 @@ export default function UsageSettings() {
               Codex and Claude subscription windows reported by connected agents.
             </p>
           </div>
+          {!limits.length && (
+            <p
+              role="status"
+              className="rounded-lg border p-4 text-xs leading-relaxed text-muted-foreground"
+            >
+              No account limits reported. Refresh to check connected computers. API-key accounts may
+              not have subscription limits.
+            </p>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             {accountLimitGroups(limits).map((group) => {
               const { provider, windows } = group
               return (
-                <div key={group.key} className="rounded-xl border bg-card/60 p-4">
+                <div key={group.key} className="rounded-lg border bg-card p-4">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold">
                       {provider === 'codex' ? 'Codex' : 'Claude'} · {group.label}
                     </h3>
-                    <span className="text-[0.6875rem] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {windows.length
                         ? `${windows.length} ${windows.length === 1 ? 'window' : 'windows'}`
                         : 'No reading'}
@@ -353,7 +394,7 @@ export default function UsageSettings() {
                                 />
                               </div>
                             )}
-                            <div className="mt-1.5 flex flex-wrap justify-between gap-x-2 text-[0.6875rem] text-muted-foreground">
+                            <div className="mt-1.5 flex flex-wrap justify-between gap-x-2 text-xs text-muted-foreground">
                               <span>
                                 Reported by {limit.computers.join(', ')} · Updated{' '}
                                 {new Date(limit.updatedAt).toLocaleString()}
@@ -411,8 +452,8 @@ export default function UsageSettings() {
             <Rows rows={summary[breakdown]} />
           </SettingsGroup>
           <p className="text-xs text-muted-foreground">
-            Cost uses reported tokens and cached API rates. Missing usage is excluded, so partial
-            totals are lower bounds.
+            Cost uses reported tokens and cached API rates. Unreported usage is excluded, so actual
+            usage may be higher.
           </p>
         </section>
       )}

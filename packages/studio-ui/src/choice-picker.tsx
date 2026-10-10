@@ -94,10 +94,11 @@ export function ChoicePicker({
           variant="outline"
           disabled={disabled}
           aria-label={label}
+          aria-describedby={`${id}-value`}
           data-value={value}
           className={cn('h-9 w-full min-w-0 justify-between text-xs font-normal', className)}
         >
-          <span className="truncate">
+          <span id={`${id}-value`} className="truncate">
             {options.find((option) => option.value === value)?.label ?? (value || 'Choose…')}
           </span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
