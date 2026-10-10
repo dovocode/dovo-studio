@@ -96,6 +96,24 @@ it('returns already finished runs immediately, including successful and cancelle
   expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
 })
 
+it('awaits fresh pipeline details on every poll instead of cycling through stale cached reads', async () => {
+  const f = await setup()
+  await f.watch()
+  f.read.mockImplementation(async (_repo, _operation, input) => {
+    const query = decode(mutableStruct({ id: Schema.String, refresh: Schema.Boolean }), input)
+    return query.refresh
+      ? detail(query.id, 'failure')
+      : detail(query.id, 'in_progress', { stale: true })
+  })
+  await f.s.pipelineWatch.tick()
+  expect(await f.status()).toMatchObject({
+    watches: [{ status: 'completed', runStatus: 'failure' }],
+  })
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+  await f.s.pipelineWatch.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+})
+
 it('stops selected watches and rejects an in-flight registration after stop', async () => {
   const f = await setup()
   await f.watch(['7', '8'])

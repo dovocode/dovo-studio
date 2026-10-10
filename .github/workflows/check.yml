@@ -51,6 +51,9 @@ jobs:
           store: ${{ steps.setup.outputs.store }}
           key: ${{ steps.setup.outputs.store-key }}
       - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
+      # Ubuntu's AppArmor restriction blocks Playwright's downloaded Chromium sandbox.
+      # Enable its user namespaces on this disposable runner; keep Chromium sandboxed.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       # All registered suites run; four jobs keep each shard bounded.
       - run: node scripts/run-browser-suites.mjs ${{ matrix.shard }} 4
   # The full suite above covers Linux. Keep real macOS native/process behavior exercised too.

@@ -238,7 +238,9 @@ export class PipelineWatch {
         }
         if (!this.eligible(task)) continue
         try {
-          const detail = await this.detail(state.repositoryId, state.runId)
+          // Polling is slower than the forge cache's freshness window. Wait for the
+          // refresh rather than repeatedly rejecting stale-while-revalidate responses.
+          const detail = await this.detail(state.repositoryId, state.runId, true)
           if (!this.current(state)) continue
           const latest = this.s.store.task(state.taskId)
           if (latest.repositoryId !== state.repositoryId || !this.eligible(latest)) continue
@@ -271,7 +273,7 @@ export class PipelineWatch {
         } catch (error) {
           if (!this.current(state)) continue
           const message = errorMessage(error)
-          this.save({ ...state, error: message })
+          this.save({ ...state, checkedAt: new Date().toISOString(), error: message })
           if (state.error !== message)
             this.s.activity.add('task', state.taskId, `Pipeline watcher: ${message}`)
         }
