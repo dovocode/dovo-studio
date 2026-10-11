@@ -349,7 +349,7 @@ it('clears the custom binding and overrides when selecting a built-in agent', ()
   const claude = selectedTaskHarness(custom, agents, 'harness:claude')!
   const changes = taskHarnessChanges(custom, 'harness:claude', claude)
   expect(changes.agentId.after).toBe('')
-  expect(changes.agentOverrides.after).toBeNull()
+  expect(changes.agentOverrides.after).toEqual({})
   expect(changes.harness.after).toEqual(defaultTaskHarness('claude'))
   expect(
     selectedTaskHarness(

@@ -60,6 +60,13 @@ const transient = (error: unknown) =>
   (error.kind === 'connection' ||
     error.kind === 'timeout' ||
     [502, 503, 504].includes(error.status ?? 0))
+// Workspace validation happens before the patch commits. A 400 is a rejected edit,
+// not an uncertain command to keep replaying or a reason to reconnect.
+const rejectedPatch = (item: MutationOutbox[number], error: unknown) =>
+  item.path === '/api/workspace' &&
+  item.method === 'PATCH' &&
+  error instanceof RuntimeRequestError &&
+  error.status === 400
 const operation = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({
     try: run,
@@ -209,7 +216,9 @@ export class RuntimeMutations {
       if (!state.pending.length) return
       while (state.pending.length && state.pending[0]?.id !== stopBefore) {
         const item = state.pending[0]!
-        if (item.blocked && !retry)
+        // A saved workspace validation failure can safely be resolved from its receipt,
+        // including journals created by older clients that retained rejected edits.
+        if (item.blocked && !retry && !(item.path === '/api/workspace' && item.method === 'PATCH'))
           return yield* Effect.fail(
             new Error(
               state.error ?? 'A saved action needs review. Retry or discard pending actions.',
@@ -217,6 +226,13 @@ export class RuntimeMutations {
           )
         const result = yield* Effect.result(this.send(connection, item))
         if (result._tag === 'Failure') {
+          if (rejectedPatch(item, result.failure)) {
+            yield* this.save(connection, state, (pending) =>
+              pending.filter((entry) => entry.id !== item.id),
+            )
+            yield* this.acknowledge(connection, state, item.id)
+            continue
+          }
           state.error = transient(result.failure)
             ? `Saved actions will sync when this computer is reachable. ${result.failure.message}`
             : result.failure.message
@@ -367,11 +383,17 @@ export class RuntimeMutations {
               result.failure instanceof RuntimeRequestError &&
               result.failure.status !== undefined &&
               !transient(result.failure)
-            if ((!transient(result.failure) && !sent && created) || rejectedLegacyCommand)
+            const rejectedEdit = sent && rejectedPatch(command, result.failure)
+            if (
+              (!transient(result.failure) && !sent && created) ||
+              rejectedLegacyCommand ||
+              rejectedEdit
+            )
               yield* this.save(connection, state, (pending) =>
                 pending.filter((entry) => entry.id !== command.id),
               )
-            if (!transient(result.failure) && sent && !rejectedLegacyCommand)
+            if (rejectedEdit) yield* this.acknowledge(connection, state, command.id)
+            if (!transient(result.failure) && sent && !rejectedLegacyCommand && !rejectedEdit)
               yield* this.save(connection, state, (pending) =>
                 pending.map((entry) =>
                   entry.id === command.id ? { ...entry, blocked: true } : entry,
@@ -407,7 +429,14 @@ export class RuntimeMutations {
       .pipe(
         Effect.tapError((error) =>
           Effect.sync(() => {
-            state.error = error.message
+            state.error =
+              !state.pending.length &&
+              path === '/api/workspace' &&
+              method === 'PATCH' &&
+              error instanceof RuntimeRequestError &&
+              error.status === 400
+                ? null
+                : error.message
             this.changed()
           }),
         ),

@@ -129,6 +129,7 @@ export function taskHarnessChanges(task: Task, selection: string, agent: Agent) 
       after: decode(taskHarnessSchema, agent),
     },
     harnessCustomized: { before: task.harnessCustomized ?? null, after: true },
+    // An empty override also works on older runtimes that reject null before patching.
     agentOverrides: {
       before: task.agentOverrides ?? null,
       after: custom
@@ -146,7 +147,7 @@ export function taskHarnessChanges(task: Task, selection: string, agent: Agent) 
                 }
               : {}),
           }
-        : null,
+        : {},
     },
   }
 }

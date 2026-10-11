@@ -158,10 +158,12 @@ it('holds conflicts for explicit review, isolates host credentials, and never se
   expect(f.stored()[0]?.blocked).toBe(true)
   fetch.mockClear()
   await run(f.queue.recoverEffect(connection))
-  expect(fetch).not.toHaveBeenCalled()
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(f.stored()[0]?.blocked).toBe(true)
   expect(f.queue.status({ ...connection, token: 'another-device' }).pending).toBe(0)
   await run(f.queue.discardEffect(connection))
   expect(f.stored()).toEqual([])
+  fetch.mockClear()
   const failing = new RuntimeMutations({
     ...f.storage,
     update: async () => {
@@ -646,4 +648,51 @@ it('restores multiple pending bubbles, preserves the receipt-to-snapshot handoff
   expect(restarted.pendingMessages(connection, task)).toEqual([])
   await run(restarted.discardEffect(connection))
   expect(restarted.pendingMessages(connection, task)).toEqual([])
+})
+
+it('retires rejected workspace edits without blocking subsequent model switches', async () => {
+  const f = fixture()
+  let rejected = true
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status'))
+        return Response.json({ version: 1, acknowledgements: true })
+      if (urlPath(url).endsWith('/acknowledge')) return Response.json({ ok: true })
+      return rejected
+        ? Response.json({ error: 'Invalid request data.' }, { status: 400 })
+        : Response.json({ ok: true })
+    }),
+  )
+  const input = {
+    collection: 'tasks',
+    id: 'task',
+    changes: { agentOverrides: { before: null, after: null } },
+  }
+  expect(
+    (await run(f.queue.requestEffect(connection, '/api/workspace', input, ok, 'PATCH')))._tag,
+  ).toBe('Failure')
+  expect(f.stored()).toEqual([])
+  expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+  rejected = false
+  expect(
+    (await run(f.queue.requestEffect(connection, '/api/workspace', input, ok, 'PATCH')))._tag,
+  ).toBe('Success')
+})
+it('resolves older blocked validation receipts while preserving uncertain commands', async () => {
+  const f = fixture([
+    { id: 'old-edit', path: '/api/workspace', method: 'PATCH', input: {}, blocked: true },
+  ])
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) =>
+      Response.json(
+        urlPath(url).endsWith('/status') ? { version: 1 } : { error: 'Invalid request data.' },
+        { status: urlPath(url).endsWith('/status') ? 200 : 400 },
+      ),
+    ),
+  )
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
+  expect(f.stored()).toEqual([])
+  expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
 })

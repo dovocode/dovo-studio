@@ -1,4 +1,4 @@
-import { decode } from '@dovo/protocol'
+import { decode, defaultTaskHarness, taskSchema } from '@dovo/protocol'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
@@ -525,3 +525,46 @@ it('allows a device to revoke only its own credential and protects the owner', a
   expect(() => runtime.services.devices.authenticate(token)).toThrow('authentication required')
   expect(runtime.services.devices.authenticate(other).id).toBe(otherId)
 })
+
+it.each(['draft', 'done'] as const)(
+  'accepts model settings patches that clear optional fields with null on a %s thread',
+  async (status) => {
+    const token = randomBytes(32).toString('base64url')
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    cleanups.push(() => runtime.close())
+    const task = decode(taskSchema, {
+      id: 'model-switch',
+      title: 'Model switch',
+      repositoryId: '',
+      agentId: '',
+      status,
+      createdAt: '',
+      messages: [],
+      files: [],
+      draft: '',
+      example: false,
+      harness: defaultTaskHarness('codex'),
+      agentOverrides: { model: 'old-model' },
+      harnessCustomized: true,
+    })
+    runtime.services.store.update((workspace) => ({ ...workspace, tasks: [task] }))
+    const response = await fetch(`http://127.0.0.1:${runtime.port}/api/workspace`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        collection: 'tasks',
+        id: task.id,
+        changes: {
+          harness: { before: task.harness, after: { ...task.harness, model: 'new-model' } },
+          agentOverrides: { before: task.agentOverrides, after: null },
+          harnessCustomized: { before: true, after: null },
+        },
+      }),
+    })
+    expect(await response.json()).toMatchObject({ revision: expect.any(Number) })
+    expect(response.status).toBe(200)
+    expect(runtime.services.store.task(task.id).harness?.model).toBe('new-model')
+    expect(runtime.services.store.task(task.id).agentOverrides).toBeUndefined()
+    expect(runtime.services.store.task(task.id).harnessCustomized).toBeUndefined()
+  },
+)

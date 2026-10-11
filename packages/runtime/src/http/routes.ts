@@ -830,7 +830,10 @@ export function route(
             const next = {
               ...current,
               ...Object.fromEntries(
-                Object.entries(patch.changes).map(([key, value]) => [key, value.after]),
+                Object.entries(patch.changes).map(([key, value]) => [
+                  key,
+                  value.after ?? undefined,
+                ]),
               ),
             }
             validateAutomation(
@@ -844,7 +847,7 @@ export function route(
           const next = decode(taskSchema, {
             ...(patch.create ?? current),
             ...Object.fromEntries(
-              Object.entries(patch.changes).map(([key, value]) => [key, value.after]),
+              Object.entries(patch.changes).map(([key, value]) => [key, value.after ?? undefined]),
             ),
           })
           s.tasks.requireCheckoutReferencesAvailable(next)
