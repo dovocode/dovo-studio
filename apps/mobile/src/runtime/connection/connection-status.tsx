@@ -1,6 +1,6 @@
 import { runtimeSyncStatus, retryRuntimeSync, runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Alert, View } from 'react-native'
 import { router } from 'expo-router'
 import { runtimeReachability } from '@dovo/protocol'
@@ -20,7 +20,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
 
   const runtime = useRuntime()
   const { busy, act } = useAction()
-  const [visible, setVisible] = useApplicationState(false)
+  const [visibleFor, setVisibleFor] = useState<string | null>(null)
   const [attempted, setAttempted] = useApplicationState(false)
   const [details, setDetails] = useApplicationState(false)
   const scoped = runtimeId
@@ -41,19 +41,26 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
   )
   const hasSaved = !!saved.length
   const offline = runtime.ready && (!!unavailable.length || hasSaved || !!fallback.length)
+  const urgent = !!unavailable.length || hasSaved
+  const noticeKey = JSON.stringify([
+    runtimeId ?? '',
+    unavailable.map((entry) => entry.profile.id).sort(),
+    saved.map((entry) => entry.profile.id).sort(),
+    fallback.map((entry) => entry.profile.id).sort(),
+  ])
   const revoked = unavailable.filter((entry) => entry.unauthorized)
   useEffect(() => {
     if (!offline) {
-      setVisible(false)
+      setVisibleFor(null)
       setAttempted(false)
       setDetails(false)
       return
     }
     // Brief reconnects shouldn't flash an indicator while somebody is reading or typing.
-    const timer = setTimeout(() => setVisible(true), 2500)
+    const timer = setTimeout(() => setVisibleFor(noticeKey), urgent ? 2500 : 15_000)
     return () => clearTimeout(timer)
-  }, [offline])
-  if (!offline || (!visible && !busy)) return null
+  }, [offline, noticeKey, urgent])
+  if (!offline || (visibleFor !== noticeKey && !busy)) return null
   const subject =
     unavailable.length === 1 && scoped.length === 1 ? 'Offline' : `${unavailable.length} offline`
   // Reconnecting cannot fix a revoked pairing; say what will.
