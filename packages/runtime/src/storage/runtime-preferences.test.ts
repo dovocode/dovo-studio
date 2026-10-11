@@ -36,10 +36,16 @@ it('moves saved runtime preferences from SQLite to settings.json', () => {
     const path = join(directory, 'settings.json')
     expect(JSON.parse(readFileSync(path, 'utf8')).runtime.branchPrefix).toBe('custom/')
     preferences.save({ autoContinueAfterRestart: true })
+    preferences.save({ allowWebRequests: true })
+    preferences.save({ autoArchiveDays: 7 })
     expect(JSON.parse(readFileSync(path, 'utf8')).runtime).toMatchObject({
       branchPrefix: 'custom/',
       autoContinueAfterRestart: true,
+      allowWebRequests: true,
     })
+    expect(new RuntimePreferences(db).get().allowWebRequests).toBe(true)
+    expect(() => preferences.save({ allowWebRequests: 'true' })).toThrow(/allowWebRequests/)
+    expect(preferences.get().allowWebRequests).toBe(true)
   } finally {
     vi.unstubAllEnvs()
     db.close()

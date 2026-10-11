@@ -219,8 +219,8 @@ export function createCodexAdapter(): AgentAdapter {
           native && interactions
             ? {
                 ...run,
-                approve: (title, detail) =>
-                  interactions.approve(title, detail, transport.lifetime.signal),
+                approve: (title, detail, kind) =>
+                  interactions.approve(title, detail, transport.lifetime.signal, kind),
                 ask: (prompt, signal, validate) =>
                   interactions.ask(
                     prompt,
@@ -252,11 +252,26 @@ export function createCodexAdapter(): AgentAdapter {
           method === 'item/commandExecution/requestApproval' ||
           method === 'item/fileChange/requestApproval'
         ) {
+          // A managed HTTP request has no shell command or extra filesystem grant.
+          const context = scope?.networkApprovalContext
+          const web =
+            method.includes('command') &&
+            !scope?.command &&
+            !scope?.additionalPermissions &&
+            !!context &&
+            typeof context === 'object' &&
+            'protocol' in context &&
+            ['http', 'https'].includes(String(context.protocol))
           const allowed =
             requestRun.agent.permission !== 'read-only' &&
             (await requestRun.approve(
-              method.includes('command') ? 'Run command' : 'Apply file changes',
+              web
+                ? 'Web request'
+                : method.includes('command')
+                  ? 'Run command'
+                  : 'Apply file changes',
               JSON.stringify(params, null, 2),
+              web ? 'web' : undefined,
             ))
           return {
             decision: allowed ? 'accept' : 'decline',

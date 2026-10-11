@@ -22,6 +22,8 @@ export const approvalSchema = mutableStruct({
   taskId: Schema.String,
   title: Schema.String,
   detail: Schema.String,
+  /** Null means unsupported; omitted by older runtimes that only remember command rules. */
+  rememberRule: Schema.optional(Schema.NullOr(Schema.Literals(['command', 'web']))),
   createdAt: Schema.String,
 })
 export const terminalSchema = mutableStruct({
@@ -83,6 +85,8 @@ export const providerStatusSchema = mutableStruct({
   detail: Schema.String,
 })
 export const snapshotSchema = mutableStruct({
+  /** Computer-wide web approval rule, derived from its persisted preferences. */
+  allowWebRequests: Schema.optional(Schema.Boolean),
   artifactsEnabled: Schema.optional(Schema.Boolean),
   scopedAgentsSupported: Schema.optional(Schema.Boolean),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
@@ -214,6 +218,15 @@ export type WorkspacePatchResult = Schema.Schema.Type<typeof workspacePatchResul
 export type RuntimeSnapshot = Schema.Schema.Type<typeof snapshotSchema>
 export type WorkspacePatch = Schema.Schema.Type<typeof patchSchema>
 export type Approval = Schema.Schema.Type<typeof approvalSchema>
+export function approvalRememberLabel(approval: Pick<Approval, 'title' | 'rememberRule'>) {
+  if (approval.rememberRule === 'web') return 'Always allow web in this project'
+  if (
+    approval.rememberRule === 'command' ||
+    (approval.rememberRule === undefined && /command|bash|shell/i.test(approval.title))
+  )
+    return 'Always allow in this project'
+  return undefined
+}
 export type TerminalInfo = Schema.Schema.Type<typeof terminalSchema>
 export type JobRun = Schema.Schema.Type<typeof jobRunSchema>
 export type JobRunStep = Schema.Schema.Type<typeof jobRunStepSchema>
@@ -292,6 +305,8 @@ export const responses = {
 }
 
 export const runtimePreferencesSchema = mutableStruct({
+  /** Allow browsing and search in every thread on this computer. Other approvals still apply. */
+  allowWebRequests: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   memory: memorySettingsSchema.pipe(
     Schema.withDecodingDefaultType(
       Effect.sync(() => ({

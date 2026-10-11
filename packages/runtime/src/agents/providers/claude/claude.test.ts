@@ -467,6 +467,7 @@ it('routes only live native-agent approvals and questions through the session af
       'Bash',
       expect.stringContaining('pwd'),
       expect.any(AbortSignal),
+      undefined,
     )
     await expect(
       options.canUseTool(

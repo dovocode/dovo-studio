@@ -1127,13 +1127,14 @@ ${
                   this.store.updateTask(id, (t) => ({ ...t, activity: text }))
                 },
                 nativeAgentInteractions: {
-                  approve: (title, detail, signal) =>
+                  approve: (title, detail, signal, kind) =>
                     acceptsNativeInteractions()
                       ? this.approvals.request(
                           id,
                           title,
                           detail,
                           AbortSignal.any([controller.signal, signal]),
+                          kind,
                         )
                       : Promise.resolve(false),
                   ask: (prompt, signal, validate) =>
@@ -1154,9 +1155,9 @@ ${
                         )
                       : Promise.resolve(null),
                 },
-                approve: (title, detail) =>
+                approve: (title, detail, kind) =>
                   acceptsProviderEvents()
-                    ? this.approvals.request(id, title, detail, questionSignal)
+                    ? this.approvals.request(id, title, detail, questionSignal, kind)
                     : Promise.resolve(false),
                 ask: (prompt, signal, validate) =>
                   acceptsProviderEvents()

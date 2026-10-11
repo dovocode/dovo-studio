@@ -358,7 +358,13 @@ const remoteAdapter: AgentAdapter = {
               (await untilAborted(
                 !prompting && event.properties.sessionID === sessionID
                   ? Promise.resolve(false)
-                  : run.approve(event.properties.permission, event.properties.patterns.join('\n')),
+                  : run.approve(
+                      event.properties.permission,
+                      event.properties.patterns.join('\n'),
+                      ['webfetch', 'websearch'].includes(event.properties.permission)
+                        ? 'web'
+                        : undefined,
+                    ),
                 eventsController.signal,
               ))
             await api.permission.reply(

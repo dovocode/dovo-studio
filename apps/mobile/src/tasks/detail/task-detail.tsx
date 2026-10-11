@@ -57,6 +57,7 @@ import { ReviewComments } from '../conversation/components/review-comments'
 import { PlanApproval } from '../conversation/components/plan-approval'
 import { SideQuestion } from '../conversation/components/side-question'
 import { ProjectInstructions } from './project-instructions'
+import { ProjectApprovalRules } from './project-approval-rules'
 import { ReviewFindings } from '../conversation/components/review-findings'
 import { randomUUID } from 'expo-crypto'
 import { ArtifactBrowser } from '../../ui/content/artifacts'
@@ -200,6 +201,7 @@ function TaskDetailContent({
   const [fileDrafts, setFileDrafts] = useState<Record<string, FileEditDraft | null>>({})
   const [asking, setAsking] = useApplicationState(false)
   const [editingInstructions, setEditingInstructions] = useApplicationState(false)
+  const [editingApprovalRules, setEditingApprovalRules] = useApplicationState(false)
   const review = useAction()
   const compaction = useAction()
   const branch = task.checkoutBranch
@@ -637,6 +639,13 @@ function TaskDetailContent({
                       overflow: true,
                       onPress: () => setEditingInstructions(true),
                     },
+                    {
+                      label: 'Project approval rules',
+                      icon: 'settings',
+                      overflow: true,
+                      disabled: !task.repositoryId,
+                      onPress: () => setEditingApprovalRules(true),
+                    },
                   ] satisfies HeaderAction[],
                 )
         }
@@ -890,6 +899,12 @@ function TaskDetailContent({
         <ProjectInstructions
           repositoryId={task.repositoryId}
           onClose={() => setEditingInstructions(false)}
+        />
+      )}
+      {editingApprovalRules && task.repositoryId && (
+        <ProjectApprovalRules
+          repositoryId={task.repositoryId}
+          onClose={() => setEditingApprovalRules(false)}
         />
       )}
     </View>

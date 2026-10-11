@@ -29,7 +29,8 @@ type Preferences = typeof runtimePreferencesSchema.Type
 export function RuntimePreferences() {
   const { styles } = useTheme()
 
-  const { connected, readEffect, callEffect } = useRuntime()
+  const { connected, snapshot, readEffect, callEffect } = useRuntime()
+  const webRulesSupported = snapshot?.allowWebRequests !== undefined
   const [value, setValue] = useApplicationState<Preferences | null>(null)
   const [memoryProjects, setMemoryProjects] = useApplicationState<
     typeof memoryProjectsSchema.Type.projects
@@ -169,6 +170,20 @@ export function RuntimePreferences() {
       )}
       {value && (
         <>
+          <Section title="Supervised mode">
+            <SettingsSwitchRow
+              first
+              label="Always allow web requests on this computer"
+              value={value.allowWebRequests}
+              disabled={disabled || !webRulesSupported}
+              onValueChange={(allowWebRequests) => save({ allowWebRequests })}
+            />
+            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+              {webRulesSupported
+                ? 'Allows browsing and search in every project and thread on this computer. Shell commands and file changes keep their existing approvals.'
+                : 'Update Dovo on this computer to use web approval rules.'}
+            </Text>
+          </Section>
           <Section title="Running tasks">
             <ChildAgentLimit
               value={value?.maxActiveChildAgents}

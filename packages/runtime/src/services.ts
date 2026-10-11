@@ -134,7 +134,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       () => commands.get(),
       (id) => acpInstallations.launch(id),
     ),
-    approvals = new Approvals(activity, store),
+    approvals = new Approvals(activity, store, preferences),
     questions = new Questions(activity, store),
     tickets = new SocketTickets()
   // Task and message activity is recorded as the store changes. Replaying the stored

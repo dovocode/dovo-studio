@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { Approval } from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
+import type { RuntimePreferences } from '../../storage/runtime-preferences.js'
 function commandForApproval(title: string, detail: string) {
   if (!/command|bash|shell/i.test(title)) return undefined
   try {
@@ -22,18 +23,33 @@ export class Approvals {
   constructor(
     private activity?: Pick<Activity, 'add'>,
     private store?: WorkspaceStore,
+    private preferences?: Pick<RuntimePreferences, 'get'>,
   ) {}
-  private requests = new Map<string, { info: Approval; resolve: (allow: boolean) => void }>()
+  private requests = new Map<
+    string,
+    { info: Approval; web: boolean; resolve: (allow: boolean) => void }
+  >()
   list() {
     return [...this.requests.values()].map((r) => r.info)
   }
-  request(taskId: string, title: string, detail: string, signal: AbortSignal) {
+  request(taskId: string, title: string, detail: string, signal: AbortSignal, kind?: 'web') {
     if (signal.aborted) return Promise.resolve(false)
     const command = commandForApproval(title, detail)
+    // Only the provider adapter can classify a web request; display text is not authoritative.
+    const web = kind === 'web'
+    const globalWeb = web && this.preferences?.get().allowWebRequests
     const task = this.store?.get().tasks.find((item) => item.id === taskId)
     const project = this.store?.get().repositories.find((item) => item.id === task?.repositoryId)
-    if (command && project?.approvedCommands?.includes(command)) {
-      this.activity?.add('approval', taskId, title, { command, status: 'allowed-by-project-rule' })
+    if (
+      (command && project?.approvedCommands?.includes(command)) ||
+      (web && project?.approvedWebRequests) ||
+      globalWeb
+    ) {
+      this.activity?.add('approval', taskId, title, {
+        command,
+        web,
+        status: globalWeb ? 'allowed-by-runtime-rule' : 'allowed-by-project-rule',
+      })
       return Promise.resolve(true)
     }
     const id = randomUUID()
@@ -54,7 +70,15 @@ export class Approvals {
       const abort = () => finish(false)
       const timer = setTimeout(abort, 10 * 60 * 1000)
       this.requests.set(id, {
-        info: { id, taskId, title, detail, createdAt: new Date().toISOString() },
+        web,
+        info: {
+          id,
+          taskId,
+          title,
+          detail,
+          createdAt: new Date().toISOString(),
+          rememberRule: project && (command || web) ? (web ? 'web' : 'command') : null,
+        },
         resolve: finish,
       })
       signal.addEventListener('abort', abort, { once: true })
@@ -65,22 +89,51 @@ export class Approvals {
     if (!request) throw new HttpError(404, 'Approval expired')
     if (remember && allow) {
       const command = commandForApproval(request.info.title, request.info.detail)
+      const web = request.info.rememberRule === 'web'
       const task = this.store?.get().tasks.find((item) => item.id === request.info.taskId)
-      if (!command || !task?.repositoryId || !this.store)
-        throw new HttpError(400, 'This approval cannot be saved as a project command rule.')
+      if (
+        (!command && !web) ||
+        !task?.repositoryId ||
+        !this.store ||
+        !this.store.get().repositories.some((project) => project.id === task.repositoryId)
+      )
+        throw new HttpError(400, 'This approval cannot be saved as a project rule.')
       this.store.update((workspace) => ({
         ...workspace,
         repositories: workspace.repositories.map((project) =>
           project.id === task.repositoryId
             ? {
                 ...project,
-                approvedCommands: [...new Set([...(project.approvedCommands ?? []), command])],
+                ...(web ? { approvedWebRequests: true } : {}),
+                ...(command && !web
+                  ? {
+                      approvedCommands: [
+                        ...new Set([...(project.approvedCommands ?? []), command]),
+                      ],
+                    }
+                  : {}),
               }
             : project,
         ),
       }))
+      // Concurrent searches already waiting for this same project need no second approval.
+      if (web) {
+        this.applyWebRules()
+        return
+      }
     }
     request.resolve(allow)
+  }
+  /** Apply saved rules to requests already waiting when a setting is enabled. */
+  applyWebRules() {
+    const globalWeb = this.preferences?.get().allowWebRequests ?? false
+    const workspace = this.store?.get()
+    for (const pending of this.requests.values()) {
+      if (!pending.web) continue
+      const task = workspace?.tasks.find((item) => item.id === pending.info.taskId)
+      const project = workspace?.repositories.find((item) => item.id === task?.repositoryId)
+      if (globalWeb || project?.approvedWebRequests) pending.resolve(true)
+    }
   }
   dispose() {
     for (const request of this.requests.values()) request.resolve(false)

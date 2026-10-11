@@ -53,10 +53,10 @@ export interface AgentRun {
   onNativeTurnEnd?: () => void
   /** Session-owned interactions for native agents that outlive the parent turn. */
   nativeAgentInteractions?: {
-    approve: (title: string, detail: string, signal: AbortSignal) => Promise<boolean>
+    approve: (title: string, detail: string, signal: AbortSignal, kind?: 'web') => Promise<boolean>
     ask: AgentRun['ask']
   }
-  approve: (title: string, detail: string) => Promise<boolean>
+  approve: (title: string, detail: string, kind?: 'web') => Promise<boolean>
   ask: (
     prompt: QuestionPrompt,
     signal?: AbortSignal,

@@ -190,6 +190,8 @@ export const repositorySchema = mutableStruct({
   approvedCommands: Schema.optional(
     maxValue(mutableArray(maxValue(minValue(Schema.String, 1), 4000)), 100),
   ),
+  /** Web browsing and search approved by the owner for this project. */
+  approvedWebRequests: Schema.optional(Schema.Boolean),
   agents: Schema.optional(maxValue(mutableArray(agentPresetSchema), 100)),
   templates: Schema.optional(maxValue(mutableArray(taskTemplateSchema), 30)),
   actions: Schema.optional(maxValue(mutableArray(projectActionSchema), 20)),

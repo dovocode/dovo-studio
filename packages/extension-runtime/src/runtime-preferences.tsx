@@ -105,9 +105,28 @@ function useRuntimePreferences(onSaved?: () => void) {
 /** Settings → Computers → Running tasks: what this computer does with tasks on its own. Stored
  * on the computer, so every device that manages it sees the same choices. */
 export function RunningTaskPreferences() {
+  const { snapshot } = useWorkspace()
+  const webRulesSupported = snapshot?.allowWebRequests !== undefined
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <SettingsGroup title="Supervised mode">
+        <SettingRow
+          label="Always allow web requests"
+          description={
+            webRulesSupported
+              ? 'Allow browsing and search in every project and thread on this computer. Shell commands and file changes keep their existing approvals.'
+              : 'Update Dovo on this computer to use web approval rules.'
+          }
+        >
+          <Toggle
+            label="Always allow web requests on this computer"
+            checked={value?.allowWebRequests ?? false}
+            disabled={disabled || !webRulesSupported}
+            onChange={(allowWebRequests) => save({ allowWebRequests })}
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="After a restart">
         <SettingRow
           label="Continue interrupted tasks"

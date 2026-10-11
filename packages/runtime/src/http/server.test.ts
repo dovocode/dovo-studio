@@ -19,6 +19,140 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
 describe('authenticated runtime', () => {
+  it('lets a paired phone save the computer-wide web flag and releases waiting web requests', async () => {
+    const ownerToken = randomBytes(32).toString('base64url')
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+    cleanups.push(() => runtime.close())
+    const token = randomBytes(32).toString('base64url')
+    runtime.services.devices.add('iPhone', token)
+    const signal = new AbortController().signal
+    const pending = runtime.services.approvals.request(
+      'projectless',
+      'WebSearch',
+      '{}',
+      signal,
+      'web',
+    )
+    const shell = runtime.services.approvals.request(
+      'projectless',
+      'Run command',
+      '{"command":"pwd"}',
+      signal,
+    )
+    const save = (changes: unknown) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/runtime/preferences/save`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(changes),
+      })
+    expect((await save({ allowWebRequests: true })).status).toBe(200)
+    await expect(pending).resolves.toBe(true)
+    expect(runtime.services.approvals.list().map((item) => item.title)).toEqual(['Run command'])
+    expect((await save({ autoArchiveDays: 7 })).status).toBe(200)
+    expect(runtime.services.preferences.get().allowWebRequests).toBe(true)
+    const state = await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(decode(snapshotSchema, await state.json()).allowWebRequests).toBe(true)
+    expect((await save({ allowWebRequests: false })).status).toBe(200)
+    const next = runtime.services.approvals.request('projectless', 'WebFetch', '{}', signal, 'web')
+    expect(runtime.services.approvals.list()).toHaveLength(2)
+    runtime.services.approvals.dispose()
+    await expect(shell).resolves.toBe(false)
+    await expect(next).resolves.toBe(false)
+  })
+  it('saves and revokes project web approvals through the authenticated mobile request paths', async () => {
+    const token = randomBytes(32).toString('base64url')
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    cleanups.push(() => runtime.close())
+    runtime.services.store.update((workspace) => ({
+      ...workspace,
+      repositories: [{ id: 'repo', name: 'Project', path: '/tmp/project', branch: 'main' }],
+      tasks: [
+        decode(taskSchema, {
+          id: 'task',
+          title: 'Task',
+          repositoryId: 'repo',
+          agentId: '',
+          status: 'running',
+          createdAt: new Date().toISOString(),
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+        }),
+      ],
+    }))
+    const send = (path: string, input: unknown, method = 'POST') =>
+      fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+    const controller = new AbortController()
+    const first = runtime.services.approvals.request(
+      'task',
+      'WebSearch',
+      '{"query":"docs"}',
+      controller.signal,
+      'web',
+    )
+    const state = await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(state.status).toBe(200)
+    const snapshot = decode(snapshotSchema, await state.json())
+    expect(snapshot.approvals[0].rememberRule).toBe('web')
+    expect(
+      (await send('/api/approvals', { id: snapshot.approvals[0].id, allow: true, remember: true }))
+        .status,
+    ).toBe(200)
+    await expect(first).resolves.toBe(true)
+    await expect(
+      runtime.services.approvals.request(
+        'task',
+        'WebFetch',
+        '{"url":"http://example.com"}',
+        controller.signal,
+        'web',
+      ),
+    ).resolves.toBe(true)
+    const revoked = await send(
+      '/api/workspace',
+      {
+        collection: 'repositories',
+        id: 'repo',
+        changes: { approvedWebRequests: { before: true, after: false } },
+      },
+      'PATCH',
+    )
+    expect(revoked.status).toBe(200)
+    decode(workspacePatchResultSchema, await revoked.json())
+    expect(runtime.services.store.get().repositories[0].approvedWebRequests).toBe(false)
+    const next = runtime.services.approvals.request(
+      'task',
+      'WebSearch',
+      '{}',
+      controller.signal,
+      'web',
+    )
+    expect(runtime.services.approvals.list()).toHaveLength(1)
+    expect(
+      (
+        await send(
+          '/api/workspace',
+          {
+            collection: 'repositories',
+            id: 'repo',
+            changes: { approvedWebRequests: { before: false, after: true } },
+          },
+          'PATCH',
+        )
+      ).status,
+    ).toBe(200)
+    await expect(next).resolves.toBe(true)
+    controller.abort()
+  })
   it('rejects a malformed request target without crashing the runtime', async () => {
     const runtime = await startRuntime({
       databasePath: ':memory:',

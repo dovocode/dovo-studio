@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, approvalRememberLabel } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
@@ -142,12 +142,12 @@ export function RunControls({ task }: { task: Task }) {
             <Button
               size="sm"
               variant="outline"
-              disabled={busy || !connected || !/command|bash|shell/i.test(approval.title)}
+              disabled={busy || !connected || !approvalRememberLabel(approval)}
               onClick={() =>
                 act('/api/approvals', { id: approval.id, allow: true, remember: true })
               }
             >
-              Always allow in this project
+              {approvalRememberLabel(approval) ?? 'Always allow in this project'}
             </Button>
             <Button
               size="sm"

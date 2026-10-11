@@ -136,7 +136,11 @@ function claudeStream(
         const allowed =
           current.agent.permission === 'read-only'
             ? ['Read', 'Glob', 'Grep'].includes(name)
-            : await current.approve(name, JSON.stringify(input, null, 2))
+            : await current.approve(
+                name,
+                JSON.stringify(input, null, 2),
+                ['WebFetch', 'WebSearch'].includes(name) ? 'web' : undefined,
+              )
         return allowed
           ? {
               behavior: 'allow',
@@ -316,11 +320,12 @@ export function createClaudeAdapter(): AgentAdapter {
         const interactions = owner.nativeAgentInteractions
         return {
           ...owner,
-          approve: (title: string, detail: string) =>
+          approve: (title: string, detail: string, kind?: 'web') =>
             interactions.approve(
               title,
               detail,
               AbortSignal.any([session.controller.signal, signal]),
+              kind,
             ),
           ask: (prompt, questionSignal, validate) =>
             interactions.ask(

@@ -397,6 +397,9 @@ export const opencodeV2Adapter: AgentAdapter = {
                 (await run.approve(
                   event.data.message || event.data.action,
                   event.data.resources.join('\n'),
+                  ['webfetch', 'websearch', 'web_fetch', 'web_search'].includes(event.data.action)
+                    ? 'web'
+                    : undefined,
                 ))
               if (!streamController.signal.aborted)
                 await api.permission.reply(

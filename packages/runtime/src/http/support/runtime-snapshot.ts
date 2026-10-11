@@ -31,6 +31,7 @@ export function runtimeSnapshot(
     })
     if (migrated) s.defaults.save(migrated, false)
     const revision = s.store.version()
+    const preferences = s.preferences.get()
     const storedWorkspace = s.store.publicWorkspace()
     const forgeConnections = new Map(
       storedWorkspace.repositories.some((repository) => repository.forge)
@@ -67,7 +68,8 @@ export function runtimeSnapshot(
       settingsScopesSupported: true,
       taskBehaviorSupported: true,
       worktreeDeletionOverrideSupported: true,
-      artifactsEnabled: s.preferences.get().enableArtifacts,
+      artifactsEnabled: preferences.enableArtifacts,
+      allowWebRequests: preferences.allowWebRequests,
       acpInstallations: s.acpInstallations.list(),
       revision,
       workspace: {

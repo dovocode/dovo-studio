@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, approvalRememberLabel } from '@dovo/protocol'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { responses } from '@dovo/protocol'
@@ -34,9 +34,9 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
               {item.detail}
             </Text>
             <View style={styles.row}>
-              {/command|bash|shell/i.test(item.title) && (
+              {approvalRememberLabel(item) && (
                 <Action
-                  label="Always allow in this project"
+                  label={approvalRememberLabel(item) ?? ''}
                   secondary
                   disabled={busy || !connected}
                   onPress={() =>

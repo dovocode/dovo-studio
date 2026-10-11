@@ -220,6 +220,18 @@ it('auto-accepts ACP edits while asking for commands in auto-accept edits mode',
   )
   expect(approve).toHaveBeenCalledOnce()
 })
+it('classifies ACP fetch permissions independently of display titles and keeps edits supervised', async () => {
+  const { cwd, launch } = await fixture(false, false, false, ['fetch', 'edit', 'execute'])
+  const approve = vi.fn<AgentRun['approve']>(async () => true)
+  const input = run(cwd, launch, { approve })
+  input.run.agent.permission = 'ask'
+  await acpAdapter.run(input.run)
+  expect(approve.mock.calls.map(([title, , kind]) => ({ title, kind }))).toEqual([
+    { title: 'Tool request', kind: 'web' },
+    { title: 'Tool request', kind: undefined },
+    { title: 'Tool request', kind: undefined },
+  ])
+})
 
 it('sends session/cancel and accepts the cancelled stop reason', async () => {
   const { cwd, record, launch } = await fixture(true)

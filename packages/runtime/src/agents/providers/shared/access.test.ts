@@ -138,6 +138,28 @@ it('offers Auto with supervised fallback where native review is unavailable', ()
   expect(supportsAccess('codex', 'auto')).toBe(true)
   expect(supportsAccess('claude', 'auto')).toBe(true)
 })
+it.each(['WebFetch', 'WebSearch', 'Bash', 'Write', 'mcp__web__delete'])(
+  'classifies only native browsing and search tools as web approvals (%s)',
+  async (name) => {
+    const input = run('ask')
+    await claudeAdapter.run(input)
+    const options = captured.options[0]
+    await options.canUseTool?.(
+      name,
+      {},
+      {
+        signal: input.signal,
+        toolUseID: 'tool',
+        requestId: 'request',
+      },
+    )
+    expect(input.approve).toHaveBeenCalledWith(
+      name,
+      '{}',
+      ['WebFetch', 'WebSearch'].includes(name) ? 'web' : undefined,
+    )
+  },
+)
 it('disables Claude built-ins and inherited MCP servers for text-only utility turns', async () => {
   const input = run('read-only')
   input.tools = 'none'

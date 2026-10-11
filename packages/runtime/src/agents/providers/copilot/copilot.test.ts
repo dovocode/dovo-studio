@@ -3,6 +3,7 @@ import { rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createCopilotAdapter, copilotPermission, copilotExecutable } from './copilot.js'
 import { providerFixture } from '../shared/provider-fixture.js'
+import type { AgentRun } from '../../execution/types.js'
 const directories: string[] = []
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
@@ -147,3 +148,24 @@ it('routes SDK approval and question callbacks to Dovo', async () => {
     wasFreeform: false,
   })
 })
+it.each([
+  { url: 'https://example.com', web: true },
+  { url: 'http://example.com', web: true },
+  { url: 'file:///etc/passwd', web: false },
+  { url: 'https://', web: false },
+  { url: 'https://example.com', managedApprovalRequired: true, web: false },
+  { url: 'https://example.com', requestSandboxBypass: true, web: false },
+])(
+  'classifies Copilot URL approvals without remembering elevated or non-web requests (%j)',
+  async ({ web, ...fields }) => {
+    const f = await fixture()
+    const approve = vi.fn<AgentRun['approve']>(async () => false)
+    const input = { kind: 'url' as const, intention: 'Read a website', ...fields }
+    await copilotPermission({ ...f.run, approve }, f.run.signal)(input, { sessionId: 's' })
+    expect(approve).toHaveBeenCalledWith(
+      'Copilot url request',
+      JSON.stringify(input),
+      web ? 'web' : undefined,
+    )
+  },
+)

@@ -24,6 +24,7 @@ async function fixture(
   compactBeforeResponse = false,
   lateChild = false,
   nativeRequests = false,
+  webRequests = false,
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-codex-modes-'))
   cleanups.push(directory)
@@ -38,11 +39,20 @@ if (${slowShutdown}) {
  setInterval(() => {}, 1000);
 }
 const send = x => process.stdout.write(JSON.stringify(x)+'\\n');
+const approvalCases = [
+ {id:'web',method:'item/commandExecution/requestApproval',params:{networkApprovalContext:{host:'example.com',protocol:'https'}}},
+ {id:'shell',method:'item/commandExecution/requestApproval',params:{command:'curl https://example.com',networkApprovalContext:{host:'example.com',protocol:'https'}}},
+ {id:'files',method:'item/fileChange/requestApproval',params:{networkApprovalContext:{host:'example.com',protocol:'https'}}},
+ {id:'extra-permissions',method:'item/commandExecution/requestApproval',params:{additionalPermissions:{fileSystem:{}},networkApprovalContext:{host:'example.com',protocol:'https'}}},
+ {id:'non-http',method:'item/commandExecution/requestApproval',params:{networkApprovalContext:{host:'example.com',protocol:'socks5Tcp'}}},
+];
+let approvalIndex=0;
+const nextApproval=()=>{const next=approvalCases[approvalIndex++];if(next)send({...next,params:{threadId:'thread',...next.params}});else send({method:'turn/completed',params:{turn:{status:'completed'}}})};
 let mcpServers;
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);if(m.id===undefined)return;
  fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({...m,pid:process.pid})+'\\n');
- if(m.method===undefined)return;
+ if(m.method===undefined){if(${webRequests})nextApproval();return;}
  let result={};
  if(m.method==='initialize')result={userAgent:'codex/${version}'};
  if(m.method==='thread/start'||m.method==='thread/resume') {
@@ -54,6 +64,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
  send({id:m.id,result});
  if(m.method==='turn/start') {
    send({method:'item/agentMessage/delta',params:{delta:JSON.stringify(mcpServers.dovo_task?.env ?? {})}});
+   if (${webRequests}) {nextApproval();return;}
    if (${nativeRequests})send({method:'item/started',params:{threadId:'native-child',item:{type:'commandExecution'}}});
    send({method:'turn/completed',params:{turn:{status:'completed'}}});
    if (${nativeRequests})setTimeout(()=>{
@@ -112,6 +123,32 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
     requests,
   }
 }
+it.each(['ask', 'read-only'] as const)(
+  'routes only HTTP web requests to web approval rules in %s mode',
+  async (permission) => {
+    const { run, requests } = await fixture('0.155.1', false, false, false, false, false, true)
+    run.agent.permission = permission
+    run.approve = vi.fn<AgentRun['approve']>(async () => true)
+    const adapter = createCodexAdapter()
+    try {
+      await adapter.run(run)
+      expect(vi.mocked(run.approve).mock.calls.map(([title]) => title)).toEqual(
+        permission === 'ask'
+          ? ['Web request', 'Run command', 'Apply file changes', 'Run command', 'Run command']
+          : [],
+      )
+      expect(vi.mocked(run.approve).mock.calls.map(([, , kind]) => kind)).toEqual(
+        permission === 'ask' ? ['web', undefined, undefined, undefined, undefined] : [],
+      )
+      const replies = (await requests()).filter((message) => message.result !== undefined)
+      expect(replies).toHaveLength(5)
+      for (const reply of replies)
+        expect(reply.result).toEqual({ decision: permission === 'ask' ? 'accept' : 'decline' })
+    } finally {
+      await adapter.dispose?.()
+    }
+  },
+)
 it('reuses the Codex app-server for follow-up turns and closes it with the adapter', async () => {
   const { run, requests } = await fixture()
   run.taskId = 'warm-task'

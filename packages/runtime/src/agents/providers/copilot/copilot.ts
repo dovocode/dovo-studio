@@ -108,7 +108,17 @@ export const copilotPermission =
     const approved =
       automatic ||
       (await nativeWait(
-        run.approve(`Copilot ${request.kind} request`, JSON.stringify(request)),
+        run.approve(
+          `Copilot ${request.kind} request`,
+          JSON.stringify(request),
+          request.kind === 'url' &&
+            !request.managedApprovalRequired &&
+            !request.requestSandboxBypass &&
+            URL.canParse(request.url) &&
+            ['http:', 'https:'].includes(new URL(request.url).protocol)
+            ? 'web'
+            : undefined,
+        ),
         signal,
       ))
     return signal.aborted || !approved

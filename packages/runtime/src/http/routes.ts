@@ -736,6 +736,7 @@ export function route(
         if (input && typeof input === 'object' && 'memory' in input)
           throw new HttpError(400, 'Configure memory through its scope settings')
         const settings = s.preferences.save(input)
+        s.approvals.applyWebRules()
         s.artifacts.prune()
         return yield* serviceResult(settings)
       }
@@ -853,6 +854,7 @@ export function route(
           s.tasks.requireCheckoutReferencesAvailable(next)
         }
         s.store.patch(patch)
+        if (patch.collection === 'repositories') s.approvals.applyWebRules()
         return yield* serviceResult({
           revision: s.store.version(),
           runtimeInstanceId: s.instanceId,

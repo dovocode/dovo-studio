@@ -24,7 +24,7 @@ const mocks = {
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import {RunningTaskPreferences,PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {Segmented} from '${ui}/settings-layout.tsx';const components={memory:Memory,worktrees:Worktrees,running:RunningTaskPreferences,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={connected:true,request:async(path,input,schema)=>decode(schema,await window.callRuntime(path,input)),requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<Component key={name}/>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import {RunningTaskPreferences,PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {Segmented} from '${ui}/settings-layout.tsx';const components={memory:Memory,worktrees:Worktrees,running:RunningTaskPreferences,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={connected:true,snapshot:window.initialSnapshot,request:async(path,input,schema)=>decode(schema,await window.callRuntime(path,input)),requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<Component key={name}/>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -65,6 +65,12 @@ try {
     if (!response.ok) throw new Error(value.error)
     return value
   })
+  const snapshot = await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((response) => response.json())
+  await page.evaluate((snapshot) => {
+    window.initialSnapshot = snapshot
+  }, snapshot)
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const chooseScope = async (name) => {
@@ -136,6 +142,36 @@ try {
   await page.getByRole('button', { name: 'Edit note-00', exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: /^Edit note-/ }).count(), 50)
   await page.evaluate(() => window.show('running'))
+  const web = page.getByRole('switch', {
+    name: 'Always allow web requests on this computer',
+    exact: true,
+  })
+  await web.waitFor()
+  await page.waitForFunction(
+    () =>
+      !document.querySelector('[aria-label="Always allow web requests on this computer"]').disabled,
+  )
+  assert.equal(await web.isChecked(), false)
+  await web.click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[aria-label="Always allow web requests on this computer"]')
+        .getAttribute('aria-checked') === 'true',
+  )
+  assert.equal(runtime.services.preferences.get().allowWebRequests, true)
+  await page.waitForFunction(
+    () =>
+      !document.querySelector('[aria-label="Always allow web requests on this computer"]').disabled,
+  )
+  await web.click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[aria-label="Always allow web requests on this computer"]')
+        .getAttribute('aria-checked') === 'false',
+  )
+  assert.equal(runtime.services.preferences.get().allowWebRequests, false)
   const limit = page.getByRole('spinbutton', { name: 'Maximum concurrent child agents' })
   await limit.waitFor()
   await limit.fill('0')

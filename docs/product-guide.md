@@ -82,8 +82,9 @@ guide before creating a separate workspace.
 - Task conversations provide commit and pull request creation from Changes, generated commit and
   pull request text, approval shortcuts (Y/N and question options 1–9), bookmarks, and a tool-based
   summary after each turn. A finished turn with file changes refreshes its browser preview.
-- Project approval rules remember exact approved commands and can be removed from project actions or
-  mobile task settings. Project instructions can be edited with a diff and a disk-change check.
+- Project approval rules remember exact approved commands and can also always allow web browsing and
+  search. Desktop project actions manage both rules; the mobile thread menu manages web permission.
+  Project instructions can be edited with a diff and a disk-change check.
 - Tasks can schedule follow-ups and start after another task completes. The host runtime processes
   these even when clients are closed. Task token and agent-time budgets warn without stopping work;
   Usage shows Codex and Claude plan windows when those providers report them.
@@ -812,6 +813,19 @@ Agent configuration and task overrides offer **Supervised**, **Auto-accept edits
 access**, and **Read only**. Existing saved `ask` and `workspace-write` values retain their behavior
 under the first two labels. Tasks can inherit their agent's mode. Mode changes start fresh provider
 context on the next turn and never change a reusable agent through a task override.
+
+For supported web approval requests, **Always allow web in this project** remembers browsing and
+search permission across that project's threads and runtime restarts. This leaves shell commands,
+file changes, read-only restrictions, and requests requiring policy review under their existing
+rules. Change the setting in desktop **Project actions → Manage approval rules** or the mobile
+thread menu's **Project approval rules**. The **Ask before web requests** action revokes it.
+
+The computer-wide **Always allow web requests on this computer** switch covers all projects and
+threads, including threads without a project. It is off by default and saved in the computer's
+runtime preferences, shared with paired devices. Desktop exposes it under **Running tasks →
+Supervised mode**; mobile exposes it under **Computer preferences → Supervised mode**. Enabling it
+also releases web requests already waiting for approval. Turning it off restores each project's own
+web rule. Commands, file changes, read-only restrictions and policy review retain their rules.
 
 - Codex Auto sends `approvalsReviewer: auto_review` with workspace sandboxing and on-request
   approvals. The runtime checks that the harness enabled review before starting the turn. Full

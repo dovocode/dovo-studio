@@ -117,7 +117,8 @@ export function createAcpAdapter(): AgentAdapter {
         if (!ownsChild(id) || !interactions) return
         return {
           ...run,
-          approve: (title, detail) => interactions.approve(title, detail, lifetime.signal),
+          approve: (title, detail, kind) =>
+            interactions.approve(title, detail, lifetime.signal, kind),
           ask: interactions.ask,
         }
       }
@@ -125,10 +126,10 @@ export function createAcpAdapter(): AgentAdapter {
       Object.assign(toolRun, {
         ...run,
         signal: lifetime.signal,
-        approve: (title: string, detail: string) =>
+        approve: (title: string, detail: string, kind?: 'web') =>
           prompting
-            ? run.approve(title, detail)
-            : (run.nativeAgentInteractions?.approve(title, detail, lifetime.signal) ??
+            ? run.approve(title, detail, kind)
+            : (run.nativeAgentInteractions?.approve(title, detail, lifetime.signal, kind) ??
               Promise.resolve(false)),
       })
       const tools =
@@ -193,6 +194,7 @@ export function createAcpAdapter(): AgentAdapter {
               (await owner.approve(
                 params.toolCall.title ?? 'ACP tool request',
                 JSON.stringify(params.toolCall, null, 2),
+                params.toolCall.kind === 'fetch' ? 'web' : undefined,
               )))
           if (cancelling || run.signal.aborted) return { outcome: { outcome: 'cancelled' } }
           const option = params.options.find(

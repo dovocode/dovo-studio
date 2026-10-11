@@ -149,16 +149,45 @@ function ApprovalRulesDialog({
   repositoryId: string
   onClose: () => void
 }) {
-  const { workspace, setWorkspace } = useWorkspace()
+  const { workspace, setWorkspace, snapshot, connected } = useWorkspace()
   const repository = workspace.repositories.find((item) => item.id === repositoryId)
   const rules = repository?.approvedCommands ?? []
+  const webRulesSupported = snapshot?.allowWebRequests !== undefined
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-xl">
         <DialogTitle>Project approval rules</DialogTitle>
         <DialogDescription>
-          These exact commands run without asking again in {repository?.name}.
+          Saved permissions apply to all threads in {repository?.name}.
         </DialogDescription>
+        <div className="flex items-center gap-2">
+          <p className="flex-1 text-xs">
+            {!webRulesSupported
+              ? 'Update Dovo on this computer to use web approval rules.'
+              : snapshot?.allowWebRequests
+                ? 'Web requests are always allowed on this computer. Change that in Running tasks settings before changing the project rule.'
+                : `Web browsing and search ${repository?.approvedWebRequests ? 'are always allowed.' : 'ask for approval.'}`}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!connected || !webRulesSupported || snapshot?.allowWebRequests}
+            onClick={() =>
+              setWorkspace((current) => ({
+                ...current,
+                repositories: current.repositories.map((project) =>
+                  project.id === repositoryId
+                    ? { ...project, approvedWebRequests: !project.approvedWebRequests }
+                    : project,
+                ),
+              }))
+            }
+          >
+            {repository?.approvedWebRequests
+              ? 'Ask before web requests'
+              : 'Always allow web requests'}
+          </Button>
+        </div>
         <div className="max-h-[50vh] space-y-2 overflow-y-auto">
           {rules.map((command) => (
             <div key={command} className="flex items-center gap-2">

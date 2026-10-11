@@ -6,6 +6,7 @@ it('defaults new preferences and accepts only Git-safe branch prefixes', () => {
   const defaults = decodeResult(runtimePreferencesSchema, {})
   expect(defaults.success && defaults.data).toMatchObject({
     branchPrefix: 'dovo/',
+    allowWebRequests: false,
     autoArchiveDays: 0,
     settleOnPullClose: false,
     autoLinkPullRequests: true,
