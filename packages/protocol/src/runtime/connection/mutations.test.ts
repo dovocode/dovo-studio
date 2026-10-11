@@ -696,3 +696,70 @@ it('resolves older blocked validation receipts while preserving uncertain comman
   expect(f.stored()).toEqual([])
   expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
 })
+
+it.each([403, 404, 409, 422])(
+  'removes confirmed rejected workspace edits (%s), but retains unmarked uncertainty',
+  async (status) => {
+    const f = fixture()
+    let confirmed = true
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url) =>
+        urlPath(url).endsWith('/status')
+          ? Response.json({ version: 1 })
+          : Response.json(
+              { error: 'Edit rejected', ...(confirmed ? { mutationRejected: true } : {}) },
+              { status },
+            ),
+      ),
+    )
+    expect(
+      (
+        await run(
+          f.queue.requestEffect(
+            connection,
+            '/api/workspace',
+            { collection: 'tasks', id: 'task', changes: {} },
+            ok,
+            'PATCH',
+          ),
+        )
+      )._tag,
+    ).toBe('Failure')
+    expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+    confirmed = false
+    await run(
+      f.queue.requestEffect(
+        connection,
+        '/api/workspace',
+        { collection: 'tasks', id: 'task', changes: {} },
+        ok,
+        'PATCH',
+      ),
+    )
+    expect(f.stored()[0]?.blocked).toBe(true)
+  },
+)
+it('resolves an old rejected edit before sending a different new model selection', async () => {
+  const f = fixture([
+    { id: 'old', path: '/api/workspace', method: 'PATCH', input: { old: true }, blocked: true },
+  ])
+  const sent: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, options) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      const id = new Headers(options?.headers).get('X-Dovo-Mutation-Id') ?? ''
+      sent.push(id)
+      return id === 'old'
+        ? Response.json({ error: 'Invalid request data.' }, { status: 400 })
+        : Response.json({ ok: true })
+    }),
+  )
+  expect(
+    (await run(f.queue.requestEffect(connection, '/api/workspace', { model: 'new' }, ok, 'PATCH')))
+      ._tag,
+  ).toBe('Success')
+  expect(sent).toEqual(['old', 'operation-1'])
+  expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+})

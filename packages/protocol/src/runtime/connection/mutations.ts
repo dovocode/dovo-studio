@@ -60,13 +60,14 @@ const transient = (error: unknown) =>
   (error.kind === 'connection' ||
     error.kind === 'timeout' ||
     [502, 503, 504].includes(error.status ?? 0))
-// Workspace validation happens before the patch commits. A 400 is a rejected edit,
-// not an uncertain command to keep replaying or a reason to reconnect.
-const rejectedPatch = (item: MutationOutbox[number], error: unknown) =>
+// Workspace validation happens before the patch commits. New runtimes explicitly
+// identify rejected edits; older runtimes return 400 for invalid input.
+const rejectedPatch = (item: { path: string; method: string }, error: unknown) =>
   item.path === '/api/workspace' &&
   item.method === 'PATCH' &&
   error instanceof RuntimeRequestError &&
-  error.status === 400
+  (error.status === 400 ||
+    (error.mutationRejected === true && [403, 404, 409, 422].includes(error.status ?? 0)))
 const operation = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({
     try: run,
@@ -325,6 +326,21 @@ export class RuntimeMutations {
       .withPermits(1)(
         Effect.gen({ self: this }, function* () {
           yield* this.load(connection, state)
+          // Resolve old rejected settings before accepting a new edit, without replaying
+          // unrelated commands or discarding conflicts with an uncertain outcome.
+          if (
+            state.pending[0]?.blocked &&
+            state.pending[0].path === '/api/workspace' &&
+            state.pending[0].method === 'PATCH'
+          ) {
+            if (yield* this.supports(connection, state)) {
+              const next = state.pending.find(
+                (entry) =>
+                  !entry.blocked || entry.path !== '/api/workspace' || entry.method !== 'PATCH',
+              )
+              yield* this.drain(connection, state, false, next?.id)
+            }
+          }
           // A UI retry of the same unresolved command keeps its identity, including after restart.
           let item = state.pending.find(
             (entry) =>
@@ -430,13 +446,7 @@ export class RuntimeMutations {
         Effect.tapError((error) =>
           Effect.sync(() => {
             state.error =
-              !state.pending.length &&
-              path === '/api/workspace' &&
-              method === 'PATCH' &&
-              error instanceof RuntimeRequestError &&
-              error.status === 400
-                ? null
-                : error.message
+              !state.pending.length && rejectedPatch({ path, method }, error) ? null : error.message
             this.changed()
           }),
         ),

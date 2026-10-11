@@ -5,9 +5,12 @@ import { dirname } from 'node:path'
 import { chromium } from './browser/harness.mjs'
 const webRequire = createRequire(new URL('../packages/studio-ui/package.json', import.meta.url))
 const mocks = {
-  '../../ui/layout/sheet': `export const Sheet=({children})=><div>{children}</div>;`,
+  '../../ui/layout/sheet': `export const Sheet=({title,children,onClose})=><section>{title&&<h2>{title}</h2>}{children}</section>;`,
+  'expo-router': `export const router={navigate:()=>{}};`,
+  '../ui/content/format-date': `export const formatDateTime=value=>value;`,
+  '../ui/controls/pill': `export const Pill=({label,onPress})=><button onClick={onPress}>{label}</button>;`,
   '../screens/settings-controls': `export {Choice as SettingsChoice} from '../ui/controls/choice';export {Field as SettingsField} from '../ui/controls/field';export {Action as SettingsAction} from '../ui/controls/action';`,
-  'react-native': `export const View=({children})=><div>{children}</div>;`,
+  'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert:()=>{}};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,
   'expo-crypto': `export const CryptoDigestAlgorithm={SHA256:'SHA-256'};export const digestStringAsync=async(_,text)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('');`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const Context=createContext(null);export const useRuntime=()=>useContext(Context);`,
@@ -26,10 +29,11 @@ const built = await build({
   },
   stdin: {
     contents: `
-import {useState,useEffect} from 'react';import {createRoot} from 'react-dom/client';import {defaultTaskHarness,decode,taskSchema,resolveTaskAgent} from '@dovo/protocol';import {Effect} from 'effect';import {HarnessSettings} from './src/tasks/detail/harness-settings.tsx';import {ModelSettings} from './src/agents/model-settings.tsx';import {Context} from '../runtime/connection/provider';import {optimisticTaskEffect,optimisticTaskConfirmed,previewTasks} from './src/runtime/state/optimistic-tasks.ts';
+import {useState,useEffect} from 'react';import {createRoot} from 'react-dom/client';import {defaultTaskHarness,decode,taskSchema,resolveTaskAgent} from '@dovo/protocol';import {Effect} from 'effect';import {HarnessSettings} from './src/tasks/detail/harness-settings.tsx';import {ModelSettings} from './src/agents/model-settings.tsx';import {Context} from '../runtime/connection/provider';import {ConnectionPill} from './src/runtime/connection/connection-status.tsx';import {optimisticTaskEffect,optimisticTaskConfirmed,previewTasks} from './src/runtime/state/optimistic-tasks.ts';
 window.requests=[];window.finishes=[];
 const readRuntime=async(profile,path,input)=>new Promise(resolve=>{window.requests.push({host:profile.id,path,input});window.finishes.push(resolve)});
 function App(){
+ const[queueStatus,setQueueStatus]=useState({pending:0,error:null});window.queueStatus=setQueueStatus;
  const[task,setTask]=useState(null),[editing,setEditing]=useState(false),[pending,setPending]=useState([]),[revision,setRevision]=useState(1);
  window.openTask=()=>{if(!task)setTask(decode(taskSchema,{id:'task',repositoryId:'repo',agentId:'',title:'Task',status:'draft',createdAt:'2026-09-23T10:00:00Z',messages:[],files:[],draft:'',example:false,harness:defaultTaskHarness('codex')}));setEditing(true)};
  const[host,setHost]=useState('one');const[agent,setAgent]=useState({...defaultTaskHarness('codex'),id:'agent',name:'Agent',model:''});const[online,setOnline]=useState(true);
@@ -39,8 +43,8 @@ function App(){
  const entry={profile,snapshot};const visible=previewTasks(entry,pending).snapshot.workspace.tasks[0];window.visibleTask=visible;window.rawTask=task;
  window.publishTask=(nextRevision,nextTask)=>{setRevision(nextRevision);if(nextTask)setTask(nextTask)};
  useEffect(()=>setPending(items=>{const next=items.filter(item=>!optimisticTaskConfirmed(item,entry,items));return next.length===items.length?items:next}),[task,revision]);
- const value={profile,connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/workspace'){const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
- return <Context.Provider value={value}>{task?<><span data-selected-model>{resolveTaskAgent(visible,[])?.model||'Default'}</span>{editing&&<HarnessSettings task={visible} onClose={()=>setEditing(false)}/>}</>:<ModelSettings agent={agent} onChange={setAgent}/>}</Context.Provider>
+ const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/workspace'){const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
+ return <Context.Provider value={value}>{task?<><span data-selected-model>{resolveTaskAgent(visible,[])?.model||'Default'}</span>{editing&&<HarnessSettings task={visible} onClose={()=>setEditing(false)}/>}</>:<ModelSettings agent={agent} onChange={setAgent}/>}<ConnectionPill/></Context.Provider>
 };createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../apps/mobile/', import.meta.url)),
@@ -50,7 +54,9 @@ function App(){
     {
       name: 'native-environment',
       setup(builder) {
-        builder.onResolve({ filter: /.*/ }, ({ path }) => {
+        builder.onResolve({ filter: /.*/ }, ({ path, importer }) => {
+          if (path === './provider' && importer.endsWith('/connection-status.tsx'))
+            return { path: '../runtime/connection/provider', namespace: 'native-environment' }
           const canonical = path.startsWith('../../') ? path.slice(3) : path
           const mocked = Object.hasOwn(mocks, path) ? path : canonical
           return Object.hasOwn(mocks, mocked)
@@ -275,6 +281,17 @@ try {
     'rejected-model'
   )
     throw new Error('Rejected save lost the selected model needed for retry')
+  await page.evaluate(() => window.queueStatus({ pending: 1, error: null }))
+  await page.waitForTimeout(2700)
+  if (await page.getByRole('button', { name: 'Saved actions · Review', exact: true }).count())
+    throw new Error('A normally syncing edit displayed connection recovery')
+  await page.evaluate(() => window.queueStatus({ pending: 1, error: 'Connection lost' }))
+  await page.getByRole('button', { name: 'Saved actions · Review', exact: true }).click()
+  await page.getByRole('heading', { name: 'Connection', exact: true }).waitFor()
+  await page.evaluate(() => window.queueStatus({ pending: 0, error: null }))
+  await page
+    .getByRole('heading', { name: 'Connection', exact: true })
+    .waitFor({ state: 'detached' })
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse/Cursor model selection, reasoning, OpenCode v1/v2 labels, and task model/reasoning saves with unavailable provider discovery passed.',

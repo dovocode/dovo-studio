@@ -1,4 +1,12 @@
-import { decode, defaultTaskHarness, taskSchema } from '@dovo/protocol'
+import { Effect } from 'effect'
+import {
+  decode,
+  defaultTaskHarness,
+  taskSchema,
+  RuntimeMutations,
+  workspacePatchResultSchema,
+  type MutationOutbox,
+} from '@dovo/protocol'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { randomBytes } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
@@ -568,3 +576,66 @@ it.each(['draft', 'done'] as const)(
     expect(runtime.services.store.task(task.id).harnessCustomized).toBeUndefined()
   },
 )
+
+it('keeps HTTP model-switch conflicts in the editor and permits the next edit', async () => {
+  const token = randomBytes(32).toString('base64url')
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  const task = decode(taskSchema, {
+    id: 'switch-http',
+    title: 'Switch',
+    repositoryId: '',
+    agentId: '',
+    status: 'done',
+    createdAt: '',
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+    harness: defaultTaskHarness('codex'),
+  })
+  runtime.services.store.update((w) => ({ ...w, tasks: [task] }))
+  const connection = { address: `http://127.0.0.1:${runtime.port}`, token }
+  let pending: MutationOutbox = []
+  let serial = 0
+  const queue = new RuntimeMutations({
+    id: () => `model-edit-${++serial}`,
+    read: async () => pending,
+    clear: async () => {
+      pending = []
+    },
+    update: async (_, change) => {
+      pending = change(pending)
+      return pending
+    },
+  })
+  const edit = (before: string, after: string) =>
+    queue.requestEffect(
+      connection,
+      '/api/workspace',
+      {
+        collection: 'tasks',
+        id: task.id,
+        changes: {
+          harness: {
+            before: { ...task.harness, model: before },
+            after: { ...task.harness, model: after },
+          },
+          agentOverrides: { before: null, after: null },
+        },
+      },
+      workspacePatchResultSchema,
+      'PATCH',
+    )
+  await Effect.runPromise(edit('', 'model-one'))
+  const conflict = await Effect.runPromise(Effect.result(edit('', 'model-two')))
+  expect(conflict).toMatchObject({
+    _tag: 'Failure',
+    failure: { status: 409, mutationRejected: true },
+  })
+  expect(queue.status(connection)).toEqual({ pending: 0, error: null })
+  expect(runtime.services.store.task(task.id).harness?.model).toBe('model-one')
+  await Effect.runPromise(edit('model-one', 'model-two'))
+  expect(queue.status(connection)).toEqual({ pending: 0, error: null })
+  expect(runtime.services.store.task(task.id).harness?.model).toBe('model-two')
+})

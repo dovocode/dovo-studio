@@ -28,7 +28,11 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
     : runtime.overviews
   // Only hosts whose requests failed count; a computer still connecting is not offline.
   const unavailable = scoped.filter((entry) => runtimeReachability(entry) === 'offline')
-  const saved = scoped.filter((entry) => runtime.mutationStatus(entry.profile).pending > 0)
+  // In-flight journal entries are ordinary saves. Surface recovery only after failure.
+  const saved = scoped.filter((entry) => {
+    const status = runtime.mutationStatus(entry.profile)
+    return status.pending > 0 && status.error !== null
+  })
   const fallback = scoped.filter(
     (entry) =>
       entry.connected &&

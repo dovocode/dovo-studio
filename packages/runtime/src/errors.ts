@@ -5,9 +5,18 @@ import { ValidationError } from '@dovo/protocol'
 export class HttpError extends Data.TaggedError('HttpError')<{
   readonly status: number
   readonly message: string
+  readonly mutationRejected?: true
+  readonly issues?: readonly { path: string; code: string; message: string }[]
 }> {
-  constructor(status: number, message: string) {
-    super({ status, message })
+  constructor(
+    status: number,
+    message: string,
+    details: {
+      mutationRejected?: true
+      issues?: readonly { path: string; code: string; message: string }[]
+    } = {},
+  ) {
+    super({ status, message, ...details })
   }
 }
 export class RuntimeOperationError extends Data.TaggedError('RuntimeOperationError')<{

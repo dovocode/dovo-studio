@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { openDatabase } from './database.js'
+import { HttpError } from '../errors.js'
 import { MutationReceipts } from './mutation-receipts.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -101,6 +102,39 @@ it('shares concurrent retries and refuses uncertain side effects after process l
     await expect(restarted.execute('phone', 'action', {}, run)).rejects.toThrow('restarted')
     finish({ ok: true })
     expect(await retry).toEqual(await pending)
+  } finally {
+    db.close()
+  }
+})
+
+it('identifies rejected workspace edits across receipt recovery without marking uncertain outcomes', async () => {
+  const db = openDatabase(':memory:')
+  try {
+    const receipts = new MutationReceipts(db)
+    const input = { method: 'PATCH', path: '/api/workspace', input: {} }
+    const run = vi.fn<() => Promise<never>>(async () => {
+      throw new HttpError(409, 'Another client changed harness')
+    })
+    await expect(receipts.execute('phone', 'rejected', input, run)).rejects.toMatchObject({
+      status: 409,
+      mutationRejected: true,
+    })
+    await expect(
+      new MutationReceipts(db).execute('phone', 'rejected', input, run),
+    ).rejects.toMatchObject({ status: 409, mutationRejected: true })
+    expect(run).toHaveBeenCalledOnce()
+    await expect(
+      receipts.execute('phone', 'rejected', { ...input, input: { different: true } }, run),
+    ).rejects.not.toHaveProperty('mutationRejected')
+    const failed = async () => {
+      throw Error('Disk failed')
+    }
+    await expect(receipts.execute('phone', 'uncertain', input, failed)).rejects.toThrow(
+      'Disk failed',
+    )
+    await expect(
+      new MutationReceipts(db).execute('phone', 'uncertain', input, failed),
+    ).rejects.not.toHaveProperty('mutationRejected')
   } finally {
     db.close()
   }

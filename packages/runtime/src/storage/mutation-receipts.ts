@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import { decode, mutableStruct, safeValidationMessage, ValidationError } from '@dovo/protocol'
+import {
+  decode,
+  mutableStruct,
+  safeValidationMessage,
+  safeValidationIssues,
+  ValidationError,
+} from '@dovo/protocol'
 import { Schema } from 'effect'
 import { HttpError, errorMessage } from '../errors.js'
 const receiptSchema = mutableStruct({
@@ -10,7 +16,12 @@ const receiptSchema = mutableStruct({
 const outcomeSchema = Schema.Union([
   mutableStruct({ retired: Schema.Literal(true) }),
   mutableStruct({ ok: Schema.Literal(true), value: Schema.Unknown }),
-  mutableStruct({ ok: Schema.Literal(false), status: Schema.Number, error: Schema.String }),
+  mutableStruct({
+    ok: Schema.Literal(false),
+    status: Schema.Number,
+    error: Schema.String,
+    mutationRejected: Schema.optional(Schema.Literal(true)),
+  }),
 ])
 /** Persist responses rather than replaying side effects when an acknowledgement is lost.
  * An interrupted in-flight action is uncertain after restart and must never run blindly. */
@@ -58,7 +69,10 @@ export class MutationReceipts {
             409,
             'This action was already acknowledged. Discard the stale saved action; it was not repeated.',
           )
-        if (!result.ok) throw new HttpError(result.status, result.error)
+        if (!result.ok)
+          throw new HttpError(result.status, result.error, {
+            mutationRejected: result.mutationRejected,
+          })
         return result.value
       }
       if (!safelyRepeat)
@@ -86,12 +100,23 @@ export class MutationReceipts {
           // A gateway/runtime failure may be transient. Preserve uncertainty rather than recording a false rejection.
           const status =
             error instanceof HttpError ? error.status : error instanceof ValidationError ? 400 : 500
+          // Workspace patches validate the full edit before committing. Distinguish a
+          // domain rejection from receipt conflicts and interrupted/unknown outcomes.
+          const mutationRejected =
+            [400, 403, 404, 409, 422].includes(status) &&
+            typeof request === 'object' &&
+            request !== null &&
+            'path' in request &&
+            request.path === '/api/workspace' &&
+            'method' in request &&
+            request.method === 'PATCH'
           if (status >= 500) this.failed.add(key)
           if (status < 500)
             this.db.prepare('UPDATE mutation_receipts SET result=? WHERE device_id=? AND id=?').run(
               JSON.stringify({
                 ok: false,
                 status,
+                ...(mutationRejected ? { mutationRejected: true } : {}),
                 error:
                   error instanceof ValidationError
                     ? safeValidationMessage(error)
@@ -99,6 +124,17 @@ export class MutationReceipts {
               }),
               deviceId,
               id,
+            )
+          if (mutationRejected)
+            throw new HttpError(
+              status,
+              error instanceof ValidationError ? safeValidationMessage(error) : errorMessage(error),
+              {
+                mutationRejected: true,
+                ...(error instanceof ValidationError
+                  ? { issues: safeValidationIssues(error) }
+                  : {}),
+              },
             )
           throw error
         },

@@ -84,6 +84,10 @@ export function createRuntimeServer(services: Services, internal = false) {
         completeRequest(request, status, message)
         return json(request, response, status, {
           error: message,
+          ...(error instanceof HttpError && error.mutationRejected
+            ? { mutationRejected: true }
+            : {}),
+          ...(error instanceof HttpError && error.issues ? { issues: error.issues } : {}),
           ...(error instanceof ValidationError ? { issues: safeValidationIssues(error) } : {}),
         })
       })
