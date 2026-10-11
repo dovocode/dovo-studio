@@ -115,7 +115,7 @@ export class SimulatorPreviews {
     const device = (
       await (this.provider
         ? this.provider.devices(taskId, deviceId, foreignOwner)
-        : previewDevices())
+        : previewDevices(deviceId))
     ).devices.find((device) => device.id === deviceId)
     assertCurrent()
     if (!device) throw new HttpError(404, 'Simulator is no longer available')

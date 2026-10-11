@@ -57,7 +57,7 @@ export const FlatList=({data,renderItem,ListEmptyComponent,contentContainerStyle
 export const Alert={alert:()=>{}};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};
 `,
   'react-native-safe-area-context': `import {View} from 'react-native';export const SafeAreaProvider=({children})=><View style={{flex:1,minHeight:0}}>{children}</View>;export const SafeAreaView=View;`,
-  'react-native-webview': `import React from 'react';export default ({source})=><iframe title="Mobile preview" sandbox="allow-scripts" srcDoc={source.html}/>;`,
+  'react-native-webview': `import React,{useEffect} from 'react';export default ({source,onContentProcessDidTerminate,onRenderProcessGone})=>{useEffect(()=>{window.mobilePreviewMounts=(window.mobilePreviewMounts||0)+1},[]);window.terminateMobilePreview=()=>onContentProcessDidTerminate?.();window.crashMobilePreview=()=>onRenderProcessGone?.();return <iframe title="Mobile preview" sandbox="allow-scripts" srcDoc={source.html}/>;};`,
   'expo-file-system': `export class File {};export const Paths={cache:''};`,
   'expo-sharing': `export const isAvailableAsync=async()=>false;export const shareAsync=async()=>{};`,
   'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
@@ -359,6 +359,15 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       await view.getByText('Counter', { exact: true }).click()
     }
     await view.frameLocator('iframe').frameLocator('iframe').locator('#interactive').waitFor()
+    if (ui.platform === 'mobile') {
+      const mounts = await view.evaluate(() => window.mobilePreviewMounts)
+      await view.evaluate(() => window.terminateMobilePreview())
+      await view.waitForFunction((count) => window.mobilePreviewMounts === count + 1, mounts)
+      await view.frameLocator('iframe').frameLocator('iframe').locator('#interactive').waitFor()
+      await view.evaluate(() => window.crashMobilePreview())
+      await view.waitForFunction((count) => window.mobilePreviewMounts === count + 2, mounts)
+      await view.frameLocator('iframe').frameLocator('iframe').locator('#interactive').waitFor()
+    }
     await view
       .getByRole('button', {
         name: ui.platform === 'desktop' ? 'Source' : 'View artifact source code',

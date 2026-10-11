@@ -13,6 +13,12 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./request-timeout": {
+      "types": "./src/shared/request-timeout.ts",
+      "development": "./src/shared/request-timeout.ts",
+      "import": "./dist/shared/request-timeout.js",
+      "default": "./dist/shared/request-timeout.js"
+    },
     "./browser-viewer": {
       "types": "./src/generated/browser-viewer.ts",
       "development": "./src/generated/browser-viewer.ts",
@@ -37,6 +43,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "cron-parser": "^5.10.1",
     "effect": "4.0.1",
     "proper-lockfile": "4.1.2",

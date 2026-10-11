@@ -26,7 +26,7 @@ import {
 } from './acp-connection.js'
 import { acpClientTools } from './acp-client-tools.js'
 import { updateSubagents } from '../../execution/subagents.js'
-import { releaseIdleProvider } from '../../execution/warm-processes.js'
+import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 type AcpConnection = ReturnType<typeof openAcpConnection>
 type AcpSession = NewSessionResponse | ResumeSessionResponse | LoadSessionResponse
 type WarmAcp = {
@@ -49,7 +49,10 @@ type WarmAcp = {
   }
 }
 export function createAcpAdapter(): AgentAdapter {
-  const idle = new Map<string, WarmAcp>()
+  const idle = new IdleProviders<WarmAcp>(
+    (value) => close(value),
+    (value) => value.native.agents.some(nativeAgentWorking),
+  )
   const close = async (value: WarmAcp) => {
     value.native.lifetime.abort()
     await value.connection.close()
@@ -57,6 +60,7 @@ export function createAcpAdapter(): AgentAdapter {
     value.native.owner.onSubagentEvent?.('dovo/session/closed', {}, value.sessionId)
   }
   return {
+    releaseTask: (taskId) => idle.release(taskId),
     models: acpModels,
     probe: async (agent, launch) => ({
       provider: 'acp',
@@ -558,19 +562,7 @@ export function createAcpAdapter(): AgentAdapter {
             compactAvailable,
             native: state,
           })
-          if (releaseIdleProvider()) {
-            const oldest = [...idle.entries()].find(
-              ([, value]) => !value.native.agents.some(nativeAgentWorking),
-            )?.[0]
-            if (oldest) {
-              const stale = idle.get(oldest)
-              idle.delete(oldest)
-              if (stale)
-                await close(stale).catch((error) =>
-                  console.error('Could not release idle ACP process:', error),
-                )
-            }
-          }
+          await idle.prune(releaseIdleProvider())
         }
       } finally {
         prompting = false

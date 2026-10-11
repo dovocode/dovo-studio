@@ -88,3 +88,59 @@ it('reads checkout images and assistant-shared temp images while denying unrelat
   expect((await read({ taskId: 'task', path: 'fake.png' })).status).toBe(415)
   expect((await read({ taskId: 'task', path: 'missing.png' })).status).toBe(404)
 })
+
+it('resizes local, tool and attachment images and keeps source ownership and originals intact', async () => {
+  const { default: sharp } = await import('sharp')
+  const { runtime, directory, read } = await setup()
+  const image = await sharp({
+    create: { width: 2048, height: 1024, channels: 3, background: '#124578' },
+  })
+    .png()
+    .toBuffer()
+  await writeFile(join(directory, 'large.png'), image)
+  const dimensions = async (response: Response) => {
+    expect(response.status).toBe(200)
+    const value = await response.json()
+    return sharp(Buffer.from(value.uri.split(',')[1], 'base64')).metadata()
+  }
+  expect(
+    await dimensions(await read({ taskId: 'task', path: 'large.png', maxSize: 128 })),
+  ).toMatchObject({ width: 128, height: 64, format: 'webp' })
+  expect(await dimensions(await read({ taskId: 'task', path: 'large.png' }))).toMatchObject({
+    width: 2048,
+    height: 1024,
+    format: 'png',
+  })
+  runtime.services.activity.add(
+    'tool',
+    'task',
+    'Screenshot',
+    {
+      result: {
+        content: [{ type: 'image', mimeType: 'image/png', data: image.toString('base64') }],
+      },
+    },
+    'large-tool-image',
+  )
+  expect(
+    await dimensions(
+      await read({ taskId: 'task', eventId: 'large-tool-image', index: 0, maxSize: 1024 }),
+    ),
+  ).toMatchObject({ width: 1024, height: 512 })
+  const id = crypto.randomUUID()
+  await runtime.services.attachments.upload({
+    taskId: 'task',
+    id,
+    name: 'large.png',
+    data: image.toString('base64'),
+  })
+  expect(
+    await dimensions(await read({ taskId: 'task', attachmentId: id, maxSize: 128 })),
+  ).toMatchObject({ width: 128, height: 64 })
+  expect((await read({ taskId: 'other', attachmentId: id, maxSize: 128 })).status).toBe(400)
+  expect(
+    (await read({ taskId: 'task', attachmentId: id, path: 'large.png', maxSize: 128 })).status,
+  ).toBe(400)
+  expect((await read({ taskId: 'task', path: 'large.png', maxSize: 99999 })).status).toBe(400)
+  expect(runtime.services.attachments.read('task', id).data).toBe(image.toString('base64'))
+})

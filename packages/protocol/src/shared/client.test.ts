@@ -20,6 +20,183 @@ const dataSchema = mutableStruct({
 })
 const readSnapshot = (selected = connection) =>
   runtimeRequest(selected, selected.address, '/api/snapshot', undefined, dataSchema, 'GET')
+it.each(['GET', 'HEAD', 'get', 'head'])(
+  'reports a %s request with a body as an invalid request before attempting fetch',
+  async (method) => {
+    const request = vi.fn<typeof fetch>(async (url, options) => {
+      new Request(url, options)
+      return Response.json({ revision: 1 })
+    })
+    vi.stubGlobal('fetch', request)
+    await expect(
+      runtimeRequest(connection, connection.address, '/api/device-hosts', {}, dataSchema, method),
+    ).rejects.toMatchObject({
+      kind: 'request',
+      message: `Runtime ${method.toUpperCase()} requests cannot include a body.`,
+    })
+    expect(request).not.toHaveBeenCalled()
+  },
+)
+it.each([
+  { path: '/api/scm/push', input: { repositoryId: 'repo' }, delay: 241000 },
+  { path: '/api/scm/push', input: { repositoryId: 'repo', taskId: 'task' }, delay: 661000 },
+  { path: '/api/tasks/handoff', input: { id: 'task', target: 'worktree' }, delay: 661000 },
+  { path: '/api/mcp-apps/rpc', input: { method: 'tools/call' }, delay: 721000 },
+  { path: '/api/mcp-apps/rpc', input: { method: 'resources/read' }, delay: 121000 },
+  {
+    path: '/api/agents/models',
+    input: {
+      provider: 'acp',
+      model: 'b',
+      acpMode: 'code',
+      acpConfig: { thought: 'high', flag: 'true' },
+    },
+    delay: 201000,
+  },
+  { path: '/api/agents/models', input: { provider: 'grok', model: 'b' }, delay: 151000 },
+  { path: '/api/tasks/commit-message', input: { id: 'task' }, delay: 91000 },
+  { path: '/api/tasks/commit', input: { id: 'task', push: true }, delay: 151000 },
+  {
+    path: '/api/scm/repositories/github/create',
+    input: { path: '/project', name: 'project', visibility: 'private' },
+    delay: 241000,
+  },
+  {
+    path: '/api/scm/repositories/forge/read',
+    input: { connectionId: 'gitea', page: 1 },
+    delay: 91000,
+  },
+  {
+    path: '/api/scm/repositories/forge/inspect',
+    input: { connectionId: 'gitea', repository: 'team/project' },
+    delay: 61000,
+  },
+  {
+    path: '/api/scm/repositories/forge/bind',
+    input: {
+      repositoryId: 'project',
+      forge: { connectionId: 'gitea', repository: 'team/project' },
+    },
+    delay: 61000,
+  },
+  { path: '/api/previews/devices', input: { taskId: 'task' }, delay: 281000 },
+  {
+    path: '/api/previews/simulator/open',
+    input: { taskId: 'task', id: 'remote:host:physical-ios:phone' },
+    delay: 431000,
+  },
+  { path: '/api/pull-request-watch', input: { action: 'watch' }, delay: 61000 },
+  {
+    path: '/api/pipeline-watch',
+    input: { action: 'watch', runIds: ['7', '8', '9'] },
+    delay: 181000,
+  },
+  {
+    path: '/api/pipeline-watch',
+    input: { action: 'watch', runIds: Array.from({ length: 20 }, (_, index) => String(index)) },
+    delay: 1200000,
+  },
+])('allows $path to finish without aborting or replaying it', async ({ path, input, delay }) => {
+  vi.useFakeTimers()
+  const request = vi.fn<typeof fetch>(async (_url, options) => {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, delay)
+      options?.signal?.addEventListener('abort', () => {
+        clearTimeout(timer)
+        reject(new Error('Request aborted'))
+      })
+    })
+    return Response.json({ revision: 1 })
+  })
+  vi.stubGlobal('fetch', request)
+  const pending = runtimeRequest(connection, connection.address, path, input, dataSchema).catch(
+    (error: unknown) => error,
+  )
+  await vi.advanceTimersByTimeAsync(delay)
+  expect(await pending).toEqual({ revision: 1 })
+  expect(request).toHaveBeenCalledTimes(1)
+  expect(request.mock.calls[0][1]?.signal?.aborted).toBe(false)
+})
+it.each([
+  { path: '/api/scm/push', input: { repositoryId: 'repo' }, deadline: 300000 },
+  { path: '/api/scm/push', input: { repositoryId: 'repo', taskId: 'task' }, deadline: 900000 },
+  { path: '/api/tasks/handoff', input: { id: 'task', target: 'worktree' }, deadline: 900000 },
+  { path: '/api/mcp-apps/rpc', input: { method: 'tools/call' }, deadline: 750000 },
+  { path: '/api/mcp-apps/rpc', input: { method: 'resources/read' }, deadline: 150000 },
+  { path: '/api/mcp-apps/rpc', input: { method: 'ui/cancel' }, deadline: 30000 },
+  { path: '/api/agents/models', input: { provider: 'acp', model: '' }, deadline: 105000 },
+  {
+    path: '/api/agents/models',
+    input: {
+      provider: 'acp',
+      model: 'b',
+      acpMode: 'code',
+      acpConfig: { thought: 'high', flag: 'true' },
+    },
+    deadline: 225000,
+  },
+  { path: '/api/agents/models', input: { provider: 'grok', model: 'b' }, deadline: 165000 },
+  { path: '/api/agents/models', input: { provider: 'codex', model: 'b' }, deadline: 65000 },
+  { path: '/api/tasks/commit-message', input: { id: 'task' }, deadline: 120000 },
+  { path: '/api/tasks/commit', input: { id: 'task' }, deadline: 180000 },
+  {
+    path: '/api/scm/repositories/github/create',
+    input: { path: '/project', name: 'project', visibility: 'private' },
+    deadline: 300000,
+  },
+  {
+    path: '/api/scm/repositories/forge/read',
+    input: { connectionId: 'gitea', page: 1 },
+    deadline: 180000,
+  },
+  {
+    path: '/api/scm/repositories/forge/inspect',
+    input: { connectionId: 'gitea', repository: 'team/project' },
+    deadline: 180000,
+  },
+  {
+    path: '/api/scm/repositories/forge/bind',
+    input: {
+      repositoryId: 'project',
+      forge: { connectionId: 'gitea', repository: 'team/project' },
+    },
+    deadline: 180000,
+  },
+  { path: '/api/previews/devices', input: { taskId: 'task' }, deadline: 300000 },
+  {
+    path: '/api/previews/simulator/open',
+    input: { taskId: 'task', id: 'remote:host:physical-ios:phone' },
+    deadline: 450000,
+  },
+  { path: '/api/scm/repositories/git-status', input: { path: '/project' }, deadline: 30000 },
+  { path: '/api/previews/browser/open', input: { taskId: 'task' }, deadline: 120000 },
+  { path: '/api/pull-request-watch', input: { action: 'watch' }, deadline: 180000 },
+  {
+    path: '/api/pipeline-watch',
+    input: { action: 'watch', runIds: ['7', '7', '8'] },
+    deadline: 360000,
+  },
+  { path: '/api/pipeline-watch', input: { action: 'status' }, deadline: 30000 },
+  { path: '/api/pull-request-watch', input: { action: 'stop' }, deadline: 30000 },
+])('still bounds $path requests and aborts a stalled fetch', async ({ path, input, deadline }) => {
+  vi.useFakeTimers()
+  const request = vi.fn<typeof fetch>(
+    (_url, options) =>
+      new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new Error('Request aborted')))
+      }),
+  )
+  vi.stubGlobal('fetch', request)
+  const pending = runtimeRequest(connection, connection.address, path, input, dataSchema).catch(
+    (error: unknown) => error,
+  )
+  await vi.advanceTimersByTimeAsync(deadline - 1)
+  expect(request.mock.calls[0][1]?.signal?.aborted).toBe(false)
+  await vi.advanceTimersByTimeAsync(2)
+  expect(await pending).toMatchObject({ kind: 'timeout' })
+  expect(request).toHaveBeenCalledTimes(1)
+  expect(request.mock.calls[0][1]?.signal?.aborted).toBe(true)
+})
 it.each([
   '/api/scm/work/issues/list',
   '/api/scm/work/issues/action',

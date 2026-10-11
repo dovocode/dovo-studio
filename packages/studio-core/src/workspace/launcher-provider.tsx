@@ -159,6 +159,8 @@ export function LauncherWorkspaceProvider({
       storageError: null,
       syncError: null,
       pendingSync: false,
+      syncConflicts: [],
+      resolveSyncConflict: unavailableAsync,
       runtimeRegistry: registry,
       activeRuntimeId: profile?.id ?? null,
       runtimes,

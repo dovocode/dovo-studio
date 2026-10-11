@@ -16,7 +16,29 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {decode} from '@dovo/protocol';import View from '${root}/packages/extension-runtime/src/device-hosts-view.tsx';window.saved={hosts:[]};window.calls=[];window.runtime={connected:true,connection:{address:'http://coding:3001'},runtimes:[{profile:{id:'coding',name:'Coding computer',connection:{address:'http://coding:3001',token:'local-secret'}}},{profile:{id:'mac',name:'Device Mac',connection:{address:'http://mac:3001',token:'paired-secret-never-render'}}}],request:async(path,input,schema,method)=>{window.calls.push({path,input,method});if(path==='/api/device-hosts/test')return decode(schema,{ok:true,checks:[{name:'SSH key authentication',ok:true,message:'Connected with key authentication'},{name:'iOS simulators',ok:true,message:'Xcode and companion ready'}]});if(method!=='GET'){window.saved={...input,hosts:input.hosts.map(({token,...host})=>({...host,hasToken:!!token||!!window.saved.hosts.find(h=>h.id===host.id)?.hasToken}))}}return decode(schema,window.saved)}};const uiRoot=createRoot(document.getElementById('app'));let viewRevision=0;window.remount=()=>uiRoot.render(<View key={++viewRevision}/>);window.remount();`,
+    contents: `
+      import React from 'react';import {createRoot} from 'react-dom/client';
+      import {decode,runtimeRequest} from '@dovo/protocol';
+      import View from '${root}/packages/extension-runtime/src/device-hosts-view.tsx';
+      window.saved={hosts:[]};window.calls=[];
+      window.fetch=async(url,options)=>{new Request(url,options);return Response.json(window.saved)};
+      window.runtime={
+        connected:true,connection:{address:'http://coding:3001',token:'local-secret'},
+        runtimes:[
+          {profile:{id:'coding',name:'Coding computer',connection:{address:'http://coding:3001',token:'local-secret'}}},
+          {profile:{id:'mac',name:'Device Mac',connection:{address:'http://mac:3001',token:'paired-secret-never-render'}}}
+        ],
+        request:async(path,input,schema,method)=>{
+          window.calls.push({path,input,method});
+          if(method==='GET')return runtimeRequest(window.runtime.connection,window.runtime.connection.address,path,input,schema,method);
+          if(path==='/api/device-hosts/test')return decode(schema,{ok:true,checks:[{name:'SSH key authentication',ok:true,message:'Connected with key authentication'},{name:'iOS simulators',ok:true,message:'Xcode and companion ready'}]});
+          window.saved={...input,hosts:input.hosts.map(({token,...host})=>({...host,hasToken:!!token||!!window.saved.hosts.find(h=>h.id===host.id)?.hasToken}))};
+          return decode(schema,window.saved);
+        }
+      };
+      const uiRoot=createRoot(document.getElementById('app'));let viewRevision=0;
+      window.remount=()=>uiRoot.render(<View key={++viewRevision}/>);window.remount();
+    `,
     loader: 'tsx',
     resolveDir: root,
   },

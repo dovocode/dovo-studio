@@ -21,7 +21,40 @@ export interface CacheStorage {
   removeItem(key: string): Promise<unknown>
   removePrefix(prefix: string): Promise<void>
   /** Cross-context storage can commit an entry, eviction and index in one transaction. */
-  writeIndexedItem?(prefix: string, key: string, value: string, limit: number): Promise<void>
+  writeIndexedItem?(
+    prefix: string,
+    key: string,
+    value: string,
+    limit: number,
+    maxBytes: number,
+  ): Promise<void>
+}
+export const READ_CACHE_MAX_BYTES = 32 * 1024 * 1024
+const indexEntry = mutableStruct({
+  key: Schema.String,
+  bytes: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+  ),
+})
+export function readCacheIndex(raw: string | null) {
+  try {
+    return decode(mutableArray(Schema.Union([Schema.String, indexEntry])), JSON.parse(raw ?? '[]'))
+  } catch {
+    // Old string indexes are migrated; a malformed disposable index is replaced.
+    return []
+  }
+}
+export function boundReadCacheIndex(
+  entries: Array<typeof indexEntry.Type>,
+  limit: number,
+  maxBytes: number,
+) {
+  let bytes = entries.reduce((total, entry) => total + entry.bytes, 0)
+  let start = 0
+  while (start < entries.length && (entries.length - start > limit || bytes > maxBytes))
+    bytes -= entries[start++]!.bytes
+  return entries.slice(start)
 }
 export type CachedRead<T> = {
   value: T
@@ -35,6 +68,7 @@ export class ReadCacheError extends Data.TaggedError('ReadCacheError')<{
   }
 }
 export interface RuntimeReadCache {
+  readonly closed: boolean
   readEffect<T extends Schema.Codec<unknown, unknown>>(
     key: string,
     schema: T,
@@ -165,24 +199,34 @@ export function createRuntimeReadCache(
           }
           const writeIndexedItem = storage.writeIndexedItem?.bind(storage)
           if (writeIndexedItem) {
-            yield* storageEffect(() => writeIndexedItem(prefix, key, encoded, 100))
+            yield* storageEffect(() =>
+              writeIndexedItem(prefix, key, encoded, 100, READ_CACHE_MAX_BYTES),
+            )
             return
           }
           yield* storageEffect(() => storage.setItem(prefix + key, encoded))
           const raw = yield* storageEffect(() => storage.getItem(prefix + '_index'))
-          const parsed = yield* Effect.result(
-            Effect.try(() => decode(mutableArray(Schema.String), JSON.parse(raw ?? '[]'))),
+          const previous = yield* Effect.forEach(readCacheIndex(raw), (item) =>
+            typeof item === 'string'
+              ? storageEffect(() => storage.getItem(prefix + item)).pipe(
+                  Effect.map((value) => ({
+                    key: item,
+                    bytes: value === null ? 0 : new TextEncoder().encode(value).byteLength,
+                  })),
+                )
+              : Effect.succeed(item),
           )
-          const previous = Result.isSuccess(parsed) ? parsed.success : []
-          const keys = [...previous.filter((item) => item !== key), key]
+          const entries = [
+            ...previous.filter((item) => item.key !== key),
+            { key, bytes: new TextEncoder().encode(encoded).byteLength },
+          ]
+          const kept = boundReadCacheIndex(entries, 100, READ_CACHE_MAX_BYTES)
           yield* Effect.forEach(
-            keys.slice(0, -100),
-            (old) => storageEffect(() => storage.removeItem(prefix + old)),
+            entries.slice(0, entries.length - kept.length),
+            (old) => storageEffect(() => storage.removeItem(prefix + old.key)),
             { discard: true },
           )
-          yield* storageEffect(() =>
-            storage.setItem(prefix + '_index', JSON.stringify(keys.slice(-100))),
-          )
+          yield* storageEffect(() => storage.setItem(prefix + '_index', JSON.stringify(kept)))
         }),
       )
       .pipe(Effect.uninterruptible)
@@ -205,6 +249,9 @@ export function createRuntimeReadCache(
       yield* storageEffect(() => storage.removePrefix(host))
     }).pipe(Effect.uninterruptible)
   return {
+    get closed() {
+      return closed
+    },
     readEffect,
     writeEffect,
     removeEffect,

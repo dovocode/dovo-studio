@@ -15,7 +15,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
-import { releaseIdleProvider } from '../../execution/warm-processes.js'
+import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { updateSubagents } from '../../execution/subagents.js'
 import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
 function claudeStream(
@@ -222,7 +222,10 @@ type WarmClaude = {
 }
 
 export function createClaudeAdapter(): AgentAdapter {
-  const idle = new Map<string, WarmClaude>()
+  const idle = new IdleProviders<WarmClaude>(
+    (session) => close(session),
+    (session) => session.nativeAgents.some(nativeAgentWorking),
+  )
   const active = new Set<WarmClaude>()
   const publish = (session: WarmClaude, owner: AgentRun) => {
     if (session.sessionId)
@@ -240,6 +243,7 @@ export function createClaudeAdapter(): AgentAdapter {
   }
   const close = (session: WarmClaude): Promise<void> => {
     if (session.closing) return session.closing
+    if (session.closed) return session.consumer
     idle.delete(session.taskId)
     active.delete(session)
     session.closed = true
@@ -383,6 +387,8 @@ export function createClaudeAdapter(): AgentAdapter {
         } catch (error) {
           session.turn?.reject(error instanceof Error ? error : new Error(String(error)))
           session.turn = undefined
+          // Explicit shutdown owns stream closure and the final session notification.
+          if (session.closed) return
           session.closed = true
           session.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
           active.delete(session)
@@ -457,15 +463,7 @@ export function createClaudeAdapter(): AgentAdapter {
       ])
       if (session.sessionId && !session.closed && !session.controller.signal.aborted) {
         idle.set(run.taskId, session)
-        if (releaseIdleProvider()) {
-          const oldest = [...idle.values()].find(
-            (candidate) => !candidate.nativeAgents.some(nativeAgentWorking),
-          )
-          if (oldest)
-            await close(oldest).catch((error) =>
-              console.error('Could not release idle Claude process:', error),
-            )
-        }
+        await idle.prune(releaseIdleProvider())
       } else await close(session)
     } catch (error) {
       session.turn = undefined
@@ -476,6 +474,7 @@ export function createClaudeAdapter(): AgentAdapter {
     }
   }
   return {
+    releaseTask: (taskId) => idle.release(taskId),
     models: claudeModels,
     probe: async (agent) => ({
       provider: 'claude',

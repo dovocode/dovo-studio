@@ -71,7 +71,7 @@ export function DeviceHostSettings({
       return
     }
     setLoading(true)
-    void read('/api/device-hosts', {}, deviceHostSettingsResultSchema, 'GET')
+    void read('/api/device-hosts', undefined, deviceHostSettingsResultSchema, 'GET')
       .then((result) => {
         if (mounted.current && version === generation.current)
           setSettings((previous) =>
@@ -115,7 +115,7 @@ export function DeviceHostSettings({
   }
   // Refuse to replace settings changed elsewhere since this screen last read them.
   const freshSettings = async (current: () => boolean) => {
-    const fresh = await read('/api/device-hosts', {}, deviceHostSettingsResultSchema, 'GET')
+    const fresh = await read('/api/device-hosts', undefined, deviceHostSettingsResultSchema, 'GET')
     if (!current()) throw new Error('Connection changed. Try again.')
     if (JSON.stringify(fresh) !== JSON.stringify(settings)) {
       if (current()) {

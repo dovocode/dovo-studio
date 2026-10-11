@@ -167,7 +167,9 @@ export class UsageTranscripts {
     this.pending = (async () => {
       const records = new Map<string, UsageRecord>(),
         notices: string[] = [],
-        seen = new Set<string>()
+        seen = new Set<string>(),
+        scannedFiles = new Set<string>()
+      const since = Date.now() - 90 * 86400000
       for (const [source, provider] of directories) {
         const directory = source.slice(provider.length + 1)
         try {
@@ -183,12 +185,13 @@ export class UsageTranscripts {
             continue
           }
           for await (const path of files(canonical)) {
+            scannedFiles.add(path)
             try {
               const info = await stat(path),
                 old = this.cache.get(path)
               let rows = old?.rows
               if (!old || old.size !== info.size || old.mtime !== info.mtimeMs) {
-                const parser = createTranscriptUsage(provider, path, Date.now() - 90 * 86400000)
+                const parser = createTranscriptUsage(provider, path, since)
                 let scanned = 0
                 for await (const text of createInterface({
                   input: createReadStream(path),
@@ -209,14 +212,15 @@ export class UsageTranscripts {
                   }
                 }
                 rows = parser.records()
-                this.cache.set(path, { size: info.size, mtime: info.mtimeMs, rows })
               }
+              rows = (rows ?? []).filter((row) => Date.parse(row.turn.startedAt) >= since)
+              this.cache.set(path, { size: info.size, mtime: info.mtimeMs, rows })
               for (const row of rows ?? []) {
                 if (row.sessionId && knownSessions.has(`${provider}:${row.sessionId}`)) continue
-                if (Date.parse(row.turn.startedAt) < Date.now() - 90 * 86400000) continue
                 records.set(`${provider}:${row.turn.id}`, row)
               }
             } catch {
+              this.cache.delete(path)
               notices.push(`${provider}: a transcript could not be read.`)
             }
           }
@@ -225,6 +229,7 @@ export class UsageTranscripts {
             notices.push(`${provider}: CLI history could not be read.`)
         }
       }
+      for (const path of this.cache.keys()) if (!scannedFiles.has(path)) this.cache.delete(path)
       return { records: [...records.values()], notices: [...new Set(notices)] }
     })()
     try {

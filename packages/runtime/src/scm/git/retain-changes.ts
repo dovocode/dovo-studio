@@ -1,4 +1,4 @@
-import type { ChangedFile } from '@dovo/protocol'
+import { filePreviewIdentity, type ChangedFile } from '@dovo/protocol'
 
 /** Preserve review state and avoid publishing an identical disk scan. */
 export function retainChangedFiles(previous: ChangedFile[], incoming: ChangedFile[]) {
@@ -8,6 +8,7 @@ export function retainChangedFiles(previous: ChangedFile[], incoming: ChangedFil
     return prior &&
       prior.before === file.before &&
       prior.after === file.after &&
+      filePreviewIdentity(prior.preview) === filePreviewIdentity(file.preview) &&
       prior.diskContents === file.diskContents
       ? prior
       : file

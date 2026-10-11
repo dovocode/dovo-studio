@@ -12,7 +12,7 @@ import {
 } from '@dovo/protocol'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
-import { releaseIdleProvider } from '../../execution/warm-processes.js'
+import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { openHermesConnection } from './hermes-connection.js'
 import { hermesConfig } from './hermes-config.js'
 
@@ -95,13 +95,14 @@ type WarmHermes = {
   stored: string
 }
 export function createHermesAdapter(): AgentAdapter {
-  const idle = new Map<string, WarmHermes>()
+  const idle = new IdleProviders<WarmHermes>((value) => close(value))
   const close = async (value: WarmHermes) => {
     // The overlay contains MCP credentials; keep it until every owned child has exited.
     await value.connection.close()
     await value.config.close()
   }
   return {
+    releaseTask: (taskId) => idle.release(taskId),
     models: hermesModels,
     probe: async (agent) => {
       const connection = openHermesConnection(agent, homedir())
@@ -410,11 +411,11 @@ export function createHermesAdapter(): AgentAdapter {
           run.taskId &&
           !run.ephemeral &&
           !run.signal.aborted &&
-          !connection.signal.aborted &&
-          !releaseIdleProvider()
-        )
+          !connection.signal.aborted
+        ) {
           idle.set(run.taskId, owned)
-        else await close(owned)
+          await idle.prune(releaseIdleProvider())
+        } else await close(owned)
       }
     },
     async dispose() {

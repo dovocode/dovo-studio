@@ -1,3 +1,4 @@
+import { reviewRoute } from './endpoints/review-routes.js'
 import { readTaskImage } from './endpoints/task-images.js'
 import { deviceHostRoute } from './endpoints/device-host-routes.js'
 import { memoryRoute } from './endpoints/memory-routes.js'
@@ -599,23 +600,28 @@ export function route(
         if (!device.owner) throw new HttpError(403, 'Only the runtime host can manage device trust')
       }
       if (method === 'POST' && path === '/api/sync/ticket') {
-        const format = url.searchParams.get('format')
-        const tasks = format === '4' ? syncTasks(url) : undefined
+        const format =
+          url.searchParams.get('format') === '4' && url.searchParams.get('subscriptions') === 'live'
+            ? '5'
+            : url.searchParams.get('format')
+        const tasks = format === '4' || format === '5' ? syncTasks(url) : undefined
         return {
           ticket: s.tickets.issue(
             token,
-            format === '4'
-              ? 'runtime-sync-4'
-              : format === '3'
-                ? 'runtime-sync-3'
-                : format === '2'
-                  ? 'runtime-sync-2'
-                  : 'runtime-sync',
+            format === '5'
+              ? 'runtime-sync-5'
+              : format === '4'
+                ? 'runtime-sync-4'
+                : format === '3'
+                  ? 'runtime-sync-3'
+                  : format === '2'
+                    ? 'runtime-sync-2'
+                    : 'runtime-sync',
             undefined,
             tasks,
             url.searchParams.get('history') === 'paged',
           ),
-          ...(format === '4' ? { format: 4 } : {}),
+          ...(format === '4' || format === '5' ? { format: Number(format) } : {}),
         }
       }
       if (method === 'POST' && path === '/api/tasks/history') {
@@ -905,6 +911,7 @@ export function route(
       if (path === '/api/terminals' || path.startsWith('/api/terminals/'))
         return yield* terminalsRoute(request, path, token)
       if (path.startsWith('/api/jobs/')) return yield* jobsRoute(request, path, owner)
+      if (path.startsWith('/api/review/')) return yield* reviewRoute(request, path)
       if (path.startsWith('/api/scm/')) return yield* scmRoute(request, path)
       throw new HttpError(404, 'Endpoint not found')
     }),

@@ -20,6 +20,7 @@ type WatcherServices = Pick<
   | 'simulators'
   | 'deviceHosts'
   | 'activity'
+  | 'agents'
 >
 const same = (a: PullStatus | undefined, b: PullStatus) =>
   !!a &&
@@ -312,6 +313,7 @@ export class TaskPullWatcher {
               (member) =>
                 !ids.has(member.id) ||
                 (!member.pinned &&
+                  !member.waitingForFeedback &&
                   !member.queue?.length &&
                   !member.draft.trim() &&
                   !member.draftAttachments?.length &&

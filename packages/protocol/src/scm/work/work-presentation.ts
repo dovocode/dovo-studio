@@ -23,6 +23,8 @@ export function pipelineSignal(status: string): PipelineSignal {
       return { label: 'Error', tone: 'danger', phase: 'finished' }
     case 'systemerror':
       return { label: 'System error', tone: 'danger', phase: 'finished' }
+    case 'startupfailure':
+      return { label: 'Startup failure', tone: 'danger', phase: 'finished' }
     case 'timedout':
       return { label: 'Timed out', tone: 'danger', phase: 'finished' }
     case 'partiallysucceeded':

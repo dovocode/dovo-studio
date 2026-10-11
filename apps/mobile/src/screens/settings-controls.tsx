@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react'
 import { Platform, Pressable, View, useWindowDimensions } from 'react-native'
 import { Choice, type ChoiceProps } from '../ui/controls/choice'
-import { Field, SearchField } from '../ui/controls/field'
+import { SearchField } from '../ui/controls/field'
 import { Action } from '../ui/controls/action'
 import { Text } from '../ui/content/text'
 import { MobileThemeContext, useTheme } from '../ui/theme'
@@ -12,7 +12,7 @@ import { useInsideSheet } from '../ui/layout/sheet'
 export function SettingsChoice(props: ChoiceProps) {
   const settings = useInsideSettings()
   const theme = useTheme()
-  const { fontScale } = useWindowDimensions()
+  const { width, fontScale } = useWindowDimensions()
   const insideSheet = useInsideSheet()
   if (!settings) return <Choice {...props} />
   // Searchable choices expand inline in an editor. Give their options the full row width.
@@ -24,7 +24,7 @@ export function SettingsChoice(props: ChoiceProps) {
         <Choice {...props} row={!props.hideLabel} compact={false} />
       </MobileThemeContext.Provider>
     )
-  const horizontal = fontScale < 1.5
+  const horizontal = fontScale < 1.5 && width / fontScale >= 360
   return (
     <View style={{ backgroundColor: theme.colors.surface, borderRadius: 20, overflow: 'hidden' }}>
       <View
@@ -62,11 +62,8 @@ export function SettingsChoice(props: ChoiceProps) {
   )
 }
 
-export function SettingsField(props: ComponentProps<typeof Field>) {
-  const settings = useInsideSettings()
-  const { styles } = useTheme()
-  return <Field {...props} style={settings ? [styles.input, props.style] : props.style} />
-}
+// Field reads the current theme itself; duplicating input styles would override multiline sizing.
+export { Field as SettingsField } from '../ui/controls/field'
 
 export function SettingsSearchField(props: ComponentProps<typeof SearchField>) {
   const settings = useInsideSettings()

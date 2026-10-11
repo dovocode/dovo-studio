@@ -151,6 +151,11 @@ export const syncInputSchema = Schema.Union([
   }),
   mutableStruct({
     type: Schema.Literal('watch'),
+    tasks: Schema.optional(
+      mutableArray(Schema.String.pipe(Schema.check(Schema.isMaxLength(200)))).pipe(
+        Schema.check(Schema.isMaxLength(8)),
+      ),
+    ),
     scopes: mutableArray(Schema.String.pipe(Schema.check(Schema.isMaxLength(200)))).pipe(
       Schema.check(Schema.isMaxLength(8)),
     ),

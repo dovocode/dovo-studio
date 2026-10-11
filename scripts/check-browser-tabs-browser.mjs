@@ -127,6 +127,24 @@ try {
   if (shown.url !== 'http://runtime.local:3000/')
     throw new Error('HTTP LAN navigation changed: ' + shown.url)
   if (shown.viewport?.width !== 390) throw new Error('Responsive viewport stopped working')
+  // Streaming text elsewhere on the page must not resend identical native view bounds.
+  const beforeStreaming = await page.evaluate(
+    () => window.calls.filter((call) => call.action === 'show').length,
+  )
+  await page.evaluate(async () => {
+    const stream = document.createElement('div')
+    stream.style.position = 'fixed'
+    document.body.append(stream)
+    for (let i = 0; i < 100; i++) stream.append(document.createTextNode('token'))
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    stream.remove()
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  })
+  if (
+    (await page.evaluate(() => window.calls.filter((call) => call.action === 'show').length)) !==
+    beforeStreaming
+  )
+    throw new Error('Unrelated streaming mutations resent native browser bounds')
   await page.getByRole('button', { name: 'Reload preview', exact: true }).click()
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'reload'))
   await page.getByLabel('Browser options', { exact: true }).click()

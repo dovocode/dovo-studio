@@ -11,7 +11,7 @@ import { codexAuthenticated, codexModels } from '../../catalogs/codex.js'
 import { codexQuestions, codexAsyncQuestions } from './codex-questions.js'
 import { formQuestions } from '../shared/form-questions.js'
 import { stopOwnedChild } from '../../execution/stop-owned-child.js'
-import { releaseIdleProvider } from '../../execution/warm-processes.js'
+import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createMessageConnection } from 'vscode-jsonrpc/node'
 import { Schema } from 'effect'
@@ -47,7 +47,10 @@ type CodexConnection = {
   consumeNotification?: (method: string, params: unknown) => void
 }
 export function createCodexAdapter(): AgentAdapter {
-  const idle = new Map<string, CodexConnection>()
+  const idle = new IdleProviders<CodexConnection>(
+    (connection) => close(connection),
+    (connection) => connection.nativeAgents.some(nativeAgentWorking),
+  )
   const close = (connection: CodexConnection): Promise<void> => {
     if (connection.closing) return connection.closing
     connection.closing = (async () => {
@@ -62,6 +65,7 @@ export function createCodexAdapter(): AgentAdapter {
   }
 
   return {
+    releaseTask: (taskId) => idle.release(taskId),
     models: codexModels,
     probe: async (agent) => ({
       provider: 'codex',
@@ -661,20 +665,7 @@ export function createCodexAdapter(): AgentAdapter {
           transport.sessionId = threadId
           transport.initialized = initialized
           idle.set(run.taskId, transport)
-          // Keep active threads warm; shed only idle processes when the server is under pressure.
-          if (releaseIdleProvider()) {
-            const oldest = [...idle.entries()].find(
-              ([, value]) => !value.nativeAgents.some(nativeAgentWorking),
-            )?.[0]
-            if (oldest) {
-              const stale = idle.get(oldest)
-              idle.delete(oldest)
-              if (stale)
-                await close(stale).catch((error) =>
-                  console.error('Could not release idle Codex process:', error),
-                )
-            }
-          }
+          await idle.prune(releaseIdleProvider())
         } else await close(transport)
       }
     },

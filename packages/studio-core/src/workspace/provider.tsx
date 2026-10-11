@@ -247,8 +247,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       ),
   )
   const [storageLock] = useApplicationState(() => Effect.runSync(Semaphore.make(1)))
+  const [syncVersion, setSyncVersion] = useApplicationState(0)
   const [synchronization] = useState(
-    () => new WorkspaceSynchronization(setSyncError, undefined, writeWorkspaceOutbox),
+    () =>
+      new WorkspaceSynchronization(setSyncError, undefined, writeWorkspaceOutbox, () =>
+        setSyncVersion((version) => version + 1),
+      ),
   )
   const beforeReplace = useCallback(
     (previous: RuntimeConnection) =>
@@ -498,6 +502,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const flush = useCallback(() => synchronization.flush(), [synchronization])
   const setWorkspace = useCallback<Dispatch<SetStateAction<Workspace>>>(
     (update) => {
+      if (synchronization.isResolving())
+        throw new Error('Wait for the conflict resolution to finish before editing.')
       if (changingConnection.current)
         throw new Error('Connection is changing. Wait before editing.')
       if (connection !== connectionRef.current)
@@ -538,11 +544,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setConnected(online)
       setSyncError(
         outbox
-          ? 'Saved edits are waiting to sync. Retry sync, or reload the host workspace from Devices & runtime.'
+          ? 'Saved edits will sync when this computer is reachable.'
           : online
             ? null
             : 'This runtime is offline. Showing its last saved workspace.',
       )
+      if (online) synchronization.clearNetworkError()
       if (persist)
         void saveRegistry((saved) => upsertRuntime(saved, profile)).catch(() => {
           /* Storage error remains visible. */
@@ -1021,6 +1028,41 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
     },
     [assertProfile, readRuntime, synchronization, updateOverview, installSnapshot, mutations],
+  )
+  const resolveSyncConflict = useCallback<WorkspaceContextValue['resolveSyncConflict']>(
+    async (conflict, choice) => {
+      const target = connectionRef.current
+      const profile = registryRef.current.profiles.find(
+        (item) => item.id === registryRef.current.activeId,
+      )
+      if (!target || !profile || synchronization.isSending())
+        throw new Error('Wait for sync to finish, then review the conflict.')
+      const checkpoint = synchronization.checkpoint()
+      const value = await runtimeRequest(
+        target,
+        target.address,
+        runtimeSnapshotPath(target),
+        undefined,
+        snapshotSchema,
+        'GET',
+      )
+      if (
+        target !== connectionRef.current ||
+        !synchronization.acceptsSaved(checkpoint) ||
+        !synchronization.acceptsRevision(value.revision, value.runtimeInstanceId)
+      )
+        throw new Error('The workspace changed. Review the current conflicts.')
+      setSnapshot(value, target)
+      const resolved = await synchronization.resolve(conflict, choice, value.workspace, checkpoint)
+      if (target !== connectionRef.current)
+        throw new Error('Runtime connection changed while resolving edits.')
+      install(resolved)
+      if (!synchronization.conflicts(value.workspace).length) {
+        await synchronization.flush()
+        await refreshRuntime(profile)
+      }
+    },
+    [synchronization, install, refreshRuntime, setSnapshot],
   )
   const refreshRuntimesEffect = useCallback(
     () =>
@@ -1783,6 +1825,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshRuntime,
       retrySync,
       discardAndReload,
+      syncConflicts: snapshot ? synchronization.conflicts(snapshot.workspace) : [],
+      resolveSyncConflict,
       mutationStatus,
       discardMutations,
       pendingSync:
@@ -1794,6 +1838,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }),
     [
       mutationVersion,
+      syncVersion,
       mutations,
       previewTask,
       visibleWorkspace,
@@ -1820,6 +1865,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshRuntime,
       retrySync,
       discardAndReload,
+      resolveSyncConflict,
       mutationStatus,
       discardMutations,
       synchronization,

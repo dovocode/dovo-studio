@@ -8,7 +8,7 @@ import {
 } from './sync.js'
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
 import type { activitySchema } from '../../automation/activity.js'
-import { retainActivityEvents, compactActivityEvents } from '../../automation/activity.js'
+import { retainActivityEvents, createActivityCompactor } from '../../automation/activity.js'
 import { Effect, Fiber, type Schema } from 'effect'
 
 type Events = Schema.Schema.Type<typeof activitySchema>['events']
@@ -16,6 +16,7 @@ type Listener = (events: Events) => void
 type Registration = {
   tasks: Map<string, number>
   events: Map<string, Events>
+  compactors: Map<string, ReturnType<typeof createActivityCompactor>>
   expiry?: ReturnType<typeof setTimeout>
   cursor?: {
     snapshot: RuntimeSnapshot
@@ -36,7 +37,13 @@ const registration = (connection: RuntimeConnection) => {
   const id = key(connection)
   let value = registrations.get(id)
   if (!value) {
-    value = { tasks: new Map(), scopes: new Map(), events: new Map(), details: new Set() }
+    value = {
+      tasks: new Map(),
+      scopes: new Map(),
+      events: new Map(),
+      compactors: new Map(),
+      details: new Set(),
+    }
     registrations.set(id, value)
   }
   return value
@@ -82,7 +89,12 @@ export function watchRuntimeActivity(
   const listeners = value.scopes.get(scope) ?? new Set<Listener>()
   const cached = value.events.get(scope)
   if (includeDetails) value.details.add(listener)
-  if (cached) listener(includeDetails ? cached : compactActivityEvents(cached))
+  let compact = value.compactors.get(scope)
+  if (!compact) {
+    compact = createActivityCompactor()
+    value.compactors.set(scope, compact)
+  }
+  if (cached) listener(includeDetails ? cached : compact(cached))
   listeners.add(listener)
   value.scopes.set(scope, listeners)
   value.live?.watch()
@@ -92,6 +104,7 @@ export function watchRuntimeActivity(
     if (!listeners.size) {
       value.scopes.delete(scope)
       value.events.delete(scope)
+      value.compactors.delete(scope)
     }
     value.live?.watch()
     if (!value.live && !value.scopes.size && !value.tasks.size && !value.cursor)
@@ -123,6 +136,8 @@ export function startRuntimeSync(
   let epoch: string | undefined = cached?.epoch
   let sequence: number | undefined = cached?.sequence
   let snapshot: RuntimeSnapshot | undefined = cached?.snapshot
+  let snapshotTasks = taskIdentity
+  let taskUpdates = false
   let lastSeen = 0
   let socketStarted = 0
   let resumeStarted: number | undefined
@@ -137,24 +152,28 @@ export function startRuntimeSync(
   let connecting = false
   let request: AbortController | undefined
   const activities = value.events
-  const watch = () => {
+  const sendWatch = () => {
+    if (stopped) return
     const next = JSON.stringify([...value.tasks.keys()].sort())
     if (next !== taskIdentity) {
       taskIdentity = next
       value.cursor = undefined
-      snapshot = undefined
-      epoch = undefined
-      sequence = undefined
-      request?.abort()
-      closeSocket()
-      options.onWake?.()
-      if (!connecting) void connect()
-      return
+      if (!taskUpdates || socket?.readyState !== 1) {
+        snapshot = undefined
+        epoch = undefined
+        sequence = undefined
+        request?.abort()
+        closeSocket()
+        options.onWake?.()
+        if (!connecting) void connect()
+        return
+      }
     }
     if (socket?.readyState === 1)
       socket.send(
         JSON.stringify({
           type: 'watch',
+          ...(taskUpdates ? { tasks: [...value.tasks.keys()] } : {}),
           scopes: [...value.scopes.keys()].slice(0, 8),
           detailScopes: [...value.scopes.entries()]
             .filter(([, listeners]) =>
@@ -164,6 +183,15 @@ export function startRuntimeSync(
             .slice(0, 8),
         }),
       )
+  }
+  let watchQueued = false
+  const watch = () => {
+    if (watchQueued || stopped) return
+    watchQueued = true
+    queueMicrotask(() => {
+      watchQueued = false
+      sendWatch()
+    })
   }
   const live = { online: () => online, watch }
   value.live = live
@@ -200,9 +228,9 @@ export function startRuntimeSync(
     if (stopped || unsupported || connecting || socket || options.active?.() === false) return
     connecting = true
     request = new AbortController()
+    const requestedTasks = taskIdentity
     try {
-      const requestedTasks = taskIdentity
-      const query = new URLSearchParams({ format: '4', history: 'paged' })
+      const query = new URLSearchParams({ format: '4', history: 'paged', subscriptions: 'live' })
       for (const id of value.tasks.keys()) query.append('task', id)
       const ticket = await runtimeRequest(
         connection,
@@ -215,6 +243,7 @@ export function startRuntimeSync(
         request.signal,
       )
       if (stopped || requestedTasks !== taskIdentity || options.active?.() === false) return
+      taskUpdates = ticket.format === 5
       const address = new URL('/ws/sync', connection.address)
       address.protocol = address.protocol === 'https:' ? 'wss:' : 'ws:'
       address.searchParams.set('ticket', ticket.ticket)
@@ -228,7 +257,7 @@ export function startRuntimeSync(
           return
         }
         current.send(JSON.stringify({ type: 'resume', epoch, sequence }))
-        watch()
+        sendWatch()
       }
       current.onmessage = (event) => {
         if (stopped || current !== socket) return
@@ -237,6 +266,7 @@ export function startRuntimeSync(
           const frame = decode(syncFrameSchema, JSON.parse(event.data))
           lastSeen = Date.now()
           if (frame.type === 'activity' || frame.type === 'activity-delta') {
+            if (!value.scopes.has(frame.scope)) return
             const old = activities.get(frame.scope) ?? []
             const byId = new Map(old.map((item) => [item.id, item]))
             if (frame.type === 'activity') for (const item of frame.events) byId.set(item.id, item)
@@ -251,12 +281,21 @@ export function startRuntimeSync(
                   })
             const events = retainActivityEvents(old, next)
             activities.set(frame.scope, events)
+            const compact = value.compactors.get(frame.scope)
+            let compacted: Events | undefined
             for (const listener of value.scopes.get(frame.scope) ?? [])
-              listener(value.details.has(listener) ? events : compactActivityEvents(events))
+              listener(
+                value.details.has(listener)
+                  ? events
+                  : (compacted ??= compact ? compact(events) : events),
+              )
             return
           }
           if (frame.type === 'snapshot') {
             snapshot = frame.snapshot
+            snapshotTasks = taskUpdates
+              ? JSON.stringify([...(snapshot.detailTaskIds ?? [])].sort())
+              : taskIdentity
             epoch = frame.epoch
             sequence = frame.sequence
             setRuntimeSnapshotTag(snapshot, frame.tag)
@@ -273,14 +312,22 @@ export function startRuntimeSync(
             setRuntimeSnapshotTag(snapshot, frame.tag)
           } else if (!snapshot || epoch !== frame.epoch || sequence !== frame.sequence)
             throw new Error('Sync needs a fresh baseline')
-          if (snapshot && epoch !== undefined && sequence !== undefined)
+          if (
+            snapshot &&
+            snapshotTasks === taskIdentity &&
+            epoch !== undefined &&
+            sequence !== undefined
+          )
             value.cursor = { snapshot, epoch, sequence, time: Date.now(), tasks: taskIdentity }
           const becameOnline = !online
           if (resumeStarted !== undefined) resumeRoundTrip = Math.max(1, Date.now() - resumeStarted)
           resumeStarted = undefined
           online = true
           failures = 0
-          if (becameOnline || frame.type !== 'heartbeat' || Date.now() - publishedAt >= 30000) {
+          if (
+            snapshotTasks === taskIdentity &&
+            (becameOnline || frame.type !== 'heartbeat' || Date.now() - publishedAt >= 30000)
+          ) {
             publishedAt = Date.now()
             publish()
           }
@@ -291,6 +338,7 @@ export function startRuntimeSync(
           sequence = undefined
           value.cursor = undefined
           activities.clear()
+          for (const compact of value.compactors.values()) compact([])
           online = false
           closeSocket()
           reconnect()
@@ -318,6 +366,7 @@ export function startRuntimeSync(
       reconnect()
     } finally {
       connecting = false
+      if (!stopped && requestedTasks !== taskIdentity && !socket) void connect()
     }
   }
   const timer = Effect.runFork(

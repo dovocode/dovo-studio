@@ -153,21 +153,24 @@ export class DeviceHosts {
     await this.closeHost(id)
     return result
   }
-  async list(taskId = 'discovery', hostId?: string, agent = false) {
+  async list(taskId = 'discovery', hostId?: string, agent = false, deviceId?: string) {
     this.assertEnabled()
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
-    const result = hostId
-      ? { host: '', devices: [] as PreviewDevice[], diagnostics: [] as string[] }
-      : await previewDevices()
     const hosts = hostId
       ? [this.host(hostId, agent)]
       : this.settings.get().hosts.filter((host) => !agent || host.agentAccess)
-    const remote = await Promise.all(
+    const local = hostId
+      ? Promise.resolve({ host: '', devices: [] as PreviewDevice[], diagnostics: [] as string[] })
+      : previewDevices(deviceId)
+    const remoteDiscovery = Promise.all(
       hosts.map(async (host) => {
         try {
           const value = decode(
             previewDevicesSchema,
-            await this.client.request(host, '/api/device-host/devices', { taskId }),
+            await this.client.request(host, '/api/device-host/devices', {
+              taskId,
+              ...(deviceId ? { id: deviceId } : {}),
+            }),
           )
           return {
             devices: value.devices.map((device) => ({
@@ -189,6 +192,7 @@ export class DeviceHosts {
         }
       }),
     )
+    const [result, remote] = await Promise.all([local, remoteDiscovery])
     for (const value of remote) {
       result.devices.push(...value.devices)
       result.diagnostics.push(...value.diagnostics)

@@ -1,4 +1,5 @@
 import type { MemoryScope } from '@dovo/protocol'
+import { retainChangedFiles } from '../../scm/git/retain-changes.js'
 import { OwnedProcessShutdownError } from '../execution/stop-owned-child.js'
 import type { McpApps } from '../../mcp-apps/bridge.js'
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'effect'
@@ -373,7 +374,7 @@ export class Tasks {
       const files = await this.git.changes(cwd).catch(() => undefined)
       this.store.updateTask(id, (current) => ({
         ...current,
-        ...(files ? { files } : {}),
+        ...(files ? { files: retainChangedFiles(current.files, files) } : {}),
         turns: current.turns?.map((item) =>
           item.id === turnId && item.checkpoint
             ? { ...item, checkpoint: { ...item.checkpoint, undone, ...(linked ? { linked } : {}) } }
@@ -434,7 +435,7 @@ export class Tasks {
         : `I discarded the uncommitted changes to ${path}; it matches the last commit again.`
       this.store.updateTask(id, (current) => ({
         ...current,
-        ...(!checkoutId && files ? { files } : {}),
+        ...(!checkoutId && files ? { files: retainChangedFiles(current.files, files) } : {}),
         messages: [
           ...current.messages,
           { id: randomUUID(), role: 'user', text: note, createdAt: new Date().toISOString() },
@@ -1746,7 +1747,7 @@ export class Tasks {
     if (!childId) this.stopChildren(id)
     return this.stopNativeFamily(id, childId)
   }
-  assertSubagentScope(taskId: string, parentRunId?: string) {
+  assertToolScope(taskId: string, parentRunId?: string) {
     this.store.task(taskId)
     if (!parentRunId) return
     const run = this.running.get(taskId)
@@ -1761,14 +1762,14 @@ export class Tasks {
       throw new HttpError(409, 'This parent turn has ended')
   }
   subagentList(taskId: string, parentRunId?: string) {
-    this.assertSubagentScope(taskId, parentRunId)
+    this.assertToolScope(taskId, parentRunId)
     return this.store
       .get()
       .tasks.filter((child) => child.delegation?.parentTaskId === taskId)
       .map((child) => this.subagentResult(taskId, child.id, false))
   }
   subagentResult(taskId: string, id: string, includeResult = true, parentRunId?: string) {
-    this.assertSubagentScope(taskId, parentRunId)
+    this.assertToolScope(taskId, parentRunId)
     const parent = this.store.task(taskId)
     const child = this.store.task(id)
     if (child.delegation?.parentTaskId !== taskId)

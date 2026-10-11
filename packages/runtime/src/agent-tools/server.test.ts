@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'node:http'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -151,6 +152,178 @@ function decodeToolText(result: Awaited<ReturnType<Client['callTool']>>) {
   if (!item || item.type !== 'text') throw new Error('Expected a text result')
   return item.text
 }
+
+it('keeps slow PR and multi-run pipeline registrations open through the MCP transport', async () => {
+  const requests: Array<{ path: string; authorization?: string; agentAccess?: string }> = []
+  const http = createServer(async (request, response) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    const input = decode(
+      mutableStruct({ action: Schema.String }),
+      JSON.parse(Buffer.concat(chunks).toString()),
+    )
+    requests.push({
+      path: request.url ?? '',
+      authorization: request.headers.authorization,
+      agentAccess:
+        typeof request.headers['x-dovo-agent-access'] === 'string'
+          ? request.headers['x-dovo-agent-access']
+          : undefined,
+    })
+    if (input.action === 'watch')
+      await new Promise((resolve) =>
+        setTimeout(resolve, request.url === '/api/pipeline-watch' ? 2100 : 610),
+      )
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end(JSON.stringify({ watches: [], action: input.action }))
+  })
+  await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
+  const address = http.address()
+  if (!address || typeof address === 'string') throw new Error('Expected a TCP listener')
+  const config = taskToolsServer(
+    'task',
+    address.port,
+    'test-token',
+    '127.0.0.1',
+    false,
+    false,
+    undefined,
+    true,
+    true,
+  )
+  // Advance only the child HTTP deadline: 61 and 210 seconds become short real delays.
+  const clock = `const timeout=AbortSignal.timeout.bind(AbortSignal);AbortSignal.timeout=ms=>timeout(Math.ceil(ms/100));`
+  const transport = new StdioClientTransport({
+    command: config.command,
+    args: ['--import', `data:text/javascript,${encodeURIComponent(clock)}`, ...config.args],
+    env: { ...config.envValues },
+    stderr: 'ignore',
+  })
+  const client = new Client({ name: 'watch-timeout-test', version: '1' })
+  try {
+    await client.connect(transport)
+    for (const [name, arguments_] of [
+      ['pull_request_watch', { action: 'watch', url: 'https://github.com/team/project/pull/7' }],
+      ['pipeline_watch', { action: 'watch', runIds: ['7', '8', '9'] }],
+      ['pipeline_watch', { action: 'status' }],
+    ] as const) {
+      const result = await client.callTool({ name, arguments: arguments_ })
+      expect(result.isError).not.toBe(true)
+      expect(JSON.parse(decodeToolText(result))).toMatchObject({ action: arguments_.action })
+    }
+    expect(requests).toEqual([
+      { path: '/api/pull-request-watch', authorization: 'Bearer test-token', agentAccess: '1' },
+      { path: '/api/pipeline-watch', authorization: 'Bearer test-token', agentAccess: '1' },
+      { path: '/api/pipeline-watch', authorization: 'Bearer test-token', agentAccess: '1' },
+    ])
+  } finally {
+    await client.close()
+    await transport.close()
+    await new Promise<void>((resolve, reject) =>
+      http.close((error) => (error ? reject(error) : resolve())),
+    )
+  }
+}, 15000)
+
+it('allows device discovery and preview opening to finish through the MCP transport', async () => {
+  const requests: Array<{
+    path: string
+    input: unknown
+    authorization?: string
+    agentAccess?: string
+  }> = []
+  const http = createServer(async (request, response) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    const input: unknown = JSON.parse(Buffer.concat(chunks).toString())
+    requests.push({
+      path: request.url ?? '',
+      input,
+      authorization: request.headers.authorization,
+      agentAccess:
+        typeof request.headers['x-dovo-agent-access'] === 'string'
+          ? request.headers['x-dovo-agent-access']
+          : undefined,
+    })
+    if (request.url === '/api/previews/devices')
+      await new Promise((resolve) => setTimeout(resolve, 2810))
+    if (request.url === '/api/previews/simulator/open')
+      await new Promise((resolve) => setTimeout(resolve, 4310))
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end(
+      JSON.stringify(
+        request.url === '/api/previews/simulator/open'
+          ? { id: 'session' }
+          : request.url === '/api/previews/devices'
+            ? { host: 'host', devices: [], diagnostics: [] }
+            : { ok: true },
+      ),
+    )
+  })
+  await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
+  const address = http.address()
+  if (!address || typeof address === 'string') throw new Error('Expected a TCP listener')
+  const config = taskToolsServer(
+    'task',
+    address.port,
+    'test-token',
+    '127.0.0.1',
+    false,
+    false,
+    undefined,
+    false,
+    false,
+    [],
+    true,
+  )
+  // Scale only the child HTTP deadlines; discovery and opening take 281 and 431 seconds.
+  const clock = `const timeout=AbortSignal.timeout.bind(AbortSignal);AbortSignal.timeout=ms=>timeout(Math.ceil(ms/100));`
+  const transport = new StdioClientTransport({
+    command: config.command,
+    args: ['--import', `data:text/javascript,${encodeURIComponent(clock)}`, ...config.args],
+    env: { ...config.envValues },
+    stderr: 'ignore',
+  })
+  const client = new Client({ name: 'preview-timeout-test', version: '1' })
+  try {
+    await client.connect(transport)
+    expect((await client.callTool({ name: 'devices' })).isError).not.toBe(true)
+    expect(
+      (
+        await client.callTool({
+          name: 'simulator_text',
+          arguments: { id: 'remote:host:physical-ios:phone', value: 'hello' },
+        })
+      ).isError,
+    ).not.toBe(true)
+    expect(requests).toEqual([
+      {
+        path: '/api/previews/devices',
+        input: { taskId: 'task' },
+        authorization: 'Bearer test-token',
+        agentAccess: '1',
+      },
+      {
+        path: '/api/previews/simulator/open',
+        input: { taskId: 'task', id: 'remote:host:physical-ios:phone' },
+        authorization: 'Bearer test-token',
+        agentAccess: '1',
+      },
+      {
+        path: '/api/previews/simulator/input',
+        input: { taskId: 'task', id: 'session', input: { type: 'text', text: 'hello' } },
+        authorization: 'Bearer test-token',
+        agentAccess: '1',
+      },
+    ])
+  } finally {
+    await client.close()
+    await transport.close()
+    await new Promise<void>((resolve, reject) =>
+      http.close((error) => (error ? reject(error) : resolve())),
+    )
+  }
+}, 15000)
 
 it('taps the point corresponding to a full-resolution iOS screenshot', async () => {
   const token = 'task-tools-owner-token-at-least-thirty-two-characters'
@@ -405,7 +578,7 @@ it('registers a project-scoped PR watch through MCP and immediately rejects old 
     })
     expect(watch.isError).not.toBe(true)
     expect(JSON.parse(decodeToolText(watch))).toMatchObject({
-      watch: { number: 7, url, status: 'watching' },
+      watches: [{ number: 7, url, status: 'watching' }],
       failedChecks: [],
     })
     expect(read).toHaveBeenCalledWith(f.directory, 7, true)
@@ -426,7 +599,58 @@ it('registers a project-scoped PR watch through MCP and immediately rejects old 
           await client.callTool({ name: 'pull_request_watch', arguments: { action: 'stop' } }),
         ),
       ),
-    ).toMatchObject({ watch: { status: 'stopped' } })
+    ).toMatchObject({ watches: [{ status: 'stopped' }] })
+    const linkedUrl = 'https://github.com/team/linked/pull/7'
+    const linkedDetail = await s.pullCache.feedback(f.directory, 7, true)
+    read.mockResolvedValue({ ...linkedDetail, pull: { ...linkedDetail.pull, url: linkedUrl } })
+    s.store.update((workspace) => ({
+      ...workspace,
+      repositories: [
+        ...workspace.repositories,
+        { id: 'linked', name: 'Linked', path: `${f.directory}/linked`, branch: 'main' },
+      ],
+      tasks: workspace.tasks.map((entry) =>
+        entry.id === task.id
+          ? {
+              ...entry,
+              linkedCheckouts: [
+                { id: 'linked', repositoryId: 'linked', execution: 'main', access: 'edit' },
+              ],
+            }
+          : entry,
+      ),
+    }))
+    expect(
+      JSON.parse(
+        decodeToolText(
+          await client.callTool({
+            name: 'pull_request_watch',
+            arguments: { action: 'watch', repositoryId: 'linked', url: linkedUrl },
+          }),
+        ),
+      ),
+    ).toMatchObject({ watches: [{ repositoryId: 'linked', status: 'watching' }] })
+    expect(read).toHaveBeenLastCalledWith(`${f.directory}/linked`, 7, true)
+    expect(
+      JSON.parse(
+        decodeToolText(
+          await client.callTool({
+            name: 'pull_request_watch',
+            arguments: { action: 'status', repositoryId: 'repo' },
+          }),
+        ),
+      ),
+    ).toMatchObject({ watches: [{ repositoryId: 'repo', status: 'stopped' }] })
+    expect(
+      JSON.parse(
+        decodeToolText(
+          await client.callTool({
+            name: 'pull_request_watch',
+            arguments: { action: 'stop', url: linkedUrl },
+          }),
+        ),
+      ),
+    ).toMatchObject({ watches: [{ repositoryId: 'linked', status: 'stopped' }] })
     s.preferences.save({ enablePullRequestWatching: false })
     const disabled = await client.callTool({
       name: 'pull_request_watch',
@@ -714,6 +938,54 @@ it('offers pipeline watches beside PR watches, scopes IDs and enforces runtime o
     expect(s.db.prepare('SELECT DISTINCT task_id FROM task_pipeline_watches').all()).toEqual([
       { task_id: task.id },
     ])
+    s.store.update((workspace) => ({
+      ...workspace,
+      repositories: [
+        ...workspace.repositories,
+        { id: 'linked', name: 'Linked', path: `${f.directory}/linked`, branch: 'main' },
+      ],
+      tasks: workspace.tasks.map((entry) =>
+        entry.id === task.id
+          ? {
+              ...entry,
+              linkedCheckouts: [
+                { id: 'linked', repositoryId: 'linked', execution: 'main', access: 'edit' },
+              ],
+            }
+          : entry,
+      ),
+    }))
+    expect(
+      JSON.parse(
+        decodeToolText(
+          await client.callTool({
+            name: 'pipeline_watch',
+            arguments: { action: 'watch', repositoryId: 'linked', runIds: ['7'] },
+          }),
+        ),
+      ),
+    ).toMatchObject({ watches: [{ repositoryId: 'linked', runId: '7', status: 'watching' }] })
+    expect(read).toHaveBeenLastCalledWith('linked', 'pipelines/detail', { id: '7', refresh: true })
+    expect(
+      JSON.parse(
+        decodeToolText(
+          await client.callTool({
+            name: 'pipeline_watch',
+            arguments: { action: 'stop', repositoryId: 'linked' },
+          }),
+        ),
+      ),
+    ).toMatchObject({ watches: [{ repositoryId: 'linked', status: 'stopped' }] })
+    expect(
+      JSON.parse(
+        decodeToolText(
+          await client.callTool({
+            name: 'pipeline_watch',
+            arguments: { action: 'status', repositoryId: 'repo', runIds: ['7'] },
+          }),
+        ),
+      ),
+    ).toMatchObject({ watches: [{ repositoryId: 'repo', status: 'watching' }] })
     for (const arguments_ of [
       { action: 'watch' },
       { action: 'watch', runIds: [] },
@@ -799,7 +1071,7 @@ it.each([
   }
 })
 
-it('rejects every subagent operation from a retired MCP turn', async () => {
+it('rejects subagent and watcher operations from a retired MCP turn', async () => {
   const f = await fixture()
   const token = 'retired-subagent-tools-token-at-least-32-characters'
   const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
@@ -810,6 +1082,7 @@ it('rejects every subagent operation from a retired MCP turn', async () => {
   try {
     const s = runtime.services
     s.store.update(() => f.workspace)
+    s.preferences.save({ enablePipelineWatching: true, enablePullRequestWatching: true })
     vi.spyOn(s.agents, 'get').mockResolvedValue({
       probe: vi.fn<AgentAdapter['probe']>(),
       run: async (run) => {
@@ -826,7 +1099,19 @@ it('rejects every subagent operation from a retired MCP turn', async () => {
           false,
           false,
           s.store.task(run.taskId).activeRunId,
+          true,
+          true,
         )
+        await s.pipelineWatch.command({
+          taskId: run.taskId,
+          parentRunId: s.store.task(run.taskId).activeRunId,
+          action: 'status',
+        })
+        await s.pullRequestWatch.command({
+          taskId: run.taskId,
+          parentRunId: s.store.task(run.taskId).activeRunId,
+          action: 'status',
+        })
         childId = s.tasks.subagentSpawn({
           taskId: run.taskId,
           key: 'retired',
@@ -864,6 +1149,21 @@ it('rejects every subagent operation from a retired MCP turn', async () => {
       expect(decodeToolText(result)).toContain('parent turn has ended')
     }
     expect(s.store.task(childId).delegation?.completion).toBe('read')
+    for (const name of ['pipeline_watch', 'pull_request_watch']) {
+      for (const action of ['watch', 'status', 'stop']) {
+        const result = await client.callTool({
+          name,
+          arguments: {
+            action,
+            runIds: ['7'],
+            url: 'https://github.com/team/project/pull/7',
+            parentRunId: s.store.task(parent.id).activeRunId,
+          },
+        })
+        expect(result.isError).toBe(true)
+        expect(decodeToolText(result)).toContain('parent turn has ended')
+      }
+    }
   } finally {
     await client.close()
     await transport?.close()

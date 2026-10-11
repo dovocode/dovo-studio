@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import {
   conversationPageSchema,
+  compactConversationPages,
   mergeConversationHistory,
   type ConversationPage,
   type Task,
@@ -12,7 +13,7 @@ const emptyPages: ConversationPage[] = []
 const recentMessageCount = 500
 export function useConversationHistory<
   T extends Pick<Task, 'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,
->(live: T) {
+>(live: T, prefetchRecent = true) {
   const { profile, read: request, connected, readCache } = useRuntime()
   const revision = live.historyRevision ?? 0
   const scope = JSON.stringify([profile?.connection.address, profile?.connection.token, live.id])
@@ -81,7 +82,7 @@ export function useConversationHistory<
           ? {
               scope,
               revision,
-              pages: [
+              pages: compactConversationPages([
                 ...value.pages,
                 {
                   messages: before.live.messages,
@@ -89,7 +90,7 @@ export function useConversationHistory<
                   historyRevision: revision,
                   before: before.live.historyBefore,
                 },
-              ],
+              ]),
             }
           : value,
       )
@@ -262,11 +263,11 @@ export function useConversationHistory<
         setLoaded((value) => ({
           scope,
           revision,
-          pages: [
+          pages: compactConversationPages([
             page,
             ...(value.scope === scope ? value.pages : []),
             { messages: live.messages, turns: live.turns ?? [], historyRevision: revision },
-          ],
+          ]),
         }))
     } catch (cause) {
       if (active.current === scope && operation.generation === generation.current)
@@ -284,6 +285,7 @@ export function useConversationHistory<
   useEffect(() => {
     // Keep transport pages small; fill the recent window incrementally.
     if (
+      !prefetchRecent ||
       hydrated !== scope ||
       !cursor ||
       !connected ||
@@ -292,7 +294,7 @@ export function useConversationHistory<
     )
       return
     void load()
-  }, [scope, cursor, connected, load, hydrated, task.messages.length, delivery])
+  }, [scope, cursor, connected, load, hydrated, task.messages.length, delivery, prefetchRecent])
   const setBookmark = useCallback(
     (messageId: string, bookmarked: boolean) =>
       setLoaded((value) =>

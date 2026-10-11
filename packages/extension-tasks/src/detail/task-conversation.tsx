@@ -160,6 +160,7 @@ export function TaskConversation({
       ) : (
         <ArtifactOpenContext value={onArtifact}>
           <ChatThread
+            active={visible}
             onReadingHistory={readingHistory}
             onManagePulls={() => setManagePullTask(task.id)}
             task={displayedTask}

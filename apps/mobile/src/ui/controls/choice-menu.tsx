@@ -15,7 +15,7 @@ import {
   padding,
   shapes,
 } from '@expo/ui/swift-ui/modifiers'
-import { useWindowDimensions, View } from 'react-native'
+import { View } from 'react-native'
 import { useTheme } from '../theme'
 import type { ChoiceProps } from './choice'
 
@@ -24,8 +24,6 @@ export function ChoiceMenu(props: ChoiceProps) {
   const { colors, mode: appearanceMode } = useTheme()
 
   const [width, setWidth] = useApplicationState<number | undefined>(undefined)
-  const { fontScale } = useWindowDimensions()
-  const height = Math.max(44, Math.ceil(22 * fontScale + 16))
   const selected =
     props.items.find((item) => item.id === props.value)?.name ?? props.selectedLabel ?? 'Choose…'
   return (
@@ -33,7 +31,7 @@ export function ChoiceMenu(props: ChoiceProps) {
       onLayout={({ nativeEvent }) => setWidth(Math.floor(nativeEvent.layout.width))}
       style={{
         minWidth: 0,
-        height,
+        minHeight: 44,
         borderRadius: 12,
         backgroundColor: props.compact ? 'transparent' : colors.surface,
         opacity: props.disabled ? 0.45 : 1,
@@ -41,10 +39,11 @@ export function ChoiceMenu(props: ChoiceProps) {
     >
       <Host
         ignoreSafeArea="all"
+        matchContents={{ vertical: true }}
         colorScheme={appearanceMode}
         style={{
           width: '100%',
-          height,
+          minHeight: 44,
         }}
       >
         <Menu
@@ -61,12 +60,13 @@ export function ChoiceMenu(props: ChoiceProps) {
               modifiers={[
                 padding({
                   horizontal: props.compact ? 4 : 12,
+                  vertical: 8,
                 }),
                 frame({
                   width,
-                  height,
                   alignment: 'leading',
                 }),
+                frame({ minHeight: 44, alignment: 'leading' }),
                 contentShape(shapes.rectangle(), ['interaction', 'accessibility']),
               ]}
             >
@@ -77,7 +77,7 @@ export function ChoiceMenu(props: ChoiceProps) {
                     weight: 'medium',
                   }),
                   foregroundStyle(props.compact ? colors.accent : colors.text),
-                  lineLimit(1),
+                  props.compact ? lineLimit(1) : lineLimit(),
                 ]}
               >
                 {selected}

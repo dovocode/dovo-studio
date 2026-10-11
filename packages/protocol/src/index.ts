@@ -9,6 +9,7 @@ export * from './runtime/connection/server-update.js'
 export {
   runtimeRequest,
   runtimeRequestEffect,
+  runtimeRequestTimeout,
   RuntimeRequestError,
   clearRuntimeRequestCache,
   getRuntimeSnapshotTag,
@@ -191,3 +192,5 @@ export * from './runtime/memory.js'
 export * from './runtime/previews/device-hosts.js'
 
 export * from './conversation/tool-images.js'
+export * from './scm/review.js'
+export * from './scm/review-session.js'

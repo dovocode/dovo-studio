@@ -68,3 +68,4 @@ export { SettingSource, type SettingOrigin } from './setting-source'
 export { HostSettingsPage } from './host-settings-page'
 
 export { RepositoryOpenItems } from './repository-open-items'
+export { FileReviewControls, ReviewFiles, type ReviewListFile } from './review/file-review'

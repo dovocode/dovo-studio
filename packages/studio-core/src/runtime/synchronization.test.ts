@@ -1,8 +1,14 @@
-import { decode } from '@dovo/protocol'
+import { decode, RuntimeRequestError } from '@dovo/protocol'
 import { expect, it, vi } from 'vite-plus/test'
 import { WorkspaceSynchronization, type WorkspaceOutbox } from './synchronization'
 import type { WorkspaceOutboxChange } from './synchronization'
 import { workspaceSchema, type RuntimeConnection, type WorkspacePatch } from '@dovo/protocol'
+import { sameWorkspaceValue } from './workspace-conflicts'
+type Persist = (
+  target: RuntimeConnection,
+  value: WorkspaceOutbox | null,
+  change: WorkspaceOutboxChange,
+) => Promise<void>
 const connection: RuntimeConnection = {
   address: 'http://localhost:8787',
   token: 'test-token-with-at-least-32-characters',
@@ -152,7 +158,7 @@ it('commits the durable outbox before sending any edit to the host', async () =>
     remove: persist.mock.calls[0][1]?.ids,
   })
 })
-it('restores failed edits after restart and requires explicit retry before replay', async () => {
+it('automatically replays restored edits when the host is reachable', async () => {
   let saved: WorkspaceOutbox | null = null
   const persist = async (_connection: RuntimeConnection, value: WorkspaceOutbox | null) => {
     saved = value
@@ -179,11 +185,267 @@ it('restores failed edits after restart and requires explicit retry before repla
   restored.bind(connection, saved)
   expect(restored.hasPending()).toBe(true)
   expect(restored.accepts(restored.checkpoint())).toBe(false)
-  await expect(restored.flush()).rejects.toThrow('Retry sync')
   expect(send).not.toHaveBeenCalled()
-  await restored.retry()
+  restored.clearNetworkError()
+  await vi.waitFor(() => expect(restored.hasPending()).toBe(false))
   expect(send).toHaveBeenCalledWith(connection, patch)
   expect(saved).toBeNull()
+})
+const hostWorkspace = {
+  ...editedWorkspace,
+  agents: editedWorkspace.agents.map((agent) => ({ ...agent, name: 'Host name' })),
+}
+it.each(['local', 'host'] as const)(
+  'resolves a field with the %s value while preserving dependent edits and other fields',
+  async (choice) => {
+    const later: WorkspacePatch = {
+      ...patch,
+      changes: {
+        name: { before: 'After', after: 'Latest local name' },
+        instructions: { before: '', after: 'Keep these instructions' },
+      },
+    }
+    const persisted = vi.fn<Persist>(
+      async (
+        _target: RuntimeConnection,
+        _value: WorkspaceOutbox | null,
+        _change: WorkspaceOutboxChange,
+      ) => {},
+    )
+    const sent: WorkspacePatch[] = []
+    const sync = new WorkspaceSynchronization(
+      () => {},
+      async (_target, patch) => {
+        sent.push(patch)
+      },
+      persisted,
+    )
+    sync.bind(connection, {
+      version: 1,
+      workspace: editedWorkspace,
+      patches: [patch, later],
+      ids: ['first', 'later'],
+    })
+    const conflict = sync.conflicts(hostWorkspace)[0]!
+    expect(conflict.local).toBe('Latest local name')
+    const result = await sync.resolve(conflict, choice, hostWorkspace, sync.checkpoint())
+    const desired = choice === 'local' ? 'Latest local name' : 'Host name'
+    expect(result.agents[0]?.name).toBe(desired)
+    expect(result.agents[0]?.instructions).toBe('Keep these instructions')
+    const saved = persisted.mock.calls[0]!
+    expect(saved[1]?.patches[0]?.changes.name).toEqual({ before: 'Host name', after: desired })
+    expect(saved[1]?.patches[1]?.changes.name).toEqual({ before: desired, after: desired })
+    expect(saved[2].replace?.map((item) => item.id)).toEqual(['first', 'later'])
+    expect(saved[1]?.ids).not.toContain('first')
+    await sync.flush()
+    expect(sent[1]?.changes.instructions?.after).toBe('Keep these instructions')
+    expect(hostWorkspace.agents[0]?.name).toBe('Host name')
+  },
+)
+it('requires fresh conflict review when the host or local edits changed', async () => {
+  const sync = new WorkspaceSynchronization(
+    () => {},
+    async () => {},
+  )
+  sync.bind(connection, {
+    version: 1,
+    workspace: editedWorkspace,
+    patches: [patch],
+    ids: ['first'],
+  })
+  const conflict = sync.conflicts(hostWorkspace)[0]!
+  const changed = {
+    ...hostWorkspace,
+    agents: hostWorkspace.agents.map((agent) => ({ ...agent, name: 'New host edit' })),
+  }
+  await expect(sync.resolve(conflict, 'local', changed, sync.checkpoint())).rejects.toThrow(
+    'Review the current conflicts',
+  )
+  const checkpoint = sync.checkpoint()
+  sync.enqueue([{ ...patch, changes: { instructions: { before: '', after: 'New local edit' } } }])
+  await expect(sync.resolve(conflict, 'local', hostWorkspace, checkpoint)).rejects.toThrow(
+    'Saved edits changed',
+  )
+})
+it('keeps a patch blocked until all its conflicting fields have been resolved', async () => {
+  const both: WorkspacePatch = {
+    ...patch,
+    changes: {
+      ...patch.changes,
+      instructions: { before: '', after: 'Local instructions' },
+    },
+  }
+  const host = {
+    ...hostWorkspace,
+    agents: hostWorkspace.agents.map((agent) => ({ ...agent, instructions: 'Host instructions' })),
+  }
+  const send = vi.fn<(target: RuntimeConnection, patch: WorkspacePatch) => Promise<void>>(
+    async () => {},
+  )
+  const sync = new WorkspaceSynchronization(() => {}, send)
+  sync.bind(connection, { version: 1, workspace: editedWorkspace, patches: [both], ids: ['both'] })
+  expect(sync.conflicts(host)).toHaveLength(2)
+  await sync.resolve(sync.conflicts(host)[0]!, 'local', host, sync.checkpoint())
+  expect(sync.conflicts(host)).toHaveLength(1)
+  sync.clearNetworkError()
+  await expect(sync.flush()).rejects.toThrow('Retry sync')
+  expect(send).not.toHaveBeenCalled()
+  await sync.resolve(sync.conflicts(host)[0]!, 'host', host, sync.checkpoint())
+  await sync.flush()
+  expect(send.mock.calls[0]?.[1].changes).toEqual({
+    name: { before: 'Host name', after: 'After' },
+    instructions: { before: 'Host instructions', after: 'Host instructions' },
+  })
+})
+it('uses the host version of a colliding creation without overwriting the existing item', async () => {
+  const create: WorkspacePatch = {
+    collection: 'agents',
+    id: 'agent',
+    create: editedWorkspace.agents[0],
+    changes: {},
+  }
+  const send = vi.fn<() => Promise<void>>(async () => {})
+  const sync = new WorkspaceSynchronization(() => {}, send)
+  sync.bind(connection, {
+    version: 1,
+    workspace: editedWorkspace,
+    patches: [create, patch],
+    ids: ['create', 'rename'],
+  })
+  const conflicts = sync.conflicts(hostWorkspace)
+  expect(conflicts).toHaveLength(1)
+  expect(conflicts[0]?.field).toBeNull()
+  await expect(
+    sync.resolve(conflicts[0]!, 'local', hostWorkspace, sync.checkpoint()),
+  ).rejects.toThrow('Use the host version')
+  const resolved = await sync.resolve(conflicts[0]!, 'host', hostWorkspace, sync.checkpoint())
+  expect(resolved.agents).toEqual(hostWorkspace.agents)
+  expect(sync.hasPending()).toBe(false)
+  await sync.flush()
+  expect(send).not.toHaveBeenCalled()
+})
+it('compares JSON patch values without treating property order as an edit', () => {
+  expect(
+    sameWorkspaceValue({ environment: { one: 1, two: 2 } }, { environment: { two: 2, one: 1 } }),
+  ).toBe(true)
+  expect(sameWorkspaceValue([1, 2], { 0: 1, 1: 2 })).toBe(false)
+  expect(sameWorkspaceValue([1, 2], [2, 1])).toBe(false)
+})
+it('preserves original edits when durable conflict resolution fails', async () => {
+  const sync = new WorkspaceSynchronization(
+    () => {},
+    async () => {},
+    async () => {
+      throw new Error('Disk full')
+    },
+  )
+  sync.bind(connection, {
+    version: 1,
+    workspace: editedWorkspace,
+    patches: [patch],
+    ids: ['first'],
+  })
+  const conflict = sync.conflicts(hostWorkspace)[0]!
+  await expect(sync.resolve(conflict, 'host', hostWorkspace, sync.checkpoint())).rejects.toThrow(
+    'Disk full',
+  )
+  expect(sync.conflicts(hostWorkspace)).toEqual([conflict])
+  expect(sync.isResolving()).toBe(false)
+})
+it('blocks dependent edits during resolution and preserves a switched connection’s queue', async () => {
+  let release: () => void = () => {}
+  const commit = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const persist = vi.fn<Persist>(
+    async (
+      _target: RuntimeConnection,
+      _value: WorkspaceOutbox | null,
+      change: WorkspaceOutboxChange,
+    ) => {
+      if (change.replace?.length) await commit
+    },
+  )
+  const sync = new WorkspaceSynchronization(
+    () => {},
+    async () => {},
+    persist,
+  )
+  sync.bind(connection, {
+    version: 1,
+    workspace: editedWorkspace,
+    patches: [patch],
+    ids: ['first'],
+  })
+  const conflict = sync.conflicts(hostWorkspace)[0]!
+  const resolution = sync.resolve(conflict, 'host', hostWorkspace, sync.checkpoint())
+  const result = resolution.then(
+    () => 'Unexpected success',
+    (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)),
+  )
+  await vi.waitFor(() => expect(sync.isResolving()).toBe(true))
+  expect(() => sync.enqueue([patch], editedWorkspace)).toThrow('Wait for the conflict resolution')
+  await expect(sync.flush()).rejects.toThrow('finish clearing')
+  sync.bind(
+    { ...connection, address: 'http://other.lan' },
+    {
+      version: 1,
+      workspace: editedWorkspace,
+      patches: [patch],
+      ids: ['new-host-edit'],
+    },
+  )
+  release()
+  expect(await result).toContain('Runtime connection changed')
+  const { Effect } = await import('effect')
+  const saved = await Effect.runPromise(sync.savedEffect())
+  expect(saved.outbox?.ids).toEqual(['new-host-edit'])
+  expect(saved.outbox?.patches).toEqual([patch])
+})
+it('automatically retries safe saved edits after a transient connection failure', async () => {
+  const send = vi
+    .fn<(target: RuntimeConnection, patch: WorkspacePatch) => Promise<unknown>>()
+    .mockRejectedValueOnce(new RuntimeRequestError({ kind: 'connection', message: 'Offline' }))
+    .mockResolvedValue(undefined)
+  const sync = new WorkspaceSynchronization(() => {}, send)
+  sync.bind(connection)
+  sync.enqueue([patch])
+  await expect(sync.flush()).rejects.toThrow('Offline')
+  sync.clearNetworkError()
+  await vi.waitFor(() => expect(sync.hasPending()).toBe(false))
+  expect(send.mock.calls.map((call) => call[1])).toEqual([patch, patch])
+})
+it('clears only a deleted item’s edits and retains unrelated pending edits', async () => {
+  const other: WorkspacePatch = { ...patch, id: 'other' }
+  const local = {
+    ...editedWorkspace,
+    agents: [
+      ...editedWorkspace.agents,
+      { ...editedWorkspace.agents[0]!, id: 'other', name: 'After' },
+    ],
+  }
+  const host = {
+    ...local,
+    agents: local.agents
+      .filter((agent) => agent.id !== 'agent')
+      .map((agent) => ({ ...agent, name: 'Before' })),
+  }
+  const send = vi.fn<(target: RuntimeConnection, patch: WorkspacePatch) => Promise<void>>(
+    async (_target: RuntimeConnection, _patch: WorkspacePatch) => {},
+  )
+  const sync = new WorkspaceSynchronization(() => {}, send)
+  sync.bind(connection, {
+    version: 1,
+    workspace: local,
+    patches: [patch, other],
+    ids: ['first', 'other'],
+  })
+  const conflict = sync.conflicts(host)[0]!
+  expect(conflict.field).toBeNull()
+  const result = await sync.resolve(conflict, 'host', host, sync.checkpoint())
+  expect(result.agents.map((agent) => agent.id)).toEqual(['other'])
+  await sync.flush()
+  expect(send).toHaveBeenCalledExactlyOnceWith(connection, other)
 })
 it('retains an uncertain acknowledgement when clearing the durable outbox fails', async () => {
   const persist = vi

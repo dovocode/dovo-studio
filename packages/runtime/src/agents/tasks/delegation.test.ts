@@ -80,6 +80,65 @@ async function setup() {
   runtime.services.store.update(() => f.workspace)
   return runtime.services
 }
+it('runs read-only audits without Git checkpoints and releases their completed provider', async () => {
+  const s = await setup()
+  const linked = await fixture()
+  cleanups.push(linked.cleanup)
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      ...workspace.repositories,
+      { id: 'linked', name: 'Linked', path: linked.directory, branch: 'main' },
+    ],
+  }))
+  const snapshot = vi.spyOn(s.git, 'snapshot')
+  const changes = vi.spyOn(s.git, 'changes')
+  const release = vi.spyOn(s.agents, 'releaseTask').mockResolvedValue()
+  let childId = ''
+  let childPermission: AgentRun['agent']['permission'] | undefined
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (run.agent.provider === 'claude') {
+        childPermission = run.agent.permission
+        run.onText('Audit complete')
+        return
+      }
+      snapshot.mockClear()
+      changes.mockClear()
+      childId = s.tasks.subagentSpawn({
+        taskId: taskId(run),
+        key: 'read-only-audit',
+        name: 'Audit',
+        prompt: 'Inspect',
+        provider: 'claude',
+        permission: 'read-only',
+      }).id
+      const result = await s.tasks.subagentWait(taskId(run), childId)
+      expect(result.result).toBe('Audit complete')
+      expect(snapshot).not.toHaveBeenCalled()
+      expect(changes).not.toHaveBeenCalled()
+      expect(s.store.task(childId).turns?.at(-1)?.checkpoint).toBeUndefined()
+      expect(release).toHaveBeenCalledWith(childId)
+      run.onText('Parent complete')
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Audit',
+    linkedCheckouts: [{ id: 'linked', repositoryId: 'linked', access: 'edit', execution: 'main' }],
+  })
+  await (
+    await s.tasks.start(parent.id)
+  ).done
+  expect(s.store.task(childId).status).toBe('review')
+  expect(childPermission).toBe('read-only')
+  expect(snapshot).toHaveBeenCalledTimes(2)
+  expect(s.store.task(parent.id).turns?.at(-1)?.checkpoint?.linked).toHaveLength(1)
+  expect(changes).toHaveBeenCalledOnce()
+})
 it('runs a Claude child from Codex in the same checkout, returns its answer, and retries without duplicating it', async () => {
   const s = await setup()
   const runs: AgentRun[] = []

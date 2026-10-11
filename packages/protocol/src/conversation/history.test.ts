@@ -1,6 +1,45 @@
 import { taskBudgetUsage } from '../tasks/task-budget'
-import { expect, it } from 'vite-plus/test'
-import { conversationPage, mergeConversationHistory } from './history'
+import { expect, it, vi } from 'vite-plus/test'
+import {
+  compactConversationPages,
+  conversationPage,
+  mergeConversationHistory,
+  readConversationHistory,
+} from './history'
+import type { ConversationPage } from './history'
+type ReadHistory = (before: string, signal: AbortSignal) => Promise<ConversationPage>
+
+it('compacts overlapping rolling windows without losing history or its oldest cursor', () => {
+  let pages: ConversationPage[] = []
+  for (let start = 0; start < 100; start++)
+    pages = compactConversationPages([
+      ...pages,
+      {
+        messages: Array.from({ length: 75 }, (_, index) => ({
+          id: `m${start + index}`,
+          role: 'assistant' as const,
+          text: `version-${start}`,
+        })),
+        turns: [],
+        before: `m${start}`,
+      },
+    ])
+  expect(pages).toHaveLength(1)
+  expect(pages[0]?.messages).toHaveLength(174)
+  expect(pages[0]?.before).toBe('m0')
+  expect(pages[0]?.messages.find((message) => message.id === 'm99')?.text).toBe('version-99')
+})
+
+it('keeps different history revisions separate when compacting offline pages', () => {
+  const pages = compactConversationPages([
+    { messages: [{ id: 'removed', role: 'user', text: 'Old' }], turns: [], historyRevision: 0 },
+    { messages: [{ id: 'new', role: 'user', text: 'New' }], turns: [], historyRevision: 1 },
+  ])
+  expect(
+    mergeConversationHistory({ messages: [], turns: [], historyRevision: 1 }, pages, false)
+      .messages,
+  ).toEqual([{ id: 'new', role: 'user', text: 'New' }])
+})
 it('retains ownership records when one execution spans multiple history pages', () => {
   const turn = {
     id: 'turn',
@@ -32,6 +71,63 @@ const history = (requests: number) => ({
     text: `Message ${index}`,
   })),
   turns: [],
+})
+it('copies a captured transcript in chronological order without refetching its loaded recent window', async () => {
+  const all = { ...history(31), historyRevision: 2 }
+  const task = { ...all, messages: all.messages.slice(40), historyBefore: 'm50' }
+  const read = vi.fn<ReadHistory>(async (before: string) => conversationPage(all, before))
+  const result = await readConversationHistory(task, read, new AbortController().signal)
+  expect(read.mock.calls[0]?.[0]).toBe('m40')
+  expect(result.messages).toEqual(all.messages)
+  expect(task.messages).toHaveLength(22)
+})
+it('rejects copy pages from a different history revision', async () => {
+  const task = { ...history(1), historyBefore: 'm0', historyRevision: 1 }
+  await expect(
+    readConversationHistory(
+      task,
+      async () => ({
+        messages: [{ id: 'old', role: 'user', text: 'Removed history' }],
+        turns: [],
+        historyRevision: 2,
+      }),
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow('Conversation changed')
+})
+it.each(['same', 'cycle', 'empty'] as const)(
+  'stops copying a %s nonadvancing cursor',
+  async (kind) => {
+    const task = { ...history(1), historyBefore: 'm0' }
+    const read = vi.fn<ReadHistory>(async (before: string) => ({
+      messages: kind === 'empty' ? [] : [{ id: 'old', role: 'user' as const, text: 'Old' }],
+      turns: [],
+      before: kind === 'same' ? before : before === 'm0' ? 'older' : 'm0',
+    }))
+    await expect(readConversationHistory(task, read, new AbortController().signal)).rejects.toThrow(
+      'History did not advance',
+    )
+    expect(read.mock.calls.length).toBeLessThanOrEqual(2)
+  },
+)
+it('cancels copying before requests or after a request completes', async () => {
+  const task = { ...history(1), historyBefore: 'm0' }
+  const controller = new AbortController()
+  const read = vi.fn<ReadHistory>(async () => ({ messages: [], turns: [] }))
+  controller.abort()
+  await expect(readConversationHistory(task, read, controller.signal)).rejects.toThrow('cancelled')
+  expect(read).not.toHaveBeenCalled()
+  const pending = new AbortController()
+  await expect(
+    readConversationHistory(
+      task,
+      async () => {
+        pending.abort()
+        return { messages: [], turns: [] }
+      },
+      pending.signal,
+    ),
+  ).rejects.toThrow('cancelled')
 })
 it('walks all history with stable message cursors while new replies arrive', () => {
   const task = history(31)

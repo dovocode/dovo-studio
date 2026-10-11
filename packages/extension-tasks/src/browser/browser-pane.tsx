@@ -276,7 +276,12 @@ function BrowserContent({
     }
   }
   const loadDevices = async () => {
-    const hosts = await request('/api/device-hosts', {}, deviceHostSettingsResultSchema, 'GET')
+    const hosts = await request(
+      '/api/device-hosts',
+      undefined,
+      deviceHostSettingsResultSchema,
+      'GET',
+    )
     if (!mount.current) return
     setHubEnabled(hosts.enabled ?? false)
     setDeviceHosts(hosts.hosts)
@@ -361,7 +366,11 @@ function BrowserContent({
   useEffect(() => {
     if (!browser || !url || mode !== 'web') return
     let alive = true
+    let frame: number | undefined
+    let previousCommand = ''
     const update = () => {
+      frame = undefined
+      if (!alive) return
       const rect = slot.current?.getBoundingClientRect()
       const obscured = document.querySelector(
         'details[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
@@ -393,12 +402,19 @@ function BrowserContent({
               action: 'hide' as const,
               key: browserKey,
             }
+      const signature = JSON.stringify(command)
+      if (signature === previousCommand) return
+      previousCommand = signature
       void browser(command).catch((e) => {
+        if (previousCommand === signature) previousCommand = ''
         if (alive) setError(String(e))
       })
     }
-    const resize = new ResizeObserver(update),
-      mutations = new MutationObserver(update)
+    const schedule = () => {
+      frame ??= requestAnimationFrame(update)
+    }
+    const resize = new ResizeObserver(schedule),
+      mutations = new MutationObserver(schedule)
     if (slot.current) resize.observe(slot.current)
     mutations.observe(document.body, {
       childList: true,
@@ -406,15 +422,16 @@ function BrowserContent({
       attributes: true,
       attributeFilter: ['open'],
     })
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
+    window.addEventListener('resize', schedule)
+    window.addEventListener('scroll', schedule, true)
     update()
     return () => {
       alive = false
+      if (frame !== undefined) cancelAnimationFrame(frame)
       resize.disconnect()
       mutations.disconnect()
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('scroll', schedule, true)
       void browser({
         action: 'hide',
         key: browserKey,

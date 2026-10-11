@@ -27,12 +27,12 @@ export const mcpAppRpcSchema = mutableStruct({
   method: Schema.String,
   params: Schema.optional(Schema.Unknown),
 })
-export function mcpAppReferences(payload: string): McpAppReference[] {
+export function mcpAppReferences(payload: unknown): McpAppReference[] {
   try {
     return (
       decodeResult(
         mutableStruct({ mcpApps: mutableArray(mcpAppReferenceSchema) }),
-        JSON.parse(payload),
+        typeof payload === 'string' ? JSON.parse(payload) : payload,
       ).data?.mcpApps ?? []
     )
   } catch {

@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   conversationPageSchema,
+  compactConversationPages,
   mergeConversationHistory,
   type ConversationPage,
   type Task,
 } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
+import { useCommittedCallback } from '../../detail/use-committed-callback'
 
 const emptyPages: ConversationPage[] = []
 const recentMessageCount = 500
 export function useConversationHistory<
   T extends Pick<Task, 'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,
->(live: T) {
+>(live: T, prefetchRecent = true) {
   const { connection, request, connected } = useWorkspace()
   const revision = live.historyRevision ?? 0
   const scope = JSON.stringify([connection?.address, connection?.token, live.id])
@@ -79,7 +81,7 @@ export function useConversationHistory<
           ? {
               scope,
               revision,
-              pages: [
+              pages: compactConversationPages([
                 ...value.pages,
                 {
                   messages: before.live.messages,
@@ -87,7 +89,7 @@ export function useConversationHistory<
                   historyRevision: revision,
                   before: before.live.historyBefore,
                 },
-              ],
+              ]),
             }
           : value,
       )
@@ -99,7 +101,7 @@ export function useConversationHistory<
     : pages.length
       ? pages[0]?.before
       : live.historyBefore
-  const load = async () => {
+  const load = useCommittedCallback(async () => {
     if (!cursor || !connected || pending.current?.scope === scope) return
     const operation = { scope, generation: generation.current }
     pending.current = operation
@@ -126,11 +128,11 @@ export function useConversationHistory<
         setLoaded((value) => ({
           scope,
           revision,
-          pages: [
+          pages: compactConversationPages([
             page,
             ...(value.scope === scope ? value.pages : []),
             { messages: live.messages, turns: live.turns ?? [], historyRevision: revision },
-          ],
+          ]),
         }))
     } catch (cause) {
       if (
@@ -148,9 +150,10 @@ export function useConversationHistory<
       if (operation.generation === generation.current)
         setDelivery((value) => (value.scope === scope ? { ...value, busy: false } : value))
     }
-  }
+  })
   useEffect(() => {
     if (
+      prefetchRecent &&
       refill.current > task.messages.length &&
       cursor &&
       connected &&
@@ -158,8 +161,8 @@ export function useConversationHistory<
       !delivery.error
     )
       void load()
-    // load closes over the current cursor/window; each successful page advances this effect.
-  }, [task, cursor, connected, delivery, revision])
+    // Each successful page advances the cursor while the loader retains its identity.
+  }, [task.messages.length, cursor, connected, delivery, revision, prefetchRecent, load])
   const setBookmark = useCallback(
     (messageId: string, bookmarked: boolean) =>
       setLoaded((value) =>

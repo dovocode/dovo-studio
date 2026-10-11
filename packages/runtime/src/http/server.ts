@@ -165,9 +165,13 @@ export function createRuntimeServer(services: Services, internal = false) {
       if (url.pathname === '/ws/sync') {
         const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
         if (
-          !['runtime-sync', 'runtime-sync-2', 'runtime-sync-3', 'runtime-sync-4'].includes(
-            ticket.resourceId,
-          )
+          ![
+            'runtime-sync',
+            'runtime-sync-2',
+            'runtime-sync-3',
+            'runtime-sync-4',
+            'runtime-sync-5',
+          ].includes(ticket.resourceId)
         )
           throw new HttpError(401, 'Invalid sync ticket')
         services.devices.authenticate(ticket.token)
@@ -178,9 +182,10 @@ export function createRuntimeServer(services: Services, internal = false) {
             ticket.token,
             services,
             ticket.resourceId !== 'runtime-sync',
-            ['runtime-sync-3', 'runtime-sync-4'].includes(ticket.resourceId),
+            ['runtime-sync-3', 'runtime-sync-4', 'runtime-sync-5'].includes(ticket.resourceId),
             ticket.syncTasks,
             ticket.pagedHistory,
+            ticket.resourceId === 'runtime-sync-5',
           )
         })
         return

@@ -64,4 +64,4 @@ export const addRepositorySchema = Schema.Union([
     directory: path,
   }),
 ])
-export const REPOSITORY_CLONE_TIMEOUT_MS = 300_000
+export { REPOSITORY_CLONE_TIMEOUT_MS } from '../../shared/request-timeout.js'

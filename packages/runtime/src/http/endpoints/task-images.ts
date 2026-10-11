@@ -5,7 +5,8 @@ import { isAbsolute, resolve, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fileTypeFromBuffer } from 'file-type'
 import { constants } from 'node:fs'
-import { decode, taskImageRequestSchema, toolImages } from '@dovo/protocol'
+import { decode, taskImageRequestSchema, toolImages, isImageAttachment } from '@dovo/protocol'
+import { imagePreview } from '../../previews/image.js'
 import type { Services } from '../../services.js'
 import { HttpError } from '../../errors.js'
 import { safeFile, repositoryPath } from '../../scm/repositories/paths.js'
@@ -42,13 +43,26 @@ function localPath(path: string, cwd: string) {
 async function readImage(s: Services, value: unknown) {
   const input = decode(taskImageRequestSchema, value),
     task = s.store.task(input.taskId)
+  if (input.attachmentId !== undefined) {
+    if (input.path !== undefined || input.eventId !== undefined || input.index !== undefined)
+      throw new HttpError(400, 'Choose one image source')
+    const attachment = s.attachments.read(task.id, input.attachmentId)
+    if (!isImageAttachment(attachment.attachment))
+      throw new HttpError(415, 'Choose an image attachment')
+    return imagePreview(Buffer.from(attachment.data, 'base64'), input.maxSize ?? 1024)
+  }
   if (input.eventId !== undefined) {
     if (input.path !== undefined || input.index === undefined)
       throw new HttpError(400, 'Choose one image source')
     const payload = s.activity.imagePayload(task.id, input.eventId)
     const image = payload === undefined ? undefined : toolImages(payload)[input.index]
     if (!image) throw new HttpError(404, 'This image result is no longer available')
-    return { uri: image.uri }
+    return input.maxSize
+      ? imagePreview(
+          Buffer.from(image.uri.slice(image.uri.indexOf(',') + 1), 'base64'),
+          input.maxSize,
+        )
+      : { uri: image.uri }
   }
   if (!input.path || input.index !== undefined) throw new HttpError(400, 'Image path is required')
   const cwd = await s.checkouts.directory(task.id),
@@ -89,7 +103,9 @@ async function readImage(s: Services, value: unknown) {
       type = await fileTypeFromBuffer(data)
     if (!type || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(type.mime))
       throw new HttpError(415, 'Use a PNG, JPEG, GIF or WebP image')
-    return { uri: `data:${type.mime};base64,${data.toString('base64')}` }
+    return input.maxSize
+      ? imagePreview(data, input.maxSize)
+      : { uri: `data:${type.mime};base64,${data.toString('base64')}` }
   } finally {
     await handle.close()
   }

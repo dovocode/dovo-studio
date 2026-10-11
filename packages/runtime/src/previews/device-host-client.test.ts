@@ -23,7 +23,13 @@ vi.mock('ws', async () => {
     },
   }
 })
-type HttpFixture = { requests: RequestOptions[]; timeouts: number[]; status: number; body?: Buffer }
+type HttpFixture = {
+  requests: RequestOptions[]
+  timeouts: number[]
+  status: number
+  body?: Buffer
+  delay?: number
+}
 const http = vi.hoisted((): HttpFixture => ({ requests: [], timeouts: [], status: 200 }))
 vi.mock('node:http', async () => {
   const { EventEmitter } = await import('node:events')
@@ -34,10 +40,19 @@ vi.mock('node:http', async () => {
     ) => {
       http.requests.push(options)
       return new (class extends EventEmitter {
-        setTimeout(timeout: number) {
+        deadline?: ReturnType<typeof setTimeout>
+        responseTimer?: ReturnType<typeof setTimeout>
+        setTimeout(timeout: number, callback: () => void) {
           http.timeouts.push(timeout)
+          if (http.delay !== undefined) this.deadline = setTimeout(callback, timeout)
         }
-        end() {
+        destroy(error: Error) {
+          clearTimeout(this.deadline)
+          clearTimeout(this.responseTimer)
+          this.emit('error', error)
+        }
+        respond() {
+          clearTimeout(this.deadline)
           const response = Object.assign(new EventEmitter(), {
             statusCode: http.status,
             destroy: (error: Error) => {
@@ -50,6 +65,11 @@ vi.mock('node:http', async () => {
             http.body ?? Buffer.from(JSON.stringify({ id: 'session', ticket: 'single-use' })),
           )
           response.emit('end')
+        }
+        end() {
+          if (http.delay !== undefined)
+            this.responseTimer = setTimeout(() => this.respond(), http.delay)
+          else this.respond()
         }
       })()
     },
@@ -75,6 +95,8 @@ afterEach(() => {
   http.timeouts.length = 0
   http.status = 200
   http.body = undefined
+  http.delay = undefined
+  vi.useRealTimers()
 })
 it('replaces mismatched unused tunnels but rejects changes while a lease is active', async () => {
   ssh.open.mockImplementation(async () => ({
@@ -215,8 +237,37 @@ it('rejects oversized device-host responses and uses bounded per-operation deadl
     await client.request(host, '/api/device-host/open')
     await client.request(host, '/api/device-host/install')
     await client.request(host, '/api/device-host/ready')
-    expect(http.timeouts).toEqual([120000, 210000, 300000, 60000])
+    expect(http.timeouts).toEqual([120000, 300000, 300000, 60000])
   } finally {
     await client.dispose()
   }
 })
+
+it.each([
+  { delay: 240000, expected: { id: 'session', ticket: 'single-use' }, elapsed: 240000 },
+  {
+    delay: 360000,
+    expected: { status: 504, message: 'Device host request timed out' },
+    elapsed: 300001,
+  },
+])(
+  'waits for slow opening but bounds a stalled device host ($delay ms)',
+  async ({ delay, expected, elapsed }) => {
+    vi.useFakeTimers()
+    http.delay = delay
+    ssh.open.mockResolvedValue({
+      child: new ChildProcess(),
+      port: 1234,
+      address: 'http://127.0.0.1:1234',
+    })
+    const client = new DeviceHostClient()
+    try {
+      const pending = client.request(host, '/api/device-host/open').catch((error: unknown) => error)
+      await vi.advanceTimersByTimeAsync(elapsed)
+      expect(await pending).toMatchObject(expected)
+      expect(http.requests).toHaveLength(1)
+    } finally {
+      await client.dispose()
+    }
+  },
+)

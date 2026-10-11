@@ -39,7 +39,13 @@ type PullDetailProps = {
   onSelect?: (number: number) => void
 }
 export function PullDetail(props: PullDetailProps) {
-  return <PullDetailSelection key={JSON.stringify([props.repositoryId, props.number])} {...props} />
+  const { activeRuntimeId } = useWorkspace()
+  return (
+    <PullDetailSelection
+      key={JSON.stringify([activeRuntimeId, props.repositoryId, props.number])}
+      {...props}
+    />
+  )
 }
 function PullDetailSelection(props: PullDetailProps) {
   const [selectedNumber, setSelectedNumber] = useApplicationState(props.number)
@@ -508,7 +514,8 @@ function PullDetailContent({
             >
               {changesOpened && (
                 <PullChanges
-                  key={detail.pull.headSha}
+                  active={tab === 'changes'}
+                  key={`${repositoryId}:${detail.pull.connectionId ?? ''}:${detail.pull.url}`}
                   detail={detail}
                   embedded={embedded}
                   repositoryId={repositoryId}

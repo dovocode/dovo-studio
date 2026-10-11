@@ -25,7 +25,7 @@ const object = (value: unknown): Record<string, unknown> =>
 export const McpAppView = memo(function McpAppView({ reference }: { reference: McpAppReference }) {
   const { colors, styles } = useTheme()
 
-  const { call, connected, activeId, connection } = useRuntime()
+  const { call, read, connected, activeId, connection } = useRuntime()
   const view = useRef<WebView>(null)
   const [app, setApp] = useState<McpApp>()
   const [error, setError] = useState('')
@@ -47,7 +47,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     if (!connected) return
     let disposed = false
     setError('')
-    void call(
+    void read(
       '/api/mcp-apps/read',
       { taskId: reference.taskId, id: reference.id },
       mcpAppResponseSchema,
@@ -62,7 +62,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     return () => {
       disposed = true
     }
-  }, [call, activeId, reference.id, reference.taskId, connected])
+  }, [read, activeId, reference.id, reference.taskId, connected])
   useEffect(() => {
     if (!connected || !connection || !app?.connected || app.format !== 'apps') return
     const key = nonce.current
@@ -218,9 +218,13 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
               )
               for (const item of files) {
                 const file = new File(Paths.cache, `${Crypto.randomUUID()}-${item.name}`)
-                if (item.text !== undefined) file.write(item.text)
-                else file.write(item.blob ?? '', { encoding: 'base64' })
-                await Sharing.shareAsync(file.uri, { mimeType: item.mime })
+                try {
+                  if (item.text !== undefined) file.write(item.text)
+                  else file.write(item.blob ?? '', { encoding: 'base64' })
+                  await Sharing.shareAsync(file.uri, { mimeType: item.mime })
+                } finally {
+                  if (file.exists) file.delete()
+                }
               }
               return {}
             }

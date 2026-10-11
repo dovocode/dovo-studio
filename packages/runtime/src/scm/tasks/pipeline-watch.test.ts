@@ -6,6 +6,7 @@ import type { AgentAdapter } from '../../agents/execution/types.js'
 import type { ForgePipelineDetail } from '@dovo/protocol'
 import { startRuntime } from '../../index.js'
 import { fixture } from '../../testing/fixture.js'
+import { PipelineWatch } from './pipeline-watch.js'
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -63,6 +64,55 @@ async function setup(persistent = false) {
     s.pipelineWatch.command({ taskId: task.id, action: 'watch', runIds })
   const status = () => s.pipelineWatch.command({ taskId: task.id, action: 'status' })
   return { f, runtime, s, taskId: task.id, read, watch, status }
+}
+it('skips watch scans during streaming and restores ownership after a rolled-back archive', async () => {
+  const f = await setup()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  await f.watch()
+  const prepare = vi.spyOn(f.s.db, 'prepare')
+  for (let index = 0; index < 20; index++)
+    f.s.store.updateTask(f.taskId, (task) => ({ ...task, activity: `token-${index}` }))
+  const scans = () =>
+    prepare.mock.calls.filter(([sql]) => sql === 'SELECT value FROM task_pipeline_watches').length
+  expect(scans()).toBe(0)
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  expect(() =>
+    f.s.store.transaction(() => {
+      f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: true }))
+      throw new Error('Rollback archive')
+    }),
+  ).toThrow('Rollback archive')
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, activity: 'resumed' }))
+  expect(scans()).toBe(2)
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  expect((await f.status()).watches[0]?.status).toBe('watching')
+  await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'stop' })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+})
+
+async function linkedSetup(persistent = false) {
+  const f = await setup(persistent)
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      ...workspace.repositories,
+      { id: 'linked', name: 'Linked', path: join(f.f.directory, 'linked'), branch: 'main' },
+    ],
+    tasks: workspace.tasks.map((task) =>
+      task.id === f.taskId
+        ? {
+            ...task,
+            status: 'review',
+            linkedCheckouts: [
+              { id: 'linked', repositoryId: 'linked', access: 'edit', execution: 'main' },
+            ],
+          }
+        : task,
+    ),
+  }))
+  const linkedWatch = (runIds = ['7']) =>
+    f.s.pipelineWatch.command({ taskId: f.taskId, repositoryId: 'linked', action: 'watch', runIds })
+  return { ...f, linkedWatch }
 }
 
 it('adds explicit runs, preserves existing watches and delivers each completion once without unpausing', async () => {
@@ -295,4 +345,235 @@ it('finishes successful runs silently and keeps Waiting until the last watch end
   expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
   expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
   expect(send).not.toHaveBeenCalled()
+})
+
+it.each(['failure', 'startup_failure'])(
+  'updates repeated registrations to returned %s without a later duplicate notification',
+  async (status) => {
+    const f = await setup()
+    await f.watch()
+    f.read.mockResolvedValue(detail('7', status))
+    expect(await f.watch()).toMatchObject({
+      watches: [{ status: 'completed', runStatus: status }],
+    })
+    await f.s.pipelineWatch.tick()
+    expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
+  },
+)
+
+it('reports blocked or waiting runs once per transition and continues watching for completion', async () => {
+  const f = await setup()
+  await f.watch()
+  for (const status of ['waiting', 'blocked', 'paused', 'running', 'waiting', 'failure']) {
+    f.read.mockResolvedValue(detail('7', status))
+    await f.s.pipelineWatch.tick()
+    await f.s.pipelineWatch.tick()
+  }
+  const queue = f.s.store.task(f.taskId).queue ?? []
+  expect(queue).toHaveLength(5)
+  expect(queue[0]?.text).toContain('attention required')
+  expect(queue[0]?.text).toContain('continues watching this run')
+  expect(queue[4]?.text).toContain('This run watch is complete')
+  expect(await f.status()).toMatchObject({ watches: [{ status: 'completed' }] })
+})
+
+it('baselines attention states returned at registration and ignores cancellation in progress', async () => {
+  const f = await setup()
+  f.read.mockResolvedValue(detail('7', 'waiting'))
+  await f.watch()
+  await f.s.pipelineWatch.tick()
+  f.read.mockResolvedValue(detail('7', 'cancelling'))
+  await f.s.pipelineWatch.tick()
+  f.read.mockResolvedValue(detail('7', 'cancelled'))
+  await f.s.pipelineWatch.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
+  expect(await f.status()).toMatchObject({ watches: [{ status: 'completed' }] })
+})
+
+it('isolates colliding run IDs across repositories and scopes stop/status without losing Waiting', async () => {
+  const f = await linkedSetup()
+  await Promise.all([f.watch(), f.linkedWatch()])
+  expect((await f.status()).watches.map((state) => state.repositoryId).sort()).toEqual([
+    'linked',
+    'repo',
+  ])
+  await f.s.pipelineWatch.command({
+    taskId: f.taskId,
+    action: 'stop',
+    repositoryId: 'repo',
+    runIds: ['7'],
+  })
+  expect(
+    await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'status', repositoryId: 'linked' }),
+  ).toMatchObject({ watches: [{ status: 'watching' }] })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  f.read.mockClear().mockResolvedValue(detail('7', 'failure'))
+  await f.s.pipelineWatch.tick()
+  expect(f.read).toHaveBeenCalledTimes(1)
+  expect(f.read).toHaveBeenCalledWith('linked', 'pipelines/detail', { id: '7', refresh: true })
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+  await expect(
+    f.s.pipelineWatch.command({
+      taskId: f.taskId,
+      action: 'watch',
+      repositoryId: 'unrelated',
+      runIds: ['7'],
+    }),
+  ).rejects.toMatchObject({ status: 403 })
+})
+
+it('preserves non-overlapping registrations and only cancels selected pending runs', async () => {
+  const f = await setup()
+  const releases = new Map<string, (value: ReturnType<typeof detail>) => void>()
+  f.read.mockImplementation(
+    (_repo, _operation, input) =>
+      new Promise<ReturnType<typeof detail>>((resolve) => releases.set(runId(input), resolve)),
+  )
+  const first = f.watch(['7'])
+  const second = f.watch(['8'])
+  await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'stop', runIds: ['7'] })
+  releases.get('7')?.(detail('7'))
+  releases.get('8')?.(detail('8'))
+  await expect(first).rejects.toThrow('replaced or stopped')
+  await second
+  expect(await f.status()).toMatchObject({ watches: [{ runId: '8', status: 'watching' }] })
+})
+
+it('discards an older in-flight completion after explicit registration of a rerun', async () => {
+  const f = await setup()
+  const attempt = (number: number, status: string) => ({
+    ...detail('7', status),
+    run: { ...detail('7', status).run, attempt: number },
+  })
+  f.read.mockResolvedValue(attempt(1, 'running'))
+  await f.watch()
+  let release!: (value: ReturnType<typeof detail>) => void
+  f.read.mockImplementationOnce(
+    () =>
+      new Promise<ReturnType<typeof detail>>((resolve) => {
+        release = resolve
+      }),
+  )
+  const polling = f.s.pipelineWatch.tick()
+  f.read.mockResolvedValue(attempt(2, 'running'))
+  await f.watch()
+  release(attempt(1, 'failure'))
+  await polling
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
+  expect(await f.status()).toMatchObject({ watches: [{ status: 'watching', attempt: 2 }] })
+  f.read.mockResolvedValue(attempt(1, 'failure'))
+  await f.s.pipelineWatch.tick()
+  expect(await f.status()).toMatchObject({
+    watches: [
+      { status: 'watching', attempt: 2, error: 'Waiting for the current pipeline attempt' },
+    ],
+  })
+  f.read.mockResolvedValue(attempt(2, 'failure'))
+  await f.s.pipelineWatch.tick()
+  await f.s.pipelineWatch.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+  expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('Attempt: 2')
+})
+
+it('prioritizes failed jobs and includes failed step diagnostics in bounded feedback', async () => {
+  const f = await setup()
+  await f.watch()
+  const jobs = Array.from({ length: 30 }, (_, index) => ({
+    id: String(index),
+    name: `Passed ${index}`,
+    status: 'success',
+    url: detail().run.url,
+  }))
+  jobs.push({ id: 'failed', name: 'Failing build', status: 'failure', url: detail().run.url })
+  f.read.mockResolvedValue(
+    detail('7', 'failure', {
+      jobs: jobs.map((job) =>
+        job.id === 'failed'
+          ? {
+              ...job,
+              steps: [
+                {
+                  id: 'compile',
+                  name: 'Compile',
+                  status: 'failure',
+                  errors: ['Type error in app.ts'],
+                },
+              ],
+            }
+          : job,
+      ),
+    }),
+  )
+  await f.s.pipelineWatch.tick()
+  const text = f.s.store.task(f.taskId).queue?.[0]?.text ?? ''
+  expect(text).toContain('Failing build')
+  expect(text).toContain('Type error in app.ts')
+  expect(text).toContain('Partial job context')
+  expect(text.length).toBeLessThan(20000)
+})
+
+it('migrates legacy pipeline watches without losing active runs', async () => {
+  const f = await setup()
+  await f.watch()
+  f.s.db.exec(`ALTER TABLE task_pipeline_watches RENAME TO task_pipeline_watches_new;
+    CREATE TABLE task_pipeline_watches (task_id TEXT NOT NULL, run_id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (task_id, run_id));
+    INSERT INTO task_pipeline_watches SELECT task_id, run_id, json_remove(value, '$.primaryRepositoryId', '$.attempt', '$.notifiedStatus') FROM task_pipeline_watches_new;
+    DROP TABLE task_pipeline_watches_new;`)
+  const watcher = new PipelineWatch(f.s.db, f.s)
+  f.read.mockResolvedValue(detail('7', 'failure'))
+  await watcher.tick()
+  await watcher.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+  expect(await f.status()).toMatchObject({
+    watches: [{ repositoryId: 'repo', status: 'completed' }],
+  })
+})
+
+it('shares a fresh pipeline read across threads watching the same run', async () => {
+  const f = await setup()
+  const other = f.s.tasks.create({
+    title: 'Other',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  f.s.store.updateTask(other.id, (task) => ({ ...task, queuePaused: true }))
+  await f.watch()
+  await f.s.pipelineWatch.command({ taskId: other.id, action: 'watch', runIds: ['7'] })
+  f.read.mockClear().mockResolvedValue(detail('7', 'failure'))
+  await f.s.pipelineWatch.tick()
+  expect(f.read).toHaveBeenCalledTimes(1)
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+  expect(f.s.store.task(other.id).queue).toHaveLength(1)
+})
+
+it('rejects a registration whose agent turn retires during its forge read', async () => {
+  const f = await setup()
+  let release!: (value: ReturnType<typeof detail>) => void
+  f.read.mockImplementation(
+    () =>
+      new Promise<ReturnType<typeof detail>>((resolve) => {
+        release = resolve
+      }),
+  )
+  let registration: ReturnType<typeof f.s.pipelineWatch.command> | undefined
+  vi.spyOn(f.s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async () => {
+      registration = f.s.pipelineWatch.command({
+        taskId: f.taskId,
+        parentRunId: f.s.store.task(f.taskId).activeRunId,
+        action: 'watch',
+        runIds: ['7'],
+      })
+    },
+  })
+  f.s.tasks.queue.add(f.taskId, 'initial', 'Watch the run')
+  await (
+    await f.s.tasks.start(f.taskId, true)
+  ).done
+  if (!registration) throw new Error('Expected an in-flight registration')
+  release(detail())
+  await expect(registration).rejects.toThrow('parent turn has ended')
+  expect(await f.status()).toEqual({ watches: [] })
 })

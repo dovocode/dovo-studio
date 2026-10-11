@@ -435,6 +435,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
                 s.browsers.closeTask(taskId),
                 s.simulators.closeTask(taskId),
                 s.deviceHosts.closeTask(taskId),
+                s.agents.releaseTask(taskId),
               ]),
             )
             for (const result of cleanup) if (result.status === 'rejected') throw result.reason
@@ -869,7 +870,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
         )
         const files = yield* serviceResult(s.git.changes(cwd).catch(() => undefined))
-        if (files) s.store.updateTask(input.id, (task) => ({ ...task, files }))
+        if (files)
+          s.store.updateTask(input.id, (task) => ({
+            ...task,
+            files: retainChangedFiles(task.files, files),
+          }))
         s.activity.add('task', input.id, `Committed ${commit.slice(0, 8)}`, { commit })
         let pushError: string | undefined
         if (input.push)
@@ -1133,3 +1138,4 @@ export function agentsRoute(request: IncomingMessage, path: string) {
     }),
   )
 }
+import { retainChangedFiles } from '../../scm/git/retain-changes.js'

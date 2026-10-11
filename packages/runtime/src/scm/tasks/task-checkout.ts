@@ -68,6 +68,55 @@ export class TaskCheckout {
     if (!linked) throw new HttpError(404, 'Linked checkout not found')
     return linked.directory
   }
+  /** Optional review metadata must never create a checkout or rerun its setup command. */
+  async reviewDirectory(
+    id: string,
+    checkoutId?: string,
+    visited = new Set<string>(),
+  ): Promise<string | undefined> {
+    if (visited.has(id)) return undefined
+    visited.add(id)
+    const task = this.store.task(id)
+    if (task.delegation && !checkoutId)
+      return this.reviewDirectory(task.delegation.parentTaskId, task.delegation.checkoutId, visited)
+    const link = checkoutId
+      ? task.linkedCheckouts?.find((link) => link.id === checkoutId)
+      : undefined
+    if (checkoutId && !link) return undefined
+    const repo = this.store
+      .get()
+      .repositories.find((repo) => repo.id === (link?.repositoryId ?? task.repositoryId))
+    if (!repo || repo.kind) return undefined
+    if ((link?.execution ?? task.execution) !== 'worktree') return repo.path
+    if (link)
+      return (
+        task.linkedCheckoutSetup?.find((setup) => setup.id === link.id)?.directory ??
+        link.existingWorktreePath
+      )
+    if (task.existingWorktreePath) return task.existingWorktreePath
+    const cached = this.prepared.get(id)
+    if (
+      cached?.repositoryId === task.repositoryId &&
+      cached.repositoryPath === repo.path &&
+      cached.execution === task.execution &&
+      cached.existingWorktreePath === task.existingWorktreePath
+    )
+      return cached.path
+    const common = (
+      await this.git.command(repo.path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+    ).trim()
+    const keys = taskWorktreeKeys(common, id, this.worktrees())
+    const records = (await this.git.command(repo.path, ['worktree', 'list', '--porcelain', '-z']))
+      .split('\0\0')
+      .map((block) => block.split('\0'))
+    for (const record of records) {
+      if (record.includes('prunable')) continue
+      const path = record.find((line) => line.startsWith('worktree '))?.slice(9)
+      const branch = record.find((line) => line.startsWith('branch '))?.slice(7)
+      if (path && isTaskWorktree(path, keys, branch)) return path
+    }
+    return undefined
+  }
   directory(id: string, signal?: AbortSignal): Promise<string> {
     return this.pending.run(id, (sharedSignal) => this.preparedDirectory(id, sharedSignal), signal)
   }

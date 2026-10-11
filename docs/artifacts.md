@@ -29,9 +29,11 @@ Artifacts do not receive the interactive MCP Apps tool bridge.
 Desktop exposes **Artifacts** in the thread toolbar. Conversation cards open the selected artifact
 beside chat, with an option to expand the preview. Mobile exposes artifacts in the thread menu and
 opens conversation cards in a full-screen viewer. Tool activity shows artifact cards even when the
-work group is collapsed. Both viewers support selecting artifacts and saved versions, preview/source
-switching and explicit refresh. Desktop can copy and download sources; mobile can share the selected
-version through the system share sheet.
+work group is collapsed. Cards appear only at the message that produced that revision. Older
+artifacts do not appear in the trailing activity area while their conversation history is unloaded.
+Mobile previews rebuild after WebView process termination. Both viewers support selecting artifacts
+and saved versions, preview/source switching and explicit refresh. Desktop can copy and download
+sources; mobile can share the selected version through the system share sheet.
 
 The desktop left sidebar and mobile navigation also expose **Artifacts** when a connected computer
 has the feature enabled. This library lists artifacts across enabled computers, most recently

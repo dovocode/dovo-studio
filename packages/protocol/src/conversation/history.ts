@@ -9,6 +9,64 @@ export const conversationPageSchema = mutableStruct({
   historyRevision: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 })
 export type ConversationPage = Schema.Schema.Type<typeof conversationPageSchema>
+/** Complete a captured transcript without mixing destructive history revisions or chasing bad cursors. */
+export async function readConversationHistory<
+  T extends Pick<Task, 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,
+>(
+  task: T,
+  read: (before: string, signal: AbortSignal) => Promise<ConversationPage>,
+  signal: AbortSignal,
+): Promise<T> {
+  const checkCancelled = () => {
+    if (signal.aborted) throw new Error('Conversation copying was cancelled.')
+  }
+  checkCancelled()
+  if (!task.historyBefore) return task
+  let before: string | undefined = task.messages[0]?.id ?? task.historyBefore
+  const cursors = new Set<string>()
+  const pages: ConversationPage[] = []
+  while (before) {
+    checkCancelled()
+    if (cursors.has(before))
+      throw new Error('History did not advance. Reload the conversation before copying.')
+    cursors.add(before)
+    const page = await read(before, signal)
+    checkCancelled()
+    if ((page.historyRevision ?? 0) !== (task.historyRevision ?? 0))
+      throw new Error('Conversation changed while copying. Try again with the latest history.')
+    if ((!page.messages.length && page.before) || page.before === before)
+      throw new Error('History did not advance. Reload the conversation before copying.')
+    pages.push(page)
+    before = page.before
+  }
+  return mergeConversationHistory(task, pages.reverse())
+}
+/** Retain each message/turn once per revision, with the newest captured version winning. */
+export function compactConversationPages(pages: readonly ConversationPage[]): ConversationPage[] {
+  const revisions = new Map<
+    number,
+    {
+      page: ConversationPage
+      messages: Map<string, Task['messages'][number]>
+      turns: Map<string, NonNullable<Task['turns']>[number]>
+    }
+  >()
+  for (const page of pages) {
+    const revision = page.historyRevision ?? 0
+    let group = revisions.get(revision)
+    if (!group) {
+      group = { page, messages: new Map(), turns: new Map() }
+      revisions.set(revision, group)
+    }
+    for (const message of page.messages) group.messages.set(message.id, message)
+    for (const turn of page.turns) group.turns.set(turn.id, turn)
+  }
+  return [...revisions.values()].map(({ page, messages, turns }) => ({
+    ...page,
+    messages: [...messages.values()],
+    turns: [...turns.values()],
+  }))
+}
 const encodedSizes = new WeakMap<object, number>()
 const encodedSize = (value: object) => {
   let size = encodedSizes.get(value)

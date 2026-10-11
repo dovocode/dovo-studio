@@ -13,6 +13,7 @@ import {
 } from './device-hosts'
 import { sshArgs } from './device-host-ssh'
 import { validateArtifact, DeviceHostUploads } from './device-host-install'
+import * as discovery from './devices'
 const host = {
   id: 'mac',
   name: 'Mac',
@@ -25,6 +26,46 @@ const host = {
   agentAccess: true,
 }
 afterEach(() => vi.restoreAllMocks())
+it('starts local and SSH discovery together and scopes a selected device on its host', async () => {
+  const db = openDatabase(':memory:')
+  const manager = new DeviceHosts(db, async () => {})
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const result = { host: 'Local', devices: [], diagnostics: [] }
+  const local = vi.spyOn(discovery, 'previewDevices').mockImplementation(async () => {
+    await gate
+    return result
+  })
+  const remote = vi.spyOn(manager.client, 'request').mockImplementation(async () => {
+    await gate
+    return { ...result, host: 'Mac' }
+  })
+  let pending: Promise<unknown> | undefined
+  try {
+    await manager.save({ enabled: true, hosts: [host] })
+    pending = manager.list('task')
+    await vi.waitFor(() => {
+      expect(local).toHaveBeenCalledOnce()
+      expect(remote).toHaveBeenCalledOnce()
+    })
+    release()
+    await pending
+    local.mockClear()
+    await manager.list('task', 'mac', false, 'physical-ios:phone')
+    expect(local).not.toHaveBeenCalled()
+    expect(remote).toHaveBeenLastCalledWith(host, '/api/device-host/devices', {
+      taskId: 'task',
+      id: 'physical-ios:phone',
+    })
+  } finally {
+    release()
+    await pending
+    await manager.dispose()
+    db.close()
+  }
+})
 it('validates key-only SSH options without interpolating identity paths or accepting option injection', () => {
   expect(sshArgs(host)).toContain('BatchMode=yes')
   expect(sshArgs(host)).toContain('PasswordAuthentication=no')

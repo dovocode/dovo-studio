@@ -381,6 +381,31 @@ function nativeRun(onSubagentEvent: AgentRun['onSubagentEvent']): AgentRun {
     ask: vi.fn<AgentRun['ask']>(async () => null),
   }
 }
+it('releases a completed child transport while retaining its resumable session ID', async () => {
+  const adapter = createClaudeAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  const close = vi.fn<() => void>()
+  mocks.query.mockImplementation(({ prompt }) => ({
+    async *[Symbol.asyncIterator]() {
+      if (typeof prompt === 'string') throw new Error('Expected streaming input')
+      for await (const _message of prompt)
+        yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+    },
+    close,
+  }))
+  const run = nativeRun(vi.fn())
+  try {
+    await adapter.run(run)
+    expect(close).not.toHaveBeenCalled()
+    await adapter.releaseTask?.('native-claude')
+    expect(close).toHaveBeenCalledOnce()
+    await adapter.run({ ...run, prompt: 'Follow-up', sessionId: 'session' })
+    expect(mocks.query.mock.calls.at(-1)?.[0].options.resume).toBe('session')
+  } finally {
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
 
 it('routes only live native-agent approvals and questions through the session after a reply', async () => {
   const adapter = createClaudeAdapter()

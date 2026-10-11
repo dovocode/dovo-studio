@@ -56,6 +56,13 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
     execution: 'worktree',
     objective: 'Work separately',
   })
+  const registered = await s.git.command(f.directory, ['worktree', 'list', '--porcelain', '-z'])
+  const revision = s.store.version()
+  expect(await s.checkouts.reviewDirectory(isolated.id)).toBeUndefined()
+  expect(await s.git.command(f.directory, ['worktree', 'list', '--porcelain', '-z'])).toBe(
+    registered,
+  )
+  expect(s.store.version()).toBe(revision)
   const [cwd, same] = await Promise.all([
     s.checkouts.directory(isolated.id),
     s.checkouts.directory(isolated.id),
@@ -72,6 +79,7 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   // Readable location: <org or user>/<repo>-<branch>; this fixture repo has no remote.
   expect(cwd).toMatch(/\.dovo\/worktrees\/local\/[\w.-]+-isolated-[a-f0-9]{8}$/)
   expect(cwd).toBe(same)
+  expect(await s.checkouts.reviewDirectory(isolated.id)).toBe(cwd)
   const inspect = vi.spyOn(s.git, 'inspect')
   const command = vi.spyOn(s.git, 'command')
   expect(await s.checkouts.directory(isolated.id)).toBe(cwd)

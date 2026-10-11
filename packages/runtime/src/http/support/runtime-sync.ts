@@ -3,7 +3,7 @@ import { Effect, Fiber } from 'effect'
 import { WebSocket } from 'ws'
 import {
   decode,
-  compactActivityEvents,
+  createActivityCompactor,
   snapshotDelta,
   activityDelta,
   syncInputSchema,
@@ -13,6 +13,7 @@ import {
 } from '@dovo/protocol'
 import type { Schema } from 'effect'
 import type { Services } from '../../services.js'
+import type { Activity } from '../../storage/activity.js'
 import { runtimeSnapshot } from './runtime-snapshot.js'
 import { scopedWorkspace } from './snapshot-overview.js'
 import { snapshotTag } from './body.js'
@@ -23,12 +24,13 @@ type Client = {
   ready: boolean
   detailScopes: Set<string>
   scopes: Map<string, ActivityEvent[]>
-  activityRevision: number
+  activityVersions: Map<string, number>
   heartbeat: number
   resuming: boolean
   bufferLimit: number
 }
 type View = {
+  id: string
   taskIds?: readonly string[]
   pagedHistory: boolean
   compact: boolean
@@ -56,13 +58,14 @@ export function attachRuntimeSync(
   fieldUpdates = false,
   taskIds?: readonly string[],
   pagedHistory = false,
+  taskUpdates = false,
 ) {
   let hub = hubs.get(services)
   if (!hub) {
     hub = new RuntimeSync(services)
     hubs.set(services, hub)
   }
-  hub.attach(socket, token, compact, fieldUpdates, taskIds, pagedHistory)
+  hub.attach(socket, token, compact, fieldUpdates, taskIds, pagedHistory, taskUpdates)
 }
 export async function disposeRuntimeSync(services: Services) {
   const hub = hubs.get(services)
@@ -74,10 +77,39 @@ class RuntimeSync {
   private views = new Map<string, View>()
   private timer?: Fiber.Fiber<never, never>
   private busy = false
+  private wakeup?: ReturnType<typeof setTimeout>
+  private dirty = false
+  private wake() {
+    if (this.controller.signal.aborted || this.wakeup) return
+    this.wakeup = setTimeout(() => {
+      this.wakeup = undefined
+      void this.tick()
+    }, 20)
+    this.wakeup.unref()
+  }
+  private activityScopes = new Map<
+    string,
+    {
+      watch: ReturnType<Activity['watchScope']>
+      users: number
+      revision: number
+      full: ActivityEvent[]
+      compact?: ActivityEvent[]
+      compactEvents: ReturnType<typeof createActivityCompactor>
+    }
+  >()
+  private releaseScope(scope: string) {
+    const entry = this.activityScopes.get(scope)
+    if (entry && !--entry.users) {
+      entry.watch.stop()
+      this.activityScopes.delete(scope)
+    }
+  }
   private projection?: { signature: string; checked: number; pending: Promise<RuntimeSnapshot> }
   constructor(private services: Services) {}
   async dispose() {
     this.controller.abort()
+    clearTimeout(this.wakeup)
     if (this.timer) await Effect.runPromise(Fiber.interrupt(this.timer))
     const pending: Promise<void>[] = []
     for (const view of this.views.values()) {
@@ -89,12 +121,13 @@ class RuntimeSync {
       }
     }
     this.views.clear()
+    for (const entry of this.activityScopes.values()) entry.watch.stop()
+    this.activityScopes.clear()
     if (this.projection) pending.push(this.projection.pending.then(() => {}))
     this.projection = undefined
     await Promise.allSettled(pending)
   }
-  attach(
-    socket: WebSocket,
+  private view(
     token: string,
     compact: boolean,
     fieldUpdates: boolean,
@@ -111,6 +144,7 @@ class RuntimeSync {
     let view = this.views.get(viewId)
     if (!view || view.token !== token) {
       view = {
+        id: viewId,
         device,
         taskIds,
         pagedHistory,
@@ -127,20 +161,21 @@ class RuntimeSync {
       }
       this.views.set(viewId, view)
     }
-    const current = view
-    clearTimeout(current.expiry)
-    const client: Client = {
-      socket,
-      ready: false,
-      scopes: new Map(),
-      detailScopes: new Set(),
-      activityRevision: -1,
-      heartbeat: Date.now(),
-      resuming: false,
-      bufferLimit: 16 * 1024 * 1024,
+    return view
+  }
+  private leave(view: View, client: Client) {
+    view.clients.delete(client)
+    if (!view.clients.size && !this.controller.signal.aborted) {
+      view.expiry = setTimeout(
+        () => {
+          if (!view.clients.size && this.views.get(view.id) === view) this.views.delete(view.id)
+        },
+        5 * 60 * 1000,
+      )
+      view.expiry.unref()
     }
-    current.clients.add(client)
-    // Retain a bounded replay cache for reconnects, without holding inactive device histories forever.
+  }
+  private trimViews() {
     for (const [id, cached] of this.views) {
       if (this.views.size <= 8) break
       if (!cached.clients.size) {
@@ -148,93 +183,173 @@ class RuntimeSync {
         this.views.delete(id)
       }
     }
+  }
+  attach(
+    socket: WebSocket,
+    token: string,
+    compact: boolean,
+    fieldUpdates: boolean,
+    taskIds?: readonly string[],
+    pagedHistory = false,
+    taskUpdates = false,
+  ) {
+    let current = this.view(token, compact, fieldUpdates, taskIds, pagedHistory)
+    clearTimeout(current.expiry)
+    const client: Client = {
+      socket,
+      ready: false,
+      scopes: new Map(),
+      detailScopes: new Set(),
+      activityVersions: new Map(),
+      heartbeat: Date.now(),
+      resuming: false,
+      bufferLimit: 16 * 1024 * 1024,
+    }
+    current.clients.add(client)
+    // Retain a bounded replay cache for reconnects, without holding inactive device histories forever.
+    this.trimViews()
     const timeout = setTimeout(() => {
       if (!client.ready) socket.close(1008, 'Sync handshake timed out')
     }, 10000)
-    socket.on('message', async (raw) => {
-      try {
-        this.services.devices.authenticate(token)
-        const buffer = Buffer.isBuffer(raw)
-          ? raw
-          : Array.isArray(raw)
-            ? Buffer.concat(raw)
-            : Buffer.from(raw)
-        const input = decode(syncInputSchema, JSON.parse(buffer.toString('utf8')))
-        if (input.type === 'watch') {
-          const details = new Set(input.detailScopes ?? [])
-          const next = new Map<string, ActivityEvent[]>()
-          for (const scope of input.scopes) {
-            if (this.services.store.get().tasks.some((task) => task.id === scope))
-              next.set(
-                scope,
-                details.has(scope) === client.detailScopes.has(scope)
-                  ? (client.scopes.get(scope) ?? [])
-                  : [],
+    let handling = Promise.resolve()
+    let queued = 0
+    socket.on('message', (raw) => {
+      if (++queued > 32) {
+        queued--
+        socket.close(1008, 'Too many sync requests')
+        return
+      }
+      handling = handling.then(async () => {
+        try {
+          if (this.controller.signal.aborted || socket.readyState !== WebSocket.OPEN) return
+          this.services.devices.authenticate(token)
+          const buffer = Buffer.isBuffer(raw)
+            ? raw
+            : Array.isArray(raw)
+              ? Buffer.concat(raw)
+              : Buffer.from(raw)
+          const input = decode(syncInputSchema, JSON.parse(buffer.toString('utf8')))
+          if (input.type === 'watch') {
+            if (taskUpdates && input.tasks) {
+              const nextView = this.view(
+                token,
+                compact,
+                fieldUpdates,
+                [...new Set(input.tasks)],
+                pagedHistory,
               )
+              if (nextView !== current) {
+                client.ready = false
+                this.leave(current, client)
+                current = nextView
+                clearTimeout(current.expiry)
+                current.clients.add(client)
+                this.trimViews()
+                await this.refresh(current)
+                if (this.controller.signal.aborted || socket.readyState !== WebSocket.OPEN) return
+                if (current.snapshot && current.tag)
+                  this.send(
+                    client,
+                    JSON.stringify({
+                      type: 'snapshot',
+                      epoch: current.epoch,
+                      sequence: current.sequence,
+                      tag: current.tag,
+                      snapshot: current.snapshot,
+                    } satisfies SyncFrame),
+                  )
+                client.ready = true
+              }
+            }
+            const details = new Set(input.detailScopes ?? [])
+            const next = new Map<string, ActivityEvent[]>()
+            for (const scope of input.scopes) {
+              if (this.services.store.get().tasks.some((task) => task.id === scope))
+                next.set(
+                  scope,
+                  details.has(scope) === client.detailScopes.has(scope)
+                    ? (client.scopes.get(scope) ?? [])
+                    : [],
+                )
+            }
+            client.detailScopes = details
+            for (const scope of client.scopes.keys()) if (!next.has(scope)) this.releaseScope(scope)
+            for (const scope of next.keys()) {
+              if (client.scopes.has(scope)) continue
+              let entry = this.activityScopes.get(scope)
+              if (!entry) {
+                entry = {
+                  watch: this.services.activity.watchScope(scope, () => this.wake()),
+                  users: 0,
+                  revision: -1,
+                  full: [],
+                  compactEvents: createActivityCompactor(),
+                }
+                this.activityScopes.set(scope, entry)
+              }
+              entry.users++
+            }
+            client.scopes = next
+            client.activityVersions.clear()
+            this.wake()
+            return
           }
-          client.detailScopes = details
-          client.scopes = next
-          client.activityRevision = -1
-          return
-        }
-        if (client.resuming) return
-        client.resuming = true
-        client.ready = false
-        await this.refresh(current)
-        if (this.controller.signal.aborted || socket.readyState !== WebSocket.OPEN) return
-        const sequence = input.sequence
-        const replay = current.history.filter(
-          (item) => sequence !== undefined && item.sequence > sequence,
-        )
-        const canReplay =
-          input.epoch === current.epoch &&
-          sequence !== undefined &&
-          sequence <= current.sequence &&
-          (sequence === current.sequence || replay[0]?.sequence === sequence + 1)
-        if (canReplay) for (const item of replay) this.send(client, item.wire)
-        else if (current.snapshot && current.tag)
+          if (client.resuming) return
+          client.resuming = true
+          client.ready = false
+          await this.refresh(current)
+          if (this.controller.signal.aborted || socket.readyState !== WebSocket.OPEN) return
+          const sequence = input.sequence
+          const replay = current.history.filter(
+            (item) => sequence !== undefined && item.sequence > sequence,
+          )
+          const canReplay =
+            input.epoch === current.epoch &&
+            sequence !== undefined &&
+            sequence <= current.sequence &&
+            (sequence === current.sequence || replay[0]?.sequence === sequence + 1)
+          if (canReplay) for (const item of replay) this.send(client, item.wire)
+          else if (current.snapshot && current.tag)
+            this.send(
+              client,
+              JSON.stringify({
+                type: 'snapshot',
+                epoch: current.epoch,
+                sequence: current.sequence,
+                tag: current.tag,
+                snapshot: current.snapshot,
+              } satisfies SyncFrame),
+            )
           this.send(
             client,
             JSON.stringify({
-              type: 'snapshot',
+              type: 'heartbeat',
               epoch: current.epoch,
               sequence: current.sequence,
-              tag: current.tag,
-              snapshot: current.snapshot,
             } satisfies SyncFrame),
           )
-        this.send(
-          client,
-          JSON.stringify({
-            type: 'heartbeat',
-            epoch: current.epoch,
-            sequence: current.sequence,
-          } satisfies SyncFrame),
-        )
-        client.ready = true
-        client.resuming = false
-        client.heartbeat = Date.now()
-        clearTimeout(timeout)
-      } catch {
-        socket.close(1008, 'Invalid sync request')
-      }
+          client.ready = true
+          client.resuming = false
+          client.heartbeat = Date.now()
+          clearTimeout(timeout)
+        } catch {
+          socket.close(1008, 'Invalid sync request')
+        } finally {
+          queued--
+        }
+      })
     })
     socket.on('close', () => {
       clearTimeout(timeout)
-      current.clients.delete(client)
-      if (!current.clients.size && !this.controller.signal.aborted) {
-        current.expiry = setTimeout(
-          () => {
-            if (!current.clients.size && this.views.get(viewId) === current)
-              this.views.delete(viewId)
-          },
-          5 * 60 * 1000,
-        )
-        current.expiry.unref()
-      }
+      for (const scope of client.scopes.keys()) this.releaseScope(scope)
+      client.scopes.clear()
+      client.activityVersions.clear()
+      this.leave(current, client)
       if (![...this.views.values()].some((item) => item.clients.size)) {
         if (this.timer) Effect.runFork(Fiber.interrupt(this.timer))
         this.timer = undefined
+        clearTimeout(this.wakeup)
+        this.wakeup = undefined
         this.projection = undefined
       }
     })
@@ -339,7 +454,10 @@ class RuntimeSync {
     for (const client of view.clients) if (client.ready) this.send(client, wire)
   }
   private async tick() {
-    if (this.busy) return
+    if (this.busy) {
+      this.dirty = true
+      return
+    }
     this.busy = true
     try {
       const signature = this.signature()
@@ -357,48 +475,57 @@ class RuntimeSync {
           if (this.controller.signal.aborted) return
           for (const client of view.clients) {
             if (!client.ready) continue
-            if (client.activityRevision !== this.services.activity.revision) {
-              for (const [scope, previous] of client.scopes) {
-                const full = this.services.activity.list('', 'task-activity', 0, scope).events
-                const events = client.detailScopes.has(scope) ? full : compactActivityEvents(full)
-                const old = new Map(previous.map((event) => [event.id, event]))
-                const changed = events.filter((event) => {
-                  const previous = old.get(event.id)
-                  return (
-                    !previous ||
-                    event.payload !== previous.payload ||
-                    event.summary !== previous.summary ||
-                    event.time !== previous.time ||
-                    event.kind !== previous.kind ||
-                    event.scope !== previous.scope
-                  )
-                })
-                if (
-                  client.activityRevision === -1 ||
-                  changed.length ||
-                  events.some((event, index) => event.id !== previous[index]?.id) ||
-                  events.length !== previous.length
-                )
-                  this.send(
-                    client,
-                    JSON.stringify(
-                      view.compact && client.activityRevision !== -1
-                        ? ({
-                            type: 'activity-delta',
-                            scope,
-                            delta: activityDelta(previous, events),
-                          } satisfies SyncFrame)
-                        : ({
-                            type: 'activity',
-                            scope,
-                            order: events.map((event) => event.id),
-                            events: changed,
-                          } satisfies SyncFrame),
-                    ),
-                  )
-                client.scopes.set(scope, events)
+            for (const [scope, previous] of client.scopes) {
+              const cached = this.activityScopes.get(scope)
+              if (!cached) continue
+              const revision = cached.watch.revision()
+              const initial = !client.activityVersions.has(scope)
+              if (!initial && client.activityVersions.get(scope) === revision) continue
+              if (cached.revision !== revision) {
+                cached.full = this.services.activity.list('', 'task-activity', 0, scope).events
+                cached.compact = undefined
+                cached.revision = revision
               }
-              client.activityRevision = this.services.activity.revision
+              const events = client.detailScopes.has(scope)
+                ? cached.full
+                : (cached.compact ??= cached.compactEvents(cached.full))
+              const old = new Map(previous.map((event) => [event.id, event]))
+              const changed = events.filter((event) => {
+                const previous = old.get(event.id)
+                return (
+                  !previous ||
+                  event.payload !== previous.payload ||
+                  event.summary !== previous.summary ||
+                  event.time !== previous.time ||
+                  event.kind !== previous.kind ||
+                  event.scope !== previous.scope
+                )
+              })
+              if (
+                initial ||
+                changed.length ||
+                events.some((event, index) => event.id !== previous[index]?.id) ||
+                events.length !== previous.length
+              )
+                this.send(
+                  client,
+                  JSON.stringify(
+                    view.compact && !initial
+                      ? ({
+                          type: 'activity-delta',
+                          scope,
+                          delta: activityDelta(previous, events),
+                        } satisfies SyncFrame)
+                      : ({
+                          type: 'activity',
+                          scope,
+                          order: events.map((event) => event.id),
+                          events: changed,
+                        } satisfies SyncFrame),
+                  ),
+                )
+              client.scopes.set(scope, events)
+              client.activityVersions.set(scope, revision)
             }
             // Application-level heartbeat works in both browser and React Native sockets.
             if (Date.now() - client.heartbeat >= 15000) {
@@ -419,6 +546,10 @@ class RuntimeSync {
       }
     } finally {
       this.busy = false
+      if (this.dirty) {
+        this.dirty = false
+        this.wake()
+      }
     }
   }
 }

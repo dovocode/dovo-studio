@@ -10,33 +10,42 @@ devices.
 With the flag enabled, writable harness sessions receive `dovo_task pull_request_watch`:
 
 - `action: "watch", url: "https://github.com/owner/repo/pull/123"` registers the thread’s PR and
-  returns any currently failed checks. A thread has one watch; choosing another PR replaces it.
-- `action: "status"` returns the current watch and any refresh error.
-- `action: "stop"` stops the watch.
+  returns `watches` and any currently `failedChecks`. Add `repositoryId` to select an editable
+  linked project; otherwise registration uses the primary project. A thread can watch one PR per
+  repository. Choosing another PR replaces only that repository’s watch.
+- `action: "status"` returns all watches and their refresh errors. Optional `repositoryId` or `url`
+  selects a particular project or PR.
+- `action: "stop"` stops all watches, or only those selected by `repositoryId` or `url`.
 
 Registration verifies the URL against the project’s configured forge and records existing comments
 as its baseline. Dovo then checks every two minutes, reusing credential-scoped caches and the
 existing GitHub rate limiter. GitHub feedback reads skip diffs, review-thread metadata, repository
 settings and check annotations; other configured forges use their existing detail adapters. New
-conversation comments, submitted reviews, inline comments and newly failing checks are queued as
-external feedback in the same thread. An idle thread wakes through its normal message queue; an
-active turn finishes before handling that feedback. Long comments are sent as excerpts with links.
-Large batches drain over subsequent polls. Successful or pending checks do not wake the agent.
+conversation comments, edits to previously seen comments, submitted reviews, changed review
+decisions, inline comments and newly failing checks are queued as external feedback in the same
+thread. An idle thread wakes through its normal message queue; an active turn finishes before
+handling that feedback. Long comments are sent as excerpts with links. Large batches drain over
+subsequent polls. Successful or pending checks do not wake the agent.
 
 Watches and delivery cursors survive turns and runtime restarts. Re-registering the same active
 watch preserves its cursor. Queue admission and cursor updates commit together, preventing duplicate
 deliveries after a restart. Failed reads retain progress and show an error in watch status; stale or
-unavailable sections cannot generate notifications. Cache refreshes can add one polling interval to
-delivery latency.
+unavailable sections cannot generate notifications. Polls await fresh feedback and share one read
+across threads watching the same PR. Existing single-project watches migrate automatically; legacy
+comment cursors acquire edit tracking on their first fresh read without replaying old feedback.
 
 Paused queues remain paused, and read-only threads are not awakened. Finished threads with active
 watches move into **Waiting**. New actionable feedback revives them through the normal message
 queue. Settling or archiving removes their watches; restoring a thread does not restore a watch.
 Disabling the feature pauses existing watches and rejects calls from older harness sessions;
 enabling it again resumes them. A watch ends when the PR closes or merges, or is stopped explicitly.
-Changing the thread’s project stops the watch. Deleted threads’ watch records are cleaned up by the
-watcher. Agents are instructed to use this tool for requested ongoing monitoring and finish their
-turn, rather than keeping their own polling loop alive. Creating a PR alone does not start a watch.
+Changing the thread’s primary project stops its watches. Removing a linked project or changing its
+access to read-only stops only that project’s watches. One PR closing leaves the thread in Waiting
+while another watch remains active. Deleted threads’ watch records are cleaned up by the watcher.
+Automatic settlement or archiving on PR closure waits for active monitoring to end. Commands from
+retired agent turns are rejected, including registrations still waiting on a forge read. Agents are
+instructed to use this tool for requested ongoing monitoring and finish their turn, rather than
+keeping their own polling loop alive. Creating a PR alone does not start a watch.
 
 ## Linking and lifecycle
 
@@ -100,24 +109,31 @@ Enable **Pipeline watcher (experimental)** in the computer’s runtime settings 
 mobile. This is independent of PR feedback watching and off by default. Writable agents then have
 `dovo_task pipeline_watch` beside `pull_request_watch` when both features are enabled.
 
-Use `action: watch` with `runIds` containing one or more provider run IDs from the thread’s project.
-Dovo uses that project’s configured forge and account. Registration adds runs without replacing
-existing watches, accepts at most 20 active runs per thread, and returns current run details.
+Use `action: watch` with `runIds` containing one or more provider run IDs. Add `repositoryId` to
+select an editable linked project; otherwise registration uses the primary project. Dovo uses the
+selected project’s configured forge and account. Run IDs are scoped by repository, so identical IDs
+in different repositories remain independent. Registration adds runs without replacing existing
+watches, accepts at most 20 active runs per thread, and returns current run details.
 Already-finished runs are returned immediately without queuing another message. Re-registering an
-active run preserves its watch. This watches explicit runs only, never a branch or future runs.
+active run preserves its start time and updates its current status; a returned completion ends that
+watch without a duplicate queued notification. Explicit registration of a rerun invalidates older
+in-flight reads. This watches explicit runs only, never a branch or future runs.
 
 Every two minutes, the runtime checks watched runs using the existing forge adapters and caches.
 When a run fails or finishes with an actionable warning, Dovo queues its result once in the same
-thread, with available job context and links. Successful, skipped and cancelled runs finish
+thread, with available job context and links. Waiting, blocked, paused and postponed runs also queue
+an update once per status transition while monitoring continues. Failed jobs are prioritized and
+available failed step diagnostics are included. Successful, skipped and cancelled runs finish
 silently. Completion and queue admission commit together. Watches survive turns and runtime
 restarts. Unavailable or stale reads retain progress and expose an error in status. Agents should
 finish their turn after registration instead of keeping a polling loop alive.
 
-Use `action: status` or `action: stop` with optional `runIds` to select runs; omit them to select
-all watches. Finished threads with active watches move into **Waiting** on desktop/web and mobile.
-Failed runs revive them; success leaves Waiting only when no active watches remain. Paused queues
-remain paused, and read-only threads are not awakened. Settling or archiving removes both PR and
-pipeline watches; restoring a thread does not resume them. Disabling the feature pauses existing
-watches and rejects calls from older sessions; re-enabling resumes monitoring. Changing the thread’s
-project stops its watches; deleting the thread removes its watch records. Provider content is
-external data and does not override thread instructions.
+Use `action: status` or `action: stop` with optional `repositoryId` and `runIds` to select runs;
+omit both to select all watches. Finished threads with active watches move into **Waiting** on
+desktop/web and mobile. Failed runs revive them; success leaves Waiting only when no active watches
+remain. Paused queues remain paused, and read-only threads are not awakened. Settling or archiving
+removes both PR and pipeline watches; restoring a thread does not resume them. Disabling the feature
+pauses existing watches and rejects calls from older sessions; re-enabling resumes monitoring.
+Changing the thread’s primary project stops its watches. Removing a linked project or changing its
+access to read-only stops only that project’s watches; deleting the thread removes its watch
+records. Provider content is external data and does not override thread instructions.

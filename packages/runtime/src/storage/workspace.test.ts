@@ -3,6 +3,71 @@ import { expect, it, vi } from 'vite-plus/test'
 import { taskHarnessSchema, type Task, type Workspace, type WorkspacePatch } from '@dovo/protocol'
 import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
+it('persists file review versions through restarts, content ABA and removal while isolating unchanged files', () => {
+  const db = openDatabase(':memory:')
+  try {
+    let store = new WorkspaceStore(db)
+    const files = [
+      { path: 'a.ts', before: 'old', after: 'new', viewed: false },
+      { path: 'b.ts', before: 'old', after: 'new', viewed: true },
+    ]
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'review',
+          title: 'Review',
+          agentId: '',
+          repositoryId: '',
+          status: 'done',
+          createdAt: '',
+          draft: '',
+          messages: [],
+          files,
+          example: false,
+        },
+      ],
+    }))
+    const initial = store.task('review').files
+    const initialVersions = store.task('review').fileReviewVersions!
+    store.updateTask('review', (task) => ({
+      ...task,
+      files: task.files.map((file) =>
+        file.path === 'a.ts' ? { ...file, after: 'changed', viewed: true } : file,
+      ),
+    }))
+    expect(store.task('review').files[0].viewed).toBe(false)
+    expect(store.task('review').files[1]).toEqual(initial[1])
+    store = new WorkspaceStore(db)
+    store.updateTask('review', (task) => ({ ...task, files: [files[0], task.files[1]] }))
+    expect(store.task('review').fileReviewVersions?.['a.ts']).toBeGreaterThan(
+      initialVersions['a.ts'],
+    )
+    const changed = store.task('review').fileReviewVersions!['a.ts']
+    store.updateTask('review', (task) => ({ ...task, files: task.files.slice(1) }))
+    store = new WorkspaceStore(db)
+    store.updateTask('review', (task) => ({
+      ...task,
+      files: [files[0], ...task.files],
+      fileReviewVersion: 0,
+    }))
+    expect(store.task('review').fileReviewVersions?.['a.ts']).toBeGreaterThan(changed)
+    expect(store.task('review').files[1]).toEqual(initial[1])
+    const before = store.task('review').files
+    const after = before.map((file) => (file.path === 'a.ts' ? { ...file, viewed: true } : file))
+    const patch: WorkspacePatch = {
+      collection: 'tasks',
+      id: 'review',
+      changes: { files: { before, after } },
+    }
+    store.patch(patch)
+    const version = store.task('review').fileReviewVersions?.['a.ts']
+    store.patch(patch)
+    expect(store.task('review').fileReviewVersions?.['a.ts']).toBe(version)
+  } finally {
+    db.close()
+  }
+})
 
 it('retains ended children when parent access narrows and accepts old over-cap children on restart', () => {
   const db = openDatabase(':memory:')

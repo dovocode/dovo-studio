@@ -208,6 +208,10 @@ export const repositorySchema = mutableStruct({
   path: minValue(Schema.String, 1),
   branch: Schema.String,
 })
+const reviewVersionSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+)
 export const fileSchema = mutableStruct({
   path: Schema.String,
   before: Schema.String,
@@ -630,6 +634,9 @@ export const taskSchema = mutableStruct({
   lastPromptAt: Schema.optional(Schema.String),
   messages: mutableArray(messageSchema),
   files: mutableArray(fileSchema),
+  /** Runtime-owned allocator; file versions remain monotonic after removal and readdition. */
+  fileReviewVersion: Schema.optional(reviewVersionSchema),
+  fileReviewVersions: Schema.optional(Schema.Record(Schema.String, reviewVersionSchema)),
   draft: Schema.String,
   draftAttachments: Schema.optional(maxValue(mutableArray(attachmentSchema), MAX_ATTACHMENTS)),
   example: Schema.Boolean,

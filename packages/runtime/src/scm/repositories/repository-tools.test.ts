@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { mkdir, writeFile, mkdtemp, rm, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -17,7 +17,13 @@ it('pushes to the configured upstream branch, even when its name differs', async
     await writeFile(join(f.directory, 'hello.txt'), 'updated')
     await git.stage(f.directory, ['hello.txt'])
     const sha = await git.commit(f.directory, 'Update')
+    const commands = vi.spyOn(git, 'command')
     await git.push(f.directory)
+    // A tracked push uses one branch read and one combined upstream read, with no remote listing.
+    expect(commands.mock.calls.map(([, args]) => args)).toHaveLength(4)
+    expect(commands.mock.calls.filter(([, args]) => args[0] === 'branch')).toHaveLength(1)
+    expect(commands.mock.calls.filter(([, args]) => args[0] === 'for-each-ref')).toHaveLength(1)
+    commands.mockRestore()
     expect((await git.command(remote, ['rev-parse', 'refs/heads/review'])).trim()).toBe(sha)
     await git.command(f.directory, ['checkout', '-b', 'new-feature'])
     await git.push(f.directory)

@@ -14,7 +14,7 @@ export function DiffView({ patch }: { patch: string }) {
       showsBlockHeaders={false}
       style={{ flex: 1, backgroundColor: colors.surface }}
       theme={{
-        fonts: { codeSize: 12 },
+        fonts: { codeSize: 13 },
         diff: {
           displayMode: 'unified',
           backgroundColor: colors.surface,

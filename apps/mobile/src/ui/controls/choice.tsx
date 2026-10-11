@@ -36,10 +36,10 @@ export function Choice({
 
   const [open, setOpen] = useApplicationState(false),
     [search, setSearch] = useApplicationState('')
-  const { fontScale } = useWindowDimensions()
+  const { width, fontScale } = useWindowDimensions()
   const insideSheet = useInsideSheet()
-  const horizontal = row && fontScale < 1.5
-  const compactControl = compact || row
+  const horizontal = row && fontScale < 1.5 && width / fontScale >= 360
+  const compactControl = compact || horizontal
   const searchField = items.length > 6 && (
     <SearchField
       label={`Search ${label.toLowerCase()}`}
@@ -67,6 +67,7 @@ export function Choice({
               styles.row,
               {
                 minHeight: 48,
+                flexWrap: 'nowrap',
                 padding: 12,
                 opacity: disabled || item.disabled ? 0.45 : 1,
                 backgroundColor: pressed || item.id === value ? colors.selection : undefined,
@@ -83,6 +84,7 @@ export function Choice({
                 styles.text,
                 {
                   flex: 1,
+                  minWidth: 0,
                 },
               ]}
             >
@@ -190,17 +192,19 @@ export function Choice({
                     paddingHorizontal: compactControl ? 4 : 12,
                     paddingVertical: compactControl ? 8 : 12,
                     minHeight: 44,
+                    flexWrap: 'nowrap',
                     borderRadius: 12,
                     backgroundColor: pressed ? colors.selection : 'transparent',
                   },
                 ]}
               >
                 <Text
-                  numberOfLines={1}
+                  numberOfLines={compactControl ? 1 : undefined}
                   style={[
                     styles.text,
                     {
                       flex: 1,
+                      minWidth: 0,
                       fontSize: compactControl ? 15 : 17,
                       color: compactControl ? colors.accent : colors.text,
                     },

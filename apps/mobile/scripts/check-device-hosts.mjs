@@ -10,6 +10,7 @@ const mocks = {
     export const View=({children,testID})=><div data-testid={testID}>{children}</div>;
     export const Image=View;export const Platform={OS:"web"};
     export const ScrollView=View;
+    export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
     export const Alert={alert:(title,message,actions)=>actions.find(action=>action.style==='destructive')?.onPress()};
   `,
   'expo-crypto': `export const randomUUID=()=> 'host-new';`,
@@ -31,6 +32,7 @@ Object.assign(mocks, {
   '../../ui/controls/switch': mocks['../ui/controls/switch'],
   '../../runtime/connection/provider': mocks['../runtime/connection/provider'],
   '../../runtime/state/application-state': mocks['../runtime/state/application-state'],
+  '../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
   '../../ui/content/text': mocks['../ui/content/text'],
   '../../screens/settings-theme': mocks['./settings-theme'],
   '../../screens/settings-controls': mocks['./settings-controls'],
@@ -55,20 +57,26 @@ const result = await build({
       import {DeviceHostSettings} from './src/screens/device-host-settings';
       import {DevicesPane} from './src/tasks/preview/browser-pane';
       import {Effect} from 'effect';
+      import {decode,runtimeRequest} from '@dovo/protocol';
       const profile={id:'current',name:'Current runtime',connection:{address:'http://runtime-a:3000',token:'current-secret-123456789'}};
       const destination={id:'remote',name:'Mac mini',connection:{address:'http://mac-mini:3000',token:'destination-secret-123456789'}};
       let settings={hosts:[],revision:0};window.operations=[];window.failRead=false;window.deferTest=false;
+      window.fetch=async(url,options)=>{
+        new Request(url,options);
+        if(window.failRead)return Response.json({error:'Cannot load hosts'},{status:500});
+        return Response.json(settings);
+      };
       const request=async(path,input,schema,method)=>{
         window.operations.push({path,input,method});
         if(path==='/api/previews/devices')return {devices:window.previewDevices,diagnostics:[],host:'runtime-a'};
         if(path==='/api/previews/action'||path==='/api/device-hosts/forward/stop')return {ok:true};
         if(path==='/api/device-hosts/install'){if(window.installFailure)throw new Error('Install failed destination-secret-123456789');return {ok:true}}
         if(path==='/api/device-hosts/forward')return {ok:true,id:'forward-1',url:'http://127.0.0.1:4000',expiresAt:new Date(Date.now()+600000).toISOString()};
-        if(method==='GET'){if(window.failRead)throw new Error('Cannot load hosts');return structuredClone(settings)}
+        if(method==='GET')return runtimeRequest(profile.connection,profile.connection.address,path,input,schema,method);
         if(path.endsWith('/test')){if(window.testFailure)return {ok:false,checks:[{name:'Pairing',ok:false,message:'Pairing failed destination-secret-123456789'}]};if(window.deferTest)return new Promise(resolve=>window.finishTest=()=>resolve({ok:true,checks:[{name:'SSH',ok:true,message:'Ready'}]}));return {ok:true,checks:[{name:'SSH',ok:true,message:'Ready'},{name:'devices',ok:false,message:'No devices connected'}]}}
         if(input.revision!==settings.revision)throw new Error('Settings changed elsewhere');
         settings={...input,revision:settings.revision+1,hosts:input.hosts.map(({token,...host})=>({...host,hasToken:!!token || !!settings.hosts.find(saved=>saved.id===host.id)?.hasToken}))};
-        return structuredClone(settings);
+        return decode(schema,settings);
       };
       window.runtime={profile,profiles:[profile,destination],connected:true,read:request,call:request};
       window.runtime.callEffect=(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error});
@@ -115,10 +123,18 @@ try {
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: result.outputFiles[0].text })
   const button = (name) => page.getByRole('button', { name, exact: true })
+  const setHubEnabled = async (enabled) => {
+    const toggle = page.getByLabel('Enable Device Hub')
+    if ((await toggle.isChecked()) !== enabled) await toggle.click()
+    await page.waitForFunction((enabled) => {
+      const toggle = document.querySelector('input[aria-label="Enable Device Hub"]')
+      return toggle.checked === enabled && !toggle.disabled
+    }, enabled)
+  }
   await page.getByLabel('Enable Device Hub').waitFor()
   assert.equal(await page.getByLabel('Enable Device Hub').isChecked(), false)
   assert.equal(await button('Add device host').count(), 0)
-  await page.getByLabel('Enable Device Hub').check()
+  await setHubEnabled(true)
   await button('Add device host').click()
   await page.getByLabel('Device host name').fill('Remote Mac')
   await page.getByLabel('Paired destination computer').selectOption('remote')
@@ -143,9 +159,9 @@ try {
         (button) => button.textContent === 'Save device host',
       ).disabled,
   )
-  await page.getByLabel('Enable Device Hub').uncheck()
+  await setHubEnabled(false)
   await page.getByLabel('Device host name').waitFor({ state: 'hidden' })
-  await page.getByLabel('Enable Device Hub').check()
+  await setHubEnabled(true)
   assert.equal(await page.getByLabel('Device host name').inputValue(), 'Remote Mac')
   assert.equal(await button('Save device host').isDisabled(), false)
   await page.getByLabel('SSH port').fill('2222')
@@ -169,9 +185,9 @@ try {
   await page.waitForFunction(() =>
     window.operations.some((op) => op.input?.defaultHostId === 'host-new'),
   )
-  await page.getByLabel('Enable Device Hub').uncheck()
+  await setHubEnabled(false)
   assert.equal(await button('Remote Mac').count(), 0)
-  await page.getByLabel('Enable Device Hub').check()
+  await setHubEnabled(true)
   await button('Remote Mac').waitFor()
   assert.equal(await page.getByLabel('Default device host').inputValue(), 'host-new')
   const toggled = await page.evaluate(

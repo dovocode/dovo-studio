@@ -9,7 +9,13 @@ const guest = (
 const app = new App({ name:'Fixture', version:'1' }, {tools:{listChanged:true}});
 app.registerTool('selection', {description:'Read selection',inputSchema:z.object({}),annotations:{readOnlyHint:true}}, async()=>({content:[{type:'text',text:document.querySelector('#result').textContent}]}));
 app.ontoolresult = (result) => { document.querySelector('#result').textContent = result.structuredContent.count; };
-document.querySelector('button').onclick = async () => { const result = await app.callServerTool({ name: 'refresh', arguments: {} }); document.querySelector('#result').textContent = result.structuredContent.count; };
+document.querySelector('button').onclick = async () => {
+  const controller = new AbortController(); window.cancelFixtureTool = () => controller.abort();
+  try {
+    const result = await app.callServerTool({ name: 'refresh', arguments: {} }, { signal: controller.signal, ...(window.fixtureRequestTimeout ? { timeout: window.fixtureRequestTimeout } : {}) });
+    document.querySelector('#result').textContent = result.structuredContent.count;
+  } catch (error) { document.querySelector('#result').textContent = 'Cancelled'; window.fixtureError = String(error); }
+};
 await app.connect();`,
       resolveDir: 'packages/studio-ui',
       sourcefile: 'guest.ts',
@@ -74,6 +80,82 @@ try {
     .frames()
     .at(-1)
     .waitForFunction(() => document.querySelector('#result')?.textContent === '2')
+  const firstRequestId = request.requestId
+  await page.evaluate(() => {
+    window.appDeadlines = []
+    window.originalTimeout = window.setTimeout
+    window.originalInterval = window.setInterval
+    window.originalClearInterval = window.clearInterval
+    window.heartbeats = new Set()
+    window.setInterval = (callback, ms, ...args) => {
+      const id = window.originalInterval(callback, ms === 20000 ? ms / 1000 : ms, ...args)
+      if (ms === 20000) window.heartbeats.add(id)
+      return id
+    }
+    window.clearInterval = (id) => {
+      window.heartbeats.delete(id)
+      return window.originalClearInterval(id)
+    }
+    window.setTimeout = (callback, ms, ...args) => {
+      if (ms === 600000 || ms === 750000) {
+        window.appDeadlines.push(ms)
+        return window.originalTimeout(callback, ms / 1000, ...args)
+      }
+      return window.originalTimeout(callback, ms, ...args)
+    }
+  })
+  await page
+    .frames()
+    .at(-1)
+    .evaluate(() => {
+      window.fixtureRequestTimeout = 250
+    })
+  await page.frameLocator('iframe').frameLocator('iframe').locator('button').click()
+  await page.waitForFunction(
+    (first) =>
+      window.reports.some(
+        (r) => r.type === 'request' && r.method === 'tools/call' && r.requestId !== first,
+      ),
+    firstRequestId,
+  )
+  const slowRequest = await page.evaluate(
+    (first) =>
+      window.reports.find(
+        (r) => r.type === 'request' && r.method === 'tools/call' && r.requestId !== first,
+      ),
+    firstRequestId,
+  )
+  if (await page.evaluate(() => window.appDeadlines.at(-1) !== 750000))
+    throw new Error('MCP App host deadline does not include approval and tool execution')
+  // An approval just before ten minutes still leaves time for the tool to complete.
+  await new Promise((resolve) => setTimeout(resolve, 650))
+  await page.evaluate((request) => {
+    window.setTimeout = window.originalTimeout
+    window.dovoMcpReply({
+      nonce: 'test-nonce',
+      requestId: request.requestId,
+      result: { content: [], structuredContent: { count: 3 } },
+    })
+  }, slowRequest)
+  await page
+    .frames()
+    .at(-1)
+    .waitForFunction(() => document.querySelector('#result')?.textContent === '3')
+  if (await page.evaluate(() => window.heartbeats.size !== 0))
+    throw new Error('Completed MCP App calls retained progress timers')
+  if (
+    await page.evaluate(
+      (id) => window.reports.some((r) => r.method === 'ui/cancel' && r.params?.requestId === id),
+      slowRequest.requestId,
+    )
+  )
+    throw new Error('MCP App host cancelled a tool before its full deadline')
+  await page
+    .frames()
+    .at(-1)
+    .evaluate(() => {
+      window.fixtureRequestTimeout = undefined
+    })
   await page.waitForFunction(() =>
     window.reports.some(
       (r) => r.type === 'app-tools' && r.tools.some((t) => t.name === 'selection'),
@@ -103,7 +185,7 @@ try {
   const selection = await page.evaluate(() =>
     window.reports.find((r) => r.type === 'app-tool-result' && r.requestId === 'selection-1'),
   )
-  if (selection.result?.content?.[0]?.text !== '2')
+  if (selection.result?.content?.[0]?.text !== '3')
     throw new Error('App tool did not read live selection')
   if (await page.evaluate(() => window.reports.some((r) => r.requestId === 'wrong')))
     throw new Error('App tool accepted wrong view nonce')
@@ -125,7 +207,39 @@ try {
     }
   })
   if (!blocked) throw new Error('Undeclared network access was allowed')
-  console.log('MCP Apps handshake, result, interactive action, native isolation and CSP passed')
+  await page.frameLocator('iframe').frameLocator('iframe').locator('button').click()
+  const completedIds = [request.requestId, slowRequest.requestId]
+  await page.waitForFunction(
+    (ids) =>
+      window.reports.some(
+        (r) => r.type === 'request' && r.method === 'tools/call' && !ids.includes(r.requestId),
+      ),
+    completedIds,
+  )
+  const cancelled = await page.evaluate(
+    (ids) =>
+      window.reports.find(
+        (r) => r.type === 'request' && r.method === 'tools/call' && !ids.includes(r.requestId),
+      ),
+    completedIds,
+  )
+  await guestFrame.evaluate(() => window.cancelFixtureTool())
+  await page.waitForFunction(
+    (id) => window.reports.some((r) => r.method === 'ui/cancel' && r.params?.requestId === id),
+    cancelled.requestId,
+  )
+  await guestFrame.waitForFunction(
+    () => document.querySelector('#result')?.textContent === 'Cancelled',
+  )
+  if (await page.evaluate(() => window.heartbeats.size !== 0))
+    throw new Error('Cancelled MCP App calls retained progress timers')
+  await page.evaluate(() => {
+    window.setInterval = window.originalInterval
+    window.clearInterval = window.originalClearInterval
+  })
+  console.log(
+    'MCP Apps handshake, slow approval/tool result, cancellation, isolation and CSP passed',
+  )
   for (const format of ['html', 'remote-dom', 'url']) {
     const legacyPage = await browser.newPage()
     await legacyPage.route('http://fixture.test/**', (route) =>

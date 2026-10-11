@@ -1,16 +1,17 @@
+import { changedFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
+import { useFileReview } from '../../scm/review/use-file-review'
+import { MobileFileReview } from '../../scm/review/file-review'
 import { useConversationSelector } from '../conversation/state/provider'
 import { SavedFilePreview } from '../files/saved-file-preview'
 import { checkpointFiles, filePreviewLabel } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { mutableStruct } from '@dovo/protocol'
 import { Choice } from '../../ui/controls/choice'
 import { useMemo, useEffect, useState } from 'react'
 import { Alert, ScrollView, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { createTwoFilesPatch, FILE_HEADERS_ONLY } from 'diff'
-import { Schema } from 'effect'
 import { responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
@@ -20,12 +21,17 @@ import { useAction } from '../../ui/controls/use-action'
 import { DiffView } from '../preview/diff-view'
 import { PullStatus } from './pull-status'
 import { CommitSection } from './commit-section'
+export type FileEditDraft = { path: string; contents: string; expected: string }
 export function TaskReview({
   initialCheckpoint = '',
   initialPath = '',
+  edit,
+  onEditChange: setEdit,
 }: {
   initialCheckpoint?: string
   initialPath?: string
+  edit: FileEditDraft | null
+  onEditChange: (draft: FileEditDraft | null) => void
 }) {
   const { styles } = useTheme()
 
@@ -63,7 +69,7 @@ export function TaskReview({
       active = false
     }
   }, [call, task.id, checkoutId, checkpoint, loadKey])
-  const files = useMemo(
+  const sourceFiles = useMemo(
     () =>
       checkpoint
         ? history
@@ -76,12 +82,43 @@ export function TaskReview({
           : task.files,
     [checkpoint, history, task.files, checkoutId, linkedFiles, loadKey],
   )
-  const [path, setPath] = useApplicationState(initialPath),
-    [edit, setEdit] = useApplicationState<{
-      path: string
-      contents: string
-      expected: string
-    } | null>(null)
+  const fingerprints = useMemo(
+    () => new Map(sourceFiles.map((file) => [file.path, changedFileFingerprint(file)])),
+    [sourceFiles],
+  )
+  const review = useFileReview(
+    {
+      kind: 'task',
+      taskId: task.id,
+      source: checkpoint ? 'turn' : 'working',
+      turnId: checkpoint || undefined,
+      checkoutId: checkoutId || undefined,
+    },
+    JSON.stringify([...fingerprints]),
+  )
+  const [related, setRelated] = useState(true),
+    [toolsOpen, setToolsOpen] = useState(false)
+  const files = useMemo(
+    () =>
+      orderReviewFiles(
+        sourceFiles.map((file) => ({
+          ...file,
+          viewed:
+            !checkpoint && !checkoutId
+              ? file.viewed
+              : (reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+                  ?.viewed ?? false),
+        })),
+        review.progress?.groups ?? [],
+        related,
+      ),
+    [sourceFiles, fingerprints, review.progress, related, checkpoint, checkoutId],
+  )
+  const stats = useMemo(
+    () => new Map(sourceFiles.map((file) => [file.path, fileStats(file)])),
+    [sourceFiles],
+  )
+  const [path, setPath] = useApplicationState(edit?.path ?? initialPath)
   const file = files.find((file) => file.path === path) ?? files[0]
   const patch = useMemo(
     () =>
@@ -90,7 +127,7 @@ export function TaskReview({
             headerOptions: FILE_HEADERS_ONLY,
           })
         : '',
-    [file],
+    [file?.path, file?.preview, file?.before, file?.after],
   )
   const refresh = () =>
     call(
@@ -111,27 +148,29 @@ export function TaskReview({
           },
         ]}
       >
-        <Choice
-          label="Project checkout"
-          value={checkoutId}
-          disabled={!!edit}
-          items={[
-            { id: '', name: 'Primary checkout' },
-            ...((checkpoint
-              ? selectedTurn?.linked?.map((item) => ({
-                  id: item.checkoutId,
-                  name: `${item.repositoryName ?? item.repositoryId} · ${item.branch ?? 'Linked checkout'}`,
-                }))
-              : task.linkedCheckouts?.map((item) => ({
-                  id: item.id,
-                  name: `${snapshot?.workspace.repositories.find((repo) => repo.id === item.repositoryId)?.name ?? item.repositoryId} · ${item.branch ?? item.execution}`,
-                }))) ?? []),
-          ]}
-          onChange={(id) => {
-            setCheckoutId(id)
-            setPath('')
-          }}
-        />
+        {!!(checkpoint ? selectedTurn?.linked?.length : task.linkedCheckouts?.length) && (
+          <Choice
+            label="Project checkout"
+            value={checkoutId}
+            disabled={!!edit}
+            items={[
+              { id: '', name: 'Primary checkout' },
+              ...((checkpoint
+                ? selectedTurn?.linked?.map((item) => ({
+                    id: item.checkoutId,
+                    name: `${item.repositoryName ?? item.repositoryId} · ${item.branch ?? 'Linked checkout'}`,
+                  }))
+                : task.linkedCheckouts?.map((item) => ({
+                    id: item.id,
+                    name: `${snapshot?.workspace.repositories.find((repo) => repo.id === item.repositoryId)?.name ?? item.repositoryId} · ${item.branch ?? item.execution}`,
+                  }))) ?? []),
+            ]}
+            onChange={(id) => {
+              setCheckoutId(id)
+              setPath('')
+            }}
+          />
+        )}
         {!!checkoutId && !checkpoint && linkedFiles?.key === loadKey && !!linkedFiles.error && (
           <Text style={styles.error}>{linkedFiles.error}</Text>
         )}
@@ -163,33 +202,44 @@ export function TaskReview({
             Snapshot diff for this turn. Select Current changes to edit files.
           </Text>
         )}
-        {!checkoutId && !checkpoint && <CommitSection task={task} />}
+        {toolsOpen && !checkoutId && !checkpoint && <CommitSection task={task} />}
         <View style={styles.row}>
           <Action
             secondary
             label="Refresh changes"
-            disabled={!connected || busy || task.example || !!edit || !!checkpoint || !!checkoutId}
-            onPress={() => act(refresh)}
+            disabled={!connected || busy || task.example || !!edit || !!checkpoint}
+            onPress={() =>
+              act(async () => {
+                const result = await refresh()
+                if (checkoutId) setLinkedFiles({ key: loadKey, files: result.files, error: '' })
+                review.reload()
+              })
+            }
           />
-          {file && (
+          <Action
+            secondary
+            label={toolsOpen ? 'Fewer actions' : 'More actions'}
+            disabled={!!edit}
+            onPress={() => setToolsOpen((value) => !value)}
+          />
+          {edit ? (
+            <Action label="Cancel edit" secondary disabled={busy} onPress={() => setEdit(null)} />
+          ) : file && toolsOpen ? (
             <Action
-              label={edit ? 'Cancel edit' : 'Edit file'}
+              label="Edit file"
               secondary
-              disabled={busy || !!checkpoint || !!checkoutId}
-              onPress={() =>
-                setEdit(
-                  edit
-                    ? null
-                    : {
-                        path: file.path,
-                        contents: file.after,
-                        expected: file.diskContents ?? file.after,
-                      },
-                )
-              }
+              disabled={busy || !!checkpoint || !!checkoutId || !!file.preview}
+              onPress={() => {
+                setPath(file.path)
+                setEdit({
+                  path: file.path,
+                  contents: file.after,
+                  expected: file.diskContents ?? file.after,
+                })
+              }}
             />
-          )}
-          {file && !edit && (!checkpoint || !history?.undone) && (
+          ) : null}
+          {toolsOpen && file && !edit && (!checkpoint || !history?.undone) && (
             <Action
               secondary
               label={checkpoint ? 'Revert this file' : 'Discard file changes'}
@@ -224,41 +274,6 @@ export function TaskReview({
               }
             />
           )}
-          {file && !edit && (
-            <Action
-              secondary
-              label={file.viewed ? 'Viewed' : 'Mark viewed'}
-              disabled={!connected || busy || !!checkpoint || !!checkoutId}
-              onPress={() =>
-                act(() =>
-                  callEffect(
-                    '/api/workspace',
-                    {
-                      collection: 'tasks',
-                      id: task.id,
-                      changes: {
-                        files: {
-                          before: task.files,
-                          after: task.files.map((f) =>
-                            f.path === file.path
-                              ? {
-                                  ...f,
-                                  viewed: !f.viewed,
-                                }
-                              : f,
-                          ),
-                        },
-                      },
-                    },
-                    mutableStruct({
-                      revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
-                    }),
-                    'PATCH',
-                  ),
-                )
-              }
-            />
-          )}
         </View>
       </View>
       {!!files.length && (
@@ -268,20 +283,36 @@ export function TaskReview({
             paddingBottom: 8,
           }}
         >
-          <Choice
-            label="Changed file"
-            value={file?.path ?? ''}
-            disabled={!!edit}
-            items={files.map((entry) => {
-              const stats = fileStats(entry)
-              const parts = entry.path.split('/')
-              const name = parts.pop() ?? entry.path
+          <MobileFileReview
+            files={files.map((file) => {
+              const amounts = stats.get(file.path)
               return {
-                id: entry.path,
-                name: `${entry.viewed ? '✓ ' : ''}${name} ${entry.preview ? filePreviewLabel(entry) : `+${stats.additions} -${stats.deletions}`}${parts.length ? ` · ${parts.join('/')}` : ''}`,
+                path: file.path,
+                viewed: file.viewed,
+                label: file.preview
+                  ? filePreviewLabel(file)
+                  : `+${amounts?.additions ?? 0} −${amounts?.deletions ?? 0}`,
               }
             })}
-            onChange={setPath}
+            groups={review.progress?.groups ?? []}
+            related={related}
+            onRelatedChange={setRelated}
+            selected={file?.path ?? ''}
+            onSelect={setPath}
+            onViewed={(viewed) => {
+              if (file) review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
+            }}
+            disabled={
+              !review.ready ||
+              !!edit ||
+              !!task.example ||
+              !file ||
+              !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+            }
+            busy={review.busy}
+            navigationDisabled={!!edit}
+            error={review.error}
+            onRetry={review.reload}
           />
         </View>
       )}
@@ -292,6 +323,7 @@ export function TaskReview({
           <Field
             label={edit.path}
             value={edit.contents}
+            editable={!busy}
             onChangeText={(contents) =>
               setEdit({
                 ...edit,
@@ -346,7 +378,7 @@ export function TaskReview({
           checkoutId={checkoutId || undefined}
         />
       ) : (
-        <DiffView patch={patch} />
+        <DiffView key={`${checkpoint}:${checkoutId}:${file?.path}`} patch={patch} />
       )}
       {!!error && (
         <Text

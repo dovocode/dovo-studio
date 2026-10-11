@@ -3,6 +3,7 @@ import { build } from 'esbuild'
 import { chromium } from 'playwright'
 const resolveDir = new URL('../apps/mobile/', import.meta.url).pathname
 const controls = `
+import {Effect} from 'effect';
 export const View=({children})=><div>{children}</div>;
 export const ScrollView=View;
 export const Text=({children})=><span>{children}</span>;
@@ -13,8 +14,8 @@ export const Action=({label,onPress})=><button onClick={onPress}>{label}</button
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const useTheme=()=>({styles:{},colors:{}});
 export const taskImageReadSchema={};
-export const runClientEffect=value=>Promise.resolve(value);
-export const useRuntime=()=>({connected:true,connection:{address:'http://paired-runtime',token:'paired-token'},callEffect:window.call});
+const readEffect=(path,input)=>Effect.tryPromise({try:signal=>window.call(path,input,signal),catch:reason=>reason});
+export const useRuntime=()=>({connected:true,connection:{address:'http://paired-runtime',token:'paired-token'},readEffect,callEffect:()=>{throw Error('Image reads must not refresh the workspace')}});
 `
 const built = await build({
   stdin: {
@@ -23,8 +24,8 @@ const built = await build({
     contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {ServerImage} from './src/ui/content/server-image';
-window.requests=[];window.fail=true;window.pending={};
-window.call=(path,input)=>{window.requests.push({path,input});if(window.fail)return Promise.reject(new Error('Temporary image failure'));if(input.path==='slow.png')return new Promise(resolve=>window.pending.slow=resolve);return Promise.resolve({uri:window.png})};
+window.requests=[];window.aborted=[];window.fail=true;window.pending={};
+window.call=(path,input,signal)=>{window.requests.push({path,input});if(window.fail)return Promise.reject(new Error('Temporary image failure'));if(input.path==='slow.png')return new Promise(resolve=>{window.pending.slow=resolve;signal.addEventListener('abort',()=>window.aborted.push(input.path),{once:true})});return Promise.resolve({uri:window.png})};
 function App(){const [path,setPath]=useState('shot.png');window.setPath=setPath;return <ServerImage source={{taskId:'task',path}} label="Screenshot"/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
   },
@@ -34,7 +35,6 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       setup(builder) {
         const paths = new Set([
           'react-native',
-          '@dovo/client-runtime',
           '@dovo/protocol',
           '../../runtime/connection/provider',
           '../theme',
@@ -78,7 +78,7 @@ try {
   await page.waitForFunction(() => document.querySelector('img')?.naturalWidth === 1)
   assert.deepEqual(await page.evaluate(() => window.requests[0]), {
     path: '/api/tasks/images/read',
-    input: { taskId: 'task', path: 'shot.png' },
+    input: { taskId: 'task', path: 'shot.png', maxSize: 1024 },
   })
   await page.getByRole('button', { name: 'Open Screenshot' }).click()
   await page.getByRole('dialog').waitFor()
@@ -86,12 +86,13 @@ try {
   await page.evaluate(() => window.setPath('slow.png'))
   await page.getByText('Loading Screenshot').waitFor()
   await page.evaluate(() => window.setPath('new.png'))
+  await page.waitForFunction(() => window.aborted.includes('slow.png'))
   await page.waitForFunction(() => document.querySelector('img')?.naturalWidth === 1)
   await page.evaluate(() => window.pending.slow({ uri: 'data:image/png;base64,broken' }))
   assert.equal(await page.locator('img').getAttribute('src'), await page.evaluate(() => window.png))
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile server image checks passed: runtime reads, visible errors, retry, decoded image, preview, and stale-response isolation.',
+    'Mobile server image checks passed: bounded runtime reads, visible errors, retry, decoded image, preview, cancellation, and stale-response isolation.',
   )
 } finally {
   await browser.close()

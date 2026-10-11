@@ -42,5 +42,6 @@ export function createGrokAdapter(): AgentAdapter {
       return acp.run({ ...run, acpLaunch: grokLaunch(run.agent) })
     },
     dispose: acp.dispose,
+    releaseTask: acp.releaseTask,
   }
 }

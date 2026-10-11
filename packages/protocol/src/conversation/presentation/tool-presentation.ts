@@ -48,6 +48,7 @@ export function toolPresentation(
   payload: string,
   summary: string,
   inputPayload?: string,
+  parsed?: unknown,
 ): ToolPresentation {
   const cached = presentations.get(payload)
   if (cached?.summary === summary && cached.inputPayload === inputPayload) {
@@ -59,7 +60,7 @@ export function toolPresentation(
     presentations.delete(payload)
     presentationChars -= cached.size
   }
-  const result = Object.freeze(computePresentation(payload, summary, inputPayload))
+  const result = Object.freeze(computePresentation(payload, summary, inputPayload, parsed))
   const size =
     payload.length +
     summary.length +
@@ -86,8 +87,8 @@ function computePresentation(
   payload: string,
   summary: string,
   inputPayload?: string,
+  parsed: unknown = parse(payload),
 ): ToolPresentation {
-  const parsed = parse(payload)
   if (parsed === undefined)
     return {
       title: summary,

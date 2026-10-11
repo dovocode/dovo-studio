@@ -1,5 +1,13 @@
 import { expect, it } from 'vite-plus/test'
-import { cachedThread, retainCachedThreads, boundedSnapshotCache } from './thread-cache.js'
+import {
+  cachedThread,
+  cachedRuntimeThread,
+  retainCachedThreads,
+  boundedSnapshotCache,
+  writeRuntimeSnapshotCache,
+} from './thread-cache.js'
+import { createRuntimeReadCache, type CacheStorage } from './read-cache.js'
+import { Effect } from 'effect'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from '../connection/runtime.js'
 import type { Task } from '../../workspace.js'
@@ -35,6 +43,63 @@ const snapshot = (tasks: Task[], detailTaskIds?: string[]) =>
     devices: [],
     pendingDevices: [],
   })
+it('shares the bounded decoded writer replica without restoring removed history or another cache binding', async () => {
+  const entries = new Map<string, string>()
+  const storage: CacheStorage = {
+    async getItem(key) {
+      return entries.get(key) ?? null
+    },
+    async setItem(key, value) {
+      entries.set(key, value)
+    },
+    async removeItem(key) {
+      entries.delete(key)
+    },
+    async removePrefix(prefix) {
+      for (const key of entries.keys()) if (key.startsWith(prefix)) entries.delete(key)
+    },
+  }
+  const cache = createRuntimeReadCache(
+    { address: 'http://host', token: 'one' },
+    storage,
+    async (value) => value,
+  )
+  const other = createRuntimeReadCache(
+    { address: 'http://host', token: 'two' },
+    storage,
+    async (value) => value,
+  )
+  try {
+    const saved = snapshot([task('a')], ['a'])
+    await Effect.runPromise(
+      writeRuntimeSnapshotCache(cache, { snapshot: saved, lastSeen: null, pulls: null }),
+    )
+    expect(cachedRuntimeThread(cache, 'a')).toBe(saved.workspace.tasks[0])
+    expect(cachedRuntimeThread(other, 'a')).toBeUndefined()
+    await cache.close()
+    expect(cachedRuntimeThread(cache, 'a')).toBeUndefined()
+    const reopened = createRuntimeReadCache(
+      { address: 'http://host', token: 'one' },
+      storage,
+      async (value) => value,
+    )
+    await Effect.runPromise(
+      writeRuntimeSnapshotCache(reopened, { snapshot: saved, lastSeen: null, pulls: null }),
+    )
+    await Effect.runPromise(
+      writeRuntimeSnapshotCache(reopened, {
+        snapshot: snapshot([{ ...task('a'), historyRevision: 1, messages: [] }], []),
+        lastSeen: null,
+        pulls: null,
+      }),
+    )
+    expect(cachedRuntimeThread(reopened, 'a')).toBeUndefined()
+    await reopened.close()
+  } finally {
+    await cache.close()
+    await other.close()
+  }
+})
 it('bounds persisted thread details while preserving metadata and prioritizing the latest selections', () => {
   const tasks = Array.from({ length: 30 }, (_, index) => task(String(index)))
   const bounded = boundedSnapshotCache(snapshot(tasks, tasks.map((task) => task.id).reverse()))

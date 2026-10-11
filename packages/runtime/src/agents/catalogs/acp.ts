@@ -58,14 +58,15 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
     if (agent.acpMode) {
       if (!session.modes?.availableModes.some((mode) => mode.id === agent.acpMode))
         throw new Error('This ACP agent does not advertise the selected mode')
-      await acpControl(
-        connection,
-        connection.rpc.request(methods.agent.session.setMode, {
-          sessionId: session.sessionId,
-          modeId: agent.acpMode,
-        }),
-        'mode selection',
-      )
+      if (session.modes.currentModeId !== agent.acpMode)
+        await acpControl(
+          connection,
+          connection.rpc.request(methods.agent.session.setMode, {
+            sessionId: session.sessionId,
+            modeId: agent.acpMode,
+          }),
+          'mode selection',
+        )
       config = updatedConfig ?? config
     }
     const legacy = legacyAcpModels(session)
@@ -79,7 +80,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
           isDefault: model.modelId === legacy?.currentModelId,
         }))
     const modelOption = config?.find((item) => item.category === 'model' && item.type === 'select')
-    if (agent.model && modelOption) {
+    if (agent.model && modelOption && modelOption.currentValue !== agent.model) {
       config = (
         await acpControl(
           connection,
@@ -95,14 +96,15 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
     if (agent.model && !modelOption) {
       if (!legacy?.availableModels.some((model) => model.modelId === agent.model))
         throw new Error('ACP agent does not offer the selected model')
-      await acpControl(
-        connection,
-        connection.rpc.request('session/set_model', {
-          sessionId: session.sessionId,
-          modelId: agent.model,
-        }),
-        'model selection',
-      )
+      if (legacy.currentModelId !== agent.model)
+        await acpControl(
+          connection,
+          connection.rpc.request('session/set_model', {
+            sessionId: session.sessionId,
+            modelId: agent.model,
+          }),
+          'model selection',
+        )
     }
     for (const [configId, value] of Object.entries(agent.acpConfig ?? {})) {
       const option = config?.find((item) => item.id === configId)
@@ -110,6 +112,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
       if (option.type === 'boolean') {
         if (value !== 'true' && value !== 'false')
           throw new Error(`ACP configuration ${configId} must be true or false`)
+        if (option.currentValue === (value === 'true')) continue
         config = (
           await acpControl(
             connection,
@@ -128,6 +131,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
         )
         if (!choices.some((item) => item.value === value))
           throw new Error(`ACP configuration ${configId} does not offer ${value}`)
+        if (option.currentValue === value) continue
         config = (
           await acpControl(
             connection,

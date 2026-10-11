@@ -1,10 +1,11 @@
 import { checkpointFileCount, runtimeComputerName } from '@dovo/protocol'
+import { conversationPageSchema, readConversationHistory, runtimeRequest } from '@dovo/protocol'
 import {
-  conversationPageSchema,
-  mergeConversationHistory,
-  type ConversationPage,
+  cachedThread,
+  cachedRuntimeThread,
+  runtimeSnapshotCacheSchema,
+  watchRuntimeTask,
 } from '@dovo/protocol'
-import { cachedThread, runtimeSnapshotCacheSchema, watchRuntimeTask } from '@dovo/protocol'
 import {
   canChangeTaskCheckout,
   REVIEW_PROMPT,
@@ -37,7 +38,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native'
-import { useEffect, useState, type ComponentProps } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } from 'react'
 import { Text } from '../../ui/content/text'
 import { type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -46,7 +47,7 @@ import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 import { ScreenHeader, type HeaderAction } from '../../ui/layout/screen-header'
 import { Composer } from '../composer/composer'
-import { TaskReview } from './task-review'
+import { TaskReview, type FileEditDraft } from './task-review'
 import { TerminalPane } from '../../terminal/terminal-pane'
 import { TaskSource } from './task-source'
 import { useTaskViewed } from './use-task-viewed'
@@ -95,8 +96,11 @@ export function TaskDetail({
     error: string
   } | null>(null)
   const [cached, setCached] = useState<{ cache: typeof readCache; task: Task } | null>(null)
+  const revision = task.historyRevision ?? 0
+  const replica = readCache ? cachedRuntimeThread(readCache, task.id) : undefined
+  const retained = replica && (replica.historyRevision ?? 0) === revision ? replica : undefined
   useEffect(() => {
-    if (loaded || !readCache) return
+    if (loaded || !readCache || retained) return
     let stopped = false
     void readCache
       .read('snapshot', runtimeSnapshotCacheSchema)
@@ -117,9 +121,14 @@ export function TaskDetail({
     return () => {
       stopped = true
     }
-  }, [loaded, readCache, task.id])
-  const available = cached?.cache === readCache && cached?.task.id === task.id
-  if (!loaded && !available)
+  }, [loaded, readCache, task.id, revision, retained])
+  const available =
+    !readCache?.closed &&
+    cached?.cache === readCache &&
+    cached?.task.id === task.id &&
+    (cached.task.historyRevision ?? 0) === revision
+  const history = retained ?? (available ? cached?.task : undefined)
+  if (!loaded && !history)
     return (
       <View style={{ flex: 1, justifyContent: 'center', gap: 12, padding: 20 }}>
         <ScreenHeader title={task.title} onBack={onBack} />
@@ -136,7 +145,7 @@ export function TaskDetail({
     )
   return (
     <TaskDetailContent
-      task={!loaded && available ? cachedThread(task, cached.task) : task}
+      task={!loaded && history ? cachedThread(task, history) : task}
       onBack={onBack}
       questionId={questionId}
       startup={startup}
@@ -159,7 +168,7 @@ function TaskDetailContent({
   const { focused, navigate } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const { snapshot, connected, profiles, profile, callEffect, read, activeId } = useRuntime()
+  const { snapshot, connected, profiles, profile, callEffect, activeId } = useRuntime()
   const worktreeThread = useAction()
   const worktreeActions: HeaderAction[] =
     task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
@@ -188,6 +197,7 @@ function TaskDetailContent({
   const retry = useAction()
   const sideChatKey = `${activeId}:${task.id}`
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
+  const [fileDrafts, setFileDrafts] = useState<Record<string, FileEditDraft | null>>({})
   const [asking, setAsking] = useApplicationState(false)
   const [editingInstructions, setEditingInstructions] = useApplicationState(false)
   const review = useAction()
@@ -233,6 +243,17 @@ function TaskDetailContent({
       }))
     : []
   const copyConversation = useAction()
+  const copyOperation = useRef<AbortController | null>(null)
+  useLayoutEffect(() => {
+    if (!focused) copyOperation.current?.abort()
+    return () => copyOperation.current?.abort()
+  }, [
+    focused,
+    profile?.connection.address,
+    profile?.connection.token,
+    task.id,
+    task.historyRevision,
+  ])
   useEffect(() => {
     if (copyConversation.error) Alert.alert('Could not copy conversation', copyConversation.error)
   }, [copyConversation.error])
@@ -277,19 +298,36 @@ function TaskDetailContent({
           disabled: copyConversation.busy || (!!task.historyBefore && !connected),
           onPress: () =>
             copyConversation.act(async () => {
-              const pages: ConversationPage[] = []
-              let before = task.historyBefore
-              while (before) {
-                const page = await read(
-                  '/api/tasks/history',
-                  { id: task.id, before },
-                  conversationPageSchema,
+              if (!focused || copyOperation.current) return
+              const operation = new AbortController()
+              copyOperation.current = operation
+              try {
+                const transcript = await readConversationHistory(
+                  task,
+                  (before, signal) => {
+                    if (!profile || !connected)
+                      throw new Error('Reconnect to copy the full conversation.')
+                    return runtimeRequest(
+                      profile.connection,
+                      profile.connection.address,
+                      '/api/tasks/history',
+                      { id: task.id, before },
+                      conversationPageSchema,
+                      'POST',
+                      undefined,
+                      signal,
+                    )
+                  },
+                  operation.signal,
                 )
-                pages.unshift(page)
-                before = page.before
+                if (operation.signal.aborted) return
+                const result = await copyText(taskTranscript(transcript))
+                if (result === 'copied') AccessibilityInfo.announceForAccessibility('Copied')
+              } catch (cause) {
+                if (!operation.signal.aborted) throw cause
+              } finally {
+                if (copyOperation.current === operation) copyOperation.current = null
               }
-              const result = await copyText(taskTranscript(mergeConversationHistory(task, pages)))
-              if (result === 'copied') AccessibilityInfo.announceForAccessibility('Copied')
             }),
         },
       ]
@@ -400,6 +438,7 @@ function TaskDetailContent({
   >('chat')
   // Keep Git controls reachable after committing, including push-only retries.
   const hasDiff =
+    !!fileDrafts[sideChatKey] ||
     (!!repository && !repository.kind) ||
     !!task.pullStatus ||
     !!task.linkedPullRequests?.length ||
@@ -821,7 +860,14 @@ function TaskDetailContent({
           <DevicesPane taskId={task.id} expanded={expandedPreview} onExpand={setExpandedPreview} />
         )}
         {pane === 'diff' && (
-          <TaskReview initialCheckpoint={checkpoint} initialPath={checkpointPath} />
+          <TaskReview
+            initialCheckpoint={checkpoint}
+            initialPath={checkpointPath}
+            edit={fileDrafts[sideChatKey] ?? null}
+            onEditChange={(draft) =>
+              setFileDrafts((current) => ({ ...current, [sideChatKey]: draft }))
+            }
+          />
         )}
         {pane === 'terminal' && (
           <TerminalPane task={task} selected={terminalId} onSelect={setTerminalId} />

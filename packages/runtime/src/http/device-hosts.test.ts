@@ -22,7 +22,7 @@ it('authenticates taskless foreign sessions, isolates paired device/task ownersh
     close,
     start: () => () => {},
   })
-  vi.spyOn(discovery, 'previewDevices').mockResolvedValue({
+  const discover = vi.spyOn(discovery, 'previewDevices').mockResolvedValue({
     host: 'B',
     diagnostics: [],
     devices: [
@@ -49,6 +49,17 @@ it('authenticates taskless foreign sessions, isolates paired device/task ownersh
   expect((await call('/api/device-host/devices', { taskId: 'foreign' }, 'bad')).status).toBe(401)
   expect((await call('/api/previews/devices', { taskId: 'foreign' })).status).toBe(404)
   expect((await call('/api/device-host/devices', { taskId: 'foreign' })).status).toBe(200)
+  expect(discover).toHaveBeenLastCalledWith(undefined)
+  expect(
+    (await call('/api/device-host/devices', { taskId: 'foreign', id: 'ios:device' })).status,
+  ).toBe(200)
+  expect(discover).toHaveBeenLastCalledWith('ios:device')
+  discover.mockClear()
+  expect(
+    (await call('/api/device-host/devices', { taskId: 'foreign', id: 'remote:other:ios:device' }))
+      .status,
+  ).toBe(400)
+  expect(discover).not.toHaveBeenCalled()
   const opened = await (
     await call('/api/device-host/open', { taskId: 'foreign', id: 'ios:device' })
   ).json()

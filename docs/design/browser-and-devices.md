@@ -58,6 +58,11 @@ flows requiring a separate popup window may need Direct preview or an external b
 
 ## Direct previews and simulators
 
+Desktop retains up to four inactive local browser views per window for quick tab and thread
+switches. Inactive views expire after five minutes; reopening an evicted tab reloads its saved URL.
+Views with a connected agent retain their page until that agent disconnects. Window closure and
+renderer reloads or crashes release every local view.
+
 ### Physical iPhones and Android phones
 
 The **Devices** list includes real iPhones/iPads reported by Xcode and Android phones reported by

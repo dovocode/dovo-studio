@@ -58,3 +58,22 @@ it('negotiates paging without changing legacy snapshots or losing budget and cha
   expect(scopedWorkspace(workspace, [task.id], true).tasks[0]).toBe(paged)
   expect(task.messages).toHaveLength(80)
 })
+it('shares equivalent selections while isolating subscriptions, paging and workspace changes', () => {
+  const second = { ...task, id: 'second' }
+  const host = { ...workspace, tasks: [task, second] }
+  const selected = scopedWorkspace(host, ['thread', 'second'], true)
+  expect(scopedWorkspace(host, ['second', 'thread', 'thread'], true)).toBe(selected)
+  const firstOnly = scopedWorkspace(host, ['thread'], true)
+  expect(firstOnly).not.toBe(selected)
+  expect(firstOnly.tasks[1]?.messages).toEqual([])
+  expect(scopedWorkspace(host, ['thread', 'second'], false)).not.toBe(selected)
+  const changed = { ...host, tasks: [{ ...task, title: 'Changed' }, second] }
+  expect(scopedWorkspace(changed, ['thread', 'second'], true)).not.toBe(selected)
+  expect(scopedWorkspace(changed, ['thread'], true).tasks[0]?.title).toBe('Changed')
+})
+it('bounds cached selection variants within a live workspace', () => {
+  const host = { ...workspace }
+  const original = scopedWorkspace(host, ['thread'], true)
+  for (let index = 0; index < 16; index++) scopedWorkspace(host, [`other-${index}`], true)
+  expect(scopedWorkspace(host, ['thread'], true)).not.toBe(original)
+})

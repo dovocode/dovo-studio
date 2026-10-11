@@ -60,6 +60,54 @@ async function setup() {
   }
   return { runtime, open, address }
 }
+it('changes thread details on one connection without changing another client or losing later deltas', async () => {
+  const { runtime, open } = await setup()
+  runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      ...workspace.tasks,
+      {
+        ...workspace.tasks[0]!,
+        id: 'second',
+        title: 'Second',
+        messages: [{ id: 'other', role: 'assistant', text: 'Second history' }],
+      },
+    ],
+  }))
+  const first = await open(token, 5, ['task'])
+  const shared = await open(token, 5, ['task'])
+  for (const client of [first, shared]) {
+    client.socket.send(JSON.stringify({ type: 'resume' }))
+    expect((await client.wait('snapshot')).snapshot.detailTaskIds).toEqual(['task'])
+    client.frames.length = 0
+  }
+  first.socket.send(JSON.stringify({ type: 'watch', tasks: ['second'], scopes: ['second'] }))
+  const selected = await first.wait('snapshot')
+  expect(selected.snapshot.detailTaskIds).toEqual(['second'])
+  expect(selected.snapshot.workspace.tasks.find((task) => task.id === 'task')?.messages).toEqual([])
+  expect(
+    selected.snapshot.workspace.tasks.find((task) => task.id === 'second')?.messages[0]?.text,
+  ).toBe('Second history')
+  expect(shared.frames.some((frame) => frame.type === 'snapshot')).toBe(false)
+  first.frames.length = 0
+  runtime.services.store.updateTask('second', (task) => ({
+    ...task,
+    messages: task.messages.map((message) => ({ ...message, text: message.text + ' updated' })),
+  }))
+  const delta = await first.wait('delta')
+  expect(delta.epoch).toBe(selected.epoch)
+  expect(
+    applySnapshotDelta(selected.snapshot, delta.delta).workspace.tasks.find(
+      (task) => task.id === 'second',
+    )?.messages[0]?.text,
+  ).toBe('Second history updated')
+  const other = await shared.wait('delta')
+  expect(other.delta.workspace.tasks?.changes.some((change) => change.messages)).toBe(false)
+  first.frames.length = 0
+  first.socket.send(JSON.stringify({ type: 'watch', tasks: ['task'], scopes: [] }))
+  expect((await first.wait('snapshot')).snapshot.detailTaskIds).toEqual(['task'])
+  expect(first.socket.readyState).toBe(WebSocket.OPEN)
+})
 it('pushes small deltas and replays updates after reconnect without a second baseline', async () => {
   const { runtime, open } = await setup()
   const first = await open()
@@ -474,4 +522,39 @@ it('avoids repeated idle defaults, devices and job projections and observes serv
     listDevices.mockRestore()
     prepare.mockRestore()
   }
+})
+
+it('shares activity preparation across clients, skips unrelated updates and releases the last subscriber', async () => {
+  const { runtime, open } = await setup()
+  const clients = await Promise.all([open(), open(), open()])
+  const list = vi.spyOn(runtime.services.activity, 'list')
+  for (const client of clients) {
+    client.socket.send(JSON.stringify({ type: 'resume' }))
+    await client.wait('snapshot')
+    client.socket.send(JSON.stringify({ type: 'watch', scopes: ['task'] }))
+    await client.wait('activity')
+  }
+  expect(list).toHaveBeenCalledTimes(1)
+  list.mockClear()
+  for (let index = 0; index < 5; index++)
+    runtime.services.activity.add('tool', 'child', 'Child output')
+  await new Promise((resolve) => setTimeout(resolve, 650))
+  expect(list).not.toHaveBeenCalled()
+  for (const client of clients) client.frames.length = 0
+  runtime.services.activity.add('tool', 'task', 'Updated command', {}, 'command')
+  for (const client of clients) expect((await client.wait('activity')).order).toEqual(['command'])
+  expect(list).toHaveBeenCalledTimes(1)
+  await Promise.all(
+    clients.map(async (client) => {
+      const closed = once(client.socket, 'close')
+      client.socket.terminate()
+      await closed
+    }),
+  )
+  const next = await open()
+  next.socket.send(JSON.stringify({ type: 'resume' }))
+  await next.wait('snapshot')
+  next.socket.send(JSON.stringify({ type: 'watch', scopes: ['task'] }))
+  expect((await next.wait('activity')).order).toEqual(['command'])
+  expect(list).toHaveBeenCalledTimes(2)
 })

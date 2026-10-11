@@ -13,6 +13,7 @@ import {Schema} from 'effect';
 import {decode,runtimeProfile,snapshotSchema} from '@dovo/protocol';
 import {TooltipProvider} from '@dovo/studio-ui';
 import DeviceHostsView from './packages/extension-runtime/src/device-hosts-view.tsx';
+import {PairingClient} from './packages/extension-runtime/src/pairing-client.tsx';
 import {WorkspaceProvider,useWorkspace} from './packages/studio-core/src/workspace/provider.tsx';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {browserMutationStorage} from './packages/studio-core/src/workspace/read-cache.ts';
@@ -32,7 +33,12 @@ window.fetch=async(url,init={})=>{
   if(path==='/api/tasks/message')throw new Error('Message delivery offline');
   if(path==='/api/workspace') {
     if(window.failWorkspace)return Response.json({error:'Workspace conflict'},{status:409});
-    return Response.json({ok:true,revision:1,runtimeInstanceId:'test-instance'});
+    const agent=window.server.workspace.agents.find(agent=>agent.id===input.id);
+    for(const[field,change]of Object.entries(input.changes)) {
+      if(agent[field]!==change.before&&agent[field]!==change.after)return Response.json({error:'Another client changed '+field},{status:409});
+    }
+    window.server={...window.server,revision:window.server.revision+1,workspace:{...window.server.workspace,agents:window.server.workspace.agents.map(agent=>agent.id===input.id?{...agent,...Object.fromEntries(Object.entries(input.changes).map(([field,change])=>[field,change.after]))}:agent)}};
+    return Response.json({ok:true,revision:window.server.revision,runtimeInstanceId:'test-instance'});
   }
   if(path==='/api/agents/settings/sync') {
     window.server={...window.server,defaults:{scopedSettings:{environment:{},shared:input.shared}}};
@@ -42,7 +48,7 @@ window.fetch=async(url,init={})=>{
   throw new Error('Unexpected request '+url);
 };
 function Probe(){const value=useWorkspace();window.workspaceContext=value;return <div>{value.ready?'Ready':'Loading'}</div>}
-createRoot(document.getElementById('app')).render(<ApplicationStateProvider><WorkspaceProvider><Probe/><TooltipProvider><DeviceHostsView/></TooltipProvider></WorkspaceProvider></ApplicationStateProvider>);
+createRoot(document.getElementById('app')).render(<ApplicationStateProvider><WorkspaceProvider><Probe/><TooltipProvider><DeviceHostsView/><PairingClient onManage={()=>{}}/></TooltipProvider></WorkspaceProvider></ApplicationStateProvider>);
 window.pendingCommands=()=>browserMutationStorage.read(window.profiles[0].connection);
 window.saveMessage=()=>window.workspaceContext.request('/api/tasks/message',{taskId:'task',messageId:'saved-message',text:'Do not lose this command'},Schema.Struct({ok:Schema.Boolean}));
 window.editWorkspace=()=>window.workspaceContext.setWorkspace(value=>({...value,agents:value.agents.map(agent=>({...agent,name:'Edited'}))}));
@@ -136,6 +142,41 @@ try {
     window.calls.some((call) => call.path === '/api/agents/settings/sync'),
   )
 
+  // Choosing one conflicting field must retain all unrelated local and host values.
+  for (const choice of ['Keep my edit', 'Use host value']) {
+    await page.evaluate(() => {
+      window.server = {
+        ...window.server,
+        revision: window.server.revision + 1,
+        workspace: {
+          ...window.server.workspace,
+          agents: window.server.workspace.agents.map((agent) => ({
+            ...agent,
+            name: 'Competing host name',
+          })),
+        },
+      }
+      window.workspaceContext.setWorkspace((value) => ({
+        ...value,
+        agents: value.agents.map((agent) => ({
+          ...agent,
+          name: 'My chosen name ' + window.server.revision,
+          instructions: 'Preserve these local instructions',
+        })),
+      }))
+    })
+    await page.waitForFunction(() =>
+      window.workspaceContext.syncError?.includes('Another client changed'),
+    )
+    await page.evaluate(() => window.workspaceContext.refreshRuntime(window.profiles[0]))
+    await page.getByRole('button', { name: choice, exact: true }).click()
+    await page.waitForFunction(() => !window.workspaceContext.pendingSync)
+    const agent = await page.evaluate(() => window.workspaceContext.workspace.agents[0])
+    if (choice === 'Keep my edit') assert.match(agent.name, /^My chosen name /)
+    else assert.equal(agent.name, 'Competing host name')
+    assert.equal(agent.instructions, 'Preserve these local instructions')
+  }
+
   await page.evaluate(() => window.saveMessage())
   assert.equal((await page.evaluate(() => window.pendingCommands())).length, 1)
   await page.evaluate(() => window.workspaceContext.discardAndReload())
@@ -144,7 +185,7 @@ try {
   assert.equal(pending[0].input.text, 'Do not lose this command')
   assert.deepEqual(errors, [])
   console.log(
-    'Workspace recovery: six HTTP hosts, scoped polling, Device Hub reads, settings retry and saved-command preservation passed.',
+    'Workspace recovery: six HTTP hosts, scoped polling, Device Hub reads, settings retry, individual conflict choices and saved-command preservation passed.',
   )
 } finally {
   await browser.close()

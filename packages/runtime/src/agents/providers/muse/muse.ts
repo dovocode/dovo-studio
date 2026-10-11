@@ -15,7 +15,7 @@ import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
 import { updateSubagents } from '../../execution/subagents.js'
-import { releaseIdleProvider } from '../../execution/warm-processes.js'
+import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { nativeObject as object, nativeText as text, nativeWait } from '../shared/native.js'
 
 const rows = mutableStruct({
@@ -69,17 +69,18 @@ export function museSelection(model: string) {
   }
 }
 export function createMuseAdapter(): AgentAdapter {
-  const idle = new Map<
-    string,
-    {
-      sessionId: string
-      config: string
-      resume: (run: AgentRun) => Promise<void>
-      close: () => Promise<void>
-      working: () => boolean
-    }
-  >()
+  const idle = new IdleProviders<{
+    sessionId: string
+    config: string
+    resume: (run: AgentRun) => Promise<void>
+    close: () => Promise<void>
+    working: () => boolean
+  }>(
+    (session) => session.close(),
+    (session) => session.working(),
+  )
   return {
+    releaseTask: (taskId) => idle.release(taskId),
     dispose: async () => {
       const sessions = [...idle.values()]
       idle.clear()
@@ -157,8 +158,13 @@ export function createMuseAdapter(): AgentAdapter {
         key === 'DOVO_TASK_RUN_ID' ? undefined : value,
       )
       const previous = run.taskId ? idle.get(run.taskId) : undefined
-      if (previous && previous.sessionId === run.sessionId && previous.config === config)
-        return previous.resume(run)
+      if (previous && previous.sessionId === run.sessionId && previous.config === config) {
+        if (run.taskId) idle.delete(run.taskId)
+        await previous.resume(run)
+        if (run.taskId) idle.set(run.taskId, previous)
+        await idle.prune(releaseIdleProvider())
+        return
+      }
       if (previous) {
         if (previous.working())
           throw new Error('Stop native Muse agents before changing their session configuration')
@@ -585,10 +591,7 @@ export function createMuseAdapter(): AgentAdapter {
             },
           }
           idle.set(taskId, warm)
-          if (releaseIdleProvider()) {
-            const stale = [...idle.values()].find((session) => !session.working())
-            if (stale) await stale.close()
-          }
+          await idle.prune(releaseIdleProvider())
         }
       } finally {
         active = false

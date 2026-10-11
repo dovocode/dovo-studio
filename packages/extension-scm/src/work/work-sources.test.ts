@@ -69,6 +69,7 @@ const linux = runtimeProfile(
   'Linux',
 )
 const cache = {
+  closed: false,
   readEffect: () => Effect.succeed(null),
   writeEffect: () => Effect.void,
   removeEffect: () => Effect.void,

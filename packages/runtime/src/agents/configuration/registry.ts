@@ -124,6 +124,15 @@ export class AgentRegistry {
   get(provider: Agent['provider']) {
     return runClientEffect(this.getEffect(provider))
   }
+  async releaseTask(taskId: string) {
+    const results = await Promise.allSettled(
+      [...this.adapters.values()].map(async (adapter) => adapter.releaseTask?.(taskId)),
+    )
+    const failures = results.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : [],
+    )
+    if (failures.length) throw new AggregateError(failures, 'Could not release task providers')
+  }
   async dispose() {
     const adapters = [...this.adapters.values()]
     const results = await Promise.allSettled(adapters.map(async (adapter) => adapter.dispose?.()))

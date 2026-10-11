@@ -122,18 +122,13 @@ export function SettingSource({
   return (
     <View
       style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        alignItems: 'center',
+        alignItems: 'stretch',
         gap: 8,
         paddingHorizontal: 4,
       }}
     >
       <Text
-        style={[
-          styles.muted,
-          { flex: 1, fontSize: 13, color: overridden ? colors.accent : colors.muted },
-        ]}
+        style={[styles.muted, { fontSize: 13, color: overridden ? colors.accent : colors.muted }]}
       >
         {overridden ? `Set here · ${name}` : `Inherited · ${name}`}
       </Text>
@@ -176,7 +171,7 @@ export function SettingSource({
             )
             return (
               <View key={entry.profile.id} style={{ gap: 6 }}>
-                <Text>
+                <Text style={styles.text}>
                   {runtimeComputerName(entry)}
                   {active ? ' · editing' : ''}
                   {!entry.connected ? ' · offline, saved snapshot' : ''}
@@ -212,10 +207,10 @@ export function SettingSource({
           {overrides.map((entry) => (
             <View
               key={`${entry.scope}:${entry.environmentId}:${entry.repositoryId ?? ''}`}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+              style={{ gap: 8 }}
             >
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text>{settingValueLabel(entry.value)}</Text>
+              <View style={{ minWidth: 0 }}>
+                <Text style={styles.text}>{settingValueLabel(entry.value)}</Text>
                 <Text style={styles.muted}>
                   {settingsScopeLabels[entry.scope]} · {overrideName(entry)}
                 </Text>

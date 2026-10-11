@@ -9,7 +9,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/components/ai-elements/conversation.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;`,
   '../chat/thread/use-task-viewed': `export const useTaskViewed=()=>({});`,
-  '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';export function ChatThread({task,onReadingHistory}){return <Conversation><ConversationHistory onReadingHistory={onReadingHistory}><ConversationContent>{Array.from({length:20},(_,index)=><section key={index} style={{contentVisibility:"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn immediate={index>=18}>{()=> <div style={{height:350}}>Turn {task.id} {index}</div>}</DeferredTurn></section>)}</ConversationContent></ConversationHistory></Conversation>}`,
+  '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';export function ChatThread({task,onReadingHistory}){return <Conversation><ConversationHistory onReadingHistory={onReadingHistory}><ConversationContent data-conversation-content style={{padding:16}}><div className="flex flex-col">{Array.from({length:20},(_,index)=>index).map(index=><section key={index} style={{contentVisibility:"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn immediate={index>=18}>{()=> <div style={{height:350}}>Turn {task.id} {index}</div>}</DeferredTurn></section>)}</div></ConversationContent></ConversationHistory></Conversation>}`,
   '../chat/composer/composer': `export function Composer({collapsed}){return <form data-collapsed={collapsed} style={{height:collapsed?48:150}}><textarea aria-label="Message" style={{width:'100%',height:collapsed?30:100}} onChange={e=>{e.currentTarget.form.style.height=e.target.value.length>20?'300px':'150px'}}/></form>}`,
 }
 for (const [path, name] of [
@@ -58,9 +58,34 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent(`<style>
-    *{box-sizing:border-box} body{margin:0} .flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1}.h-full{height:100%}.min-h-0{min-height:0}.overflow-y-hidden{overflow-y:hidden}
+    *{box-sizing:border-box} body{margin:0} .flex{display:flex}.flex-col{flex-direction:column}.flex-col-reverse{flex-direction:column-reverse}.flex-1{flex:1}.h-full{height:100%}.min-h-0{min-height:0}.overflow-y-hidden{overflow-y:hidden}
   </style><div id="app"></div>`)
+  // Delay initial scrolling to check the content before its first anchored frame.
+  await page.evaluate(() => {
+    const requestFrame = window.requestAnimationFrame.bind(window)
+    const queued = []
+    let holding = true
+    window.requestAnimationFrame = (callback) => {
+      if (!holding) return requestFrame(callback)
+      queued.push(callback)
+      return -queued.length
+    }
+    window.releaseInitialFrames = () => {
+      holding = false
+      for (const callback of queued) requestFrame(callback)
+    }
+  })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const content = page.locator('[data-conversation-content]')
+  await content.waitFor({ state: 'attached' })
+  assert.equal(await content.evaluate((e) => getComputedStyle(e).visibility), 'hidden')
+  assert.ok(
+    (await page
+      .locator('[role=log] > div')
+      .evaluate((e) => e.scrollHeight - e.clientHeight - e.scrollTop)) > 300,
+  )
+  assert.equal(await content.evaluate((e) => getComputedStyle(e).padding), '16px')
+  await page.evaluate(() => window.releaseInitialFrames())
   const bottom = () =>
     page.waitForFunction(
       () => {
@@ -73,6 +98,8 @@ try {
   const uncollapsed = async () =>
     assert.equal(await page.locator('form').getAttribute('data-collapsed'), 'false')
   await bottom()
+  await content.waitFor({ state: 'visible' })
+  assert.equal(await content.evaluate((e) => e.style.visibility), '')
   await uncollapsed()
   // Opening another sidebar thread starts at the latest turn, including deferred layout.
   await page.evaluate(() => window.openThread('second'))
@@ -107,7 +134,7 @@ try {
   assert.equal(await page.locator('[role=log] > div').evaluate((e) => e.scrollTop), before)
   assert.deepEqual(errors, [])
   console.log(
-    'Thread opening, deferred layout, composer resizing, and reading-history focus checks passed.',
+    'Newest-first thread opening, initial visibility, deferred layout, composer resizing, and reading-history focus checks passed.',
   )
 } finally {
   await browser.close()

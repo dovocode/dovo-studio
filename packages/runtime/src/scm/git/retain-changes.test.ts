@@ -12,3 +12,19 @@ it('invalidates review marks when content changes and includes additions and rem
   expect(retainChangedFiles([file], [changed, added])).toEqual([changed, added])
   expect(retainChangedFiles([file], [])).toEqual([])
 })
+it('invalidates image/binary review state when saved hashes or modes change', () => {
+  const image = {
+    ...file,
+    before: '',
+    after: '',
+    preview: { kind: 'image' as const, after: { hash: 'old', size: 10, mode: '100644' } },
+  }
+  const scanned = { ...image, viewed: false }
+  expect(retainChangedFiles([image], [scanned])[0]).toBe(image)
+  const changed = {
+    ...scanned,
+    preview: { ...scanned.preview, after: { ...scanned.preview.after, hash: 'new' } },
+  }
+  expect(retainChangedFiles([image], [changed])[0]).toBe(changed)
+  expect(retainChangedFiles([image], [changed])[0].viewed).toBe(false)
+})

@@ -8,6 +8,7 @@ import {
   previewResultSchema,
   deviceHostInstallSchema,
   deviceHostForwardSchema,
+  runtimeRequestTimeout,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -65,6 +66,7 @@ const number = (value: unknown, name: string) => {
   return value
 }
 async function post(path: string, input: unknown): Promise<unknown> {
+  const timeout = runtimeRequestTimeout(path, input)
   const response = await fetch(new URL(path, base), {
     method: 'POST',
     headers: {
@@ -74,13 +76,7 @@ async function post(path: string, input: unknown): Promise<unknown> {
     },
     body: JSON.stringify(input),
     signal: AbortSignal.timeout(
-      path === '/api/device-hosts/install'
-        ? 600_000
-        : path === '/api/device-hosts/forward'
-          ? 90_000
-          : path.startsWith('/api/previews/')
-            ? 210_000
-            : 30_000,
+      path.startsWith('/api/previews/') ? Math.max(210_000, timeout) : timeout,
     ),
   })
   const result: unknown = await response.json()
@@ -343,11 +339,18 @@ const tools: Array<
               {
                 name: 'pipeline_watch',
                 description:
-                  'Hand monitoring of one or more explicit pipeline runs in this thread’s project to Dovo. Use watch with runIds (provider run IDs, up to 20 active runs). Adds watches without replacing other runs. Returns current run details; already finished runs need no watch. Dovo queues failed or actionable results once for each watched run and wakes this thread; successful runs finish silently. Survives turns and restarts; respects paused queues. Finished threads with active watches move to Waiting; settling or archiving cancels their watches. Finish your turn after registering. Use status or stop with optional runIds; omitting runIds selects all watches. Does not follow a branch or discover future runs.',
+                  'Hand monitoring of explicit pipeline runs to Dovo. Use watch with runIds (provider run IDs, up to 20 active runs per thread). Optional repositoryId selects an editable linked project; watch defaults to the primary project. Adds watches without replacing other runs. Returns current run details; already finished runs need no watch. Dovo queues failures and actionable waiting/blocked states without duplicate deliveries; successful runs finish silently. Survives turns and restarts; respects paused queues. Finished threads with active watches move to Waiting; settling or archiving cancels their watches. Finish your turn after registering. Use status or stop with optional repositoryId and runIds; omitting both selects all watches. Does not follow a branch or discover future runs.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
                     action: { type: 'string' as const, enum: ['watch', 'status', 'stop'] },
+                    repositoryId: {
+                      type: 'string' as const,
+                      minLength: 1,
+                      maxLength: 200,
+                      description:
+                        'Primary or editable linked project ID. Watch defaults to primary; status/stop default to all projects.',
+                    },
                     runIds: {
                       type: 'array' as const,
                       items: { type: 'string' as const, minLength: 1, maxLength: 300 },
@@ -366,12 +369,24 @@ const tools: Array<
               {
                 name: 'pull_request_watch',
                 description:
-                  'Hand PR feedback monitoring to Dovo. Use action watch with a PR URL in this thread’s project; replaces this thread’s previous watch. Returns current failed checks. Dovo queues new comments, reviews and check failures and wakes the thread without an agent polling loop. Survives turns and runtime restarts, stops when the PR closes. Use status to inspect the watch or stop to cancel it. Respects paused queues. Finished threads with active watches move to Waiting; settling or archiving cancels their watches.',
+                  'Hand PR feedback monitoring to Dovo. Use watch with a PR URL and optional repositoryId for an editable linked project; defaults to the primary project. One PR per project, so another PR replaces only that project’s watch. Returns watches and current failedChecks. Dovo queues new or edited comments, submitted reviews and check failures and wakes the thread without a polling loop. Survives turns and restarts; each watch stops when its PR closes. Use status or stop with optional repositoryId or url; omitting both selects all watches. Respects paused queues. Finished threads with active watches move to Waiting; settling or archiving cancels their watches.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
                     action: { type: 'string' as const, enum: ['watch', 'status', 'stop'] },
-                    url: { type: 'string' as const, description: 'Required for action watch.' },
+                    repositoryId: {
+                      type: 'string' as const,
+                      minLength: 1,
+                      maxLength: 200,
+                      description:
+                        'Primary or editable linked project ID. Watch defaults to primary; status/stop default to all projects.',
+                    },
+                    url: {
+                      type: 'string' as const,
+                      minLength: 1,
+                      maxLength: 2048,
+                      description: 'Required for watch; optional PR selection for status and stop.',
+                    },
                   },
                   required: ['action'],
                 },

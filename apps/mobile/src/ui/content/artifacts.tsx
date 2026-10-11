@@ -139,6 +139,7 @@ export function ArtifactBrowser({
   const [revision, setRevision] = useState<number>()
   const [versions, setVersions] = useState<ArtifactMetadata[]>([])
   const [reload, setReload] = useState(0)
+  const [previewGeneration, setPreviewGeneration] = useState(0)
   const selection = JSON.stringify([taskId, id, revision, reload])
   const [loaded, setLoaded] = useState<{ selection: string; artifact: Artifact }>()
   const artifact = loaded?.selection === selection ? loaded.artifact : undefined
@@ -448,7 +449,7 @@ export function ArtifactBrowser({
             </ScrollView>
           ) : (
             <WebView
-              key={`${id}:${artifact.revision}`}
+              key={`${id}:${artifact.revision}:${previewGeneration}`}
               source={{ html: artifactPreviewHtml(artifact.content) }}
               style={{ flex: 1, backgroundColor: '#fff' }}
               originWhitelist={['*']}
@@ -463,6 +464,8 @@ export function ArtifactBrowser({
                 (!request.isTopFrame && /^(about:|data:|blob:)/.test(request.url))
               }
               onError={() => setPreviewError('Could not load artifact preview')}
+              onContentProcessDidTerminate={() => setPreviewGeneration((value) => value + 1)}
+              onRenderProcessGone={() => setPreviewGeneration((value) => value + 1)}
             />
           ))
         )}

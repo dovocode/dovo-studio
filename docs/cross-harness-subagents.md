@@ -25,10 +25,18 @@ installed integration. Provider-only children inherit connection/account setting
 parent harness or project default. Unsupported restricted access is refused before creating a child;
 child access never expands to accommodate a provider.
 
-Follow-up turns reuse their warm provider and MCP connections, preserving native children. Session
-configuration changes require live native children to finish or stop first. Dovo child controls use
-Dovo's ownership and access checks, so read-only parents can launch and receive read-only children
-without a Codex approval prompt.
+Interactive turns reuse available warm provider and MCP connections, preserving native children.
+Idle transports across Codex, Claude, ACP (including Grok), Hermes and Muse share a four-process
+budget and expire after two minutes; memory pressure can release them earlier. Completed Dovo
+children release their idle transport immediately. A transport with working native children stays
+alive until those children finish. Saved conversations remain resumable after releasing their
+process. Archive and delete also release idle task transports.
+
+Read-only Dovo children retain their answers and usage without capturing Git checkpoints or
+refreshing checkout diffs. Writable children and independent threads retain normal change capture.
+Session configuration changes require live native children to finish or stop first. Dovo child
+controls use Dovo's ownership and access checks, so read-only parents can launch and receive
+read-only children without a Codex approval prompt.
 
 `subagent_wait` waits up to 20 seconds. If `running` is still true, the child keeps working; wait
 again or finish your turn and receive its completion asynchronously. A finished result contains the

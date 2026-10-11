@@ -18,8 +18,8 @@ const built = await build({
   stdin: {
     contents: `
 import { createRoot } from 'react-dom/client';
-import { useState, useEffect, useMemo, memo } from 'react';
-import { useExternalStoreRuntime, AssistantRuntimeProvider, MessageByIndexProvider } from '@assistant-ui/core/react';
+import { useState, useEffect, useMemo, memo, createContext, useContext, useLayoutEffect } from 'react';
+import { useExternalStoreRuntime, AssistantRuntimeProvider, ThreadPrimitiveUnstable_MessageById, unstable_useThreadMessageIds } from '@assistant-ui/core/react';
 import { useAuiState } from '@assistant-ui/store';
 import { createConversationMessages, convertConversationMessage } from '../../apps/mobile/src/tasks/conversation/state/messages.ts';
 const initial = {
@@ -37,18 +37,27 @@ window.measureProjection=()=>{
  return {serializations,parses,elapsedMs:performance.now()-started};
 };
 window.messageRenders = Array(500).fill(0);
+window.rowPaints=[];window.renderOrder=[];
+const ExpectedMessage=createContext(null);
 function Message() {
-  const message = useAuiState(state=>state.message);
-  window.messageRenders[Number(message.id)]++;
-  return <p>{message.content[0].text}</p>;
+  const id = useAuiState(state=>state.message.id);
+  const content = useAuiState(state=>state.message.content);
+  const expected=useContext(ExpectedMessage);
+  const index=Number(id);
+  if(Number.isFinite(index))window.messageRenders[index]++;
+  window.renderOrder.push(id);
+  useLayoutEffect(()=>{window.rowPaints.push({expected,actual:id})});
+  return <p>{content[0].text}</p>;
 }
-const Cell = memo(({index})=><MessageByIndexProvider index={index}><Message/></MessageByIndexProvider>);
-const cells=initial.messages.map((message,index)=><Cell key={message.id} index={index}/>);
+const components={Message};
+const Cell = memo(({messageId})=><ExpectedMessage.Provider value={messageId}><ThreadPrimitiveUnstable_MessageById messageId={messageId} components={components}/></ExpectedMessage.Provider>);
+function List(){const ids=unstable_useThreadMessageIds();return [...ids].reverse().map(messageId=><Cell key={messageId} messageId={messageId}/>)}
 function App() {
   const [revision, setRevision] = useState(0);
   const [text, setText] = useState('');
+  const [older,setOlder]=useState(0);
   const [project] = useState(createConversationMessages);
-  const messages = useMemo(()=>project({...initial, messages:initial.messages.map((message,index)=>index===499?{...message,text:message.text+text}:message)},[]),[project,text]);
+  const messages = useMemo(()=>project({...initial, messages:[...Array.from({length:older},(_,index)=>({id:'older-'+index,role:'assistant',text:'Older '+index})),...initial.messages.map((message,index)=>index===499?{...message,text:message.text+text}:message)]},[]),[project,text,older]);
   const runtime = useExternalStoreRuntime({messages,convertMessage:convertConversationMessage,isRunning:false,onNew:async()=>{}});
   useEffect(()=>{
     window.runtime=runtime;
@@ -56,8 +65,10 @@ function App() {
     window.text=text;
     window.edit=()=>setRevision(value=>value+1);
     window.stream=()=>setText(value=>value+'x');
+    window.prepend=()=>setOlder(value=>value+50);
+    window.older=older;
   });
-  return <AssistantRuntimeProvider runtime={runtime}><div>Draft revision {revision}</div>{cells}</AssistantRuntimeProvider>;
+  return <AssistantRuntimeProvider runtime={runtime}><div>Draft revision {revision}</div><List/></AssistantRuntimeProvider>;
 }
 createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -78,6 +89,8 @@ try {
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.waitForFunction(() => window.runtime?.thread.getState().messages.length === 500)
+  if ((await page.evaluate(() => window.renderOrder[0])) !== '499')
+    throw new Error('Initial mobile messages rendered before the newest reply')
   await page.evaluate(() => {
     window.initialMessages = window.runtime.thread.getState().messages
   })
@@ -113,9 +126,27 @@ try {
     throw new Error(
       'Streaming reserialized historical message metadata: ' + JSON.stringify(projection),
     )
+  await page.evaluate(() => {
+    window.renderOrder = []
+    window.prepend()
+  })
+  await page.waitForFunction(() => window.runtime.thread.getState().messages.length === 550)
+  const prepended = await page.evaluate(() => ({
+    paints: window.rowPaints.filter(({ expected, actual }) => expected !== actual),
+    order: window.renderOrder,
+    unchanged: window.messageRenders.slice(0, 499).every((count) => count === 1),
+  }))
+  if (prepended.paints.length)
+    throw new Error('History insertion painted a different message in an existing row')
+  if (!prepended.unchanged) throw new Error('Older history rerendered settled newer messages')
+  if (
+    prepended.order.join(',') !==
+    Array.from({ length: 50 }, (_, index) => 'older-' + (49 - index)).join(',')
+  )
+    throw new Error('Inserted mobile history did not render newest to oldest')
   console.log('Native projection over 20 streamed updates:', projection)
   console.log(
-    '500-message runtime: 20 draft edits rerendered no message cells; streaming rerendered only the latest reply.',
+    'Mobile messages render newest first; prepending history preserves newer rows; draft edits and streaming leave unrelated cells unchanged.',
   )
 } finally {
   await browser.close()

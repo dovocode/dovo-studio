@@ -73,8 +73,76 @@ async function setup(persistent = false) {
   const read = vi.spyOn(s.pullCache, 'feedback').mockResolvedValue(detail())
   const watch = (watchUrl = url) =>
     s.pullRequestWatch.command({ taskId: task.id, action: 'watch', url: watchUrl })
-  const status = () => s.pullRequestWatch.command({ taskId: task.id, action: 'status' })
+  const status = (repositoryId?: string) =>
+    s.pullRequestWatch.command({ taskId: task.id, repositoryId, action: 'status' })
   return { f, runtime, s, taskId: task.id, read, watch, status }
+}
+it('skips watch scans during streaming and restores ownership after a rolled-back archive', async () => {
+  const f = await setup()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  await f.watch()
+  const prepare = vi.spyOn(f.s.db, 'prepare')
+  for (let index = 0; index < 20; index++)
+    f.s.store.updateTask(f.taskId, (task) => ({ ...task, activity: `token-${index}` }))
+  const scans = () =>
+    prepare.mock.calls.filter(([sql]) => sql === 'SELECT value FROM task_pull_watches').length
+  expect(scans()).toBe(0)
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  expect(() =>
+    f.s.store.transaction(() => {
+      f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: true }))
+      throw new Error('Rollback archive')
+    }),
+  ).toThrow('Rollback archive')
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, activity: 'resumed' }))
+  expect(scans()).toBe(2)
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  expect((await f.status()).watches[0]?.status).toBe('watching')
+  await f.s.pullRequestWatch.command({ taskId: f.taskId, action: 'stop' })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+})
+
+async function linkedSetup(persistent = false) {
+  const f = await setup(persistent)
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      ...workspace.repositories,
+      { id: 'linked', name: 'Linked', path: join(f.f.directory, 'linked'), branch: 'main' },
+    ],
+    tasks: workspace.tasks.map((task) =>
+      task.id === f.taskId
+        ? {
+            ...task,
+            status: 'review',
+            linkedCheckouts: [
+              { id: 'linked', repositoryId: 'linked', access: 'edit', execution: 'main' },
+            ],
+          }
+        : task,
+    ),
+  }))
+  const linkedUrl = 'https://github.com/team/linked/pull/7'
+  f.read.mockImplementation(async (path) =>
+    path === f.f.directory
+      ? detail()
+      : detail({
+          pull: {
+            ...detail().pull,
+            url: linkedUrl,
+            repositoryUrl: 'https://github.com/team/linked',
+          },
+          comments: [],
+        }),
+  )
+  const linkedWatch = () =>
+    f.s.pullRequestWatch.command({
+      taskId: f.taskId,
+      repositoryId: 'linked',
+      action: 'watch',
+      url: linkedUrl,
+    })
+  return { ...f, linkedUrl, linkedWatch }
 }
 
 it('baselines old feedback, returns existing failures, delivers every feedback kind once and preserves a paused queue', async () => {
@@ -82,7 +150,7 @@ it('baselines old feedback, returns existing failures, delivers every feedback k
   const existingFailure = { id: 'check-old', name: 'lint', status: 'failure' }
   f.read.mockResolvedValue(detail({ checks: [existingFailure] }))
   expect(await f.watch()).toMatchObject({
-    watch: { status: 'watching' },
+    watches: [{ status: 'watching' }],
     failedChecks: [existingFailure],
   })
   await f.s.pullRequestWatch.tick()
@@ -198,7 +266,7 @@ it('retains progress through unavailable sections, stale results and a full queu
   )
   await f.s.pullRequestWatch.tick()
   expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
-  expect(await f.status()).toMatchObject({ watch: { error: 'Conversation: offline' } })
+  expect(await f.status()).toMatchObject({ watches: [{ error: 'Conversation: offline' }] })
   f.read.mockResolvedValue(detail({ comments: [comment('new')] }))
   f.s.store.updateTask(f.taskId, (task) => ({
     ...task,
@@ -211,7 +279,7 @@ it('retains progress through unavailable sections, stale results and a full queu
   }))
   await f.s.pullRequestWatch.tick()
   expect(await f.status()).toMatchObject({
-    watch: { error: expect.stringContaining('Queue is full') },
+    watches: [{ error: expect.stringContaining('Queue is full') }],
   })
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, queue: [] }))
   await f.s.pullRequestWatch.tick()
@@ -256,7 +324,7 @@ it('pauses disabled/archived/read-only threads, stops on closure or project chan
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: true }))
   await f.s.pullRequestWatch.tick()
   expect(f.read).not.toHaveBeenCalled()
-  expect(await f.status()).toEqual({ watch: null })
+  expect(await f.status()).toEqual({ watches: [] })
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: false }))
   f.read.mockResolvedValue(detail())
   await f.watch()
@@ -276,7 +344,7 @@ it('pauses disabled/archived/read-only threads, stops on closure or project chan
     detail({ pull: { ...detail().pull, state: 'merged' }, comments: [comment('new')] }),
   )
   await f.s.pullRequestWatch.tick()
-  expect(await f.status()).toMatchObject({ watch: { status: 'closed' } })
+  expect(await f.status()).toMatchObject({ watches: [{ status: 'closed' }] })
   expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
   f.read.mockClear()
   await f.s.pullRequestWatch.tick()
@@ -286,7 +354,7 @@ it('pauses disabled/archived/read-only threads, stops on closure or project chan
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, repositoryId: 'other' }))
   await f.s.pullRequestWatch.tick()
   expect(await f.status()).toMatchObject({
-    watch: { status: 'stopped', error: 'The thread’s project changed' },
+    watches: [{ status: 'stopped', error: 'The thread’s project changed' }],
   })
   f.s.store.update((workspace) => ({ ...workspace, tasks: [] }))
   await f.s.pullRequestWatch.tick()
@@ -326,7 +394,7 @@ it('rejects foreign URLs and incomplete baselines, and cancels in-flight registr
   resolveRead(detail({ comments: [comment('new')] }))
   await polling
   expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
-  expect(await f.status()).toMatchObject({ watch: { status: 'stopped' } })
+  expect(await f.status()).toMatchObject({ watches: [{ status: 'stopped' }] })
 })
 
 it('drains large batches without dropping comments and ignores unsubmitted reviews', async () => {
@@ -426,13 +494,13 @@ it.each(['settle', 'archive'] as const)(
     })
     if (action === 'archive')
       f.s.store.updateTask(f.taskId, (task) => ({ ...task, archivedAt: new Date().toISOString() }))
-    expect(await f.status()).toEqual({ watch: null })
+    expect(await f.status()).toEqual({ watches: [] })
     expect(await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'status' })).toEqual({
       watches: [],
     })
     expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
     f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: false, archivedAt: undefined }))
-    expect(await f.status()).toEqual({ watch: null })
+    expect(await f.status()).toEqual({ watches: [] })
     f.read.mockResolvedValue(detail({ comments: [comment('new')] }))
     await f.s.pullRequestWatch.tick()
     await f.s.pipelineWatch.tick()
@@ -475,7 +543,7 @@ it('keeps Waiting for a pipeline after the PR watcher ends, and cancels registra
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: false }))
   complete(detail())
   await expect(registration).rejects.toThrow('replaced or stopped')
-  expect(await f.status()).toEqual({ watch: null })
+  expect(await f.status()).toEqual({ watches: [] })
 })
 
 it('rolls back watch removal and Waiting together when settlement cannot commit', async () => {
@@ -490,5 +558,283 @@ it('rolls back watch removal and Waiting together when settlement cannot commit'
   ).toThrow('settlement failed')
   expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
   expect(f.s.store.task(f.taskId).archived).not.toBe(true)
-  expect(await f.status()).toMatchObject({ watch: { status: 'watching' } })
+  expect(await f.status()).toMatchObject({ watches: [{ status: 'watching' }] })
+})
+
+it('waits for fresh feedback on each poll instead of rejecting expired cache entries', async () => {
+  const f = await setup()
+  await f.watch()
+  f.read.mockImplementation(async (_path, _number, force) =>
+    detail({
+      comments: [comment('fresh')],
+      stale: !force,
+    }),
+  )
+  await f.s.pullRequestWatch.tick()
+  expect(f.read).toHaveBeenLastCalledWith(f.f.directory, 7, true)
+  expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('Feedback fresh')
+})
+
+it('delivers edited comments and changed review decisions once, retaining versions on failed sections', async () => {
+  const f = await setup()
+  const review = comment('review', { kind: 'review', state: 'APPROVED', body: '' })
+  f.read.mockResolvedValue(detail({ comments: [comment('old'), review] }))
+  await f.watch()
+  const edited = comment('old', { body: 'Please fix the race' })
+  f.read.mockResolvedValue(
+    detail({
+      comments: [edited, { ...review, state: 'CHANGES_REQUESTED' }],
+      warnings: ['Conversation: offline'],
+    }),
+  )
+  await f.s.pullRequestWatch.tick()
+  expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('Updated review')
+  expect(f.s.store.task(f.taskId).queue?.[0]?.text).not.toContain(edited.body)
+  f.read.mockResolvedValue(
+    detail({ comments: [edited, { ...review, state: 'CHANGES_REQUESTED' }] }),
+  )
+  await f.s.pullRequestWatch.tick()
+  await f.s.pullRequestWatch.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(2)
+  expect(f.s.store.task(f.taskId).queue?.[1]?.text).toContain(`Updated comment`)
+  expect(f.s.store.task(f.taskId).queue?.[1]?.text).toContain(edited.body)
+})
+
+it('keeps PR watches independent across repositories, selects stops and replaces only one project', async () => {
+  const f = await linkedSetup()
+  await Promise.all([f.watch(), f.linkedWatch()])
+  expect((await f.status()).watches).toHaveLength(2)
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  f.read.mockImplementation(async (path, number) =>
+    path === f.f.directory
+      ? detail({
+          pull: { ...detail().pull, number, url: url.replace('/7', `/${number}`) },
+          comments: [comment('primary')],
+        })
+      : detail({
+          pull: { ...detail().pull, url: f.linkedUrl },
+          comments: [comment('linked', { url: `${f.linkedUrl}#linked` })],
+        }),
+  )
+  await f.s.pullRequestWatch.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(2)
+  await f.watch(url.replace('/7', '/8'))
+  expect(
+    (await f.status()).watches
+      .map((state) => [state.repositoryId, state.number] as const)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  ).toEqual([
+    ['linked', 7],
+    ['repo', 8],
+  ])
+  await f.s.pullRequestWatch.command({ taskId: f.taskId, action: 'stop', url: f.linkedUrl })
+  expect(await f.status('repo')).toMatchObject({ watches: [{ status: 'watching' }] })
+  expect(await f.status('linked')).toMatchObject({ watches: [{ status: 'stopped' }] })
+  await f.s.pullRequestWatch.command({ taskId: f.taskId, action: 'stop', repositoryId: 'repo' })
+  expect((await f.status()).watches.every((state) => state.status === 'stopped')).toBe(true)
+})
+
+it('keeps Waiting for another repository when one PR closes and cancels removed/read-only links', async () => {
+  const f = await linkedSetup()
+  await f.watch()
+  await f.linkedWatch()
+  f.read.mockImplementation(async (path) =>
+    path === f.f.directory
+      ? detail({ pull: { ...detail().pull, state: 'merged' } })
+      : detail({ pull: { ...detail().pull, url: f.linkedUrl }, comments: [] }),
+  )
+  await f.s.pullRequestWatch.tick()
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    linkedCheckouts: task.linkedCheckouts?.map((link) => ({ ...link, access: 'read-only' })),
+  }))
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+  expect(await f.status('repo')).toMatchObject({ watches: [{ status: 'closed' }] })
+  expect(await f.status('linked')).toMatchObject({
+    watches: [{ status: 'stopped', error: expect.stringContaining('editable linked project') }],
+  })
+  f.read.mockClear()
+  await expect(f.linkedWatch()).rejects.toMatchObject({ status: 403 })
+  await expect(
+    f.s.pullRequestWatch.command({
+      taskId: f.taskId,
+      action: 'watch',
+      repositoryId: 'unrelated',
+      url,
+    }),
+  ).rejects.toMatchObject({ status: 403 })
+  expect(f.read).not.toHaveBeenCalled()
+})
+
+it('cancels linked registrations on unlink/relink without cancelling unrelated pending registrations', async () => {
+  const f = await linkedSetup()
+  let releaseLinked!: (value: PullDetail) => void
+  let releasePrimary!: (value: PullDetail) => void
+  f.read.mockImplementation(
+    (path) =>
+      new Promise((resolve) => {
+        if (path === f.f.directory) releasePrimary = resolve
+        else releaseLinked = resolve
+      }),
+  )
+  const linked = f.linkedWatch()
+  const primary = f.watch()
+  await f.s.pullRequestWatch.command({ taskId: f.taskId, action: 'stop', url: f.linkedUrl })
+  releaseLinked(detail({ pull: { ...detail().pull, url: f.linkedUrl } }))
+  releasePrimary(detail())
+  await expect(linked).rejects.toThrow('replaced or stopped')
+  await primary
+  expect((await f.status()).watches).toHaveLength(1)
+  const registration = f.linkedWatch()
+  const links = f.s.store.task(f.taskId).linkedCheckouts
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, linkedCheckouts: [] }))
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, linkedCheckouts: links }))
+  releaseLinked(detail({ pull: { ...detail().pull, url: f.linkedUrl } }))
+  await expect(registration).rejects.toThrow('replaced or stopped')
+})
+
+it('migrates persisted single-project watches and legacy cursors without replaying feedback', async () => {
+  const f = await setup()
+  const check = { name: 'lint', status: 'failure', url: 'https://ci.example/lint' }
+  f.read.mockResolvedValue(detail({ checks: [check] }))
+  await f.watch()
+  const legacyCheck = JSON.stringify([detail().pull.headSha, check.name, null, check.status])
+  f.s.db.exec(`ALTER TABLE task_pull_watches RENAME TO task_pull_watches_new;
+    CREATE TABLE task_pull_watches (task_id TEXT PRIMARY KEY, value TEXT NOT NULL);
+    INSERT INTO task_pull_watches SELECT task_id, json_remove(value, '$.commentVersions', '$.primaryRepositoryId') FROM task_pull_watches_new;
+    DROP TABLE task_pull_watches_new;`)
+  f.s.db
+    .prepare(
+      "UPDATE task_pull_watches SET value=json_set(value, '$.seenComments', json(?), '$.failedChecks', json(?))",
+    )
+    .run(JSON.stringify(['comment:old']), JSON.stringify([legacyCheck]))
+  const watcher = new PullRequestWatch(f.s.db, f.s)
+  await watcher.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
+  f.read.mockResolvedValue(
+    detail({ comments: [comment('old', { body: 'Edited after migration' })], checks: [check] }),
+  )
+  await watcher.tick()
+  await watcher.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+  expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('Edited after migration')
+})
+
+it('rolls back edited feedback delivery with its cursor if persistence fails', async () => {
+  const f = await setup()
+  await f.watch()
+  f.read.mockResolvedValue(detail({ comments: [comment('old', { body: 'Updated body' })] }))
+  f.s.db.exec(`CREATE TRIGGER reject_pr_update BEFORE INSERT ON task_pull_watches
+    WHEN json_extract(NEW.value, '$.error') IS NULL
+    BEGIN SELECT RAISE(ABORT, 'cursor save failed'); END`)
+  await f.s.pullRequestWatch.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
+  expect(await f.status()).toMatchObject({ watches: [{ error: 'cursor save failed' }] })
+  f.s.db.exec('DROP TRIGGER reject_pr_update')
+  await f.s.pullRequestWatch.tick()
+  await f.s.pullRequestWatch.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+})
+
+it('shares one fresh feedback read across threads watching the same PR', async () => {
+  const f = await setup()
+  const other = f.s.tasks.create({
+    title: 'Other',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  f.s.store.updateTask(other.id, (task) => ({ ...task, queuePaused: true }))
+  await f.watch()
+  await f.s.pullRequestWatch.command({ taskId: other.id, action: 'watch', url })
+  f.read.mockClear().mockResolvedValue(detail({ comments: [comment('shared')] }))
+  await f.s.pullRequestWatch.tick()
+  expect(f.read).toHaveBeenCalledTimes(1)
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+  expect(f.s.store.task(other.id).queue).toHaveLength(1)
+})
+
+it('persists independent PR and pipeline watches for linked projects through a restart', async () => {
+  const f = await linkedSetup(true)
+  await f.watch()
+  await f.linkedWatch()
+  f.s.preferences.save({ enablePipelineWatching: true })
+  const pipeline = {
+    cachedAt: new Date().toISOString(),
+    run: {
+      id: '7',
+      title: 'Build',
+      url: 'https://github.com/team/project/actions/runs/7',
+      sha: 'a'.repeat(40),
+      ref: 'main',
+      actor: 'me',
+      status: 'running',
+      createdAt: '',
+      updatedAt: '',
+    },
+    jobs: [],
+  }
+  vi.spyOn(f.s.forgeWork, 'request').mockResolvedValue(pipeline)
+  await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'watch', runIds: ['7'] })
+  await f.s.pipelineWatch.command({
+    taskId: f.taskId,
+    repositoryId: 'linked',
+    action: 'watch',
+    runIds: ['7'],
+  })
+  await f.runtime.close()
+  const runtime = await startRuntime({
+    databasePath: join(f.f.directory, 'runtime.sqlite'),
+    ownerToken: token,
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  expect(s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  expect(
+    (await s.pullRequestWatch.command({ taskId: f.taskId, action: 'status' })).watches,
+  ).toHaveLength(2)
+  expect(
+    (await s.pipelineWatch.command({ taskId: f.taskId, action: 'status' })).watches,
+  ).toHaveLength(2)
+  vi.spyOn(s.forgeWork, 'request').mockResolvedValue({
+    ...pipeline,
+    run: { ...pipeline.run, status: 'failure' },
+  })
+  await s.pipelineWatch.tick()
+  await s.pipelineWatch.tick()
+  expect(s.store.task(f.taskId).queue).toHaveLength(2)
+  expect(s.store.task(f.taskId).queuePaused).toBe(true)
+})
+
+it('rejects a registration whose agent turn retires during its forge read', async () => {
+  const f = await setup()
+  let release!: (value: PullDetail) => void
+  f.read.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = resolve
+      }),
+  )
+  let registration: ReturnType<typeof f.s.pullRequestWatch.command> | undefined
+  vi.spyOn(f.s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async () => {
+      registration = f.s.pullRequestWatch.command({
+        taskId: f.taskId,
+        parentRunId: f.s.store.task(f.taskId).activeRunId,
+        action: 'watch',
+        url,
+      })
+    },
+  })
+  f.s.tasks.queue.add(f.taskId, 'initial', 'Watch the PR')
+  await (
+    await f.s.tasks.start(f.taskId, true)
+  ).done
+  if (!registration) throw new Error('Expected an in-flight registration')
+  release(detail())
+  await expect(registration).rejects.toThrow('parent turn has ended')
+  expect(await f.status()).toEqual({ watches: [] })
 })

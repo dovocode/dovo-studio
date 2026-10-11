@@ -1,8 +1,11 @@
+import { useMemo } from 'react'
+import { pullFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
+import { useFileReview } from '../../review/use-file-review'
+import { MobileFileReview } from '../../review/file-review'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { View, useWindowDimensions } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import { pullFilePatch, type PullDetail } from '@dovo/protocol'
-import { Choice } from '../../../ui/controls/choice'
 import { Action } from '../../../ui/controls/action'
 import { useTheme } from '../../../ui/theme'
 import { DiffView } from '../../../tasks/preview/diff-view'
@@ -10,11 +13,15 @@ import { PullComments } from './pull-comments'
 import type { PullActionTarget } from '../list/pull-actions'
 export function PullChanges({
   detail,
+  active = true,
+  repositoryId,
   onOpen,
   onAction,
   onLineComment,
 }: {
   detail: PullDetail
+  active?: boolean
+  repositoryId: string
   onOpen: (url: string) => void
   onAction?: (target: PullActionTarget) => void
   onLineComment?: (path: string) => void
@@ -22,9 +29,32 @@ export function PullChanges({
   const { colors, styles } = useTheme()
 
   const { height } = useWindowDimensions()
-  const [selected, setSelected] = useApplicationState(detail.files[0]?.path ?? ''),
-    [viewed, setViewed] = useApplicationState<Set<string>>(new Set())
-  const file = detail.files.find((f) => f.path === selected) ?? detail.files[0]
+  const fingerprints = useMemo(
+    () => new Map(detail.files.map((file) => [file.path, pullFileFingerprint(file, detail.pull)])),
+    [detail.files, detail.pull],
+  )
+  const review = useFileReview(
+    { kind: 'pull', repositoryId, number: detail.pull.number },
+    JSON.stringify([...fingerprints]),
+    active,
+  )
+  const [related, setRelated] = useApplicationState(true)
+  const files = useMemo(
+    () =>
+      orderReviewFiles(
+        detail.files.map((file) => ({
+          ...file,
+          viewed:
+            reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+              ?.viewed ?? false,
+        })),
+        review.progress?.groups ?? [],
+        related,
+      ),
+    [detail.files, review.progress, fingerprints, related],
+  )
+  const [selected, setSelected] = useApplicationState(detail.files[0]?.path ?? '')
+  const file = files.find((file) => file.path === selected) ?? files[0]
   if (!file) return <Text style={styles.muted}>No changed files returned.</Text>
   return (
     <View
@@ -32,53 +62,27 @@ export function PullChanges({
         gap: 10,
       }}
     >
-      <View
-        style={[
-          styles.row,
-          {
-            justifyContent: 'space-between',
-            rowGap: 10,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            styles.muted,
-            {
-              minWidth: 0,
-              flexShrink: 1,
-            },
-          ]}
-        >
-          {viewed.size} of {detail.files.length} {detail.files.length === 1 ? 'file' : 'files'}{' '}
-          viewed
-        </Text>
-        <Action
-          secondary
-          label={viewed.has(file.path) ? 'Viewed ✓' : 'Mark viewed'}
-          onPress={() =>
-            setViewed((current) => {
-              const next = new Set(current)
-              if (next.has(file.path)) next.delete(file.path)
-              else next.add(file.path)
-              return next
-            })
-          }
-        />
-      </View>
-      <Choice
-        label="Changed file"
-        hideLabel
-        value={file.path}
-        onChange={setSelected}
-        items={detail.files.map((entry) => {
-          const parts = entry.path.split('/')
-          const name = parts.pop() ?? entry.path
-          return {
-            id: entry.path,
-            name: `${name}${parts.length ? ` · ${parts.join('/')}` : ''}`,
-          }
-        })}
+      <MobileFileReview
+        files={files.map((file) => ({
+          path: file.path,
+          viewed: file.viewed,
+          label: `+${file.additions ?? 0} −${file.deletions ?? 0}`,
+        }))}
+        groups={review.progress?.groups ?? []}
+        related={related}
+        onRelatedChange={setRelated}
+        selected={file.path}
+        onSelect={setSelected}
+        onViewed={(viewed) =>
+          review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
+        }
+        disabled={
+          !review.ready ||
+          !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+        }
+        busy={review.busy}
+        error={review.error}
+        onRetry={review.reload}
       />
       <Text selectable style={styles.muted}>
         {file.previousPath ? `Renamed from ${file.previousPath} · ` : ''}
@@ -103,7 +107,7 @@ export function PullChanges({
             height: Math.max(280, Math.min(600, height * 0.55)),
           }}
         >
-          <DiffView patch={pullFilePatch(file)} />
+          <DiffView key={file.path} patch={pullFilePatch(file)} />
         </View>
       ) : (
         <Text style={styles.muted}>No text patch available. Open this PR on its server.</Text>

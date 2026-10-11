@@ -1,3 +1,5 @@
+import { ReviewMarks } from './scm/reviews/progress.js'
+import { FileReviews, pullReviewScope, pullReviewFiles } from './scm/reviews/reviews.js'
 import { DeviceHosts, splitDeviceId } from './previews/device-hosts.js'
 import { previewDevices } from './previews/devices.js'
 import { DeviceHostUploads } from './previews/device-host-install.js'
@@ -57,10 +59,12 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   )
   const simulators = new SimulatorPreviews({
     authorize: () => deviceHosts.assertEnabled(),
-    devices: (taskId, deviceId, foreignOwner) =>
-      foreignOwner || !splitDeviceId(deviceId).hostId
-        ? previewDevices()
-        : deviceHosts.list(taskId, splitDeviceId(deviceId).hostId),
+    devices: (taskId, deviceId, foreignOwner) => {
+      const selected = splitDeviceId(deviceId)
+      return foreignOwner || !selected.hostId
+        ? previewDevices(deviceId)
+        : deviceHosts.list(taskId, selected.hostId, false, selected.id)
+    },
     driver: (taskId, device) => deviceHosts.driver(taskId, device),
   })
   const defaults = new RuntimeDefaults(db)
@@ -125,7 +129,17 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   // Task and message activity is recorded as the store changes. Replaying the stored
   // workspace here would resurrect pruned rows and duplicate task events on every start.
   const attachments = new Attachments(db, store, activity)
-  const pullCache = new PullCache(db, pulls, store, (cwd, refresh) => pulls.identity(cwd, refresh))
+  const reviewMarks = new ReviewMarks(db)
+  const pullCache = new PullCache(
+    db,
+    pulls,
+    store,
+    (cwd, refresh) => pulls.identity(cwd, refresh),
+    (detail) => {
+      if (!detail.warnings.some((warning) => warning.startsWith('Files:')))
+        reviewMarks.reconcile(pullReviewScope(detail), pullReviewFiles(detail))
+    },
+  )
   const scratch = new ScratchWorkspaces(
     db.name === ':memory:'
       ? join(tmpdir(), `dovo-scratch-${randomUUID()}`)
@@ -140,6 +154,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     scratch,
     () => preferences.worktreesRoot(),
   )
+  const fileReviews = new FileReviews({ store, git, checkouts, pullCache, reviewMarks })
   const memory = new Memory(db, store, preferences, checkouts)
   const titles = new TitleGeneration(db, store, agents)
   const tasks = new Tasks(
@@ -230,6 +245,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   })
 
   return {
+    fileReviews,
+    reviewMarks,
     pipelineWatch,
     pullRequestWatch,
     backups: new RuntimeBackups(db.name),
@@ -302,6 +319,8 @@ export interface Services {
   defaults: RuntimeDefaults
   titles: TitleGeneration
   activity: Activity
+  fileReviews: FileReviews
+  reviewMarks: ReviewMarks
   pullCache: PullCache
   pulls: ForgePullRequests
   commands: Commands

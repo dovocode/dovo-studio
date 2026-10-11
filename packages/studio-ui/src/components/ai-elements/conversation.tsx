@@ -27,9 +27,18 @@ export function Conversation({ className, ...props }: ComponentProps<typeof Stic
 }
 export function ConversationContent({
   className,
+  style,
   ...props
 }: ComponentProps<typeof StickToBottom.Content>) {
-  return <StickToBottom.Content className={cn('flex flex-col gap-4 p-4', className)} {...props} />
+  const ready = useContext(HistoryReady)
+  return (
+    <StickToBottom.Content
+      {...props}
+      className={cn('flex flex-col gap-4 p-4', className)}
+      // Keep scroll measurements available while the initial position settles.
+      style={ready ? style : { ...style, visibility: 'hidden' }}
+    />
+  )
 }
 const HistoryReady = createContext(true)
 /** Mount the latest content before allowing old turns to enter the render window. */
@@ -37,22 +46,27 @@ export function ConversationHistory({
   children,
   onLoadEarlier,
   onReadingHistory,
+  onReady,
 }: {
   children: ReactNode
   onLoadEarlier?: () => void
   onReadingHistory?: () => void
+  onReady?: () => void
 }) {
   const { scrollToBottom, scrollRef, escapedFromLock } = useStickToBottomContext()
   const [ready, setReady] = useState(false)
   useEffect(() => {
     let disposed = false
     void Promise.resolve(scrollToBottom({ animation: 'instant' })).then(() => {
-      if (!disposed) setReady(true)
+      if (!disposed) {
+        setReady(true)
+        onReady?.()
+      }
     })
     return () => {
       disposed = true
     }
-  }, [scrollToBottom])
+  }, [scrollToBottom, onReady])
   // Content observation alone misses viewport changes caused by the composer or panels.
   useEffect(() => {
     const root = scrollRef.current

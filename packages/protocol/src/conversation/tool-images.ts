@@ -1,5 +1,5 @@
 import { Schema } from 'effect'
-import { decodeResult, mutableArray, mutableStruct } from '../shared/schema.js'
+import { decodeResult, mutableArray, mutableStruct, uuidSchema } from '../shared/schema.js'
 const mime = Schema.Literals(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 const index = Schema.Number.pipe(
   Schema.check(Schema.isInt()),
@@ -78,9 +78,12 @@ export function toolImages(payload: unknown): ToolImage[] {
   visit(payload, 0)
   return images
 }
-export function toolImageReferences(payload: string): ToolImageReference[] {
+export function toolImageReferences(payload: unknown): ToolImageReference[] {
   try {
-    return decodeResult(referencesSchema, JSON.parse(payload)).data?.toolImages ?? []
+    return (
+      decodeResult(referencesSchema, typeof payload === 'string' ? JSON.parse(payload) : payload)
+        .data?.toolImages ?? []
+    )
   } catch {
     return []
   }
@@ -90,4 +93,11 @@ export const taskImageRequestSchema = mutableStruct({
   eventId: Schema.optional(Schema.String),
   index: Schema.optional(index),
   path: Schema.optional(Schema.String.pipe(Schema.check(Schema.isMaxLength(4000)))),
+  attachmentId: Schema.optional(uuidSchema),
+  maxSize: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 32, maximum: 2048 })),
+    ),
+  ),
 })

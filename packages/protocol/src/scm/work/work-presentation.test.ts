@@ -47,6 +47,7 @@ describe('pipeline status and actions', () => {
     'FAILED',
     'ERROR',
     'SYSTEM_ERROR',
+    'startup_failure',
     'STOPPED',
     'EXPIRED',
     'NOT_RUN',
@@ -77,6 +78,7 @@ describe('pipeline status and actions', () => {
       phase: 'finished',
     })
     expect(pipelineSignal('failed').tone).toBe('danger')
+    expect(pipelineSignal('startup_failure').tone).toBe('danger')
     expect(pipelineSignal('partiallySucceeded').tone).toBe('warning')
     expect(pipelineSignal('skipped').tone).toBe('neutral')
     expect(pipelineSignal('completed').tone).toBe('neutral')

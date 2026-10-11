@@ -2,6 +2,7 @@ import { nativeEffect, mobileWorkflow } from '../state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { Directory, File, Paths } from 'expo-file-system'
+import { writeAsStringAsync, deleteAsync, makeDirectoryAsync } from 'expo-file-system/legacy'
 import { digestStringAsync, CryptoDigestAlgorithm } from 'expo-crypto'
 import { createRuntimeReadCache, type CacheStorage, type RuntimeConnection } from '@dovo/protocol'
 const digest = (value: string) => digestStringAsync(CryptoDigestAlgorithm.SHA256, value)
@@ -31,17 +32,18 @@ const storage: CacheStorage = {
     return runClientEffect(
       mobileWorkflow(function* () {
         const { directory, file } = yield* fileFor(key)
-        directory.create({
-          intermediates: true,
-          idempotent: true,
-        })
+        if (!directory.exists)
+          yield* nativeEffect(() => makeDirectoryAsync(directory.uri, { intermediates: true }))
         const temporary = new File(directory, `${file.name}.tmp`)
-        temporary.write(value)
-        yield* nativeEffect(() =>
-          temporary.move(file, {
-            overwrite: true,
-          }),
-        )
+        const temporaryUri = temporary.uri
+        yield* nativeEffect(async () => {
+          try {
+            await writeAsStringAsync(temporaryUri, value)
+            await temporary.move(file, { overwrite: true })
+          } finally {
+            await deleteAsync(temporaryUri, { idempotent: true })
+          }
+        })
       }),
     )
   },
@@ -49,7 +51,7 @@ const storage: CacheStorage = {
     return runClientEffect(
       mobileWorkflow(function* () {
         const { file } = yield* fileFor(key)
-        if (file.exists) file.delete()
+        yield* nativeEffect(() => deleteAsync(file.uri, { idempotent: true }))
       }),
     )
   },
@@ -59,7 +61,7 @@ const storage: CacheStorage = {
         const match = /^dovo\.read-cache\.v1\.([a-f0-9]{64})\.$/.exec(prefix)
         if (!match) return yield* Effect.fail(new Error('Invalid offline cache namespace'))
         const directory = new Directory(root(), match[1])
-        if (directory.exists) directory.delete()
+        yield* nativeEffect(() => deleteAsync(directory.uri, { idempotent: true }))
       }),
     )
   },

@@ -12,7 +12,7 @@ import { MessageActions } from './components/message-actions'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import { useCallback, useEffect, useRef, useMemo, memo, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import {
   ActivityIndicator,
   FlatList,
@@ -25,13 +25,12 @@ import { Text } from '../../ui/content/text'
 import { Schema } from 'effect'
 import { attachmentSchema, activitySchema, type TaskTurn } from '@dovo/protocol'
 import {
-  MessageByIndexProvider,
   MessagePrimitive,
   ThreadPrimitive,
   useAuiState,
+  unstable_useThreadMessageIds,
   type DataMessagePartProps,
   type ToolCallMessagePartProps,
-  type ThreadMessage,
 } from '@assistant-ui/react-native'
 import {
   usePendingConversationMessage,
@@ -266,10 +265,11 @@ const userParts = {
 function AssistantParts({ footer = false }: { footer?: boolean }) {
   const { colors, styles } = useTheme()
 
-  const message = useAuiState((state) => state.message)
-  const presentation = useConversationPresentation(message.id)
+  const id = useAuiState((state) => state.message.id)
+  const content = useAuiState((state) => state.message.content)
+  const presentation = useConversationPresentation(id)
   const turn = presentation?.groupTurn
-  const turnId = presentation?.groupId ?? message.id
+  const turnId = presentation?.groupId ?? id
   const collapsed = useConversationSelector(
     useCallback((value) => value.collapsedTurns[turnId], [turnId]),
   )
@@ -277,13 +277,13 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
   const open = !(collapsed ?? turn?.status === 'completed')
   const car = useCarMode()
   const { finalIndex, end } = turnPartBoundaries(
-    message.content,
+    content,
     turn?.status === 'running' || !presentation?.final,
   )
   if (footer)
     return (
       <>
-        {(open || presentation?.footer ? message.content.slice(end) : []).map((_, index) => (
+        {(open || presentation?.footer ? content.slice(end) : []).map((_, index) => (
           <MessagePrimitive.PartByIndex key={end + index} index={end + index} components={parts} />
         ))}
       </>
@@ -291,7 +291,7 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
   if (!turn || car)
     return (
       <>
-        {message.content.slice(0, end).map((_, index) => (
+        {content.slice(0, end).map((_, index) => (
           <MessagePrimitive.PartByIndex key={index} index={index} components={parts} />
         ))}
       </>
@@ -299,10 +299,10 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
   const renderRange = (start: number, end: number) => {
     const elements = []
     for (let index = start; index < end; index++) {
-      const part = message.content[index]
+      const part = content[index]
       if (part.type === 'tool-call') {
         const first = index
-        index = toolPartGroupEnd(message.content, first, end)
+        index = toolPartGroupEnd(content, first, end)
         elements.push(
           <WorkGroup
             key={part.toolCallId}
@@ -310,7 +310,7 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
             endIndex={index}
             artifactsOnly={
               !open &&
-              !message.content
+              !content
                 .slice(first, index + 1)
                 .some((part) => part.type === 'tool-call' && part.isError)
             }
@@ -362,7 +362,7 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
       )}
       {open
         ? renderRange(0, end)
-        : foldedTurnPartRanges(message.content, finalIndex, end).flatMap((range) =>
+        : foldedTurnPartRanges(content, finalIndex, end).flatMap((range) =>
             renderRange(range.start, range.end),
           )}
     </>
@@ -373,12 +373,11 @@ function Message() {
 
   const pendingMessage = usePendingConversationMessage()
   const id = useAuiState((state) => state.message.id)
+  const latest = useAuiState((state) => state.thread.messages.at(-1)?.id === state.message.id)
+  const onRecentLayout = useConversationSelector((value) => value.onRecentLayout)
   const user = useAuiState((state) => state.message.role === 'user')
   const childResult = useConversationSelector(
-    useCallback(
-      (value) => !!value.task.messages.find((message) => message.id === id)?.subagentResultId,
-      [id],
-    ),
+    useCallback((value) => value.childResultIds.has(id), [id]),
   )
   const createdAt = useAuiState((state) => state.message.createdAt)
   const streaming = useAuiState((state) => state.message.status?.type === 'running')
@@ -412,6 +411,7 @@ function Message() {
   if (!showContent && !presentation?.header) return null
   return (
     <MessagePrimitive.Root
+      onLayout={latest ? onRecentLayout : undefined}
       style={{
         gap: 4,
         marginBottom: 10,
@@ -469,23 +469,11 @@ function Message() {
     </MessagePrimitive.Root>
   )
 }
-const ConversationMessageCell = memo(function ConversationMessageCell({
-  index,
-}: {
-  index: number
-}) {
-  return (
-    <MessageByIndexProvider index={index}>
-      <Message />
-    </MessageByIndexProvider>
-  )
-})
-const renderConversationMessage = ({
-  item,
-}: {
-  item: { message: ThreadMessage; index: number }
-}) => <ConversationMessageCell index={item.index} />
-const messageKey = (item: { message: ThreadMessage; index: number }) => item.message.id
+const messageComponents = { Message }
+const renderConversationMessage = ({ item }: { item: string }) => (
+  <ThreadPrimitive.Unstable_MessageById messageId={item} components={messageComponents} />
+)
+const messageKey = (id: string) => id
 export function Conversation({ onBrowse, setup }: { onBrowse?: () => void; setup?: ReactNode }) {
   const { colors, styles } = useTheme()
 
@@ -494,13 +482,15 @@ export function Conversation({ onBrowse, setup }: { onBrowse?: () => void; setup
   const legacyEvents = useConversationSelector((value) => value.legacyEvents)
   const activityError = useConversationSelector((value) => value.activityError)
   const followRequest = useConversationSelector((value) => value.followRequest)
+  const recentReady = useConversationSelector((value) => value.recentReady)
+  const onRecentLayout = useConversationSelector((value) => value.onRecentLayout)
   const bookmarks = task.messages.flatMap((message, index) =>
     message.role === 'assistant' && message.bookmarked ? [{ message, index }] : [],
   )
   const car = useCarMode()
   const { activeId, connected } = useRuntime()
-  const messages = useAuiState((state) => state.thread.messages)
-  const messageCount = messages.length
+  const messageIds = unstable_useThreadMessageIds()
+  const messageCount = messageIds.length
   const emptyDraft =
     task.status === 'draft' &&
     !messageCount &&
@@ -509,11 +499,8 @@ export function Conversation({ onBrowse, setup }: { onBrowse?: () => void; setup
     !history.hasMore &&
     !history.error &&
     !activityError
-  const newestFirst = useMemo(
-    () => messages.map((message, index) => ({ message, index })).reverse(),
-    [messages],
-  )
-  const list = useRef<FlatList<{ message: ThreadMessage; index: number }>>(null)
+  const newestFirst = useMemo(() => [...messageIds].reverse(), [messageIds])
+  const list = useRef<FlatList<string>>(null)
   const [scroll] = useApplicationState(() => createConversationScroll({ inverted: true }))
   const [following, setFollowing] = useApplicationState(true)
   const frame = useRef<number | null>(null)
@@ -595,7 +582,8 @@ export function Conversation({ onBrowse, setup }: { onBrowse?: () => void; setup
         maxToRenderPerBatch={6}
         windowSize={7}
         onEndReached={() => {
-          if (history.hasMore && !history.busy && !history.error && connected) void history.load()
+          if (recentReady && history.hasMore && !history.busy && !history.error && connected)
+            void history.load()
         }}
         onEndReachedThreshold={2}
         ref={list}
@@ -613,7 +601,10 @@ export function Conversation({ onBrowse, setup }: { onBrowse?: () => void; setup
         testID="Conversation messages"
         // Offset zero is the latest reply, independent of older Markdown measurements.
         onContentSizeChange={(_width, height) => move(scroll.content(height))}
-        onLayout={({ nativeEvent }) => move(scroll.viewport(nativeEvent.layout.height))}
+        onLayout={({ nativeEvent }) => {
+          move(scroll.viewport(nativeEvent.layout.height))
+          if (!messageCount) onRecentLayout()
+        }}
         onScrollBeginDrag={() => {
           cancelMove()
           scroll.beginInteraction()

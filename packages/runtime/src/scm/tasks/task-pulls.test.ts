@@ -178,6 +178,95 @@ async function smartFixture(state: 'closed' | 'merged' = 'closed') {
   return { s, task, list, detail, watcher: new TaskPullWatcher(s) }
 }
 
+it.each([
+  ['settle', 'pr'],
+  ['settle', 'pipeline'],
+  ['archive', 'pr'],
+  ['archive', 'pipeline'],
+] as const)(
+  'defers automatic %s while a linked project has an active %s watch',
+  async (policy, kind) => {
+    const f = await smartFixture('merged')
+    const repo = f.s.store.get().repositories.find((repo) => repo.id === 'repo')
+    if (!repo) throw new Error('Expected primary project')
+    f.s.store.update((workspace) => ({
+      ...workspace,
+      repositories: [
+        ...workspace.repositories,
+        { ...repo, id: 'linked', path: `${repo.path}/linked` },
+      ],
+      tasks: workspace.tasks.map((task) =>
+        task.id === f.task.id
+          ? {
+              ...task,
+              linkedCheckouts: [
+                { id: 'linked', repositoryId: 'linked', access: 'edit', execution: 'main' },
+              ],
+            }
+          : task,
+      ),
+    }))
+    f.s.preferences.save({
+      enablePullRequestWatching: true,
+      enablePipelineWatching: true,
+      settleOnPullClose: policy === 'settle',
+      archiveOnPullMerge: policy === 'archive',
+    })
+    if (kind === 'pr') {
+      const closed = await f.s.pullCache.status(repo.path, 7)
+      const url = 'https://github.com/o/linked/pull/7'
+      vi.spyOn(f.s.pullCache, 'feedback').mockResolvedValue({
+        ...closed,
+        pull: { ...closed.pull, state: 'open', url },
+      })
+      await f.s.pullRequestWatch.command({
+        taskId: f.task.id,
+        action: 'watch',
+        repositoryId: 'linked',
+        url,
+      })
+    } else {
+      vi.spyOn(f.s.forgeWork, 'request').mockResolvedValue({
+        cachedAt: new Date().toISOString(),
+        run: {
+          id: '7',
+          title: 'Build',
+          url: 'https://github.com/o/linked/actions/runs/7',
+          sha: 'a'.repeat(40),
+          actor: 'me',
+          ref: 'main',
+          status: 'running',
+          createdAt: '',
+          updatedAt: '',
+        },
+        jobs: [],
+      })
+      await f.s.pipelineWatch.command({
+        taskId: f.task.id,
+        action: 'watch',
+        repositoryId: 'linked',
+        runIds: ['7'],
+      })
+    }
+    expect(f.s.store.task(f.task.id).waitingForFeedback).toBe(true)
+    await f.watcher.refresh()
+    f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+    await f.watcher.refresh()
+    expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+    if (kind === 'pr')
+      await f.s.pullRequestWatch.command({
+        taskId: f.task.id,
+        action: 'stop',
+        repositoryId: 'linked',
+      })
+    else
+      await f.s.pipelineWatch.command({ taskId: f.task.id, action: 'stop', repositoryId: 'linked' })
+    await f.watcher.refresh()
+    expect(f.s.store.task(f.task.id).archived).toBe(true)
+    expect(Boolean(f.s.store.task(f.task.id).archivedAt)).toBe(policy === 'archive')
+  },
+)
+
 it.each(['settle', 'archive'] as const)(
   'protects pending descendants then %ss the whole PR task family',
   async (policy) => {

@@ -73,6 +73,7 @@ export function SettingsRow({
   subtitle,
   value,
   icon,
+  tint,
   onPress,
   label,
   testID,
@@ -97,6 +98,8 @@ export function SettingsRow({
 }) {
   const { colors, styles } = useTheme()
   const grouped = useContext(GroupContext)
+  const { width, fontScale } = useWindowDimensions()
+  const stacked = width / fontScale < 360
   return (
     <Pressable
       testID={testID ?? label ?? title}
@@ -124,7 +127,7 @@ export function SettingsRow({
           justifyContent: 'center',
         }}
       >
-        <Icon name={icon} size={22} color={colors.text} />
+        <Icon name={icon} size={22} color={tint ?? colors.text} />
       </View>
       <View
         style={{
@@ -140,25 +143,40 @@ export function SettingsRow({
           borderColor: colors.border,
         }}
       >
-        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-          <Text style={styles.text}>{title}</Text>
-          {subtitle && <Text style={styles.muted}>{subtitle}</Text>}
-        </View>
-        {value && (
-          <Text
-            numberOfLines={1}
-            style={[styles.text, { color: colors.muted, flexShrink: 1, maxWidth: '45%' }]}
-          >
-            {value}
-          </Text>
-        )}
-        {selected && <Icon name="check" size={16} color={colors.accent} />}
-        {mark && (
-          <View accessibilityLabel={mark.label}>
-            <Icon name={mark.icon} size={13} color={colors.muted} />
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            flexDirection: stacked ? 'column' : 'row',
+            alignItems: stacked ? 'stretch' : 'center',
+            gap: stacked ? 4 : 8,
+          }}
+        >
+          <View style={{ flex: stacked ? undefined : 1, minWidth: 0, gap: 2 }}>
+            <Text style={styles.text}>{title}</Text>
+            {subtitle && <Text style={styles.muted}>{subtitle}</Text>}
           </View>
-        )}
-        <Icon name="next" size={15} color={colors.muted} />
+          {value && (
+            <Text
+              numberOfLines={stacked ? undefined : 1}
+              style={[
+                styles.text,
+                { color: colors.muted, flexShrink: 1, maxWidth: stacked ? undefined : '45%' },
+              ]}
+            >
+              {value}
+            </Text>
+          )}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {selected && <Icon name="check" size={16} color={colors.accent} />}
+          {mark && (
+            <View accessibilityLabel={mark.label}>
+              <Icon name={mark.icon} size={13} color={colors.muted} />
+            </View>
+          )}
+          <Icon name="next" size={15} color={colors.muted} />
+        </View>
       </View>
     </Pressable>
   )

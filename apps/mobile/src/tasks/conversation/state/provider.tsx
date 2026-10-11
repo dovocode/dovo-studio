@@ -17,6 +17,7 @@ import { AssistantRuntimeProvider } from '@assistant-ui/react-native'
 import { useExternalStoreRuntime } from '@assistant-ui/core/react'
 import {
   startingConversationMessage,
+  unassignedConversationTools,
   conversationPresentation,
   type PendingMessage,
   type Task,
@@ -32,9 +33,12 @@ import { useRef } from 'react'
 import { taskToolEvents, type ToolEvents } from './tool-events'
 type Conversation = {
   visible: boolean
+  recentReady: boolean
+  onRecentLayout: () => void
   history: ReturnType<typeof useConversationHistory<Task>>
   task: Task
   presentation: ReturnType<typeof conversationPresentation>
+  childResultIds: ReadonlySet<string>
   actions: ReturnType<typeof useConversationActions>
   send: (mode?: 'queue' | 'steer') => void
   stop: () => void
@@ -87,8 +91,17 @@ export function ConversationProvider({
   openTerminal: (terminalId: string) => void
   children: ReactNode
 }) {
-  const history = useConversationHistory(liveTask)
+  const [recentReady, setRecentReady] = useState(false)
+  const onRecentLayout = useCallback(() => setRecentReady(true), [])
+  const history = useConversationHistory(liveTask, visible && recentReady)
   const task = history.task
+  const childResultIds = useMemo(
+    () =>
+      new Set(
+        task.messages.filter((message) => message.subagentResultId).map((message) => message.id),
+      ),
+    [task.messages],
+  )
   const retainPresentation = useMemo(() => {
     let previous: ReturnType<typeof conversationPresentation> = new Map()
     return (next: ReturnType<typeof conversationPresentation>) => {
@@ -220,13 +233,8 @@ export function ConversationProvider({
     pendingMessage,
   ])
   const legacyEvents = useMemo(() => {
-    const visibleTurns = new Set(
-      [...presentation.values()].flatMap((item) => (item.turn ? [item.turn.id] : [])),
-    )
-    return taskToolEvents(task, activity.events).filter(
-      (event) => !event.turnId || !visibleTurns.has(event.turnId),
-    )
-  }, [activity.events, task.id, task.status, task.turns, presentation])
+    return unassignedConversationTools(task, taskToolEvents(task, activity.events))
+  }, [activity.events, task.id, task.status, task.turns, task.messages])
   const runtime = useExternalStoreRuntime({
     messages,
     convertMessage: convertConversationMessage,
@@ -274,8 +282,11 @@ export function ConversationProvider({
   const value: Conversation = {
     task,
     presentation,
+    childResultIds,
     history,
     visible,
+    recentReady,
+    onRecentLayout,
     actions,
     openCheckpoint: showCheckpoint,
     openTerminal: showTerminal,

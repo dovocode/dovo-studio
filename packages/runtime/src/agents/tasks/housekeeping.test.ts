@@ -87,9 +87,11 @@ async function archiveFixture() {
 it('automatically archives the main thread and all descendants together', async () => {
   const { s, housekeeping } = await archiveFixture()
   const close = vi.spyOn(s.browsers, 'closeTask').mockResolvedValue()
+  const release = vi.spyOn(s.agents, 'releaseTask').mockResolvedValue()
   expect(await housekeeping.archiveInactive(now)).toEqual(['parent'])
   expect(s.store.get().tasks.every((item) => item.archived && item.archivedAt)).toBe(true)
   expect(close.mock.calls.map(([id]) => id).sort()).toEqual(['child', 'nested', 'parent'])
+  expect(release.mock.calls.map(([id]) => id).sort()).toEqual(['child', 'nested', 'parent'])
 })
 
 it('keeps the whole family unarchived when its activity audit cannot commit', async () => {
@@ -164,6 +166,30 @@ it('prunes activity older than the retention window and keeps newer entries', as
   retention = 90
   expect(await housekeeping.pruneActivity(now)).toBe(4500)
   expect(db.prepare('SELECT id FROM activity').all()).toEqual([{ id: 'recent' }])
+})
+
+it('rechecks inactivity after releasing provider processes before auto-settling', async () => {
+  const { s, housekeeping } = await archiveFixture()
+  s.defaults.save(
+    {
+      ...s.defaults.get(),
+      scopedSettings: { environment: { taskBehavior: { settleInactive: true } }, shared: [] },
+    },
+    false,
+  )
+  let released!: () => void
+  const release = vi.spyOn(s.agents, 'releaseTask').mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        released = resolve
+      }),
+  )
+  const settling = housekeeping.settleInactive(now)
+  await vi.waitFor(() => expect(release).toHaveBeenCalledOnce())
+  s.store.updateTask('parent', (task) => ({ ...task, draft: 'New work' }))
+  released()
+  expect(await settling).toEqual([])
+  expect(s.store.task('parent').archived).not.toBe(true)
 })
 
 it('settles inactive task families using scoped policy without archiving or touching worktrees', async () => {

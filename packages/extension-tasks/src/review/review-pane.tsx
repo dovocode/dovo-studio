@@ -1,3 +1,6 @@
+import { changedFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
+import { useFileReview } from '@dovo/studio-core'
+import { FileReviewControls } from '@dovo/studio-ui'
 import { useAppPreferences, whitespaceOnlyFile } from '@dovo/studio-core'
 import { LinkedReview } from './linked-review'
 import { ChoicePicker } from '@dovo/studio-ui'
@@ -5,7 +8,7 @@ import { SavedFilePreview } from '../files/saved-file-preview'
 import { randomUUID, checkpointFiles } from '@dovo/protocol'
 import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { useLiveRefresh } from '../detail/live-refresh'
 import { DiskActions } from './disk-actions'
 import {
@@ -42,9 +45,12 @@ function PrimaryReviewPane({
 }) {
   const { hideWhitespaceChanges } = useAppPreferences()
   const { setWorkspace, request, connected } = useWorkspace()
+  const [selected, setSelected] = useApplicationState('')
+  const displayedPath = useRef('')
   const [editing, setEditing] = useApplicationState(false)
   const editingChanged = useCallback(
     (value: boolean) => {
+      if (value) setSelected(displayedPath.current)
       setEditing(value)
       onEditingChange?.(value)
     },
@@ -67,7 +73,6 @@ function PrimaryReviewPane({
     base: string
   } | null>(null)
   const [branchLoading, setBranchLoading] = useApplicationState(false)
-  const [selected, setSelected] = useApplicationState('')
   const turns = task.turns ?? []
   const selectedTurn =
     source.kind === 'latest'
@@ -81,7 +86,7 @@ function PrimaryReviewPane({
       : source.kind === 'branch'
         ? (branchDiff?.files ?? [])
         : (selectedTurn?.checkpoint?.files ?? [])
-  const files = useMemo(
+  const visibleFiles = useMemo(
     () =>
       checkpointFiles({
         files: sourceFiles,
@@ -98,7 +103,45 @@ function PrimaryReviewPane({
       selectedTurn?.checkpoint?.omitted,
     ],
   )
+  const fingerprints = useMemo(
+    () => new Map(visibleFiles.map((file) => [file.path, changedFileFingerprint(file)])),
+    [visibleFiles],
+  )
+  const review = useFileReview(
+    {
+      kind: 'task',
+      taskId: task.id,
+      source: source.kind === 'working' || source.kind === 'branch' ? source.kind : 'turn',
+      turnId: selectedTurn?.id,
+    },
+    JSON.stringify([...fingerprints]),
+  )
+  const [related, setRelated] = useApplicationState(true)
+  const files = useMemo(
+    () =>
+      orderReviewFiles(
+        visibleFiles.map((file) => ({
+          ...file,
+          viewed:
+            source.kind === 'working'
+              ? file.viewed
+              : (reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+                  ?.viewed ?? false),
+        })),
+        review.progress?.groups ?? [],
+        related,
+      ),
+    [visibleFiles, fingerprints, review.progress, related, source.kind],
+  )
   const file = files.find((item) => item.path === selected) ?? files[0]
+  displayedPath.current = file?.path ?? ''
+  const pendingDraft =
+    source.kind === 'working' &&
+    file?.diskContents !== undefined &&
+    file.diskContents !== file.after
+  const chooseFile = (path: string) => {
+    if (!editing) setSelected(path)
+  }
   const sourceLabel =
     source.kind === 'working'
       ? 'Working tree'
@@ -121,6 +164,7 @@ function PrimaryReviewPane({
   }, [request, task.repositoryId, task.id, branchRefresh])
   const branchError = useLiveRefresh(connected && source.kind === 'branch', refreshBranch)
   const chooseSource = (next: DiffSource) => {
+    if (editing) return
     setSelected('')
     if (next.kind === 'branch') {
       setBranchRefresh((value) => value + 1)
@@ -129,7 +173,7 @@ function PrimaryReviewPane({
     }
     setSource(next)
   }
-  const stats = useMemo(() => files.map(fileStats), [files])
+  const stats = useMemo(() => visibleFiles.map(fileStats), [visibleFiles])
   const additions = stats.reduce((total, item) => total + item.additions, 0)
   const deletions = stats.reduce((total, item) => total + item.deletions, 0)
   return (
@@ -144,6 +188,7 @@ function PrimaryReviewPane({
               variant="ghost"
               size="sm"
               className="h-8 gap-1.5 rounded-md bg-muted/50 px-2.5 text-xs font-medium"
+              disabled={editing}
               aria-label={`Diff source: ${sourceLabel}`}
             >
               {sourceLabel} <ChevronDown className="size-3.5 text-muted-foreground" />
@@ -294,11 +339,44 @@ function PrimaryReviewPane({
           <FolderTree size={14} />
         </IconButton>
         {onClose && (
-          <IconButton label="Close review pane" className="size-7" onClick={onClose}>
+          <IconButton
+            label="Close review pane"
+            className="size-7"
+            onClick={onClose}
+            disabled={editing}
+            title={editing ? 'Save or cancel your edit before closing' : undefined}
+          >
             <PanelRightClose size={14} />
           </IconButton>
         )}
       </header>
+      <FileReviewControls
+        files={files}
+        selected={file?.path ?? ''}
+        onSelect={chooseFile}
+        onViewed={(viewed) => {
+          if (file) review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
+        }}
+        disabled={
+          !review.ready ||
+          editing ||
+          !!task.example ||
+          !file ||
+          !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+        }
+        busy={review.busy}
+        navigationDisabled={editing}
+        error={review.error}
+        onRetry={review.reload}
+      />
+      {pendingDraft && file && (
+        <div className="shrink-0 border-b">
+          <p className="px-3 pt-2 text-xs text-muted-foreground">
+            Saved draft pending. Apply it to disk or reload the file to continue.
+          </p>
+          <DiskActions task={task} file={file} />
+        </div>
+      )}
       {(reviewError || branchError) && (
         <p role="alert" className="border-b px-3 py-2 text-xs text-destructive">
           {reviewError || branchError}
@@ -311,11 +389,11 @@ function PrimaryReviewPane({
             task={task}
             className="p-2"
             onOpen={(finding) => {
-              if (task.files.some((item) => item.path === finding.path)) setSelected(finding.path)
+              if (task.files.some((item) => item.path === finding.path)) chooseFile(finding.path)
             }}
           />
           <CommitBar task={task} />
-          {file && <DiskActions task={task} file={file} />}
+          {file && !pendingDraft && <DiskActions task={task} file={file} />}
           {file && <ReviewFeedback key={file.path} task={task} file={file} />}
         </div>
       )}
@@ -384,7 +462,16 @@ function PrimaryReviewPane({
             </ErrorBoundary>
           </div>
           {filesOpen && (
-            <FileTree files={files} stats={stats} selected={file.path} onSelect={setSelected} />
+            <FileTree
+              files={files}
+              stats={stats}
+              selected={file.path}
+              onSelect={chooseFile}
+              groups={review.progress?.groups ?? []}
+              related={related}
+              onRelatedChange={setRelated}
+              disabled={editing}
+            />
           )}
         </div>
       ) : (
@@ -407,11 +494,20 @@ function PrimaryReviewPane({
 export function ReviewPane(props: Parameters<typeof PrimaryReviewPane>[0]) {
   const { workspace } = useWorkspace()
   const [checkoutId, setCheckoutId] = useApplicationState('')
+  const [editing, setEditing] = useApplicationState(false)
+  const editingChanged = useCallback(
+    (value: boolean) => {
+      setEditing(value)
+      props.onEditingChange?.(value)
+    },
+    [props.onEditingChange],
+  )
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {!!props.task.linkedCheckouts?.length && (
         <ChoicePicker
           aria-label="Review project checkout"
+          disabled={editing}
           value={checkoutId}
           onValueChange={setCheckoutId}
         >
@@ -432,7 +528,7 @@ export function ReviewPane(props: Parameters<typeof PrimaryReviewPane>[0]) {
           checkoutId={checkoutId}
         />
       ) : (
-        <PrimaryReviewPane {...props} />
+        <PrimaryReviewPane {...props} onEditingChange={editingChanged} />
       )}
     </div>
   )

@@ -435,7 +435,9 @@ export function PullDetail({
             >
               {changesOpened && (
                 <PullChanges
-                  key={detail.pull.headSha}
+                  active={tab === 'changes'}
+                  key={`${repositoryId}:${detail.pull.number}`}
+                  repositoryId={repositoryId}
                   detail={detail}
                   onOpen={open}
                   onAction={actionDisabled ? undefined : setAction}

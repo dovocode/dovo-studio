@@ -18,13 +18,13 @@ const initial={id:'thread',title:'Thread',status:'done',messages:[
 {id:'steer',turnId:'attempt',role:'user',text:'Clarification',createdAt:'2026-10-03T10:00:10Z'},
 {id:'after',turnId:'attempt',role:'assistant',text:'Linking works on right-click or long-press.Final answer.',textBreaks:[43,56],createdAt:'2026-10-03T10:00:11Z'}],turns:[turn],files:[],draft:''};
 const events=[{id:'last',time:'2026-10-03T10:00:50Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'last',status:'completed',textOffset:56,event:{item:{type:'commandExecution',command:'git diff'}}})},{id:'command',time:'2026-10-03T10:00:20Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'command',status:'completed',textOffset:35,event:{item:{type:'commandExecution',command:'git status'}}})},{id:'prior',time:'2026-10-03T10:00:05Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'before',toolId:'prior',status:'completed',textOffset:13,event:{item:{type:'commandExecution',command:'pnpm test'}}})}];
-window.events=events;export function App(){const[task,setTask]=useState(initial),[collapsedTurns,setCollapsed]=useState({}),[preferences,setPreferences]=useState({toolActivity:'collapsed',showToolDetails:false,responseStreaming:'tokens'});window.setTask=setTask;window.setPreferences=setPreferences;window.fixturePreferences=preferences;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,tools:recentTools(events),preferences,collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??[...presentation.values()].find(value=>value.groupId===id)?.groupTurn?.status==='completed')})),workspace:{tasks:[task]},connected:true,request:async()=>({ok:true}),history:{hasMore:false,busy:false,error:'',setBookmark:()=>{}},legacyEvents:[],activityError:'',followRequest:0};return <Context.Provider value={value}>CONTENT</Context.Provider>}
+window.events=events;export function App(){const[task,setTask]=useState(initial),[active,setActive]=useState(true),[collapsedTurns,setCollapsed]=useState({}),[preferences,setPreferences]=useState({toolActivity:'collapsed',showToolDetails:false,responseStreaming:'tokens'});window.setTask=setTask;window.setActive=setActive;window.setPreferences=setPreferences;window.fixturePreferences=preferences;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,childResultIds:new Set(task.messages.filter(message=>message.subagentResultId).map(message=>message.id)),tools:recentTools(events),preferences,collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??[...presentation.values()].find(value=>value.groupId===id)?.groupTurn?.status==='completed')})),workspace:{tasks:[task]},connection:{address:'http://copy.lan:8787',token:'copy-token'},connected:true,request:async()=>({ok:true}),history:{hasMore:false,busy:false,error:'',setBookmark:()=>{}},legacyEvents:[],activityError:'',followRequest:0,recentReady:true,onRecentLayout:()=>{window.recentLayouts=(window.recentLayouts??0)+1}};return <Context.Provider value={value}>CONTENT</Context.Provider>}
 `
 const ui = `
 export * as ContextMenu from '@radix-ui/react-context-menu';export const Conversation=({children,...props})=><div {...props}>{children}</div>;
 export const ConversationContent=({children})=><div>{children}</div>,ConversationHistory=ConversationContent;
 export const Message=({children,id})=><div id={id}>{children}</div>,MessageContent=ConversationContent;
-export const MessageResponse=({children})=><p data-prose>{children}</p>;
+export const MessageResponse=({children})=>{(window.renderedProse??=[]).push(children);return <p data-prose>{children}</p>};
 export const Button=({children,onClick,disabled,...props})=><button aria-expanded={props['aria-expanded']} disabled={disabled} onClick={onClick}>{children}</button>,IconButton=Button;
 export const ConversationRail=()=>null,ConversationScrollButton=()=>null;
 `
@@ -53,22 +53,26 @@ async function bundle(mobile) {
     '../../ui/controls/pill': `export const Pill=()=>null;`,
     '../../ui/controls/action': `export const Action=()=>null;`,
     '../../runtime/connection/connection-status': `export const ConnectionPill=()=>null;`,
-    './components/thread-markdown': `export const ThreadMarkdown=({text})=><p data-prose>{text}</p>;`,
+    './components/thread-markdown': `export const ThreadMarkdown=({text})=>{(window.renderedProse??=[]).push(text);return <p data-prose>{text}</p>};`,
     './components/tool-activity-row': `import {ToolActivityRow as ActualToolActivityRow} from '${root}/apps/mobile/src/tasks/conversation/components/tool-activity-row.tsx';export const ToolActivityRow=props=>window.artifactCase?<ActualToolActivityRow {...props}/>:<div data-tools>Tools</div>;export const ReasoningActivity=()=>null;`,
     './components/work-group': `import {ConversationWorkGroup as ActualWorkGroup} from '${root}/apps/mobile/src/tasks/conversation/components/work-group.tsx';export const ConversationWorkGroup=props=>window.artifactCase?<ActualWorkGroup {...props}/>:<div>{props.children}</div>;`,
     './components/activity': `export const TaskActivity=()=>null;`,
     '@assistant-ui/react-native': `
-import {useContext} from 'react';import {MessageContext,useFixture} from 'fixture';
+import {useContext,useEffect} from 'react';import {MessageContext,useFixture} from 'fixture';
 export const useAuiState=select=>{const fixture=useFixture(),message=useContext(MessageContext);return select({thread:{messages:fixture.messages},message})};
-export const MessageByIndexProvider=({index,children})=><MessageContext.Provider value={useFixture().messages[index]}>{children}</MessageContext.Provider>;
+export const unstable_useThreadMessageIds=()=>useFixture().messages.map(message=>message.id);
 const PartByIndex=({index,components})=>{const part=useContext(MessageContext).content[index];const C=part.type==='text'?components.Text:part.type==='tool-call'?components.tools.Fallback:components.data.by_name[part.name];return C?<C {...part}/>:null};
-export const MessagePrimitive={Root:({children})=><div>{children}</div>,PartByIndex,Parts:({components})=>useContext(MessageContext).content.map((_,index)=><PartByIndex key={index} index={index} components={components}/>)};
-export const ThreadPrimitive={Root:({children})=><div>{children}</div>};`,
+export const MessagePrimitive={Root:({children,onLayout})=>{useEffect(()=>onLayout?.(),[onLayout]);return <div>{children}</div>},PartByIndex,Parts:({components})=>useContext(MessageContext).content.map((_,index)=><PartByIndex key={index} index={index} components={components}/>)};
+export const ThreadPrimitive={Root:({children})=><div>{children}</div>,Unstable_MessageById:({messageId,components})=>{
+const message=useFixture().messages.find(message=>message.id===messageId);if(!message)return null;
+const Component=components.Message;return <MessageContext.Provider value={message}><Component/></MessageContext.Provider>;
+}};`,
     'react-native': `
+import {useEffect} from 'react';
 export const View=({children})=><div>{children}</div>,Text=({children})=><span>{children}</span>;
 export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} onClick={onPress}>{children}</button>:<div onClick={onPress}>{children}</div>;
 export const ActivityIndicator=()=>null;
-export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent})=><div>{ListFooterComponent}{[...data].reverse().map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListHeaderComponent}</div>;`,
+export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout})=>{useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[onLayout]);return <div style={{display:'flex',flexDirection:'column-reverse'}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
   }
   mocks['../state/provider'] =
     `import {useFixture} from 'fixture';export const useConversationTurn=id=>useFixture().presentation.get(id)?.turn;`
@@ -127,7 +131,10 @@ export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFoo
             contents:
               path === 'fixture'
                 ? fixture
-                    .replace('CONTENT', mobile ? '<Conversation/>' : '<ChatThread task={task}/>')
+                    .replace(
+                      'CONTENT',
+                      mobile ? '<Conversation/>' : '<ChatThread task={task} active={active}/>',
+                    )
                     .replace(
                       'export const Context=',
                       mobile
@@ -150,6 +157,20 @@ export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFoo
   })
   return result.outputFiles[0].text
 }
+const visualText = (locator) =>
+  locator.evaluateAll((elements) =>
+    elements
+      .map((element) => ({ text: element.textContent, top: element.getBoundingClientRect().top }))
+      .sort((a, b) => a.top - b.top)
+      .map(({ text }) => text),
+  )
+const visualIndices = (locator) =>
+  locator.evaluateAll((elements) =>
+    elements
+      .map((element, index) => ({ index, top: element.getBoundingClientRect().top }))
+      .sort((a, b) => a.top - b.top)
+      .map(({ index }) => index),
+  )
 const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
@@ -157,25 +178,45 @@ try {
     page.setDefaultTimeout(8000)
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
-    await page.setContent('<div id="app"></div>')
+    await page.setContent(
+      '<style>.flex{display:flex}.flex-col{flex-direction:column}.flex-col-reverse{flex-direction:column-reverse}.gap-3{gap:12px}.gap-5{gap:20px}</style><div id="app"></div>',
+    )
     await page.addScriptTag({ content: await bundle(mobile) })
     const header = page.getByRole('button', { name: /Worked for/ })
     await header.waitFor()
+    assert.equal(
+      await page.evaluate(() => window.renderedProse[0]),
+      mobile ? 'Final answer.' : 'Original request',
+    )
+    if (mobile) assert.equal(await page.evaluate(() => window.recentLayouts), 1)
     assert.equal(await header.count(), 1)
     assert.equal(
       await page.getByText('1 test command · 3 commands used', { exact: true }).count(),
       1,
     )
     assert.equal(
-      await page
-        .locator('[data-prose]')
-        .allTextContents()
-        .then((text) => text.join('|')),
+      (await visualText(page.locator('[data-prose]'))).join('|'),
       'Original request|Clarification|Final answer.',
     )
+    if (!mobile) {
+      const selected = await page.evaluate(() => {
+        const prose = [...document.querySelectorAll('[data-prose]')]
+        const range = document.createRange()
+        range.setStartBefore(prose[0])
+        range.setEndAfter(prose.at(-1))
+        const selection = window.getSelection()
+        selection.removeAllRanges()
+        selection.addRange(range)
+        const text = selection.toString()
+        selection.removeAllRanges()
+        return text
+      })
+      assert.ok(selected.indexOf('Original request') < selected.indexOf('Clarification'))
+      assert.ok(selected.indexOf('Clarification') < selected.indexOf('Final answer.'))
+    }
     assert.equal(await page.locator('[data-tools]').count(), 0)
     await header.click()
-    assert.deepEqual(await page.locator('[data-prose]').allTextContents(), [
+    assert.deepEqual(await visualText(page.locator('[data-prose]')), [
       'Original request',
       'First update.',
       'Second update.',
@@ -186,7 +227,7 @@ try {
     const prose = page.getByText('Linking works on right-click or long-press.', { exact: true })
     assert.equal(await prose.count(), 1)
     assert.equal(await page.locator('[data-tools]').count(), 3)
-    const order = await page.locator('[data-prose],[data-tools]').allTextContents()
+    const order = await visualText(page.locator('[data-prose],[data-tools]'))
     assert.ok(
       order.lastIndexOf('Tools') > order.indexOf('Linking works on right-click or long-press.'),
     )
@@ -241,6 +282,7 @@ try {
     // Resumed executions share a disclosure; the next independent request gets its own.
     await page.evaluate(() => {
       window.events.length = 0
+      window.renderedProse = []
       window.setTask((task) => ({
         ...task,
         messages: [
@@ -259,23 +301,28 @@ try {
       }))
     })
     await page.getByText('Independent answer', { exact: true }).waitFor()
+    assert.equal(
+      await page.evaluate(() => window.renderedProse[0]),
+      mobile ? 'Independent answer' : 'First request',
+    )
     const disclosures = page.getByRole('button', { name: /Worked for/ })
     assert.equal(await disclosures.count(), 2)
     for (let index = 0; index < 2; index++) {
       if ((await disclosures.nth(index).getAttribute('aria-expanded')) === 'true')
         await disclosures.nth(index).click()
     }
-    assert.deepEqual(await page.locator('[data-prose]').allTextContents(), [
+    assert.deepEqual(await visualText(page.locator('[data-prose]')), [
       'First request',
       'Resume clarification',
       'Resumed answer',
       'Second request',
       'Independent answer',
     ])
-    await disclosures.first().click()
+    const [firstIndex, secondIndex] = await visualIndices(disclosures)
+    await disclosures.nth(firstIndex).click()
     assert.equal(await page.getByText('Initial execution', { exact: true }).count(), 1)
-    assert.equal(await disclosures.nth(1).getAttribute('aria-expanded'), 'false')
-    await disclosures.first().click()
+    assert.equal(await disclosures.nth(secondIndex).getAttribute('aria-expanded'), 'false')
+    await disclosures.nth(firstIndex).click()
     assert.equal(await page.getByText('Initial execution', { exact: true }).count(), 0)
 
     // Artifact-bearing messages survive the outer disclosure, including a middle reply
@@ -348,7 +395,7 @@ try {
       await page.getByRole('button', { name: 'Open artifact Preview 2' }).waitFor()
       assert.equal(await tiles.count(), 2)
     }
-    await tiles.nth(1).click()
+    await page.getByRole('button', { name: 'Open artifact Preview 2', exact: true }).click()
     assert.equal(await page.evaluate(() => window.openedArtifact.title), 'Preview 2')
     await page.evaluate(() =>
       window.setTask((task) => ({
@@ -375,11 +422,116 @@ try {
     )
     await artifactTurn.waitFor()
     assert.equal(await tiles.count(), 2, 'Textless completed turns retain artifact tiles')
+    if (mobile) {
+      // An empty recent window must still allow older history to load after list layout.
+      await page.evaluate(() => {
+        window.recentLayouts = 0
+        window.setTask((task) => ({ ...task, id: 'empty', messages: [], turns: [] }))
+      })
+      await page.waitForFunction(() => window.recentLayouts === 1)
+    }
+    if (!mobile) {
+      // Exercise the actual copy menu, authenticated history request and cancellation.
+      await page.evaluate(() => {
+        window.artifactCase = false
+        window.events.length = 0
+        window.copies = []
+        window.copyRequests = []
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: { writeText: async (text) => window.copies.push(text) },
+        })
+        window.copyMode = 'good'
+        window.fetch = async (url, init) => {
+          if (new URL(url).pathname !== '/api/tasks/history' || init.method !== 'POST')
+            throw new Error('Invalid copy history request')
+          if (new Headers(init.headers).get('Authorization') !== 'Bearer copy-token')
+            throw new Error('Unauthenticated copy request')
+          const input = JSON.parse(init.body)
+          window.copyRequests.push(input)
+          if (window.copyMode === 'pending') {
+            window.copySignal = init.signal
+            return new Promise(
+              (resolve) =>
+                (window.finishCopyRead = () =>
+                  resolve(Response.json({ messages: [], turns: [], historyRevision: 3 }))),
+            )
+          }
+          return Response.json({
+            messages: [{ id: 'old', role: 'user', text: 'Older request' }],
+            turns: [],
+            historyRevision: window.copyMode === 'revision' ? 4 : 3,
+            ...(window.copyMode === 'cursor' ? { before: input.before } : {}),
+          })
+        }
+        window.setTask((task) => ({
+          ...task,
+          id: 'copy-thread',
+          historyBefore: 'recent',
+          historyRevision: 3,
+          messages: [{ id: 'recent', role: 'assistant', text: 'Newest copy reply' }],
+          turns: [],
+        }))
+      })
+      // The fixture's connection is read by ChatThread through useWorkspace.
+      const copy = async () => {
+        await page.locator('#message-copy-thread-recent').click({ button: 'right' })
+        await page.getByText('Copy conversation', { exact: true }).click()
+      }
+      await copy()
+      await page.waitForFunction(() => window.copies.length === 1)
+      const copied = await page.evaluate(() => window.copies[0])
+      assert.ok(copied.indexOf('Older request') < copied.indexOf('Newest copy reply'))
+      assert.deepEqual(await page.evaluate(() => window.copyRequests[0]), {
+        id: 'copy-thread',
+        before: 'recent',
+      })
+      for (const [mode, error] of [
+        ['revision', 'Conversation changed'],
+        ['cursor', 'History did not advance'],
+      ]) {
+        await page.evaluate((mode) => (window.copyMode = mode), mode)
+        await copy()
+        await page.getByRole('alert').filter({ hasText: error }).waitFor()
+        assert.equal(await page.evaluate(() => window.copies.length), 1)
+      }
+      await page.evaluate(() => (window.copyMode = 'pending'))
+      await copy()
+      await page.waitForFunction(() => !!window.finishCopyRead)
+      await page.locator('#message-copy-thread-recent').click({ button: 'right' })
+      assert.equal(
+        await page
+          .getByText('Copying conversation…', { exact: true })
+          .getAttribute('data-disabled'),
+        '',
+      )
+      await page.keyboard.press('Escape')
+      await page.evaluate(() => window.setTask((task) => ({ ...task, id: 'navigated-thread' })))
+      await page.waitForFunction(() => window.copySignal.aborted)
+      await page.evaluate(() => window.finishCopyRead())
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      assert.equal(await page.evaluate(() => window.copies.length), 1)
+      await page.evaluate(() => {
+        window.finishCopyRead = null
+        window.setTask((task) => ({ ...task, id: 'copy-thread' }))
+      })
+      await copy()
+      await page.waitForFunction(() => !!window.finishCopyRead)
+      await page.evaluate(() => window.setActive(false))
+      await page.waitForFunction(() => window.copySignal.aborted)
+      await page.evaluate(() => window.finishCopyRead())
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      assert.equal(await page.evaluate(() => window.copies.length), 1)
+    }
     assert.deepEqual(errors, [])
     await page.close()
   }
   console.log(
-    'Desktop and mobile: turn grouping, visible steering/final replies, tool ordering, and artifact tiles in folded, running, textless and intermediate replies across all tool activity settings passed.',
+    'Desktop and mobile: turn grouping, visible steering/final replies, tool ordering, artifact tiles, chronological selection and guarded conversation copying passed.',
   )
 } finally {
   await browser.close()

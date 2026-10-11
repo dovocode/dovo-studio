@@ -24,6 +24,7 @@ const built = await build({
       window.recover = () => Effect.runPromise(queue.recoverEffect(window.connection));
       window.pending = () => browserMutationStorage.read(window.connection);
       window.cache = browserReadCache(window.connection);
+      window.cachedString = key => window.cache.read(key, Schema.String);
       window.createTask = () => createTask({title:'HTTP task',agentId:'',repositoryId:'',objective:'Work over LAN'});
       const base = {version:1,runtimeAddress:'',tasks:[],repositories:[],automations:[],agents:[{id:'agent',name:'Before',instructions:'Before',provider:'codex',model:'',permission:'ask',endpoint:''}]};
       window.workspaceDelivered = [];
@@ -35,10 +36,26 @@ const built = await build({
         return Effect.runPromise(window.workspaceSync.savedEffect());
       };
       window.workspacePending = () => readWorkspaceOutbox(window.connection);
+      window.startConflict = async (peer) => {
+        window.connection = {...window.connection,token:'conflict-test-device'};
+        window.workspaceSync.bind(window.connection);
+        const patches = peer
+          ? [{collection:'agents',id:'agent',changes:{instructions:{before:'Before',after:'Peer instructions'}}}]
+          : [
+              {collection:'agents',id:'agent',changes:{name:{before:'Before',after:'Intermediate'}}},
+              {collection:'agents',id:'agent',changes:{name:{before:'Intermediate',after:'Latest edit'}}},
+            ];
+        window.workspaceSync.enqueue(patches,{...base,agents:[{...base.agents[0],name:peer?'Before':'Latest edit',instructions:peer?'Peer instructions':'Before'}]});
+        await Effect.runPromise(window.workspaceSync.savedEffect());
+      };
+      window.conflictHost = {...base,agents:[{...base.agents[0],name:'Changed on host'}]};
+      window.resolveWorkspace = () => window.workspaceSync.resolve(window.workspaceSync.conflicts(window.conflictHost)[0], 'host', window.conflictHost, window.workspaceSync.checkpoint());
+
       window.flushWorkspace = () => window.workspaceSync.flush();
       window.restoreWorkspace = async () => {
         window.workspaceSync.bind(window.connection, await window.workspacePending());
-        await window.workspaceSync.retry();
+        window.workspaceSync.clearNetworkError();
+        await window.workspaceSync.flush();
       };
       window.transferWorkspace = async () => {
         const outbox = await window.workspacePending();
@@ -170,6 +187,37 @@ try {
   const index = cached.find(([key]) => key.endsWith('._index'))
   assert.equal(JSON.parse(index[1]).length, 100)
   assert.equal(cached.length, 101)
+  // Migrate an older index and enforce the same byte budget across independent tabs.
+  await first.evaluate(async () => {
+    const db = await new Promise((resolve) => {
+      const request = indexedDB.open('dovo-read-cache', 1)
+      request.onsuccess = () => resolve(request.result)
+    })
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('entries', 'readwrite')
+      const entries = tx.objectStore('entries')
+      const keys = entries.getAllKeys()
+      keys.onsuccess = () => {
+        for (const key of keys.result.filter((key) => String(key).endsWith('._index'))) {
+          const index = entries.get(key)
+          index.onsuccess = () =>
+            entries.put(JSON.stringify(JSON.parse(index.result).map((entry) => entry.key)), key)
+        }
+      }
+      tx.oncomplete = () => {
+        db.close()
+        resolve()
+      }
+      tx.onerror = tx.onabort = () => reject(tx.error)
+    })
+  })
+  await first.evaluate(() => window.cache.write('large:one', '€'.repeat(4 * 1024 * 1024)))
+  await second.evaluate(() => window.cache.write('large:two', '€'.repeat(4 * 1024 * 1024)))
+  await first.evaluate(() => window.cache.write('large:three', '€'.repeat(4 * 1024 * 1024)))
+  assert.equal(
+    await second.evaluate(async () => (await window.cachedString('large:one')) === null),
+    true,
+  )
   await first.close()
   await second.close()
   const restarted = await open()
@@ -216,8 +264,39 @@ try {
   assert.deepEqual(legacy[0].ids, legacy[1].ids)
   await restarted.evaluate(() => window.restoreWorkspace())
   assert.equal(await restarted.evaluate(() => window.workspacePending()), null)
+  // Replace dependent records at their original positions and preserve a peer's edit.
+  await restarted.evaluate(() => window.startConflict(false))
+  await stale.evaluate(() => window.startConflict(true))
+  const beforeResolution = await restarted.evaluate(() => window.workspacePending())
+  await stale.evaluate(async () =>
+    window.workspaceSync.bind(window.connection, await window.workspacePending()),
+  )
+  await restarted.evaluate(() => window.resolveWorkspace())
+  const resolved = await restarted.evaluate(() => window.workspacePending())
+  assert.equal(resolved.patches.length, 3)
+  assert.notEqual(resolved.ids[0], beforeResolution.ids[0])
+  assert.notEqual(resolved.ids[1], beforeResolution.ids[1])
+  assert.equal(resolved.ids[2], beforeResolution.ids[2])
+  assert.equal(resolved.patches[0].changes.name.after, 'Changed on host')
+  assert.equal(resolved.patches[1].changes.name.before, 'Changed on host')
+  assert.equal(resolved.workspace.agents[0].name, 'Changed on host')
+  assert.equal(resolved.workspace.agents[0].instructions, 'Peer instructions')
+  const staleResolution = await stale.evaluate(() =>
+    window.resolveWorkspace().then(
+      () => '',
+      (error) => error.message,
+    ),
+  )
+  assert.match(staleResolution, /changed in another window/)
+  assert.deepEqual(await restarted.evaluate(() => window.workspacePending()), resolved)
+  await restarted.evaluate(() => window.flushWorkspace())
+  const peerRemaining = await restarted.evaluate(() => window.workspacePending())
+  assert.equal(peerRemaining.patches.length, 1)
+  assert.equal(peerRemaining.patches[0].changes.instructions.after, 'Peer instructions')
+  await restarted.evaluate(() => window.restoreWorkspace())
+  assert.equal(await restarted.evaluate(() => window.workspacePending()), null)
   console.log(
-    'Shared HTTP-origin storage checks passed: task UUIDs, cross-tab workspace/action durability, isolated acknowledgement and transfer, legacy recovery and transactional cache eviction.',
+    'Shared HTTP-origin storage checks passed: task UUIDs, cross-tab workspace/action durability, isolated acknowledgement and transfer, legacy recovery, individual conflict resolution and transactional cache eviction.',
   )
 } finally {
   await browser.close()

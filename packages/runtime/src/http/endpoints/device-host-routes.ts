@@ -151,9 +151,14 @@ export async function deviceHostRoute(
     return { ok: true }
   }
   if (path === '/api/device-host/devices') {
-    decode(scopeSchema, await body(request, 4096))
+    const input = decode(
+      mutableStruct({ ...scopeSchema.fields, id: Schema.optional(Schema.String) }),
+      await body(request, 4096),
+    )
+    if (input.id?.startsWith('remote:'))
+      throw new HttpError(400, 'Device host endpoint accepts only local devices')
     // Only local discovery; never recursively traverse this runtime's own device hosts.
-    return previewDevices()
+    return previewDevices(input.id)
   }
   if (path === '/api/device-host/action') {
     const input = decode(previewActionSchema, await body(request, 8192))

@@ -33,6 +33,7 @@ function pagedTask(task: Task): Task {
   return result
 }
 const scopedTasks = new WeakMap<Task, Task>()
+const scopedWorkspaces = new WeakMap<Workspace, Map<string, Workspace>>()
 function summaryTask(task: Task, overview: boolean): Task {
   const cache = overview ? overviewTasks : scopedTasks
   const cached = cache.get(task)
@@ -59,11 +60,26 @@ export function scopedWorkspace(
   taskIds: readonly string[],
   paged = false,
 ): Workspace {
+  const key = JSON.stringify([paged, [...new Set(taskIds)].sort()])
+  let variants = scopedWorkspaces.get(workspace)
+  const cached = variants?.get(key)
+  if (cached) return cached
+  if (!variants) {
+    variants = new Map()
+    scopedWorkspaces.set(workspace, variants)
+  }
   const details = new Set(taskIds)
-  return {
+  const result = {
     ...workspace,
     tasks: workspace.tasks.map((task) =>
       details.has(task.id) ? (paged ? pagedTask(task) : task) : summaryTask(task, false),
     ),
   }
+  // Device metadata remains filtered separately; only identical workspace projections share a hash.
+  variants.set(key, result)
+  if (variants.size > 16) {
+    const oldest = variants.keys().next().value
+    if (oldest !== undefined) variants.delete(oldest)
+  }
+  return result
 }

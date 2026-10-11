@@ -23,6 +23,7 @@ import {
 import { resourceCsp, csp, protectHtml, sources } from './security'
 import sandbox from './sandbox.json'
 import type { McpApp } from '@dovo/protocol'
+import { runtimeRequestTimeout } from '@dovo/protocol/request-timeout'
 const rootElement = document.getElementById('root')!
 const appCalls = new Map<string, AbortController>()
 let bridge: AppBridge | undefined
@@ -59,7 +60,7 @@ function rpc(method: string, params: unknown, signal?: AbortSignal): Promise<unk
       () => {
         cancel()
       },
-      10 * 60 * 1000,
+      runtimeRequestTimeout('/api/mcp-apps/rpc', { method }),
     )
     const cancel = () => {
       if (!pending.has(requestId)) return
@@ -252,8 +253,32 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
     },
   )
   const current = bridge
-  current.oncalltool = async (params, extra) =>
-    CallToolResultSchema.parse(await rpc('tools/call', params, extra.mcpReq.signal))
+  current.oncalltool = async (params, extra) => {
+    const controller = new AbortController()
+    const signal = AbortSignal.any([extra.mcpReq.signal, controller.signal])
+    const progressToken = extra.mcpReq._meta?.progressToken
+    const started = performance.now()
+    const report = () =>
+      extra.mcpReq
+        .notify({
+          method: 'notifications/progress',
+          params: {
+            progressToken,
+            progress: (performance.now() - started) / 1000,
+            message: 'Waiting for approval or tool result',
+          },
+        })
+        .catch((error: unknown) => controller.abort(error))
+    // App.callServerTool resets its inactivity timer on progress, including approval waits.
+    const progress = typeof progressToken === 'string' || typeof progressToken === 'number'
+    const heartbeat = progress ? setInterval(() => void report(), 20000) : undefined
+    try {
+      if (progress) await report()
+      return CallToolResultSchema.parse(await rpc('tools/call', params, signal))
+    } finally {
+      clearInterval(heartbeat)
+    }
+  }
   current.onreadresource = async (params) =>
     ReadResourceResultSchema.parse(await rpc('resources/read', params))
   current.onlistresources = async (params) =>

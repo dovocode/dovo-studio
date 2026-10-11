@@ -87,6 +87,12 @@ export function WorkspaceScope({
       connected: active ? root.connected : (entry?.connected ?? false),
       syncError: active ? root.syncError : (entry?.error ?? null),
       pendingSync: active && root.pendingSync,
+      syncConflicts: active ? root.syncConflicts : [],
+      resolveSyncConflict: active
+        ? root.resolveSyncConflict
+        : async () => {
+            throw new Error('Open this computer before resolving saved edits.')
+          },
       readCache: entry ? runtimeReadCache(owner) : null,
       request,
       requestEffect,

@@ -198,6 +198,8 @@ export default function SettingsScreen() {
       <ScrollView
         contentContainerStyle={[styles.content, { paddingTop: 8, gap: 28 }]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
       >
         <SearchField
           label="Search settings"

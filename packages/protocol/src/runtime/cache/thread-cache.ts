@@ -2,6 +2,15 @@ import { Effect, Semaphore } from 'effect'
 import type { Task } from '../../workspace.js'
 import type { RuntimeSnapshot } from '../connection/runtime.js'
 import { runtimeSnapshotCacheSchema, type RuntimeReadCache } from './read-cache.js'
+const sizes = new WeakMap<Task, number>()
+function taskBytes(task: Task) {
+  let size = sizes.get(task)
+  if (size === undefined) {
+    size = new TextEncoder().encode(JSON.stringify(task)).byteLength
+    sizes.set(task, size)
+  }
+  return size
+}
 
 /** Preserve only cached history, while using fresh shell fields for status, drafts and settings. */
 export function cachedThread(summary: Task, cached: Task): Task {
@@ -46,8 +55,9 @@ export function retainCachedThreads(
       (task.historyRevision ?? 0) !== (cached.historyRevision ?? 0)
     )
       continue
-    const size = new TextEncoder().encode(JSON.stringify(cached)).byteLength
-    if (ids.size >= 20 || retainedBytes + size > 8 * 1024 * 1024) continue
+    if (ids.size >= 20) break
+    const size = taskBytes(cached)
+    if (retainedBytes + size > 8 * 1024 * 1024) continue
     retainedBytes += size
     ids.add(id)
     retained.set(id, cachedThread(task, cached))
@@ -66,8 +76,9 @@ export function boundedSnapshotCache(snapshot: RuntimeSnapshot): RuntimeSnapshot
   for (const id of ids) {
     const task = byId.get(id)
     if (!task) continue
-    const size = new TextEncoder().encode(JSON.stringify(task)).byteLength
-    if (kept.size >= 20 || bytes + size > 8 * 1024 * 1024) continue
+    if (kept.size >= 20) break
+    const size = taskBytes(task)
+    if (bytes + size > 8 * 1024 * 1024) continue
     kept.add(id)
     bytes += size
   }
@@ -102,6 +113,16 @@ const replicas = new WeakMap<
   RuntimeReadCache,
   { snapshot?: RuntimeSnapshot; loaded: boolean; lock: Semaphore.Semaphore }
 >()
+/** Reuse the writer's bounded, decoded replica instead of decoding it again on each selection. */
+export function cachedRuntimeThread(cache: RuntimeReadCache, taskId: string): Task | undefined {
+  if (cache.closed) {
+    replicas.delete(cache)
+    return undefined
+  }
+  const snapshot = replicas.get(cache)?.snapshot
+  if (snapshot?.detailTaskIds && !snapshot.detailTaskIds.includes(taskId)) return undefined
+  return snapshot?.workspace.tasks.find((task) => task.id === taskId)
+}
 export function writeRuntimeSnapshotCache(cache: RuntimeReadCache, envelope: Envelope) {
   let replica = replicas.get(cache)
   if (!replica) {
@@ -111,6 +132,7 @@ export function writeRuntimeSnapshotCache(cache: RuntimeReadCache, envelope: Env
   const state = replica
   return state.lock.withPermits(1)(
     Effect.gen(function* () {
+      if (cache.closed) return
       if (!state.loaded) {
         state.snapshot = (yield* cache.readEffect(
           'snapshot',
@@ -120,6 +142,7 @@ export function writeRuntimeSnapshotCache(cache: RuntimeReadCache, envelope: Env
       }
       const snapshot = boundedSnapshotCache(retainCachedThreads(state.snapshot, envelope.snapshot))
       yield* cache.writeEffect('snapshot', { ...envelope, snapshot })
+      if (cache.closed) return
       state.snapshot = snapshot
     }),
   )

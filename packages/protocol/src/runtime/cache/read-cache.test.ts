@@ -223,12 +223,32 @@ it('shares eviction ownership across independent cache instances', async () => {
   const clients = Array.from({ length: 105 }, () => cache('http://first'))
   await Promise.all(clients.map((client, index) => client.write(`pr:${index}`, { index })))
   const index = [...values.entries()].find(([key]) => key.endsWith('._index'))!
-  const tracked: string[] = JSON.parse(index[1])
+  const tracked: Array<{ key: string; bytes: number }> = JSON.parse(index[1])
   const entries = [...values.keys()].filter((key) => !key.endsWith('._index'))
   expect(tracked).toHaveLength(100)
   expect(entries).toHaveLength(100)
-  expect(entries.every((key) => tracked.some((item) => key.endsWith('.' + item)))).toBe(true)
+  expect(entries.every((key) => tracked.some((item) => key.endsWith('.' + item.key)))).toBe(true)
   await clients[0]!.clear()
   await Promise.all(clients.map((client) => client.write('late', 'late')))
   expect(values.size).toBe(0)
+})
+
+it('evicts by UTF-8 bytes, refreshes rewritten entries and migrates legacy indexes', async () => {
+  const { values, cache } = fixture()
+  const client = cache('http://byte-budget')
+  const text = '€'.repeat(4 * 1024 * 1024)
+  await client.write('conversation:one', text)
+  await client.write('conversation:two', text)
+  const indexKey = [...values.keys()].find((key) => key.endsWith('._index'))!
+  values.set(indexKey, JSON.stringify(['conversation:one', 'conversation:two']))
+  await client.write('conversation:one', text)
+  await client.write('conversation:three', text)
+  expect(await client.read('conversation:two', Schema.Unknown)).toBeNull()
+  expect((await client.read('conversation:one', Schema.String))?.value.length).toBe(text.length)
+  const index: Array<{ key: string; bytes: number }> = JSON.parse(values.get(indexKey)!)
+  expect(index.map((entry) => entry.key)).toEqual(['conversation:one', 'conversation:three'])
+  expect(index.reduce((bytes, entry) => bytes + entry.bytes, 0)).toBeLessThanOrEqual(
+    32 * 1024 * 1024,
+  )
+  await client.close()
 })

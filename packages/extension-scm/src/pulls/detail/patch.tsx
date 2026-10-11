@@ -17,6 +17,7 @@ export function PullPatch({
   provider = 'github',
   allowInlineComment = true,
   allowInlineRange = true,
+  headSha = '',
 }: {
   file: PullDetail['files'][number]
   split: boolean
@@ -29,31 +30,37 @@ export function PullPatch({
       side: 'additions' | 'deletions'
     },
     destination: 'github' | 'agent',
+    baseline: { headSha: string; path: string; patch: string },
   ) => Promise<void>
   provider?: ForgeProvider
   allowInlineComment?: boolean
   allowInlineRange?: boolean
+  headSha?: string
 }) {
   const [selection, setSelection] = useApplicationState<{
     start: number
     end: number
     side: 'additions' | 'deletions'
+    file: PullDetail['files'][number]
+    headSha: string
   } | null>(null)
   const [destination, setDestination] = useApplicationState<'github' | 'agent'>('agent')
   const diffs = useDiffOptions()
   const [ready, setReady] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const [highlightAttempt, setHighlightAttempt] = useApplicationState(0)
+  // Keep the original diff and range mounted while a push refreshes the live PR.
+  const draftFile = selection?.file ?? file
   const parsed = useMemo(() => {
     try {
       const diff = parsePatchFiles(
         pullFilePatch(
-          reviewContext && file.patch
+          reviewContext && draftFile.patch
             ? {
-                ...file,
-                patch: reviewPatch(file.patch),
+                ...draftFile,
+                patch: reviewPatch(draftFile.patch),
               }
-            : file,
+            : draftFile,
         ),
         undefined,
         true,
@@ -62,8 +69,8 @@ export function PullPatch({
         diff: diff
           ? {
               ...diff,
-              name: file.path,
-              prevName: file.previousPath ?? diff.prevName,
+              name: draftFile.path,
+              prevName: draftFile.previousPath ?? diff.prevName,
             }
           : undefined,
         error: '',
@@ -75,12 +82,12 @@ export function PullPatch({
       }
     }
   }, [
-    file.path,
-    file.previousPath,
-    file.patch,
-    file.status,
-    file.additions,
-    file.deletions,
+    draftFile.path,
+    draftFile.previousPath,
+    draftFile.patch,
+    draftFile.status,
+    draftFile.additions,
+    draftFile.deletions,
     reviewContext,
   ])
   useEffect(() => {
@@ -98,7 +105,7 @@ export function PullPatch({
       stopped = true
     }
   }, [file.path, highlightAttempt])
-  if (!file.patch)
+  if (!draftFile.patch)
     return (
       <p className="p-4 text-xs text-muted-foreground">
         {forgeLabels[provider]} has no text patch for this file (binary, large, or rename-only).
@@ -122,7 +129,7 @@ export function PullPatch({
           </Button>
         )}
         <pre className="overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">
-          {file.patch}
+          {draftFile.patch}
         </pre>
       </div>
     )
@@ -141,6 +148,12 @@ export function PullPatch({
       {reviewContext && (
         <p className="py-2 text-[0.625rem] text-muted-foreground">
           Review excerpt · original line numbers; surrounding changes may be omitted.
+        </p>
+      )}
+      {selection && selection.headSha !== headSha && (
+        <p role="status" className="py-2 text-xs text-muted-foreground">
+          This draft refers to an earlier PR revision. Your text is preserved; select lines on the
+          current revision before posting to the PR, or send this feedback to an agent.
         </p>
       )}
       {ready ? (
@@ -180,7 +193,16 @@ export function PullPatch({
                     throw new Error(
                       'This provider accepts one line per comment. Select a single line or send the range to an agent task.',
                     )
-                  await onComment(body, selection, destination)
+                  await onComment(
+                    body,
+                    { start: selection.start, end: selection.end, side: selection.side },
+                    destination,
+                    {
+                      headSha: selection.headSha,
+                      path: selection.file.path,
+                      patch: selection.file.patch ?? '',
+                    },
+                  )
                   if (destination === 'github') setSelection(null)
                 }}
               >
@@ -214,6 +236,8 @@ export function PullPatch({
                   start: Math.min(range.start, range.end),
                   end: Math.max(range.start, range.end),
                   side: range.side ?? 'additions',
+                  file: draftFile,
+                  headSha: selection?.headSha ?? headSha,
                 })
             },
             onGutterUtilityClick: (range) => {
@@ -222,6 +246,8 @@ export function PullPatch({
                   start: Math.min(range.start, range.end),
                   end: Math.max(range.start, range.end),
                   side: range.side ?? 'additions',
+                  file: draftFile,
+                  headSha: selection?.headSha ?? headSha,
                 })
             },
           }}

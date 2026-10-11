@@ -42,6 +42,45 @@ const record = mutableStruct({
   payload: Schema.String,
 })
 export class Activity {
+  private scopes = new Map<
+    string,
+    { revision: number; users: number; listeners: Set<() => void> }
+  >()
+  watchScope(scope: string, onChange?: () => void) {
+    let entry = this.scopes.get(scope)
+    if (!entry) {
+      entry = { revision: this.revision, users: 0, listeners: new Set() }
+      this.scopes.set(scope, entry)
+    }
+    entry.users++
+    const current = entry
+    const notify = () => onChange?.()
+    if (onChange) current.listeners.add(notify)
+    let stopped = false
+    return {
+      revision: () => current.revision,
+      stop: () => {
+        if (stopped) return
+        stopped = true
+        current.listeners.delete(notify)
+        if (!--current.users) this.scopes.delete(scope)
+      },
+    }
+  }
+  private changed(scope?: string) {
+    this.revision++
+    if (scope !== undefined) {
+      const watched = this.scopes.get(scope)
+      if (watched) {
+        watched.revision = this.revision
+        for (const notify of watched.listeners) notify()
+      }
+    } else
+      for (const watched of this.scopes.values()) {
+        watched.revision = this.revision
+        for (const notify of watched.listeners) notify()
+      }
+  }
   private pendingMessages = new Map<
     string,
     Map<string, Workspace['tasks'][number]['messages'][number]>
@@ -91,7 +130,8 @@ export class Activity {
         String(redact(summary)),
         JSON.stringify(redact(payload)),
       )
-    this.revision++
+    if (['tool', 'reasoning', 'task-activity'].includes(kind)) this.changed(scope)
+    else this.revision++
   }
   imagePayload(scope: string, id: string) {
     return decode(
@@ -202,7 +242,7 @@ export class Activity {
         "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE time < ? AND NOT (kind='tool' AND id GLOB 'artifact:*') ORDER BY time LIMIT ?)",
       )
       .run(before, limit).changes
-    if (changes) this.revision++
+    if (changes) this.changed()
     return changes
   }
   /** Artifact outputs follow the artifact's lifetime, rather than log retention. */
@@ -210,7 +250,7 @@ export class Activity {
     const changes = this.db
       .prepare("DELETE FROM activity WHERE scope=? AND kind='tool' AND id GLOB 'artifact:*'")
       .run(scope).changes
-    if (changes) this.revision++
+    if (changes) this.changed(scope)
   }
   list(query: string, kind: string, offset: number, scope = '') {
     const filters: string[] = []

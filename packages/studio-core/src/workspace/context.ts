@@ -11,6 +11,7 @@ import type {
 } from '@dovo/protocol'
 import type { TaskPreviewChanges } from './task-previews'
 import type { Workspace } from './schema'
+import type { WorkspaceConflict } from '../runtime/workspace-conflicts'
 
 export type WorkspaceRequest = <T extends Schema.Codec<unknown, unknown>>(
   path: string,
@@ -59,6 +60,8 @@ export type WorkspaceContextValue = {
   refreshRuntime: (profile: RuntimeProfile) => Promise<void>
   retrySync: () => Promise<void>
   discardAndReload: () => Promise<void>
+  syncConflicts: WorkspaceConflict[]
+  resolveSyncConflict: (conflict: WorkspaceConflict, choice: 'local' | 'host') => Promise<void>
   mutationStatus: (profile: RuntimeProfile) => { pending: number; error: string | null }
   discardMutations: (profile: RuntimeProfile) => Promise<void>
   pendingSync: boolean

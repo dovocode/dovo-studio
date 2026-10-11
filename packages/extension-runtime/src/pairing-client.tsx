@@ -18,6 +18,11 @@ import {
   Input,
   cn,
 } from '@dovo/studio-ui'
+function conflictValue(value: unknown) {
+  const text =
+    value === null ? '(empty)' : typeof value === 'string' ? value : JSON.stringify(value)
+  return text && text.length > 500 ? `${text.slice(0, 500)}…` : text || '(empty)'
+}
 export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile) => void }) {
   const {
     connect,
@@ -29,6 +34,8 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
     retrySync,
     discardAndReload,
     pendingSync,
+    syncConflicts,
+    resolveSyncConflict,
     mutationStatus,
     discardMutations,
   } = useWorkspace()
@@ -186,10 +193,59 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
               Edits for{' '}
               {runtimeRegistry.profiles.find((entry) => entry.id === runtimeRegistry.activeId)
                 ?.name ?? 'this computer'}{' '}
-              stay on this device until they sync. Retry after reconnecting, or reload the host
-              version to resolve a conflicting edit.
+              stay on this device until they sync. Saved edits resume automatically after
+              reconnecting. Review any competing edits below.
             </p>
           </div>
+          {syncConflicts.map((conflict) => (
+            <div
+              key={JSON.stringify([conflict.patchId, conflict.field])}
+              className="space-y-2 rounded-md border bg-card p-3"
+            >
+              <h4 className="text-xs font-medium">
+                {conflict.name}
+                {conflict.field
+                  ? ` · ${conflict.field.replace(/([A-Z])/g, ' $1').toLowerCase()}`
+                  : ''}
+              </h4>
+              {conflict.field === null ? (
+                <p className="text-xs text-muted-foreground">
+                  This item no longer matches the host. Using the host version clears only this
+                  item’s saved edits.
+                </p>
+              ) : (
+                <dl className="space-y-1 text-xs">
+                  <dt className="text-muted-foreground">Your edit</dt>
+                  <dd className="whitespace-pre-wrap break-words">
+                    {conflictValue(conflict.local)}
+                  </dd>
+                  <dt className="text-muted-foreground">Host value</dt>
+                  <dd className="whitespace-pre-wrap break-words">
+                    {conflictValue(conflict.host)}
+                  </dd>
+                </dl>
+              )}
+              <div className="flex gap-2">
+                {conflict.field !== null && (
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void act(() => resolveSyncConflict(conflict, 'local'))}
+                  >
+                    Keep my edit
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void act(() => resolveSyncConflict(conflict, 'host'))}
+                >
+                  Use host value
+                </Button>
+              </div>
+            </div>
+          ))}
           <div className="flex gap-2">
             <Button size="sm" disabled={busy} onClick={() => void act(retrySync)}>
               Retry sync

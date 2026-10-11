@@ -71,6 +71,7 @@ const runtime = (address: string, name: string): RuntimeOverview => ({
 const mac = runtime('http://mac.local:51464', 'Mac')
 const linux = runtime('http://linux.local:51464', 'Linux')
 const cache: RuntimeReadCache = {
+  closed: false,
   readEffect: () => Effect.succeed(null),
   writeEffect: () => Effect.void,
   removeEffect: () => Effect.void,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Image, ScrollView, View, Pressable } from 'react-native'
-import { runClientEffect } from '@dovo/client-runtime'
+import { clientTaskScope } from '@dovo/client-runtime'
+import { Effect } from 'effect'
 import { taskImageReadSchema, type ToolImageReference } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../theme'
@@ -13,7 +14,7 @@ type Source =
   | { taskId: string; reference: ToolImageReference }
   | { uri: string }
 export function ServerImage({ source, label = 'Image' }: { source: Source; label?: string }) {
-  const { callEffect, connected, connection } = useRuntime(),
+  const { readEffect, connected, connection } = useRuntime(),
     { styles, colors } = useTheme()
   const identity = JSON.stringify([connection?.address, connection?.token, source]),
     [revision, setRevision] = useState(0)
@@ -41,23 +42,26 @@ export function ServerImage({ source, label = 'Image' }: { source: Source; label
             index: source.reference.index,
           }
         : { taskId: source.taskId, path: source.path }
-    void runClientEffect(callEffect('/api/tasks/images/read', input, taskImageReadSchema)).then(
-      (result) => {
-        if (active) setLoaded({ identity, uri: result.uri })
-      },
-      (reason: unknown) => {
-        if (active)
-          setLoaded({
-            identity,
-            uri: '',
-            error: reason instanceof Error ? reason.message : String(reason),
-          })
-      },
+    const requests = clientTaskScope()
+    void requests.run(
+      readEffect('/api/tasks/images/read', { ...input, maxSize: 1024 }, taskImageReadSchema).pipe(
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            if (active) setLoaded({ identity, uri: result.uri })
+          }),
+        ),
+        Effect.catch((reason) =>
+          Effect.sync(() => {
+            if (active) setLoaded({ identity, uri: '', error: reason.message })
+          }),
+        ),
+      ),
     )
     return () => {
       active = false
+      void requests.stop()
     }
-  }, [identity, revision, connected, callEffect])
+  }, [identity, revision, connected, readEffect])
   const fail = () =>
     setLoaded((current) =>
       current?.identity === identity

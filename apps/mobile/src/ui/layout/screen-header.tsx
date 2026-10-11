@@ -232,6 +232,8 @@ export function ScreenHeader({
                     color: button.selected ? colors.accent : colors.text,
                     fontSize: 17,
                     lineHeight: 22,
+                    flex: 1,
+                    minWidth: 0,
                   }}
                 >
                   {button.label}

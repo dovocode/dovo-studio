@@ -68,4 +68,6 @@ export interface AgentAdapter {
   run: (run: AgentRun) => Promise<void>
   probe: (agent: Agent, launch?: AcpLaunch) => Promise<ProviderStatus>
   dispose?: () => Promise<void>
+  /** Release this task's idle transport without interrupting provider-native children. */
+  releaseTask?: (taskId: string) => Promise<void>
 }

@@ -56,6 +56,7 @@ import { TaskConversation } from './detail/task-conversation'
 import { ReviewPane } from './review/review-pane'
 import { TaskFiles } from './detail/task-files'
 import { useLiveRefresh } from './detail/live-refresh'
+import { useCommittedCallback } from './detail/use-committed-callback'
 import type { CodeReference } from './detail/code-reference'
 import { TerminalPane } from './terminal/terminal-pane'
 import {
@@ -200,12 +201,9 @@ export default function TasksView({ entityId }: StudioViewProps) {
     refreshChanges,
   )
   const lastToolSurface = useRef<TaskSurface>('files')
-  const setSurface = useCallback(
-    (next: TaskSurface) => {
-      setThreadSurfaces((current) => ({ ...current, [threadKey]: next }))
-    },
-    [threadKey],
-  )
+  const setSurface = useCommittedCallback((next: TaskSurface) => {
+    setThreadSurfaces((current) => ({ ...current, [threadKey]: next }))
+  })
   const [terminalVisited, setTerminalVisited] = useApplicationState(false)
   const [bottomTerminalTaskId, setBottomTerminalTaskId] = useApplicationState('')
   const bottomTerminalOpen = !compact && bottomTerminalTaskId === threadKey
@@ -231,46 +229,43 @@ export default function TasksView({ entityId }: StudioViewProps) {
   })
   const lastFocus = useRef<Partial<Record<TaskSurface, HTMLElement>>>({})
   const focusNext = useRef<TaskSurface | null>(null)
-  const selectSurface = useCallback(
-    (next: TaskSurface, moveFocus = false) => {
-      for (const id of [
-        'pull-preview',
-        'chat',
-        'changes',
-        'files',
-        'terminal',
-        'browser',
-        'devices',
-        'agents',
-        'projects',
-        'artifacts',
-        'side-chats',
-      ] as const) {
-        const focused = document.activeElement
-        if (focused instanceof HTMLElement && panes.current[id]?.contains(focused)) {
-          lastFocus.current[id] = focused
-          // A toolbar click keeps focus on the toolbar. In-pane actions and shortcuts
-          // move it out of content that is about to become hidden.
-          if (id !== next && (id !== 'chat' || compact)) moveFocus = true
-        }
+  const selectSurface = useCommittedCallback((next: TaskSurface, moveFocus = false) => {
+    for (const id of [
+      'pull-preview',
+      'chat',
+      'changes',
+      'files',
+      'terminal',
+      'browser',
+      'devices',
+      'agents',
+      'projects',
+      'artifacts',
+      'side-chats',
+    ] as const) {
+      const focused = document.activeElement
+      if (focused instanceof HTMLElement && panes.current[id]?.contains(focused)) {
+        lastFocus.current[id] = focused
+        // A toolbar click keeps focus on the toolbar. In-pane actions and shortcuts
+        // move it out of content that is about to become hidden.
+        if (id !== next && (id !== 'chat' || compact)) moveFocus = true
       }
-      if (moveFocus) focusNext.current = next
-      if (!compact && next === 'terminal') {
-        setBottomTerminalTaskId(threadKey)
-        setSurface('chat')
-        return
-      }
-      if (next !== 'chat' && next !== 'terminal') {
-        lastToolSurface.current = next
-      }
-      setSurface(next)
-      if (next === 'terminal') {
-        setTerminalVisited(true)
-        setBottomTerminalTaskId('')
-      }
-    },
-    [compact, setSurface, threadKey],
-  )
+    }
+    if (moveFocus) focusNext.current = next
+    if (!compact && next === 'terminal') {
+      setBottomTerminalTaskId(threadKey)
+      setSurface('chat')
+      return
+    }
+    if (next !== 'chat' && next !== 'terminal') {
+      lastToolSurface.current = next
+    }
+    setSurface(next)
+    if (next === 'terminal') {
+      setTerminalVisited(true)
+      setBottomTerminalTaskId('')
+    }
+  })
   const [pullPreviews, setPullPreviews] = useApplicationState<
     Record<string, { repositoryId: string; number: number }>
   >({})
@@ -320,13 +315,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
       .reduce((sum, stats) => sum + stats.additions + stats.deletions, 0)
     if (task.files.length >= 3 || lines >= 50) selectSurface('changes')
   }, [preferences.proactivePanels, task, historyLoaded, threadKey, threadSurfaces])
-  const addCodeReference = useCallback(
-    (taskId: string, text: string) => {
-      setCodeReference({ taskId, id: randomUUID(), text })
-      selectSurface('chat', true)
-    },
-    [selectSurface],
-  )
+  const addCodeReference = useCommittedCallback((taskId: string, text: string) => {
+    setCodeReference({ taskId, id: randomUUID(), text })
+    selectSurface('chat', true)
+  })
   useLayoutEffect(() => {
     const next = focusNext.current
     if (!next) return
@@ -346,26 +338,23 @@ export default function TasksView({ entityId }: StudioViewProps) {
       preventScroll: true,
     })
   }, [surface, terminalVisited, bottomTerminalOpen])
-  const showTerminal = useCallback(
-    (terminalId: string) => {
-      setTerminalFocus(terminalId)
-      selectSurface('terminal', true)
-    },
-    [selectSurface],
-  )
-  const toggleTerminal = useCallback(() => {
+  const showTerminal = useCommittedCallback((terminalId: string) => {
+    setTerminalFocus(terminalId)
+    selectSurface('terminal', true)
+  })
+  const toggleTerminal = useCommittedCallback(() => {
     if (surface !== 'terminal') setTerminalFocus('')
     if (!compact && bottomTerminalOpen) setBottomTerminalTaskId('')
     else selectSurface(surface === 'terminal' ? 'chat' : 'terminal', true)
-  }, [selectSurface, surface, compact, bottomTerminalOpen])
-  const toggleBottomTerminal = useCallback(() => {
+  })
+  const toggleBottomTerminal = useCommittedCallback(() => {
     if (!task) return
     if (bottomTerminalOpen) setBottomTerminalTaskId('')
     else {
       setBottomTerminalTaskId(threadKey)
       selectSurface('chat', true)
     }
-  }, [task?.id, threadKey, bottomTerminalOpen, selectSurface])
+  })
   useEffect(() => {
     if (!compact && surface === 'terminal') selectSurface('terminal')
   }, [compact, surface, selectSurface])
@@ -396,7 +385,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     repositoryId: string
     templateId?: string
   } | null>(null)
-  const startTask = useCallback(
+  const startTask = useCommittedCallback(
     async (requestedProject?: string, confirmed = false, templateId?: string) => {
       if (busy) return
       if (!confirmed) {
@@ -443,7 +432,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
         setBusy(false)
       }
     },
-    [projectId, workspace.repositories, sources, activeRuntimeId, switchRuntime, busy],
   )
   useEffect(() => {
     if (!pendingCreate || pendingCreate.runtimeId !== activeRuntimeId) return
@@ -532,7 +520,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     })
   }
   const [draftVersion, setDraftVersion] = useApplicationState(0)
-  const newThread = useCallback(() => {
+  const newThread = useCommittedCallback(() => {
     if (busy) return
     setDeselected(true)
     setSelectedId('')
@@ -543,7 +531,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     setSidebar(true)
     setDraftVersion((version) => version + 1)
     host.navigate({ viewId: 'tasks' })
-  }, [busy, host])
+  })
   useEffect(
     () =>
       host.registerCommand({

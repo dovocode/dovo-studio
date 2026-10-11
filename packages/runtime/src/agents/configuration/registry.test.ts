@@ -8,6 +8,24 @@ import type { AgentAdapter } from '../execution/types.js'
 import { decode, commandsSchema } from '@dovo/protocol'
 
 afterEach(() => vi.restoreAllMocks())
+it('releases loaded task providers and reports cleanup failures', async () => {
+  const releaseTask = vi.fn<NonNullable<AgentAdapter['releaseTask']>>().mockResolvedValue()
+  vi.spyOn(acpModule, 'createAcpAdapter').mockReturnValue({
+    run: vi.fn<AgentAdapter['run']>(),
+    probe: vi.fn<AgentAdapter['probe']>(),
+    releaseTask,
+  })
+  const registry = new AgentRegistry()
+  try {
+    await registry.get('acp')
+    await registry.releaseTask('child')
+    expect(releaseTask).toHaveBeenCalledWith('child')
+    releaseTask.mockRejectedValue(new Error('Process did not stop'))
+    await expect(registry.releaseTask('child')).rejects.toThrow('Could not release task providers')
+  } finally {
+    await registry.dispose()
+  }
+})
 it('uses the Hermes launcher by default and preserves explicit Python overrides', () => {
   const registry = new AgentRegistry()
   const agent = { provider: 'hermes' as const, endpoint: '', model: '' }

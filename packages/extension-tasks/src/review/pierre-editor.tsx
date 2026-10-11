@@ -295,7 +295,7 @@ export function PierreEditor({
         {readOnly
           ? 'Historical diff · Select lines to reference in the composer'
           : editing
-            ? 'Editing draft · ⌘Z undo · ⌘F find · saved when leaving this file'
+            ? 'Editing draft · ⌘Z undo · ⌘F find · Save draft or cancel to continue'
             : 'Drag line numbers or Shift-click for a range · Click + for one line · Edit changes file contents'}
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
+const registrations: Array<ReturnType<typeof registerBrowser>> = []
 const mocks = vi.hoisted(() => {
   const contents = {
     setWindowOpenHandler: vi.fn<(...args: unknown[]) => void>(),
@@ -28,6 +29,9 @@ const mocks = vi.hoisted(() => {
     },
     getContentSize: () => [900, 700],
     once: vi.fn<(event: string, callback: () => void) => void>(),
+    webContents: {
+      on: vi.fn<(event: string, callback: (...args: unknown[]) => void) => void>(),
+    },
   }
   return {
     view,
@@ -54,7 +58,11 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn<(url: string) => Promise<void>>() },
 }))
 import { registerBrowser } from './browser'
-afterEach(() => vi.unstubAllEnvs())
+afterEach(async () => {
+  for (const registration of registrations.splice(0)) await registration.dispose()
+  vi.unstubAllEnvs()
+  vi.useRealTimers()
+})
 beforeEach(() => {
   vi.clearAllMocks()
   vi.stubEnv('VITE_DEV_SERVER_URL', '')
@@ -62,7 +70,7 @@ beforeEach(() => {
 const frame = { url: 'file:///app/index.html' }
 const event = { sender: { mainFrame: frame }, senderFrame: frame }
 function handler() {
-  registerBrowser('/app/index.html')
+  registrations.push(registerBrowser('/app/index.html'))
   const callback = mocks.handle.mock.calls.at(-1)?.[1]
   if (!callback) throw new Error('Missing IPC handler')
   return callback
@@ -127,6 +135,72 @@ it('rejects privileged URL schemes before loading native content', async () => {
   expect(mocks.contents.loadURL).not.toHaveBeenCalled()
 })
 
+it('waits for the initial renderer before emulation, including concurrent positioning commands', async () => {
+  const call = handler()
+  let ready = () => {}
+  mocks.contents.loadURL.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        ready = resolve
+      }),
+  )
+  const command = {
+    action: 'show',
+    key: 'task',
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  }
+  const first = call(event, command)
+  const second = call(event, { ...command, viewport: { width: 390, height: 844 } })
+  expect(mocks.contents.loadURL).toHaveBeenCalledOnce()
+  expect(mocks.contents.disableDeviceEmulation).not.toHaveBeenCalled()
+  expect(mocks.contents.enableDeviceEmulation).not.toHaveBeenCalled()
+  expect(mocks.view.setVisible).not.toHaveBeenCalledWith(true)
+  ready()
+  await Promise.all([first, second])
+  expect(mocks.contents.disableDeviceEmulation).toHaveBeenCalledOnce()
+  expect(mocks.contents.enableDeviceEmulation).toHaveBeenCalledOnce()
+  expect(mocks.view.setVisible).toHaveBeenLastCalledWith(true)
+})
+
+it.each(['hide', 'close'])('keeps a loading preview inactive after %s', async (action) => {
+  const call = handler()
+  let ready = () => {}
+  mocks.contents.loadURL.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        ready = resolve
+      }),
+  )
+  const loading = call(event, {
+    action: 'show',
+    key: 'task',
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  })
+  await call(event, { action, key: 'task' })
+  ready()
+  await loading
+  expect(mocks.contents.disableDeviceEmulation).not.toHaveBeenCalled()
+  expect(mocks.view.setVisible).not.toHaveBeenCalledWith(true)
+})
+
+it('can retry the same URL after its navigation fails', async () => {
+  const call = handler()
+  const command = {
+    action: 'show',
+    key: 'task',
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  }
+  mocks.contents.loadURL.mockRejectedValueOnce(new Error('Connection refused'))
+  await expect(call(event, command)).rejects.toThrow('Connection refused')
+  expect(mocks.contents.disableDeviceEmulation).not.toHaveBeenCalled()
+  await call(event, command)
+  expect(mocks.contents.loadURL).toHaveBeenCalledTimes(2)
+  expect(mocks.contents.disableDeviceEmulation).toHaveBeenCalledOnce()
+})
+
 it('replaces the native view when its profile changes, keeping separate persistent partitions', async () => {
   const call = handler()
   const command = {
@@ -161,6 +235,7 @@ it('replaces the native view when its profile changes, keeping separate persiste
 
 it('does not re-enable agent access when a pending bridge startup finishes after disabling it', async () => {
   const bridge = {
+    connected: vi.fn<(id: string) => boolean>(() => false),
     register: vi.fn<() => string>(() => 'ws://unused'),
     remove: vi.fn<(id: string) => void>(),
     close: vi.fn<() => Promise<void>>(async () => {}),
@@ -172,7 +247,7 @@ it('does not re-enable agent access when a pending bridge startup finishes after
         ready = resolve
       }),
   )
-  registerBrowser('/app/index.html', '/tmp/browser-bridge-race')
+  registrations.push(registerBrowser('/app/index.html', '/tmp/browser-bridge-race'))
   const call = mocks.handle.mock.calls.at(-1)?.[1]
   if (!call) throw new Error('Missing handler')
   const command = {
@@ -224,4 +299,84 @@ it('releases every retained tab when its window closes', async () => {
   expect(closed).toBeDefined()
   closed?.()
   expect(mocks.contents.close).toHaveBeenCalledTimes(2)
+})
+
+it('releases orphaned tabs on renderer reloads and crashes, keeping same-document navigation', async () => {
+  const call = handler()
+  const show = {
+    action: 'show',
+    key: 'tab',
+    url: 'http://localhost:3000/',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  }
+  await call(event, show)
+  await call(event, { ...show, key: 'other' })
+  const navigation = mocks.window.webContents.on.mock.calls.find(
+    ([name]) => name === 'did-start-navigation',
+  )?.[1]
+  const crash = mocks.window.webContents.on.mock.calls.find(
+    ([name]) => name === 'render-process-gone',
+  )?.[1]
+  expect(navigation).toBeDefined()
+  expect(crash).toBeDefined()
+  navigation?.({ isMainFrame: false, isSameDocument: false })
+  navigation?.({ isMainFrame: true, isSameDocument: true })
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  navigation?.({ isMainFrame: true, isSameDocument: false })
+  expect(mocks.contents.close).toHaveBeenCalledTimes(2)
+  expect(mocks.window.contentView.removeChildView).toHaveBeenCalledTimes(2)
+  await call(event, show)
+  expect(mocks.create).toHaveBeenCalledTimes(3)
+  crash?.()
+  expect(mocks.contents.close).toHaveBeenCalledTimes(3)
+})
+
+it('bounds inactive views and expires them while keeping the visible view', async () => {
+  vi.useFakeTimers()
+  const call = handler()
+  const show = {
+    action: 'show',
+    key: '0',
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  }
+  for (let i = 0; i < 9; i++) await call(event, { ...show, key: String(i) })
+  expect(mocks.contents.close).toHaveBeenCalledTimes(4)
+  await vi.advanceTimersByTimeAsync(5 * 60_000)
+  expect(mocks.contents.close).toHaveBeenCalledTimes(8)
+  const created = mocks.create.mock.calls.length
+  await call(event, { ...show, key: '8' })
+  expect(mocks.create).toHaveBeenCalledTimes(created)
+  await call(event, show)
+  expect(mocks.create).toHaveBeenCalledTimes(created + 1)
+})
+
+it('keeps hidden views while an agent is connected and evicts them after it disconnects', async () => {
+  vi.useFakeTimers()
+  let connected = true
+  const bridge = {
+    connected: () => connected,
+    register: () => 'ws://unused',
+    remove: vi.fn<(id: string) => void>(),
+    close: async () => {},
+  }
+  mocks.cdpCreate.mockResolvedValueOnce(bridge)
+  registrations.push(registerBrowser('/app/index.html', '/tmp/browser-eviction'))
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  const show = {
+    action: 'show',
+    key: 'agent',
+    taskId: 'agent',
+    agentAccess: true,
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  }
+  await call(event, show)
+  await call(event, { ...show, key: 'other', taskId: 'other', agentAccess: false })
+  await vi.advanceTimersByTimeAsync(6 * 60_000)
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  connected = false
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(mocks.contents.close).toHaveBeenCalledOnce()
+  expect(bridge.remove).toHaveBeenCalledWith(JSON.stringify([1, 'agent']))
 })

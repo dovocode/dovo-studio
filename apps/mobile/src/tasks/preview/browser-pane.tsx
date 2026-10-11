@@ -3,7 +3,7 @@ import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { Image, Platform, ScrollView, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import {
@@ -26,7 +26,21 @@ import { RemoteBrowser } from './remote-browser'
 import { PhysicalControls } from './physical-controls'
 import { DeviceActions, type DeviceForward } from './device-actions'
 import { deviceHostMessage } from '../../screens/device-host-form'
+import { usePreviewActive } from './use-preview-active'
 const addresses = new Map<string, string>()
+function rememberAddress(scope: string, url: string) {
+  addresses.delete(scope)
+  addresses.set(scope, url)
+  if (addresses.size > 50) {
+    const oldest = addresses.keys().next().value
+    if (oldest !== undefined) addresses.delete(oldest)
+  }
+}
+function savedAddress(scope: string) {
+  const url = addresses.get(scope)
+  if (url !== undefined) rememberAddress(scope, url)
+  return url
+}
 type PreviewProps = { taskId: string; expanded: boolean; onExpand: (value: boolean) => void }
 export function BrowserPane(props: PreviewProps) {
   return <PreviewPane {...props} initialMode="remote" />
@@ -139,8 +153,11 @@ function BrowserContent({
 
   const { profile, profiles, connected, read, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
-  const [input, setInput] = useApplicationState(addresses.get(scope) ?? 'http://localhost:3000'),
-    [url, setUrl] = useApplicationState(addresses.get(scope) ?? '')
+  const active = usePreviewActive()
+  const [input, setInput] = useApplicationState(
+      () => savedAddress(scope) ?? 'http://localhost:3000',
+    ),
+    [url, setUrl] = useApplicationState(() => savedAddress(scope) ?? '')
   const [preset, setPreset] = useApplicationState('fill'),
     [landscape, setLandscape] = useApplicationState(false)
   const [devices, setDevices] = useApplicationState<PreviewDevice[]>([]),
@@ -159,6 +176,7 @@ function BrowserContent({
   )
   const [image, setImage] = useApplicationState(''),
     [loadError, setLoadError] = useApplicationState('')
+  const [previewGeneration, setPreviewGeneration] = useApplicationState(0)
   const web = useRef<WebView>(null)
   useEffect(() => {
     if (reloadToken && mode === 'web' && url) web.current?.reload()
@@ -168,13 +186,27 @@ function BrowserContent({
     forward: false,
     url: '',
   })
+  useLayoutEffect(() => {
+    if (active) return
+    // Direct pages are remounted on return; reopen the last navigated URL.
+    setUrl(history.url || url)
+    setHistory((previous) =>
+      previous.back || previous.forward ? { ...previous, back: false, forward: false } : previous,
+    )
+  }, [active, history.url, url])
+  const recoverPreview = () => {
+    setUrl(history.url || url)
+    setHistory((previous) => ({ ...previous, back: false, forward: false }))
+    setLoadError('')
+    setPreviewGeneration((value) => value + 1)
+  }
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
   const load = () => {
     const generation = ++listGeneration.current
     return runClientEffect(
       mobileWorkflow(function* () {
         const settings = yield* nativeEffect(() =>
-          read('/api/device-hosts', {}, deviceHostSettingsResultSchema, 'GET'),
+          read('/api/device-hosts', undefined, deviceHostSettingsResultSchema, 'GET'),
         )
         if (generation !== listGeneration.current) return
         setHubEnabled(settings.enabled === true)
@@ -202,19 +234,20 @@ function BrowserContent({
     )
   }
   useEffect(() => {
-    if (mode === 'devices' && connected) act(load)
+    if (active && mode === 'devices' && connected) act(load)
     return () => {
       listGeneration.current++
     }
-  }, [mode, connected])
+  }, [active, mode, connected])
   const navigate = () =>
     act(() =>
       nativeEffect(() => {
         const target = previewUrl(input, profile?.connection.address)
         if (target === url) web.current?.reload()
         setUrl(target)
+        setHistory({ back: false, forward: false, url: target })
         setInput(target)
-        addresses.set(scope, target)
+        rememberAddress(scope, target)
         setLoadError('')
       }),
     )
@@ -466,8 +499,9 @@ function BrowserContent({
                   >
                     <Text style={styles.text}>Open this preview externally in Safari.</Text>
                   </View>
-                ) : (
+                ) : active ? (
                   <WebView
+                    key={previewGeneration}
                     ref={web}
                     source={{
                       uri: url,
@@ -483,22 +517,25 @@ function BrowserContent({
                       /^https?:\/\//i.test(request.url) || request.url === 'about:blank'
                     }
                     onError={(event) => setLoadError(event.nativeEvent.description)}
+                    onContentProcessDidTerminate={recoverPreview}
+                    onRenderProcessGone={recoverPreview}
                     onHttpError={(event) =>
                       setLoadError(`Page returned HTTP ${event.nativeEvent.statusCode}`)
                     }
                     onNavigationStateChange={(state) => {
-                      setHistory({
+                      const pageUrl = /^https?:\/\//i.test(state.url)
+                      setHistory((previous) => ({
                         back: state.canGoBack,
                         forward: state.canGoForward,
-                        url: state.url,
-                      })
-                      if (state.url.startsWith('http')) {
+                        url: pageUrl ? state.url : previous.url,
+                      }))
+                      if (pageUrl) {
                         setInput(state.url)
-                        addresses.set(scope, state.url)
+                        rememberAddress(scope, state.url)
                       }
                     }}
                   />
-                )}
+                ) : null}
               </View>
             </ScrollView>
           </ScrollView>

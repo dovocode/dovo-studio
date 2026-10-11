@@ -26,6 +26,7 @@ const mocks = {
   'expo-crypto': `let id=0;export const randomUUID=()=> 'thread-'+(++id);`,
   'react-native': `
     export const View=({children})=><div>{children}</div>;
+    export const ScrollView=({children})=><div>{children}</div>;
     export const ActivityIndicator=()=> <span>Loading</span>;
     export const Keyboard={dismiss:()=>{}};
     export const Alert={alert:()=>{}};
@@ -48,22 +49,22 @@ const mocks = {
       const root=useRuntime();
       const entry=root.overviews.find(entry=>entry.profile.id===runtimeId);
       return <RuntimeContext.Provider value={{...root,activeId:runtimeId,profile:entry.profile,
-        snapshot:entry.snapshot,connected:entry.connected,
+        snapshot:entry.snapshot,connected:entry.connected,readCache:window.caches[runtimeId]??null,
         readEffect:(...args)=>root.request(runtimeId,...args),
         callEffect:(...args)=>root.request(runtimeId,...args)}}>{children}</RuntimeContext.Provider>;
     };
   `,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;`,
-  '../../shell/navigation': `export const useNavigation=()=>({focused:true,navigate:()=>{}});`,
+  '../../shell/navigation': `import {createContext,useContext} from 'react';export const FocusContext=createContext(true);export const useNavigation=()=>({focused:useContext(FocusContext),navigate:()=>{}});`,
   '../../shell/use-route-computer': `export const useRouteComputer=()=>({error:'',retry:()=>{}});`,
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
   '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
-  '../../ui/controls/use-action': `export const useAction=()=>({busy:false,error:'',act:()=>{}});`,
+  '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
   '../../ui/layout/sheet': `export const Sheet=()=>null;`,
   '../../ui/theme': `export const useTheme=()=>({colors:{},styles:{}});`,
-  '../../ui/layout/screen-header': `export const ScreenHeader=({title,buttons})=><header>{title}{buttons?.filter(b=>!b.overflow).map(b=><button key={b.label} onClick={b.onPress}>{b.label}</button>)}</header>;`,
-  '../../ui/content/clipboard': `export const copyText=async()=> 'copied';`,
+  '../../ui/layout/screen-header': `export const ScreenHeader=({title,buttons})=><header>{title}{buttons?.filter(b=>!b.overflow||b.label==='Copy conversation'||b.label==='Chat').map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>;`,
+  '../../ui/content/clipboard': `export const copyText=async text=>{(window.mobileCopies??=[]).push(text);return 'copied'};`,
   '../../ui/content/artifacts': `export const ArtifactBrowser=()=>null;`,
   '../draft/use-draft': `export const saveRuntimeDraft=async(...args)=>{window.savedDraft=args};`,
   './folder-picker': `export const FolderPicker=()=>null;`,
@@ -71,6 +72,7 @@ const mocks = {
     import {createContext,useContext,useEffect} from 'react';
     export const ConversationContext=createContext(null);
     export const useConversation=()=>useContext(ConversationContext);
+    export const useConversationSelector=fn=>fn({task:useContext(ConversationContext)});
     export const ConversationProvider=({children,task,temporary})=>{
       useEffect(()=>{window.providerMounts++;return ()=>window.providerUnmounts++},[]);
       window.task=task;window.temporary=temporary;
@@ -136,7 +138,20 @@ for (const [path, names] of Object.entries({
 }))
   mocks[path] = names.map((name) => `export const ${name}=()=>null;`).join('\n')
 
-mocks['./task-review'] = 'export const TaskReview=()=> <div data-git-controls>Git controls</div>;'
+mocks['./task-review'] =
+  `export {TaskReview} from '${root}apps/mobile/src/tasks/detail/task-review.tsx';`
+mocks['./commit-section'] = 'export const CommitSection=()=>null;'
+mocks['./pull-status'] = 'export const PullStatus=()=>null;'
+mocks['../files/saved-file-preview'] =
+  'export const SavedFilePreview=()=> <div>Binary preview</div>;'
+mocks['../preview/diff-view'] =
+  'export const DiffView=()=> <div data-git-controls>Git controls</div>;'
+mocks['../../scm/review/use-file-review'] =
+  'export const useFileReview=()=>({progress:null,ready:false,busy:false,error:"",reload:()=>{},setViewed:()=>{}});'
+mocks['../../scm/review/file-review'] = 'export const MobileFileReview=()=>null;'
+mocks['../../ui/controls/choice'] = 'export const Choice=()=>null;'
+mocks['../../ui/controls/field'] =
+  'export const Field=({label,value,onChangeText,editable})=> <textarea aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/>;'
 
 const built = await build({
   stdin: {
@@ -144,16 +159,40 @@ const built = await build({
       import {useState} from 'react';
       import {createRoot} from 'react-dom/client';
       import {Effect} from 'effect';
+      import {createRuntimeReadCache,writeRuntimeSnapshotCache,decode,snapshotSchema,taskSchema} from '@dovo/protocol';
       import {RuntimeContext} from '../../runtime/connection/provider';
       import {RouteContext} from 'expo-router';
+      import {FocusContext} from '../../shell/navigation';
       import {NewTaskScreen,TaskRouteScreen} from './src/tasks/detail/task-route-screen';
       window.requests=[];window.navigation=[];window.watches=[];window.failure='';
       window.editorMounts=0;window.editorUnmounts=0;window.providerMounts=0;window.providerUnmounts=0;
-      const profiles=['a','b'].map(id=>({id,name:id,connection:{address:'http://'+id}}));
+      window.caches={};window.cacheReads=0;
+      const entries=new Map();
+      const storage={getItem:async key=>entries.get(key)??null,setItem:async(key,value)=>{entries.set(key,value)},removeItem:async key=>{entries.delete(key)},removePrefix:async prefix=>{for(const key of entries.keys())if(key.startsWith(prefix))entries.delete(key)}};
+      window.seedCache=async(runtimeId,text,cold=false)=>{
+        await window.caches[runtimeId]?.close();
+        const connection={address:'http://'+runtimeId,token:runtimeId};
+        let cache=createRuntimeReadCache(connection,storage,async value=>value);
+        const task=decode(taskSchema,{...window.created,id:'cached',historyRevision:0,title:'Cached title',draft:'Cached draft',messages:[{id:'cached-reply',role:'assistant',text}]});
+        const snapshot=decode(snapshotSchema,{revision:1,owner:false,detailTaskIds:['cached'],workspace:{version:1,runtimeAddress:'',repositories:[],agents:[],tasks:[task],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]});
+        await Effect.runPromise(writeRuntimeSnapshotCache(cache,{snapshot,lastSeen:null,pulls:null}));
+        if(cold){await cache.close();cache=createRuntimeReadCache(connection,storage,async value=>value)};
+        const read=cache.read.bind(cache);
+        cache.read=async(...args)=>{
+          window.cacheReads++;
+          const entry=await read(...args);
+          if(window.holdCacheRead)await new Promise(resolve=>window.releaseCacheRead=resolve);
+          return entry;
+        };
+        window.caches[runtimeId]=cache;
+        return {...task,title:'Fresh title',draft:'Fresh draft',messages:[]};
+      };
+      const profiles=['a','b'].map(id=>({id,name:id,connection:{address:'http://'+id,token:'mobile-copy-token-for-'+id}}));
       function App(){
         const [route,setRoute]=useState({href:'/new',params:{},key:0});
         const [activeId,setActiveId]=useState('a');
         const [online,setOnline]=useState(true);
+        const [focused,setFocused]=useState(true);window.setFocused=setFocused;
         const [snapshots,setSnapshots]=useState(Object.fromEntries(profiles.map(p=>[p.id,{
           detailTaskIds:[],questions:[],approvals:[],runs:[],
           workspace:{tasks:[],agents:[],repositories:[{id:'chat-'+p.id,kind:'scratch',name:'Chat',path:'/scratch',branch:''}]}
@@ -163,6 +202,7 @@ const built = await build({
         window.openRoute=href=>setRoute(route=>({href:typeof href==='string'?href:href.pathname,params:typeof href==='string'?{}:href.params,key:route.key+1}));
         window.publish=(runtimeId,task,detailed=true)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],detailTaskIds:detailed?[task.id]:[],workspace:{...s[runtimeId].workspace,tasks:[task]}}}));
         window.online=setOnline;
+        window.selectRuntime=setActiveId;
         window.makeGit=runtimeId=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],workspace:{...s[runtimeId].workspace,repositories:s[runtimeId].workspace.repositories.map(repo=>({...repo,id:window.created.repositoryId,kind:undefined}))}}}));
         const overviews=profiles.map(profile=>({profile,connected:online,snapshot:snapshots[profile.id]}));
         const request=(runtimeId,path,input)=>Effect.tryPromise({try:async()=>{
@@ -172,10 +212,10 @@ const built = await build({
           if(window.failAttachment&&path==='/api/attachments/upload'){window.failAttachment=false;throw Error('Upload failed')}
           return {ok:true};
         },catch:error=>error});
-        const runtime={ready:true,activeId,profiles,profile:profiles.find(p=>p.id===activeId),connected:online,snapshot:snapshots[activeId],overviews,request,refresh:async()=>{}};
-        return <RuntimeContext.Provider value={runtime}><RouteContext.Provider value={route.params}>
+        const runtime={ready:true,activeId,profiles,profile:profiles.find(p=>p.id===activeId),connected:online,snapshot:snapshots[activeId],overviews,request,readCache:window.caches[activeId]??null,refresh:async()=>{}};
+        return <FocusContext.Provider value={focused}><RuntimeContext.Provider value={runtime}><RouteContext.Provider value={route.params}>
           {route.href==='/new'?<NewTaskScreen key={route.key}/>:<TaskRouteScreen key={route.key}/>}
-        </RouteContext.Provider></RuntimeContext.Provider>;
+        </RouteContext.Provider></RuntimeContext.Provider></FocusContext.Provider>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -329,13 +369,40 @@ try {
   // Committing must not remove the Changes pane while a push retry is still possible.
   await page.evaluate(() => {
     window.makeGit('b')
-    window.publish('b', { ...window.created, status: 'done', files: [{ path: 'changed.ts' }] })
+    window.publish('b', {
+      ...window.created,
+      status: 'done',
+      files: [{ path: 'changed.ts', before: 'old', after: 'new', viewed: false }],
+    })
   })
   await page.getByRole('button', { name: 'Changes (1)', exact: true }).click()
   await page.locator('[data-git-controls]').waitFor()
+  await page.getByRole('button', { name: 'More actions', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit file', exact: true }).click()
+  const fileDraft = page.getByRole('textbox', { name: 'changed.ts', exact: true })
+  await fileDraft.fill('Keep my unsaved file edit')
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  await page.getByRole('button', { name: 'Changes (1)', exact: true }).click()
+  assert.equal(await fileDraft.inputValue(), 'Keep my unsaved file edit')
+  await page.evaluate(() =>
+    window.publish('b', {
+      ...window.created,
+      status: 'done',
+      files: [
+        { path: 'changed.ts', before: '', after: '', viewed: false, preview: { kind: 'binary' } },
+      ],
+    }),
+  )
+  assert.equal(
+    await page.getByRole('button', { name: 'Cancel edit', exact: true }).isEnabled(),
+    true,
+  )
+  assert.equal(await fileDraft.inputValue(), 'Keep my unsaved file edit')
   await page.evaluate(() => window.publish('b', { ...window.created, status: 'done', files: [] }))
   await page.getByRole('button', { name: 'Changes (0)', exact: true }).waitFor()
-  assert.equal(await page.locator('[data-git-controls]').count(), 1)
+  assert.equal(await fileDraft.inputValue(), 'Keep my unsaved file edit')
+  await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
+  await page.getByText('No changed files.', { exact: true }).waitFor()
 
   await page.evaluate(() => {
     window.online(false)
@@ -343,9 +410,119 @@ try {
   })
   await page.getByText('Connect a computer', { exact: true }).waitFor()
   assert.equal(await input.count(), 0)
+
+  // Already decoded history opens without another aggregate read, while live metadata wins.
+  await page.evaluate(async () => {
+    const summary = await window.seedCache('b', 'Decoded reply')
+    window.cacheSummary = summary
+    window.selectRuntime('b')
+    window.online(true)
+    window.publish('b', summary, false)
+    window.openRoute({ pathname: '/thread', params: { runtimeId: 'b', taskId: summary.id } })
+  })
+  await page.getByText('Decoded reply', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.cacheReads), 0)
+  assert.equal(await page.evaluate(() => window.task.title), 'Fresh title')
+  assert.equal(await input.inputValue(), 'Fresh draft')
+
+  // A rewind invalidates cached history instead of mounting an empty conversation as loaded.
+  await page.evaluate(() =>
+    window.publish('b', { ...window.cacheSummary, historyRevision: 1 }, false),
+  )
+  await page.getByText('Loading conversation…', { exact: true }).waitFor()
+  assert.equal(await page.getByText('Decoded reply', { exact: true }).count(), 0)
+  assert.equal(await input.count(), 0)
+  await page.evaluate(() =>
+    window.publish('b', { ...window.cacheSummary, historyRevision: 1 }, true),
+  )
+  await input.waitFor()
+  assert.equal(await page.evaluate(() => window.task.messages.length), 0)
+
+  // A cold cache still hydrates from storage, and a late read cannot replace another computer.
+  await page.evaluate(async () => {
+    const summary = await window.seedCache('b', 'Persistent reply', true)
+    window.publish('b', summary, false)
+    window.openRoute({ pathname: '/thread', params: { runtimeId: 'b', taskId: summary.id } })
+  })
+  await page.getByText('Persistent reply', { exact: true }).waitFor()
+  const reads = await page.evaluate(() => window.cacheReads)
+  assert.equal(reads, 2)
+  await page.evaluate(() => {
+    window.holdCacheRead = true
+    window.openRoute({ pathname: '/thread', params: { runtimeId: 'b', taskId: 'cached' } })
+  })
+  await page.waitForFunction(() => !!window.releaseCacheRead)
+  await page.evaluate(async () => {
+    window.holdCacheRead = false
+    const summary = await window.seedCache('a', 'Other computer reply')
+    window.selectRuntime('a')
+    window.publish('a', summary, false)
+    window.openRoute({ pathname: '/thread', params: { runtimeId: 'a', taskId: summary.id } })
+  })
+  await page.getByText('Other computer reply', { exact: true }).waitFor()
+  await page.evaluate(() => window.releaseCacheRead())
+  assert.equal(await page.getByText('Persistent reply', { exact: true }).count(), 0)
+  assert.equal(await page.getByText('Other computer reply', { exact: true }).count(), 1)
+  // The actual mobile copy action must page with authentication and stop on lost focus.
+  await page.evaluate(() => {
+    window.online(true)
+    window.mobileCopies = []
+    window.mobileCopyRequests = []
+    window.fetch = async (url, init) => {
+      if (new URL(url).pathname !== '/api/tasks/history' || init.method !== 'POST')
+        throw new Error('Invalid mobile copy request')
+      if (new Headers(init.headers).get('Authorization') !== 'Bearer mobile-copy-token-for-a')
+        throw new Error('Unauthenticated mobile copy')
+      window.mobileCopyRequests.push(JSON.parse(init.body))
+      if (window.holdCopy) {
+        window.mobileCopySignal = init.signal
+        return new Promise(
+          (resolve) =>
+            (window.finishMobileCopy = () =>
+              resolve(Response.json({ messages: [], turns: [], historyRevision: 0 }))),
+        )
+      }
+      return Response.json({
+        messages: [{ id: 'older-copy', role: 'user', text: 'Older mobile request' }],
+        turns: [],
+        historyRevision: 0,
+      })
+    }
+    window.publish(
+      'a',
+      {
+        ...window.task,
+        historyBefore: 'newest-copy',
+        historyRevision: 0,
+        messages: [{ id: 'newest-copy', role: 'assistant', text: 'Newest mobile reply' }],
+      },
+      true,
+    )
+  })
+  const copyButton = page.getByRole('button', { name: 'Copy conversation', exact: true })
+  await copyButton.click()
+  await page.waitForFunction(() => window.mobileCopies.length === 1)
+  const copied = await page.evaluate(() => window.mobileCopies[0])
+  assert.ok(copied.indexOf('Older mobile request') < copied.indexOf('Newest mobile reply'))
+  assert.deepEqual(await page.evaluate(() => window.mobileCopyRequests[0]), {
+    id: 'cached',
+    before: 'newest-copy',
+  })
+  await page.evaluate(() => (window.holdCopy = true))
+  await copyButton.click()
+  await page.waitForFunction(() => !!window.finishMobileCopy)
+  assert.equal(await copyButton.isDisabled(), true)
+  await page.evaluate(() => window.setFocused(false))
+  await page.waitForFunction(() => window.mobileCopySignal.aborted)
+  await page.evaluate(() => window.finishMobileCopy())
+  await page.waitForFunction(() => !document.querySelector('header button:disabled'))
+  assert.equal(await page.evaluate(() => window.mobileCopies.length), 1)
+  await page.evaluate(async () => {
+    await Promise.all(Object.values(window.caches).map((cache) => cache.close()))
+  })
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile draft transition: one mounted screen/provider/editor through creation, send, delayed snapshots, upload retry and owner-qualified URL updates; restoration and offline startup passed.',
+    'Mobile draft transition: creation, delayed snapshots, upload retry, restoration and offline startup; decoded cache reuse, revision invalidation, cold hydration, computer isolation, guarded conversation copying and file drafts across pane switches, binary refresh and removal passed.',
   )
 } finally {
   await browser.close()

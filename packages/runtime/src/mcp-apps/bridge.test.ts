@@ -22,13 +22,21 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
-import { decode, mcpServerSchema, recentTools, mcpAppReferences } from '@dovo/protocol'
+import {
+  decode,
+  mcpServerSchema,
+  recentTools,
+  mcpAppReferences,
+  runtimeRequest,
+  runtimeRequestTimeout,
+  mcpAppRpcResponseSchema,
+} from '@dovo/protocol'
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
-async function setup(resourceCsp = true, failureStatus?: number) {
+async function setup(resourceCsp = true, failureStatus?: number, toolDelay = 0) {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
@@ -57,6 +65,8 @@ async function setup(resourceCsp = true, failureStatus?: number) {
     ],
   }))
   upstream.setRequestHandler(CallToolRequestSchema, async (request) => {
+    if (request.params.name === 'refresh' && toolDelay)
+      await new Promise((resolve) => setTimeout(resolve, toolDelay))
     calls++
     parameters.push(request.params)
     return request.params.name === 'legacy'
@@ -139,6 +149,24 @@ async function setup(resourceCsp = true, failureStatus?: number) {
     notify: () => upstream.sendToolListChanged(),
   }
 }
+it('closes MCP sessions and revokes proxy scopes when a thread is auto-settled', async () => {
+  const s = await setup(),
+    bridge = s.runtime.services.mcpApps
+  await bridge.proxy(s.token, 'tools/list', {})
+  const close = vi.spyOn(Client.prototype, 'close')
+  s.runtime.services.store.updateTask(s.task.id, (task) => ({
+    ...task,
+    archived: true,
+    autoSettled: true,
+  }))
+  await bridge.reconcile()
+  expect(close).toHaveBeenCalledOnce()
+  await expect(bridge.proxy(s.token, 'tools/list', {})).rejects.toThrow(
+    'Invalid MCP bridge credential',
+  )
+  expect(bridge['resolved'].size).toBe(0)
+  expect(bridge['sessions'].size).toBe(0)
+})
 it('captures MCP Apps and legacy resources once without putting HTML in sync', async () => {
   const s = await setup(),
     bridge = s.runtime.services.mcpApps
@@ -193,6 +221,42 @@ it('requires UI approval and deduplicates calls, including persisted completed a
   await expect(
     bridge.action(s.task.id, ref.id, 'declined', 'tools/call', { name: 'refresh' }),
   ).rejects.toThrow('declined')
+  expect(s.calls()).toBe(2)
+})
+it('keeps the UI request alive through approval and a slow upstream tool without duplicate execution', async () => {
+  const s = await setup(true, undefined, 450),
+    bridge = s.runtime.services.mcpApps
+  await bridge.proxy(s.token, 'tools/call', { name: 'chart' })
+  const ref = recentTools(
+    s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events,
+  ).flatMap((event) => mcpAppReferences(event.payload))[0]
+  const approve = vi.spyOn(s.runtime.services.approvals, 'request').mockImplementation(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    return true
+  })
+  const input = {
+    taskId: s.task.id,
+    id: ref.id,
+    requestId: 'slow',
+    method: 'tools/call',
+    params: { name: 'refresh' },
+  }
+  const connection = {
+    address: `http://127.0.0.1:${s.runtime.port}`,
+    token: 'test-owner-token-with-at-least-32-characters',
+  }
+  // Scale the client budget; 50 seconds of approval followed by a 45-second tool is valid.
+  const result = await runtimeRequest(
+    connection,
+    connection.address,
+    '/api/mcp-apps/rpc',
+    input,
+    mcpAppRpcResponseSchema,
+    'POST',
+    runtimeRequestTimeout('/api/mcp-apps/rpc', input) / 100,
+  )
+  expect(result.result).toMatchObject({ content: [{ type: 'text', text: 'Chart ready' }] })
+  expect(approve).toHaveBeenCalledOnce()
   expect(s.calls()).toBe(2)
 })
 it('invalidates old capabilities and saved app actions when server configuration changes', async () => {

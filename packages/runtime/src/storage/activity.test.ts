@@ -4,6 +4,30 @@ import { Approvals } from '../agents/execution/approvals'
 import { Activity, redact } from './activity'
 import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
+it('notifies only affected activity owners and detaches stopped listeners', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const log = new Activity(db)
+    const notify = vi.fn<() => void>()
+    const first = log.watchScope('task', notify)
+    const second = log.watchScope('task', notify)
+    log.add('tool', 'child', 'Unrelated')
+    log.add('request', 'task', 'Request')
+    expect(notify).not.toHaveBeenCalled()
+    log.add('tool', 'task', 'Artifact', {}, 'artifact:one:1')
+    expect(notify).toHaveBeenCalledTimes(2)
+    first.stop()
+    first.stop()
+    log.removeArtifacts('task')
+    expect(notify).toHaveBeenCalledTimes(3)
+    second.stop()
+    log.add('tool', 'task', 'Later')
+    log.pruneBefore(new Date(Date.now() + 60000).toISOString())
+    expect(notify).toHaveBeenCalledTimes(3)
+  } finally {
+    db.close()
+  }
+})
 it.each(['preparing', 'finalizing', 'provider'] as const)(
   'does not resurrect pruned assistant history when restarting during %s',
   (runPhase) => {
@@ -416,3 +440,36 @@ it('keeps fake-provider streaming history live while auditing only meaningful bo
     await f.cleanup()
   }
 }, 15000)
+
+it('tracks only watched thread activity and invalidates pruning without retaining stopped watches', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const log = new Activity(db)
+    const first = log.watchScope('task'),
+      second = log.watchScope('task')
+    const initial = first.revision()
+    log.add('tool', 'child', 'Unrelated')
+    log.add('request', 'task', 'Unrelated request')
+    expect(first.revision()).toBe(initial)
+    log.add('tool', 'task', 'Artifact', {}, 'artifact:one:1')
+    expect(first.revision()).toBeGreaterThan(initial)
+    expect(second.revision()).toBe(first.revision())
+    first.stop()
+    first.stop()
+    const stopped = first.revision()
+    log.removeArtifacts('task')
+    expect(second.revision()).toBeGreaterThan(stopped)
+    second.stop()
+    const released = second.revision()
+    log.add('tool', 'task', 'Later')
+    expect(second.revision()).toBe(released)
+    const resumed = log.watchScope('task')
+    expect(resumed.revision()).toBeGreaterThan(released)
+    const beforePrune = resumed.revision()
+    log.pruneBefore(new Date(Date.now() + 60000).toISOString())
+    expect(resumed.revision()).toBeGreaterThan(beforePrune)
+    resumed.stop()
+  } finally {
+    db.close()
+  }
+})

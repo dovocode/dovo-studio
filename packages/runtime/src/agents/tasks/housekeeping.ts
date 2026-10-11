@@ -58,6 +58,7 @@ type ArchiveServices = Pick<
   | 'simulators'
   | 'deviceHosts'
   | 'activity'
+  | 'agents'
 >
 /** Whether a task is doing or waiting for something, so automatic archiving must skip it. */
 export function taskIsBusy(s: ArchiveServices, id: string) {
@@ -101,6 +102,7 @@ export async function archiveTask(
         s.browsers.closeTask(member),
         s.simulators.closeTask(member),
         s.deviceHosts.closeTask(member),
+        s.agents.releaseTask(member),
       ])
       for (const result of cleanup) if (result.status === 'rejected') throw result.reason
     }
@@ -172,6 +174,7 @@ export class Housekeeping {
       | 'backups'
       | 'db'
       | 'git'
+      | 'agents'
     >,
   ) {}
   start() {
@@ -244,20 +247,34 @@ export class Housekeeping {
     for (const task of this.s.store.get().tasks) {
       const policy = this.s.store.projectSettings(task.repositoryId).taskBehavior
       if (!policy?.settleInactive || task.archived) continue
-      const eligible = inactiveTaskIds(
-        this.s.store.get().tasks,
-        policy.inactiveDays ?? 3,
-        now,
-        (member) =>
-          taskIsBusy(this.s, member.id) ||
-          !!member.queue?.length ||
-          !!member.draft.trim() ||
-          !!member.draftAttachments?.length ||
-          !!member.scheduledMessages?.length ||
-          !!member.quotaContinuation,
-      )
-      if (!eligible.includes(task.id)) continue
+      const eligible = () => {
+        const current = this.s.store.get().tasks.find((member) => member.id === task.id)
+        const currentPolicy =
+          current && this.s.store.projectSettings(current.repositoryId).taskBehavior
+        return (
+          !!current &&
+          !current.archived &&
+          !!currentPolicy?.settleInactive &&
+          inactiveTaskIds(
+            this.s.store.get().tasks,
+            currentPolicy.inactiveDays ?? 3,
+            now,
+            (member) =>
+              taskIsBusy(this.s, member.id) ||
+              !!member.queue?.length ||
+              !!member.draft.trim() ||
+              !!member.draftAttachments?.length ||
+              !!member.scheduledMessages?.length ||
+              !!member.quotaContinuation,
+          ).includes(task.id)
+        )
+      }
+      if (!eligible()) continue
       const ids = taskFamilyIds(this.s.store.get().tasks, task.id)
+      for (const id of ids) await this.s.agents.releaseTask(id)
+      const latestIds = taskFamilyIds(this.s.store.get().tasks, task.id)
+      if (!eligible() || latestIds.size !== ids.size || [...latestIds].some((id) => !ids.has(id)))
+        continue
       this.s.store.transaction(() => {
         this.s.store.update((workspace) => ({
           ...workspace,

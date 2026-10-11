@@ -1,4 +1,4 @@
-import { pullStacks, stackSummary, type PullSummary } from '@dovo/protocol'
+import { pullStacks, stackSummary, type PullDetail, type PullSummary } from '@dovo/protocol'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode, decodeResult } from '@dovo/protocol'
 import { retainUnavailableSections } from './cached-detail.js'
@@ -38,6 +38,7 @@ export class PullCache {
       Partial<Pick<PullRequests, 'status' | 'feedback'>>,
     private store: WorkspaceStore,
     private identity?: (cwd: string, refresh: boolean) => Promise<string>,
+    private onDetail?: (detail: PullDetail) => void,
   ) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS pull_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS pull_cache_scopes (cwd TEXT PRIMARY KEY, scope TEXT NOT NULL)',
@@ -286,7 +287,11 @@ export class PullCache {
         pullDetailSchema,
         () => this.pulls.detail(cwd, number),
         force,
-        retainUnavailableSections,
+        (fresh, cached) => {
+          const detail = retainUnavailableSections(fresh, cached)
+          this.onDetail?.(detail)
+          return detail
+        },
         300_000,
       )
     })

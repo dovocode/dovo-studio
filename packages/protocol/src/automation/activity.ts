@@ -32,24 +32,23 @@ const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const pending = (status: string) =>
   ['started', 'running', 'in_progress', 'pending', 'inProgress'].includes(status)
 type Event = Schema.Schema.Type<typeof activitySchema>['events'][number]
+function sameActivityEvent(event: Event, other: Event) {
+  return (
+    event === other ||
+    (event.id === other.id &&
+      event.time === other.time &&
+      event.kind === other.kind &&
+      event.scope === other.scope &&
+      event.summary === other.summary &&
+      event.payload === other.payload)
+  )
+}
 
 /** Preserve references on unchanged polls without ignoring same-ID tool updates. */
 export function retainActivityEvents(previous: Event[], next: Event[]): Event[] {
   if (previous === next) return previous
   if (previous.length !== next.length) return next
-  return previous.every((event, index) => {
-    const other = next[index]!
-    return (
-      event.id === other.id &&
-      event.time === other.time &&
-      event.kind === other.kind &&
-      event.scope === other.scope &&
-      event.summary === other.summary &&
-      event.payload === other.payload
-    )
-  })
-    ? previous
-    : next
+  return previous.every((event, index) => sameActivityEvent(event, next[index]!)) ? previous : next
 }
 
 type Tool = Event & {
@@ -62,13 +61,13 @@ type Tool = Event & {
 }
 
 // Claude can send several calls in one message and return their results individually.
-function splitCalls(event: Event): Event[] {
-  let payload: unknown
-  try {
-    payload = JSON.parse(event.payload)
-  } catch {
-    return [event]
-  }
+function splitCalls(event: Event, payload?: unknown): Event[] {
+  if (payload === undefined)
+    try {
+      payload = JSON.parse(event.payload)
+    } catch {
+      return [event]
+    }
   const envelope = object(payload)
   const data = object(envelope.event)
   const message = object(data.message)
@@ -100,7 +99,7 @@ function splitCalls(event: Event): Event[] {
 }
 export function recentTools(events: Event[]): Tool[] {
   const parsed = events
-    .flatMap(splitCalls)
+    .flatMap((event) => splitCalls(event))
     .map((event) => {
       let payload: unknown
       try {
@@ -158,21 +157,22 @@ export function recentTools(events: Event[]): Tool[] {
 export function compactActivityEvents(events: Event[]): Event[] {
   return events.flatMap((event) => {
     if (!['tool', 'reasoning', 'task-activity'].includes(event.kind)) return [event]
-    const originalImages = toolImages(event.payload)
-    return splitCalls(event).map((call) => {
-      let metadata: unknown
-      try {
-        metadata = JSON.parse(call.payload)
-      } catch {
-        metadata = {}
-      }
+    let original: unknown
+    try {
+      original = JSON.parse(event.payload)
+    } catch {
+      original = undefined
+    }
+    const originalImages = toolImages(original)
+    return splitCalls(event, original).map((call) => {
+      const metadata: unknown = call === event ? original : JSON.parse(call.payload)
       const fields = decodeResult(toolPayload, metadata).data
-      const presentation = toolPresentation(call.payload, call.summary)
-      const apps = mcpAppReferences(call.payload)
+      const presentation = toolPresentation(call.payload, call.summary, undefined, metadata)
+      const apps = mcpAppReferences(metadata)
       const artifacts = artifactReferences(metadata)
-      const images = toolImageReferences(call.payload)
+      const images = toolImageReferences(metadata)
       if (!images.length)
-        for (const image of toolImages(call.payload)) {
+        for (const image of call === event ? originalImages : toolImages(metadata)) {
           const index = originalImages.findIndex((original) => original.uri === image.uri)
           if (index >= 0) images.push({ eventId: event.id, index, mime: image.mime })
         }
@@ -192,6 +192,25 @@ export function compactActivityEvents(events: Event[]): Event[] {
       }
     })
   })
+}
+
+/** Owned by one subscribed scope; discarded events release their raw payloads immediately. */
+export function createActivityCompactor() {
+  let retained = new Map<string, { source: Event; events: Event[] }>()
+  return (events: Event[]): Event[] => {
+    const next = new Map<string, { source: Event; events: Event[] }>()
+    const compact = events.flatMap((event) => {
+      const old = retained.get(event.id)
+      const entry =
+        old && sameActivityEvent(old.source, event)
+          ? old
+          : { source: event, events: compactActivityEvents([event]) }
+      next.set(event.id, entry)
+      return entry.events
+    })
+    retained = next
+    return compact
+  }
 }
 
 /** Reuse unchanged tool records across text streaming and incremental activity updates. */

@@ -1,5 +1,10 @@
-import { expect, it } from 'vite-plus/test'
-import { compactActivityEvents, recentTools, type activitySchema } from './activity'
+import { expect, it, vi } from 'vite-plus/test'
+import {
+  compactActivityEvents,
+  createActivityCompactor,
+  recentTools,
+  type activitySchema,
+} from './activity'
 import { toolPresentation } from '../conversation/presentation/tool-presentation'
 import { mcpAppReferences } from '../conversation/mcp-apps'
 import type { Schema } from 'effect'
@@ -11,6 +16,39 @@ const event = (payload: unknown): Event => ({
   scope: 'task',
   summary: 'Command',
   payload: JSON.stringify(payload),
+})
+it('reuses unchanged compact events and releases removed records, including split tool calls', () => {
+  const compact = createActivityCompactor()
+  const first = event({ turnId: 'turn', toolId: 'one', status: 'running' })
+  const split = {
+    ...event({
+      event: {
+        message: {
+          content: [
+            { type: 'tool_use', id: 'two', name: 'bash', input: { command: 'pwd' } },
+            { type: 'tool_use', id: 'three', name: 'bash', input: { command: 'ls' } },
+          ],
+        },
+      },
+    }),
+    id: 'split',
+  }
+  const before = compact([first, split])
+  const parse = vi.spyOn(JSON, 'parse')
+  try {
+    const same = compact([{ ...first }, { ...split }])
+    expect(same.every((item, index) => item === before[index])).toBe(true)
+    expect(parse).not.toHaveBeenCalled()
+    const changed = compact([{ ...first, summary: 'Updated' }, split])
+    expect(changed[0]?.summary).toBe('Updated')
+    expect(changed[0]).not.toBe(before[0])
+    expect(changed[1]).toBe(before[1])
+    expect(changed[2]).toBe(before[2])
+    compact([])
+    expect(compact([split])[0]).not.toBe(before[1])
+  } finally {
+    parse.mockRestore()
+  }
 })
 it('keeps commands, status, turn offsets and apps while dropping raw data and output', () => {
   const apps = [{ id: 'app', taskId: 'task', title: 'Preview', revision: 1 }]

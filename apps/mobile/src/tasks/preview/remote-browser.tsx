@@ -3,7 +3,7 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { AppState, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Schema, Effect } from 'effect'
@@ -12,6 +12,7 @@ import { remoteBrowserHtml } from '@dovo/protocol/browser-viewer'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../../ui/theme'
 import { deviceHostMessage } from '../../screens/device-host-form'
+import { usePreviewActive } from './use-preview-active'
 const bridgeSchema = mutableStruct({
   channel: Schema.Literal('dovo-browser'),
   type: Schema.Literals(['ready', 'reconnect', 'close']),
@@ -32,6 +33,8 @@ export function RemoteBrowser({
   const { styles } = useTheme()
 
   const { connection, profiles, readEffect } = useRuntime()
+  const active = usePreviewActive()
+  const visible = useRef(active)
   const web = useRef<WebView>(null)
   const [generation, setGeneration] = useApplicationState(0)
   const current = useRef(0)
@@ -54,7 +57,13 @@ export function RemoteBrowser({
   const connect = () => {
     return runClientEffect(
       mobileWorkflow(function* () {
-        if (!connection || pending.current || AppState.currentState === 'background') return
+        if (
+          !connection ||
+          !visible.current ||
+          pending.current ||
+          AppState.currentState === 'background'
+        )
+          return
         const version = current.current
         pending.current = true
         if (deviceId)
@@ -77,7 +86,12 @@ export function RemoteBrowser({
             },
             remoteBrowserTicketSchema,
           )
-          if (version !== current.current) return
+          if (
+            version !== current.current ||
+            !visible.current ||
+            AppState.currentState === 'background'
+          )
+            return
           const target = new URL(deviceId ? '/ws/simulator' : '/ws/browser', connection.address)
           target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:'
           target.searchParams.set('ticket', result.ticket)
@@ -120,28 +134,26 @@ export function RemoteBrowser({
       })
   }, [expanded])
   const resume = useRef(connect)
-  useEffect(() => {
+  useLayoutEffect(() => {
     resume.current = connect
   })
-  useEffect(() => {
-    let backgrounded = false
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'background') {
-        backgrounded = true
-        current.current++
-        pending.current = false
-        web.current?.injectJavaScript("window.dispatchEvent(new Event('pagehide'));true;")
-      }
-      if (state === 'active' && backgrounded && ready.current) {
-        backgrounded = false
-        // Retain the canvas, viewport and address draft while obtaining a fresh ticket.
-        // Only a terminated WebKit process needs a full remount.
-        void resume.current()
-      }
-    })
-    return () => {
+  useLayoutEffect(() => {
+    visible.current = active
+    if (!active) {
       current.current++
-      subscription.remove()
+      pending.current = false
+      web.current?.injectJavaScript("window.dispatchEvent(new Event('pagehide'));true;")
+    } else if (ready.current) {
+      // Preserve the canvas and viewport across screen switches and backgrounding.
+      void resume.current()
+    }
+  }, [active])
+  useLayoutEffect(() => {
+    return () => {
+      visible.current = false
+      current.current++
+      pending.current = false
+      web.current?.injectJavaScript("window.dispatchEvent(new Event('pagehide'));true;")
     }
   }, [])
   return (
@@ -185,6 +197,7 @@ export function RemoteBrowser({
           const parsed = decodeResult(bridgeSchema, message)
           if (!parsed.success) return
           if (parsed.data.type === 'close') {
+            if (!visible.current || AppState.currentState === 'background') return
             current.current++
             pending.current = false
             ready.current = false

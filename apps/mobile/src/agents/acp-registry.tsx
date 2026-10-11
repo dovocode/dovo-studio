@@ -356,7 +356,7 @@ function AcpAuthentication({
 }) {
   const { styles } = useTheme()
 
-  const { callEffect, connected } = useRuntime()
+  const { callEffect, readEffect, connected } = useRuntime()
   const [methods, setMethods] = useApplicationState<Schema.Schema.Type<
     typeof acpInspectionSchema
   > | null>(null)
@@ -376,7 +376,7 @@ function AcpAuthentication({
     setNotice('')
     setInspectError('')
     void runClientEffect(
-      callEffect('/api/agents/acp/inspect', { id: installation.id }, acpInspectionSchema, 'POST')
+      readEffect('/api/agents/acp/inspect', { id: installation.id }, acpInspectionSchema, 'POST')
         .pipe(
           Effect.flatMap((value) =>
             nativeEffect(() => {
@@ -398,14 +398,14 @@ function AcpAuthentication({
     return () => {
       active = false
     }
-  }, [callEffect, connected, installation.id])
+  }, [readEffect, connected, installation.id])
   const waiting = methods?.authentication?.status === 'waiting'
   useEffect(() => {
     if (!connected || !waiting) return
     let active = true
     const poll = async () => {
       await runClientEffect(
-        callEffect(
+        readEffect(
           '/api/agents/acp/inspect',
           { id: installation.id },
           acpInspectionSchema,
@@ -430,7 +430,7 @@ function AcpAuthentication({
       active = false
       clearTimeout(timer)
     }
-  }, [callEffect, connected, installation.id, waiting])
+  }, [readEffect, connected, installation.id, waiting])
   const run = (methodId: string) =>
     act(() =>
       mobileWorkflow(function* () {
@@ -450,7 +450,7 @@ function AcpAuthentication({
           )
           yield* nativeEffect(() => setTerminal(result.terminal?.id ?? ''))
         }
-        const status = yield* callEffect(
+        const status = yield* readEffect(
           '/api/agents/acp/inspect',
           { id: installation.id },
           acpInspectionSchema,
@@ -479,7 +479,7 @@ function AcpAuthentication({
         disabled={!connected || busy}
         onPress={() =>
           act(() =>
-            callEffect(
+            readEffect(
               '/api/agents/acp/inspect',
               { id: installation.id },
               acpInspectionSchema,

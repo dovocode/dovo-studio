@@ -9,10 +9,11 @@ const controls =
   ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog']
     .map((name) => `export * from '${uiDir}/components/ui/${name}.tsx';`)
     .join('') +
-  `export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
+  `export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
 const mocks = {
   '@dovo/studio-ui': controls,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useWorkspace=()=>window.store;export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo'});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
+  '@dovo/studio-core': `export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useWorkspace=()=>window.store;export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo'});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
+  '../workspace/context': 'export const useWorkspace=()=>window.store;',
   '@dovo/studio-core/state': `export * from '${root}/packages/studio-core/src/runtime/application-state.ts';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
   './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
@@ -25,12 +26,25 @@ const built = await build({
   stdin: {
     loader: 'tsx',
     resolveDir: root,
-    contents: `import {Effect} from 'effect';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {createRoot} from 'react-dom/client';import {PullDetail} from '${root}/packages/extension-scm/src/pulls/detail/detail.tsx';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';
+    contents: `import {pullFileFingerprint} from '@dovo/protocol';import {Effect} from 'effect';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {createRoot} from 'react-dom/client';import {PullDetail} from '${root}/packages/extension-scm/src/pulls/detail/detail.tsx';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';
 const pull={number:7,title:'Improve pull request reviews',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'dominic',updatedAt:'2026-10-04',head:'feature',base:'main',labels:['feature'],checksState:'SUCCESS',reviewDecision:'REVIEW_REQUIRED',additions:24,deletions:8,commentCount:3,viewerIsAuthor:true,viewerIsAssigned:true,viewerIsInvolved:true,viewerReviewRequested:true};
 window.pulls=[pull,{...pull,number:8,url:'https://github.com/team/project/pull/8',title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,url:'https://github.com/team/project/pull/9',title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
 window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project'}};
 window.detail={pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
-window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};window.detailReads=0;window.store.requestEffect=()=>Effect.sync(()=>{window.detailReads++;return JSON.parse(JSON.stringify(window.detail));});const realRoot=createRoot(document.getElementById('app'));const rootView={render:element=>realRoot.render(<ApplicationStateProvider>{element}</ApplicationStateProvider>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);window.renderKey=0;window.showProbe=()=>rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><nav className="studio-navigation" style={{width:44}}/><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key={window.renderKey++}/></div></div></main></div></div>);window.showProbe();`,
+window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};window.detailReads=0;window.store.requestEffect=()=>Effect.sync(()=>{window.detailReads++;return JSON.parse(JSON.stringify(window.detail));});const realRoot=createRoot(document.getElementById('app'));const rootView={render:element=>realRoot.render(<ApplicationStateProvider>{element}</ApplicationStateProvider>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);window.renderKey=0;window.showProbe=()=>rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><nav className="studio-navigation" style={{width:44}}/><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key={window.renderKey++}/></div></div></main></div></div>);
+const originalRequest = window.store.request; const marks = new Map();
+window.store.request = async (path, input, ...rest) => {
+  if (!path.startsWith('/api/review/')) return originalRequest(path, input, ...rest);
+  const files = window.detail.files.map(file => {
+    const key = window.detail.pull.url + ':' + file.path, fingerprint = pullFileFingerprint(file, window.detail.pull);
+    const prior = marks.get(key);
+    const state = prior?.fingerprint === fingerprint ? prior : {path:file.path, fingerprint, viewed:false, version:(prior?.version??0)+1};
+    marks.set(key,state); return state;
+  });
+  if (path.endsWith('/set')) { const file = files.find(file => file.path === input.path); if (!file || file.fingerprint !== input.fingerprint || file.version !== input.version) throw new Error('File changed'); Object.assign(file,{viewed:input.viewed,version:file.version+1}); }
+  return {files:files.map(file=>({...file})), groups:[{label:'src',basis:'folder',paths:files.map(file=>file.path)}]};
+};
+window.showProbe();`,
   },
   bundle: true,
   write: false,
@@ -60,10 +74,12 @@ window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{v
         b.onLoad({ filter: /pulls\/detail\/patch\.tsx$/ }, async ({ path }) => ({
           loader: 'tsx',
           contents:
-            (await readFile(path, 'utf8')).replace(
-              'parsePatchFiles }',
-              'parsePatchFiles as originalParsePatchFiles }',
-            ) +
+            (await readFile(path, 'utf8'))
+              .replace('parsePatchFiles }', 'parsePatchFiles as originalParsePatchFiles }')
+              .replace(
+                'onGutterUtilityClick: (range) => {',
+                'onGutterUtilityClick: (window.inlineSelections ??= {})[file.path] = (range) => {',
+              ) +
             '\nfunction parsePatchFiles(...args){window.parseCount=(window.parseCount??0)+1;return originalParsePatchFiles(...args)}',
         }))
         b.onResolve({ filter: /.*/ }, ({ path }) =>
@@ -142,7 +158,13 @@ try {
   await form.fill('Keep my feedback')
   await detail.getByRole('tab', { name: 'Changes (30)', exact: true }).click()
   assert.ok(Math.abs((await content.evaluate((e) => e.scrollTop)) - changesTop) < 2)
-  await detail.getByRole('checkbox').first().check()
+  await detail.getByRole('checkbox', { name: 'File viewed', exact: true }).click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[aria-label="Code changes"] [aria-label="File viewed"]')
+        .getAttribute('aria-checked') === 'true',
+  )
   await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
   await page.waitForFunction(() => window.detailReads >= 2)
   await page.waitForTimeout(100)
@@ -159,7 +181,41 @@ try {
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   assert.equal(await form.inputValue(), 'Keep my feedback')
   await detail.getByRole('tab', { name: 'Changes (30)', exact: true }).click()
-  await detail.getByText('1 of 30 reviewed', { exact: true }).waitFor()
+  await detail.getByText('0 of 30 viewed', { exact: true }).waitFor()
+
+  // A push preserves the inline draft and original range, while blocking stale publication.
+  await page.evaluate(() => {
+    window.detail.capabilities.actions.push('inline-comment')
+  })
+  await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
+  await page.evaluate(() =>
+    window.inlineSelections['src/file-0.txt']({ start: 2, end: 2, side: 'additions' }),
+  )
+  const inline = detail.getByRole('textbox', { name: 'Line comment', exact: true })
+  await inline.fill('Keep my inline feedback across pushes')
+  await page.evaluate(() => {
+    window.detail.pull.headSha = 'b'.repeat(40)
+    window.detail.files[0].patch = '@@ -1 +1,2 @@\n old\n+updated'
+  })
+  await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
+  await detail.getByRole('status').filter({ hasText: 'earlier PR revision' }).waitFor()
+  assert.equal(await inline.inputValue(), 'Keep my inline feedback across pushes')
+  const inlineForm = inline.locator('xpath=ancestor::form')
+  await inlineForm.getByRole('button', { name: 'Comment destination', exact: true }).click()
+  await page.getByRole('dialog').getByRole('option', { name: 'GitHub PR', exact: true }).click()
+  await inlineForm.getByRole('button', { name: 'Post to GitHub', exact: true }).click()
+  await inlineForm
+    .getByRole('alert')
+    .filter({ hasText: 'PR changed while you were writing' })
+    .waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.writes.filter((write) => write.path === '/api/scm/pulls/comment').length,
+    ),
+    0,
+  )
+  assert.equal(await inline.inputValue(), 'Keep my inline feedback across pushes')
+  await inlineForm.getByRole('button', { name: 'Cancel', exact: true }).click()
 
   await page.setViewportSize({ width: 768, height: 350 })
   await page.evaluate(() => {

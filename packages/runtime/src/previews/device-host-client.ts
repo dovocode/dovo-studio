@@ -173,7 +173,8 @@ export class DeviceHostClient {
         path === '/api/device-host/install'
           ? 300000
           : path === '/api/device-host/open'
-            ? 210000
+            ? // Targeted discovery, a cold native helper build and first-frame readiness.
+              300000
             : path === '/api/device-host/devices'
               ? 120000
               : 60000,

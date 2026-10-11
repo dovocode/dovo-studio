@@ -186,6 +186,7 @@ export async function createBrowserCdp(directory: string) {
     save()
   }
   return {
+    connected: (id: string) => !!targets.get(id)?.clients.size,
     register(
       id: string,
       taskId: string,

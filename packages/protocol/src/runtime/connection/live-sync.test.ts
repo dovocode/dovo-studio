@@ -3,6 +3,7 @@ import {
   startRuntimeSync,
   runtimeSyncOnline,
   watchRuntimeTask,
+  watchRuntimeActivity,
   runtimeSnapshotPath,
 } from './live-sync.js'
 import type { RuntimeSnapshot } from './runtime.js'
@@ -15,7 +16,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.useRealTimers()
 })
-async function stalledSocketFixture(address: string) {
+async function stalledSocketFixture(address: string, format?: number) {
   const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
   class Socket {
     static instances: Socket[] = []
@@ -39,7 +40,9 @@ async function stalledSocketFixture(address: string) {
   vi.stubGlobal('WebSocket', Socket)
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ ticket: 'ticket' })),
+    vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json({ ticket: 'ticket', format })),
   )
   const receive = vi.fn<(value: RuntimeSnapshot) => void>()
   const wake = vi.fn<() => void>()
@@ -76,6 +79,67 @@ async function stalledSocketFixture(address: string) {
   })
   return { clock, Socket, receive, wake, live, frame }
 }
+it('does not retain late activity frames after the final listener leaves a scope', async () => {
+  const address = 'http://late-activity.local'
+  const { Socket } = await stalledSocketFixture(address, 5)
+  const socket = Socket.instances[0]!
+  socket.readyState = 1
+  socket.onopen?.()
+  const connection = { address, token: 'stalled-socket-test-token' }
+  const listen = vi.fn<(events: unknown[]) => void>()
+  const stop = watchRuntimeActivity(connection, 'old', listen)
+  stop()
+  socket.onmessage?.({
+    data: JSON.stringify({
+      type: 'activity',
+      scope: 'old',
+      order: ['late'],
+      events: [
+        {
+          id: 'late',
+          scope: 'old',
+          time: '2026-10-10',
+          kind: 'tool',
+          summary: 'Obsolete',
+          payload: '{}',
+        },
+      ],
+    }),
+  })
+  stopped.push(watchRuntimeActivity(connection, 'old', listen))
+  expect(listen).not.toHaveBeenCalled()
+})
+it('coalesces thread selection changes on a negotiated stream and ignores obsolete baselines', async () => {
+  const address = 'http://live-subscriptions.local'
+  const connection = { address, token: 'stalled-socket-test-token' }
+  const { Socket, frame, receive, live } = await stalledSocketFixture(address, 5)
+  const socket = Socket.instances[0]!
+  socket.readyState = 1
+  socket.onopen?.()
+  socket.onmessage?.({ data: frame })
+  const a = watchRuntimeTask(connection, 'a')
+  const shared = watchRuntimeTask(connection, 'a')
+  stopped.push(a, shared)
+  await Promise.resolve()
+  expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({ type: 'watch', tasks: ['a'] })
+  a()
+  shared()
+  const b = watchRuntimeTask(connection, 'b')
+  stopped.push(b)
+  await Promise.resolve()
+  expect(Socket.instances).toHaveLength(1)
+  expect(live.online()).toBe(true)
+  expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({ type: 'watch', tasks: ['b'] })
+  const baseline = JSON.parse(frame)
+  baseline.snapshot.detailTaskIds = ['a']
+  socket.onmessage?.({ data: JSON.stringify(baseline) })
+  expect(receive).toHaveBeenCalledTimes(1)
+  baseline.snapshot.detailTaskIds = ['b']
+  baseline.epoch = 'selected-b'
+  socket.onmessage?.({ data: JSON.stringify(baseline) })
+  expect(receive).toHaveBeenCalledTimes(2)
+  expect(receive.mock.lastCall?.[0].detailTaskIds).toEqual(['b'])
+})
 it('replaces a stale socket immediately on refresh and ignores its late callbacks', async () => {
   const { clock, Socket, receive, live, frame } = await stalledSocketFixture(
     'http://stale-runtime.local',

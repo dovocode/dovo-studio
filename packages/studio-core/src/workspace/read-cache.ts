@@ -1,6 +1,12 @@
 import { mutationOutboxSchema, type MutationStorage } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import { createRuntimeReadCache, type CacheStorage, type RuntimeConnection } from '@dovo/protocol'
+import {
+  createRuntimeReadCache,
+  readCacheIndex,
+  boundReadCacheIndex,
+  type CacheStorage,
+  type RuntimeConnection,
+} from '@dovo/protocol'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Schema } from 'effect'
@@ -10,6 +16,7 @@ import {
   type WorkspaceOutbox,
   type WorkspaceOutboxChange,
 } from '../runtime/synchronization'
+import { restoreWorkspaceEntity } from '../runtime/workspace-conflicts'
 let database: Promise<IDBDatabase> | undefined
 function open() {
   return (database ??= new Promise<IDBDatabase>((resolve, reject) => {
@@ -69,26 +76,45 @@ const storage: CacheStorage = {
       tx.onerror = tx.onabort = () => reject(tx.error)
     })
   },
-  async writeIndexedItem(prefix, key, value, limit) {
+  async writeIndexedItem(prefix, key, value, limit, maxBytes) {
     const db = await open()
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('entries', 'readwrite')
       const entries = tx.objectStore('entries')
       const request = entries.get(prefix + '_index')
       request.onsuccess = () => {
-        let previous: string[] = []
-        try {
-          const raw: unknown = request.result
-          const parsed: unknown = JSON.parse(typeof raw === 'string' ? raw : '[]')
-          if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string'))
-            previous = parsed
-        } catch {
-          // This index is disposable; malformed indexes are replaced.
+        const raw: unknown = request.result
+        const previous = readCacheIndex(typeof raw === 'string' ? raw : null)
+        const migrated: Array<{ key: string; bytes: number }> = []
+        let remaining = previous.length
+        const commit = () => {
+          const next = [
+            ...migrated.filter((item) => item.key !== key),
+            { key, bytes: new TextEncoder().encode(value).byteLength },
+          ]
+          const kept = boundReadCacheIndex(next, limit, maxBytes)
+          entries.put(value, prefix + key)
+          for (const old of next.slice(0, next.length - kept.length))
+            entries.delete(prefix + old.key)
+          entries.put(JSON.stringify(kept), prefix + '_index')
         }
-        const keys = [...previous.filter((item) => item !== key), key]
-        entries.put(value, prefix + key)
-        for (const old of keys.slice(0, -limit)) entries.delete(prefix + old)
-        entries.put(JSON.stringify(keys.slice(-limit)), prefix + '_index')
+        if (!remaining) commit()
+        previous.forEach((item, index) => {
+          if (typeof item !== 'string') {
+            migrated[index] = item
+            if (!--remaining) commit()
+            return
+          }
+          const stored = entries.get(prefix + item)
+          stored.onsuccess = () => {
+            const content: unknown = stored.result
+            migrated[index] = {
+              key: item,
+              bytes: typeof content === 'string' ? new TextEncoder().encode(content).byteLength : 0,
+            }
+            if (!--remaining) commit()
+          }
+        })
       }
       tx.oncomplete = () => resolve()
       tx.onerror = tx.onabort = () => reject(tx.error)
@@ -212,10 +238,20 @@ export async function writeWorkspaceOutbox(
         const current = raw === undefined ? null : parseWorkspaceOutbox(raw)
         const ids: string[] = []
         const patches: WorkspacePatch[] = []
+        const replacements = new Map(change?.replace?.map((item) => [item.id, item.withId]))
+        for (const id of replacements.keys())
+          if (!current?.ids.includes(id))
+            throw new Error('Saved edits changed in another window. Review the current conflicts.')
         current?.ids.forEach((id, index) => {
           if (!remove.has(id)) {
-            ids.push(id)
-            patches.push(current.patches[index])
+            const withId = replacements.get(id)
+            const incomingIndex = withId ? (incoming?.ids.indexOf(withId) ?? -1) : -1
+            if (withId && (!incoming || incomingIndex < 0))
+              throw new Error('A conflict resolution is missing its replacement edit')
+            ids.push(withId ?? id)
+            patches.push(
+              incoming && withId ? incoming.patches[incomingIndex] : current.patches[index],
+            )
           }
         })
         let workspace = current?.workspace ?? incoming?.workspace
@@ -234,6 +270,8 @@ export async function writeWorkspaceOutbox(
           ids.push(id)
           patches.push(patch)
         }
+        if (change?.restore && workspace)
+          workspace = restoreWorkspaceEntity(workspace, change.restore, patches)
         if (patches.length && workspace)
           entries.put(JSON.stringify({ version: 1, workspace, patches, ids }), key)
         else entries.delete(key)

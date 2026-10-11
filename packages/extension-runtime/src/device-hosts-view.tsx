@@ -55,7 +55,7 @@ function DeviceHostSettings() {
     setBusy(false)
     lock.current = false
     if (connected)
-      void request('/api/device-hosts', {}, deviceHostSettingsResultSchema, 'GET')
+      void request('/api/device-hosts', undefined, deviceHostSettingsResultSchema, 'GET')
         .then((value) => {
           if (current === generation.current) setSettings(value)
         })

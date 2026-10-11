@@ -1,6 +1,6 @@
 import { runtimeComputerName } from '@dovo/protocol'
 import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react'
-import { Alert, Pressable, View } from 'react-native'
+import { Alert, Pressable, View, useWindowDimensions } from 'react-native'
 import {
   settingsProjectChoices,
   resolveSettingsTarget,
@@ -90,6 +90,8 @@ export function ScopedSettings({
   children: (selection: { scope: SettingsScope; repository?: Repository }) => ReactNode
 }) {
   const { colors, styles } = useTheme()
+  const { width, fontScale } = useWindowDimensions()
+  const narrow = width / fontScale < 360
   const { target, setTarget, source, scope, repository, projectName, computerName } =
     useSettingsTargetState()
   const { overviews, activeId } = useRuntime()
@@ -99,14 +101,19 @@ export function ScopedSettings({
   return (
     <View style={{ gap: 28 }}>
       <View accessibilityLabel="Settings target" style={[styles.card, { gap: 10 }]}>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-          <Text style={[styles.muted, { flex: 1, fontSize: 13, lineHeight: 18 }]}>
-            <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
-              {settingsScopeLabels[scope]}
+        <View
+          style={{
+            flexDirection: narrow ? 'column' : 'row',
+            alignItems: narrow ? 'stretch' : 'center',
+            gap: 8,
+          }}
+        >
+          <View style={{ flex: narrow ? undefined : 1, minWidth: 0, gap: 4 }}>
+            <Text style={[styles.text, { fontWeight: '600' }]}>{settingsScopeLabels[scope]}</Text>
+            <Text style={styles.muted}>
+              {projectName} · {computerName}
             </Text>
-            {'\n'}
-            {projectName} · {computerName}
-          </Text>
+          </View>
           <Action
             secondary
             label={expanded ? 'Hide scope choices' : 'Change scope'}
@@ -132,7 +139,7 @@ export function ScopedSettings({
                   disabled={!next}
                   onPress={() => next && setTarget(next)}
                   style={({ pressed }) => ({
-                    width: expanded ? '48%' : undefined,
+                    width: narrow ? '100%' : '48%',
                     flexGrow: expanded ? 1 : 0,
                     gap: 4,
                     paddingHorizontal: 10,

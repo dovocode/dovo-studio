@@ -4,6 +4,7 @@ import type { RuntimeReadCache } from '@dovo/protocol'
 import { acknowledgePullList, invalidatePullList, pullListRevision } from './pull-list-invalidation'
 
 const cache = (): RuntimeReadCache => ({
+  closed: false,
   readEffect: () => Effect.succeed(null),
   writeEffect: () => Effect.void,
   removeEffect: () => Effect.void,

@@ -1,14 +1,20 @@
 import { SafeModal } from '../../../ui/layout/safe-modal'
 import { nativeEffect, mobileWorkflow } from '../../../runtime/state/native-effect'
 import { useEffect } from 'react'
-import { runClientEffect } from '@dovo/client-runtime'
+import { runClientEffect, clientTaskScope } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { Image, View, ScrollView } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
-import { attachmentReadSchema, isImageAttachment, responses, type Attachment } from '@dovo/protocol'
+import {
+  attachmentReadSchema,
+  taskImageReadSchema,
+  isImageAttachment,
+  responses,
+  type Attachment,
+} from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { Action } from '../../../ui/controls/action'
 import { useTheme } from '../../../ui/theme'
@@ -182,24 +188,45 @@ export function MessageAttachments({
 }
 
 function AttachmentThumbnail({ taskId, file }: { taskId: string; file: Attachment }) {
-  const { connected, callEffect } = useRuntime()
+  const { styles } = useTheme()
+  const { connected, readEffect } = useRuntime()
   const [uri, setUri] = useApplicationState('')
+  const [thumbnailError, setThumbnailError] = useApplicationState('')
   useEffect(() => {
+    setUri('')
+    setThumbnailError('')
     if (!connected) return
     let cancelled = false
-    void runClientEffect(
-      callEffect('/api/attachments/read', { taskId, id: file.id }, attachmentReadSchema),
+    const requests = clientTaskScope()
+    void requests.run(
+      readEffect(
+        '/api/tasks/images/read',
+        { taskId, attachmentId: file.id, maxSize: 128 },
+        taskImageReadSchema,
+      ).pipe(
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            if (!cancelled) setUri(result.uri)
+          }),
+        ),
+        Effect.catch((reason) =>
+          Effect.sync(() => {
+            if (!cancelled) setThumbnailError(reason.message)
+          }),
+        ),
+      ),
     )
-      .then((result) => {
-        if (!cancelled) setUri(`data:${file.mime};base64,${result.data}`)
-      })
-      .catch(() => {
-        /* The attachment remains available through its file action. */
-      })
     return () => {
       cancelled = true
+      void requests.stop()
     }
-  }, [connected, callEffect, taskId, file.id, file.mime])
+  }, [connected, readEffect, taskId, file.id, file.mime])
+  if (thumbnailError)
+    return (
+      <Text style={styles.muted} accessibilityLabel={`Preview unavailable: ${thumbnailError}`}>
+        Preview unavailable
+      </Text>
+    )
   return (
     <Image
       source={uri ? { uri } : undefined}

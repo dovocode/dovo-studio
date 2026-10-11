@@ -1,4 +1,5 @@
 import { projectDelegatedAgents } from '../agents/tasks/delegation-state.js'
+import { versionReviewedFiles } from './file-review-versions.js'
 import { Conversations } from './conversations.js'
 import { ProviderActions, type ProviderAction } from './provider-actions.js'
 import { UsageTranscripts } from './usage-transcripts.js'
@@ -551,6 +552,7 @@ export class WorkspaceStore {
         .filter((task) => !task.example)
         .map((task) => {
           const previous = previousTasks.get(task.id)
+          task = versionReviewedFiles(task, previous)
           const childPermissionChanged =
             task.delegation &&
             (!previous ||
@@ -896,6 +898,8 @@ export class WorkspaceStore {
           record.waitingForFeedback !== undefined ||
           record.lastViewedTurnId !== undefined ||
           record.viewedRevision !== undefined ||
+          record.fileReviewVersion !== undefined ||
+          record.fileReviewVersions !== undefined ||
           record.turns !== undefined ||
           record.subagents !== undefined ||
           record.linkedCheckoutSetup !== undefined ||
@@ -921,7 +925,11 @@ export class WorkspaceStore {
       if (patch.collection === 'repositories' && 'kind' in record && record.kind === 'scratch')
         throw new HttpError(400, 'The scratch workspace is managed by Dovo')
       if (entity) {
-        if (isDeepStrictEqual(entity, parsed)) return
+        const retry =
+          patch.collection === 'tasks'
+            ? versionReviewedFiles(decode(taskSchema, parsed), this.task(patch.id))
+            : parsed
+        if (isDeepStrictEqual(entity, retry)) return
         throw new HttpError(409, 'This item already exists. Refresh to load the latest version.')
       }
       this.update((w) => ({

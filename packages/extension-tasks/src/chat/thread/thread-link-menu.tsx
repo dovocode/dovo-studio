@@ -17,6 +17,7 @@ export function ThreadLinkMenu({
   task,
   onSearch,
   onCopyThread,
+  copying = false,
   onManagePulls,
   onBookmark,
   canBookmark,
@@ -29,6 +30,7 @@ export function ThreadLinkMenu({
   task: Pick<Task, 'id' | 'messages'>
   onSearch: () => void
   onCopyThread: () => Promise<void>
+  copying?: boolean
   onManagePulls?: () => void
   onBookmark: (id: string, bookmarked: boolean) => Promise<void>
   canBookmark: (id: string) => boolean
@@ -153,8 +155,12 @@ export function ThreadLinkMenu({
               <ContextMenu.Separator className="my-1 h-px bg-border" />
             </>
           )}
-          <ContextMenu.Item className={itemClass} onSelect={() => perform(onCopyThread)}>
-            Copy conversation
+          <ContextMenu.Item
+            className={itemClass}
+            disabled={copying}
+            onSelect={() => perform(onCopyThread)}
+          >
+            {copying ? 'Copying conversation…' : 'Copy conversation'}
           </ContextMenu.Item>
           <ContextMenu.Item className={itemClass} onSelect={onSearch}>
             Find in thread

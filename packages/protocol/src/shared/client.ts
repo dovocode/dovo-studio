@@ -1,7 +1,8 @@
 import { Data, Effect, Result, Exit, Schedule, Schema } from 'effect'
 import { decodeResult, ValidationError } from './schema.js'
 import type { RuntimeConnection } from '../runtime/connection/runtime.js'
-import { REPOSITORY_CLONE_TIMEOUT_MS } from '../scm/repositories/repositories.js'
+import { runtimeRequestTimeout } from './request-timeout.js'
+export { runtimeRequestTimeout } from './request-timeout.js'
 import { snapshotResponseCache } from '../runtime/cache/snapshot-memory-cache.js'
 export { clearRuntimeRequestCache } from '../runtime/cache/snapshot-memory-cache.js'
 
@@ -26,35 +27,6 @@ export function copyRuntimeSnapshotTag(source: object, target: object) {
 function rememberSnapshotTag(value: unknown, tag: string | null | undefined) {
   if (tag && value && typeof value === 'object') snapshotTags.set(value, tag)
 }
-function requestTimeout(path: string) {
-  if (path === '/api/device-hosts/install') return 600000
-  if (path === '/api/device-hosts/test') return 150000
-  if (path === '/api/device-hosts/forward') return 90000
-  if (path === '/api/tasks/side-chat/ask' || path === '/api/tasks/aside') return 120000
-  if (path === '/api/commands/cua/action') return 90000
-  if (path === '/api/agents/availability') return 90000
-  if (path === '/api/agents/models') return 65000
-  if (path === '/api/agents/acp/install') return 630000
-  if (path === '/api/agents/acp/authenticate' || path === '/api/agents/acp/logout') return 330000
-  if (path === '/api/agents/acp/inspect' || path.startsWith('/api/agents/acp/sessions'))
-    return 65000
-  return path === '/api/previews/simulator/open'
-    ? 210000
-    : path.startsWith('/api/previews/')
-      ? 120000
-      : path === '/api/tasks/title'
-        ? 120000
-        : path === '/api/tasks/dictation/cleanup'
-          ? 40000
-          : path === '/api/scm/repositories/add'
-            ? REPOSITORY_CLONE_TIMEOUT_MS + 30000
-            : path.startsWith('/api/scm/pulls/') ||
-                path.startsWith('/api/scm/work/') ||
-                path === '/api/scm/jira/bind'
-              ? 180000
-              : 30000
-}
-
 // Proxies and VPN gateways (Tailscale, NetBird) report a briefly unreachable host this way.
 const transientStatuses = new Set([502, 503, 504])
 const isTransient = (error: RuntimeRequestError | ValidationError) =>
@@ -111,6 +83,13 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
           cause,
         }),
     })
+    if (body !== undefined && ['GET', 'HEAD'].includes(method.toUpperCase()))
+      return yield* Effect.fail(
+        new RuntimeRequestError({
+          kind: 'request',
+          message: `Runtime ${method.toUpperCase()} requests cannot include a body.`,
+        }),
+      )
     const conditional =
       connection && method === 'GET' && target.pathname === '/api/snapshot' && input === undefined
         ? snapshotResponseCache(target.origin, connection.token, target.pathname + target.search)
@@ -247,7 +226,7 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
           ? Effect.retry(request, readRetry)
           : request,
       Effect.timeoutOrElse({
-        duration: timeoutMs ?? requestTimeout(path),
+        duration: timeoutMs ?? runtimeRequestTimeout(path, input),
         orElse: () =>
           Effect.fail(
             (() =>

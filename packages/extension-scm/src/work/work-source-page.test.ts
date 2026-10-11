@@ -24,6 +24,7 @@ const options = decode(forgeWorkOptionsSchema, {
   issueSearch: true,
 })
 const cache: RuntimeReadCache = {
+  closed: false,
   readEffect: () => Effect.succeed(null),
   writeEffect: () => Effect.void,
   removeEffect: () => Effect.void,

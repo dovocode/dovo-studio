@@ -211,66 +211,72 @@ async function executableAvailable(name: string) {
 }
 const launching = new Map<string, ChildProcess>()
 const launchErrors = new Map<string, string>()
-export async function previewDevices() {
+async function discoverIosSimulators() {
   const devices: PreviewDevice[] = [],
     diagnostics: string[] = []
-  if (process.platform === 'darwin') {
-    try {
-      devices.push(
-        ...parseIosDevices(
-          await run('xcrun', ['simctl', 'list', 'devices', 'available', '--json']),
-        ),
-      )
-    } catch {
+  try {
+    devices.push(
+      ...parseIosDevices(await run('xcrun', ['simctl', 'list', 'devices', 'available', '--json'])),
+    )
+  } catch {
+    diagnostics.push(
+      'iOS: install Xcode, select its developer directory and install a Simulator runtime.',
+    )
+  }
+  if (
+    devices.some((device) => device.platform === 'ios') &&
+    !(await executableAvailable(process.env.DOVO_IDB_COMPANION || 'idb_companion'))
+  ) {
+    for (const device of devices)
+      if (device.platform === 'ios' && device.kind !== 'physical') device.liveSupported = false
+    diagnostics.push(
+      'iOS live previews: install idb_companion (brew install facebook/fb/idb-companion) or set DOVO_IDB_COMPANION. Start, screenshots and app installation remain available.',
+    )
+  }
+  return { devices, diagnostics }
+}
+async function discoverPhysicalIos() {
+  const devices: PreviewDevice[] = [],
+    diagnostics: string[] = []
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-devices-'))
+  try {
+    const output = join(directory, 'devices.json')
+    await run('xcrun', ['devicectl', 'list', 'devices', '--json-output', output])
+    devices.push(...parsePhysicalIosDevices(await readFile(output, 'utf8')))
+    if (
+      devices.some((device) => device.platform === 'ios' && device.kind === 'physical') &&
+      !(await executableAvailable(process.env.DOVO_FFMPEG || 'ffmpeg'))
+    ) {
+      for (const device of devices)
+        if (device.platform === 'ios' && device.kind === 'physical') device.liveSupported = false
       diagnostics.push(
-        'iOS: install Xcode, select its developer directory and install a Simulator runtime.',
+        'Physical iPhone live previews: install FFmpeg on this Mac or set DOVO_FFMPEG. App installation and launch remain available.',
       )
     }
     if (
-      devices.some((device) => device.platform === 'ios') &&
-      !(await executableAvailable(process.env.DOVO_IDB_COMPANION || 'idb_companion'))
+      devices.some((device) => device.platform === 'ios' && device.kind === 'physical') &&
+      !process.env.DOVO_IOS_DEVICE_HELPER &&
+      !(await executableAvailable('cargo'))
     ) {
-      for (const device of devices)
-        if (device.platform === 'ios' && device.kind !== 'physical') device.liveSupported = false
       diagnostics.push(
-        'iOS live previews: install idb_companion (brew install facebook/fb/idb-companion) or set DOVO_IDB_COMPANION. Start, screenshots and app installation remain available.',
+        'Physical iPhone control needs Rust/Cargo for the first native helper build; an existing cached helper does not need Cargo. Install Rust or configure DOVO_IOS_DEVICE_HELPER if setup is incomplete.',
       )
     }
-    const directory = await mkdtemp(join(tmpdir(), 'dovo-devices-'))
-    try {
-      const output = join(directory, 'devices.json')
-      await run('xcrun', ['devicectl', 'list', 'devices', '--json-output', output])
-      devices.push(...parsePhysicalIosDevices(await readFile(output, 'utf8')))
-      if (
-        devices.some((device) => device.platform === 'ios' && device.kind === 'physical') &&
-        !(await executableAvailable(process.env.DOVO_FFMPEG || 'ffmpeg'))
-      ) {
-        for (const device of devices)
-          if (device.platform === 'ios' && device.kind === 'physical') device.liveSupported = false
-        diagnostics.push(
-          'Physical iPhone live previews: install FFmpeg on this Mac or set DOVO_FFMPEG. App installation and launch remain available.',
-        )
-      }
-      if (
-        devices.some((device) => device.platform === 'ios' && device.kind === 'physical') &&
-        !process.env.DOVO_IOS_DEVICE_HELPER &&
-        !(await executableAvailable('cargo'))
-      ) {
-        diagnostics.push(
-          'Physical iPhone control needs Rust/Cargo for the first native helper build; an existing cached helper does not need Cargo. Install Rust or configure DOVO_IOS_DEVICE_HELPER if setup is incomplete.',
-        )
-      }
-    } catch {
-      diagnostics.push(
-        'Physical iPhones: connect and trust this Mac, enable Developer Mode, and use Xcode 15 or newer.',
-      )
-    } finally {
-      await rm(directory, {
-        recursive: true,
-        force: true,
-      })
-    }
-  } else diagnostics.push('iOS simulators require a macOS runtime with Xcode.')
+  } catch {
+    diagnostics.push(
+      'Physical iPhones: connect and trust this Mac, enable Developer Mode, and use Xcode 15 or newer.',
+    )
+  } finally {
+    await rm(directory, {
+      recursive: true,
+      force: true,
+    })
+  }
+  return { devices, diagnostics }
+}
+async function discoverPhysicalAndroid() {
+  const devices: PreviewDevice[] = [],
+    diagnostics: string[] = []
   try {
     devices.push(
       ...parsePhysicalAndroidDevices(await run(await androidTool('adb'), ['devices', '-l'])),
@@ -278,25 +284,40 @@ export async function previewDevices() {
   } catch {
     diagnostics.push('Physical Android devices: install Platform Tools and enable USB debugging.')
   }
+  return { devices, diagnostics }
+}
+async function discoverAndroidEmulators() {
+  const devices: PreviewDevice[] = [],
+    diagnostics: string[] = []
   try {
     const emulator = await androidTool('emulator'),
       adb = await androidTool('adb')
-    const names = (await run(emulator, ['-list-avds']))
+    const [avds, attached] = await Promise.all([
+      run(emulator, ['-list-avds']),
+      run(adb, ['devices']),
+    ])
+    const names = avds
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
-    const serials = (await run(adb, ['devices']))
+    const serials = attached
       .split('\n')
       .flatMap((line) => line.match(/^(emulator-\d+)\s+device$/)?.[1] ?? [])
     const running = new Map<string, { serial: string; ready: boolean }>()
-    for (const serial of serials) {
-      const name = (await run(adb, ['-s', serial, 'emu', 'avd', 'name'])).split('\n')[0]?.trim()
-      // Like a Booted iOS simulator, an emulator counts as ready once Android finished booting.
-      const ready = await run(adb, ['-s', serial, 'shell', 'getprop', 'sys.boot_completed'])
-        .then((value) => value.trim() === '1')
-        .catch(() => false)
-      if (name) running.set(name, { serial, ready })
-    }
+    await Promise.all(
+      serials.map(async (serial) => {
+        const [name, ready] = await Promise.all([
+          run(adb, ['-s', serial, 'emu', 'avd', 'name']).then((value) =>
+            value.split('\n')[0]?.trim(),
+          ),
+          // A Booted emulator must have completed Android startup.
+          run(adb, ['-s', serial, 'shell', 'getprop', 'sys.boot_completed'])
+            .then((value) => value.trim() === '1')
+            .catch(() => false),
+        ])
+        if (name) running.set(name, { serial, ready })
+      }),
+    )
     for (const name of names) {
       const emulator = running.get(name)
       devices.push({
@@ -316,19 +337,41 @@ export async function previewDevices() {
       'Android: install SDK Platform Tools and Emulator, then create an AVD in Android Studio. Set ANDROID_HOME if needed.',
     )
   }
-  for (const device of devices.filter(
-    (device) =>
-      device.platform === 'android' && device.kind !== 'physical' && device.state === 'booted',
-  )) {
-    try {
-      await emulatorEndpoint(device)
-    } catch (error) {
-      device.liveSupported = false
-      diagnostics.push(
-        `${device.name}: ${error instanceof HttpError ? error.message : 'Live preview control endpoint could not be checked.'}`,
+  return { devices, diagnostics }
+}
+/** Opening a selected device only discovers its own device type; listings discover all in parallel. */
+export async function previewDevices(deviceId?: string) {
+  const requested = (prefix: string) => !deviceId || deviceId.startsWith(prefix)
+  const mac = process.platform === 'darwin'
+  const results = await Promise.all([
+    mac && requested('ios:') ? discoverIosSimulators() : undefined,
+    mac && requested('physical-ios:') ? discoverPhysicalIos() : undefined,
+    requested('physical-android:') ? discoverPhysicalAndroid() : undefined,
+    requested('android:') ? discoverAndroidEmulators() : undefined,
+  ])
+  const devices = results.flatMap((result) => result?.devices ?? [])
+  const diagnostics = results.flatMap((result) => result?.diagnostics ?? [])
+  if (!mac && (requested('ios:') || requested('physical-ios:')))
+    diagnostics.unshift('iOS simulators require a macOS runtime with Xcode.')
+  const endpointDiagnostics = await Promise.all(
+    devices
+      .filter(
+        (device) =>
+          device.platform === 'android' && device.kind !== 'physical' && device.state === 'booted',
       )
-    }
-  }
+      .map(async (device) => {
+        try {
+          await emulatorEndpoint(device)
+          return []
+        } catch (error) {
+          device.liveSupported = false
+          return [
+            `${device.name}: ${error instanceof HttpError ? error.message : 'Live preview control endpoint could not be checked.'}`,
+          ]
+        }
+      }),
+  )
+  diagnostics.push(...endpointDiagnostics.flat())
   const priority = {
     booted: 0,
     starting: 1,

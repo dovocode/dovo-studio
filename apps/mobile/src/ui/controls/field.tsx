@@ -75,7 +75,11 @@ export function Field({
         placeholderTextColor={colors.muted}
         autoCapitalize="none"
         selectionColor={colors.accent}
-        style={[styles.input, style]}
+        style={[
+          styles.input,
+          props.multiline && { minHeight: 96, textAlignVertical: 'top' },
+          style,
+        ]}
         {...props}
       />
       {!!hint && !error && <Text style={[styles.muted, { fontSize: 12 }]}>{hint}</Text>}

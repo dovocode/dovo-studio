@@ -354,12 +354,16 @@ export class McpApps {
   ) {
     authorize()
     signal.throwIfAborted()
-    if (session.toolsDirty) {
+    if (session.toolsDirty && (method === 'tools/list' || method === 'tools/call')) {
       const tools: Tool[] = [],
         seen = new Set<string>()
+      const toolListSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
       let cursor: string | undefined
       do {
-        const page = await session.client.listTools({ cursor }, { signal, timeout: 30_000 })
+        const page = await session.client.listTools(
+          { cursor },
+          { signal: toolListSignal, timeout: 30_000 },
+        )
         tools.push(...page.tools)
         cursor = page.nextCursor
         if (tools.length > 2000 || (cursor && seen.has(cursor)))
@@ -778,14 +782,14 @@ export class McpApps {
     const invalid = new Set<string>()
     for (const [token, scope] of this.scopes) {
       const task = tasks.get(scope.taskId)
-      if (task && !task.archivedAt && task.status !== 'done') continue
+      if (task && !task.archived && !task.archivedAt && task.status !== 'done') continue
       this.scopes.delete(token)
       this.cancelTask(scope.taskId)
       invalid.add(`${scope.taskId}:${fingerprint(scope.server)}:${scope.cwd}`)
     }
     for (const key of this.resolved.keys()) {
       const task = tasks.get(key.slice(0, key.indexOf(':')))
-      if (!task || task.archivedAt || task.status === 'done') invalid.add(key)
+      if (!task || task.archived || task.archivedAt || task.status === 'done') invalid.add(key)
     }
     for (const key of invalid) {
       const session = this.resolved.get(key)

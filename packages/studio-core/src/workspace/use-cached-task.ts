@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { cachedThread, runtimeSnapshotCacheSchema, type Task } from '@dovo/protocol'
+import {
+  cachedThread,
+  cachedRuntimeThread,
+  runtimeSnapshotCacheSchema,
+  type Task,
+} from '@dovo/protocol'
 import { useWorkspace } from './context'
 export function useCachedTask(summary: Task | undefined) {
   const { snapshot, readCache } = useWorkspace()
@@ -11,8 +16,13 @@ export function useCachedTask(summary: Task | undefined) {
   } | null>(null)
   const id = summary?.id
   const live = !!id && (!snapshot?.detailTaskIds || snapshot.detailTaskIds.includes(id))
+  const replica = id && readCache ? cachedRuntimeThread(readCache, id) : undefined
+  const retained =
+    replica && (replica.historyRevision ?? 0) === (summary?.historyRevision ?? 0)
+      ? replica
+      : undefined
   useEffect(() => {
-    if (!id || !readCache || live) return
+    if (!id || !readCache || live || retained) return
     let stopped = false
     void readCache
       .read('snapshot', runtimeSnapshotCacheSchema)
@@ -33,15 +43,17 @@ export function useCachedTask(summary: Task | undefined) {
     return () => {
       stopped = true
     }
-  }, [id, readCache, live])
+  }, [id, readCache, live, retained])
   const available =
     !!summary &&
     cached?.cache === readCache &&
     cached.task.id === summary.id &&
     (cached.task.historyRevision ?? 0) === (summary.historyRevision ?? 0)
+  const history = retained ?? (available ? cached?.task : undefined)
   return {
-    task: summary && !live && available ? cachedThread(summary, cached.task) : summary,
-    loaded: live || available,
-    error: !live && failure?.cache === readCache && failure.id === id ? failure.error : '',
+    task: summary && !live && history ? cachedThread(summary, history) : summary,
+    loaded: live || !!history,
+    error:
+      !live && !history && failure?.cache === readCache && failure.id === id ? failure.error : '',
   }
 }

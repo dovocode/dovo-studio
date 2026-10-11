@@ -9,17 +9,36 @@ import {
   Settings2,
 } from 'lucide-react'
 import type { ChangedFile } from '@dovo/studio-core'
+const statsCache = new WeakMap<
+  ChangedFile,
+  {
+    before: string
+    after: string
+    path: string
+    stats: { path: string; additions: number; deletions: number }
+  }
+>()
 export function fileStats(file: ChangedFile) {
+  const cached = statsCache.get(file)
+  if (
+    !file.preview &&
+    cached?.path === file.path &&
+    cached.before === file.before &&
+    cached.after === file.after
+  )
+    return cached.stats
   if (file.preview) return { path: file.path, additions: 0, deletions: 0 }
   const diff = parseDiffFromFile(
     { name: file.path, contents: file.before },
     { name: file.path, contents: file.after },
   )
-  return {
+  const stats = {
     path: file.path,
     additions: diff.hunks.reduce((n, h) => n + h.additionLines, 0),
     deletions: diff.hunks.reduce((n, h) => n + h.deletionLines, 0),
   }
+  statsCache.set(file, { path: file.path, before: file.before, after: file.after, stats })
+  return stats
 }
 export function FileIcon({ path }: { path: string }) {
   const extension = path.split('.').at(-1)?.toLowerCase() ?? ''

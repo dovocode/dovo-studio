@@ -1,6 +1,13 @@
 import { Data, Effect, Schema, Semaphore } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
+  workspaceConflicts,
+  sameWorkspaceValue,
+  restoreWorkspaceEntity,
+  type WorkspaceConflict,
+  type WorkspaceEntityRestore,
+} from './workspace-conflicts'
+import {
   decodeResult,
   mutableArray,
   mutableStruct,
@@ -36,7 +43,12 @@ export const workspaceOutboxSchema = mutableStruct({
   ),
 )
 export type WorkspaceOutbox = Schema.Schema.Type<typeof workspaceOutboxSchema>
-export type WorkspaceOutboxChange = { append: string[]; remove: string[] }
+export type WorkspaceOutboxChange = {
+  append: string[]
+  remove: string[]
+  replace?: Array<{ id: string; withId: string }>
+  restore?: WorkspaceEntityRestore
+}
 type Persist = (
   connection: RuntimeConnection,
   value: WorkspaceOutbox | null,
@@ -100,6 +112,7 @@ export class WorkspaceSynchronization {
   private writtenIds = new Set<string>()
   private draining: Effect.Effect<void, SynchronizationError> | null = null
   private discarding: object | null = null
+  private resolving: object | null = null
   private conflicted = false
   private workspace: Workspace | null = null
   private durable: Effect.Effect<void, SynchronizationError> = Effect.void
@@ -109,6 +122,7 @@ export class WorkspaceSynchronization {
     private onError: (message: string | null) => void,
     private send: Send = sendPatch,
     private persist?: Persist,
+    private onChange: () => void = () => {},
   ) {}
 
   bind(connection: RuntimeConnection | null, restored: WorkspaceOutbox | null = null) {
@@ -122,11 +136,9 @@ export class WorkspaceSynchronization {
     this.durable = Effect.void
     this.draining = null
     this.discarding = null
-    this.conflicted = this.pending.length > 0
-    if (this.conflicted)
-      this.onError(
-        'Saved edits are waiting to sync. Retry sync, or reload the host workspace from Devices & runtime.',
-      )
+    this.resolving = null
+    this.conflicted = false
+    this.onChange()
   }
 
   private save(
@@ -134,6 +146,7 @@ export class WorkspaceSynchronization {
     patches: WorkspacePatch[],
     ids: string[],
     remove: string[] = [],
+    resolution?: Pick<WorkspaceOutboxChange, 'replace' | 'restore'>,
   ): Effect.Effect<void, SynchronizationError> {
     if (!this.persist) return Effect.void
     if (patches.length && !this.workspace)
@@ -157,9 +170,9 @@ export class WorkspaceSynchronization {
           .withPermits(1)(
             Effect.suspend(() => {
               const append = capturedIds.filter((id) => !written.has(id))
-              return attempt(() => persist(connection, value, { append, remove })).pipe(
-                Effect.tap(() => Effect.sync(() => append.forEach((id) => written.add(id)))),
-              )
+              return attempt(() =>
+                persist(connection, value, { append, remove, ...resolution }),
+              ).pipe(Effect.tap(() => Effect.sync(() => append.forEach((id) => written.add(id)))))
             }),
           )
           .pipe(Effect.uninterruptible),
@@ -170,12 +183,15 @@ export class WorkspaceSynchronization {
   }
 
   enqueue(patches: WorkspacePatch[], workspace?: Workspace) {
+    if (this.resolving)
+      throw new Error('Wait for the conflict resolution to finish before editing.')
     if (!patches.length) return
     this.version++
     if (workspace) this.workspace = workspace
     if (!this.connection) return
     this.pending.push(...patches)
     this.pendingIds.push(...patches.map(() => randomUUID()))
+    this.onChange()
     const generation = this.generation
     // Synchronous editor boundary: begin durability before allowing network flush.
     void runClientEffect(
@@ -246,8 +262,152 @@ export class WorkspaceSynchronization {
   isSending() {
     return this.draining !== null || this.discarding !== null
   }
+  isResolving() {
+    return this.resolving !== null
+  }
   hasPending() {
     return this.pending.length > 0
+  }
+
+  conflicts(host: Workspace): WorkspaceConflict[] {
+    return workspaceConflicts(host, this.pending, this.pendingIds)
+  }
+
+  /** A resolution replaces stable records in place, durably, before they can be replayed. */
+  resolveEffect(
+    conflict: WorkspaceConflict,
+    choice: 'local' | 'host',
+    host: Workspace,
+    checkpoint: Checkpoint,
+  ) {
+    const operation = {}
+    return Effect.gen({ self: this }, function* () {
+      if (!this.connection || !this.acceptsSaved(checkpoint))
+        return yield* Effect.fail(
+          new SynchronizationError({
+            message: 'Saved edits changed. Review the current conflicts.',
+          }),
+        )
+      const current = this.conflicts(host).find(
+        (item) => item.patchId === conflict.patchId && item.field === conflict.field,
+      )
+      if (!current || !sameWorkspaceValue(current, conflict))
+        return yield* Effect.fail(
+          new SynchronizationError({
+            message: 'The host or saved edits changed. Review the current conflicts.',
+          }),
+        )
+      if (conflict.field === null && choice === 'local')
+        return yield* Effect.fail(
+          new SynchronizationError({
+            message: 'This item was removed or replaced on the host. Use the host version.',
+          }),
+        )
+      yield* this.durable
+      if (!this.acceptsSaved(checkpoint))
+        return yield* Effect.fail(
+          new SynchronizationError({
+            message: 'Saved edits changed. Review the current conflicts.',
+          }),
+        )
+      const target = this.connection
+      const ids = [...this.pendingIds]
+      const patches = [...this.pending]
+      const remove: string[] = []
+      const replace: Array<{ id: string; withId: string }> = []
+      let first = true
+      for (let index = patches.length - 1; index >= 0; index--) {
+        const patch = patches[index]
+        if (patch.collection !== conflict.collection || patch.id !== conflict.id) continue
+        if (conflict.field === null) {
+          remove.push(ids[index])
+          ids.splice(index, 1)
+          patches.splice(index, 1)
+        }
+      }
+      if (conflict.field !== null) {
+        const field = conflict.field
+        const after = choice === 'local' ? conflict.local : conflict.host
+        const entity = host[conflict.collection].find((item) => item.id === conflict.id)
+        const hostRecord = decodeResult(
+          Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
+          entity,
+        )
+        const before = hostRecord.success ? (hostRecord.data[field] ?? null) : null
+        for (const [index, patch] of patches.entries()) {
+          if (
+            patch.collection !== conflict.collection ||
+            patch.id !== conflict.id ||
+            !patch.changes[field]
+          )
+            continue
+          const withId = randomUUID()
+          replace.push({ id: ids[index], withId })
+          ids[index] = withId
+          patches[index] = {
+            ...patch,
+            changes: { ...patch.changes, [field]: { before: first ? before : after, after } },
+          }
+          first = false
+        }
+      }
+      const restore: WorkspaceEntityRestore = {
+        collection: conflict.collection,
+        id: conflict.id,
+        entity: host[conflict.collection].find((item) => item.id === conflict.id) ?? null,
+      }
+      const previousWorkspace = this.workspace
+      if (!previousWorkspace)
+        return yield* Effect.fail(
+          new SynchronizationError({
+            message: 'The saved workspace is unavailable. Keep this window open.',
+          }),
+        )
+      const projected = yield* Effect.try({
+        try: () => restoreWorkspaceEntity(previousWorkspace, restore, patches),
+        catch: failure,
+      })
+      this.discarding = operation
+      this.resolving = operation
+      this.workspace = projected
+      // Block editing during persistence: replacements must precede dependent new edits.
+      yield* this.save(target, patches, ids, remove, { replace, restore }).pipe(
+        Effect.tapError(() =>
+          Effect.sync(() => {
+            if (this.isCurrent(checkpoint)) this.workspace = previousWorkspace
+          }),
+        ),
+      )
+      if (!this.isCurrent(checkpoint))
+        return yield* Effect.fail(
+          new SynchronizationError({
+            message: 'Runtime connection changed while resolving saved edits.',
+          }),
+        )
+      this.pending = patches
+      this.pendingIds = ids
+      this.version++
+      this.conflicted = this.conflicts(host).length > 0
+      this.onChange()
+      this.onError(this.conflicted ? 'Review the remaining competing edits before syncing.' : null)
+      return projected
+    }).pipe(
+      Effect.uninterruptible,
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (this.discarding === operation) this.discarding = null
+          if (this.resolving === operation) this.resolving = null
+        }),
+      ),
+    )
+  }
+  resolve(
+    conflict: WorkspaceConflict,
+    choice: 'local' | 'host',
+    host: Workspace,
+    checkpoint: Checkpoint,
+  ) {
+    return runClientEffect(this.resolveEffect(conflict, choice, host, checkpoint))
   }
 
   retryEffect(): Effect.Effect<void, SynchronizationError> {
@@ -258,6 +418,7 @@ export class WorkspaceSynchronization {
         )
       if (this.draining) return this.draining
       this.version++
+      this.onChange()
       this.conflicted = false
       const generation = this.generation
       return Effect.gen({ self: this }, function* () {
@@ -319,6 +480,7 @@ export class WorkspaceSynchronization {
       if (!this.pending.length) this.workspace = null
       this.conflicted = changed && this.pending.length > 0
       this.version++
+      this.onChange()
       if (changed)
         return yield* Effect.fail(
           new SynchronizationError({
@@ -390,6 +552,7 @@ export class WorkspaceSynchronization {
                   Effect.sync(() => {
                     pending.shift()
                     pendingIds.shift()
+                    this.onChange()
                   }),
                 ),
                 Effect.uninterruptible,

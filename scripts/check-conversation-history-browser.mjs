@@ -6,6 +6,46 @@ import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const environment = `export const AppState={addEventListener:(_event,handler)=>{window.background=handler;return {remove:()=>{}}}};export const useWorkspace=()=>window.connection;export const useRuntime=()=>({...window.connection,profile:{connection:window.connection.connection},read:window.connection.request,readCache:window.cache});`
+async function checkFirstLayout(page) {
+  await page.evaluate(() => {
+    window.prefetchRequests = 0
+    window.connection.request = async () => {
+      window.prefetchRequests++
+      return {
+        messages: [{ id: 'older-first-layout', role: 'assistant', text: 'Older' }],
+        turns: [],
+      }
+    }
+    window.setPrefetchReady(false)
+    window.setLive({
+      id: 'first-layout',
+      historyBefore: 'recent-first-layout',
+      messages: [
+        { id: 'recent-first-layout', role: 'user', text: 'Recent request' },
+        { id: 'newest-first-layout', role: 'assistant', text: 'Newest reply' },
+      ],
+      turns: [],
+    })
+  })
+  await page.waitForFunction(() => window.historyState.task.id === 'first-layout')
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  if (await page.evaluate(() => window.prefetchRequests))
+    throw new Error('Older history loaded before the latest message layout')
+  if (
+    (await page.evaluate(() => window.historyState.task.messages.at(-1)?.id)) !==
+    'newest-first-layout'
+  )
+    throw new Error('Conversation lost its newest initial reply while history was deferred')
+  await page.evaluate(() => window.setPrefetchReady(true))
+  await page.waitForFunction(() => window.prefetchRequests === 1 && !window.historyState.busy)
+  if (
+    (await page.evaluate(() => window.historyState.task.messages.at(-1)?.id)) !==
+    'newest-first-layout'
+  )
+    throw new Error('Older history replaced the newest initial reply')
+}
 async function checkLiveDeletion(page) {
   await page.evaluate(() => {
     window.connection = {
@@ -560,7 +600,7 @@ import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {useConversationHistory} from './${file}';
 window.requests=0;window.connection={connected:true,connection:{address:'http://host-a',token:'paired-a'},request:()=>new Promise((resolve,reject)=>{window.requests++;window.reply={resolve,reject}})};
 const message=id=>({id,role:'assistant',text:id});
-function App(){const [live,setLive]=useState(window.initial??{id:'thread',messages:[message('m2'),message('m3')],turns:[],historyBefore:'m2'});window.setLive=setLive;window.historyState=useConversationHistory(live);return <div>{window.historyState.task.messages.map(m=>m.id).join(',')}</div>}
+function App(){const [live,setLive]=useState(window.initial??{id:'thread',messages:[message('m2'),message('m3')],turns:[],historyBefore:'m2'});const[prefetchReady,setPrefetchReady]=useState(true);window.setPrefetchReady=setPrefetchReady;window.setLive=setLive;window.historyState=useConversationHistory(live,prefetchReady);return <div>{window.historyState.task.messages.map(m=>m.id).join(',')}</div>}
 const root=createRoot(document.getElementById('app'));let restart=0;window.restart=()=>root.render(<App key={++restart}/>);root.render(<App/>);`,
         loader: 'tsx',
         resolveDir: root,
@@ -867,6 +907,7 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
     )
     if ((await page.evaluate(() => window.desktopFillRequests)) !== 10)
       throw new Error('Desktop did not fill a bounded recent window')
+    await checkFirstLayout(page)
     await page.close()
   }
   await checkProductionPaging(browser)
