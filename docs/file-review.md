@@ -46,3 +46,17 @@ folder fallback. Missing local sources are retried after 20 seconds while the vi
 fetching the matching commits restores dependency grouping without a runtime restart. Stable
 complete sources reuse cached analysis. The server loads WebAssembly grammars lazily and frees each
 parse tree; only the requested grammars ship with the runtime, and mobile clients do no parsing.
+
+On desktop/web, expand **Organize review**; on mobile, tap **Organize review** in task diffs
+(including linked checkouts and history) or PR changes. It defaults to the configured title harness
+and model; optionally choose another, then **Organize by feature**. The selected model reads bounded
+diff excerpts and the existing dependency groups in a separate ephemeral session with tools
+disabled. Feature groups include a change summary and linked-impact notes; these are model
+suggestions to verify against the diffs, not a complete impact analysis. Missing or truncated
+evidence is labeled in the model input. Every changed file must appear exactly once in the result.
+
+Feature groups apply to the current viewer session and clear when its diff changes. Analysis that
+finishes after changes arrive is rejected. **Use dependency groups** restores static grouping;
+**Folders** remains available. Viewed progress keeps its existing persisted behavior. Organizer
+selection does not change the coding task's harness/model or the utility-model settings. Harnesses
+that cannot disable tools are excluded.

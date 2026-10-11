@@ -1,6 +1,6 @@
 import { pullFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
-import { FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
+import { OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
 import { useMemo, useRef } from 'react'
 import { useAppPreferences, whitespaceOnlyPatch } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -92,6 +92,7 @@ export function PullChanges({
           {treeOpen ? 'Hide files' : 'Show files'}
         </Button>
       </div>
+      <OrganizeReview review={review} onOrganized={() => setRelated(true)} />
       <FileReviewControls
         files={files.map((file) => ({ path: file.path, viewed: viewed.has(file.path) }))}
         selected={selectedFile?.path ?? ''}

@@ -6,7 +6,7 @@ import {
   orderReviewFiles,
 } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
-import { FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
+import { OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
 import { useEffect, useState } from 'react'
 import { useWorkspace, responses, updateTask, type Task, type ChangedFile } from '@dovo/studio-core'
 import { Button, ChoicePicker } from '@dovo/studio-ui'
@@ -145,6 +145,7 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
         </p>
       )}
       {loading && <p className="text-xs text-muted-foreground">Loading changes…</p>}
+      <OrganizeReview review={review} onOrganized={() => setRelated(true)} />
       <FileReviewControls
         files={files}
         selected={file?.path ?? ''}

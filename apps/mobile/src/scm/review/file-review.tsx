@@ -45,7 +45,8 @@ export function MobileFileReview({
         .filter((file) => (!unviewed || !file.viewed) && file.path.toLowerCase().includes(filter))
         .map((file) => [file.path, file]),
     )
-    const sections: { title: string; data: ReviewListFile[] }[] = []
+    const sections: { title: string; summary?: string; impact?: string; data: ReviewListFile[] }[] =
+      []
     if (related)
       for (const group of groups) {
         const data = group.paths.flatMap((path) => {
@@ -56,7 +57,9 @@ export function MobileFileReview({
         })
         if (data.length)
           sections.push({
-            title: `${group.basis === 'ast' ? 'Related' : 'Folder'} · ${group.label}`,
+            title: `${group.basis === 'feature' ? 'Feature' : group.basis === 'ast' ? 'Related' : 'Folder'} · ${group.label}`,
+            summary: group.summary,
+            impact: group.impact,
             data,
           })
       }
@@ -187,7 +190,13 @@ export function MobileFileReview({
           <View style={[styles.row, { justifyContent: 'space-between' }]}>
             <Action
               secondary
-              label={related ? 'Related changes' : 'Folders'}
+              label={
+                related
+                  ? groups.some((group) => group.basis === 'feature')
+                    ? 'Features'
+                    : 'Related changes'
+                  : 'Folders'
+              }
               onPress={() => onRelatedChange(!related)}
             />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -211,12 +220,17 @@ export function MobileFileReview({
               </Text>
             }
             renderSectionHeader={({ section }) => (
-              <Text
-                accessibilityRole="header"
-                style={[styles.muted, { paddingVertical: 12, fontWeight: '600' }]}
-              >
-                {section.title}
-              </Text>
+              <View style={{ paddingVertical: 12, gap: 6 }}>
+                <Text accessibilityRole="header" style={[styles.muted, { fontWeight: '600' }]}>
+                  {section.title}
+                </Text>
+                {!!section.summary && (
+                  <Text style={{ color: colors.text, fontSize: 14 }}>{section.summary}</Text>
+                )}
+                {!!section.impact && (
+                  <Text style={styles.muted}>Linked impact: {section.impact}</Text>
+                )}
+              </View>
             )}
             renderItem={({ item }) => (
               <Pressable

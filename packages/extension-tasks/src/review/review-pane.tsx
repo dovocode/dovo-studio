@@ -1,6 +1,6 @@
 import { changedFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
-import { FileReviewControls } from '@dovo/studio-ui'
+import { OrganizeReview, FileReviewControls } from '@dovo/studio-ui'
 import { useAppPreferences, whitespaceOnlyFile } from '@dovo/studio-core'
 import { LinkedReview } from './linked-review'
 import { ChoicePicker } from '@dovo/studio-ui'
@@ -350,6 +350,11 @@ function PrimaryReviewPane({
           </IconButton>
         )}
       </header>
+      <OrganizeReview
+        review={review}
+        disabled={editing || !!task.example}
+        onOrganized={() => setRelated(true)}
+      />
       <FileReviewControls
         files={files}
         selected={file?.path ?? ''}

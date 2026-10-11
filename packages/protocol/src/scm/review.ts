@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { titleGenerationSettingsSchema } from '../tasks/title-generation.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
 import { mutableArray, mutableStruct, minValue, maxValue, strictStruct } from '../shared/schema.js'
@@ -42,12 +43,52 @@ export const reviewProgressSchema = mutableStruct({
     mutableStruct({
       label: Schema.String,
       paths: mutableArray(Schema.String),
-      basis: Schema.Literals(['ast', 'folder']),
+      basis: Schema.Literals(['ast', 'folder', 'feature']),
+      summary: Schema.optional(maxValue(Schema.String, 2000)),
+      impact: Schema.optional(maxValue(Schema.String, 2000)),
     }),
   ),
 })
 export type ReviewProgress = typeof reviewProgressSchema.Type
 export type ReviewGroup = ReviewProgress['groups'][number]
+
+export const reviewOrganizeSchema = strictStruct({
+  context: reviewContextSchema,
+  selection: Schema.optional(titleGenerationSettingsSchema),
+  files: maxValue(mutableArray(strictStruct({ path, fingerprint: Schema.String })), 500),
+})
+export const featureReviewSchema = strictStruct({
+  groups: maxValue(
+    minValue(
+      mutableArray(
+        strictStruct({
+          label: maxValue(minValue(Schema.String, 1), 200),
+          summary: maxValue(minValue(Schema.String, 1), 2000),
+          impact: maxValue(minValue(Schema.String, 1), 2000),
+          paths: maxValue(minValue(mutableArray(path), 1), 500),
+        }),
+      ),
+      1,
+    ),
+    100,
+  ),
+})
+/** Model output must partition the supplied changed files, without inventing paths. */
+export function featureReviewGroups(
+  value: typeof featureReviewSchema.Type,
+  paths: string[],
+): ReviewGroup[] {
+  const remaining = new Set(paths)
+  const groups = value.groups.map((group) => {
+    for (const path of group.paths) {
+      if (!remaining.delete(path))
+        throw new Error('The organizer returned an unknown or duplicate file. Try again.')
+    }
+    return { ...group, basis: 'feature' as const }
+  })
+  if (remaining.size) throw new Error('The organizer omitted changed files. Try again.')
+  return groups
+}
 
 export function filePreviewIdentity(preview: ChangedFile['preview']) {
   return JSON.stringify(

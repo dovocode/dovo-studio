@@ -63,3 +63,31 @@ it('never shows viewed state for a different visible revision and orders depende
     ),
   ).toEqual(['types.ts', 'app.ts'])
 })
+
+it('requires feature groups to partition changed paths exactly once and preserves review order', async () => {
+  const { featureReviewGroups, featureReviewSchema, decode } = await import('../index')
+  const group = {
+    label: 'Feature',
+    summary: 'Change contract',
+    impact: 'Inspect callers and tests',
+    paths: ['app.ts', 'types.ts'],
+  }
+  const value = decode(featureReviewSchema, { groups: [group] })
+  const groups = featureReviewGroups(value, ['types.ts', 'app.ts'])
+  expect(groups[0]).toMatchObject({ ...group, basis: 'feature' })
+  expect(
+    orderReviewFiles([{ path: 'types.ts' }, { path: 'app.ts' }], groups, true).map(
+      (file) => file.path,
+    ),
+  ).toEqual(['app.ts', 'types.ts'])
+  expect(() =>
+    featureReviewGroups({ groups: [{ ...group, paths: ['missing.ts'] }] }, ['app.ts']),
+  ).toThrow(/unknown or duplicate/)
+  expect(() =>
+    featureReviewGroups({ groups: [{ ...group, paths: ['app.ts', 'app.ts'] }] }, ['app.ts']),
+  ).toThrow(/unknown or duplicate/)
+  expect(() =>
+    featureReviewGroups({ groups: [{ ...group, paths: ['app.ts'] }] }, ['app.ts', 'types.ts']),
+  ).toThrow(/omitted/)
+  expect(() => decode(featureReviewSchema, { groups: [] })).toThrow(/at least 1/)
+})

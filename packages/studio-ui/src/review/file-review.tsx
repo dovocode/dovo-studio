@@ -122,7 +122,13 @@ export function ReviewFiles({
   )
   const sections = useMemo(() => {
     const remaining = new Map(filtered.map((file) => [file.path, file]))
-    const sections: { label: string; basis: 'ast' | 'folder'; files: ReviewListFile[] }[] = []
+    const sections: {
+      label: string
+      basis: ReviewGroup['basis']
+      summary?: string
+      impact?: string
+      files: ReviewListFile[]
+    }[] = []
     if (related)
       for (const group of groups) {
         const members = group.paths.flatMap((path) => {
@@ -131,8 +137,7 @@ export function ReviewFiles({
           remaining.delete(path)
           return [file]
         })
-        if (members.length)
-          sections.push({ label: group.label, basis: group.basis, files: members })
+        if (members.length) sections.push({ ...group, files: members })
       }
     const folders = new Map<string, ReviewListFile[]>()
     for (const file of [...remaining.values()].sort((a, b) => a.path.localeCompare(b.path))) {
@@ -164,7 +169,11 @@ export function ReviewFiles({
             aria-pressed={related}
             onClick={() => onRelatedChange(!related)}
           >
-            {related ? 'Related changes' : 'Folders'}
+            {related
+              ? groups.some((group) => group.basis === 'feature')
+                ? 'Features'
+                : 'Related changes'
+              : 'Folders'}
           </Button>
           <label className="flex min-h-8 items-center gap-2">
             <Checkbox
@@ -189,14 +198,27 @@ export function ReviewFiles({
             <summary
               className="cursor-pointer break-all px-2 py-2 text-xs font-medium text-muted-foreground"
               title={
-                section.basis === 'ast'
-                  ? 'Dependencies first, followed by files that import them'
-                  : 'Folder order; no reliable dependency link available'
+                section.basis === 'feature'
+                  ? 'Model-proposed feature group; verify the summary against its diffs'
+                  : section.basis === 'ast'
+                    ? 'Dependencies first, followed by files that import them'
+                    : 'Folder order; no reliable dependency link available'
               }
             >
-              {section.basis === 'ast' ? 'Related · ' : 'Folder · '}
+              {section.basis === 'feature'
+                ? 'Feature · '
+                : section.basis === 'ast'
+                  ? 'Related · '
+                  : 'Folder · '}
               {section.label}
             </summary>
+            {section.summary && <p className="px-2 pb-2 text-xs">{section.summary}</p>}
+            {section.impact && (
+              <p className="px-2 pb-2 text-xs text-muted-foreground">
+                <span className="font-medium">Linked impact: </span>
+                {section.impact}
+              </p>
+            )}
             {section.files.map((file) => (
               <button
                 key={file.path}
@@ -214,7 +236,7 @@ export function ReviewFiles({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{file.path.split('/').at(-1)}</span>
-                  {section.basis === 'ast' && (
+                  {section.basis !== 'folder' && (
                     <span className="block truncate text-[0.6875rem] text-muted-foreground">
                       {file.path.slice(0, file.path.lastIndexOf('/')) || 'Root'}
                     </span>

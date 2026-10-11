@@ -1,5 +1,9 @@
-import { parsePatch } from 'diff'
+import { createTwoFilesPatch, parsePatch } from 'diff'
 import {
+  decode,
+  featureReviewSchema,
+  featureReviewGroups,
+  type TitleGenerationSettings,
   changedFileFingerprint,
   pullFilePatch,
   pullFileFingerprint,
@@ -9,6 +13,7 @@ import {
   type ReviewProgress,
   type ChangedFile,
 } from '@dovo/protocol'
+import type { TitleGeneration } from '../../agents/tasks/title-generation.js'
 import type { Services } from '../../services.js'
 import { HttpError } from '../../errors.js'
 import { relatedFileGroups, type ReviewSource, type ReviewModule } from './order.js'
@@ -49,9 +54,33 @@ export class FileReviews {
       .catch(() => {})
     return work
   }
+  async organize(
+    context: ReviewContext,
+    selection: TitleGenerationSettings | undefined,
+    expected: { path: string; fingerprint: string }[],
+    titles: TitleGeneration,
+  ) {
+    const result = await this.resolve(context, undefined, {
+      selection: selection ?? titles.read(),
+      expected,
+      titles,
+    })
+    const current = await this.request(context)
+    if (
+      JSON.stringify(current.files.map(({ path, fingerprint }) => ({ path, fingerprint }))) !==
+      JSON.stringify(expected)
+    )
+      throw new HttpError(409, 'Changes updated during analysis. Organize the current diff again.')
+    return result
+  }
   private async resolve(
     context: ReviewContext,
     mark?: { path: string; fingerprint: string; viewed: boolean; version: number },
+    organize?: {
+      selection: TitleGenerationSettings
+      expected: { path: string; fingerprint: string }[]
+      titles: TitleGeneration
+    },
   ): Promise<ReviewProgress> {
     const s = this.services
     let scope: string, files: { path: string; fingerprint: string }[], sources: ReviewSource[]
@@ -263,6 +292,48 @@ export class FileReviews {
         groups,
         ...(incomplete ? { retryAt: Date.now() + 20_000 } : {}),
       })
+    }
+    if (organize) {
+      if (JSON.stringify(files) !== JSON.stringify(organize.expected))
+        throw new HttpError(409, 'Changes updated. Refresh the diff before organizing it.')
+      if (!files.length || files.length > 500)
+        throw new HttpError(400, 'Choose a diff with 1–500 files')
+      // Bound evidence, retaining every path and explicitly labeling incomplete source.
+      const budget = Math.min(12_000, Math.floor(180_000 / files.length))
+      const changes = sources.map((file) => {
+        const patch = pullSource?.detail.files.find((item) => item.path === file.path)?.patch
+        const evidence =
+          patch ??
+          (file.before === undefined || file.after === undefined
+            ? ''
+            : createTwoFilesPatch(file.path, file.path, file.before, file.after))
+        return {
+          path: file.path,
+          evidence: evidence.slice(0, budget),
+          incomplete: !evidence || evidence.length > budget,
+        }
+      })
+      const output = await organize.titles.organizeReview(
+        JSON.stringify({ changes, dependencies: groups }),
+        organize.selection,
+      )
+      try {
+        const parsed: unknown = JSON.parse(
+          output
+            .trim()
+            .replace(/^```(?:json)?\s*/, '')
+            .replace(/\s*```$/, ''),
+        )
+        groups = featureReviewGroups(
+          decode(featureReviewSchema, parsed),
+          files.map((file) => file.path),
+        )
+      } catch {
+        throw new HttpError(
+          502,
+          'The organizer returned invalid or incomplete feature groups. Try again or choose another model.',
+        )
+      }
     }
     return { files: working ? states : s.reviewMarks.files(scope), groups }
   }

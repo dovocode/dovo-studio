@@ -1,5 +1,6 @@
 import { changedFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
 import { useFileReview } from '../../scm/review/use-file-review'
+import { MobileOrganizeReview } from '../../scm/review/organize-review'
 import { MobileFileReview } from '../../scm/review/file-review'
 import { useConversationSelector } from '../conversation/state/provider'
 import { SavedFilePreview } from '../files/saved-file-preview'
@@ -283,6 +284,11 @@ export function TaskReview({
             paddingBottom: 8,
           }}
         >
+          <MobileOrganizeReview
+            review={review}
+            disabled={!!edit || !!task.example}
+            onOrganized={() => setRelated(true)}
+          />
           <MobileFileReview
             files={files.map((file) => {
               const amounts = stats.get(file.path)

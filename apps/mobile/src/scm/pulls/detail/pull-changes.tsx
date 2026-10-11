@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { pullFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
 import { useFileReview } from '../../review/use-file-review'
+import { MobileOrganizeReview } from '../../review/organize-review'
 import { MobileFileReview } from '../../review/file-review'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { View, useWindowDimensions } from 'react-native'
@@ -62,6 +63,7 @@ export function PullChanges({
         gap: 10,
       }}
     >
+      <MobileOrganizeReview review={review} onOrganized={() => setRelated(true)} />
       <MobileFileReview
         files={files.map((file) => ({
           path: file.path,

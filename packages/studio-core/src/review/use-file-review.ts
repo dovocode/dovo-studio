@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  type TitleGenerationSettings,
+  type ReviewProgress,
   createReviewSession,
   reviewProgressSchema,
   type ReviewContext,
@@ -37,9 +39,58 @@ export function useFileReview(context: ReviewContext, version: string, enabled =
     if (previousVersion.current !== current) void session.current?.session.refresh()
     previousVersion.current = current
   }, [key, version])
+  const [organized, setOrganized] = useState<{ key: string; progress: ReviewProgress } | null>(null)
+  const [organizingKey, setOrganizingKey] = useState('')
+  const [organizeFailure, setOrganizeFailure] = useState<{ key: string; message: string } | null>(
+    null,
+  )
   const state = value?.key === key ? value.state : null
+  const evidence = JSON.stringify(
+    state?.progress?.files.map(({ path, fingerprint }) => [path, fingerprint]),
+  )
+  const analysisKey = `${key}:${version}:${evidence}`
+  const analysisRef = useRef(analysisKey)
+  analysisRef.current = analysisKey
   return {
-    progress: state?.progress ?? null,
+    progress:
+      organized?.key === analysisKey && state?.progress
+        ? { ...state.progress, groups: organized.progress.groups }
+        : (state?.progress ?? null),
+    featureGroups: organized?.key === analysisKey,
+    organizing: !!organizingKey,
+    organizeError: organizeFailure?.key === analysisKey ? organizeFailure.message : '',
+    clearGroups: () => setOrganized(null),
+    organize: async (selection?: TitleGenerationSettings) => {
+      if (!state?.progress || organizingKey) return false
+      const currentKey = analysisKey
+      setOrganizingKey(currentKey)
+      setOrganizeFailure(null)
+      try {
+        const progress = await request(
+          '/api/review/organize',
+          {
+            context,
+            selection,
+            files: state.progress.files.map(({ path, fingerprint }) => ({ path, fingerprint })),
+          },
+          reviewProgressSchema,
+        )
+        if (analysisRef.current === currentKey) {
+          setOrganized({ key: currentKey, progress })
+          return true
+        }
+        return false
+      } catch (cause: unknown) {
+        if (analysisRef.current === currentKey)
+          setOrganizeFailure({
+            key: currentKey,
+            message: cause instanceof Error ? cause.message : String(cause),
+          })
+        return false
+      } finally {
+        setOrganizingKey('')
+      }
+    },
     busy: state?.busy ?? false,
     error: state?.error ?? '',
     ready: connected && enabled && value?.key === key && !!state?.progress,

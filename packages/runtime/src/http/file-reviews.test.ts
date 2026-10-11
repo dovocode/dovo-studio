@@ -335,3 +335,79 @@ it('isolates identical working sources whose Go module identities differ between
   const second = await read({ kind: 'task', taskId: 'second', source: 'working' })
   expect(second.groups.every((group) => group.basis === 'folder')).toBe(true)
 })
+
+it('organizes authenticated current diffs and rejects invalid output and stale analysis without altering viewed marks', async () => {
+  const { runtime, read, request, desktop } = await setup()
+  const context: ReviewContext = { kind: 'task', taskId: 'task', source: 'working' }
+  const initial = await read(context)
+  await request(context, desktop, { ...initial.files[0], viewed: true })
+  const selection = {
+    harness: { provider: 'codex', endpoint: '' },
+    model: 'review-model',
+    reasoning: '',
+  }
+  const output = {
+    groups: [
+      {
+        label: 'Shared contract',
+        summary: 'Updates the value and caller',
+        impact: 'Inspect app.ts consuming types.ts',
+        paths: ['types.ts', 'app.ts'],
+      },
+    ],
+  }
+  const model = vi
+    .spyOn(runtime.services.titles, 'organizeReview')
+    .mockResolvedValue(JSON.stringify(output))
+  const organize = (files = initial.files, token = desktop) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/review/organize`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        context,
+        selection,
+        files: files.map(({ path, fingerprint }) => ({ path, fingerprint })),
+      }),
+    })
+  expect((await organize(initial.files, '')).status).toBe(401)
+  const response = await organize()
+  expect(response.status).toBe(200)
+  const result = decode(reviewProgressSchema, await response.json())
+  expect(result.groups[0]).toMatchObject({ ...output.groups[0], basis: 'feature' })
+  expect(result.files[0].viewed).toBe(true)
+  expect(model).toHaveBeenCalledWith(
+    expect.stringContaining('dependencies'),
+    expect.objectContaining(selection),
+  )
+  expect((await read(context)).groups[0].basis).toBe('ast')
+  const titles = runtime.services.titles.save({
+    harness: { provider: 'codex', endpoint: 'title-harness' },
+    model: 'title-model',
+    reasoning: 'low',
+  })
+  const defaultResponse = await fetch(`http://127.0.0.1:${runtime.port}/api/review/organize`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${desktop}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      context,
+      files: initial.files.map(({ path, fingerprint }) => ({ path, fingerprint })),
+    }),
+  })
+  expect(defaultResponse.status).toBe(200)
+  expect(model).toHaveBeenLastCalledWith(expect.any(String), titles)
+  model.mockResolvedValue(
+    JSON.stringify({ groups: [{ ...output.groups[0], paths: ['invented.ts'] }] }),
+  )
+  expect((await organize()).status).toBe(502)
+  model.mockImplementation(async () => {
+    runtime.services.store.updateTask('task', (task) => ({
+      ...task,
+      files: task.files.map((file) => ({ ...file, after: file.after + '\n// new revision' })),
+    }))
+    return JSON.stringify(output)
+  })
+  expect((await organize()).status).toBe(409)
+  model.mockClear()
+  expect((await organize()).status).toBe(409)
+  expect(model).not.toHaveBeenCalled()
+})

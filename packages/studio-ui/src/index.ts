@@ -69,3 +69,5 @@ export { HostSettingsPage } from './host-settings-page'
 
 export { RepositoryOpenItems } from './repository-open-items'
 export { FileReviewControls, ReviewFiles, type ReviewListFile } from './review/file-review'
+
+export { OrganizeReview } from './review/organize-review'

@@ -319,3 +319,36 @@ it('cancels a deleted parent’s side request without recreating its saved data'
     s.db.close()
   }
 })
+
+it('organizes reviews with a request-local model without changing utility or coding settings', async () => {
+  const s = setup()
+  let captured: AgentRun | undefined
+  vi.spyOn(s.registry, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      captured = run
+      run.onText('{"groups":[]}')
+    },
+  })
+  const before = s.titles.read()
+  expect(
+    await s.titles.organizeReview('{"changes":[]}', {
+      agentId: 'harness',
+      model: 'organizer-model',
+      reasoning: 'low',
+    }),
+  ).toBe('{"groups":[]}')
+  expect(captured?.agent).toMatchObject({
+    model: 'organizer-model',
+    reasoning: 'low',
+    permission: 'read-only',
+  })
+  expect(captured?.tools).toBe('none')
+  expect(captured?.ephemeral).toBe(true)
+  expect(captured?.agent.instructions).toContain('Include each supplied changed path exactly once')
+  expect(existsSync(captured?.cwd ?? '')).toBe(false)
+  expect(s.titles.read()).toEqual(before)
+  expect(s.store.get().agents[0].model).toBe('task-model')
+  await s.titles.dispose()
+  s.db.close()
+})
