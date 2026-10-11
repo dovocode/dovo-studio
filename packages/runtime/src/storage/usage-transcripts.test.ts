@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Agent } from '@dovo/protocol'
@@ -9,10 +9,12 @@ afterEach(() => vi.useRealTimers())
 
 it('evicts deleted transcripts, removed sources and aged rows from retained scans', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-transcript-retention-'))
-  const source = join(directory, 'projects')
+  const configured = join(directory, 'config')
+  const source = join(configured, 'projects')
   const path = join(source, 'session.jsonl')
   try {
-    await mkdir(source)
+    await mkdir(join(directory, 'projects'))
+    await symlink(directory, configured, process.platform === 'win32' ? 'junction' : 'dir')
     const timestamp = new Date(Date.now() - 89 * 86400000).toISOString()
     await writeFile(
       path,
@@ -23,6 +25,7 @@ it('evicts deleted transcripts, removed sources and aged rows from retained scan
         message: { id: 'message', model: 'claude', usage: { input_tokens: 10, output_tokens: 5 } },
       }) + '\n',
     )
+    const canonicalPath = await realpath(path)
     const agent: Agent = {
       id: 'claude',
       name: 'Claude',
@@ -31,14 +34,14 @@ it('evicts deleted transcripts, removed sources and aged rows from retained scan
       instructions: '',
       endpoint: '',
       permission: 'ask',
-      env: { CLAUDE_CONFIG_DIR: directory },
+      env: { CLAUDE_CONFIG_DIR: configured },
     }
     const usage = new UsageTranscripts()
     expect((await usage.read([agent], new Set(), true)).records).toHaveLength(1)
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(Date.now() + 2 * 86400000)
     expect((await usage.read([agent], new Set(), true)).records).toHaveLength(0)
-    expect(usage['cache'].get(path)?.rows).toHaveLength(0)
+    expect(usage['cache'].get(canonicalPath)?.rows).toHaveLength(0)
     await rm(path)
     await usage.read([agent], new Set(), true)
     expect(usage['cache'].size).toBe(0)
