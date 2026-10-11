@@ -148,6 +148,7 @@ mocks['../preview/diff-view'] =
   'export const DiffView=()=> <div data-git-controls>Git controls</div>;'
 mocks['../../scm/review/use-file-review'] =
   'export const useFileReview=()=>({progress:null,ready:false,busy:false,error:"",reload:()=>{},setViewed:()=>{}});'
+mocks['../../scm/review/organize-review'] = 'export const MobileOrganizeReview=()=>null;'
 mocks['../../scm/review/file-review'] = 'export const MobileFileReview=()=>null;'
 mocks['../../ui/controls/choice'] = 'export const Choice=()=>null;'
 mocks['../../ui/controls/field'] =
