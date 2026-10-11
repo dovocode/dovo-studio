@@ -12,7 +12,13 @@ import {
   QueueItemIndicator,
   QueueItemContent,
 } from '@dovo/studio-ui'
-export function MessageQueue({ task, pending }: { task: Task; pending?: PendingMessage | null }) {
+export function MessageQueue({
+  task,
+  pending,
+}: {
+  task: Task
+  pending?: readonly PendingMessage[] | null
+}) {
   const { request, connected } = useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
@@ -22,6 +28,7 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
     expectedText: string
   } | null>(null)
   const queue = task.queue ?? []
+  const queuedPending = pending?.find((item) => item.destination === 'queue')
   const act = async (
     action: string,
     messageId?: string,
@@ -57,10 +64,12 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
       <Queue open>
         <QueueSectionTrigger>
           {queue.length} queued ·{' '}
-          {pending?.destination === 'queue'
-            ? pending.state === 'sending'
-              ? 'Sending…'
-              : 'Send failed'
+          {queuedPending
+            ? queuedPending.state === 'failed'
+              ? 'Send failed'
+              : queuedPending.state === 'saved'
+                ? 'Saved for reconnect'
+                : 'Sending…'
             : task.queuePaused
               ? 'Paused'
               : 'Runs after this turn'}
@@ -75,15 +84,19 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
                   ? ` · ${message.attachments.length} files`
                   : ''}
               </QueueItemContent>
-              {pending?.message.id === message.id && (
+              {pending?.some((item) => item.message.id === message.id) && (
                 <span role="status" className="shrink-0 text-muted-foreground">
-                  {pending.state === 'sending' ? 'Sending…' : 'Retry from composer'}
+                  {pending?.find((item) => item.message.id === message.id)?.state === 'failed'
+                    ? 'Retry from composer'
+                    : 'Waiting for confirmation'}
                 </span>
               )}
               <IconButton
                 label={`Edit queued message ${index + 1}`}
                 className="size-6"
-                disabled={!connected || busy || pending?.message.id === message.id}
+                disabled={
+                  !connected || busy || pending?.some((item) => item.message.id === message.id)
+                }
                 onClick={() =>
                   setEditing({ id: message.id, text: message.text, expectedText: message.text })
                 }
@@ -96,7 +109,7 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
                 disabled={
                   !connected ||
                   busy ||
-                  pending?.message.id === message.id ||
+                  pending?.some((item) => item.message.id === message.id) ||
                   task.status !== 'running'
                 }
                 onClick={() => void act('steer', message.id)}
@@ -106,7 +119,12 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
               <IconButton
                 label={`Move queued message ${index + 1} up`}
                 className="size-6"
-                disabled={!connected || busy || pending?.message.id === message.id || index === 0}
+                disabled={
+                  !connected ||
+                  busy ||
+                  pending?.some((item) => item.message.id === message.id) ||
+                  index === 0
+                }
                 onClick={() => void act('up', message.id)}
               >
                 <ArrowUp size={12} />
@@ -117,9 +135,9 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
                 disabled={
                   !connected ||
                   busy ||
-                  pending?.message.id === message.id ||
+                  pending?.some((item) => item.message.id === message.id) ||
                   index === queue.length - 1 ||
-                  pending?.message.id === queue[index + 1]?.id
+                  pending?.some((item) => item.message.id === queue[index + 1]?.id)
                 }
                 onClick={() => void act('down', message.id)}
               >
@@ -128,7 +146,9 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
               <IconButton
                 label={`Cancel queued message ${index + 1} and return it to the composer`}
                 className="size-6"
-                disabled={!connected || busy || pending?.message.id === message.id}
+                disabled={
+                  !connected || busy || pending?.some((item) => item.message.id === message.id)
+                }
                 onClick={() => void act('restore', message.id)}
               >
                 <X size={12} />
@@ -181,7 +201,7 @@ export function MessageQueue({ task, pending }: { task: Task; pending?: PendingM
             !connected ||
             busy ||
             task.archived ||
-            (queue.length === 1 && pending?.message.id === queue[0]?.id)
+            (queue.length === 1 && pending?.some((item) => item.message.id === queue[0]?.id))
           }
           onClick={() => void act(task.queuePaused ? 'resume' : 'pause')}
         >

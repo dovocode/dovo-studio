@@ -1,3 +1,4 @@
+import { runtimeTransportAddress } from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -92,7 +93,10 @@ export function RemoteBrowser({
             AppState.currentState === 'background'
           )
             return
-          const target = new URL(deviceId ? '/ws/simulator' : '/ws/browser', connection.address)
+          const target = new URL(
+            deviceId ? '/ws/simulator' : '/ws/browser',
+            runtimeTransportAddress(connection),
+          )
           target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:'
           target.searchParams.set('ticket', result.ticket)
           post({

@@ -26,10 +26,22 @@ const built = await build({
   },
   stdin: {
     contents: `
-import {useState} from 'react';import {createRoot} from 'react-dom/client';import {defaultTaskHarness,decode,taskSchema} from '@dovo/protocol';import {Effect} from 'effect';import {HarnessSettings} from './src/tasks/detail/harness-settings.tsx';import {ModelSettings} from './src/agents/model-settings.tsx';import {Context} from '../runtime/connection/provider';
+import {useState,useEffect} from 'react';import {createRoot} from 'react-dom/client';import {defaultTaskHarness,decode,taskSchema,resolveTaskAgent} from '@dovo/protocol';import {Effect} from 'effect';import {HarnessSettings} from './src/tasks/detail/harness-settings.tsx';import {ModelSettings} from './src/agents/model-settings.tsx';import {Context} from '../runtime/connection/provider';import {optimisticTaskEffect,optimisticTaskConfirmed,previewTasks} from './src/runtime/state/optimistic-tasks.ts';
 window.requests=[];window.finishes=[];
 const readRuntime=async(profile,path,input)=>new Promise(resolve=>{window.requests.push({host:profile.id,path,input});window.finishes.push(resolve)});
-function App(){const[task,setTask]=useState(null);window.openTask=()=>setTask(decode(taskSchema,{id:'task',repositoryId:'repo',agentId:'',title:'Task',status:'draft',createdAt:'2026-09-23T10:00:00Z',messages:[],files:[],draft:'',example:false,harness:defaultTaskHarness('codex')}));const[host,setHost]=useState('one');const[agent,setAgent]=useState({...defaultTaskHarness('codex'),id:'agent',name:'Agent',model:''});const[online,setOnline]=useState(true);window.host=value=>setHost(value);window.harness=provider=>setAgent({...defaultTaskHarness(provider),id:'agent',name:'Agent',model:''});window.online=setOnline;const value={profile:{id:host,name:host,connection:{address:'http://'+host,token:'private-token'}},connected:online,readRuntime,snapshot:{defaults:{},workspace:{agents:[],repositories:[]},acpInstallations:[]},callEffect:(path,input,schema,method)=>Effect.sync(()=>{window.saved={path,input,method};return {revision:1}}),refresh:async()=>{}};return <Context.Provider value={value}>{task?<HarnessSettings task={task} onClose={()=>setTask(null)}/>:<ModelSettings agent={agent} onChange={setAgent}/>}</Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){
+ const[task,setTask]=useState(null),[editing,setEditing]=useState(false),[pending,setPending]=useState([]),[revision,setRevision]=useState(1);
+ window.openTask=()=>{if(!task)setTask(decode(taskSchema,{id:'task',repositoryId:'repo',agentId:'',title:'Task',status:'draft',createdAt:'2026-09-23T10:00:00Z',messages:[],files:[],draft:'',example:false,harness:defaultTaskHarness('codex')}));setEditing(true)};
+ const[host,setHost]=useState('one');const[agent,setAgent]=useState({...defaultTaskHarness('codex'),id:'agent',name:'Agent',model:''});const[online,setOnline]=useState(true);
+ window.host=setHost;window.harness=provider=>setAgent({...defaultTaskHarness(provider),id:'agent',name:'Agent',model:''});window.online=setOnline;
+ const profile={id:host,name:host,connection:{address:'http://'+host,token:'private-token'}};
+ const snapshot={revision,runtimeInstanceId:host,defaults:{},workspace:{agents:[],repositories:[],tasks:task?[task]:[]},acpInstallations:[]};
+ const entry={profile,snapshot};const visible=previewTasks(entry,pending).snapshot.workspace.tasks[0];window.visibleTask=visible;window.rawTask=task;
+ window.publishTask=(nextRevision,nextTask)=>{setRevision(nextRevision);if(nextTask)setTask(nextTask)};
+ useEffect(()=>setPending(items=>{const next=items.filter(item=>!optimisticTaskConfirmed(item,entry,items));return next.length===items.length?items:next}),[task,revision]);
+ const value={profile,connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
+ return <Context.Provider value={value}>{task?<><span data-selected-model>{resolveTaskAgent(visible,[])?.model||'Default'}</span>{editing&&<HarnessSettings task={visible} onClose={()=>setEditing(false)}/>}</>:<ModelSettings agent={agent} onChange={setAgent}/>}</Context.Provider>
+};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../apps/mobile/', import.meta.url)),
     loader: 'tsx',
@@ -227,6 +239,42 @@ try {
     throw new Error(
       'Task model/reasoning selection was not saved after failed availability discovery',
     )
+  await page.waitForFunction(() => window.visibleTask?.harness?.model === 'task-model')
+  await page.evaluate(() => window.finishSave(false))
+  await page
+    .getByRole('button', { name: 'Save agent & model', exact: true })
+    .waitFor({ state: 'detached' })
+  if ((await page.locator('[data-selected-model]').textContent()) !== 'task-model')
+    throw new Error(
+      'Closing model settings reverted a committed model before snapshot confirmation',
+    )
+  await page.evaluate(() => window.publishTask(1, { ...window.rawTask }))
+  await page.waitForFunction(() => window.visibleTask?.harness?.model === 'task-model')
+  await page.evaluate(() =>
+    window.publishTask(2, {
+      ...window.rawTask,
+      harness: window.saved.input.changes.harness.after,
+      harnessCustomized: true,
+    }),
+  )
+  await page.waitForFunction(
+    () =>
+      window.rawTask?.harness?.model === 'task-model' &&
+      window.visibleTask?.harness?.model === 'task-model',
+  )
+  await page.evaluate(() => window.openTask())
+  await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('__custom__')
+  await page.getByRole('textbox', { name: 'Custom model ID', exact: true }).fill('rejected-model')
+  await page.getByRole('button', { name: 'Save agent & model', exact: true }).click()
+  await page.waitForFunction(() => window.visibleTask?.harness?.model === 'rejected-model')
+  await page.evaluate(() => window.finishSave(true))
+  await page.getByText('Model save rejected', { exact: true }).waitFor()
+  await page.waitForFunction(() => window.visibleTask?.harness?.model === 'task-model')
+  if (
+    (await page.getByRole('textbox', { name: 'Custom model ID', exact: true }).inputValue()) !==
+    'rejected-model'
+  )
+    throw new Error('Rejected save lost the selected model needed for retry')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse/Cursor model selection, reasoning, OpenCode v1/v2 labels, and task model/reasoning saves with unavailable provider discovery passed.',

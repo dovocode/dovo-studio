@@ -14,6 +14,8 @@ import {
   resolveTaskAgent,
   canChangeTaskCheckout,
   type Task,
+  visiblePendingMessages,
+  mergePendingMessages,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { readMobilePreferences } from '../../../runtime/preferences/app-preferences'
@@ -24,7 +26,16 @@ import { useComposerDictation } from '../../composer/use-composer-dictation'
 import { createSendAttempts, type SendAttempt } from '../../composer/send-attempts'
 const sendAttempts = createSendAttempts(randomUUID)
 export function useConversationActions(task: Task) {
-  const { call, connected, snapshot, activeId, profile, readEffect, callEffect } = useRuntime(),
+  const {
+      call,
+      connected,
+      snapshot,
+      activeId,
+      profile,
+      readEffect,
+      callEffect,
+      pendingMessages: savedMessages,
+    } = useRuntime(),
     storedDraft = useDraft(
       task.id,
       task.draft,
@@ -32,7 +43,38 @@ export function useConversationActions(task: Task) {
     ),
     action = useAction(),
     cancellation = useAction()
-  const [pendingMessage, setPendingMessage] = useApplicationState<MobilePendingSend | null>(null)
+  const pendingScope = JSON.stringify([
+    profile?.connection.address,
+    profile?.connection.token,
+    task.id,
+  ])
+  const [localPending, setLocalPending] = useApplicationState<
+    (MobilePendingSend & { scope: string })[]
+  >([])
+  const setPendingMessage = (
+    update: MobilePendingSend | ((message: MobilePendingSend | null) => MobilePendingSend | null),
+  ) => {
+    setLocalPending((items) => {
+      if (typeof update !== 'function')
+        return [
+          ...items.filter(
+            (item) => item.scope !== pendingScope || item.message.id !== update.message.id,
+          ),
+          { ...update, scope: pendingScope },
+        ]
+      return items.flatMap((item) => {
+        if (item.scope !== pendingScope) return [item]
+        const next = update(item)
+        return next ? [{ ...next, scope: pendingScope }] : []
+      })
+    })
+  }
+  const pendingMessage = localPending.filter((item) => item.scope === pendingScope).at(-1) ?? null
+  const pendingMessages = mergePendingMessages(
+    task,
+    savedMessages(task),
+    localPending.filter((item) => item.scope === pendingScope),
+  )
   const { busy } = action
   const failedSend = useRef<SendAttempt | null>(null)
   const restoredScope = useRef('')
@@ -143,6 +185,14 @@ export function useConversationActions(task: Task) {
     pendingMessage?.message.id,
     pendingMessage?.state,
   ])
+  useEffect(() => {
+    setLocalPending((items) => {
+      const next = items.filter(
+        (item) => item.scope !== pendingScope || !!visiblePendingMessages(task, [item]).length,
+      )
+      return next.length === items.length ? items : next
+    })
+  }, [task.id, task.messages, task.queue, pendingScope])
   const agent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
   const firstMessage = !task.messages.length && !task.queue?.length && !task.turns?.length
   const checkoutEditable = canChangeTaskCheckout(task)
@@ -250,6 +300,15 @@ export function useConversationActions(task: Task) {
               attachmentIds,
             },
             responses.ok,
+          ).pipe(
+            Effect.tap((result) =>
+              Effect.sync(() => {
+                if (result.pending)
+                  setPendingMessage((pending) =>
+                    pending?.message.id === attempt.id ? { ...pending, state: 'saved' } : pending,
+                  )
+              }),
+            ),
           ),
         )
         yield* storedDraft.confirmEffect(attempt, clearDraft)
@@ -277,6 +336,7 @@ export function useConversationActions(task: Task) {
   return {
     threadScope: JSON.stringify([profile?.connection.address, profile?.connection.token, task.id]),
     pendingMessage,
+    pendingMessages,
     draftAttachments:
       pendingMessage?.taskId === task.id && pendingMessage.state === 'sending'
         ? task.draftAttachments?.filter(

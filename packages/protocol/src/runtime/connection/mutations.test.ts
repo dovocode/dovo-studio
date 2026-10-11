@@ -1,3 +1,6 @@
+import { decode } from '../../shared/schema.js'
+import { taskSchema } from '../../workspace.js'
+import { responses } from './runtime.js'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Effect, Schema } from 'effect'
 import { RuntimeMutations, type MutationOutbox, type MutationStorage } from './mutations.js'
@@ -591,4 +594,56 @@ it('keeps the receipt unretired when durable outbox removal fails after acceptan
   ).toBe('Failure')
   expect(f.stored()).toHaveLength(1)
   expect(fetcher.mock.calls.some(([url]) => urlPath(url).endsWith('/acknowledge'))).toBe(false)
+})
+
+it('restores multiple pending bubbles, preserves the receipt-to-snapshot handoff, and clears discard', async () => {
+  const task = decode(taskSchema, {
+    id: 'task',
+    title: 'Task',
+    repositoryId: 'repo',
+    agentId: '',
+    status: 'running',
+    createdAt: '',
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+  })
+  const f = fixture()
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('Offline')))
+  for (const id of ['first', 'second']) {
+    const result = await run(
+      f.queue.requestEffect(
+        connection,
+        '/api/tasks/message',
+        { id: task.id, messageId: id, text: id },
+        responses.ok,
+      ),
+    )
+    expect(result).toMatchObject({ _tag: 'Success', success: { ok: true, pending: true } })
+  }
+  const restarted = f.restart()
+  await run(restarted.recoverEffect(connection))
+  expect(restarted.pendingMessages(connection, task).map((item) => item.message.id)).toEqual([
+    'first',
+    'second',
+  ])
+  expect(restarted.pendingMessages({ ...connection, token: 'another-token' }, task)).toEqual([])
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) =>
+      Response.json(urlPath(url).endsWith('/status') ? { version: 1 } : { ok: true }),
+    ),
+  )
+  await run(restarted.recoverEffect(connection))
+  expect(f.stored()).toEqual([])
+  expect(restarted.pendingMessages(connection, task).map((item) => item.message.id)).toEqual([
+    'first',
+    'second',
+  ])
+  const messages = restarted.pendingMessages(connection, task).map((item) => item.message)
+  restarted.acknowledgeMessages(connection, [{ ...task, messages }])
+  expect(restarted.pendingMessages(connection, task)).toEqual([])
+  await run(restarted.discardEffect(connection))
+  expect(restarted.pendingMessages(connection, task)).toEqual([])
 })

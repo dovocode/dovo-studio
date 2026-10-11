@@ -91,6 +91,8 @@ export const snapshotSchema = mutableStruct({
   /** Present on scoped replicas; only these threads contain authoritative history. */
   detailTaskIds: Schema.optional(mutableArray(Schema.String)),
   runtimeInstanceId: Schema.optional(Schema.String),
+  runtimeId: Schema.optional(Schema.String),
+  runtimeAddresses: Schema.optional(mutableArray(Schema.String)),
   /** The runtime process ended unexpectedly before this start; shown until dismissed. */
   lastCrash: Schema.optional(mutableStruct({ at: Schema.String, message: Schema.String })),
   protocolVersion: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isInt()))),
@@ -143,6 +145,8 @@ export const connectionSchema = mutableStruct({
     'Runtime address must not contain credentials',
   ),
   token: minValue(Schema.String, 20),
+  runtimeId: Schema.optional(Schema.String),
+  alternateAddresses: Schema.optional(mutableArray(Schema.String)),
 })
 export const patchSchema = mutableStruct({
   collection: Schema.Literals(['agents', 'repositories', 'tasks', 'automations']),
@@ -202,6 +206,11 @@ export const terminalInputSchema = Schema.Union([
   }),
 ])
 export type RuntimeConnection = Schema.Schema.Type<typeof connectionSchema>
+export const workspacePatchResultSchema = mutableStruct({
+  revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+  runtimeInstanceId: Schema.optional(Schema.String),
+})
+export type WorkspacePatchResult = Schema.Schema.Type<typeof workspacePatchResultSchema>
 export type RuntimeSnapshot = Schema.Schema.Type<typeof snapshotSchema>
 export type WorkspacePatch = Schema.Schema.Type<typeof patchSchema>
 export type Approval = Schema.Schema.Type<typeof approvalSchema>
@@ -213,6 +222,7 @@ export const responses = {
   repositoryOpenTargets: repositoryOpenTargetsSchema,
   ok: mutableStruct({
     ok: Schema.Boolean,
+    pending: Schema.optional(Schema.Boolean),
   }),
   pairCode: mutableStruct({
     addresses: Schema.optional(

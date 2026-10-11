@@ -1,3 +1,4 @@
+import { runtimeTransportAddress } from '@dovo/protocol'
 import { startMcpAppTools } from '@dovo/client-runtime'
 import { SafeModal } from '../layout/safe-modal'
 import { File, Paths } from 'expo-file-system'
@@ -69,7 +70,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     const sendTool = (value: unknown) =>
       view.current?.injectJavaScript(`window.dovoMcpAppTool(${JSON.stringify(value)});true;`)
     const current = startMcpAppTools({
-      address: connection.address,
+      address: () => runtimeTransportAddress(connection),
       ticket: async () =>
         (
           await call(

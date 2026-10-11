@@ -923,3 +923,20 @@ it('retries a dropped chat message because the runtime deduplicates its message 
   expect(transport).toHaveBeenCalledTimes(2)
   for (const [, init] of transport.mock.calls) expect(init?.body).toBe(JSON.stringify(input))
 })
+
+it('preserves same-origin paths containing a double slash when selecting a transport route', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true }))
+  vi.stubGlobal('fetch', fetcher)
+  const connection = { address: 'http://path-origin.local', token: 'path-origin-paired-token' }
+  await runtimeRequest(
+    connection,
+    connection.address,
+    '/.//other-host/api/test',
+    {},
+    Schema.Struct({ ok: Schema.Boolean }),
+  )
+  const target = fetcher.mock.calls[0]![0]
+  expect(target).toBeInstanceOf(URL)
+  expect(target instanceof URL && target.origin).toBe(connection.address)
+  expect(target instanceof URL && target.pathname).toBe('//other-host/api/test')
+})

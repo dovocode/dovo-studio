@@ -77,7 +77,22 @@ entry and HTTP remain supported; no account is required.
 Use **Update connection address** for a saved remote computer when its address changes. Pair the new
 address with a fresh code from the same computer. The old connection remains saved until
 confirmation and credential storage both succeed. The saved computer ID stays the same, so its route
-links remain valid. This is an explicit replacement, not automatic host discovery.
+links remain valid. Explicit replacement remains available for older runtimes and networks whose
+addresses are not advertised.
+
+Updated runtimes advertise their listener's LAN/VPN addresses in authenticated snapshots. Clients
+save these with a persistent runtime identity and check a credential-free `/health` descriptor
+before sending a device token to an alternate address. Routes are probed concurrently with a
+three-second deadline; the configured address is preferred and rechecked after a minute or explicit
+reconnect. The saved computer, caches and mutation journal keep their original logical identity. An
+uncertain mutation is never replayed on another route; receipt-backed recovery retains its existing
+rules. HTTP remains supported on every route.
+
+Live sync resets its retry backoff only after thirty seconds of healthy traffic. **Reconnect**
+restarts the live stream and rechecks previously rejected tickets. Unsupported older runtimes keep
+HTTP updates, shown separately from live streaming. Pending messages survive reopening through the
+mutation journal, and successful message receipts and task edits stay visible until an authoritative
+snapshot confirms them.
 
 Interrupted pairing is recovered after the saved workspace opens, and retried on returning to the
 app. An offline computer does not block opening the local workspace. Pending credentials stay in

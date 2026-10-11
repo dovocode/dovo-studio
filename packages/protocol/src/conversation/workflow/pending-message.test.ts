@@ -3,6 +3,9 @@ import { decode } from '../../shared/schema'
 import { taskSchema } from '../../workspace'
 import {
   visiblePendingMessage,
+  visiblePendingMessages,
+  mergePendingMessages,
+  savedPendingMessages,
   pendingMessageDestination,
   pendingMessageQueue,
   startingConversationMessage,
@@ -93,4 +96,84 @@ it('does not show a handed-off message in the queue while its history arrives be
   expect(
     pendingMessageQueue({ id: 'task', messages: [handedOff], queue: [handedOff, later] }, null),
   ).toEqual([later])
+})
+
+it('keeps multiple local sends ordered and hands each off independently', () => {
+  const task = { id: 't', messages: [], queue: [] }
+  const first: PendingMessage = {
+    taskId: 't',
+    state: 'sending',
+    destination: 'thread',
+    message: { id: 'first', role: 'user', text: 'First' },
+  }
+  const second: PendingMessage = {
+    ...first,
+    destination: 'queue',
+    message: { ...first.message, id: 'second', text: 'Second' },
+  }
+  expect(visiblePendingMessages(task, [first, second]).map((item) => item.message.id)).toEqual([
+    'first',
+    'second',
+  ])
+  const accepted = { ...task, messages: [first.message] }
+  expect(visiblePendingMessages(accepted, [first, second])).toEqual([second])
+  expect(pendingMessageQueue(accepted, [first, second]).map((item) => item.id)).toEqual(['second'])
+  expect(
+    visiblePendingMessages(
+      { ...accepted, queue: [{ ...second.message, role: 'user', createdAt: '' }] },
+      [first, second],
+    ),
+  ).toEqual([])
+})
+
+it('restores saved sends from the journal without borrowing another thread or accepting malformed input', () => {
+  const task = decode(taskSchema, {
+    id: 't',
+    title: 'Task',
+    repositoryId: 'r',
+    agentId: '',
+    status: 'running',
+    createdAt: '',
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+  })
+  const journal = [
+    {
+      id: 'one',
+      path: '/api/tasks/message',
+      method: 'POST' as const,
+      input: { id: 't', messageId: 'first', text: 'First' },
+    },
+    {
+      id: 'two',
+      path: '/api/tasks/steer',
+      method: 'POST' as const,
+      blocked: true,
+      input: { id: 't', messageId: 'second', text: 'Second' },
+    },
+    {
+      id: 'other',
+      path: '/api/tasks/message',
+      method: 'POST' as const,
+      input: { id: 'other', messageId: 'third', text: 'Other' },
+    },
+    {
+      id: 'bad',
+      path: '/api/tasks/message',
+      method: 'POST' as const,
+      input: { id: 't', text: 'Missing ID' },
+    },
+  ]
+  const saved = savedPendingMessages(task, journal)
+  expect(saved.map((item) => [item.message.id, item.state, item.destination])).toEqual([
+    ['first', 'saved', 'queue'],
+    ['second', 'failed', 'thread'],
+  ])
+  expect(task.messages).toEqual([])
+  expect(mergePendingMessages(task, saved, [{ ...saved[1]!, state: 'saved' }])[1]?.state).toBe(
+    'failed',
+  )
+  expect(mergePendingMessages(task, [], [{ ...saved[0]!, state: 'saved' }])).toEqual([])
 })

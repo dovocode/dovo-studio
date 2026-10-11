@@ -17,6 +17,8 @@ it('restarts over the same database without replaying conversations into activit
     port: 0,
   }
   let r = await startRuntime(options)
+  const runtimeId = r.services.runtimeId
+  const firstInstance = r.services.instanceId
   cleanups.push(() => r.close())
   r.services.store.update(() => f.workspace)
   const task = r.services.tasks.create({
@@ -42,6 +44,8 @@ it('restarts over the same database without replaying conversations into activit
   expect(before.message).toBe(2)
   await r.close()
   r = await startRuntime(options)
+  expect(r.services.runtimeId).toBe(runtimeId)
+  expect(r.services.instanceId).not.toBe(firstInstance)
   expect({ task: count('task'), message: count('message') }).toEqual(before)
   expect(r.services.activity.pruneBefore(new Date(Date.now() + 60_000).toISOString())).toBe(
     before.task + before.message,

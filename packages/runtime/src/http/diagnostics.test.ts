@@ -9,7 +9,12 @@ it('keeps public health lightweight and readiness authenticated, showing stale s
   const address = `http://127.0.0.1:${runtime.port}`
   try {
     const publicHealth = await fetch(address + '/health')
-    expect(await publicHealth.json()).toEqual({ ok: true, service: 'dovo-runtime', version: 1 })
+    expect(await publicHealth.json()).toEqual({
+      ok: true,
+      service: 'dovo-runtime',
+      version: 1,
+      runtimeId: runtime.services.runtimeId,
+    })
     const request = (credential?: string) =>
       fetch(address + '/api/runtime/diagnostics', {
         method: 'POST',

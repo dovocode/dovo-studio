@@ -1,3 +1,4 @@
+import { runtimeTransportAddress } from '@dovo/protocol'
 import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 import {
   useWorkspace,
@@ -69,7 +70,10 @@ export function RemoteBrowser({
       if (generation !== version.current) return
       if (tabId && (result.tabId !== tabId || result.profileId !== profileId))
         throw new Error('Update the connected runtime to use remote browser tabs.')
-      const target = new URL(deviceId ? '/ws/simulator' : '/ws/browser', connection.address)
+      const target = new URL(
+        deviceId ? '/ws/simulator' : '/ws/browser',
+        runtimeTransportAddress(connection),
+      )
       target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:'
       target.searchParams.set('ticket', result.ticket)
       if (tabId) post({ type: 'visibility', visible: visibility.current })

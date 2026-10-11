@@ -46,6 +46,8 @@ export function runtimeSnapshot(
       ...(taskIds ? { detailTaskIds: [...taskIds] } : {}),
       protocolVersion: RUNTIME_PROTOCOL_VERSION,
       runtimeInstanceId: s.instanceId,
+      runtimeId: s.runtimeId,
+      runtimeAddresses: s.runtimeAddresses(),
       lastCrash: readLastCrash(s.db.name),
       runtimeHost: hostname(),
       releaseVersion: process.env.DOVO_RELEASE_VERSION || undefined,

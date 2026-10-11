@@ -1,10 +1,10 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { LoaderCircle, GitFork, Folder } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   taskBudgetUsage,
   taskPreparation,
-  visiblePendingMessage,
+  mergePendingMessages,
   pendingMessageQueue,
   startingConversationMessage,
   type PendingMessage,
@@ -79,28 +79,59 @@ export function TaskConversation({
       setComposerCollapsed(true)
   }, [collapseComposerOnScroll])
   const [managePullTask, setManagePullTask] = useState<string | null>(null)
-  const [pending, setPending] = useApplicationState<PendingMessage | null>(null)
+  const [pending, setPending] = useApplicationState<(PendingMessage & { scope: string })[]>([])
+  const { pendingMessages: savedMessages, connection } = useWorkspace()
+  const pendingScope = JSON.stringify([connection?.address, connection?.token, task.id])
+  const onPending = useCallback(
+    (message: PendingMessage | null) => {
+      setPending((items) =>
+        message
+          ? [
+              ...items.filter(
+                (item) => item.scope !== pendingScope || item.message.id !== message.message.id,
+              ),
+              { ...message, scope: pendingScope },
+            ]
+          : items,
+      )
+    },
+    [pendingScope],
+  )
   const { id, messages, queue, turns, status, compactions } = task
   const visiblePending = useMemo(
-    () => visiblePendingMessage({ id, messages, queue }, pending),
-    [id, messages, queue, pending],
+    () =>
+      mergePendingMessages(
+        task,
+        savedMessages?.(task) ?? [],
+        pending.filter((item) => item.scope === pendingScope),
+      ),
+    [id, messages, queue, pending, savedMessages, task, pendingScope],
   )
-  const threadPending = visiblePending?.destination === 'queue' ? null : visiblePending
+  useEffect(() => {
+    setPending((items) => {
+      const accepted = new Set([...messages, ...(queue ?? [])].map((item) => item.id))
+      const next = items.filter(
+        (item) => item.scope !== pendingScope || !accepted.has(item.message.id),
+      )
+      return next.length === items.length ? items : next
+    })
+  }, [id, messages, queue, pendingScope])
+  const threadPending = visiblePending.filter((item) => item.destination !== 'queue')
   const startingMessage = startingConversationMessage(task)
   const queueTask = {
     ...task,
-    queue: pendingMessageQueue(task, pending).filter(
+    queue: pendingMessageQueue(task, visiblePending).filter(
       (message) => message.id !== startingMessage?.id,
     ),
   }
   const displayedTask = useMemo(
     () => ({
       id,
-      messages: startingMessage
-        ? [...messages, startingMessage]
-        : threadPending
-          ? [...messages, threadPending.message]
-          : messages,
+      messages: [
+        ...messages,
+        ...(startingMessage ? [startingMessage] : []),
+        ...threadPending.map((item) => item.message),
+      ],
       queue,
       turns,
       status,
@@ -251,7 +282,7 @@ export function TaskConversation({
           task={task}
           temporary={temporary}
           workspaceControls={workspaceControls}
-          onPending={setPending}
+          onPending={onPending}
           onAside={onAside}
           codeReference={codeReference}
           composerInsert={composerInsert}

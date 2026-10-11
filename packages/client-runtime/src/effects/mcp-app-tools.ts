@@ -2,7 +2,7 @@ import { startReconnecting } from './reconnecting.js'
 
 /** Ticket-authenticated live view transport, shared by browser and native WebView hosts. */
 export function startMcpAppTools(options: {
-  address: string
+  address: string | (() => string)
   ticket: () => Promise<string>
   call: (value: { requestId: string; name: string; arguments: unknown }) => void
   cancel: (requestId: string) => void
@@ -17,7 +17,10 @@ export function startMcpAppTools(options: {
   const connection = startReconnecting(async (signal, connected) => {
     const ticket = await options.ticket()
     if (signal.aborted) return
-    const url = new URL('/ws/mcp-app', options.address)
+    const url = new URL(
+      '/ws/mcp-app',
+      typeof options.address === 'function' ? options.address() : options.address,
+    )
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     url.searchParams.set('ticket', ticket)
     await new Promise<void>((resolve, reject) => {

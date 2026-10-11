@@ -21,11 +21,11 @@ for (const [path, name] of [
 const built = await build({
   stdin: {
     contents: `
-import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {MessageQueue} from './src/chat/thread/message-queue.tsx';
+import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {MessageQueue} from './src/chat/thread/message-queue.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;
 const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[]}};return <WorkspaceHarness value={value}><><Composer task={workspace.tasks[0]} onPending={onPending}/><MessageQueue task={workspace.tasks[0]}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[]}};return <WorkspaceHarness value={value}><><Composer task={workspace.tasks[0]} onPending={onPending}/><MessageQueue task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -186,6 +186,47 @@ try {
     throw new Error('Incorrect fork request')
   if ((await page.evaluate(() => window.navigations[0].entityId)) !== forkId)
     throw new Error('Fork did not open the new thread')
+  await page.evaluate(() => {
+    window.setTask((task) => ({
+      ...task,
+      queue: [{ id: 'server-queued', role: 'user', text: 'Accepted queue item', createdAt: '' }],
+    }))
+    window.setPendingQueue([
+      {
+        taskId: 'task',
+        state: 'saved',
+        destination: 'queue',
+        message: { id: 'saved-queued', role: 'user', text: 'Saved queue item' },
+      },
+      {
+        taskId: 'task',
+        state: 'sending',
+        destination: 'queue',
+        message: { id: 'sending-queued', role: 'user', text: 'Sending queue item' },
+      },
+    ])
+  })
+  await page.getByText('Saved queue item', { exact: true }).waitFor()
+  await page.getByText('Sending queue item', { exact: true }).waitFor()
+  for (const index of [2, 3]) {
+    for (const name of [
+      `Edit queued message ${index}`,
+      `Steer with queued message ${index}`,
+      `Move queued message ${index} up`,
+      `Move queued message ${index} down`,
+      `Cancel queued message ${index} and return it to the composer`,
+    ])
+      if (!(await page.getByRole('button', { name, exact: true }).isDisabled()))
+        throw new Error('Unconfirmed queue item exposed an authoritative action: ' + name)
+  }
+  if (
+    !(await page
+      .getByRole('button', { name: 'Move queued message 1 down', exact: true })
+      .isDisabled())
+  )
+    throw new Error('Accepted queue item can be moved into a local-only row')
+  if (await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).isDisabled())
+    throw new Error('Accepted queue item lost its actions')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing and fork dispatch with stable retry IDs passed.',

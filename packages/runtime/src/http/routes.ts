@@ -79,6 +79,7 @@ export function route(
           ok: true,
           service: 'dovo-runtime',
           version: 1,
+          runtimeId: s.runtimeId,
         })
       if (method === 'POST' && path === '/api/pair/request') {
         const input = decode(

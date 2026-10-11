@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeSyncStatus, retryRuntimeSync, runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { useEffect, type ReactNode } from 'react'
 import { Alert, View } from 'react-native'
@@ -29,8 +29,14 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
   // Only hosts whose requests failed count; a computer still connecting is not offline.
   const unavailable = scoped.filter((entry) => runtimeReachability(entry) === 'offline')
   const saved = scoped.filter((entry) => runtime.mutationStatus(entry.profile).pending > 0)
+  const fallback = scoped.filter(
+    (entry) =>
+      entry.connected &&
+      runtimeSyncStatus(entry.profile.connection) !== undefined &&
+      runtimeSyncStatus(entry.profile.connection) !== 'live',
+  )
   const hasSaved = !!saved.length
-  const offline = runtime.ready && (!!unavailable.length || hasSaved)
+  const offline = runtime.ready && (!!unavailable.length || hasSaved || !!fallback.length)
   const revoked = unavailable.filter((entry) => entry.unauthorized)
   useEffect(() => {
     if (!offline) {
@@ -49,15 +55,18 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
   // Reconnecting cannot fix a revoked pairing; say what will.
   const label = busy
     ? 'Reconnecting…'
-    : hasSaved && !unavailable.length
-      ? 'Saved actions · Review'
-      : revoked.length
-        ? 'Pairing expired · Pair again'
-        : attempted
-          ? `Still ${subject.toLowerCase()}`
-          : `${subject} · Reconnect`
+    : fallback.length && !hasSaved && !unavailable.length
+      ? 'HTTP updates · Review'
+      : hasSaved && !unavailable.length
+        ? 'Saved actions · Review'
+        : revoked.length
+          ? 'Pairing expired · Pair again'
+          : attempted
+            ? `Still ${subject.toLowerCase()}`
+            : `${subject} · Reconnect`
   const reconnect = () =>
     act(async () => {
+      for (const entry of scoped) retryRuntimeSync(entry.profile.connection)
       await runtime.refreshAll()
       setAttempted(true)
     })
@@ -73,7 +82,11 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
             ? 'Shows connection details'
             : 'Reconnects. Touch and hold for details'
         }
-        onPress={() => (attempted || revoked.length || hasSaved ? setDetails(true) : reconnect())}
+        onPress={() =>
+          attempted || revoked.length || hasSaved || fallback.length
+            ? setDetails(true)
+            : reconnect()
+        }
         onLongPress={() => setDetails(true)}
       />
       {details && (
@@ -81,7 +94,9 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
           <Text style={styles.text}>
             {revoked.length
               ? 'This phone is no longer paired with a computer below. It was removed on that computer, or the runtime was reset. Pair it again from Devices in Settings.'
-              : 'Saved work stays available. Reconnect a computer to send messages or run commands there.'}
+              : fallback.length && !unavailable.length
+                ? 'Connected using HTTP updates. Live streaming is reconnecting or unavailable. Reconnect to retry it.'
+                : 'Saved work stays available. Reconnect a computer to send messages or run commands there.'}
           </Text>
           {saved.map((entry) => {
             const status = runtime.mutationStatus(entry.profile)

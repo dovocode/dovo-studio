@@ -64,7 +64,7 @@ export function ChatThread({
   }
   /** Shows the terminal after a chat command ran in it. */
   onTerminal?: (terminalId: string) => void
-  pending?: PendingMessage | null
+  pending?: readonly PendingMessage[] | null
   onBrowser?: (url: string) => void
   onPullLink?: (url: string) => boolean
   revealMessage?: string
@@ -556,7 +556,10 @@ export function ChatThread({
                                       compactionsByMessage.get(message.id) ?? emptyCompactions
                                     }
                                     highlighted={selectedMatch?.id === message.id}
-                                    pending={pending?.message.id === message.id ? pending : null}
+                                    pending={
+                                      pending?.find((item) => item.message.id === message.id) ??
+                                      null
+                                    }
                                     taskRunning={task.status === 'running'}
                                     latestTurnId={lastTurn?.id}
                                     connected={connected}

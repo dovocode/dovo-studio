@@ -1,12 +1,55 @@
-import type { RuntimeConnection, RuntimeOverview, Task } from '@dovo/protocol'
+import type { RuntimeConnection, RuntimeOverview, Task, WorkspacePatchResult } from '@dovo/protocol'
 import { Effect } from 'effect'
 
-export type TaskPreview = Partial<Pick<Task, 'pinned' | 'archived' | 'snoozedUntil'>>
+export type TaskPreview = Partial<
+  Pick<
+    Task,
+    | 'pinned'
+    | 'archived'
+    | 'snoozedUntil'
+    | 'agentId'
+    | 'harness'
+    | 'harnessCustomized'
+    | 'agentOverrides'
+  >
+>
 export type OptimisticTask = {
   id: symbol
   connection: RuntimeConnection
   taskId: string
   changes: TaskPreview
+  runtimeInstanceId?: string
+  acknowledged?: WorkspacePatchResult
+}
+
+export function optimisticTaskConfirmed(
+  pending: OptimisticTask,
+  entry: RuntimeOverview,
+  items: readonly OptimisticTask[] = [],
+) {
+  const ack = pending.acknowledged,
+    snapshot = entry.snapshot
+  if (!ack || !snapshot) return false
+  if (
+    items
+      .slice(0, items.indexOf(pending))
+      .some(
+        (older) =>
+          !older.acknowledged &&
+          older.taskId === pending.taskId &&
+          older.connection.address === pending.connection.address &&
+          older.connection.token === pending.connection.token &&
+          Object.keys(older.changes).some((field) => Object.hasOwn(pending.changes, field)),
+      )
+  )
+    return false
+  if (ack.runtimeInstanceId && snapshot.runtimeInstanceId !== ack.runtimeInstanceId)
+    return (
+      !!pending.runtimeInstanceId &&
+      !!snapshot.runtimeInstanceId &&
+      snapshot.runtimeInstanceId !== pending.runtimeInstanceId
+    )
+  return snapshot.revision >= ack.revision
 }
 
 /** Overlays are presentation only: never mutate snapshots or the persisted offline cache. */
@@ -50,14 +93,24 @@ export function previewTasks(
   }
 }
 
-export function optimisticTaskEffect<A, E>(
+export function optimisticTaskEffect<A extends WorkspacePatchResult, E>(
   pending: OptimisticTask,
   publish: (change: (items: OptimisticTask[]) => OptimisticTask[]) => void,
   request: Effect.Effect<A, E>,
 ): Effect.Effect<A, E> {
-  return Effect.acquireUseRelease(
-    Effect.sync(() => publish((items) => [...items, pending])),
-    () => request,
-    () => Effect.sync(() => publish((items) => items.filter((item) => item.id !== pending.id))),
+  return Effect.sync(() => publish((items) => [...items, pending])).pipe(
+    Effect.andThen(request),
+    Effect.tap((acknowledged) =>
+      Effect.sync(() =>
+        publish((items) =>
+          items.map((item) => (item.id === pending.id ? { ...item, acknowledged } : item)),
+        ),
+      ),
+    ),
+    Effect.onExit((exit) =>
+      exit._tag === 'Failure'
+        ? Effect.sync(() => publish((items) => items.filter((item) => item.id !== pending.id)))
+        : Effect.void,
+    ),
   )
 }

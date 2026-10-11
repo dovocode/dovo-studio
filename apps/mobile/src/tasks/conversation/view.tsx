@@ -371,8 +371,8 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
 function Message() {
   const { colors, styles } = useTheme()
 
-  const pendingMessage = usePendingConversationMessage()
   const id = useAuiState((state) => state.message.id)
+  const pendingMessage = usePendingConversationMessage(id)
   const latest = useAuiState((state) => state.thread.messages.at(-1)?.id === state.message.id)
   const onRecentLayout = useConversationSelector((value) => value.onRecentLayout)
   const user = useAuiState((state) => state.message.role === 'user')
@@ -447,7 +447,9 @@ function Message() {
         >
           {pendingMessage.state === 'failed'
             ? 'Not confirmed · retry from the composer'
-            : 'Sending…'}
+            : pendingMessage.state === 'saved'
+              ? 'Saved · waiting for connection'
+              : 'Sending…'}
         </Text>
       )}
       {showContent && showActions && !car && (user || !streaming) && (

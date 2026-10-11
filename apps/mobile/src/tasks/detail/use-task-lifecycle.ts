@@ -1,6 +1,6 @@
 import { readMobilePreferences } from '../../runtime/preferences/app-preferences'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
-import { mutableStruct } from '@dovo/protocol'
+import { workspacePatchResultSchema } from '@dovo/protocol'
 import { Alert } from 'react-native'
 import { Schema, Effect } from 'effect'
 import {
@@ -61,7 +61,9 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
     return onCurrentRuntime
       ? callEffect(path, input, schema, method)
       : readRuntimeEffect(owner.profile, path, input, schema, method).pipe(
-          Effect.tap(() => refreshRuntimeEffect(owner.profile)),
+          Effect.tap(() =>
+            refreshRuntimeEffect(owner.profile).pipe(Effect.catch(() => Effect.void)),
+          ),
         )
   }
   const completed = latestCompletedTaskTurn(task)
@@ -85,9 +87,7 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
           id: task.id,
           changes,
         },
-        mutableStruct({
-          revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
-        }),
+        workspacePatchResultSchema,
         'PATCH',
       ),
     ).pipe(

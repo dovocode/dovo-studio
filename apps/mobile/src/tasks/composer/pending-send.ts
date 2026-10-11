@@ -13,7 +13,10 @@ export { pendingMessageDestination as sendDestination } from '@dovo/protocol'
 export function visibleMobileSend(task: Task, pending: MobilePendingSend | null) {
   return visiblePendingMessage(task, pending) ? pending : null
 }
-export function pendingQueue(task: Task, pending: MobilePendingSend | null) {
+export function pendingQueue(
+  task: Task,
+  pending: readonly PendingMessage[] | MobilePendingSend | null,
+) {
   const starting = startingConversationMessage(task)
   return pendingMessageQueue(task, pending).filter((message) => message.id !== starting?.id)
 }

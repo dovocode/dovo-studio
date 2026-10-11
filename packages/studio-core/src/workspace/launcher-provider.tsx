@@ -181,6 +181,7 @@ export function LauncherWorkspaceProvider({
       flush: unavailableAsync,
       retrySync: unavailableAsync,
       discardAndReload: unavailableAsync,
+      pendingMessages: () => [],
       mutationStatus: () => ({ pending: 0, error: null }),
       discardMutations: unavailableAsync,
       refreshRuntimes: async () => {

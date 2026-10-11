@@ -47,6 +47,17 @@ import { SimulatorPreviews } from './previews/simulators.js'
 import { RemoteBrowsers } from './previews/browser.js'
 import { ProjectFiles } from './scm/repositories/project-files.js'
 export function createServices(db: Database.Database, ownerToken: string): Services {
+  db.prepare("INSERT OR IGNORE INTO documents (id, value) VALUES ('runtime-identity', ?)").run(
+    JSON.stringify(randomUUID()),
+  )
+  const identity = db
+    .prepare("SELECT value FROM documents WHERE id = 'runtime-identity'")
+    .pluck()
+    .get()
+  if (typeof identity !== 'string') throw new Error('Missing runtime identity')
+  const runtimeId: unknown = JSON.parse(identity)
+  if (typeof runtimeId !== 'string' || !runtimeId)
+    throw new Error('Invalid persisted runtime identity')
   const activity = new Activity(db)
   const commands = new Commands(db)
   const preferences = new RuntimePreferences(db)
@@ -252,6 +263,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     backups: new RuntimeBackups(db.name),
     mutations,
     instanceId: randomUUID(),
+    runtimeId,
+    runtimeAddresses: () => [],
     mcpApps,
     artifacts,
     memory,
@@ -306,6 +319,8 @@ export interface Services {
   mutations: MutationReceipts
   mcpApps: McpApps
   instanceId: string
+  runtimeId: string
+  runtimeAddresses: () => string[]
   scratch: ScratchWorkspaces
   network?: ExternalListener
   acpInstallations: AcpInstallations

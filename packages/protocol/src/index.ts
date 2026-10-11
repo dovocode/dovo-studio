@@ -105,6 +105,8 @@ export {
 } from './runtime/cache/overview-state.js'
 export {
   visiblePendingMessage,
+  visiblePendingMessages,
+  mergePendingMessages,
   pendingMessageDestination,
   startingConversationMessage,
   pendingMessageQueue,
@@ -194,3 +196,15 @@ export * from './runtime/previews/device-hosts.js'
 export * from './conversation/tool-images.js'
 export * from './scm/review.js'
 export * from './scm/review-session.js'
+
+export {
+  retryRuntimeSync,
+  runtimeSyncStatus,
+  type RuntimeSyncStatus,
+} from './runtime/connection/live-sync.js'
+
+export {
+  learnRuntimeRoutes,
+  runtimeTransportAddress,
+  invalidateRuntimeRoute,
+} from './runtime/connection/routes.js'

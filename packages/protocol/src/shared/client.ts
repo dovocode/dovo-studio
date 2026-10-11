@@ -1,3 +1,4 @@
+import { resolveRuntimeRoute, invalidateRuntimeRoute } from '../runtime/connection/routes.js'
 import { Data, Effect, Result, Exit, Schedule, Schema } from 'effect'
 import { decodeResult, ValidationError } from './schema.js'
 import type { RuntimeConnection } from '../runtime/connection/runtime.js'
@@ -118,10 +119,26 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
               if (Exit.hasInterrupts(exit)) controller.abort()
             }),
         )
+        const resolved =
+          connection && target.origin === new URL(connection.address).origin
+            ? yield* Effect.tryPromise({
+                try: () => resolveRuntimeRoute(connection, controller.signal),
+                catch: (cause) =>
+                  new RuntimeRequestError({
+                    kind: 'connection',
+                    message:
+                      cause instanceof Error ? cause.message : 'Cannot resolve runtime address.',
+                    cause,
+                  }),
+              })
+            : target.origin
+        const transportTarget = new URL(resolved)
+        transportTarget.pathname = target.pathname
+        transportTarget.search = target.search
         const send = (tag?: string) =>
           Effect.tryPromise({
             try: () =>
-              fetch(target, {
+              fetch(transportTarget, {
                 redirect: 'error',
                 method,
                 headers: {
@@ -134,12 +151,14 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
                 ...(body === undefined ? {} : { body }),
                 signal: controller.signal,
               }),
-            catch: (cause) =>
-              new RuntimeRequestError({
+            catch: (cause) => {
+              if (connection) invalidateRuntimeRoute(connection)
+              return new RuntimeRequestError({
                 kind: 'connection',
                 cause,
                 message: `Cannot reach ${target.host}. Check that its runtime is running and both devices are on the same Wi-Fi or VPN.`,
-              }),
+              })
+            },
           })
         let response = yield* send(conditional?.tag)
         if (response.status === 304) {

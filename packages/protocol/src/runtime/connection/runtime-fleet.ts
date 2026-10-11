@@ -131,6 +131,7 @@ export type RuntimeOverview = {
   pullError: string | null
   /** The runtime rejected this device's token: it was revoked or the runtime was reset. */
   unauthorized?: boolean
+  syncStatus?: import('./live-sync.js').RuntimeSyncStatus
 }
 /** Older profiles used the address hostname as their automatic label. Preserve saved overrides. */
 export function runtimeHasCustomName(

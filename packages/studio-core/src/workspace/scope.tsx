@@ -96,6 +96,8 @@ export function WorkspaceScope({
       readCache: entry ? runtimeReadCache(owner) : null,
       request,
       requestEffect,
+      pendingMessages: (task: Parameters<WorkspaceContextValue['pendingMessages']>[0]) =>
+        root.pendingMessages(task, owner.connection),
       setWorkspace: scopedSetWorkspace,
     }),
     [root, id, active, entry, owner, runtimeReadCache, request, requestEffect, scopedSetWorkspace],

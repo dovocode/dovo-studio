@@ -1,3 +1,4 @@
+import { runtimeTransportAddress } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
@@ -51,7 +52,7 @@ export function TerminalSession({ id }: { id: string }) {
         setStatus('Connecting terminal…')
         const { ticket } = await call('/api/terminals/ticket', { id }, responses.ticket)
         if (signal.aborted) return
-        const url = new URL('/ws/terminal', connection.address)
+        const url = new URL('/ws/terminal', runtimeTransportAddress(connection))
         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
         url.searchParams.set('ticket', ticket)
         const attempt = ++sequence.current

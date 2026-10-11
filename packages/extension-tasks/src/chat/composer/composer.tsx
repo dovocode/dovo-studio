@@ -290,8 +290,8 @@ export function Composer({
         )
         await flush()
       }
-      if (connection)
-        await request(
+      if (connection) {
+        const result = await request(
           mode === 'steer' ? '/api/tasks/steer' : '/api/tasks/message',
           {
             id: task.id,
@@ -302,7 +302,8 @@ export function Composer({
           },
           responses.ok,
         )
-      else
+        if (result.pending) onPending({ ...pending, state: 'saved' })
+      } else
         setWorkspace((w) =>
           updateTask(w, task.id, (t) => ({
             ...t,

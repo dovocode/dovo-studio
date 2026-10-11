@@ -1,4 +1,4 @@
-import { decode, mutableStruct } from '@dovo/protocol'
+import { decode, workspacePatchResultSchema } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { Task, useWorkspace } from '@dovo/studio-core'
 import type { TaskSource } from './task-collection'
@@ -63,20 +63,14 @@ export function taskActionClient(store: Store, source: TaskSource) {
       const input = taskRowPatch(task, updates)
       if (!Object.keys(input.changes).length) return
       const apply = async () => {
-        await request(
-          '/api/workspace',
-          input,
-          mutableStruct({
-            revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
-          }),
-          'PATCH',
-        )
+        const result = await request('/api/workspace', input, workspacePatchResultSchema, 'PATCH')
         try {
           await refresh()
         } catch {
           // The write committed. refreshRuntime already exposes the connection error;
           // do not report this as a rejected edit or invite a duplicate mutation.
         }
+        return result
       }
       const connection = profile?.connection ?? (active ? store.connection : null)
       if (connection) await store.previewTask(connection, task.id, updates, apply)

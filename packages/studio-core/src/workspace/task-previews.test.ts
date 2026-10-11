@@ -1,7 +1,13 @@
+import { decode, snapshotSchema } from '@dovo/protocol'
 import { expect, it } from 'vite-plus/test'
 import { createTask } from './actions'
 import { createWorkspace } from './seed'
-import { previewWorkspace, withTaskPreview, type TaskPreview } from './task-previews'
+import {
+  previewWorkspace,
+  withTaskPreview,
+  taskPreviewConfirmed,
+  type TaskPreview,
+} from './task-previews'
 
 const connection = { address: 'http://mac.local:51464', token: 'device-token' }
 const task = createTask({ title: 'Task', repositoryId: 'repo', agentId: '', objective: '' })
@@ -16,8 +22,8 @@ const preview = (): TaskPreview => ({
 it('updates immediately over stale snapshots without mutating the workspace or another host', async () => {
   let pending: TaskPreview[] = []
   let complete = () => {}
-  const response = new Promise<void>((resolve) => {
-    complete = resolve
+  const response = new Promise<{ revision: number }>((resolve) => {
+    complete = () => resolve({ revision: 2 })
   })
   const operation = withTaskPreview(
     preview(),
@@ -37,7 +43,7 @@ it('updates immediately over stale snapshots without mutating the workspace or a
   )
   complete()
   await operation
-  expect(pending).toEqual([])
+  expect(pending[0]?.acknowledged).toEqual({ revision: 2 })
 })
 
 it('rolls back only the failed action and preserves newer server data and concurrent previews', async () => {
@@ -87,4 +93,60 @@ it('cleans up synchronous errors and leaves unchanged workspaces referentially s
   const other = createTask({ title: 'Other', repositoryId: 'repo', agentId: '', objective: '' })
   const withOther = { ...workspace, tasks: [task, other] }
   expect(previewWorkspace(withOther, connection, [preview()]).tasks[1]).toBe(other)
+})
+
+it('keeps an acknowledged preview over old snapshots until its commit is visible', () => {
+  const snapshot = decode(snapshotSchema, {
+    revision: 1,
+    runtimeInstanceId: 'original',
+    workspace,
+    approvals: [],
+    questions: [],
+    terminals: [],
+    runs: [],
+    devices: [],
+    pendingDevices: [],
+    owner: false,
+  })
+  const committed: TaskPreview = {
+    ...preview(),
+    runtimeInstanceId: 'original',
+    acknowledged: { revision: 2, runtimeInstanceId: 'original' },
+  }
+  expect(taskPreviewConfirmed(committed, snapshot)).toBe(false)
+  expect(previewWorkspace(snapshot.workspace, connection, [committed]).tasks[0]?.pinned).toBe(true)
+  expect(taskPreviewConfirmed(committed, { ...snapshot, revision: 2 })).toBe(true)
+  // A restarted runtime's authoritative state wins even if its revision is lower.
+  expect(
+    taskPreviewConfirmed(committed, { ...snapshot, revision: 0, runtimeInstanceId: 'restarted' }),
+  ).toBe(true)
+  // An old cached instance is not confirmation of a write to the new instance.
+  expect(
+    taskPreviewConfirmed(
+      { ...committed, acknowledged: { revision: 0, runtimeInstanceId: 'restarted' } },
+      snapshot,
+    ),
+  ).toBe(false)
+})
+it('keeps a later confirmed edit covering an older request until that request settles', () => {
+  const snapshot = decode(snapshotSchema, {
+    revision: 3,
+    workspace,
+    approvals: [],
+    questions: [],
+    terminals: [],
+    runs: [],
+    devices: [],
+    pendingDevices: [],
+    owner: false,
+  })
+  const first = preview()
+  const second = { ...preview(), changes: { pinned: false }, acknowledged: { revision: 3 } }
+  const items = [first, second]
+  expect(taskPreviewConfirmed(second, snapshot, items)).toBe(false)
+  expect(previewWorkspace(workspace, connection, items).tasks[0]?.pinned).toBe(false)
+  expect(taskPreviewConfirmed(second, snapshot, [second])).toBe(true)
+  expect(
+    taskPreviewConfirmed(second, snapshot, [{ ...first, acknowledged: { revision: 2 } }, second]),
+  ).toBe(true)
 })

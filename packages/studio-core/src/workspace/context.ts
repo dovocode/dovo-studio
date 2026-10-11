@@ -3,6 +3,9 @@ import type { Effect, Schema } from 'effect'
 import type {
   PairingProof,
   RuntimeConnection,
+  WorkspacePatchResult,
+  Task,
+  PendingMessage,
   RuntimeSnapshot,
   RuntimeProfile,
   RuntimeRegistry,
@@ -26,7 +29,7 @@ export type WorkspaceRequestEffect = <T extends Schema.Codec<unknown, unknown>>(
   method?: 'GET' | 'POST' | 'PATCH',
 ) => Effect.Effect<T['Type'], Error>
 export type WorkspaceContextValue = {
-  previewTask: <A>(
+  previewTask: <A extends WorkspacePatchResult>(
     connection: RuntimeConnection,
     taskId: string,
     changes: TaskPreviewChanges,
@@ -62,6 +65,7 @@ export type WorkspaceContextValue = {
   discardAndReload: () => Promise<void>
   syncConflicts: WorkspaceConflict[]
   resolveSyncConflict: (conflict: WorkspaceConflict, choice: 'local' | 'host') => Promise<void>
+  pendingMessages: (task: Task, connection?: RuntimeConnection) => PendingMessage[]
   mutationStatus: (profile: RuntimeProfile) => { pending: number; error: string | null }
   discardMutations: (profile: RuntimeProfile) => Promise<void>
   pendingSync: boolean

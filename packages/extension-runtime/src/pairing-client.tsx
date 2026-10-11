@@ -1,5 +1,10 @@
 import { LinuxSetupGuide } from './linux-setup-guide'
-import { PAIRING_PROTOCOL_VERSION, pairingAddress } from '@dovo/protocol'
+import {
+  runtimeSyncStatus,
+  retryRuntimeSync,
+  PAIRING_PROTOCOL_VERSION,
+  pairingAddress,
+} from '@dovo/protocol'
 import { ComputerUpdates } from './computer-updates'
 import { Effect } from 'effect'
 import { runtimeRequestEffect } from '@dovo/studio-core'
@@ -272,7 +277,13 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                     )}
                   >
                     <Circle aria-hidden="true" size={6} fill="currentColor" />
-                    {entry.connected ? 'Online' : 'Offline'}
+                    {entry.connected
+                      ? runtimeSyncStatus(entry.profile.connection) === 'live'
+                        ? 'Live'
+                        : runtimeSyncStatus(entry.profile.connection)
+                          ? 'Online · HTTP updates'
+                          : 'Online'
+                      : 'Offline'}
                   </span>
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
@@ -324,7 +335,12 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                   variant="ghost"
                   aria-label={`Reconnect ${entry.profile.name}`}
                   disabled={busy}
-                  onClick={() => void act(() => refreshRuntime(entry.profile))}
+                  onClick={() =>
+                    void act(() => {
+                      retryRuntimeSync(entry.profile.connection)
+                      return refreshRuntime(entry.profile)
+                    })
+                  }
                 >
                   Reconnect
                 </Button>

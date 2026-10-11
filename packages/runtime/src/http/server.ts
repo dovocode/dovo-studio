@@ -96,6 +96,11 @@ export function createRuntimeServer(services: Services, internal = false) {
     requests.set(request, done)
     void done.catch((error: unknown) => console.error('Runtime request failed', error))
   })
+  if (!internal)
+    services.runtimeAddresses = () =>
+      pairingAddresses(services.network?.pairingAddress() ?? server.address()).map(
+        (entry) => entry.address,
+      )
   // Mobile clients reuse idle sockets; closing them sooner than the client's pool races new
   // requests into "network connection was lost". TCP keepalive detects peers that left the LAN/VPN.
   server.keepAliveTimeout = 65_000

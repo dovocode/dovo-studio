@@ -2,6 +2,8 @@ import { Effect, Schema, Semaphore } from 'effect'
 import { decode, mutableArray, mutableStruct } from '../../shared/schema.js'
 import { runtimeRequestEffect, RuntimeRequestError } from '../../shared/client.js'
 import type { RuntimeConnection } from './runtime.js'
+import type { Task } from '../../workspace.js'
+import { savedPendingMessages } from '../../conversation/workflow/pending-message.js'
 
 const mutations = new Set([
   '/api/tasks/message',
@@ -46,6 +48,8 @@ type State = {
   supported?: boolean
   acknowledgements?: boolean
   pending: MutationOutbox
+  /** Presentation handoff only; these commands have already left the durable journal. */
+  confirmedMessages: MutationOutbox
   error: string | null
   lock: Semaphore.Semaphore
 }
@@ -77,6 +81,7 @@ export class RuntimeMutations {
     if (!state) {
       state = {
         pending: [],
+        confirmedMessages: [],
         error: null,
         lock: Effect.runSync(Semaphore.make(1)),
       }
@@ -87,6 +92,36 @@ export class RuntimeMutations {
   status(connection: RuntimeConnection) {
     const state = this.state(connection)
     return { pending: state.pending.length, error: state.error }
+  }
+  pendingMessages(connection: RuntimeConnection, task: Task) {
+    const state = this.state(connection)
+    return [
+      ...savedPendingMessages(task, state.confirmedMessages).map((item) => ({
+        ...item,
+        state: 'sending' as const,
+      })),
+      ...savedPendingMessages(task, state.pending),
+    ]
+  }
+  acknowledgeMessages(connection: RuntimeConnection, tasks: readonly Task[]) {
+    const state = this.state(connection)
+    state.confirmedMessages = state.confirmedMessages.filter((item) => {
+      const input = item.input
+      if (!input || typeof input !== 'object' || !('id' in input) || !('messageId' in input))
+        return false
+      const task = tasks.find((task) => task.id === input.id)
+      return (
+        !task ||
+        ![...task.messages, ...(task.queue ?? [])].some((message) => message.id === input.messageId)
+      )
+    })
+  }
+  private retainMessage(state: State, item: MutationOutbox[number]) {
+    if (item.path === '/api/tasks/message' || item.path === '/api/tasks/steer')
+      state.confirmedMessages = [
+        ...state.confirmedMessages.filter((previous) => previous.id !== item.id),
+        item,
+      ]
   }
   private supports(connection: RuntimeConnection, state: State, refresh = false) {
     return Effect.gen(function* () {
@@ -192,6 +227,7 @@ export class RuntimeMutations {
           this.changed()
           return yield* Effect.fail(result.failure)
         }
+        this.retainMessage(state, item)
         yield* this.save(connection, state, (pending) =>
           pending.filter((entry) => entry.id !== item.id),
         )
@@ -239,6 +275,7 @@ export class RuntimeMutations {
       Effect.gen({ self: this }, function* () {
         yield* operation(() => this.storage.clear(connection))
         state.pending = []
+        state.confirmedMessages = []
         state.error = null
         this.changed()
       }).pipe(Effect.uninterruptible),
@@ -357,6 +394,7 @@ export class RuntimeMutations {
             try: () => decode(schema, result.success),
             catch: (error) => (error instanceof Error ? error : new Error(String(error))),
           })
+          this.retainMessage(state, command)
           yield* this.save(connection, state, (pending) =>
             pending.filter((entry) => entry.id !== command.id),
           )

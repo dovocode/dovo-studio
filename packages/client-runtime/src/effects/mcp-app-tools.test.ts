@@ -58,3 +58,24 @@ it('keeps HTTP runtimes on ws, forwards only active calls and cancels them on di
     await bridge.stop()
   }
 })
+
+it('resolves its transport address after ticket acquisition selects an alternate route', async () => {
+  vi.stubGlobal('WebSocket', Socket)
+  let address = 'http://old-lan.local'
+  const bridge = startMcpAppTools({
+    address: () => address,
+    ticket: async () => {
+      address = 'http://vpn.local'
+      return 'alternate-ticket'
+    },
+    call: () => {},
+    cancel: () => {},
+    onError: () => {},
+  })
+  try {
+    await vi.waitFor(() => expect(Socket.instances).toHaveLength(1))
+    expect(Socket.instances[0]!.url).toBe('ws://vpn.local/ws/mcp-app?ticket=alternate-ticket')
+  } finally {
+    await bridge.stop()
+  }
+})

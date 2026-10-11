@@ -1,3 +1,4 @@
+import { invalidateRuntimeRoute, runtimeTransportAddress } from './routes.js'
 import { decode } from '../../shared/schema.js'
 import { runtimeRequest, setRuntimeSnapshotTag } from '../../shared/client.js'
 import {
@@ -26,7 +27,12 @@ type Registration = {
     tasks: string
   }
 
-  live?: { online: () => boolean; watch: () => void }
+  live?: {
+    online: () => boolean
+    watch: () => void
+    retry: () => void
+    status: () => RuntimeSyncStatus
+  }
   details: Set<Listener>
   scopes: Map<string, Set<Listener>>
 }
@@ -111,6 +117,20 @@ export function watchRuntimeActivity(
       registrations.delete(key(connection))
   }
 }
+export type RuntimeSyncStatus =
+  | 'connecting'
+  | 'live'
+  | 'reconnecting'
+  | 'unauthorized'
+  | 'forbidden'
+  | 'unsupported'
+export function runtimeSyncStatus(connection: RuntimeConnection) {
+  return registrations.get(key(connection))?.live?.status()
+}
+/** Explicit user recovery also retries endpoints rejected by an earlier runtime/session. */
+export function retryRuntimeSync(connection: RuntimeConnection) {
+  registrations.get(key(connection))?.live?.retry()
+}
 /** One stream owned by the selected runtime; existing HTTP mutation/outbox semantics stay intact. */
 export function startRuntimeSync(
   connection: RuntimeConnection,
@@ -118,6 +138,7 @@ export function startRuntimeSync(
     onSnapshot: (snapshot: RuntimeSnapshot) => void
     active?: () => boolean
     onWake?: () => void
+    onStatus?: (status: RuntimeSyncStatus) => void
   },
 ) {
   const value = registration(connection)
@@ -126,6 +147,13 @@ export function startRuntimeSync(
   let stopped = false
   let online = false
   let unsupported = false
+  let status: RuntimeSyncStatus = 'connecting'
+  let healthySince: number | undefined
+  const setStatus = (next: RuntimeSyncStatus) => {
+    if (status === next) return
+    status = next
+    options.onStatus?.(next)
+  }
   let taskIdentity = JSON.stringify([...value.tasks.keys()].sort())
   const cached =
     value.cursor &&
@@ -193,7 +221,21 @@ export function startRuntimeSync(
       sendWatch()
     })
   }
-  const live = { online: () => online, watch }
+  const recover = () => {
+    if (stopped) return
+    invalidateRuntimeRoute(connection)
+    unsupported = false
+    failures = 0
+    request?.abort()
+    closeSocket()
+    if (retry) Effect.runFork(Fiber.interrupt(retry))
+    retry = undefined
+    setStatus('connecting')
+    if (!connecting) void connect()
+    else retryRequested = true
+  }
+  let retryRequested = false
+  const live = { online: () => online, watch, retry: recover, status: () => status }
   value.live = live
   const publish = () => {
     if (snapshot) options.onSnapshot(snapshot)
@@ -204,14 +246,19 @@ export function startRuntimeSync(
     const previous = socket
     socket = undefined
     online = false
+    if (healthySince !== undefined && Date.now() - healthySince >= 30000) failures = 0
+    healthySince = undefined
     resumeStarted = undefined
     previous?.close()
   }
   const reconnect = () => {
+    if (healthySince !== undefined && Date.now() - healthySince >= 30000) failures = 0
+    healthySince = undefined
     online = false
     if (stopped || options.active?.() === false) return
     options.onWake?.()
     if (unsupported || retry || options.active?.() === false) return
+    setStatus('reconnecting')
     const delay = Math.min(30000, 500 * 2 ** Math.min(failures++, 6))
     retry = Effect.runFork(
       Effect.sleep(Math.round(delay * (0.8 + Math.random() * 0.4))).pipe(
@@ -242,9 +289,15 @@ export function startRuntimeSync(
         5000,
         request.signal,
       )
-      if (stopped || requestedTasks !== taskIdentity || options.active?.() === false) return
+      if (
+        stopped ||
+        retryRequested ||
+        requestedTasks !== taskIdentity ||
+        options.active?.() === false
+      )
+        return
       taskUpdates = ticket.format === 5
-      const address = new URL('/ws/sync', connection.address)
+      const address = new URL('/ws/sync', runtimeTransportAddress(connection))
       address.protocol = address.protocol === 'https:' ? 'wss:' : 'ws:'
       address.searchParams.set('ticket', ticket.ticket)
       const current = new WebSocket(address.href)
@@ -323,7 +376,9 @@ export function startRuntimeSync(
           if (resumeStarted !== undefined) resumeRoundTrip = Math.max(1, Date.now() - resumeStarted)
           resumeStarted = undefined
           online = true
-          failures = 0
+          healthySince ??= Date.now()
+          if (Date.now() - healthySince >= 30000) failures = 0
+          setStatus('live')
           if (
             snapshotTasks === taskIdentity &&
             (becameOnline || frame.type !== 'heartbeat' || Date.now() - publishedAt >= 30000)
@@ -356,16 +411,29 @@ export function startRuntimeSync(
         }
       }
     } catch (error) {
+      if (retryRequested || stopped) return
       if (
         error &&
         typeof error === 'object' &&
         'status' in error &&
         [401, 403, 404].includes(Number(error.status))
-      )
+      ) {
         unsupported = true
+        setStatus(
+          Number(error.status) === 401
+            ? 'unauthorized'
+            : Number(error.status) === 403
+              ? 'forbidden'
+              : 'unsupported',
+        )
+      }
       reconnect()
     } finally {
       connecting = false
+      if (retryRequested) {
+        retryRequested = false
+        if (!stopped) void connect()
+      }
       if (!stopped && requestedTasks !== taskIdentity && !socket) void connect()
     }
   }
@@ -409,6 +477,7 @@ export function startRuntimeSync(
   void connect()
   return {
     online: () => online,
+    retry: recover,
     refresh: () => {
       if (socket && Date.now() - lastSeen >= 15000) closeSocket()
       if (socket?.readyState === 1) {

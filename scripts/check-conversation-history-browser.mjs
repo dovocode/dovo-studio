@@ -478,15 +478,15 @@ async function checkProductionPaging(browser) {
       contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {TaskConversation} from './packages/extension-tasks/src/detail/task-conversation.tsx';
-window.productionRevision=7;
-window.connection={connected:true,connection:{address:'http://host-a',token:'paired-a'},request:async()=>({
+window.productionRevision=7;window.savedPending=[];
+window.connection={connected:true,pendingMessages:()=>window.savedPending,connection:{address:'http://host-a',token:'paired-a'},request:async()=>({
  historyRevision:window.productionRevision,turns:[],messages:[{id:'m0',role:'assistant',text:'Older'},
  ...(window.productionRevision===7?[{id:'m1',role:'user',text:'Removed feedback'}]:[])]})};
 function App(){const [task,setTask]=useState({id:'production',title:'Production',agentId:'',repositoryId:'',
  status:'review',createdAt:'',example:false,draft:'',files:[],turns:[],historyBefore:'m2',historyRevision:7,
  messages:[{id:'m2',role:'assistant',text:'Current'},{id:'m3',role:'assistant',text:'Last'}]});
  window.setProductionTask=setTask;return <TaskConversation task={task} historyLoaded visible={false} onReview={()=>{}}/>}
-createRoot(document.getElementById('app')).render(<App/>);`,
+const productionRoot=createRoot(document.getElementById('app'));let instance=0;window.remountProduction=()=>productionRoot.render(<App key={++instance}/>);productionRoot.render(<App/>);`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -529,7 +529,10 @@ createRoot(document.getElementById('app')).render(<App/>);`,
               contents = `
 import {useConversationHistory} from '${root}packages/extension-tasks/src/chat/thread/use-conversation-history.ts';
 export function ChatThread({task}){const h=useConversationHistory(task);window.productionHistory=h;
-return <div>{h.hasMore&&<button onClick={()=>h.load()}>Load earlier messages</button>}</div>}`
+return <div>{h.task.messages.map(message=><div data-pending-message={message.id} key={message.id}>{message.text}</div>)}{h.hasMore&&<button onClick={()=>h.load()}>Load earlier messages</button>}</div>}`
+            else if (args.path.endsWith('/composer'))
+              contents =
+                'export const Composer=({onPending})=>{window.pushProductionPending=onPending;return null}'
             else if (args.path.endsWith('use-task-viewed'))
               contents = "export const useTaskViewed=()=>({error:'',retry:()=>{}})"
             else {
@@ -577,6 +580,66 @@ return <div>{h.hasMore&&<button onClick={()=>h.load()}>Load earlier messages</bu
       !window.productionHistory.busy &&
       window.productionHistory.task.messages.map((m) => m.id).join(',') === 'm0,m2,m3',
   )
+  await page.evaluate(() => {
+    window.setProductionTask((old) => ({ ...old, historyBefore: undefined }))
+    window.pushProductionPending({
+      taskId: 'production',
+      state: 'sending',
+      message: { id: 'pending-a', role: 'user', text: 'First pending send' },
+    })
+    window.pushProductionPending({
+      taskId: 'production',
+      state: 'sending',
+      message: { id: 'pending-b', role: 'user', text: 'Second pending send' },
+    })
+  })
+  await page.locator('[data-pending-message="pending-a"]').waitFor()
+  await page.locator('[data-pending-message="pending-b"]').waitFor()
+  await page.evaluate(() =>
+    window.setProductionTask((old) => ({
+      ...old,
+      messages: [...old.messages, { id: 'pending-a', role: 'user', text: 'First pending send' }],
+    })),
+  )
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('[data-pending-message="pending-a"]').length === 1 &&
+      document.querySelectorAll('[data-pending-message="pending-b"]').length === 1,
+  )
+  await page.evaluate(() => {
+    window.savedPending = [
+      {
+        taskId: 'production',
+        state: 'saved',
+        message: { id: 'saved-offline', role: 'user', text: 'Saved offline send' },
+      },
+    ]
+    window.remountProduction()
+  })
+  await page.locator('[data-pending-message="saved-offline"]').waitFor()
+  await page.evaluate(() => {
+    window.savedPending = []
+    window.setProductionTask((old) => ({ ...old }))
+  })
+  await page.waitForFunction(
+    () => !document.querySelector('[data-pending-message="saved-offline"]'),
+  )
+  await page.evaluate(() =>
+    window.pushProductionPending({
+      taskId: 'production',
+      state: 'sending',
+      message: { id: 'old-pairing', role: 'user', text: 'Belongs to old pairing' },
+    }),
+  )
+  await page.locator('[data-pending-message="old-pairing"]').waitFor()
+  await page.evaluate(() => {
+    window.connection = {
+      ...window.connection,
+      connection: { address: 'http://host-a', token: 'different-pairing' },
+    }
+    window.setProductionTask((old) => ({ ...old }))
+  })
+  await page.waitForFunction(() => !document.querySelector('[data-pending-message="old-pairing"]'))
   if (errors.length) throw new Error(errors.join('\n'))
   await page.close()
 }

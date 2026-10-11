@@ -418,3 +418,67 @@ it('reference counts thread subscriptions and drops the old cursor when the scop
   shared()
   expect(runtimeSnapshotPath(connection)).toBe('/api/snapshot?scope=threads&history=paged')
 })
+
+it.each([401, 403, 404])(
+  'explicit recovery rechecks a previously rejected ticket (%s)',
+  async (status) => {
+    const connection = {
+      address: `http://rejected-${status}.local`,
+      token: 'rejected-runtime-test-token',
+    }
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ error: 'Rejected' }, { status }))
+    vi.stubGlobal('fetch', fetcher)
+    class Socket {
+      static instances: Socket[] = []
+      readyState = 0
+      constructor() {
+        Socket.instances.push(this)
+      }
+      close() {}
+      send() {}
+    }
+    vi.stubGlobal('WebSocket', Socket)
+    const onStatus = vi.fn<(status: import('./live-sync.js').RuntimeSyncStatus) => void>()
+    const live = startRuntimeSync(connection, { onSnapshot: () => {}, onStatus })
+    stopped.push(live.stop)
+    await vi.waitFor(() =>
+      expect(onStatus).toHaveBeenCalledWith(
+        status === 401 ? 'unauthorized' : status === 403 ? 'forbidden' : 'unsupported',
+      ),
+    )
+    fetcher.mockResolvedValue(Response.json({ ticket: 'recovered' }))
+    live.retry()
+    await vi.waitFor(() => expect(Socket.instances).toHaveLength(1))
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  },
+)
+
+it('increases backoff across briefly healthy sessions and resets after sustained health', async () => {
+  vi.useFakeTimers()
+  vi.spyOn(Math, 'random').mockReturnValue(0.5)
+  const { Socket, live, frame, clock } = await stalledSocketFixture('http://flapping-backoff.local')
+  const receive = (socket: InstanceType<typeof Socket>) => {
+    socket.readyState = 1
+    socket.onmessage?.({ data: frame })
+    socket.onerror?.()
+  }
+  receive(Socket.instances[0]!)
+  await vi.advanceTimersByTimeAsync(500)
+  expect(Socket.instances).toHaveLength(2)
+  receive(Socket.instances[1]!)
+  await vi.advanceTimersByTimeAsync(500)
+  expect(Socket.instances).toHaveLength(2)
+  await vi.advanceTimersByTimeAsync(500)
+  expect(Socket.instances).toHaveLength(3)
+  const third = Socket.instances[2]!
+  third.readyState = 1
+  third.onmessage?.({ data: frame })
+  clock.mockReturnValue(32000)
+  third.onmessage?.({ data: frame })
+  third.onerror?.()
+  await vi.advanceTimersByTimeAsync(500)
+  expect(Socket.instances).toHaveLength(4)
+  expect(live.online()).toBe(false)
+})

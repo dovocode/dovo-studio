@@ -1,11 +1,10 @@
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { mutableStruct } from '@dovo/protocol'
+import { workspacePatchResultSchema } from '@dovo/protocol'
 import { resolveScopedAgents, decode } from '@dovo/protocol'
 import { useEffect } from 'react'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { Schema } from 'effect'
 import {
   selectableAccessModes,
   defaultTaskHarness,
@@ -46,7 +45,7 @@ export function HarnessSettings({
 }) {
   const { styles } = useTheme()
 
-  const { snapshot, connected, callEffect } = useRuntime(),
+  const { snapshot, connected, profile, callEffect, previewTaskEffect } = useRuntime(),
     { act, busy, error } = useAction()
   useEffect(() => {
     // An inline editor must keep its enclosing sheet mounted until saving finishes.
@@ -225,17 +224,23 @@ export function HarnessSettings({
           act(() =>
             mobileWorkflow(function* () {
               if (controlsDisabled || !selectionAllowed) return
-              yield* callEffect(
-                '/api/workspace',
+              if (!profile) throw new Error('This computer is no longer saved.')
+              const changes = taskHarnessChanges(task, selection, agent)
+              yield* previewTaskEffect(
+                profile,
+                task.id,
                 {
-                  collection: 'tasks',
-                  id: task.id,
-                  changes: taskHarnessChanges(task, selection, agent),
+                  agentId: changes.agentId.after,
+                  harness: changes.harness.after,
+                  harnessCustomized: changes.harnessCustomized.after,
+                  agentOverrides: changes.agentOverrides.after ?? undefined,
                 },
-                mutableStruct({
-                  revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
-                }),
-                'PATCH',
+                callEffect(
+                  '/api/workspace',
+                  { collection: 'tasks', id: task.id, changes },
+                  workspacePatchResultSchema,
+                  'PATCH',
+                ),
               )
               onClose()
             }),

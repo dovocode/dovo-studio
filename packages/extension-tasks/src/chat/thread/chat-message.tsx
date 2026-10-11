@@ -222,7 +222,11 @@ export const ChatMessage = memo(function ChatMessage({
         )}
         {pending?.message.id === message.id && (
           <p role="status" className="text-[0.6875rem] text-muted-foreground">
-            {pending.state === 'failed' ? 'Not confirmed · retry from the composer' : 'Sending…'}
+            {pending.state === 'failed'
+              ? 'Not confirmed · retry from the composer'
+              : pending.state === 'saved'
+                ? 'Saved · waiting for connection'
+                : 'Sending…'}
           </p>
         )}
         {(!!message.text || !!message.createdAt) && (

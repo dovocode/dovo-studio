@@ -1,4 +1,4 @@
-import { pendingQueue, visibleMobileSend } from './pending-send'
+import { pendingQueue } from './pending-send'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Pressable, View, TextInput } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -43,8 +43,9 @@ export function MessageQueue({ task }: { task: Task }) {
       }),
     )
   }
-  const pending = visibleMobileSend(task, actions.pendingMessage)
-  const queue = pendingQueue(task, actions.pendingMessage)
+  const pendingMessages = actions.pendingMessages
+  const pending = pendingMessages.find((item) => item.destination === 'queue')
+  const queue = pendingQueue(task, pendingMessages)
   const change = (action: string, messageId?: string) =>
     act(() =>
       callEffect(
@@ -105,9 +106,11 @@ export function MessageQueue({ task }: { task: Task }) {
           >
             {queue.length} queued ·{' '}
             {pending?.destination === 'queue'
-              ? pending.state === 'sending'
-                ? 'Sending…'
-                : 'Send failed'
+              ? pending.state === 'failed'
+                ? 'Send failed'
+                : pending.state === 'saved'
+                  ? 'Saved for reconnect'
+                  : 'Sending…'
               : task.queuePaused
                 ? 'Paused'
                 : 'After this turn'}
@@ -182,10 +185,11 @@ export function MessageQueue({ task }: { task: Task }) {
                 }}
               >
                 <Text style={styles.muted}>
-                  {pending?.message.id === message.id
-                    ? pending.state === 'sending'
-                      ? 'Sending…'
-                      : 'Could not send · Retry from composer'
+                  {pendingMessages.some((item) => item.message.id === message.id)
+                    ? pendingMessages.find((item) => item.message.id === message.id)?.state ===
+                      'failed'
+                      ? 'Could not send · Retry from composer'
+                      : 'Waiting for confirmation'
                     : `Message ${index + 1}`}
                 </Text>
                 <Text style={styles.text}>
@@ -198,7 +202,11 @@ export function MessageQueue({ task }: { task: Task }) {
               <IconButton
                 icon="edit"
                 label={`Edit queued message ${index + 1}`}
-                disabled={!connected || busy || pending?.message.id === message.id}
+                disabled={
+                  !connected ||
+                  busy ||
+                  pendingMessages.some((item) => item.message.id === message.id)
+                }
                 onPress={() =>
                   setEditing({ id: message.id, text: message.text, expectedText: message.text })
                 }
@@ -209,7 +217,7 @@ export function MessageQueue({ task }: { task: Task }) {
                 disabled={
                   !connected ||
                   busy ||
-                  pending?.message.id === message.id ||
+                  pendingMessages.some((item) => item.message.id === message.id) ||
                   task.status !== 'running'
                 }
                 onPress={() => change('steer', message.id)}
@@ -217,13 +225,22 @@ export function MessageQueue({ task }: { task: Task }) {
               <IconButton
                 icon="moveUp"
                 label={`Up ${index + 1}`}
-                disabled={!connected || busy || pending?.message.id === message.id || index === 0}
+                disabled={
+                  !connected ||
+                  busy ||
+                  pendingMessages.some((item) => item.message.id === message.id) ||
+                  index === 0
+                }
                 onPress={() => change('up', message.id)}
               />
               <IconButton
                 icon="trash"
                 label={`Cancel ${index + 1} and return to composer`}
-                disabled={!connected || busy || pending?.message.id === message.id}
+                disabled={
+                  !connected ||
+                  busy ||
+                  pendingMessages.some((item) => item.message.id === message.id)
+                }
                 onPress={() => restore(message)}
               />
             </View>

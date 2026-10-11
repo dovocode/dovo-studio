@@ -1,5 +1,4 @@
 import { useConversationHistory } from './use-conversation-history'
-import { visibleMobileSend } from '../../composer/pending-send'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import {
   createContext,
@@ -53,7 +52,7 @@ type Conversation = {
 const Context = createContext<ReturnType<typeof applicationState<Conversation>>['atom'] | null>(
   null,
 )
-const PendingContext = createContext<PendingMessage | null>(null)
+const PendingContext = createContext<readonly PendingMessage[]>([])
 const wholeConversation = (value: Conversation) => value
 export function useConversationSelector<A>(selector: (value: Conversation) => A) {
   const atom = useContext(Context)
@@ -73,8 +72,8 @@ export function useConversationPresentation(messageId: string) {
 export function useTaskConversation() {
   return useConversationSelector(wholeConversation)
 }
-export function usePendingConversationMessage() {
-  return useContext(PendingContext)
+export function usePendingConversationMessage(messageId: string) {
+  return useContext(PendingContext).find((pending) => pending.message.id === messageId) ?? null
 }
 export function ConversationProvider({
   task: liveTask,
@@ -199,10 +198,10 @@ export function ConversationProvider({
     if ((!visible || answeringQuestion || task.archived) && dictating) finishDictation()
   }, [visible, answeringQuestion, task.archived, dictating, finishDictation])
   const activity = useToolActivity(task.id, visible && !temporary, task.status === 'running')
-  const pendingMessage = useMemo(() => {
-    const pending = visibleMobileSend(task, actions.pendingMessage)
-    return pending?.destination === 'thread' ? pending : null
-  }, [task.id, task.messages, task.queue, actions.pendingMessage])
+  const pendingMessages = useMemo(
+    () => actions.pendingMessages.filter((pending) => pending.destination === 'thread'),
+    [actions.pendingMessages],
+  )
   const projectMessages = useMemo(() => createConversationMessages(), [])
   const { id, status, turns, compactions, messages: taskMessages } = task
   const startingMessage = startingConversationMessage(task)
@@ -213,11 +212,11 @@ export function ConversationProvider({
         status,
         turns,
         compactions,
-        messages: startingMessage
-          ? [...taskMessages, startingMessage]
-          : pendingMessage
-            ? [...taskMessages, pendingMessage.message]
-            : taskMessages,
+        messages: [
+          ...taskMessages,
+          ...(startingMessage ? [startingMessage] : []),
+          ...pendingMessages.map((pending) => pending.message),
+        ],
       },
       activity.events,
     )
@@ -230,7 +229,7 @@ export function ConversationProvider({
     taskMessages,
     startingMessage,
     activity.events,
-    pendingMessage,
+    pendingMessages,
   ])
   const legacyEvents = useMemo(() => {
     return unassignedConversationTools(task, taskToolEvents(task, activity.events))
@@ -313,7 +312,7 @@ export function ConversationProvider({
   })
   return (
     <Context.Provider value={atom}>
-      <PendingContext.Provider value={pendingMessage}>
+      <PendingContext.Provider value={pendingMessages}>
         <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
       </PendingContext.Provider>
     </Context.Provider>

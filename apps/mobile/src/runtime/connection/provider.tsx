@@ -1,3 +1,4 @@
+import type { WorkspacePatchResult, PendingMessage, Task } from '@dovo/protocol'
 import type { Repository } from '@dovo/protocol'
 import {
   runtimeHasCustomName,
@@ -9,7 +10,7 @@ import { writeRuntimeSnapshotCache } from '@dovo/protocol'
 import { RuntimeMutations } from '@dovo/protocol'
 import { mobileMutationStorage } from './mutation-storage'
 import { runtimeSnapshotPath } from '@dovo/protocol'
-import { startRuntimeSync } from '@dovo/protocol'
+import { learnRuntimeRoutes, retryRuntimeSync, startRuntimeSync } from '@dovo/protocol'
 import {
   useMobilePreferences,
   updateMobilePreferences,
@@ -18,6 +19,7 @@ import {
 import { pendingAgentPresets } from '@dovo/protocol'
 import {
   optimisticTaskEffect,
+  optimisticTaskConfirmed,
   previewTasks,
   type OptimisticTask,
   type TaskPreview,
@@ -109,7 +111,7 @@ type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   method?: string,
 ) => Effect.Effect<T['Type'], Error>
 type Runtime = {
-  previewTaskEffect: <A, E>(
+  previewTaskEffect: <A extends WorkspacePatchResult, E>(
     profile: RuntimeProfile,
     taskId: string,
     changes: TaskPreview,
@@ -159,6 +161,8 @@ type Runtime = {
   readEffect: CallEffect
   readRuntimeEffect: RuntimeReadEffect
   refreshRuntimeEffect: (profile: RuntimeProfile) => Effect.Effect<void, Error>
+  pendingMessages: (task: Task) => PendingMessage[]
+  pendingMessagesFor: (profile: RuntimeProfile, task: Task) => PendingMessage[]
   mutationStatus: (profile: RuntimeProfile) => { pending: number; error: string | null }
   retryMutations: (profile: RuntimeProfile) => Promise<void>
   discardMutations: (profile: RuntimeProfile) => Promise<void>
@@ -208,20 +212,26 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     return () => subscription.remove()
   }, [])
   const previewTaskEffect = useCallback(
-    <A, E>(
+    <A extends WorkspacePatchResult, E>(
       owner: RuntimeProfile,
       taskId: string,
       changes: TaskPreview,
       request: Effect.Effect<A, E>,
     ) =>
       optimisticTaskEffect(
-        { id: Symbol(taskId), connection: owner.connection, taskId, changes },
+        {
+          id: Symbol(taskId),
+          connection: owner.connection,
+          taskId,
+          changes,
+          runtimeInstanceId: entryRef.current[owner.id]?.snapshot?.runtimeInstanceId,
+        },
         setPreviews,
         request,
       ),
     [],
   )
-  const [, setMutationVersion] = useApplicationState(0)
+  const [mutationVersion, setMutationVersion] = useApplicationState(0)
   const [mutations] = useApplicationState(
     () =>
       new RuntimeMutations(mobileMutationStorage, () =>
@@ -428,6 +438,37 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       ),
     [storageLock, persistRegistryEffect],
   )
+  useEffect(() => {
+    const learned = new Map<string, RuntimeConnection>()
+    for (const entry of Object.values(entries)) {
+      const saved = registry.profiles.find((profile) => profile.id === entry.profile.id)
+      if (
+        !saved ||
+        !entry.connected ||
+        !entry.snapshot ||
+        !sameRuntimeConnection(saved.connection, entry.profile.connection)
+      )
+        continue
+      try {
+        const next = learnRuntimeRoutes(saved.connection, entry.snapshot)
+        if (JSON.stringify(next) !== JSON.stringify(saved.connection)) learned.set(saved.id, next)
+      } catch (error) {
+        setStorageError(error instanceof Error ? error.message : String(error))
+      }
+    }
+    if (learned.size)
+      void runClientEffect(
+        changeRegistryEffect((registry) => ({
+          ...registry,
+          profiles: registry.profiles.map((profile) => {
+            const next = learned.get(profile.id)
+            return next && sameRuntimeConnection(profile.connection, next)
+              ? { ...profile, connection: next }
+              : profile
+          }),
+        })),
+      ).catch(() => undefined)
+  }, [entries, registry.profiles, changeRegistryEffect])
   const cancelPairing = useCallback(
     (address: string, proof: PairingProof) =>
       runClientEffect(
@@ -612,7 +653,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       : undefined
   const refreshEffect = useCallback(() => {
     return mobileWorkflow(function* () {
-      if (profile) yield* refreshProfileEffect(profile)
+      if (profile) {
+        retryRuntimeSync(profile.connection)
+        yield* refreshProfileEffect(profile)
+      }
     })
   }, [profile, refreshProfileEffect])
   const connectEffect = useCallback(
@@ -929,6 +973,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     let stopped = false
     let wakeFallback = () => {}
     const live = startRuntimeSync(profile.connection, {
+      onStatus: (syncStatus) => {
+        if (!stopped) updateEntry(profile, (previous) => ({ ...previous, syncStatus }))
+      },
       onWake: () => wakeFallback(),
       onSnapshot: (snapshot) => {
         if (stopped) return
@@ -1038,6 +1085,25 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     (...args: Parameters<typeof disconnectEffect>) => runClientEffect(disconnectEffect(...args)),
     [disconnectEffect],
   )
+  useEffect(() => {
+    setPreviews((items) => {
+      const next = items.filter((item) => {
+        const owner = registry.profiles.find((profile) =>
+          sameRuntimeConnection(profile.connection, item.connection),
+        )
+        return (
+          !!owner &&
+          (!entries[owner.id] || !optimisticTaskConfirmed(item, entries[owner.id], items))
+        )
+      })
+      return next.length === items.length ? items : next
+    })
+  }, [previews, registry.profiles, entries])
+  useEffect(() => {
+    for (const entry of Object.values(entries))
+      if (entry.snapshot)
+        mutations.acknowledgeMessages(entry.profile.connection, entry.snapshot.workspace.tasks)
+  }, [entries, mutationVersion, mutations])
   const overviews = useMemo(
     () =>
       registry.profiles.map((item) =>
@@ -1048,7 +1114,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               : initialOverview(item)),
             profile: item,
           },
-          previews,
+          previews.filter(
+            (pending) =>
+              !entries[item.id] || !optimisticTaskConfirmed(pending, entries[item.id], previews),
+          ),
         ),
       ),
     [registry.profiles, entries, previews],
@@ -1226,6 +1295,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         readRuntime,
         readRuntimeEffect,
         refreshRuntimeEffect: refreshProfileEffect,
+        pendingMessages: (task) => (connection ? mutations.pendingMessages(connection, task) : []),
+        pendingMessagesFor: (profile, task) => mutations.pendingMessages(profile.connection, task),
         mutationStatus: (profile) => mutations.status(profile.connection),
         retryMutations: (profile) =>
           runClientEffect(mutations.recoverEffect(profile.connection, true)),
@@ -1269,7 +1340,12 @@ export function RuntimeScope({ runtimeId, children }: { runtimeId: string; child
   )
   const read = useCallback<Call>((...args) => runClientEffect(readEffect(...args)), [readEffect])
   const refreshEffect = useCallback(
-    () => (profile ? refreshRuntimeEffect(profile) : Effect.void),
+    () =>
+      profile
+        ? Effect.sync(() => retryRuntimeSync(profile.connection)).pipe(
+            Effect.andThen(refreshRuntimeEffect(profile)),
+          )
+        : Effect.void,
     [profile, refreshRuntimeEffect],
   )
   const refresh = useCallback(() => runClientEffect(refreshEffect()), [refreshEffect])
@@ -1303,6 +1379,7 @@ export function RuntimeScope({ runtimeId, children }: { runtimeId: string; child
         callEffect,
         refresh,
         refreshEffect,
+        pendingMessages: (task) => runtime.pendingMessagesFor(entry.profile, task),
         readCache: runtime.cacheForRuntime(entry.profile),
       }}
     >

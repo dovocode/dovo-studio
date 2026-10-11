@@ -1,3 +1,4 @@
+import type { WorkspacePatchResult } from '@dovo/protocol'
 import { runtimeComputerName, runtimeHasCustomName } from '@dovo/protocol'
 import {
   mergeSharedSettings,
@@ -8,7 +9,12 @@ import { writeRuntimeSnapshotCache } from '@dovo/protocol'
 import { RuntimeMutations } from '@dovo/protocol'
 import { browserMutationStorage } from './read-cache'
 import { runtimeSnapshotPath } from '@dovo/protocol'
-import { startRuntimeSync, runtimeSyncOnline } from '@dovo/protocol'
+import {
+  learnRuntimeRoutes,
+  retryRuntimeSync,
+  startRuntimeSync,
+  runtimeSyncOnline,
+} from '@dovo/protocol'
 import { retainWorkspace } from '@dovo/protocol'
 import { recentSnapshot } from '../runtime/recent-snapshot'
 import { useAppPreferences, updateAppPreferences, readAppPreferences } from '../preferences'
@@ -22,6 +28,7 @@ import {
 import {
   previewWorkspace,
   withTaskPreview,
+  taskPreviewConfirmed,
   type TaskPreview,
   type TaskPreviewChanges,
 } from './task-previews'
@@ -116,12 +123,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   } = useAppPreferences()
   const [previews, setPreviews] = useApplicationState<TaskPreview[]>([])
   const previewTask = useCallback(
-    <A,>(
+    <A extends WorkspacePatchResult>(
       connection: RuntimeConnection,
       taskId: string,
       changes: TaskPreviewChanges,
       action: () => Promise<A>,
-    ) => withTaskPreview({ id: Symbol(taskId), connection, taskId, changes }, setPreviews, action),
+    ) =>
+      withTaskPreview(
+        {
+          id: Symbol(taskId),
+          connection,
+          taskId,
+          changes,
+          runtimeInstanceId:
+            overviewsRef.current[
+              registryRef.current.profiles.find(
+                (profile) =>
+                  profile.connection.address === connection.address &&
+                  profile.connection.token === connection.token,
+              )?.id ?? ''
+            ]?.snapshot?.runtimeInstanceId,
+        },
+        setPreviews,
+        action,
+      ),
     [],
   )
   const [workspace, setState, current] = useApplicationState(createWorkspace)
@@ -432,6 +457,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setOverviews(next)
     if (value.connected && value.snapshot) cacheDirty.current = true
   }, [])
+  useEffect(() => {
+    const learned = new Map<string, RuntimeConnection>()
+    for (const entry of Object.values(overviews)) {
+      const saved = runtimeRegistry.profiles.find((profile) => profile.id === entry.profile.id)
+      if (
+        !saved ||
+        !entry.connected ||
+        !entry.snapshot ||
+        !sameRuntimeConnection(saved.connection, entry.profile.connection)
+      )
+        continue
+      try {
+        const next = learnRuntimeRoutes(saved.connection, entry.snapshot)
+        if (JSON.stringify(next) !== JSON.stringify(saved.connection)) learned.set(saved.id, next)
+      } catch (error) {
+        setStorageError(error instanceof Error ? error.message : String(error))
+      }
+    }
+    if (learned.size)
+      void saveRegistry((registry) => ({
+        ...registry,
+        profiles: registry.profiles.map((profile) => {
+          const next = learned.get(profile.id)
+          return next && sameRuntimeConnection(profile.connection, next)
+            ? { ...profile, connection: next }
+            : profile
+        }),
+      })).catch(() => undefined)
+  }, [overviews, runtimeRegistry.profiles, saveRegistry])
   useEffect(() => {
     const persist = Effect.gen(function* () {
       if (!cacheDirty.current) return
@@ -1174,6 +1228,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [ready, runtimeRegistry.profiles, mutations])
   const retrySync = useCallback(async () => {
     if (connection !== connectionRef.current) throw new Error('Runtime connection changed')
+    if (connection) retryRuntimeSync(connection)
     failedPresetRequests.current.clear()
     setPresetSyncError(null)
     failedSettingsRequests.current.clear()
@@ -1452,6 +1507,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       )?.id ?? runtimeProfile(connection).id
     let wakeFallback = () => {}
     const live = startRuntimeSync(connection, {
+      onStatus: (syncStatus) => {
+        const previous = overviewsRef.current[id]
+        if (!stopped && previous) updateOverview({ ...previous, syncStatus })
+      },
       active: () => inputPreview || document.visibilityState === 'visible',
       onWake: () => wakeFallback(),
       onSnapshot: (value) => {
@@ -1643,10 +1702,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', polling.refresh)
     }
   }, [ready, refreshRuntimesEffect, inputPreview, backgroundActivity])
+  useEffect(() => {
+    for (const entry of Object.values(overviews))
+      if (entry.snapshot)
+        mutations.acknowledgeMessages(entry.profile.connection, entry.snapshot.workspace.tasks)
+  }, [overviews, mutationVersion, mutations])
   const visibleWorkspace = useMemo(
-    () => previewWorkspace(workspace, connection, previews),
-    [workspace, connection, previews],
+    () =>
+      previewWorkspace(
+        workspace,
+        connection,
+        previews.filter((item) => !snapshot || !taskPreviewConfirmed(item, snapshot, previews)),
+      ),
+    [workspace, connection, previews, snapshot],
   )
+  useEffect(() => {
+    setPreviews((items) => {
+      const next = items.filter((item) => {
+        const profile = runtimeRegistry.profiles.find(
+          (profile) =>
+            profile.connection.address === item.connection.address &&
+            profile.connection.token === item.connection.token,
+        )
+        if (!profile) return false
+        const snapshot = overviews[profile.id]?.snapshot
+        return !snapshot || !taskPreviewConfirmed(item, snapshot, items)
+      })
+      return next.length === items.length ? items : next
+    })
+  }, [previews, overviews, runtimeRegistry.profiles])
   const visibleRuntimes = useMemo(
     () =>
       runtimeRegistry.profiles.map((profile) => {
@@ -1655,7 +1739,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             ? overviews[profile.id]
             : idleOverview(profile)
         if (!entry.snapshot) return entry
-        const workspace = previewWorkspace(entry.snapshot.workspace, profile.connection, previews)
+        const workspace = previewWorkspace(
+          entry.snapshot.workspace,
+          profile.connection,
+          previews.filter((item) => !taskPreviewConfirmed(item, entry.snapshot!, previews)),
+        )
         return workspace === entry.snapshot.workspace
           ? entry
           : {
@@ -1827,6 +1915,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       discardAndReload,
       syncConflicts: snapshot ? synchronization.conflicts(snapshot.workspace) : [],
       resolveSyncConflict,
+      pendingMessages: (
+        task: Parameters<WorkspaceContextValue['pendingMessages']>[0],
+        owner = connection,
+      ) => (owner ? mutations.pendingMessages(owner, task) : []),
       mutationStatus,
       discardMutations,
       pendingSync:
