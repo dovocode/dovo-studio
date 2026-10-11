@@ -13,6 +13,7 @@ const bundle = async (entry) =>
       format: 'iife',
       platform: 'browser',
       target: 'es2022',
+      conditions: ['development'],
       define: { 'process.env.NODE_ENV': '"production"' },
     })
   ).outputFiles[0].text.replace(/<\/script/gi, '<\\/script')
