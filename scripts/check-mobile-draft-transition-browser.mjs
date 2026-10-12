@@ -31,6 +31,7 @@ const mocks = {
     export const Keyboard={dismiss:()=>{}};
     export const Alert={alert:()=>{}};
     export const AccessibilityInfo={announceForAccessibility:()=>{}};
+    export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};
     export const useWindowDimensions=()=>({width:390,height:844});
   `,
   'react-native-safe-area-context': `export const useSafeAreaInsets=()=>({top:0,bottom:0});`,
@@ -135,6 +136,7 @@ for (const [path, names] of Object.entries({
   '../conversation/components/side-question': ['SideQuestion'],
   './project-instructions': ['ProjectInstructions'],
   '../conversation/components/review-findings': ['ReviewFindings'],
+  '../../scm/review/code-review-card': ['CodeReviewCard'],
 }))
   mocks[path] = names.map((name) => `export const ${name}=()=>null;`).join('\n')
 
@@ -148,6 +150,8 @@ mocks['../preview/diff-view'] =
   'export const DiffView=()=> <div data-git-controls>Git controls</div>;'
 mocks['../../scm/review/use-file-review'] =
   'export const useFileReview=()=>({progress:null,ready:false,busy:false,error:"",reload:()=>{},setViewed:()=>{}});'
+mocks['../../scm/review/use-task-review'] =
+  'export const useTaskReview=()=>({report:null,busy:false,error:"",refresh:async()=>{},run:async()=>false});'
 mocks['../../scm/review/organize-review'] = 'export const MobileOrganizeReview=()=>null;'
 mocks['../../scm/review/file-review'] = 'export const MobileFileReview=()=>null;'
 mocks['../../ui/controls/choice'] = 'export const Choice=()=>null;'
@@ -250,7 +254,10 @@ try {
   const page = await browser.newPage()
   page.setDefaultTimeout(10000)
   const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('pageerror', (error) => {
+    errors.push(error.message)
+    console.error(error.message)
+  })
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const input = page.getByLabel('Message')

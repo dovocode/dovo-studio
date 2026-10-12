@@ -49,6 +49,7 @@ async function bundle(mobile) {
     '../../../ui/theme': `export const styles={};export const colors={};export const useTheme=()=>({styles,colors,mode:'dark'});`,
     '../theme': `export const styles={chatText:{}};export const colors={};export const useTheme=()=>({styles,colors,mode:'dark'});`,
     './mermaid-diagram': `export const MermaidDiagram=()=>null;`,
+    './task-visualization': `export const TaskVisualization=()=>null;`,
     'react-native': `export const View=({children})=><div>{children}</div>;export const Text=({children,onPress,onLongPress})=>onPress?<a href="#" onClick={e=>{e.preventDefault();onPress()}} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</a>:<span>{children}</span>;export const Platform={OS:'ios'};export const Alert={alert:(...args)=>window.alerts.push(args)};`,
     'react-native-enriched-markdown': `export const EnrichedMarkdownText=({markdown,onLinkPress,onLinkLongPress})=>{const url=markdown.match(/\\]\\(<([^>]+)>\\)/)?.[1]??markdown;return <a href={url} onClick={e=>{e.preventDefault();onLinkPress({url})}} onContextMenu={e=>{e.preventDefault();onLinkLongPress?.({url})}}>{markdown.includes('&#')?url:'Thread PR'}</a>};`,
   }

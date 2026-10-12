@@ -20,6 +20,7 @@ for (const [path, name] of [
   ['../chat/thread/review-comments-tray', 'ReviewCommentsTray'],
   ['../chat/thread/plan-approval', 'PlanApproval'],
   ['../chat/thread/review-findings', 'ReviewFindings'],
+  ['../review/code-review-card', 'CodeReviewCard'],
   ['../dialogs/task-pull-link-dialog', 'TaskPullLinkDialog'],
 ])
   mocks[path] = `export const ${name}=()=>null;`

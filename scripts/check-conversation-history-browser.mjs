@@ -546,6 +546,7 @@ return <div>{h.task.messages.map(message=><div data-pending-message={message.id}
                 'review-comments-tray': 'ReviewCommentsTray',
                 'plan-approval': 'PlanApproval',
                 'review-findings': 'ReviewFindings',
+                'code-review-card': 'CodeReviewCard',
                 'task-pull-link-dialog': 'TaskPullLinkDialog',
               }
               const name = names[args.path.split('/').at(-1)]

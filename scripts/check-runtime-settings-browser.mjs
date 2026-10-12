@@ -18,7 +18,7 @@ const mocks = {
     ['button', 'input', 'textarea', 'dialog', 'select', 'checkbox']
       .map((name) => `export * from '${ui}/components/ui/${name}.tsx';`)
       .join('\n') +
-    `\nexport * from '${ui}/file-tree.tsx';export * from '${ui}/repository-open-items.tsx';export * from '${ui}/settings-layout.tsx';export * from '${ui}/choice-picker.tsx';export * from '${ui}/components/form-field.tsx';export * from '${ui}/components/ai-elements/conversation.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const MessageResponse=({children})=>children;`,
+    `\nexport {cn} from '${ui}/lib/utils.ts';export {IconButton} from '${ui}/components/icon-button.tsx';export * from '${ui}/file-tree.tsx';export * from '${ui}/repository-open-items.tsx';export * from '${ui}/settings-layout.tsx';export * from '${ui}/choice-picker.tsx';export * from '${ui}/components/form-field.tsx';export * from '${ui}/components/ai-elements/conversation.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const MessageResponse=({children})=>children;`,
   './host-page': `export const HostPage=({children})=>children;`,
 }
 const built = await bundleBrowser(

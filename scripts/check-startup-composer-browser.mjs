@@ -71,6 +71,7 @@ for (const [path, names] of [
   ['../chat/thread/review-comments-tray', ['ReviewCommentsTray']],
   ['../chat/thread/plan-approval', ['PlanApproval']],
   ['../chat/thread/review-findings', ['ReviewFindings']],
+  ['../review/code-review-card', ['CodeReviewCard']],
   ['../dialogs/task-pull-link-dialog', ['TaskPullLinkDialog']],
   ['./attachment-picker', ['AttachmentPicker']],
   ['./message-attachments', ['MessageAttachments']],
