@@ -25,7 +25,7 @@ export function SectionOrderDialog() {
           <DialogTitle>Organize sections</DialogTitle>
           <DialogDescription>
             Change the order of thread categories. Empty sections stay hidden. With project or no
-            grouping, those threads use Active’s position.
+            grouping, those threads use Open’s position.
           </DialogDescription>
           <ol className="space-y-1" aria-label="Thread section order">
             {order.map((id, index) => (
@@ -37,7 +37,7 @@ export function SectionOrderDialog() {
                   size="icon"
                   variant="ghost"
                   className="size-8"
-                  aria-label={`Move ${id} up`}
+                  aria-label={`Move ${id === 'active' ? 'open' : id} up`}
                   disabled={index === 0}
                   onClick={() =>
                     updateAppPreferences({ threadSectionOrder: moveThreadSection(order, id, -1) })
@@ -49,7 +49,7 @@ export function SectionOrderDialog() {
                   size="icon"
                   variant="ghost"
                   className="size-8"
-                  aria-label={`Move ${id} down`}
+                  aria-label={`Move ${id === 'active' ? 'open' : id} down`}
                   disabled={index === order.length - 1}
                   onClick={() =>
                     updateAppPreferences({ threadSectionOrder: moveThreadSection(order, id, 1) })

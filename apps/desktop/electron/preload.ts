@@ -1,6 +1,61 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+const runtimeSyncListeners = new Map<
+  string,
+  (event: import('@dovo/protocol').DesktopSyncEvent) => void
+>()
+const runtimeSyncError = (id: string, error: unknown) =>
+  runtimeSyncListeners.get(id)?.({
+    type: 'error',
+    message:
+      error instanceof Error ? error.message : 'Could not reach the runtime connection manager.',
+  })
 contextBridge.exposeInMainWorld('dovo', {
+  runtimeSync: {
+    subscribe: (
+      input: import('@dovo/protocol').DesktopSyncSubscription,
+      listener: (event: import('@dovo/protocol').DesktopSyncEvent) => void,
+    ) => {
+      let stopped = false
+      runtimeSyncListeners.set(input.id, listener)
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        id: string,
+        update: import('@dovo/protocol').DesktopSyncEvent,
+      ) => {
+        if (!stopped && id === input.id) listener(update)
+      }
+      ipcRenderer.on('runtime:sync-event', handler)
+      void ipcRenderer.invoke('runtime:sync-watch', input).catch((error: unknown) => {
+        if (!stopped)
+          listener({
+            type: 'error',
+            message:
+              error instanceof Error ? error.message : 'Could not connect to the runtime manager.',
+          })
+      })
+      return () => {
+        stopped = true
+        runtimeSyncListeners.delete(input.id)
+        ipcRenderer.removeListener('runtime:sync-event', handler)
+        void ipcRenderer
+          .invoke('runtime:sync-unwatch', input.id)
+          .catch((error: unknown) =>
+            console.error('Could not release runtime subscription:', error),
+          )
+      }
+    },
+    update: (input: import('@dovo/protocol').DesktopSyncSubscription) => {
+      void ipcRenderer
+        .invoke('runtime:sync-watch', input)
+        .catch((error: unknown) => runtimeSyncError(input.id, error))
+    },
+    refresh: (id: string, retry: boolean) => {
+      void ipcRenderer
+        .invoke('runtime:sync-refresh', id, retry)
+        .catch((error: unknown) => runtimeSyncError(id, error))
+    },
+  },
   popOutThread: (target: import('@dovo/protocol').ThreadWindowTarget): Promise<void> =>
     ipcRenderer.invoke('thread:pop-out', target),
   taskLauncher: {

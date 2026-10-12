@@ -178,6 +178,18 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   }, [allTasks, car, now, query, sort, project, projectMembers, archived])
   const listItems = useMemo(() => {
     if (archived || car) return tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))
+    const orderedItems = (sections: { key: string; items: TaskListItem[] }[]) =>
+      orderThreadSections(
+        sections.filter((section) => section.items.length),
+        (group) => group.key,
+        preferences.threadSectionOrder,
+      ).flatMap((section, index) => {
+        if (section.key !== 'active' || grouping === 'project') return section.items
+        if (index === 0) return section.items.filter((item) => item.kind === 'task')
+        return collapsed.has('active')
+          ? section.items.filter((item) => item.kind === 'group')
+          : section.items
+      })
     const active = tasks.filter(
       ({ task, needsInput }) =>
         !task.archived && !isSnoozed(task, now) && (!task.waitingForFeedback || needsInput),
@@ -234,29 +246,23 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       { key: 'settled', items: settledItems },
     ]
     if (grouping === 'none')
-      return orderThreadSections(
-        [
-          {
-            key: 'active',
-            items: unsettled.length
-              ? ([
-                  { kind: 'group', key: 'active', name: 'Active', count: unsettled.length },
-                  ...(collapsed.has('active')
-                    ? []
-                    : unsettled.map((entry): TaskListItem => ({ kind: 'task', entry }))),
-                ] satisfies TaskListItem[])
-              : [],
-          },
-          ...otherSections,
-        ],
-        (group) => group.key,
-        preferences.threadSectionOrder,
-      ).flatMap((group) => group.items)
+      return orderedItems([
+        {
+          key: 'active',
+          items: unsettled.length
+            ? ([
+                { kind: 'group', key: 'active', name: 'Open', count: unsettled.length },
+                ...unsettled.map((entry): TaskListItem => ({ kind: 'task', entry })),
+              ] satisfies TaskListItem[])
+            : [],
+        },
+        ...otherSections,
+      ])
     const groups: { key: string; name: string; tasks: RuntimeTask[] }[] = []
     if (grouping === 'status') {
       groups.push(
         { key: 'pinned', name: 'Pinned', tasks: unsettled.filter(({ task }) => task.pinned) },
-        { key: 'active', name: 'Active', tasks: unsettled.filter(({ task }) => !task.pinned) },
+        { key: 'active', name: 'Open', tasks: unsettled.filter(({ task }) => !task.pinned) },
       )
     } else {
       const identities = new Map(
@@ -288,28 +294,20 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         ),
       )
     }
-    return orderThreadSections(
-      [
-        ...groups
-          .filter((group) => group.tasks.length)
-          .map((group) => ({
-            key: grouping === 'status' ? group.key : 'active',
-            items: [
-              { kind: 'group', key: group.key, name: group.name, count: group.tasks.length },
-              ...(collapsed.has(
-                grouping === 'status' && group.key === 'active'
-                  ? 'active'
-                  : `${grouping}:${group.key}`,
-              )
-                ? []
-                : group.tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))),
-            ] satisfies TaskListItem[],
-          })),
-        ...otherSections,
-      ],
-      (group) => group.key,
-      preferences.threadSectionOrder,
-    ).flatMap((group) => group.items)
+    return orderedItems([
+      ...groups
+        .filter((group) => group.tasks.length)
+        .map((group) => ({
+          key: grouping === 'status' ? group.key : 'active',
+          items: [
+            { kind: 'group', key: group.key, name: group.name, count: group.tasks.length },
+            ...(group.key !== 'active' && collapsed.has(`${grouping}:${group.key}`)
+              ? []
+              : group.tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))),
+          ] satisfies TaskListItem[],
+        })),
+      ...otherSections,
+    ])
   }, [
     tasks,
     grouping,

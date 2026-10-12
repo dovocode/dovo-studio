@@ -205,3 +205,41 @@ it('serves a local PDF viewer and worker only through a valid file grant', async
   expect((await fetch(origin + url + '?pdfjs=other')).status).toBe(400)
   expect((await fetch(origin + '/api/tasks/files/shared/wrong?pdfjs=main')).status).toBe(401)
 })
+it('loads HTML visualizations from their runtime with task-scoped authorization and size limits', async () => {
+  const { runtime, directory, origin } = await setup()
+  const external = await mkdtemp(join(tmpdir(), 'dovo-visualization-'))
+  cleanup.push(() => rm(external, { recursive: true, force: true }))
+  const path = join(external, 'demo.html')
+  await writeFile(path, '<button onclick="this.textContent=123">Interactive</button>')
+  runtime.services.store.updateTask('task', (task) => ({
+    ...task,
+    messages: [
+      {
+        id: 'reply',
+        role: 'assistant',
+        text: `\uE200visualize\uE202${JSON.stringify({ path })}\uE201`,
+        createdAt: '2026-10-12',
+      },
+    ],
+  }))
+  const read = (file: string, taskId = 'task', credential = token) =>
+    fetch(origin + '/api/tasks/visualizations/read', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, path: file }),
+    })
+  expect((await read(path, 'task', 'wrong')).status).toBe(401)
+  expect((await read(path, 'other')).status).toBe(403)
+  const response = await read(path)
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({
+    path,
+    contents: '<button onclick="this.textContent=123">Interactive</button>',
+  })
+  const large = join(directory, 'large.html')
+  await writeFile(large, 'x'.repeat(1024 * 1024 + 1))
+  expect((await read(large)).status).toBe(413)
+  const text = join(directory, 'note.txt')
+  await writeFile(text, 'not html')
+  expect((await read(text)).status).toBe(415)
+})

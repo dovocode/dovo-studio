@@ -45,13 +45,14 @@ afterEach(() => {
 })
 function fixture(entries: RuntimeUpgradeEntry[]) {
   const commands: { id: string; path: string }[] = []
+  const bodies: unknown[] = []
   const states = new Map<string, { status: string; version?: string }>()
   const failures = new Set<string>()
   const lostReplies = new Set<string>()
   const droppedRequests = new Set<string>()
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async (input) => {
+    vi.fn<typeof fetch>(async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : input.toString())
       if (url.hostname === 'api.github.com')
         return Response.json(
@@ -70,6 +71,7 @@ function fixture(entries: RuntimeUpgradeEntry[]) {
       if (url.pathname.endsWith('/status'))
         return Response.json(states.get(id) ?? { status: 'idle' })
       commands.push({ id, path: url.pathname })
+      bodies.push(typeof init?.body === 'string' ? JSON.parse(init.body) : undefined)
       if (failures.has(id)) return Response.json({ error: 'Installer failed' }, { status: 409 })
       if (droppedRequests.has(id)) throw new TypeError('Connection lost before dispatch')
       const next = {
@@ -85,6 +87,7 @@ function fixture(entries: RuntimeUpgradeEntry[]) {
   return {
     manager: createRuntimeUpgradeManager({ entries: () => entries, refreshed }),
     commands,
+    bodies,
     states,
     failures,
     lostReplies,
@@ -318,3 +321,26 @@ it('uses the desktop app release channel only when explicitly configured', () =>
     available: true,
   })
 })
+
+it.each([false, true])(
+  'sends restart policy %s and finishes downloads on older desktop bridges exactly once',
+  async (resumeInterrupted) => {
+    const f = fixture([entry('desktop', true), entry('server')])
+    await f.manager.check()
+    await f.manager.start(['desktop', 'server'], { restartDesktops: true, resumeInterrupted })
+    expect(f.bodies).toEqual([
+      { version: '1.0.1', restartAfterDownload: true, resumeInterrupted },
+      { version: '1.0.1' },
+    ])
+    f.states.set('desktop', { status: 'downloaded', version: '1.0.1' })
+    await f.manager.poll()
+    expect(f.commands.at(-1)).toEqual({ id: 'desktop', path: '/api/runtime/update/restart' })
+    expect(f.bodies.at(-1)).toEqual({
+      version: '1.0.1',
+      restartAfterDownload: false,
+      resumeInterrupted,
+    })
+    await f.manager.poll()
+    expect(f.commands.filter((command) => command.path.endsWith('/restart'))).toHaveLength(1)
+  },
+)

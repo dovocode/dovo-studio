@@ -4,6 +4,8 @@ import { gfmFromMarkdown } from 'mdast-util-gfm'
 import { gfm } from 'micromark-extension-gfm'
 import { directive } from 'micromark-extension-directive'
 import type { Nodes } from 'mdast'
+import { Schema } from 'effect'
+import { decodeResult, mutableStruct, maxValue, minValue } from '../../shared/schema.js'
 import { localMarkdownPath } from './markdown-links.js'
 
 export type ArtifactTemplate = {
@@ -17,7 +19,24 @@ export type RichMarkdownPart =
   | { kind: 'file'; path: string; label: string; offset: number }
   | { kind: 'image'; path: string; label: string; offset: number }
   | { kind: 'video'; path: string; label: string; offset: number }
+  | { kind: 'visualization'; path: string; label: string; wide: boolean; offset: number }
   | { kind: 'template'; template: ArtifactTemplate; offset: number }
+const visualizationSchema = mutableStruct({
+  path: maxValue(minValue(Schema.String, 1), 4000),
+  title: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  mode: Schema.optional(Schema.Literals(['wide'])),
+})
+function visualization(value: string) {
+  try {
+    const parsed = decodeResult(visualizationSchema, JSON.parse(value)).data
+    if (!parsed || localMarkdownPath(parsed.path) === undefined || !/\.html?$/i.test(parsed.path))
+      return
+    return parsed
+  } catch {
+    // Incomplete streaming markers stay literal until their JSON is complete.
+    return
+  }
+}
 const templateKinds = new Set([
   'document',
   'presentation',
@@ -110,7 +129,8 @@ export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[
     !text.includes('[') &&
     !/https?:\/\//i.test(text) &&
     !text.includes(':codex-file-citation') &&
-    !text.includes('::artifact-template')
+    !text.includes('::artifact-template') &&
+    !text.includes('\uE200visualize\uE202')
   )
     return [{ kind: 'markdown', text, offset: 0 }]
   const root = parse(text)
@@ -121,12 +141,9 @@ export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[
   )
   const parts: RichMarkdownPart[] = []
   let offset = 0
-  const add = (start: number, end: number, part: RichMarkdownPart) => {
-    if (start > offset)
-      parts.push({ kind: 'markdown', text: renderFileCitations(text.slice(offset, start)), offset })
-    parts.push(part)
-    offset = end
-  }
+  const edits: Array<{ start: number; end: number; part: RichMarkdownPart }> = []
+  const add = (start: number, end: number, part: RichMarkdownPart) =>
+    edits.push({ start, end, part })
   for (const node of root.children) {
     const start = node.position?.start.offset,
       end = node.position?.end.offset
@@ -155,6 +172,32 @@ export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[
       continue
     }
     if (node.type !== 'paragraph') continue
+    if (localFiles) {
+      const source = text.slice(start, end)
+      for (const match of source.matchAll(
+        /(?:^|\n)[ \t]*\uE200visualize\uE202([^\n]+?)\uE201[ \t]*(?=\n|$)/g,
+      )) {
+        const parsed = visualization(match[1]!)
+        if (!parsed) continue
+        const from = start + match.index + (match[0].startsWith('\n') ? 1 : 0)
+        if (
+          node.children.some(
+            (child) =>
+              child.type === 'inlineCode' &&
+              (child.position?.start.offset ?? Infinity) <= from &&
+              (child.position?.end.offset ?? -1) > from,
+          )
+        )
+          continue
+        add(from, start + match.index + match[0].length, {
+          kind: 'visualization',
+          path: parsed.path,
+          label: parsed.title ?? markdownFileName(parsed.path),
+          wide: parsed.mode === 'wide',
+          offset: from,
+        })
+      }
+    }
     for (const child of node.children) {
       if (child.type !== 'link' && child.type !== 'linkReference') continue
       const from = child.position?.start.offset,
@@ -176,6 +219,17 @@ export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[
       add(from, to, { kind, path, label, offset: from })
     }
   }
+  for (const edit of edits.sort((a, b) => a.start - b.start)) {
+    if (edit.start < offset) continue
+    if (edit.start > offset)
+      parts.push({
+        kind: 'markdown',
+        text: renderFileCitations(text.slice(offset, edit.start)),
+        offset,
+      })
+    parts.push(edit.part)
+    offset = edit.end
+  }
   if (offset < text.length || !parts.length)
     parts.push({ kind: 'markdown', text: renderFileCitations(text.slice(offset)), offset })
   // Each independently rendered block needs the original reference definitions.
@@ -190,8 +244,11 @@ export function richMarkdown(text: string, localFiles = true): RichMarkdownPart[
 }
 /** Paths explicitly shared by assistant output, including structured file citations. */
 export function richMarkdownPaths(text: string): string[] {
-  if (!text.includes(':codex-file-citation')) return []
-  const paths: string[] = []
+  const visualizations = richMarkdown(text).flatMap((part) =>
+    part.kind === 'visualization' ? [part.path] : [],
+  )
+  if (!text.includes(':codex-file-citation')) return visualizations
+  const paths: string[] = [...visualizations]
   const visit = (node: Nodes, inLink = false) => {
     if (!inLink && node.type === 'textDirective' && citation(node) && node.attributes?.path)
       paths.push(node.attributes.path)

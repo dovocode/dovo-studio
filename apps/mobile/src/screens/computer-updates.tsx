@@ -14,6 +14,7 @@ import { SettingsAction as Action } from './settings-controls'
 import { Switch } from '../ui/controls/switch'
 import { useTheme } from '../ui/theme'
 import { SettingsGroup } from './settings-group'
+import { Sheet } from '../ui/layout/sheet'
 
 export function ComputerUpdates() {
   const { styles } = useTheme()
@@ -42,12 +43,24 @@ export function ComputerUpdates() {
       subscription.remove()
     }
   }, [manager])
+  const [confirmAll, setConfirmAll] = useState(false)
+  const [resumeInterrupted, setResumeInterrupted] = useState(false)
   const eligible = (entry: RuntimeUpgradeEntry) =>
     !runtimeUpgradeBlocked(entry) &&
     runtimeUpdate(entry.snapshot, state.releases).available &&
     !['queued', 'downloading', 'installing', 'downloaded'].includes(
       state.statuses[entry.profile.id]?.status ?? '',
     )
+  const all = targets
+    .filter(
+      (entry) =>
+        !runtimeUpgradeBlocked(entry, true) &&
+        runtimeUpdate(entry.snapshot, state.releases).available &&
+        !['queued', 'downloading', 'installing', 'downloaded'].includes(
+          state.statuses[entry.profile.id]?.status ?? '',
+        ),
+    )
+    .map((entry) => entry.profile.id)
   const selected = targets
     .filter((entry) => state.selected.includes(entry.profile.id) && eligible(entry))
     .map((entry) => entry.profile.id)
@@ -149,6 +162,44 @@ export function ComputerUpdates() {
             </View>
           )
         })}
+        <Action
+          label={`Update all (${all.length})`}
+          disabled={!all.length || state.checking || !!state.busy.length}
+          onPress={() => {
+            setResumeInterrupted(false)
+            setConfirmAll(true)
+          }}
+        />
+        {confirmAll && (
+          <Sheet title="Update all computers" onClose={() => setConfirmAll(false)}>
+            <View style={{ gap: 16 }}>
+              <Text style={styles.muted}>
+                Servers install and restart automatically. Desktops download, install and restart.
+                Running desktop threads are interrupted. Leave the box off to resume manually, or
+                enable it to resume automatically after this restart.
+              </Text>
+              <View style={styles.row}>
+                <Text style={[styles.text, { flex: 1 }]}>
+                  Resume interrupted threads after restart
+                </Text>
+                <Switch
+                  accessibilityLabel="Resume interrupted threads after restart"
+                  value={resumeInterrupted}
+                  onValueChange={setResumeInterrupted}
+                />
+              </View>
+              <Action
+                label={`Update and restart (${all.length})`}
+                disabled={!all.length || !!state.busy.length}
+                onPress={() => {
+                  setConfirmAll(false)
+                  void manager.start(all, { restartDesktops: true, resumeInterrupted })
+                }}
+              />
+              <Action secondary label="Cancel" onPress={() => setConfirmAll(false)} />
+            </View>
+          </Sheet>
+        )}
         <Action
           label={`Update selected (${selected.length})`}
           disabled={!selected.length || !!state.busy.length}

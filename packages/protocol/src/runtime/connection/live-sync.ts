@@ -1,3 +1,4 @@
+import { desktopRuntimeSyncBridge } from './desktop-sync.js'
 import { invalidateRuntimeRoute, runtimeTransportAddress } from './routes.js'
 import { decode } from '../../shared/schema.js'
 import { runtimeRequest, setRuntimeSnapshotTag } from '../../shared/client.js'
@@ -139,9 +140,78 @@ export function startRuntimeSync(
     active?: () => boolean
     onWake?: () => void
     onStatus?: (status: RuntimeSyncStatus) => void
+    onError?: (message: string) => void
+    onConnection?: (connection: RuntimeConnection) => void
   },
 ) {
   const value = registration(connection)
+  const bridge = desktopRuntimeSyncBridge()
+  if (bridge) {
+    const id = crypto.randomUUID()
+    let stopped = false,
+      online = false
+    let status: RuntimeSyncStatus = 'connecting'
+    const input = () => ({
+      id,
+      connection,
+      tasks: [...value.tasks.keys()],
+      scopes: [...value.scopes.keys()],
+      detailScopes: [...value.scopes.entries()]
+        .filter(([, listeners]) => [...listeners].some((listener) => value.details.has(listener)))
+        .map(([scope]) => scope),
+    })
+    const live = {
+      online: () => online,
+      status: () => status,
+      watch: () => bridge.update(input()),
+      retry: () => bridge.refresh(id, true),
+    }
+    value.live = live
+    const unsubscribe = bridge.subscribe(input(), (event) => {
+      if (stopped) return
+      if (event.type === 'status') {
+        online = event.online
+        status = event.status
+        options.onStatus?.(status)
+      } else if (event.type === 'error') {
+        online = false
+        options.onError?.(event.message)
+      } else if (event.type === 'snapshot') {
+        if (event.tag) setRuntimeSnapshotTag(event.snapshot, event.tag)
+        options.onSnapshot(event.snapshot)
+      } else if (event.type === 'connection') {
+        options.onConnection?.(event.connection)
+      } else {
+        const old = value.events.get(event.scope) ?? []
+        const events = retainActivityEvents(old, event.events)
+        value.events.set(event.scope, events)
+        const compact = value.compactors.get(event.scope)
+        let compacted: Events | undefined
+        for (const listener of value.scopes.get(event.scope) ?? [])
+          listener(
+            value.details.has(listener)
+              ? events
+              : (compacted ??= compact ? compact(events) : events),
+          )
+      }
+    })
+    return {
+      shared: true,
+      online: live.online,
+      retry: live.retry,
+      refresh: () => bridge.refresh(id, false),
+      stop: () => {
+        if (stopped) return
+        stopped = true
+        online = false
+        unsubscribe()
+        if (value.live === live) value.live = undefined
+        value.events.clear()
+        for (const compact of value.compactors.values()) compact([])
+        if (!value.tasks.size && !value.scopes.size) registrations.delete(key(connection))
+      },
+    }
+  }
   clearTimeout(value.expiry)
   let socket: WebSocket | undefined
   let stopped = false
@@ -476,6 +546,7 @@ export function startRuntimeSync(
   )
   void connect()
   return {
+    shared: false,
     online: () => online,
     retry: recover,
     refresh: () => {

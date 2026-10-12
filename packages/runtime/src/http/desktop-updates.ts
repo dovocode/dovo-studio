@@ -47,6 +47,8 @@ export async function desktopUpdate(
   action: 'status' | 'download' | 'restart',
   version?: string,
   shared = false,
+  restartAfterDownload?: boolean,
+  resumeInterrupted?: boolean,
 ) {
   const host = desktopHost(shared)
   if (!host)
@@ -54,7 +56,10 @@ export async function desktopUpdate(
   const response = await fetch(`http://127.0.0.1:${host.port}/${action}`, {
     method: action === 'status' ? 'GET' : 'POST',
     headers: { Authorization: `Bearer ${host.token}`, 'Content-Type': 'application/json' },
-    body: action === 'status' ? undefined : JSON.stringify({ version }),
+    body:
+      action === 'status'
+        ? undefined
+        : JSON.stringify({ version, restartAfterDownload, resumeInterrupted }),
     signal: AbortSignal.timeout(5000),
   })
   const value: unknown = await response.json()

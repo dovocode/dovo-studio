@@ -26,11 +26,11 @@ it('allows a paired device to download and explicitly restart its desktop while 
   vi.stubEnv('DOVO_RELEASE_VERSION', '1.0.0')
   vi.stubEnv('DOVO_DATABASE_PATH', join(directory, 'runtime.sqlite'))
   let state: DesktopUpdateState = { status: 'available', version: '1.0.1' }
-  const remote = vi.fn<(action: 'download' | 'restart', version: string) => Promise<void>>(
-    async (action, version) => {
-      state = { status: action === 'download' ? 'downloaded' : 'restarting', version }
-    },
-  )
+  const remote = vi.fn<
+    (action: 'download' | 'restart' | 'install', version: string) => Promise<void>
+  >(async (action, version) => {
+    state = { status: action === 'download' ? 'downloaded' : 'restarting', version }
+  })
   const close = await registerRemoteUpdates(directory, {
     supported: true,
     state: () => state,
@@ -53,11 +53,16 @@ it('allows a paired device to download and explicitly restart its desktop while 
   })
   const token = randomBytes(32).toString('hex')
   runtime.services.devices.add('Phone', token)
-  const request = (path: string, authenticated = true, version?: string) =>
+  const request = (
+    path: string,
+    authenticated = true,
+    version?: string,
+    options?: { restartAfterDownload: boolean; resumeInterrupted: boolean },
+  ) =>
     fetch(`http://127.0.0.1:${runtime.port}${path}`, {
       method: version ? 'POST' : 'GET',
       headers: authenticated ? { Authorization: `Bearer ${token}` } : {},
-      body: version ? JSON.stringify({ version }) : undefined,
+      body: version ? JSON.stringify({ version, ...options }) : undefined,
     })
   expect((await request('/api/runtime/update/status', false)).status).toBe(401)
   expect(await (await request('/api/snapshot')).json()).toMatchObject({
@@ -75,6 +80,15 @@ it('allows a paired device to download and explicitly restart its desktop while 
   }))
   expect((await request('/api/runtime/update/restart', true, '1.0.1')).status).toBe(409)
   expect(remote).toHaveBeenCalledTimes(1)
+  expect(
+    (
+      await request('/api/runtime/update/start', true, '1.0.1', {
+        restartAfterDownload: true,
+        resumeInterrupted: false,
+      })
+    ).status,
+  ).toBe(200)
+  await vi.waitFor(() => expect(remote).toHaveBeenCalledWith('install', '1.0.1', false))
   runtime.services.store.update((workspace) => ({
     ...workspace,
     tasks: workspace.tasks.map((task) => ({ ...task, status: 'review' })),
@@ -90,11 +104,11 @@ it('updates a desktop app through an independent paired server without replacing
   vi.stubEnv('DOVO_RELEASE_DISTRIBUTION', 'source')
   vi.stubEnv('DOVO_RELEASE_VERSION', '1.0.0')
   let state: DesktopUpdateState = { status: 'idle' }
-  const remote = vi.fn<(action: 'download' | 'restart', version: string) => Promise<void>>(
-    async (action, version) => {
-      state = { status: action === 'download' ? 'downloaded' : 'restarting', version }
-    },
-  )
+  const remote = vi.fn<
+    (action: 'download' | 'restart' | 'install', version: string) => Promise<void>
+  >(async (action, version) => {
+    state = { status: action === 'download' ? 'downloaded' : 'restarting', version }
+  })
   const close = await registerRemoteUpdates(
     join(f.directory, 'app-profile'),
     {

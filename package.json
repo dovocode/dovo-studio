@@ -43,6 +43,7 @@
     "test:mobile-startup-thread:browser": "node scripts/check-mobile-startup-thread-browser.mjs && node scripts/check-mobile-draft-transition-browser.mjs",
     "test:mobile-thread-folder:browser": "node scripts/check-mobile-thread-folder-browser.mjs",
     "test:task-waiting:browser": "node scripts/check-task-waiting-browser.mjs",
+    "test:desktop-runtime-connections": "node scripts/check-desktop-runtime-connections.mjs",
     "test:thread-popout:browser": "node scripts/check-thread-popout-browser.mjs",
     "test:thread-folder:browser": "node scripts/check-thread-folder-browser.mjs",
     "test:startup-checkout:browser": "node scripts/check-startup-checkout-browser.mjs",
@@ -58,6 +59,7 @@
     "test:section-thread:browser": "node scripts/check-section-thread-browser.mjs",
     "test:manual-model:browser": "pnpm --filter @dovo/desktop build && node scripts/check-manual-model-browser.mjs",
     "test:pull-links:browser": "node scripts/check-pull-links-browser.mjs && node scripts/check-thread-pull-links-browser.mjs",
+    "test:computer-updates:browser": "node scripts/check-computer-updates-browser.mjs",
     "test:runtime-icons:browser": "node scripts/check-runtime-icons-browser.mjs",
     "test:runtime-settings:browser": "node scripts/check-runtime-settings-browser.mjs",
     "test:general-settings:browser": "pnpm --filter @dovo/web build && node scripts/check-general-settings-browser.mjs",
@@ -107,7 +109,9 @@
     "test:remote-browser-sessions:browser": "node scripts/check-remote-browser-sessions.mjs",
     "test:mobile-registry-recovery:browser": "node scripts/check-mobile-registry-recovery-browser.mjs",
     "test:workspace-recovery:browser": "node scripts/check-workspace-recovery-browser.mjs",
-    "test:browser": "node scripts/run-browser-suites.mjs"
+    "test:browser": "node scripts/run-browser-suites.mjs",
+    "test:code-review:browser": "node scripts/check-code-review-browser.mjs && node scripts/check-mobile-review-browser.mjs && node scripts/check-mobile-review-report-browser.mjs",
+    "test:file-drop:browser": "node scripts/check-composer-send-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

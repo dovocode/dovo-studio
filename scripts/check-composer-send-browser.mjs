@@ -5,7 +5,7 @@ const mocks = {
   '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
-  './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:()=>{},remove:()=>{}});`,
+  './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
   './composer-editor': `import {useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText})=>{const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} onChange={event=>controller.update(event.target.value)}/>};`,
 }
 for (const [path, name] of [
@@ -23,7 +23,7 @@ const built = await build({
     contents: `
 import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {MessageQueue} from './src/chat/thread/message-queue.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
-window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;
+window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;
 const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
 function App(){const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[]}};return <WorkspaceHarness value={value}><><Composer task={workspace.tasks[0]} onPending={onPending}/><MessageQueue task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -63,6 +63,45 @@ try {
   await page.goto('https://dovo.test/')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const input = page.getByRole('textbox', { name: 'Message' })
+  const dropFiles = async () =>
+    page.evaluate(() => {
+      const transfer = new DataTransfer()
+      transfer.items.add(new File(['hello'], 'note.txt', { type: 'text/plain' }))
+      transfer.items.add(new File(['image'], 'photo.png', { type: 'image/png' }))
+      const input = document.querySelector('textarea')
+      input.dispatchEvent(
+        new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }),
+      )
+    })
+  await input.fill('Keep this draft')
+  await dropFiles()
+  await page.getByRole('status').filter({ hasText: 'Drop files to attach' }).waitFor()
+  await page.evaluate(() => {
+    const transfer = new DataTransfer()
+    transfer.items.add(new File(['hello'], 'note.txt', { type: 'text/plain' }))
+    transfer.items.add(new File(['image'], 'photo.png', { type: 'image/png' }))
+    document
+      .querySelector('textarea')
+      .dispatchEvent(
+        new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }),
+      )
+  })
+  if (
+    JSON.stringify(await page.evaluate(() => window.dropped)) !==
+    JSON.stringify([
+      [
+        { name: 'note.txt', size: 5 },
+        { name: 'photo.png', size: 5 },
+      ],
+    ])
+  )
+    throw new Error('Dropped files did not reach attachment upload')
+  if ((await input.inputValue()) !== 'Keep this draft') throw new Error('Drop changed draft text')
+  await page
+    .getByRole('status')
+    .filter({ hasText: 'Drop files to attach' })
+    .waitFor({ state: 'detached' })
+  await input.fill('')
   const submit = async (text, button = 'Send') => {
     await input.fill(text)
     await (

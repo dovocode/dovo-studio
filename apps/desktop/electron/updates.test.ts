@@ -461,3 +461,50 @@ it('allows an explicit stable-to-nightly change despite prerelease version order
   expect(updater.allowDowngrade).toBe(true)
   expect(writeLocalSettingsSection).toHaveBeenCalledOnce()
 })
+
+it.each([false, true])(
+  'installs remotely with restart resume choice %s without a host dialog',
+  async (resumeInterrupted) => {
+    const request = vi.fn<typeof fetch>(async (input) =>
+      (input instanceof Request ? input.url : input.toString()).endsWith('/prepare-restart')
+        ? Response.json({ id: 'restart-lease' })
+        : Response.json(snapshot),
+    )
+    vi.stubGlobal('fetch', request)
+    const { registerUpdates } = await import('./updates')
+    const prepare = vi.fn<() => Promise<() => Promise<void>>>(async () => async () => {})
+    const updates = registerUpdates('/unused', prepare)
+    await updates.remote('install', 'next', resumeInterrupted)
+    expect(f.downloads).toHaveBeenCalledOnce()
+    expect(f.install).toHaveBeenCalledOnce()
+    expect(f.message).not.toHaveBeenCalled()
+    expect(request).toHaveBeenCalledWith(
+      'http://fixture/api/runtime/prepare-restart',
+      expect.objectContaining({
+        body: JSON.stringify({ resumeInterrupted }),
+      }),
+    )
+  },
+)
+
+it('cancels restart preparation and keeps the download retryable when shutdown fails', async () => {
+  const request = vi.fn<typeof fetch>(async (input) =>
+    (input instanceof Request ? input.url : input.toString()).endsWith('/prepare-restart')
+      ? Response.json({ id: 'restart-lease' })
+      : Response.json(snapshot),
+  )
+  vi.stubGlobal('fetch', request)
+  const { registerUpdates } = await import('./updates')
+  const updates = registerUpdates('/unused', async () => {
+    throw new Error('Shutdown failed')
+  })
+  await expect(updates.remote('install', 'next', false)).rejects.toThrow('Shutdown failed')
+  expect(updates.state().status).toBe('downloaded')
+  expect(request).toHaveBeenCalledWith(
+    'http://fixture/api/runtime/cancel-restart',
+    expect.objectContaining({
+      body: JSON.stringify({ id: 'restart-lease' }),
+    }),
+  )
+  expect(f.install).not.toHaveBeenCalled()
+})

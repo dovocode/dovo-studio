@@ -1,3 +1,4 @@
+import { FileDropTarget } from './file-drop-target'
 import { resolveTaskDefaults } from '@dovo/protocol'
 import { checkpointCanUndo } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
@@ -372,7 +373,12 @@ export function Composer({
       </>
     )
   const input = (
-    <View
+    <FileDropTarget
+      key={actions.threadScope}
+      enabled={
+        connected && draft.ready && !busy && !attaching && !dictation.active && !task.archived
+      }
+      upload={attachmentPicker.upload}
       testID="Composer"
       style={[
         styles.content,
@@ -848,7 +854,7 @@ export function Composer({
         </Text>
       )}
       {settings && <HarnessSettings task={task} onClose={() => setSettings(false)} />}
-    </View>
+    </FileDropTarget>
   )
   return renderAbove ? (
     <>

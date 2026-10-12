@@ -390,6 +390,8 @@ export function WorkspaceProvider({
             throw new Error(
               'Saved computers could not be loaded at startup. Restart the app before changing connections.',
             )
+          if (JSON.stringify(value) === JSON.stringify(registryRef.current))
+            return Promise.resolve(value)
           if (!runtimeId) return writeRuntimeRegistry(value)
           return readRuntimeRegistry().then((saved) =>
             writeRuntimeRegistry({
@@ -1333,6 +1335,9 @@ export function WorkspaceProvider({
           }),
         ),
       )
+      // This is the baseline for this window's edits, not a newly created registry.
+      // Install it before asynchronous startup work can trigger connection persistence.
+      setRegistry(selectRegistry(registry))
       let cached: Record<string, RuntimeSnapshot> = {}
       yield* Effect.try({
         try: () => {
@@ -1375,22 +1380,27 @@ export function WorkspaceProvider({
         const previousLocal = registry.profiles.find(
           (profile) => profile.connection.token === local.connection.token,
         )
-        registry = upsertRuntime(
-          registry,
-          previousLocal
-            ? {
-                ...local,
-                id: previousLocal.id,
-                name: previousLocal.name,
-                nameIsCustom: runtimeHasCustomName(previousLocal),
-              }
-            : local,
-          !runtimeId,
-        )
+        if (!runtimeId)
+          registry = upsertRuntime(
+            registry,
+            previousLocal
+              ? {
+                  ...previousLocal,
+                  connection: { ...previousLocal.connection, ...local.connection },
+                  id: previousLocal.id,
+                  name: previousLocal.name,
+                  nameIsCustom: runtimeHasCustomName(previousLocal),
+                }
+              : local,
+            !runtimeId,
+          )
         if (firstConnection) firstLocalConnection = local.connection
       }
       registry = selectRegistry(registry)
-      yield* native(() => saveRegistry(() => registry))
+      // A thread window only selects its owning runtime in memory. Opening it must
+      // not overwrite the main window's saved selection or connection metadata.
+      if (!runtimeId) yield* native(() => saveRegistry(() => registry))
+      else setRegistry(registry)
       if (runtimeId && !registry.activeId)
         setStorageError(
           'This thread’s computer is no longer saved. Pair it again in the main window.',
@@ -1560,6 +1570,22 @@ export function WorkspaceProvider({
       )?.id ?? runtimeProfile(connection).id
     let wakeFallback = () => {}
     const live = startRuntimeSync(connection, {
+      onConnection: (latest) => {
+        if (stopped || latest.token !== localOwnerToken.current) return
+        void connect(latest, undefined, id).catch((error: unknown) => {
+          if (!stopped)
+            setSyncError(
+              error instanceof Error ? error.message : 'Could not reconnect the local runtime.',
+            )
+        })
+      },
+      onError: (message) => {
+        if (stopped) return
+        setConnected(false)
+        setSyncError(message)
+        const previous = overviewsRef.current[id]
+        if (previous) updateOverview({ ...previous, connected: false, error: message })
+      },
       onStatus: (syncStatus) => {
         const previous = overviewsRef.current[id]
         if (!stopped && previous) updateOverview({ ...previous, syncStatus })
@@ -1592,6 +1618,7 @@ export function WorkspaceProvider({
     })
     const poll = Effect.suspend(() => {
       if (
+        live.shared ||
         live.online() ||
         (!inputPreview && document.visibilityState !== 'visible') ||
         busySnapshots.current.has(id)

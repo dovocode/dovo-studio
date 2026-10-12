@@ -11,6 +11,7 @@ import {
   writeWindowsRuntimeChoice,
   prepareWslRuntime,
 } from './windows-runtime.js'
+import { registerRuntimeSync } from './runtime-sync.js'
 import { registerThreadWindows } from './thread-window.js'
 import { registerTaskLauncher } from './task-launcher.js'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
@@ -152,6 +153,11 @@ app.once('will-quit', () => {
 
 const taskLauncher = registerTaskLauncher(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => taskLauncher.dispose())
+const runtimeSync = registerRuntimeSync(rendererPath, async (connection) => {
+  const local = await startLocalRuntime(__dirname)
+  return local.token === connection.token && local.address !== connection.address ? local : null
+})
+app.once('will-quit', () => runtimeSync.dispose())
 const threadWindows = registerThreadWindows(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => threadWindows.dispose())
 let mainWindow: BrowserWindow | undefined

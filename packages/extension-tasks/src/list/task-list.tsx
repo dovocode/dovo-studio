@@ -304,6 +304,11 @@ export function TaskList({
     }
   }
   const groups = useMemo(() => {
+    const ordered = (sections: { id: string; name: string; tasks: TaskEntry[]; open: boolean }[]) =>
+      orderThreadSections(sections, (group) => group.id, preferences.threadSectionOrder).map(
+        (group, index) => (index === 0 && group.id === 'active' ? { ...group, open: true } : group),
+      )
+
     const active = tasks.filter(
       ({ task, needsInput }) =>
         !task.archived &&
@@ -320,7 +325,7 @@ export function TaskList({
       },
       {
         id: 'active',
-        name: 'Active',
+        name: 'Open',
         tasks: active.filter(
           ({ task, needsInput }) =>
             !task.pinned &&
@@ -385,35 +390,29 @@ export function TaskList({
         !preferences.workingSection || task.pinned || task.status !== 'running' || needsInput,
     )
     if (grouping === 'none')
-      return orderThreadSections(
-        [
-          ...(visibleActive.length
-            ? [
-                {
-                  id: 'active',
-                  name: 'Active',
-                  tasks: visibleActive,
-                  open:
-                    visibleActive.some((entry) => entry.key === temporaryEntry?.key) ||
-                    (expanded.active ?? true),
-                },
-              ]
-            : []),
-          ...collapsedGroups,
-        ],
-        (group) => group.id,
-        preferences.threadSectionOrder,
-      )
+      return ordered([
+        ...(visibleActive.length
+          ? [
+              {
+                id: 'active',
+                name: 'Open',
+                tasks: visibleActive,
+                open:
+                  visibleActive.some((entry) => entry.key === temporaryEntry?.key) ||
+                  (expanded.active ?? true),
+              },
+            ]
+          : []),
+        ...collapsedGroups,
+      ])
     if (grouping === 'status')
-      return orderThreadSections(
+      return ordered(
         statusGroups.map((group) => ({
           ...group,
           open:
             group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
             (expanded[group.id] ?? group.open),
         })),
-        (group) => group.id,
-        preferences.threadSectionOrder,
       )
     const byProject = new Map<string, { id: string; name: string; tasks: TaskEntry[] }>()
     for (const entry of visibleActive) {
@@ -431,21 +430,17 @@ export function TaskList({
       group.tasks.push(entry)
       byProject.set(key, group)
     }
-    return orderThreadSections(
-      [
-        ...[...byProject.values()]
-          .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
-          .map((group) => ({
-            ...group,
-            open:
-              group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
-              (expanded[group.id] ?? true),
-          })),
-        ...collapsedGroups,
-      ],
-      (group) => group.id,
-      preferences.threadSectionOrder,
-    )
+    return ordered([
+      ...[...byProject.values()]
+        .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+        .map((group) => ({
+          ...group,
+          open:
+            group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
+            (expanded[group.id] ?? true),
+        })),
+      ...collapsedGroups,
+    ])
   }, [
     tasks,
     now,
@@ -684,7 +679,7 @@ export function TaskList({
         className="min-h-0 flex-1 overflow-y-auto px-1.5"
         aria-busy={busy}
       >
-        {groups.map((group) => {
+        {groups.map((group, index) => {
           const rows = group.tasks.map((entry) => {
             const handlers = entryHandlers(entry)
             return (
@@ -776,6 +771,7 @@ export function TaskList({
               </div>
             )
           })
+          if (index === 0 && group.id === 'active') return <div key={group.id}>{rows}</div>
           return (
             <details
               key={group.id}

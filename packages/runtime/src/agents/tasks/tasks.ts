@@ -11,6 +11,7 @@ import {
   taskHarnessSchema,
   delegatedAccess,
   resolveProviderAccess,
+  supportsAccess,
   taskFamilyIds,
   taskFamilyWorking,
   taskFamilyRunToken,
@@ -57,7 +58,7 @@ export class Tasks {
   private checkingSchedule = false
   private readonly executor = ManagedRuntime.make(Layer.empty)
   private stopping = false
-  private restartLease: { id: string; expiresAt: number } | undefined
+  private restartLease: { id: string; expiresAt: number; resumeInterrupted?: boolean } | undefined
   private steering = new Map<string, symbol>()
   private checkoutMutations = new Set<string>()
   private running = new Map<string, Running>()
@@ -933,15 +934,16 @@ export class Tasks {
   steer(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
     return runClientEffect(this.steerEffect(id, messageId, text, attachmentIds))
   }
-  prepareRestart() {
+  prepareRestart(resumeInterrupted?: boolean) {
     if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
       throw new HttpError(409, 'A runtime restart is already in progress')
     if (
-      this.running.size ||
-      this.store.get().tasks.some((task) => task.subagents?.some(nativeAgentWorking))
+      resumeInterrupted === undefined &&
+      (this.running.size ||
+        this.store.get().tasks.some((task) => task.subagents?.some(nativeAgentWorking)))
     )
       throw new HttpError(409, 'Finish or stop running tasks before changing network access.')
-    this.restartLease = { id: randomUUID(), expiresAt: Date.now() + 60000 }
+    this.restartLease = { id: randomUUID(), expiresAt: Date.now() + 60000, resumeInterrupted }
     return { id: this.restartLease.id }
   }
   cancelRestart(id: string) {
@@ -1838,6 +1840,44 @@ export class Tasks {
     }
     return result
   }
+  /** A UI-requested review owns a fresh session and never queues a result to the author. */
+  createIndependentReviewer(taskId: string, reviewId: string, prompt: string, agentId?: string) {
+    const parent = this.store.task(taskId)
+    if (parent.example || parent.archived || parent.archivedAt || this.hasWorkingFamily(taskId))
+      throw new HttpError(409, 'Finish running work before starting an independent review')
+    const configured = agentId
+      ? this.store.agentsFor(parent.repositoryId).find((agent) => agent.id === agentId)
+      : resolveTaskAgent(parent, this.store.get().agents)
+    if (!configured) throw new HttpError(400, 'Choose an available reviewer configuration')
+    if (!supportsAccess(configured.provider, 'read-only'))
+      throw new HttpError(
+        400,
+        'This provider does not support read-only reviews. Choose another reviewer.',
+      )
+    return this.store.transaction(() => {
+      const reviewer = this.create({
+        title: `Review: ${parent.title}`,
+        repositoryId: parent.repositoryId,
+        execution: parent.execution,
+        agentId: agentId ?? parent.agentId,
+        harness: decode(taskHarnessSchema, { ...configured, permission: 'read-only' }),
+        objective: prompt,
+        origin: 'code-review',
+      })
+      this.store.updateTask(reviewer.id, (task) => ({
+        ...task,
+        setupCommand: undefined,
+        worktreeFromOrigin: undefined,
+        delegation: {
+          parentTaskId: parent.id,
+          parentRunId: reviewId,
+          key: `review:${reviewId}`,
+          completion: 'read',
+        },
+      }))
+      return this.store.task(reviewer.id)
+    })
+  }
   subagentSpawn(input: SubagentSpawn) {
     const parent = this.store.task(input.taskId)
     const run = this.running.get(parent.id)
@@ -2044,6 +2084,7 @@ export class Tasks {
           if (!task?.restartRecovery) continue
           if (
             !(
+              task.restartRecovery.resumeRequested ??
               this.store.projectSettings(task.repositoryId).taskBehavior?.continueAfterRestart ??
               enabled()
             ) ||
@@ -2067,7 +2108,7 @@ export class Tasks {
             id,
             true,
             () =>
-              enabled() &&
+              (this.store.task(id).restartRecovery?.resumeRequested ?? enabled()) &&
               this.store.task(id).restartRecovery?.automatic === true &&
               !this.store.task(id).archived,
           ).pipe(
@@ -2133,6 +2174,11 @@ export class Tasks {
               automatic:
                 !(task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length) &&
                 !task.queuePaused,
+              ...(this.restartLease &&
+              this.restartLease.expiresAt > Date.now() &&
+              this.restartLease.resumeInterrupted !== undefined
+                ? { resumeRequested: this.restartLease.resumeInterrupted }
+                : {}),
             },
           }))
         run.controller.abort(new Error('Runtime shutting down'))

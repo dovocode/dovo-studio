@@ -1,3 +1,4 @@
+import { TaskVisualization } from './task-visualization'
 import { useEffect, useMemo, useState, useCallback, type ComponentProps } from 'react'
 import {
   MessageResponse,
@@ -189,6 +190,8 @@ export function TaskMessageResponse({
             <MessageResponse {...props} localFiles={localFiles}>
               {part.text}
             </MessageResponse>
+          ) : part.kind === 'visualization' ? (
+            <TaskVisualization taskId={taskId} path={part.path} label={part.label} />
           ) : part.kind === 'template' ? (
             <div
               role="group"

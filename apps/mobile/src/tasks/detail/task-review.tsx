@@ -1,3 +1,8 @@
+import { useTaskReview } from '../../scm/review/use-task-review'
+import { CodeReviewReport, type ReviewTab } from '../../scm/review/code-review-report'
+import type { CodeFinding } from '@dovo/protocol'
+import { Sheet } from '../../ui/layout/sheet'
+import { pendingReviewComments } from '@dovo/protocol'
 import { changedFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
 import { useFileReview } from '../../scm/review/use-file-review'
 import { MobileOrganizeReview } from '../../scm/review/organize-review'
@@ -26,11 +31,15 @@ export type FileEditDraft = { path: string; contents: string; expected: string }
 export function TaskReview({
   initialCheckpoint = '',
   initialPath = '',
+  initialLine,
+  initialTab = 'diff',
   edit,
   onEditChange: setEdit,
 }: {
   initialCheckpoint?: string
   initialPath?: string
+  initialLine?: number
+  initialTab?: ReviewTab
   edit: FileEditDraft | null
   onEditChange: (draft: FileEditDraft | null) => void
 }) {
@@ -40,6 +49,52 @@ export function TaskReview({
   const { call, connected, callEffect, snapshot } = useRuntime(),
     { busy, error, act } = useAction()
   const [checkpoint, setCheckpoint] = useApplicationState(initialCheckpoint)
+  const [tab, setTab] = useState<ReviewTab>(initialTab)
+  const codeReview = useTaskReview(
+    task.id,
+    JSON.stringify([
+      task.status,
+      task.files.map((file) => [file.path, changedFileFingerprint(file)]),
+    ]),
+    !task.example,
+  )
+  const [scope, setScope] = useState<'working' | 'branch'>('working')
+  const [branchFiles, setBranchFiles] = useState<Task['files']>([])
+  const [branchError, setBranchError] = useState('')
+  const [focusedFinding, setFocusedFinding] = useState<CodeFinding>()
+  useEffect(() => {
+    if (scope !== 'branch' || !connected) return
+    let active = true
+    setBranchError('')
+    void call(
+      '/api/scm/branch-changes',
+      { repositoryId: task.repositoryId, taskId: task.id, includeWorking: true },
+      responses.branchDiff,
+    ).then(
+      (result) => {
+        if (active) setBranchFiles(result.files)
+      },
+      (error: unknown) => {
+        if (active) setBranchError(error instanceof Error ? error.message : String(error))
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [scope, connected, call, task.id, task.repositoryId, task.files])
+  const [since, setSince] = useState<{ id: string; files: Task['files'] } | null>(null)
+  const [contextPreview, setContextPreview] = useState<{
+    path: string
+    line: number
+    contents: string
+  } | null>(null)
+  const [contextError, setContextError] = useState('')
+  const [focusedLine, setFocusedLine] = useState(initialLine)
+  const [comment, setComment] = useState<{
+    line: number
+    side: 'additions' | 'deletions'
+    body: string
+  } | null>(null)
   const selectedTurn = task.turns?.find((turn) => turn.id === checkpoint)?.checkpoint
   const [checkoutId, setCheckoutId] = useState('')
   const linkedHistory = selectedTurn?.linked?.find((item) => item.checkoutId === checkoutId)
@@ -72,16 +127,20 @@ export function TaskReview({
   }, [call, task.id, checkoutId, checkpoint, loadKey])
   const sourceFiles = useMemo(
     () =>
-      checkpoint
-        ? history
-          ? checkpointFiles(history)
-          : []
-        : checkoutId
-          ? linkedFiles?.key === loadKey
-            ? linkedFiles.files
+      since
+        ? since.files
+        : checkpoint
+          ? history
+            ? checkpointFiles(history)
             : []
-          : task.files,
-    [checkpoint, history, task.files, checkoutId, linkedFiles, loadKey],
+          : checkoutId
+            ? linkedFiles?.key === loadKey
+              ? linkedFiles.files
+              : []
+            : scope === 'branch'
+              ? branchFiles
+              : task.files,
+    [checkpoint, history, task.files, checkoutId, linkedFiles, loadKey, since, scope, branchFiles],
   )
   const fingerprints = useMemo(
     () => new Map(sourceFiles.map((file) => [file.path, changedFileFingerprint(file)])),
@@ -91,11 +150,12 @@ export function TaskReview({
     {
       kind: 'task',
       taskId: task.id,
-      source: checkpoint ? 'turn' : 'working',
+      source: checkpoint ? 'turn' : scope,
       turnId: checkpoint || undefined,
       checkoutId: checkoutId || undefined,
     },
     JSON.stringify([...fingerprints]),
+    !since,
   )
   const [related, setRelated] = useState(true),
     [toolsOpen, setToolsOpen] = useState(false)
@@ -105,7 +165,7 @@ export function TaskReview({
         sourceFiles.map((file) => ({
           ...file,
           viewed:
-            !checkpoint && !checkoutId
+            !checkpoint && !checkoutId && scope === 'working'
               ? file.viewed
               : (reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
                   ?.viewed ?? false),
@@ -113,7 +173,7 @@ export function TaskReview({
         review.progress?.groups ?? [],
         related,
       ),
-    [sourceFiles, fingerprints, review.progress, related, checkpoint, checkoutId],
+    [sourceFiles, fingerprints, review.progress, related, checkpoint, checkoutId, scope],
   )
   const stats = useMemo(
     () => new Map(sourceFiles.map((file) => [file.path, fileStats(file)])),
@@ -132,260 +192,475 @@ export function TaskReview({
   )
   const refresh = () =>
     call(
-      checkoutId ? '/api/tasks/checkouts/changes' : '/api/scm/changes',
+      checkoutId
+        ? '/api/tasks/checkouts/changes'
+        : scope === 'branch'
+          ? '/api/scm/branch-changes'
+          : '/api/scm/changes',
       checkoutId
         ? { id: task.id, checkoutId }
-        : { repositoryId: task.repositoryId, taskId: task.id },
+        : { repositoryId: task.repositoryId, taskId: task.id, includeWorking: scope === 'branch' },
       responses.files,
     )
+  const openFinding = (finding: CodeFinding) => {
+    setFocusedFinding(finding)
+    if (!sourceFiles.some((file) => file.path === finding.path)) {
+      act(async () => {
+        const result = await call(
+          '/api/tasks/files/read',
+          { id: task.id, path: finding.path },
+          responses.projectFile,
+        )
+        setContextPreview({ ...result, line: finding.line })
+      })
+      return
+    }
+    setSince(null)
+    setCheckpoint('')
+    setCheckoutId('')
+    setPath(finding.path)
+    setFocusedLine(finding.line)
+    setTab('diff')
+  }
+  useEffect(() => {
+    let active = true
+    setContextError('')
+    if (initialPath && initialLine && !task.files.some((file) => file.path === initialPath))
+      void call(
+        '/api/tasks/files/read',
+        { id: task.id, path: initialPath },
+        responses.projectFile,
+      ).then(
+        (result) => {
+          if (active) setContextPreview({ ...result, line: initialLine })
+        },
+        (error: unknown) => {
+          if (active) setContextError(error instanceof Error ? error.message : String(error))
+        },
+      )
+    return () => {
+      active = false
+    }
+  }, [initialPath, initialLine, task.id, call])
+  const sinceReview = (reviewId: string) =>
+    act(async () => {
+      const result = await call(
+        '/api/review/task/changes',
+        { taskId: task.id, reviewId },
+        responses.files,
+      )
+      setSince({ id: reviewId, files: result.files })
+      setCheckpoint('')
+      setCheckoutId('')
+      setPath('')
+      setFocusedLine(undefined)
+      setTab('diff')
+    })
   return (
     <View style={styles.screen}>
       <PullStatus task={task} />
-      <View
-        style={[
-          styles.content,
-          {
-            paddingVertical: 8,
-          },
-        ]}
-      >
-        {!!(checkpoint ? selectedTurn?.linked?.length : task.linkedCheckouts?.length) && (
+      <CodeReviewReport
+        task={task}
+        review={codeReview}
+        tab={tab}
+        onTab={setTab}
+        onOpen={openFinding}
+        onSince={sinceReview}
+        editing={!!edit}
+        scope={scope}
+        focusedFinding={focusedFinding}
+        onScope={(next) => {
+          setScope(next)
+          setSince(null)
+          setCheckpoint('')
+          setCheckoutId('')
+          setPath('')
+          setFocusedLine(undefined)
+          setFocusedFinding(undefined)
+          setBranchFiles([])
+        }}
+      />
+      {!!branchError && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {branchError}
+        </Text>
+      )}
+      <View style={tab === 'diff' ? { flex: 1, minHeight: 0 } : { display: 'none' }}>
+        <View
+          style={[
+            styles.content,
+            {
+              paddingVertical: 8,
+            },
+          ]}
+        >
+          {!!(checkpoint ? selectedTurn?.linked?.length : task.linkedCheckouts?.length) && (
+            <Choice
+              label="Project checkout"
+              value={checkoutId}
+              disabled={!!edit}
+              items={[
+                { id: '', name: 'Primary checkout' },
+                ...((checkpoint
+                  ? selectedTurn?.linked?.map((item) => ({
+                      id: item.checkoutId,
+                      name: `${item.repositoryName ?? item.repositoryId} · ${item.branch ?? 'Linked checkout'}`,
+                    }))
+                  : task.linkedCheckouts?.map((item) => ({
+                      id: item.id,
+                      name: `${snapshot?.workspace.repositories.find((repo) => repo.id === item.repositoryId)?.name ?? item.repositoryId} · ${item.branch ?? item.execution}`,
+                    }))) ?? []),
+              ]}
+              onChange={(id) => {
+                setSince(null)
+                setCheckoutId(id)
+                setPath('')
+              }}
+            />
+          )}
+          {!!checkoutId && !checkpoint && linkedFiles?.key === loadKey && !!linkedFiles.error && (
+            <Text style={styles.error}>{linkedFiles.error}</Text>
+          )}
           <Choice
-            label="Project checkout"
-            value={checkoutId}
+            label="Change history"
+            value={since ? 'review' : checkpoint}
             disabled={!!edit}
             items={[
-              { id: '', name: 'Primary checkout' },
-              ...((checkpoint
-                ? selectedTurn?.linked?.map((item) => ({
-                    id: item.checkoutId,
-                    name: `${item.repositoryName ?? item.repositoryId} · ${item.branch ?? 'Linked checkout'}`,
-                  }))
-                : task.linkedCheckouts?.map((item) => ({
-                    id: item.id,
-                    name: `${snapshot?.workspace.repositories.find((repo) => repo.id === item.repositoryId)?.name ?? item.repositoryId} · ${item.branch ?? item.execution}`,
-                  }))) ?? []),
+              {
+                id: '',
+                name: 'Current changes',
+              },
+              ...(since ? [{ id: 'review', name: 'Since last review' }] : []),
+              ...(task.turns ?? [])
+                .filter((turn) => turn.checkpoint)
+                .map((turn, index) => ({
+                  id: turn.id,
+                  name: `Turn ${index + 1} · ${turn.status} · ${turn.checkpoint ? checkpointFiles(turn.checkpoint).length : 0} files`,
+                })),
             ]}
-            onChange={(id) => {
-              setCheckoutId(id)
+            onChange={(value) => {
+              if (value === 'review') return
+              setSince(null)
+              setCheckpoint(value)
+              setCheckoutId('')
               setPath('')
             }}
           />
-        )}
-        {!!checkoutId && !checkpoint && linkedFiles?.key === loadKey && !!linkedFiles.error && (
-          <Text style={styles.error}>{linkedFiles.error}</Text>
-        )}
-        <Choice
-          label="Change history"
-          value={checkpoint}
-          disabled={!!edit}
-          items={[
-            {
-              id: '',
-              name: 'Current changes',
-            },
-            ...(task.turns ?? [])
-              .filter((turn) => turn.checkpoint)
-              .map((turn, index) => ({
-                id: turn.id,
-                name: `Turn ${index + 1} · ${turn.status} · ${turn.checkpoint ? checkpointFiles(turn.checkpoint).length : 0} files`,
-              })),
-          ]}
-          onChange={(value) => {
-            setCheckpoint(value)
-            setCheckoutId('')
-            setPath('')
-          }}
-        />
-        {!!history?.error && <Text style={styles.error}>{history.error}</Text>}
-        {!!checkpoint && (
-          <Text style={styles.muted}>
-            Snapshot diff for this turn. Select Current changes to edit files.
-          </Text>
-        )}
-        {toolsOpen && !checkoutId && !checkpoint && <CommitSection task={task} />}
-        <View style={styles.row}>
-          <Action
-            secondary
-            label="Refresh changes"
-            disabled={!connected || busy || task.example || !!edit || !!checkpoint}
-            onPress={() =>
-              act(async () => {
-                const result = await refresh()
-                if (checkoutId) setLinkedFiles({ key: loadKey, files: result.files, error: '' })
-                review.reload()
-              })
-            }
-          />
-          <Action
-            secondary
-            label={toolsOpen ? 'Fewer actions' : 'More actions'}
-            disabled={!!edit}
-            onPress={() => setToolsOpen((value) => !value)}
-          />
-          {edit ? (
-            <Action label="Cancel edit" secondary disabled={busy} onPress={() => setEdit(null)} />
-          ) : file && toolsOpen ? (
-            <Action
-              label="Edit file"
-              secondary
-              disabled={busy || !!checkpoint || !!checkoutId || !!file.preview}
-              onPress={() => {
-                setPath(file.path)
-                setEdit({
-                  path: file.path,
-                  contents: file.after,
-                  expected: file.diskContents ?? file.after,
-                })
-              }}
-            />
-          ) : null}
-          {toolsOpen && file && !edit && (!checkpoint || !history?.undone) && (
+          {since && (
+            <Text style={styles.muted}>
+              Changes since this review snapshot. Select Current changes to comment or edit.
+            </Text>
+          )}
+          {!!history?.error && <Text style={styles.error}>{history.error}</Text>}
+          {!!checkpoint && (
+            <Text style={styles.muted}>
+              Snapshot diff for this turn. Select Current changes to edit files.
+            </Text>
+          )}
+          {toolsOpen && !checkoutId && !checkpoint && <CommitSection task={task} />}
+          <View style={styles.row}>
             <Action
               secondary
-              label={checkpoint ? 'Revert this file' : 'Discard file changes'}
-              disabled={!connected || busy || task.example || task.status === 'running'}
+              label="Refresh changes"
+              disabled={!connected || busy || task.example || !!edit || !!checkpoint}
               onPress={() =>
-                Alert.alert(
-                  checkpoint ? 'Revert this file?' : 'Discard changes to this file?',
-                  checkpoint
-                    ? `${file.path} goes back to how it was before this turn. The current file is saved first.`
-                    : `${file.path} goes back to the last commit. The current file is saved first, so this can be recovered.`,
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: checkpoint ? 'Revert' : 'Discard',
-                      style: 'destructive',
-                      onPress: () =>
-                        act(() =>
-                          callEffect(
-                            '/api/tasks/file/restore',
-                            {
-                              id: task.id,
-                              path: file.path,
-                              ...(checkpoint ? { turnId: checkpoint } : {}),
-                              checkoutId: checkoutId || undefined,
-                            },
-                            responses.ok,
-                          ),
-                        ),
-                    },
-                  ],
+                act(async () => {
+                  if (since) {
+                    const result = await call(
+                      '/api/review/task/changes',
+                      { taskId: task.id, reviewId: since.id },
+                      responses.files,
+                    )
+                    setSince({ ...since, files: result.files })
+                    return
+                  }
+                  const result = await refresh()
+                  if (checkoutId) setLinkedFiles({ key: loadKey, files: result.files, error: '' })
+                  else if (scope === 'branch') setBranchFiles(result.files)
+                  review.reload()
+                })
+              }
+            />
+            <Action
+              secondary
+              label={toolsOpen ? 'Fewer actions' : 'More actions'}
+              disabled={!!edit}
+              onPress={() => setToolsOpen((value) => !value)}
+            />
+            {edit ? (
+              <Action label="Cancel edit" secondary disabled={busy} onPress={() => setEdit(null)} />
+            ) : file && toolsOpen ? (
+              <Action
+                label="Edit file"
+                secondary
+                disabled={
+                  busy ||
+                  !!checkpoint ||
+                  !!checkoutId ||
+                  !!file.preview ||
+                  !!since ||
+                  scope === 'branch'
+                }
+                onPress={() => {
+                  setPath(file.path)
+                  setEdit({
+                    path: file.path,
+                    contents: file.after,
+                    expected: file.diskContents ?? file.after,
+                  })
+                }}
+              />
+            ) : null}
+            {toolsOpen &&
+              file &&
+              !edit &&
+              !since &&
+              scope === 'working' &&
+              (!checkpoint || !history?.undone) && (
+                <Action
+                  secondary
+                  label={checkpoint ? 'Revert this file' : 'Discard file changes'}
+                  disabled={!connected || busy || task.example || task.status === 'running'}
+                  onPress={() =>
+                    Alert.alert(
+                      checkpoint ? 'Revert this file?' : 'Discard changes to this file?',
+                      checkpoint
+                        ? `${file.path} goes back to how it was before this turn. The current file is saved first.`
+                        : `${file.path} goes back to the last commit. The current file is saved first, so this can be recovered.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: checkpoint ? 'Revert' : 'Discard',
+                          style: 'destructive',
+                          onPress: () =>
+                            act(() =>
+                              callEffect(
+                                '/api/tasks/file/restore',
+                                {
+                                  id: task.id,
+                                  path: file.path,
+                                  ...(checkpoint ? { turnId: checkpoint } : {}),
+                                  checkoutId: checkoutId || undefined,
+                                },
+                                responses.ok,
+                              ),
+                            ),
+                        },
+                      ],
+                    )
+                  }
+                />
+              )}
+          </View>
+        </View>
+        {!!files.length && (
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingBottom: 8,
+            }}
+          >
+            {toolsOpen && (
+              <MobileOrganizeReview
+                review={review}
+                disabled={!!edit || !!task.example || !!since}
+                onOrganized={() => setRelated(true)}
+              />
+            )}
+            <MobileFileReview
+              files={files.map((file) => {
+                const amounts = stats.get(file.path)
+                return {
+                  path: file.path,
+                  viewed: file.viewed,
+                  label: file.preview ? filePreviewLabel(file) : undefined,
+                  additions: file.preview ? undefined : (amounts?.additions ?? 0),
+                  deletions: file.preview ? undefined : (amounts?.deletions ?? 0),
+                }
+              })}
+              groups={review.progress?.groups ?? []}
+              related={related}
+              onRelatedChange={setRelated}
+              selected={file?.path ?? ''}
+              onSelect={(next) => {
+                setPath(next)
+                setFocusedFinding(undefined)
+                setFocusedLine(undefined)
+              }}
+              onViewed={(viewed) => {
+                if (file) review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
+              }}
+              disabled={
+                !review.ready ||
+                !!edit ||
+                !!task.example ||
+                !file ||
+                !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+              }
+              busy={review.busy}
+              navigationDisabled={!!edit}
+              error={review.error}
+              onRetry={review.reload}
+            />
+          </View>
+        )}
+        {!file && !edit ? (
+          <Text style={[styles.muted, styles.content]}>No changed files.</Text>
+        ) : edit ? (
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <Field
+              label={edit.path}
+              value={edit.contents}
+              editable={!busy}
+              onChangeText={(contents) =>
+                setEdit({
+                  ...edit,
+                  contents,
+                })
+              }
+              multiline
+              autoCorrect={false}
+              style={[
+                styles.input,
+                {
+                  minHeight: 300,
+                  fontFamily: 'monospace',
+                  textAlignVertical: 'top',
+                },
+              ]}
+            />
+            <Action
+              label="Apply to disk"
+              disabled={busy || !connected || task.example}
+              onPress={() =>
+                act(() =>
+                  mobileWorkflow(function* () {
+                    yield* callEffect(
+                      '/api/scm/apply',
+                      {
+                        repositoryId: task.repositoryId,
+                        taskId: task.id,
+                        path: edit.path,
+                        expected: edit.expected,
+                        contents: edit.contents,
+                      },
+                      responses.ok,
+                    )
+                    setEdit(null)
+                    yield* nativeEffect(() => refresh())
+                  }),
                 )
               }
             />
-          )}
-        </View>
+            <Text style={styles.muted}>
+              Applies on the connected computer only if the file still matches the loaded baseline.
+            </Text>
+          </ScrollView>
+        ) : file?.preview ? (
+          <SavedFilePreview
+            key={`${checkpoint}:${checkoutId}:${file.path}`}
+            file={file}
+            taskId={task.id}
+            turnId={checkpoint || undefined}
+            working={!checkpoint}
+            checkoutId={checkoutId || undefined}
+          />
+        ) : (
+          <DiffView
+            key={`${checkpoint}:${checkoutId}:${file?.path}:${since?.id ?? ''}`}
+            patch={patch}
+            focusedLine={focusedLine}
+            onLinePress={
+              !checkpoint && !checkoutId && !since && scope === 'working'
+                ? (line, side) => {
+                    setFocusedLine(line)
+                    setComment({ line, side, body: '' })
+                  }
+                : undefined
+            }
+            annotations={
+              file && !checkpoint && !since && !checkoutId && scope === 'working'
+                ? pendingReviewComments(task)
+                    .filter(
+                      (message) =>
+                        message.file === file.path &&
+                        message.diffComment &&
+                        (message.diffComment.side === 'additions' ? file.after : file.before)
+                          .split('\n')
+                          .slice(message.diffComment.start - 1, message.diffComment.end)
+                          .join('\n') === message.diffComment.excerpt,
+                    )
+                    .flatMap((message) =>
+                      message.diffComment
+                        ? [
+                            {
+                              line: message.diffComment.start,
+                              side: message.diffComment.side,
+                              text: message.diffComment.body,
+                            },
+                          ]
+                        : [],
+                    )
+                : []
+            }
+          />
+        )}
       </View>
-      {!!files.length && (
-        <View
-          style={{
-            paddingHorizontal: 16,
-            paddingBottom: 8,
-          }}
+      {contextPreview && (
+        <Sheet
+          title={`${contextPreview.path}:${contextPreview.line}`}
+          onClose={() => setContextPreview(null)}
         >
-          <MobileOrganizeReview
-            review={review}
-            disabled={!!edit || !!task.example}
-            onOrganized={() => setRelated(true)}
-          />
-          <MobileFileReview
-            files={files.map((file) => {
-              const amounts = stats.get(file.path)
-              return {
-                path: file.path,
-                viewed: file.viewed,
-                label: file.preview ? filePreviewLabel(file) : undefined,
-                additions: file.preview ? undefined : (amounts?.additions ?? 0),
-                deletions: file.preview ? undefined : (amounts?.deletions ?? 0),
-              }
-            })}
-            groups={review.progress?.groups ?? []}
-            related={related}
-            onRelatedChange={setRelated}
-            selected={file?.path ?? ''}
-            onSelect={setPath}
-            onViewed={(viewed) => {
-              if (file) review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
-            }}
-            disabled={
-              !review.ready ||
-              !!edit ||
-              !!task.example ||
-              !file ||
-              !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
-            }
-            busy={review.busy}
-            navigationDisabled={!!edit}
-            error={review.error}
-            onRetry={review.reload}
-          />
-        </View>
+          <ScrollView>
+            <Text style={styles.muted}>Surrounding code · unchanged file</Text>
+            <Text selectable style={[styles.text, { fontFamily: 'monospace' }]}>
+              {contextPreview.contents
+                .split('\n')
+                .slice(Math.max(0, contextPreview.line - 11), contextPreview.line + 10)
+                .map(
+                  (line, index) => `${Math.max(0, contextPreview.line - 11) + index + 1}  ${line}`,
+                )
+                .join('\n')}
+            </Text>
+          </ScrollView>
+        </Sheet>
       )}
-      {!file && !edit ? (
-        <Text style={[styles.muted, styles.content]}>No changed files.</Text>
-      ) : edit ? (
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Field
-            label={edit.path}
-            value={edit.contents}
-            editable={!busy}
-            onChangeText={(contents) =>
-              setEdit({
-                ...edit,
-                contents,
-              })
-            }
-            multiline
-            autoCorrect={false}
-            style={[
-              styles.input,
-              {
-                minHeight: 300,
-                fontFamily: 'monospace',
-                textAlignVertical: 'top',
-              },
-            ]}
-          />
-          <Action
-            label="Apply to disk"
-            disabled={busy || !connected || task.example}
-            onPress={() =>
-              act(() =>
-                mobileWorkflow(function* () {
-                  yield* callEffect(
-                    '/api/scm/apply',
+      {comment && file && (
+        <Sheet title={`Comment on ${file.path}:${comment.line}`} onClose={() => setComment(null)}>
+          <View style={{ gap: 12 }}>
+            <Field
+              label="Review comment"
+              multiline
+              value={comment.body}
+              onChangeText={(body) => setComment({ ...comment, body })}
+            />
+            <Action
+              label="Add comment to thread"
+              disabled={!connected || busy || !comment.body.trim()}
+              onPress={() =>
+                act(async () => {
+                  const contents = comment.side === 'additions' ? file.after : file.before
+                  await call(
+                    '/api/tasks/feedback',
                     {
-                      repositoryId: task.repositoryId,
-                      taskId: task.id,
-                      path: edit.path,
-                      expected: edit.expected,
-                      contents: edit.contents,
+                      id: task.id,
+                      path: file.path,
+                      body: comment.body,
+                      side: comment.side,
+                      start: comment.line,
+                      end: comment.line,
+                      excerpt: contents.split('\n')[comment.line - 1] ?? '',
                     },
                     responses.ok,
                   )
-                  setEdit(null)
-                  yield* nativeEffect(() => refresh())
-                }),
-              )
-            }
-          />
-          <Text style={styles.muted}>
-            Applies on the connected computer only if the file still matches the loaded baseline.
-          </Text>
-        </ScrollView>
-      ) : file?.preview ? (
-        <SavedFilePreview
-          key={`${checkpoint}:${checkoutId}:${file.path}`}
-          file={file}
-          taskId={task.id}
-          turnId={checkpoint || undefined}
-          working={!checkpoint}
-          checkoutId={checkoutId || undefined}
-        />
-      ) : (
-        <DiffView key={`${checkpoint}:${checkoutId}:${file?.path}`} patch={patch} />
+                  setComment(null)
+                })
+              }
+            />
+          </View>
+        </Sheet>
       )}
+      {!!contextError && <Text style={styles.error}>{contextError}</Text>}
       {!!error && (
         <Text
           style={[

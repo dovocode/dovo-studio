@@ -482,3 +482,63 @@ it('increases backoff across briefly healthy sessions and resets after sustained
   expect(Socket.instances).toHaveLength(4)
   expect(live.online()).toBe(false)
 })
+
+it('uses the desktop connection owner for snapshots, activity, watches and retry without opening a renderer socket', () => {
+  const connection = {
+    address: 'http://desktop-shared.lan:8787',
+    token: 'desktop-shared-runtime-token',
+  }
+  let receive: ((event: import('./desktop-sync.js').DesktopSyncEvent) => void) | undefined
+  const stop = vi.fn<() => void>()
+  const subscribe = vi.fn<import('./desktop-sync.js').DesktopRuntimeSyncBridge['subscribe']>(
+    (_input, listener) => {
+      receive = listener
+      return stop
+    },
+  )
+  const update = vi.fn<import('./desktop-sync.js').DesktopRuntimeSyncBridge['update']>()
+  const refresh = vi.fn<import('./desktop-sync.js').DesktopRuntimeSyncBridge['refresh']>()
+  vi.stubGlobal('window', { dovo: { runtimeSync: { subscribe, update, refresh } } })
+  const fetcher = vi.fn<typeof fetch>()
+  vi.stubGlobal('fetch', fetcher)
+  const task = watchRuntimeTask(connection, 'author')
+  const activity =
+    vi.fn<
+      (
+        events: (typeof import('../../automation/activity.js').activitySchema.Type)['events'],
+      ) => void
+    >()
+  const unwatch = watchRuntimeActivity(connection, 'author', activity, true)
+  const snapshot = vi.fn<(value: RuntimeSnapshot) => void>()
+  const error = vi.fn<(value: string) => void>()
+  const live = startRuntimeSync(connection, { onSnapshot: snapshot, onError: error })
+  stopped.push(() => {
+    live.stop()
+    task()
+    unwatch()
+  })
+  expect(live.shared).toBe(true)
+  expect(subscribe.mock.calls[0][0]).toMatchObject({
+    tasks: ['author'],
+    scopes: ['author'],
+    detailScopes: ['author'],
+  })
+  const reviewer = watchRuntimeTask(connection, 'reviewer')
+  stopped.push(reviewer)
+  expect(update.mock.calls.at(-1)?.[0].tasks).toEqual(['author', 'reviewer'])
+  receive?.({ type: 'status', status: 'live', online: true })
+  expect(runtimeSyncOnline(connection, 'author')).toBe(true)
+  receive?.({ type: 'activity', scope: 'author', events: [] })
+  expect(activity).toHaveBeenCalledWith([])
+  receive?.({ type: 'error', message: 'Runtime offline' })
+  expect(live.online()).toBe(false)
+  expect(error).toHaveBeenCalledWith('Runtime offline')
+  live.refresh()
+  live.retry()
+  expect(refresh.mock.calls.map((call) => call[1])).toEqual([false, true])
+  expect(fetcher).not.toHaveBeenCalled()
+  live.stop()
+  expect(stop).toHaveBeenCalledOnce()
+  receive?.({ type: 'activity', scope: 'author', events: [] })
+  expect(activity).toHaveBeenCalledTimes(1)
+})

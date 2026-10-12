@@ -19,7 +19,7 @@ export function SectionOrderSheet({ onClose }: { onClose: () => void }) {
       <View style={{ gap: 12 }}>
         <Text style={styles.muted}>
           Change the order of thread categories. Empty sections stay hidden. Project and ungrouped
-          threads use Active’s position.
+          threads use Open’s position.
         </Text>
         {order.map((id, index) => (
           <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -28,7 +28,7 @@ export function SectionOrderSheet({ onClose }: { onClose: () => void }) {
             </Text>
             <IconButton
               icon="send"
-              label={`Move ${id} up`}
+              label={`Move ${id === 'active' ? 'open' : id} up`}
               disabled={index === 0}
               onPress={() =>
                 updateMobilePreferences({ threadSectionOrder: moveThreadSection(order, id, -1) })
@@ -36,7 +36,7 @@ export function SectionOrderSheet({ onClose }: { onClose: () => void }) {
             />
             <IconButton
               icon="down"
-              label={`Move ${id} down`}
+              label={`Move ${id === 'active' ? 'open' : id} down`}
               disabled={index === order.length - 1}
               onPress={() =>
                 updateMobilePreferences({ threadSectionOrder: moveThreadSection(order, id, 1) })

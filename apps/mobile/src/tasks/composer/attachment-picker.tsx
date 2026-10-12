@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { Alert, Keyboard, Linking, Platform } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
@@ -6,14 +7,68 @@ import { isHeicAttachment, jpegAttachmentName } from './attachment-images'
 import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
-import { attachmentResultSchema, MAX_ATTACHMENT_BYTES } from '@dovo/protocol'
+import { attachmentResultSchema, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 
+export type AttachmentAsset = { uri: string; name: string; mimeType?: string | null }
+
 // This controller belongs to the conversation, not a button that moves when the keyboard closes.
 export function useAttachmentPicker(taskId: string) {
-  const { connected, callEffect } = useRuntime()
-  const { busy, error, act } = useAction()
+  const { connected, callEffect, snapshot } = useRuntime()
+  const { busy, error, act, run } = useAction()
+  const uploading = useRef(false)
+  const uploadAssets = (assets: AttachmentAsset[]) =>
+    mobileWorkflow(function* () {
+      const count =
+        snapshot?.workspace.tasks.find((task) => task.id === taskId)?.draftAttachments?.length ?? 0
+      if (count + assets.length > MAX_ATTACHMENTS)
+        throw new Error('Attach up to 5 files per message.')
+      for (const asset of assets) {
+        const prepared = yield* nativeEffect(async () => {
+          if (!isHeicAttachment(asset)) return asset
+          const context = ImageManipulator.manipulate(asset.uri)
+          try {
+            const image = await context.renderAsync()
+            try {
+              const converted = await image.saveAsync({
+                format: SaveFormat.JPEG,
+                compress: 0.8,
+              })
+              return { ...asset, uri: converted.uri, name: jpegAttachmentName(asset.name) }
+            } finally {
+              image.release()
+            }
+          } finally {
+            context.release()
+          }
+        })
+        const data = yield* nativeEffect(async () => {
+          const file = new File(prepared.uri)
+          try {
+            if (file.size > MAX_ATTACHMENT_BYTES)
+              throw new Error(`${prepared.name} is larger than 4 MB`)
+            return await file.base64()
+          } finally {
+            if (prepared.uri !== asset.uri) file.delete()
+          }
+        })
+        yield* callEffect(
+          '/api/attachments/upload',
+          { taskId, id: randomUUID(), name: prepared.name, data },
+          attachmentResultSchema,
+        )
+      }
+    })
+  const upload = (assets: AttachmentAsset[]) => {
+    if (!connected) return Promise.reject(new Error('Reconnect to attach files.'))
+    if (busy || uploading.current)
+      return Promise.reject(new Error('Wait for the current attachment operation to finish.'))
+    uploading.current = true
+    return run(() => uploadAssets(assets)).finally(() => {
+      uploading.current = false
+    })
+  }
   const select = (source: 'photos' | 'files' | 'camera') => {
     if (!connected) return
     act(() =>
@@ -54,42 +109,7 @@ export function useAttachmentPicker(taskId: string) {
               })) ?? [],
           }
         })
-        if (!result.canceled)
-          for (const asset of result.assets) {
-            const prepared = yield* nativeEffect(async () => {
-              if (!isHeicAttachment(asset)) return asset
-              const context = ImageManipulator.manipulate(asset.uri)
-              try {
-                const image = await context.renderAsync()
-                try {
-                  const converted = await image.saveAsync({
-                    format: SaveFormat.JPEG,
-                    compress: 0.8,
-                  })
-                  return { ...asset, uri: converted.uri, name: jpegAttachmentName(asset.name) }
-                } finally {
-                  image.release()
-                }
-              } finally {
-                context.release()
-              }
-            })
-            const data = yield* nativeEffect(async () => {
-              const file = new File(prepared.uri)
-              try {
-                if (file.size > MAX_ATTACHMENT_BYTES)
-                  throw new Error(`${prepared.name} is larger than 4 MB`)
-                return await file.base64()
-              } finally {
-                if (prepared.uri !== asset.uri) file.delete()
-              }
-            })
-            yield* callEffect(
-              '/api/attachments/upload',
-              { taskId, id: randomUUID(), name: prepared.name, data },
-              attachmentResultSchema,
-            )
-          }
+        if (!result.canceled) yield* uploadAssets(result.assets)
       }),
     )
   }
@@ -112,5 +132,6 @@ export function useAttachmentPicker(taskId: string) {
     busy,
     error,
     pick,
+    upload,
   }
 }

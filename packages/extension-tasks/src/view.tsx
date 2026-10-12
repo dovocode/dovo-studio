@@ -1,3 +1,4 @@
+import type { CodeFinding } from '@dovo/protocol'
 import { TaskWaitingPanel } from './detail/task-waiting-panel'
 import { fileStats } from './files/presentation'
 import { randomUUID, checkpointFileCount } from '@dovo/protocol'
@@ -218,6 +219,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
     id: string
     url: string
   } | null>(null)
+  const [reviewTarget, setReviewTarget] = useState<{
+    threadKey: string
+    finding?: CodeFinding
+  } | null>(null)
   const [terminalFocus, setTerminalFocus] = useApplicationState('')
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
     'pull-preview': null,
@@ -364,8 +369,9 @@ export default function TasksView({ entityId }: StudioViewProps) {
     if (!compact && surface === 'terminal') selectSurface('terminal')
   }, [compact, surface, selectSurface])
   useEffect(() => {
-    if (surface === 'changes' && !hasDiff) selectSurface('files')
-  }, [surface, hasDiff, selectSurface])
+    if (surface === 'changes' && !hasDiff && reviewTarget?.threadKey !== threadKey)
+      selectSurface('files')
+  }, [surface, hasDiff, selectSurface, reviewTarget?.threadKey, threadKey])
   const [projectId, setProjectId, projectRef] = useApplicationState(
     () => readTaskListViewState(host).projectId ?? '',
   )
@@ -824,6 +830,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   codeReference={codeReference?.taskId === task.id ? codeReference : null}
                   visible={!listOpen && (!compact || surface === 'chat')}
                   onReview={() => selectSurface(hasDiff ? 'changes' : 'files')}
+                  onCodeReview={(finding) => {
+                    setReviewTarget({ threadKey, finding })
+                    selectSurface('changes')
+                  }}
                   onTerminal={showTerminal}
                   onPullLink={(url) => openPullPreview(task, url)}
                   onArtifact={openArtifact}
@@ -1070,8 +1080,16 @@ export default function TasksView({ entityId }: StudioViewProps) {
             >
               {surface === 'changes' && (
                 <ReviewPane
-                  key={task.id}
+                  key={`${task.id}:${reviewTarget?.threadKey === threadKey ? (reviewTarget.finding?.id ?? 'report') : ''}`}
                   task={task}
+                  initialFinding={
+                    reviewTarget?.threadKey === threadKey ? reviewTarget.finding : undefined
+                  }
+                  initialTab={
+                    reviewTarget?.threadKey === threadKey && !reviewTarget.finding
+                      ? 'findings'
+                      : 'diff'
+                  }
                   onReference={(text) => addCodeReference(task.id, text)}
                   onEditingChange={setFileEditing}
                 />

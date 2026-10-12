@@ -1,3 +1,4 @@
+import { TaskReviews } from './scm/reviews/task-reviews.js'
 import { ReviewMarks } from './scm/reviews/progress.js'
 import { FileReviews, pullReviewScope, pullReviewFiles } from './scm/reviews/reviews.js'
 import { DeviceHosts, splitDeviceId } from './previews/device-hosts.js'
@@ -189,6 +190,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       () => deviceHosts.settings.get().enabled ?? false,
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git)
+  const taskReviews = new TaskReviews(db, { store, tasks, git, checkouts, activity })
   const mcpApps = new McpApps(db, store, activity, approvals)
   tasks.setMcpApps(mcpApps)
   mcpApps.setSendMessage((taskId, messageId, text) => tasks.send(taskId, messageId, text))
@@ -257,6 +259,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
 
   return {
     fileReviews,
+    taskReviews,
     reviewMarks,
     pipelineWatch,
     pullRequestWatch,
@@ -334,6 +337,7 @@ export interface Services {
   defaults: RuntimeDefaults
   titles: TitleGeneration
   activity: Activity
+  taskReviews: TaskReviews
   fileReviews: FileReviews
   reviewMarks: ReviewMarks
   pullCache: PullCache

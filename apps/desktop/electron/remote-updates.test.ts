@@ -14,11 +14,15 @@ async function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'dovo-desktop-remote-update-'))
   directories.push(directory)
   let state: DesktopUpdateState = { status: 'available', version: '1.2.3' }
-  const remote = vi.fn<(action: 'download' | 'restart', version: string) => Promise<void>>(
-    async (action, version) => {
-      state = { status: action === 'download' ? 'downloaded' : 'restarting', version }
-    },
-  )
+  const remote = vi.fn<
+    (
+      action: 'download' | 'restart' | 'install',
+      version: string,
+      resumeInterrupted?: boolean,
+    ) => Promise<void>
+  >(async (action, version) => {
+    state = { status: action === 'download' ? 'downloaded' : 'restarting', version }
+  })
   const close = await registerRemoteUpdates(directory, {
     supported: true,
     state: () => state,
@@ -30,11 +34,16 @@ async function fixture() {
     desktopUpdateHostSchema,
     JSON.parse(readFileSync(join(directory, 'desktop-update-host.json'), 'utf8')),
   )
-  const request = (path: string, version?: string, token = host.token) =>
+  const request = (
+    path: string,
+    version?: string,
+    token = host.token,
+    options?: { restartAfterDownload: boolean; resumeInterrupted: boolean },
+  ) =>
     fetch(`http://127.0.0.1:${host.port}${path}`, {
       method: version ? 'POST' : 'GET',
       headers: { Authorization: `Bearer ${token}` },
-      body: version ? JSON.stringify({ version }) : undefined,
+      body: version ? JSON.stringify({ version, ...options }) : undefined,
     })
   return { directory, remote, request }
 }
@@ -127,3 +136,17 @@ it('advertises its installed version to independent same-user servers and replac
   expect(replacement.version).toBe('1.2.4')
   expect(replacement.token).not.toBe(record.token)
 })
+
+it.each([false, true])(
+  'forwards the install and resume policy %s through the private bridge',
+  async (resumeInterrupted) => {
+    const f = await fixture()
+    await f.request('/download', '1.2.3', undefined, {
+      restartAfterDownload: true,
+      resumeInterrupted,
+    })
+    await vi.waitFor(() =>
+      expect(f.remote).toHaveBeenCalledWith('install', '1.2.3', resumeInterrupted),
+    )
+  },
+)

@@ -173,3 +173,24 @@ it('compares committed branch changes against the default branch without includi
   ])
   expect(result.omitted).toEqual([])
 })
+it('captures whole-branch review scope without changing HEAD or the user index', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const git = new GitService()
+  await git.command(f.directory, ['branch', '-M', 'main'])
+  await git.command(f.directory, ['checkout', '-b', 'review-scope'])
+  await writeFile(join(f.directory, 'hello.txt'), 'committed\n')
+  await git.command(f.directory, ['add', 'hello.txt'])
+  await git.command(f.directory, ['commit', '-m', 'Committed change'])
+  await writeFile(join(f.directory, 'hello.txt'), 'local edit\n')
+  await writeFile(join(f.directory, 'untracked.txt'), 'new\n')
+  const head = await git.command(f.directory, ['rev-parse', 'HEAD'])
+  const index = await git.command(f.directory, ['ls-files', '--stage'])
+  const result = await git.reviewBranchChangesFiles(f.directory)
+  expect(result.files).toEqual([
+    { path: 'hello.txt', before: 'original\n', after: 'local edit\n', viewed: false },
+    { path: 'untracked.txt', before: '', after: 'new\n', viewed: false },
+  ])
+  expect(await git.command(f.directory, ['rev-parse', 'HEAD'])).toBe(head)
+  expect(await git.command(f.directory, ['ls-files', '--stage'])).toBe(index)
+})

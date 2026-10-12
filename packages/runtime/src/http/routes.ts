@@ -2,7 +2,7 @@ import { taskWaitingRequestSchema } from '@dovo/protocol'
 import { McpError } from '@modelcontextprotocol/sdk/types.js'
 import { taskWaiting } from './endpoints/task-waiting.js'
 import { reviewRoute } from './endpoints/review-routes.js'
-import { shareTaskFile, openTaskFile } from './endpoints/task-files.js'
+import { shareTaskFile, openTaskFile, readTaskVisualization } from './endpoints/task-files.js'
 import { readTaskImage } from './endpoints/task-images.js'
 import { deviceHostRoute } from './endpoints/device-host-routes.js'
 import { memoryRoute } from './endpoints/memory-routes.js'
@@ -588,6 +588,10 @@ export function route(
         return yield* serviceResult(
           shareTaskFile(s, yield* serviceResult(body(request, 8192)), token),
         )
+      if (method === 'POST' && path === '/api/tasks/visualizations/read')
+        return yield* serviceResult(
+          readTaskVisualization(s, yield* serviceResult(body(request, 8192))),
+        )
       if (method === 'POST' && path === '/api/tasks/images/read')
         return yield* serviceResult(readTaskImage(s, yield* serviceResult(body(request, 8192))))
       if (method === 'POST' && path === '/api/activity') {
@@ -705,7 +709,14 @@ export function route(
       }
       if (method === 'POST' && path === '/api/runtime/prepare-restart') {
         owner()
-        return yield* serviceResult(s.tasks.prepareRestart())
+        return yield* serviceResult(
+          s.tasks.prepareRestart(
+            decode(
+              mutableStruct({ resumeInterrupted: Schema.optional(Schema.Boolean) }),
+              yield* serviceResult(body(request)),
+            ).resumeInterrupted,
+          ),
+        )
       }
       if (method === 'POST' && path === '/api/runtime/crash/dismiss') {
         owner()
@@ -738,11 +749,21 @@ export function route(
           return yield* serviceResult(desktopUpdate('status', undefined, true))
         if (method === 'POST' && (action === 'start' || action === 'restart')) {
           const input = decode(
-            mutableStruct({ version: maxValue(minValue(Schema.String, 1), 80) }),
+            mutableStruct({
+              version: maxValue(minValue(Schema.String, 1), 80),
+              restartAfterDownload: Schema.optional(Schema.Boolean),
+              resumeInterrupted: Schema.optional(Schema.Boolean),
+            }),
             yield* serviceResult(body(request)),
           )
           return yield* serviceResult(
-            desktopUpdate(action === 'start' ? 'download' : 'restart', input.version, true),
+            desktopUpdate(
+              action === 'start' ? 'download' : 'restart',
+              input.version,
+              true,
+              input.restartAfterDownload,
+              input.resumeInterrupted,
+            ),
           )
         }
       }
@@ -756,21 +777,35 @@ export function route(
         method === 'POST' &&
         ['/api/runtime/update/start', '/api/runtime/update/restart'].includes(path)
       ) {
+        const input = decode(
+          mutableStruct({
+            version: maxValue(minValue(Schema.String, 1), 80),
+            restartAfterDownload: Schema.optional(Schema.Boolean),
+            resumeInterrupted: Schema.optional(Schema.Boolean),
+          }),
+          yield* serviceResult(body(request)),
+        )
         if (
-          s.store.publicWorkspace().tasks.some((task) => task.status === 'running') ||
-          s.jobs.list().some((run) => run.status === 'running')
+          !(
+            process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop' &&
+            input.resumeInterrupted !== undefined
+          ) &&
+          (s.store.publicWorkspace().tasks.some((task) => task.status === 'running') ||
+            s.jobs.list().some((run) => run.status === 'running'))
         )
           throw new HttpError(
             409,
             'Finish running tasks and automations before updating this computer.',
           )
-        const input = decode(
-          mutableStruct({ version: maxValue(minValue(Schema.String, 1), 80) }),
-          yield* serviceResult(body(request)),
-        )
         if (process.env.DOVO_RELEASE_DISTRIBUTION === 'desktop')
           return yield* serviceResult(
-            desktopUpdate(path.endsWith('/restart') ? 'restart' : 'download', input.version),
+            desktopUpdate(
+              path.endsWith('/restart') ? 'restart' : 'download',
+              input.version,
+              false,
+              input.restartAfterDownload,
+              input.resumeInterrupted,
+            ),
           )
         if (path.endsWith('/restart'))
           throw new HttpError(409, 'Server updates restart automatically after installation')

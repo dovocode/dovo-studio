@@ -1158,6 +1158,12 @@ export class GitService {
     const { before, after, base } = await this.branchTrees(cwd)
     return { ...(await this.checkpointChanges(cwd, before, after)), base, before, after }
   }
+  /** Whole branch against the merge base, including staged, unstaged and untracked files. */
+  async reviewBranchChangesFiles(cwd: string) {
+    const { before, base } = await this.branchTrees(cwd)
+    const after = await this.snapshot(cwd, 'refs/dovo/reviews/branch-preview')
+    return { ...(await this.checkpointChanges(cwd, before, after)), base, before, after }
+  }
   async branchTrees(cwd: string) {
     const head = (await this.command(cwd, ['rev-parse', '--verify', 'HEAD'])).trim()
     const originHead = await this.command(cwd, [

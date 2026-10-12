@@ -69,3 +69,20 @@ it('reads the saved workspace registry without waiting for pending network pairi
     vi.unstubAllGlobals()
   }
 })
+
+it('loads an encrypted registry without rewriting it when a second window opens', async () => {
+  const { readRuntimeRegistry } = await import('./runtime-registry')
+  const registry = decodeRuntimeRegistry(null, JSON.stringify(connection))
+  registry.profiles[0].connection.alternateAddresses = ['http://100.64.0.1:8787']
+  const read = vi.fn<() => Promise<string>>(async () => JSON.stringify(registry))
+  const write = vi.fn<(value: string) => Promise<void>>(async () => {})
+  vi.stubGlobal('window', { dovo: { readRuntimeRegistry: read, writeRuntimeRegistry: write } })
+  vi.stubGlobal('localStorage', { getItem: () => null })
+  try {
+    expect(await readRuntimeRegistry()).toEqual(registry)
+    expect(read).toHaveBeenCalledOnce()
+    expect(write).not.toHaveBeenCalled()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})

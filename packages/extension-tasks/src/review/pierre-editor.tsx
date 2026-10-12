@@ -11,6 +11,7 @@ import {
   type FileDiffOptions,
 } from '@pierre/diffs/react'
 import { Button, LineCommentForm, MessageResponse } from '@dovo/studio-ui'
+import type { CodeFinding } from '@dovo/protocol'
 import type { ChangedFile, Task } from '@dovo/studio-core'
 import { formatCodeReference } from '../detail/code-reference'
 const createEditor: EditorFactory<undefined, undefined> = (type, options, key) =>
@@ -24,8 +25,14 @@ export function PierreEditor({
   onComment,
   onReference,
   onEditingChange,
+  findings = [],
+  focusedLine,
+  onFixFinding,
 }: {
   file: ChangedFile
+  findings?: CodeFinding[]
+  focusedLine?: number
+  onFixFinding?: (finding: CodeFinding) => void
   onEditingChange?: (editing: boolean) => void
   taskId: string
   readOnly?: boolean
@@ -64,6 +71,7 @@ export function PierreEditor({
   } | null>(null)
   const [editing, setEditing] = useApplicationState(false)
   const cancelEdit = useRef(false)
+  const scrolledTarget = useRef('')
   const diffs = useDiffOptions()
   const [split, setSplit] = useApplicationState(diffs.defaultSplit)
   const [dirty, setDirty] = useApplicationState(false)
@@ -96,6 +104,20 @@ export function PierreEditor({
       disableFileHeader: true,
       enableLineSelection: !editing,
       enableGutterUtility: !editing,
+      onPostRender: (node, instance) => {
+        if (!focusedLine) return
+        const target = `${file.path}:${focusedLine}`
+        if (scrolledTarget.current === target) return
+        if (!instance.isLineRenderable(focusedLine)) {
+          instance.revealLine(focusedLine)
+          return
+        }
+        const line = (node.shadowRoot ?? node).querySelector('[data-line][data-selected-line]')
+        if (line) {
+          scrolledTarget.current = target
+          line.scrollIntoView({ block: 'center' })
+        }
+      },
       onLineSelectionEnd: (range) => {
         if (range && (!range.endSide || range.endSide === range.side))
           setSelection({
@@ -113,7 +135,7 @@ export function PierreEditor({
           })
       },
     }),
-    [split, editing, diffs.options],
+    [split, editing, diffs.options, focusedLine, file.path],
   )
   const anchored = comments.filter((m) => {
     const c = m.diffComment
@@ -152,6 +174,12 @@ export function PierreEditor({
       lineNumber: selection.end,
       side: selection.side,
     })
+  for (const finding of findings.filter((finding) => finding.path === file.path)) {
+    if (
+      !anchors.some((anchor) => anchor.side === 'additions' && anchor.lineNumber === finding.line)
+    )
+      anchors.push({ side: 'additions', lineNumber: finding.line })
+  }
   if (loadError) throw loadError
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -222,8 +250,39 @@ export function PierreEditor({
             <FileDiff
               fileDiff={diff}
               lineAnnotations={anchors}
+              selectedLines={
+                focusedLine
+                  ? { start: focusedLine, end: focusedLine, side: 'additions' }
+                  : undefined
+              }
               renderAnnotation={(annotation) => (
                 <div className="space-y-2 p-2">
+                  {findings
+                    .filter(
+                      (finding) =>
+                        finding.path === file.path &&
+                        annotation.side === 'additions' &&
+                        annotation.lineNumber === finding.line,
+                    )
+                    .map((finding) => (
+                      <article
+                        key={finding.id}
+                        className="space-y-1 rounded border bg-background p-3 text-xs"
+                      >
+                        <strong>
+                          {finding.severity.toUpperCase()} · {finding.title}
+                        </strong>
+                        <p>Trigger: {finding.trigger}</p>
+                        <p>Impact: {finding.impact}</p>
+                        <p>Suggested fix: {finding.suggestion}</p>
+                        {onFixFinding && (
+                          <Button size="sm" onClick={() => onFixFinding(finding)}>
+                            Ask author to fix
+                          </Button>
+                        )}
+                      </article>
+                    ))}
+
                   {anchored
                     .filter(
                       (m) =>

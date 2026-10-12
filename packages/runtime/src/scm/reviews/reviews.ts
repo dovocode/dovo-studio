@@ -187,7 +187,7 @@ export class FileReviews {
         }
       } else if (context.source === 'branch') {
         const cwd = await s.checkouts.directory(task.id)
-        const diff = await s.git.branchChangesFiles(cwd)
+        const diff = await s.git.reviewBranchChangesFiles(cwd)
         changes = checkpointFiles(diff)
         sourceIdentity.push(cwd, diff.before, diff.after)
         moduleSources = () => s.git.reviewGoModules(cwd, changes, diff.before, diff.after)

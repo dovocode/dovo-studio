@@ -32,3 +32,10 @@ export function diffRows(patch: string): DiffRow[] {
   }
   return patch.split('\n').map((text) => ({ text, kind: 'header' }))
 }
+
+export type ReviewDiffProps = {
+  patch: string
+  focusedLine?: number
+  onLinePress?: (line: number, side: 'additions' | 'deletions') => void
+  annotations?: { line: number; side: 'additions' | 'deletions'; text: string }[]
+}

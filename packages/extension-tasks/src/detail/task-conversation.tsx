@@ -1,3 +1,5 @@
+import { CodeReviewCard } from '../review/code-review-card'
+import type { CodeFinding } from '@dovo/protocol'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { LoaderCircle, GitFork, Folder } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -37,6 +39,7 @@ export function TaskConversation({
   historyLoaded,
   historyError,
   onReview,
+  onCodeReview,
   onTerminal,
   onBrowser,
   onPullLink,
@@ -57,6 +60,7 @@ export function TaskConversation({
   historyLoaded?: boolean
   historyError?: string
   onReview: () => void
+  onCodeReview?: (finding?: CodeFinding) => void
   onTerminal?: (terminalId: string) => void
   onBrowser?: (url: string) => void
   onPullLink?: (url: string) => boolean
@@ -281,6 +285,7 @@ export function TaskConversation({
       <TaskQuestions taskId={task.id} />
       <RunControls task={task} />
       <PlanApproval task={task} />
+      {onCodeReview && <CodeReviewCard task={task} onOpen={onCodeReview} visible={visible} />}
       <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />
       <ReviewCommentsTray task={task} className="px-5 pb-2" />
       <MessageQueue task={queueTask} pending={visiblePending} />

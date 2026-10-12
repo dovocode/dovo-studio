@@ -138,7 +138,11 @@ export function registerUpdates(
   })
   const check = async (
     direct = false,
-    remote?: { action: 'download' | 'restart'; version: string },
+    remote?: {
+      action: 'download' | 'restart' | 'install'
+      version: string
+      resumeInterrupted?: boolean
+    },
   ) => {
     if (busy) {
       if (remote) throw new Error('A desktop update is already running')
@@ -175,6 +179,7 @@ export function registerUpdates(
       return
     }
     busy = true
+    let restartPreparation: { address: string; token: string; id: string } | undefined
     try {
       if (
         remote?.action === 'restart' &&
@@ -242,17 +247,19 @@ export function registerUpdates(
           autoUpdater.removeListener('download-progress', progress)
           for (const window of BrowserWindow.getAllWindows()) window.setProgressBar(-1)
         }
-        if (remote) return
-        const answer = await dialog.showMessageBox({
-          type: 'info',
-          message: `${appName} ${state.version ?? ''} is ready`,
-          detail:
-            'The update is downloaded. Restart now to install it, or keep working and restart later.',
-          buttons: ['Restart and install', 'Later'],
-          cancelId: 1,
-          defaultId: 1,
-        })
-        if (answer.response !== 0) return
+        if (remote && remote.action !== 'install') return
+        if (!remote) {
+          const answer = await dialog.showMessageBox({
+            type: 'info',
+            message: `${appName} ${state.version ?? ''} is ready`,
+            detail:
+              'The update is downloaded. Restart now to install it, or keep working and restart later.',
+            buttons: ['Restart and install', 'Later'],
+            cancelId: 1,
+            defaultId: 1,
+          })
+          if (answer.response !== 0) return
+        }
       }
       const connection = await startLocalRuntime(directory, { allowIncompatible: true })
       const response = await fetch(`${connection.address}/api/snapshot`, {
@@ -267,8 +274,9 @@ export function registerUpdates(
         )
       const snapshot = decode(snapshotSchema, await response.json())
       if (
-        snapshot.workspace.tasks.some((task) => task.status === 'running') ||
-        snapshot.runs.some((run) => run.status === 'running')
+        remote?.resumeInterrupted === undefined &&
+        (snapshot.workspace.tasks.some((task) => task.status === 'running') ||
+          snapshot.runs.some((run) => run.status === 'running'))
       ) {
         if (remote)
           throw new Error('Finish running tasks and automations before restarting this desktop')
@@ -280,11 +288,51 @@ export function registerUpdates(
         })
         return
       }
+      if (remote?.resumeInterrupted !== undefined) {
+        const prepared = await fetch(`${connection.address}/api/runtime/prepare-restart`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${connection.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ resumeInterrupted: remote.resumeInterrupted }),
+          signal: AbortSignal.timeout(5000),
+        })
+        if (!prepared.ok) throw new Error('Could not prepare interrupted threads for restart')
+        const result: unknown = await prepared.json()
+        if (
+          !result ||
+          typeof result !== 'object' ||
+          !('id' in result) ||
+          typeof result.id !== 'string'
+        )
+          throw new Error('Invalid restart preparation')
+        restartPreparation = { ...connection, id: result.id }
+      }
       publish({ ...state, status: 'restarting' })
       restoreRuntime = await prepareQuit()
       autoUpdater.quitAndInstall(false, true)
     } catch (error) {
       let message = error instanceof Error ? error.message : String(error)
+      try {
+        if (restartPreparation) {
+          const cancelled = await fetch(
+            `${restartPreparation.address}/api/runtime/cancel-restart`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${restartPreparation.token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ id: restartPreparation.id }),
+              signal: AbortSignal.timeout(5000),
+            },
+          )
+          if (!cancelled.ok) throw new Error('Could not cancel restart preparation')
+        }
+      } catch (cause) {
+        message += ` Restart cancellation failed: ${cause instanceof Error ? cause.message : String(cause)}`
+      }
       try {
         await recover()
       } catch (cause) {
@@ -292,7 +340,8 @@ export function registerUpdates(
       }
       publish({
         ...state,
-        status: remote?.action === 'restart' && state.progress === 100 ? 'downloaded' : 'error',
+        status:
+          remote && remote.action !== 'download' && state.progress === 100 ? 'downloaded' : 'error',
         error: message,
       })
       if (remote) throw new Error(message)
@@ -377,7 +426,11 @@ export function registerUpdates(
     state: () => state,
     refresh,
     install: () => check(true),
-    remote: (action: 'download' | 'restart', version: string) => check(true, { action, version }),
+    remote: (
+      action: 'download' | 'restart' | 'install',
+      version: string,
+      resumeInterrupted?: boolean,
+    ) => check(true, { action, version, resumeInterrupted }),
     installedVersion: app.getVersion(),
     supported: app.isPackaged && (process.platform !== 'linux' || !!process.env.APPIMAGE),
   }

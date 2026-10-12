@@ -1196,3 +1196,12 @@ Valid Codex file citations render as file links with source line ranges. Valid a
 directives render as template cards. Use template appends a prompt to the current composer draft
 without sending it; standalone Markdown surfaces offer Copy template prompt instead. Invalid or
 unfinished directives and examples inside code remain literal text.
+
+### Desktop windows and runtime connections
+
+The main window and popped-out threads share a connection manager in Electron’s main process. Each
+paired runtime has one live sync stream and one fallback snapshot poller. Thread and activity
+subscriptions are combined across windows; closing or reloading one window releases only its own
+subscriptions. A popout stays on its thread’s runtime when the main window switches computers. The
+connection closes when its last window subscription ends. HTTP LAN and VPN connections remain
+supported, with the same pairing codes and device tokens.

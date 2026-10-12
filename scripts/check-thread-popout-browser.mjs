@@ -15,7 +15,7 @@ import {useWorkspace,useStudioHost} from '@dovo/studio-core';
 import {TaskActions} from './packages/extension-tasks/src/detail/task-actions.tsx';
 const profiles=[0,1].map(i=>runtimeProfile({address:'http://host'+i+'.lan:8787',token:'device-token-at-least-32-characters-'+i},'Computer '+i));
 if(!localStorage.getItem('desktop.registry'))localStorage.setItem('desktop.registry',JSON.stringify({version:1,activeId:profiles[0].id,profiles}));
-window.dovo={readRuntimeRegistry:async()=>localStorage.getItem('desktop.registry'),writeRuntimeRegistry:async value=>localStorage.setItem('desktop.registry',value),runtimeConnection:async()=>profiles[0].connection};
+window.registryWrites=0;window.dovo={readRuntimeRegistry:async()=>localStorage.getItem('desktop.registry'),writeRuntimeRegistry:async value=>{window.registryWrites++;localStorage.setItem('desktop.registry',value)},runtimeConnection:async()=>profiles[0].connection};
 window.calls=[];window.popped=[];
 window.fetch=async(url,init={})=>{
  const parsed=new URL(url),path=parsed.pathname,input=init.body?JSON.parse(init.body):undefined;
@@ -27,7 +27,7 @@ window.fetch=async(url,init={})=>{
 };
 function Thread({entityId}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.send=()=>value.request('/api/tasks/compact',{id:'thread'},responses.ok);const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskActions task={task}/>}</>}
 const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Thread})}]}];
-const target=location.hash?{runtimeId:profiles[1].id,taskId:'thread',title:'Remote thread'}:undefined;
+const target=location.hash?{runtimeId:profiles[location.hash==='#local'?0:1].id,taskId:'thread',title:'Popped thread'}:undefined;
 createRoot(document.getElementById('app')).render(<Workbench extensions={extensions} threadWindow={target} popOutThread={async target=>{window.popped.push(target)}}/>);
 `,
     },
@@ -119,13 +119,42 @@ try {
   await main.goto('http://popout.test/')
   await main.addScriptTag({ content: built.outputFiles[0].text })
   await main.waitForFunction(() => window.store?.ready)
+  await main.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('desktop.registry'))
+    saved.profiles[0].connection.alternateAddresses = [
+      'http://host0.lan:8787',
+      'http://100.64.0.1:8787',
+    ]
+    localStorage.setItem('desktop.registry', JSON.stringify(saved))
+  })
+  const savedBeforePopout = await main.evaluate(() => localStorage.getItem('desktop.registry'))
   await detached.goto('http://popout.test/#thread')
   await detached.addScriptTag({ content: built.outputFiles[0].text })
   await detached.waitForFunction(
     () => document.getElementById('selection')?.textContent === 'http://host1.lan:8787|thread',
   )
+  assert.equal(await detached.evaluate(() => window.registryWrites), 0)
+  assert.equal(await detached.evaluate(() => Boolean(window.store.storageError)), false)
+  assert.equal(
+    await detached.evaluate(() => localStorage.getItem('desktop.registry')),
+    savedBeforePopout,
+  )
   assert.equal(await detached.locator('#title').textContent(), 'Thread on host1.lan')
   assert.equal(await detached.locator('#focused').textContent(), 'true')
+  const localPopout = await context.newPage()
+  localPopout.on('pageerror', (error) => errors.push(error.message))
+  await localPopout.goto('http://popout.test/#local')
+  await localPopout.addScriptTag({ content: built.outputFiles[0].text })
+  await localPopout.waitForFunction(
+    () => document.getElementById('selection')?.textContent === 'http://host0.lan:8787|thread',
+  )
+  assert.equal(await localPopout.evaluate(() => window.registryWrites), 0)
+  assert.equal(await localPopout.evaluate(() => Boolean(window.store.storageError)), false)
+  assert.equal(
+    await localPopout.evaluate(() => localStorage.getItem('desktop.registry')),
+    savedBeforePopout,
+  )
+  await localPopout.close()
   assert.equal(await detached.getByRole('navigation', { name: 'Main navigation' }).count(), 0)
   assert.equal(await main.getByRole('navigation', { name: 'Main navigation' }).count(), 1)
   assert.equal(

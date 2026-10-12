@@ -126,6 +126,22 @@ export async function openTaskFile(s: Services, value: unknown) {
   }
   return { ok: true, revision: s.store.version() }
 }
+/** Read a shared visualization through its runtime, then render in the artifact sandbox. */
+export async function readTaskVisualization(s: Services, value: unknown) {
+  const input = decode(taskFileRequestSchema, value)
+  const { target, handle } = await openSharedFile(s, input.taskId, input.path)
+  try {
+    const info = await handle.stat()
+    if (!info.isFile() || info.size > 1024 * 1024)
+      throw new HttpError(413, 'Visualizations must be HTML files up to 1 MB')
+    if (!/\.html?$/i.test(target)) throw new HttpError(415, 'Use an HTML visualization')
+    const contents = await handle.readFile('utf8')
+    if (contents.includes('\0')) throw new HttpError(415, 'Binary files cannot be visualizations')
+    return { path: input.path, contents }
+  } finally {
+    await handle.close()
+  }
+}
 const escapeHTML = (value: string) =>
   value.replace(
     /[&<>"']/g,

@@ -407,10 +407,10 @@ try {
       await page.getByRole('button', { name: 'Move waiting up', exact: true }).click()
       assert.deepEqual(
         await page
-          .getByRole('button', { name: /^(Waiting|Active|Working), \d+ tasks$/ })
+          .getByRole('button', { name: /^(Waiting|Open|Working), \d+ tasks$/ })
           .allTextContents()
           .then((values) => values.map((value) => value.replace(/\d+$/, '').trim())),
-        ['Waiting', 'Active', 'Working'],
+        ['Waiting', 'Open', 'Working'],
       )
       const waitingHeader = page.getByRole('button', { name: 'Waiting, 1 tasks', exact: true })
       await waitingHeader.click()
@@ -437,21 +437,42 @@ try {
           .locator('summary')
           .allTextContents()
           .then((values) => values.map((value) => value.replace(/\d+$/, '').trim())),
-        ['Waiting', 'Active', 'Working'],
+        ['Waiting', 'Open', 'Working'],
       )
     }
     for (const taskGrouping of ['status', 'none']) {
       await page.evaluate(
-        (taskGrouping) => window.updatePreferences({ taskGrouping }),
+        (taskGrouping) =>
+          window.updatePreferences({
+            taskGrouping,
+            threadSectionOrder: ['waiting', 'active', 'working', 'pinned', 'snoozed', 'settled'],
+          }),
         taskGrouping,
       )
       const activeHeader = mobile
-        ? page.getByRole('button', { name: 'Active, 1 tasks', exact: true })
-        : page.locator('summary').filter({ hasText: 'Active' })
+        ? page.getByRole('button', { name: 'Open, 1 tasks', exact: true })
+        : page.locator('summary').filter({ hasText: 'Open' })
       await page.getByText('Active order', { exact: true }).waitFor()
       await activeHeader.click()
       await page.getByText('Active order', { exact: true }).waitFor({ state: 'hidden' })
       if (mobile) assert.equal(await activeHeader.getAttribute('aria-expanded'), 'false')
+      else await page.waitForFunction(() => !window.orders.at(-1).includes('active-order'))
+      await page.evaluate(() =>
+        window.updatePreferences({
+          threadSectionOrder: ['active', 'working', 'waiting', 'pinned', 'snoozed', 'settled'],
+        }),
+      )
+      await page.getByText('Active order', { exact: true }).waitFor()
+      assert.equal(await activeHeader.count(), 0, 'Open at the top has no collapse header')
+      if (!mobile) await page.waitForFunction(() => window.orders.at(-1).includes('active-order'))
+      await page.evaluate(() =>
+        window.updatePreferences({
+          threadSectionOrder: ['waiting', 'active', 'working', 'pinned', 'snoozed', 'settled'],
+        }),
+      )
+      await activeHeader.waitFor()
+      await page.getByText('Active order', { exact: true }).waitFor({ state: 'hidden' })
+
       assert.equal(
         await (
           mobile

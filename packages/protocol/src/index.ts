@@ -219,3 +219,8 @@ export * from './runtime/connection/runtime-icon.js'
 export * from './tasks/thread-sections.js'
 
 export * from './tasks/task-waiting.js'
+
+export * from './scm/task-review.js'
+export * from './scm/task-review-session.js'
+
+export * from './runtime/connection/desktop-sync.js'

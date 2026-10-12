@@ -2,6 +2,7 @@
 
 interface Window {
   dovo: {
+    runtimeSync: import('@dovo/protocol').DesktopRuntimeSyncBridge
     popOutThread: import('@dovo/protocol').ThreadWindowBridge
     taskLauncher: import('@dovo/protocol').TaskLauncherBridge
     inputPreview: import('@dovo/protocol').InputPreviewBridge

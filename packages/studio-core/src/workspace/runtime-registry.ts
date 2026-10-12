@@ -98,7 +98,7 @@ export async function readRuntimeRegistry(): Promise<RuntimeRegistry> {
         : await readWorkspaceDocument(registryKey)),
     localStorage.getItem(legacyConnectionKey),
   )
-  if (bridge.success) await writeRuntimeRegistry(value)
+  if (bridge.success && encrypted === null) await writeRuntimeRegistry(value)
   observed = value
   return value
 }

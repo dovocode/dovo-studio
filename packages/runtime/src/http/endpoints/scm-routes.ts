@@ -586,7 +586,11 @@ export function scmRoute(request: IncomingMessage, path: string) {
           })
         }
         if (path === '/api/scm/branch-changes')
-          return yield* serviceResult(s.git.branchChangesFiles(cwd))
+          return yield* serviceResult(
+            input.includeWorking === true
+              ? s.git.reviewBranchChangesFiles(cwd)
+              : s.git.branchChangesFiles(cwd),
+          )
         if (path === '/api/scm/apply') {
           const data = decode(
             mutableStruct({

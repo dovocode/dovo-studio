@@ -66,7 +66,7 @@ export type RuntimeUpgradeState = {
   error?: string
   statuses: Readonly<Record<string, ServerUpdateStatus>>
 }
-export function runtimeUpgradeBlocked(entry: RuntimeUpgradeEntry) {
+export function runtimeUpgradeBlocked(entry: RuntimeUpgradeEntry, interruptDesktop = false) {
   if (!entry.connected) return 'Connect this computer to update it.'
   if (!entry.snapshot?.releaseVersion) return 'Update once on the host to enable remote updates.'
   if (!entry.snapshot.releaseCanUpdate)
@@ -74,8 +74,9 @@ export function runtimeUpgradeBlocked(entry: RuntimeUpgradeEntry) {
       ? 'Open a supported signed desktop app on the host to enable remote updates.'
       : 'Upgrade with the installer or package manager on the host.'
   if (
-    entry.snapshot.workspace.tasks.some((task) => task.status === 'running') ||
-    entry.snapshot.runs.some((run) => run.status === 'running')
+    !(interruptDesktop && entry.snapshot.releaseDistribution === 'desktop') &&
+    (entry.snapshot.workspace.tasks.some((task) => task.status === 'running') ||
+      entry.snapshot.runs.some((run) => run.status === 'running'))
   )
     return 'Finish running tasks and automations first.'
   return undefined
@@ -92,6 +93,7 @@ export function createRuntimeUpgradeManager(options: {
   let polling = false
   const generations = new Map<string, number>()
   const unconfirmed = new Set<string>()
+  const automaticRestarts = new Map<string, boolean>()
   const listeners = new Set<() => void>()
   const update = (next: Partial<RuntimeUpgradeState>) => {
     state = { ...state, ...next }
@@ -127,12 +129,24 @@ export function createRuntimeUpgradeManager(options: {
           'The update has not reconnected. Reconnect this computer and verify its installed version.',
       })
   }
-  const request = (entry: RuntimeUpgradeEntry, path: string, version?: string) =>
+  const request = (
+    entry: RuntimeUpgradeEntry,
+    path: string,
+    version?: string,
+    resumeInterrupted?: boolean,
+  ) =>
     runtimeRequest(
       entry.profile.connection,
       entry.profile.connection.address,
       `/api/runtime/${entry.target === 'desktop' ? 'desktop-update' : 'update'}/${path}`,
-      version ? { version } : undefined,
+      version
+        ? {
+            version,
+            ...(resumeInterrupted !== undefined && entry.snapshot?.releaseDistribution === 'desktop'
+              ? { restartAfterDownload: path === 'start', resumeInterrupted }
+              : {}),
+          }
+        : undefined,
       serverUpdateStatusSchema,
       version ? 'POST' : 'GET',
       5000,
@@ -180,6 +194,7 @@ export function createRuntimeUpgradeManager(options: {
                     newerRuntimeVersion(snapshot.releaseVersion, previous.version))
                 ) {
                   unconfirmed.delete(entry.profile.id)
+                  automaticRestarts.delete(entry.profile.id)
                   status(entry.profile.id, { status: 'complete', version: snapshot.releaseVersion })
                   await options.refreshed(entry)
                   return
@@ -205,6 +220,8 @@ export function createRuntimeUpgradeManager(options: {
                 return
               }
               status(entry.profile.id, next)
+              if (next.status === 'error' || next.status === 'complete')
+                automaticRestarts.delete(entry.profile.id)
               stalled(entry.profile.id, state.statuses[entry.profile.id])
               if (next.status === 'complete' && previous?.status !== 'complete')
                 await options.refreshed(entry)
@@ -215,11 +232,31 @@ export function createRuntimeUpgradeManager(options: {
             }
           }),
       )
+      // Older desktop bridges only download; finish their explicitly requested restart here.
+      if (!state.busy.length) {
+        for (const [id, resumeInterrupted] of automaticRestarts) {
+          const entry = options.entries().find((entry) => entry.profile.id === id)
+          const status = state.statuses[id]
+          if (
+            !entry ||
+            status?.status !== 'downloaded' ||
+            status.error ||
+            runtimeUpgradeBlocked(entry, true)
+          )
+            continue
+          automaticRestarts.delete(id)
+          await run([id], true, { restartDesktops: true, resumeInterrupted })
+        }
+      }
     } finally {
       polling = false
     }
   }
-  const run = async (ids: readonly string[], restart = false) => {
+  const run = async (
+    ids: readonly string[],
+    restart = false,
+    restartOptions?: { restartDesktops: boolean; resumeInterrupted: boolean },
+  ) => {
     if (state.busy.length) return
     const targets = options.entries().filter((entry) => ids.includes(entry.profile.id))
     update({ busy: targets.map((entry) => entry.profile.id) })
@@ -235,7 +272,7 @@ export function createRuntimeUpgradeManager(options: {
         const release = runtimeUpdate(entry.snapshot, state.releases)
         const previous = state.statuses[id]
         const version = restart ? previous?.version : release.latest?.version
-        const blocked = runtimeUpgradeBlocked(entry)
+        const blocked = runtimeUpgradeBlocked(entry, restartOptions?.restartDesktops)
         if (
           blocked ||
           !version ||
@@ -249,7 +286,21 @@ export function createRuntimeUpgradeManager(options: {
         try {
           generations.set(id, (generations.get(id) ?? 0) + 1)
           unconfirmed.delete(id)
-          status(id, await request(entry, restart ? 'restart' : 'start', version))
+          if (
+            !restart &&
+            restartOptions?.restartDesktops &&
+            entry.snapshot?.releaseDistribution === 'desktop'
+          )
+            automaticRestarts.set(id, restartOptions.resumeInterrupted)
+          status(
+            id,
+            await request(
+              entry,
+              restart ? 'restart' : 'start',
+              version,
+              restartOptions?.restartDesktops ? restartOptions.resumeInterrupted : undefined,
+            ),
+          )
         } catch (cause) {
           if (
             cause instanceof RuntimeRequestError &&
@@ -261,6 +312,7 @@ export function createRuntimeUpgradeManager(options: {
             unconfirmed.add(id)
             status(id, { status: restart ? 'installing' : 'queued', version })
           } else {
+            automaticRestarts.delete(id)
             status(id, {
               status: 'error',
               version,
@@ -303,7 +355,10 @@ export function createRuntimeUpgradeManager(options: {
       }
     },
     poll,
-    start: (ids: readonly string[]) => run(ids),
+    start: (
+      ids: readonly string[],
+      restartOptions?: { restartDesktops: boolean; resumeInterrupted: boolean },
+    ) => run(ids, false, restartOptions),
     restart: (ids: readonly string[]) => run(ids, true),
   }
 }

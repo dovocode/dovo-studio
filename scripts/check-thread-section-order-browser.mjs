@@ -90,12 +90,12 @@ try {
   const headings = () => page.locator('summary').allTextContents()
   const names = async () => (await headings()).map((text) => text.replace(/\d+$/, '').trim())
   await page.getByText('Active thread', { exact: true }).waitFor()
-  assert.deepEqual(await names(), ['Active', 'Working', 'Waiting'])
+  assert.deepEqual(await names(), ['Working', 'Waiting'])
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
-  assert.deepEqual(await names(), ['Waiting', 'Active', 'Working'])
+  assert.deepEqual(await names(), ['Waiting', 'Open', 'Working'])
   assert.equal(
     await page
       .locator('details')

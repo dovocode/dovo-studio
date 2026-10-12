@@ -3,7 +3,7 @@ import { mutableArray } from '../shared/schema.js'
 
 export const threadSections = [
   { id: 'pinned', name: 'Pinned' },
-  { id: 'active', name: 'Active' },
+  { id: 'active', name: 'Open' },
   { id: 'working', name: 'Working' },
   { id: 'waiting', name: 'Waiting' },
   { id: 'snoozed', name: 'Snoozed' },
@@ -38,7 +38,7 @@ export function moveThreadSection(
   next[target] = section
   return next
 }
-/** Project groups and the ungrouped list occupy the Active section's position. */
+/** Project groups and the ungrouped list occupy the Open section's position. */
 export function orderThreadSections<T>(
   groups: readonly T[],
   key: (group: T) => string,

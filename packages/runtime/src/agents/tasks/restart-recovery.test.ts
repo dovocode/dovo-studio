@@ -650,3 +650,55 @@ it('retains interruption delivery when the runtime shuts down with an idle paren
   expect(resumed).toHaveBeenCalledOnce()
   expect(resumed.mock.calls[0][0].prompt).toContain('Child interrupted by runtime restart')
 })
+
+it.each([false, true])(
+  'uses the explicit resume choice %s for this restart without changing preferences',
+  async (resumeInterrupted) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const options = {
+      databasePath: join(f.directory, '.git', 'restart-choice.sqlite'),
+      ownerToken: 'synthetic-owner-token-for-restart-test',
+      port: 0,
+    }
+    const runtime = await startRuntime(options)
+    runtime.services.store.update(() => f.workspace)
+    runtime.services.preferences.save({ autoContinueAfterRestart: !resumeInterrupted })
+    const task = runtime.services.tasks.create({
+      title: 'Restart choice',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Continue this work',
+    })
+    let allocated = false
+    const lookup = adapter(async (context) => {
+      context.onSession('restart-choice-session')
+      context.onPromptAccepted?.()
+      allocated = true
+      await new Promise<void>((resolve) =>
+        context.signal.addEventListener('abort', () => resolve(), { once: true }),
+      )
+      context.signal.throwIfAborted()
+    })
+    await runtime.services.tasks.start(task.id)
+    await waitForRecovery(() => expect(allocated).toBe(true))
+    runtime.services.tasks.prepareRestart(resumeInterrupted)
+    await runtime.close()
+    const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Recovered'))
+    lookup.mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    const restarted = await startRuntime(options)
+    cleanups.push(restarted.close)
+    await waitForRecovery(() =>
+      expect(restarted.services.store.task(task.id).status).toBe(
+        resumeInterrupted ? 'review' : 'cancelled',
+      ),
+    )
+    expect(run).toHaveBeenCalledTimes(resumeInterrupted ? 1 : 0)
+    expect(restarted.services.store.task(task.id).restartRecovery).toEqual(
+      resumeInterrupted
+        ? undefined
+        : expect.objectContaining({ automatic: false, resumeRequested: false }),
+    )
+    expect(restarted.services.preferences.get().autoContinueAfterRestart).toBe(!resumeInterrupted)
+  },
+)

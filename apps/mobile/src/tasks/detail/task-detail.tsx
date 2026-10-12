@@ -1,3 +1,4 @@
+import { CodeReviewCard } from '../../scm/review/code-review-card'
 import { TaskWaitingPanel } from './task-waiting-panel'
 import { checkpointFileCount, runtimeComputerName } from '@dovo/protocol'
 import { conversationPageSchema, readConversationHistory, runtimeRequest } from '@dovo/protocol'
@@ -434,6 +435,8 @@ function TaskDetailContent({
                   : 'Draft'
   const [checkpoint, setCheckpoint] = useApplicationState('')
   const [checkpointPath, setCheckpointPath] = useApplicationState('')
+  const [reviewLine, setReviewLine] = useApplicationState<number | undefined>(undefined)
+  const [reviewTab, setReviewTab] = useApplicationState<'diff' | 'findings'>('diff')
   const [terminalId, setTerminalId] = useApplicationState('')
   const car = useCarMode()
   const [pane, setPane] = useApplicationState<
@@ -696,6 +699,8 @@ function TaskDetailContent({
           setPane('terminal')
         }}
         openCheckpoint={(id, path) => {
+          setReviewLine(undefined)
+          setReviewTab('diff')
           setCheckpointPath(path ?? '')
           setCheckpoint(id)
           setPane('diff')
@@ -837,6 +842,16 @@ function TaskDetailContent({
                   </View>
                 )}
                 <PlanApproval task={task} />
+                <CodeReviewCard
+                  task={task}
+                  onOpen={(finding) => {
+                    setCheckpoint('')
+                    setCheckpointPath(finding?.path ?? '')
+                    setReviewLine(finding?.line)
+                    setReviewTab(finding ? 'diff' : 'findings')
+                    setPane('diff')
+                  }}
+                />
                 <ReviewFindings task={task} onOpen={() => setPane('diff')} />
                 <ReviewComments task={task} />
                 <MessageQueue task={task} />
@@ -876,6 +891,8 @@ function TaskDetailContent({
           <TaskReview
             initialCheckpoint={checkpoint}
             initialPath={checkpointPath}
+            initialLine={!checkpoint ? reviewLine : undefined}
+            initialTab={!checkpoint ? reviewTab : 'diff'}
             edit={fileDrafts[sideChatKey] ?? null}
             onEditChange={(draft) =>
               setFileDrafts((current) => ({ ...current, [sideChatKey]: draft }))

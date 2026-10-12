@@ -64,6 +64,7 @@ export function Composer({
   const [machineMoving, setMachineMoving] = useApplicationState(false)
   const sending = submitBusy || machineMoving
   const sendingRequest = useRef(false)
+  const [fileDrag, setFileDrag] = useState(false)
   const attachments = useAttachments(task)
   const composerDraft = useComposerDraft(task, temporary)
   const host = useStudioHost()
@@ -546,9 +547,22 @@ export function Composer({
         }
         error={error || composerDraft.error || attachments.error}
         onDragOver={(event) => {
-          if (event.dataTransfer.types.includes('Files')) event.preventDefault()
+          if (!event.dataTransfer.types.includes('Files')) return
+          event.preventDefault()
+          const allowed = connected && !sending && !attachments.busy && !task.archived
+          event.dataTransfer.dropEffect = allowed ? 'copy' : 'none'
+          setFileDrag(allowed)
+        }}
+        onDragLeave={(event) => {
+          if (
+            event.relatedTarget instanceof Node &&
+            event.currentTarget.contains(event.relatedTarget)
+          )
+            return
+          setFileDrag(false)
         }}
         onDrop={(event) => {
+          setFileDrag(false)
           if (!event.dataTransfer.files.length) return
           event.preventDefault()
           if (connected && !sending && !task.archived)
@@ -565,6 +579,14 @@ export function Composer({
           void send(steerFirst ? 'steer' : 'queue')
         }}
       >
+        {fileDrag && (
+          <div
+            role="status"
+            className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-2xl border-2 border-primary bg-card/95 text-sm"
+          >
+            Drop files to attach
+          </div>
+        )}
         <div className={cn('px-3', pendingQuestion && 'hidden')}>
           <MessageAttachments
             taskId={task.id}

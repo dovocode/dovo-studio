@@ -110,3 +110,31 @@ it('embeds bare media URLs without promoting sentence links or table cells', () 
   ])
     expect(richMarkdown(text)).toEqual([{ kind: 'markdown', text, offset: 0 }])
 })
+it('renders visualization markers as interactive file previews and registers shared paths', () => {
+  const marker =
+    '\uE200visualize\uE202{"path":"/tmp/a_b/demo.html","mode":"wide","title":"Review demo"}\uE201'
+  const text = `Before\n\n${marker}\n\nAfter`
+  expect(richMarkdown(text)).toContainEqual({
+    kind: 'visualization',
+    path: '/tmp/a_b/demo.html',
+    label: 'Review demo',
+    wide: true,
+    offset: 8,
+  })
+  expect(richMarkdownPaths(text)).toEqual(['/tmp/a_b/demo.html'])
+  expect(richMarkdown(text, false)).toEqual([{ kind: 'markdown', text, offset: 0 }])
+})
+it('keeps invalid, remote, incomplete and code-example visualization markers literal', () => {
+  for (const text of [
+    '\uE200visualize\uE202{"path":"https://example.com/demo.html"}\uE201',
+    '\uE200visualize\uE202{"path":"/tmp/file.txt"}\uE201',
+    '\uE200visualize\uE202{"path":"/tmp/demo.html"',
+    '\uE200visualize\uE202not json\uE201',
+    '```\n\uE200visualize\uE202{"path":"/tmp/demo.html"}\uE201\n```',
+    '`\uE200visualize\uE202{"path":"/tmp/demo.html"}\uE201`',
+    '`\n\uE200visualize\uE202{"path":"/tmp/demo.html"}\uE201\n`',
+  ]) {
+    expect(richMarkdown(text)).toEqual([{ kind: 'markdown', text, offset: 0 }])
+    expect(richMarkdownPaths(text)).toEqual([])
+  }
+})

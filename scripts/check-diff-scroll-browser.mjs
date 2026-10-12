@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { readFile, readdir } from 'node:fs/promises'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { chromium } from './browser/harness.mjs'
 const root = new URL('../', import.meta.url).pathname.replace(/\/$/, '')
 const mocks = {
-  '@dovo/studio-core': `export * from '@dovo/protocol';export const updateTask=(workspace)=>workspace;export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyFile=()=>false;export const useWorkspace=()=>({workspace:{repositories:[]},connected:false,setWorkspace:()=>{},request:async()=>({})});export const useFileReview=()=>({progress:null,busy:false,error:"",ready:false,reload(){},setViewed(){}});export const defaultAppPreferences={diffFilesSidebarWidth:260};export const readAppPreferences=()=>defaultAppPreferences;export const updateAppPreferences=()=>{};`,
+  '@dovo/studio-core': `export * from '@dovo/protocol';export const updateTask=(workspace)=>workspace;export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyFile=()=>false;export const useWorkspace=()=>({workspace:{repositories:[],agents:[]},connected:false,setWorkspace:()=>{},request:async()=>({})});export const useFileReview=()=>({progress:null,busy:false,error:"",ready:false,reload(){},setViewed(){}});export const defaultAppPreferences={diffFilesSidebarWidth:260};export const readAppPreferences=()=>defaultAppPreferences;export const updateAppPreferences=()=>{};`,
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export const useApplicationState=v=>{const [value,set]=useState(v);const ref=useRef(value);ref.current=value;return [value,set,ref]};`,
-  '@dovo/studio-ui': `export {Button} from './src/components/ui/button';export const OrganizeReview=()=>null;export {ReviewFiles,FileReviewControls} from './src/review/file-review';export {cn} from './src/lib/utils';export {ChoicePicker} from './src/choice-picker';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const EmptyState=()=>null;export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;export const ErrorBoundary=({children})=>children;`,
+  '@dovo/studio-ui': `export {Button} from './src/components/ui/button';export {Dialog,DialogContent,DialogTitle} from './src/components/ui/dialog';export const OrganizeReview=()=>null;export {ReviewFiles,FileReviewControls} from './src/review/file-review';export {cn} from './src/lib/utils';export {ChoicePicker} from './src/choice-picker';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const EmptyState=()=>null;export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;export const ErrorBoundary=({children})=>children;`,
   '../files/presentation': `export const FileIcon=()=>null;export const DiffAmounts=()=>null;export const fileStats=file=>({path:file.path,additions:1,deletions:1});`,
   './linked-review': `export const LinkedReview=()=>null;`,
   '../files/saved-file-preview': `export const SavedFilePreview=()=>null;`,
@@ -16,6 +16,7 @@ const mocks = {
   './commit-bar': `export const CommitBar=()=>null;`,
   './review-feedback': `export const ReviewFeedback=()=>null;`,
   '../chat/thread/review-comments-tray': `export const ReviewCommentsTray=()=>null;`,
+  './use-task-review': `export const useTaskReview=()=>({busy:false,error:'',refresh(){},run(){},report:{current:true,evidenceLimited:false,reviews:[{id:'review',status:'completed',reviewer:'Independent reviewer',model:'Thread model',createdAt:'2026-10-12',baseline:'tree',files:[],summary:'Inspected persistence and callers',notVerified:['Physical iPhone behavior'],findings:[{id:'finding',path:'src/nested/file-000.ts',line:42,severity:'high',status:'addressed',title:'Closing can lose unsaved changes',trigger:'Close while persistence is pending',impact:'Latest changes are lost',suggestion:'Wait for persistence before closing'}]}],commands:[{id:'check',command:'pnpm test persistence',status:'passed',source:'reviewer',revision:'tree',time:'2026-10-12',output:'Regression passed',exitCode:0}]}});`,
   './pierre-editor': `export const PierreEditor=()=> <div className="flex h-full min-h-0 flex-col"><header className="shrink-0 h-10">Editor</header><div id="real-diff" className="min-h-0 flex-1 overflow-auto"><pre>{Array.from({length:600},(_,i)=>'line '+i).join('\\n')}</pre></div></div>;`,
 }
 const bundle = await build({
@@ -96,6 +97,7 @@ try {
     true,
   )
   await page.evaluate(() => window.showRealReview())
+  await page.getByRole('button', { name: 'Show change map', exact: true }).click()
   const realTree = page.getByRole('complementary', { name: 'Changed files' })
   const realScroll = realTree.locator('nav.overflow-auto')
   await realTree.waitFor()
@@ -128,6 +130,39 @@ try {
     await page.evaluate(() => document.scrollingElement.scrollHeight <= innerHeight),
     true,
   )
+  await page.getByRole('tab', { name: /Findings/ }).click()
+  const panel = page.getByRole('complementary', { name: 'Findings beside diff' })
+  await panel.getByText('Closing can lose unsaved changes', { exact: true }).waitFor()
+  assert.equal(await page.locator('#real-diff').isVisible(), true)
+  assert.equal(
+    await panel.getByText('Close while persistence is pending', { exact: false }).isVisible(),
+    false,
+  )
+  await panel.getByText('Evidence & suggested fix', { exact: true }).click()
+  assert.equal(
+    await panel.getByText('Close while persistence is pending', { exact: false }).isVisible(),
+    true,
+  )
+  await page.getByRole('button', { name: 'Hide change map', exact: true }).click()
+  const screenshots = process.env.DOVO_REVIEW_SCREENSHOTS
+  if (screenshots) await mkdir(screenshots, { recursive: true })
+  for (const width of [1200, 736, 360]) {
+    await page.setViewportSize({ width, height: 800 })
+    const diff = await page.locator('#real-diff').boundingBox()
+    const findings = await panel.boundingBox()
+    assert.ok(
+      diff && findings && diff.width > 100 && diff.height > 80 && findings.height > 80,
+      JSON.stringify({ width, diff, findings }),
+    )
+    if (width >= 700) assert.ok(findings.x >= diff.x + diff.width - 2)
+    else assert.ok(findings.y >= diff.y + diff.height - 2)
+    assert.equal(
+      await page.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth),
+      true,
+    )
+    if (screenshots)
+      await page.screenshot({ path: screenshots + '/review-workbench-' + width + '.png' })
+  }
   assert.deepEqual(errors, [])
   console.log(
     'Diff and PR file trees scroll independently; filters remain visible and the page stays bounded',

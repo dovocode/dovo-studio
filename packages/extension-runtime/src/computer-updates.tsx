@@ -6,7 +6,14 @@ import {
   runtimeUpgradeBlocked,
   type RuntimeUpgradeEntry,
 } from '@dovo/protocol'
-import { Button, MessageResponse } from '@dovo/studio-ui'
+import {
+  Button,
+  MessageResponse,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from '@dovo/studio-ui'
 import { useWorkspace } from '@dovo/studio-core'
 
 export function ComputerUpdates() {
@@ -28,6 +35,8 @@ export function ComputerUpdates() {
       clearInterval(timer)
     }
   }, [manager])
+  const [confirmAll, setConfirmAll] = useState(false)
+  const [resumeInterrupted, setResumeInterrupted] = useState(false)
   const eligible = (entry: RuntimeUpgradeEntry) => {
     const status = state.statuses[entry.profile.id]?.status
     return (
@@ -36,6 +45,16 @@ export function ComputerUpdates() {
       !['queued', 'downloading', 'installing', 'downloaded'].includes(status ?? '')
     )
   }
+  const all = targets
+    .filter(
+      (entry) =>
+        !runtimeUpgradeBlocked(entry, true) &&
+        runtimeUpdate(entry.snapshot, state.releases).available &&
+        !['queued', 'downloading', 'installing', 'downloaded'].includes(
+          state.statuses[entry.profile.id]?.status ?? '',
+        ),
+    )
+    .map((entry) => entry.profile.id)
   const selected = targets
     .filter((entry) => state.selected.includes(entry.profile.id) && eligible(entry))
     .map((entry) => entry.profile.id)
@@ -53,8 +72,8 @@ export function ComputerUpdates() {
         <div>
           <h2 className="text-sm font-medium">Computer updates</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Update computers individually or select a batch. Desktop downloads wait for your restart
-            choice.
+            Update every eligible computer at once, or select a batch. Update all installs and
+            restarts desktops automatically.
           </p>
         </div>
         <Button
@@ -187,7 +206,49 @@ export function ComputerUpdates() {
           )
         })}
       </div>
+      <Dialog open={confirmAll} onOpenChange={setConfirmAll}>
+        <DialogContent className="max-w-md">
+          <DialogTitle>Update all computers</DialogTitle>
+          <DialogDescription>
+            Servers install and restart automatically. Desktops download, install and restart.
+            Running desktop threads are interrupted. Leave the box off to resume manually, or enable
+            it to resume automatically after this restart.
+          </DialogDescription>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={resumeInterrupted}
+              onChange={(event) => setResumeInterrupted(event.target.checked)}
+            />
+            Resume interrupted threads after restart
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmAll(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!all.length || !!state.busy.length}
+              onClick={() => {
+                setConfirmAll(false)
+                void manager.start(all, { restartDesktops: true, resumeInterrupted })
+              }}
+            >
+              Update and restart ({all.length})
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          disabled={!all.length || state.checking || !!state.busy.length}
+          onClick={() => {
+            setResumeInterrupted(false)
+            setConfirmAll(true)
+          }}
+        >
+          Update all ({all.length})
+        </Button>
         <Button
           size="sm"
           disabled={!selected.length || !!state.busy.length}

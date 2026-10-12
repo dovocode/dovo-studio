@@ -1,3 +1,4 @@
+import { TaskVisualization } from './task-visualization'
 import { markdownImages, type MarkdownImagePart } from './markdown-images'
 import { ServerImage } from './server-image'
 import { Text } from './text'
@@ -320,7 +321,14 @@ export const Markdown = memo(function Markdown({
         />
       )}
       {parts.map((part) =>
-        part.kind === 'template' ? (
+        part.kind === 'visualization' ? (
+          <TaskVisualization
+            key={part.offset}
+            taskId={taskId}
+            path={part.path}
+            label={part.label}
+          />
+        ) : part.kind === 'template' ? (
           <TemplateCard key={part.offset} template={part.template} onUse={onUseTemplate} />
         ) : part.kind === 'file' || part.kind === 'video' ? (
           <RichFile

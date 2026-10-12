@@ -1,0 +1,5 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": { "modules": ["DovoFileDropModule"] },
+  "android": { "modules": ["expo.modules.dovofiledrop.DovoFileDropModule"] }
+}

@@ -6,7 +6,11 @@ import type { DesktopUpdateState, ServerUpdateStatus } from '@dovo/protocol'
 
 type Updater = {
   state: () => DesktopUpdateState
-  remote: (action: 'download' | 'restart', version: string) => Promise<void>
+  remote: (
+    action: 'download' | 'restart' | 'install',
+    version: string,
+    resumeInterrupted?: boolean,
+  ) => Promise<void>
   supported: boolean
   installedVersion?: string
 }
@@ -22,7 +26,7 @@ export async function registerRemoteUpdates(
   const paths = [...new Set([directory, ...(sharedDirectory ? [sharedDirectory] : [])])].map(
     (directory) => join(directory, 'desktop-update-host.json'),
   )
-  let pending: { version: string; action: 'download' | 'restart' } | undefined
+  let pending: { version: string; action: 'download' | 'restart' | 'install' } | undefined
   let failure: { version: string; error: string } | undefined
   const status = (): ServerUpdateStatus => {
     const state = updater.state()
@@ -34,7 +38,11 @@ export async function registerRemoteUpdates(
             : 'error',
         ...failure,
       }
-    if (pending?.action === 'restart') return { status: 'installing', version: pending.version }
+    if (
+      pending?.action === 'restart' ||
+      (pending?.action === 'install' && state.status === 'downloaded')
+    )
+      return { status: 'installing', version: pending.version }
     if (
       pending &&
       (state.version !== pending.version ||
@@ -97,13 +105,32 @@ export async function registerRemoteUpdates(
           reply(409, { error: 'A desktop update is already running' })
           return
         }
-        const action = request.url === '/restart' ? 'restart' : 'download'
+        if (
+          ('restartAfterDownload' in input && typeof input.restartAfterDownload !== 'boolean') ||
+          ('resumeInterrupted' in input && typeof input.resumeInterrupted !== 'boolean')
+        ) {
+          reply(400, { error: 'Invalid restart options' })
+          return
+        }
+        const action =
+          request.url === '/restart'
+            ? 'restart'
+            : 'restartAfterDownload' in input && input.restartAfterDownload === true
+              ? 'install'
+              : 'download'
         const version = input.version
         failure = undefined
         pending = { action, version }
         reply(202, { status: action === 'restart' ? 'installing' : 'queued', version })
-        void updater
-          .remote(action, version)
+        const work =
+          action === 'install' || 'resumeInterrupted' in input
+            ? updater.remote(
+                action,
+                version,
+                'resumeInterrupted' in input && input.resumeInterrupted === true,
+              )
+            : updater.remote(action, version)
+        void work
           .catch((cause: unknown) => {
             failure = { version, error: cause instanceof Error ? cause.message : String(cause) }
           })

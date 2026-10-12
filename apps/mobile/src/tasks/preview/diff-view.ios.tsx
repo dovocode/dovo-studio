@@ -1,8 +1,13 @@
+import { DiffView as InteractiveDiffView } from './interactive-diff-view'
+import type { ReviewDiffProps } from './diff-lines'
 import { useTheme } from '../../ui/theme'
 import { DiffsView } from 'react-native-diffs'
-export function DiffView({ patch }: { patch: string }) {
+export function DiffView(props: ReviewDiffProps) {
   const { colors, mode: appearanceMode } = useTheme()
 
+  if (props.onLinePress || props.focusedLine !== undefined || props.annotations?.length)
+    return <InteractiveDiffView {...props} />
+  const { patch } = props
   // Keep embedded backticks inside the native diff block.
   const fence = '`'.repeat(
     (patch.match(/`+/g) ?? []).reduce((length, run) => Math.max(length, run.length + 1), 3),

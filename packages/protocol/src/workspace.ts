@@ -689,7 +689,11 @@ export const taskSchema = mutableStruct({
   queue: Schema.optional(mutableArray(queuedMessageSchema)),
   queuePaused: Schema.optional(Schema.Boolean),
   restartRecovery: Schema.optional(
-    mutableStruct({ kind: Schema.Literals(['turn', 'queue']), automatic: Schema.Boolean }),
+    mutableStruct({
+      kind: Schema.Literals(['turn', 'queue']),
+      automatic: Schema.Boolean,
+      resumeRequested: Schema.optional(Schema.Boolean),
+    }),
   ),
   turns: Schema.optional(mutableArray(turnSchema)),
   consumedMessageIds: Schema.optional(mutableArray(Schema.String)),
