@@ -26,6 +26,7 @@ const mocks = {
   `,
   '../../dialogs/harness-dialog': 'export const HarnessDialog=()=>null;',
   '@dovo/studio-ui': `
+    export {FileTypeIcon} from '../studio-ui/src/file-tree';
     export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';
     export const cn=(...values)=>values.filter(Boolean).join(' ');
     export const useCompactLayout=()=>false;

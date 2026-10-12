@@ -12,13 +12,13 @@ runtime.services.store.update(() => f.workspace)
 const ui = `${root}/packages/studio-ui/src`
 // Exercise actual Radix controls. Only runtime context and the surrounding host shell are adapted.
 const mocks = {
-  '@dovo/studio-core': `import {useEffect} from 'react';export {responses} from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.runtime;export function useSettingsDraft(dirty){useEffect(()=>{window.dirty=dirty},[dirty])}`,
+  '@dovo/studio-core': `import {useEffect} from 'react';export {responses} from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useStudioHost=()=>({});export const useWorkspace=()=>window.runtime;export function useSettingsDraft(dirty){useEffect(()=>{window.dirty=dirty},[dirty])}`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui':
     ['button', 'input', 'textarea', 'dialog', 'select', 'checkbox']
       .map((name) => `export * from '${ui}/components/ui/${name}.tsx';`)
       .join('\n') +
-    `\nexport * from '${ui}/settings-layout.tsx';export * from '${ui}/choice-picker.tsx';export * from '${ui}/components/form-field.tsx';export * from '${ui}/components/ai-elements/conversation.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const MessageResponse=({children})=>children;`,
+    `\nexport * from '${ui}/file-tree.tsx';export * from '${ui}/repository-open-items.tsx';export * from '${ui}/settings-layout.tsx';export * from '${ui}/choice-picker.tsx';export * from '${ui}/components/form-field.tsx';export * from '${ui}/components/ai-elements/conversation.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const MessageResponse=({children})=>children;`,
   './host-page': `export const HostPage=({children})=>children;`,
 }
 const built = await bundleBrowser(

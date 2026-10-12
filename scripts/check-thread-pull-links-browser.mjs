@@ -24,6 +24,8 @@ return <Context.Provider value={value}>CONTENT</Context.Provider>};createRoot(do
 `
 async function bundle(mobile) {
   const mocks = {
+    // File previews are exercised by check-chat-files-browser; this suite verifies PR links.
+    './rich-file': `export const RichFile=()=>null;export const TemplateCard=()=>null;`,
     './server-image': `export const ServerImage=()=>null;`,
     '@dovo/studio-core': environment,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
@@ -32,6 +34,7 @@ async function bundle(mobile) {
     './turn-label': `export const TurnLabel=()=>null;`,
     './deferred-turn': `export const DeferredTurn=({children})=>children();`,
     './chat-message': `export const ChatMessage=({message})=><div id={'message-thread-'+message.id}><p>Message context text</p><a href={message.text}><span>Thread PR</span></a><div data-empty>Conversation space</div></div>;`,
+    '../../runtime/connection/provider': `export {useRuntime} from '@dovo/studio-core';`,
     '../../../runtime/connection/provider': `export {useRuntime} from '@dovo/studio-core';`,
     '../state/provider': `export {useConversationSelector} from '@dovo/studio-core';`,
     '../../../ui/content/open-link': `export const openAppLink=async url=>{window.opened.push(url)};`,
