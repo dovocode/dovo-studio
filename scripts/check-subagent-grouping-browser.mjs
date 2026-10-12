@@ -440,6 +440,30 @@ try {
         ['Waiting', 'Active', 'Working'],
       )
     }
+    for (const taskGrouping of ['status', 'none']) {
+      await page.evaluate(
+        (taskGrouping) => window.updatePreferences({ taskGrouping }),
+        taskGrouping,
+      )
+      const activeHeader = mobile
+        ? page.getByRole('button', { name: 'Active, 1 tasks', exact: true })
+        : page.locator('summary').filter({ hasText: 'Active' })
+      await page.getByText('Active order', { exact: true }).waitFor()
+      await activeHeader.click()
+      await page.getByText('Active order', { exact: true }).waitFor({ state: 'hidden' })
+      if (mobile) assert.equal(await activeHeader.getAttribute('aria-expanded'), 'false')
+      assert.equal(
+        await (
+          mobile
+            ? page.getByRole('button', { name: 'Waiting, 1 tasks', exact: true })
+            : page.locator('summary').filter({ hasText: 'Waiting' })
+        ).isVisible(),
+        true,
+      )
+      await activeHeader.click()
+      await page.getByText('Active order', { exact: true }).waitFor()
+      if (mobile) assert.equal(await activeHeader.getAttribute('aria-expanded'), 'true')
+    }
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'}: parent-only rows, live pills, finished-agent filtering, group/child stop controls, unknown/offline visibility, remembered toggle, ended results and navigation passed.`,

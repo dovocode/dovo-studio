@@ -238,7 +238,14 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         [
           {
             key: 'active',
-            items: unsettled.map((entry): TaskListItem => ({ kind: 'task', entry })),
+            items: unsettled.length
+              ? ([
+                  { kind: 'group', key: 'active', name: 'Active', count: unsettled.length },
+                  ...(collapsed.has('active')
+                    ? []
+                    : unsettled.map((entry): TaskListItem => ({ kind: 'task', entry }))),
+                ] satisfies TaskListItem[])
+              : [],
           },
           ...otherSections,
         ],
@@ -289,7 +296,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             key: grouping === 'status' ? group.key : 'active',
             items: [
               { kind: 'group', key: group.key, name: group.name, count: group.tasks.length },
-              ...(collapsed.has(`${grouping}:${group.key}`)
+              ...(collapsed.has(
+                grouping === 'status' && group.key === 'active'
+                  ? 'active'
+                  : `${grouping}:${group.key}`,
+              )
                 ? []
                 : group.tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))),
             ] satisfies TaskListItem[],
@@ -590,7 +601,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                   item.key === 'settled' ||
                     item.key === 'snoozed' ||
                     item.key === 'working' ||
-                    item.key === 'waiting'
+                    item.key === 'waiting' ||
+                    item.key === 'active'
                     ? item.key
                     : `${grouping}:${item.key}`,
                 ),
@@ -602,7 +614,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                     item.key === 'settled' ||
                     item.key === 'snoozed' ||
                     item.key === 'working' ||
-                    item.key === 'waiting'
+                    item.key === 'waiting' ||
+                    item.key === 'active'
                       ? item.key
                       : `${grouping}:${item.key}`
                   if (next.has(key)) next.delete(key)
@@ -618,7 +631,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                     item.key === 'settled' ||
                       item.key === 'snoozed' ||
                       item.key === 'working' ||
-                      item.key === 'waiting'
+                      item.key === 'waiting' ||
+                      item.key === 'active'
                       ? item.key
                       : `${grouping}:${item.key}`,
                   )

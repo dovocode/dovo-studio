@@ -386,7 +386,21 @@ export function TaskList({
     )
     if (grouping === 'none')
       return orderThreadSections(
-        [{ id: 'all', name: '', tasks: visibleActive, open: true }, ...collapsedGroups],
+        [
+          ...(visibleActive.length
+            ? [
+                {
+                  id: 'active',
+                  name: 'Active',
+                  tasks: visibleActive,
+                  open:
+                    visibleActive.some((entry) => entry.key === temporaryEntry?.key) ||
+                    (expanded.active ?? true),
+                },
+              ]
+            : []),
+          ...collapsedGroups,
+        ],
         (group) => group.id,
         preferences.threadSectionOrder,
       )
@@ -762,13 +776,7 @@ export function TaskList({
               </div>
             )
           })
-          return grouping === 'none' &&
-            group.id !== 'waiting' &&
-            group.id !== 'settled' &&
-            group.id !== 'snoozed' &&
-            group.id !== 'working' ? (
-            <div key={group.id}>{rows}</div>
-          ) : (
+          return (
             <details
               key={group.id}
               open={group.open}
