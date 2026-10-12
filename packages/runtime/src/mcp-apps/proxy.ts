@@ -2,6 +2,8 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
+  McpError,
+  JSONRPCErrorResponseSchema,
   ListToolsRequestSchema,
   CallToolRequestSchema,
   ListResourcesRequestSchema,
@@ -28,6 +30,10 @@ async function rpc(method: string, params: unknown, signal: AbortSignal) {
   })
   const value: unknown = await response.json()
   if (!response.ok) throw new Error('MCP bridge request failed')
+  if (value && typeof value === 'object' && 'error' in value) {
+    const error = JSONRPCErrorResponseSchema.shape.error.parse(value.error)
+    throw McpError.fromError(error.code, error.message, error.data)
+  }
   if (!value || typeof value !== 'object' || !('result' in value))
     throw new Error('Invalid MCP bridge response')
   return value.result

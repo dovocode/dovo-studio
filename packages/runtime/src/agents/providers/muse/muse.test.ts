@@ -1,4 +1,5 @@
 import { decode, mcpServerSchema } from '@dovo/protocol'
+import { spawnMspConnection } from '@muse-code/sdk'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { rm } from 'node:fs/promises'
 import { createMuseAdapter } from './muse.js'
@@ -20,6 +21,7 @@ const item=(id,text,status='inProgress',revision=1,kind='agentMessage')=>({itemI
 function finish(){event('item/started',{item:item('p','')});event('item/delta',{itemId:'p',delta:'Working.'});event('item/completed',{item:item('p','Working.','completed',2)});event('item/started',{item:item('f','')});event('item/delta',{itemId:'f',delta:'Done.'});event('item/completed',{item:item('f','Done.','completed',2)});event('turn/completed',{turnId:turn,terminal:'completed'})}
 createInterface({input:process.stdin}).on('line',line=>{
  const v=JSON.parse(line),p=v.params||{};messages.push(v);writeFileSync(process.env.TEST_RECORD,JSON.stringify(messages));
+ if(v.method==='initialize'&&!/^[a-z0-9_]+$/.test(p.clientInfo?.name||''))return send({id:v.id,error:{code:-32602,message:'invalid initialize params: clientInfo.name must be a machine identifier matching ^[a-z0-9_]+$ (SS1.4.1)',data:{kind:'invalidParams'}}});
  if(v.method==='initialize')return reply(v.id,{schema:{version:1,fingerprint:'test'},grantedCapabilities:process.env.NO_MCP?[]:['sessionMcp'],experimentalApi:false,sessionDurability:'durable',serverInfo:{name:'fixture',version:'1'},museHome:'/tmp/muse',platformFamily:'unix',platformOs:'macos',userAgent:'test'});
  if(v.method==='initialized')return;
  if(v.method==='model/list')return reply(v.id,{models:[{modelId:'a',providerId:'meta',displayLabel:'A',variants:['low','high'],defaultReasoningEffort:'low',isDefault:true,isActive:false}],providerId:'meta',profileId:null,source:'fakeCatalog'});
@@ -44,6 +46,40 @@ createInterface({input:process.stdin}).on('line',line=>{
   directories.push(f.cwd)
   return { ...f, adapter: createMuseAdapter() }
 }
+it('initializes availability, discovery and execution with a valid machine identifier', async () => {
+  const f = await fixture()
+  const host = spawnMspConnection({
+    command: process.execPath,
+    args: [f.script],
+    cwd: f.cwd,
+    env: { TEST_RECORD: f.record },
+  })
+  try {
+    await expect(
+      host.initialize({ clientInfo: { name: 'dovo-studio', version: '0.1.0' } }),
+    ).rejects.toThrow('clientInfo.name must be a machine identifier')
+  } finally {
+    await host.close()
+  }
+  expect(await f.adapter.probe?.(f.run.agent)).toMatchObject({ available: true })
+  expect((await f.messages()).find((frame) => frame.method === 'initialize')?.params).toMatchObject(
+    {
+      clientInfo: { name: 'dovo_studio', version: '0.1.0' },
+    },
+  )
+  expect((await f.adapter.models?.(f.run.agent))?.models).toHaveLength(1)
+  expect((await f.messages()).find((frame) => frame.method === 'initialize')?.params).toMatchObject(
+    {
+      clientInfo: { name: 'dovo_studio', version: '0.1.0' },
+    },
+  )
+  await f.adapter.run(f.run)
+  expect((await f.messages()).find((frame) => frame.method === 'initialize')?.params).toMatchObject(
+    {
+      clientInfo: { name: 'dovo_studio', version: '0.1.0' },
+    },
+  )
+})
 it('uses the SDK session fold for text boundaries, completion and provider-qualified models', async () => {
   const f = await fixture(),
     boundary = vi.fn<() => void>()

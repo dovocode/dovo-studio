@@ -14,6 +14,11 @@ import { createServer } from 'node:http'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
+  McpError,
+  ErrorCode,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
+  ListPromptsRequestSchema,
   ListToolsRequestSchema,
   ListToolsResultSchema,
   CallToolRequestSchema,
@@ -36,7 +41,12 @@ const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
-async function setup(resourceCsp = true, failureStatus?: number, toolDelay = 0) {
+async function setup(
+  resourceCsp = true,
+  failureStatus?: number,
+  toolDelay = 0,
+  discovery?: 'tools-only' | 'full',
+) {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
@@ -50,8 +60,41 @@ async function setup(resourceCsp = true, failureStatus?: number, toolDelay = 0) 
     resources = 0
   const upstream = new Server(
     { name: 'apps-fixture', version: '1' },
-    { capabilities: { tools: {}, resources: {} } },
+    {
+      capabilities: {
+        tools: {},
+        ...(discovery === 'tools-only' ? {} : { resources: {} }),
+        ...(discovery === 'full' ? { prompts: {} } : {}),
+      },
+    },
   )
+  const discoveryRequests: Array<{ method: string; cursor?: string }> = []
+  if (discovery === 'full') {
+    const page = (method: string, cursor?: string) => {
+      discoveryRequests.push({ method, cursor })
+      if (cursor === 'error')
+        throw new McpError(ErrorCode.InternalError, 'Upstream catalog unavailable', {
+          retryable: false,
+        })
+      if (cursor === 'missing')
+        throw new McpError(ErrorCode.MethodNotFound, 'Advertised discovery method failed')
+      return { nextCursor: cursor ? undefined : 'next' }
+    }
+    upstream.setRequestHandler(ListResourcesRequestSchema, async ({ params }) => ({
+      ...page('resources/list', params?.cursor),
+      resources: [{ uri: `fixture://${params?.cursor ?? 'first'}`, name: 'Resource' }],
+    }))
+    upstream.setRequestHandler(ListResourceTemplatesRequestSchema, async ({ params }) => ({
+      ...page('resources/templates/list', params?.cursor),
+      resourceTemplates: [
+        { uriTemplate: `fixture://${params?.cursor ?? 'first'}/{id}`, name: 'Template' },
+      ],
+    }))
+    upstream.setRequestHandler(ListPromptsRequestSchema, async ({ params }) => ({
+      ...page('prompts/list', params?.cursor),
+      prompts: [{ name: params?.cursor ?? 'first' }],
+    }))
+  }
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID })
   upstream.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
@@ -84,21 +127,22 @@ async function setup(resourceCsp = true, failureStatus?: number, toolDelay = 0) 
         }
       : { content: [{ type: 'text', text: 'Chart ready' }], structuredContent: { count: calls } }
   })
-  upstream.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
-    resources++
-    return {
-      contents: [
-        {
-          uri: params.uri,
-          mimeType: 'text/html;profile=mcp-app',
-          text: '<h1>Chart</h1>',
-          _meta: resourceCsp
-            ? { ui: { csp: { resourceDomains: ['https://example.com'] } } }
-            : undefined,
-        },
-      ],
-    }
-  })
+  if (discovery !== 'tools-only')
+    upstream.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
+      resources++
+      return {
+        contents: [
+          {
+            uri: params.uri,
+            mimeType: 'text/html;profile=mcp-app',
+            text: '<h1>Chart</h1>',
+            _meta: resourceCsp
+              ? { ui: { csp: { resourceDomains: ['https://example.com'] } } }
+              : undefined,
+          },
+        ],
+      }
+    })
   await upstream.connect(transport)
   const requestMethods: Array<string | undefined> = []
   const http = createServer((request, response) => {
@@ -145,6 +189,7 @@ async function setup(resourceCsp = true, failureStatus?: number, toolDelay = 0) 
     calls: () => calls,
     parameters,
     requestMethods,
+    discoveryRequests,
     resources: () => resources,
     notify: () => upstream.sendToolListChanged(),
   }
@@ -280,8 +325,7 @@ it('invalidates old capabilities and saved app actions when server configuration
   ).rejects.toThrow('no longer enabled')
 })
 
-it('runs the provider stdio proxy without exposing upstream credentials', async () => {
-  const s = await setup()
+async function proxyClient(s: Awaited<ReturnType<typeof setup>>) {
   const transport = new StdioClientTransport({
     command: s.proxy.command,
     args: s.proxy.args,
@@ -299,6 +343,11 @@ it('runs the provider stdio proxy without exposing upstream credentials', async 
   const client = new Client({ name: 'harness-fixture', version: '1' })
   cleanups.push(() => client.close())
   await client.connect(transport)
+  return client
+}
+it('runs the provider stdio proxy without exposing upstream credentials', async () => {
+  const s = await setup()
+  const client = await proxyClient(s)
   expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
     'chart',
     'legacy',
@@ -315,6 +364,72 @@ it('runs the provider stdio proxy without exposing upstream credentials', async 
   expect(acpMcpServers([s.proxy])[0]).toMatchObject({ command: process.execPath })
   expect(JSON.stringify(s.proxy)).not.toContain(s.server.url)
 })
+
+it('discovers all advertised capabilities through stdio for a tools-only upstream', async () => {
+  const s = await setup(true, undefined, 0, 'tools-only')
+  const client = await proxyClient(s)
+  expect(client.getServerCapabilities()).toMatchObject({ tools: {}, resources: {}, prompts: {} })
+  expect((await client.listTools()).tools[0]?.name).toBe('chart')
+  expect(await client.listResources()).toEqual({ resources: [] })
+  expect(await client.listResourceTemplates()).toEqual({ resourceTemplates: [] })
+  expect(await client.listPrompts()).toEqual({ prompts: [] })
+})
+
+it('preserves supported discovery pages and cursors through the stdio proxy', async () => {
+  const s = await setup(true, undefined, 0, 'full')
+  const client = await proxyClient(s)
+  const resources = await client.listResources()
+  expect(resources).toEqual({
+    resources: [{ uri: 'fixture://first', name: 'Resource' }],
+    nextCursor: 'next',
+  })
+  expect(await client.listResources({ cursor: resources.nextCursor })).toEqual({
+    resources: [{ uri: 'fixture://next', name: 'Resource' }],
+  })
+  const templates = await client.listResourceTemplates()
+  expect(templates).toEqual({
+    resourceTemplates: [{ uriTemplate: 'fixture://first/{id}', name: 'Template' }],
+    nextCursor: 'next',
+  })
+  expect(await client.listResourceTemplates({ cursor: templates.nextCursor })).toEqual({
+    resourceTemplates: [{ uriTemplate: 'fixture://next/{id}', name: 'Template' }],
+  })
+  const prompts = await client.listPrompts()
+  expect(prompts).toEqual({ prompts: [{ name: 'first' }], nextCursor: 'next' })
+  expect(await client.listPrompts({ cursor: prompts.nextCursor })).toEqual({
+    prompts: [{ name: 'next' }],
+  })
+  expect(s.discoveryRequests).toEqual([
+    { method: 'resources/list', cursor: undefined },
+    { method: 'resources/list', cursor: 'next' },
+    { method: 'resources/templates/list', cursor: undefined },
+    { method: 'resources/templates/list', cursor: 'next' },
+    { method: 'prompts/list', cursor: undefined },
+    { method: 'prompts/list', cursor: 'next' },
+  ])
+})
+
+it.each(['resources', 'templates', 'prompts'] as const)(
+  'preserves upstream %s discovery errors through stdio instead of returning an empty list',
+  async (capability) => {
+    const s = await setup(true, undefined, 0, 'full')
+    const client = await proxyClient(s)
+    const request = (cursor: string) => {
+      if (capability === 'resources') return client.listResources({ cursor })
+      if (capability === 'templates') return client.listResourceTemplates({ cursor })
+      return client.listPrompts({ cursor })
+    }
+    await expect(request('error')).rejects.toMatchObject({
+      code: ErrorCode.InternalError,
+      message: expect.stringContaining('Upstream catalog unavailable'),
+      data: { retryable: false },
+    })
+    await expect(request('missing')).rejects.toMatchObject({
+      code: ErrorCode.MethodNotFound,
+      message: expect.stringContaining('Advertised discovery method failed'),
+    })
+  },
+)
 it('cancels pending UI approvals without executing their tools', async () => {
   const s = await setup(),
     bridge = s.runtime.services.mcpApps

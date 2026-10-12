@@ -18,6 +18,8 @@ import { updateSubagents } from '../../execution/subagents.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { nativeObject as object, nativeText as text, nativeWait } from '../shared/native.js'
 
+const clientInfo = { name: 'dovo_studio', version: '0.1.0' }
+
 const rows = mutableStruct({
   models: mutableArray(
     mutableStruct({
@@ -90,7 +92,7 @@ export function createMuseAdapter(): AgentAdapter {
       const host = launch(agent, homedir())
       try {
         const ready = await nativeWait(
-          host.initialize({ clientInfo: { name: 'dovo-studio', version: '0.1.0' } }),
+          host.initialize({ clientInfo }),
           new AbortController().signal,
           30000,
         )
@@ -129,7 +131,7 @@ export function createMuseAdapter(): AgentAdapter {
       try {
         const ready = await nativeWait(
           host.initialize({
-            clientInfo: { name: 'dovo-studio', version: '0.1.0' },
+            clientInfo,
             capabilities: { requestedCapabilities: ['sessionMcp'] },
           }),
           new AbortController().signal,
@@ -340,7 +342,7 @@ export function createMuseAdapter(): AgentAdapter {
       try {
         connection = await nativeWait(
           host.initialize({
-            clientInfo: { name: 'dovo-studio', version: '0.1.0' },
+            clientInfo,
             capabilities: {
               requestedCapabilities: ['sessionMcp'],
               experimentalApi: false,

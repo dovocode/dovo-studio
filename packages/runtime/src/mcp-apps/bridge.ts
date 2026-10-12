@@ -453,12 +453,21 @@ export class McpApps {
           }
     }
     const pagination = typeof value.cursor === 'string' ? { cursor: value.cursor } : undefined
-    if (method === 'resources/list') return session.client.listResources(pagination, options)
+    const capabilities = session.client.getServerCapabilities()
+    if (method === 'resources/list')
+      return capabilities?.resources
+        ? session.client.listResources(pagination, options)
+        : { resources: [] }
     if (method === 'resources/templates/list')
-      return session.client.listResourceTemplates(pagination, options)
+      return capabilities?.resources
+        ? session.client.listResourceTemplates(pagination, options)
+        : { resourceTemplates: [] }
     if (method === 'resources/read' && typeof value.uri === 'string')
       return session.client.readResource({ uri: value.uri }, options)
-    if (method === 'prompts/list') return session.client.listPrompts(pagination, options)
+    if (method === 'prompts/list')
+      return capabilities?.prompts
+        ? session.client.listPrompts(pagination, options)
+        : { prompts: [] }
     if (method === 'prompts/get') {
       const request = GetPromptRequestSchema.safeParse({ method, params })
       if (!request.success) throw new HttpError(400, 'Invalid MCP prompts/get parameters')

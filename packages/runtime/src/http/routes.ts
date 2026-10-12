@@ -1,4 +1,5 @@
 import { taskWaitingRequestSchema } from '@dovo/protocol'
+import { McpError } from '@modelcontextprotocol/sdk/types.js'
 import { taskWaiting } from './endpoints/task-waiting.js'
 import { reviewRoute } from './endpoints/review-routes.js'
 import { shareTaskFile, openTaskFile } from './endpoints/task-files.js'
@@ -158,7 +159,13 @@ export function route(
           yield* serviceResult(body(request, 256 * 1024)),
         )
         return yield* serviceResult(
-          s.mcpApps.proxy(token, input.method, input.params).then((result) => ({ result })),
+          s.mcpApps.proxy(token, input.method, input.params).then(
+            (result) => ({ result }),
+            (error: unknown) => {
+              if (!(error instanceof McpError)) throw error
+              return { error: { code: error.code, message: error.message, data: error.data } }
+            },
+          ),
         )
       }
       const device = s.devices.authenticate(token)
