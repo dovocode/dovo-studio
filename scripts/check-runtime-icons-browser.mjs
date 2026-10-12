@@ -126,6 +126,14 @@ try {
     window.connected = false
     window.refresh()
   })
+  await desktop
+    .getByRole('button', { name: 'Server', exact: true })
+    .and(desktop.locator(':disabled'))
+    .waitFor()
+  await mobile
+    .getByRole('button', { name: 'Server', exact: true })
+    .and(mobile.locator(':disabled'))
+    .waitFor()
   assert.equal(
     await desktop.getByRole('button', { name: 'Server', exact: true }).isDisabled(),
     true,

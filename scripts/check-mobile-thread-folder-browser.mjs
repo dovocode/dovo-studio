@@ -12,6 +12,7 @@ const mocks = {
   '../../ui/controls/field': `export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;`,
   '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   '../../ui/controls/choice': `export const Choice=({label,value,onChange,items,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id} disabled={item.disabled}>{item.name}</option>)}</select>;`,
+  '../../ui/content/runtime-icon': `export const RuntimeIcon=()=>null;`,
   '../../ui/controls/icon': `export const Icon=()=>null;`,
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
   '../../ui/theme': `export const useTheme=()=>({styles:{},colors:{}});`,

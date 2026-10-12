@@ -12,6 +12,7 @@ const mocks = {
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
     export {WorkspaceContext,useWorkspace} from '../studio-core/src/workspace/context';
     export {useCachedTask} from '../studio-core/src/workspace/use-cached-task';
+    export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const useStudioHost=()=>window.host;
     export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
