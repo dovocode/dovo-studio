@@ -20,6 +20,7 @@ const mocks = {
     export const formatDateTime=value=>value;
   `,
   '@dovo/studio-ui': `
+    export {FileTypeIcon} from './src/file-tree';
     export const cn=(...values)=>values.filter(Boolean).join(' ');
     export const useCompactLayout=()=>false;
     const Box=({children})=><div>{children}</div>;
