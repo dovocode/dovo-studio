@@ -1,16 +1,18 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskLifecycleActions } from './task-lifecycle-actions'
-import { Ellipsis, GitPullRequest, Minimize2, Pin } from 'lucide-react'
+import { Ellipsis, GitPullRequest, Minimize2, Pin, ExternalLink } from 'lucide-react'
 import {
   readAppPreferences,
   responses,
   updateTask,
   useWorkspace,
+  useStudioHost,
   type Task,
 } from '@dovo/studio-core'
 import { IconButton, Popover } from '@dovo/studio-ui'
 export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () => void }) {
-  const { setWorkspace, request, connected } = useWorkspace(),
+  const host = useStudioHost()
+  const { setWorkspace, request, connected, activeRuntimeId, workspace } = useWorkspace(),
     [actionsOpen, setActionsOpen] = useApplicationState(false),
     [compactBusy, setCompactBusy] = useApplicationState(false),
     [compactError, setCompactError] = useApplicationState('')
@@ -70,6 +72,30 @@ export function TaskActions({ task, onLinkPull }: { task: Task; onLinkPull?: () 
                   <Minimize2 size={13} />
                 </IconButton>
               )}
+              {host.popOutThread &&
+                activeRuntimeId &&
+                workspace.tasks.some((item) => item.id === task.id) && (
+                  <IconButton
+                    label="Pop out thread"
+                    className="size-7"
+                    onClick={() => {
+                      if (!host.popOutThread || !activeRuntimeId) return
+                      setCompactError('')
+                      void host
+                        .popOutThread({
+                          runtimeId: activeRuntimeId,
+                          taskId: task.id,
+                          title: task.title,
+                        })
+                        .then(() => setActionsOpen(false))
+                        .catch((cause: unknown) =>
+                          setCompactError(cause instanceof Error ? cause.message : String(cause)),
+                        )
+                    }}
+                  >
+                    <ExternalLink size={13} />
+                  </IconButton>
+                )}
               <TaskLifecycleActions task={task} />
               {onLinkPull && (
                 <IconButton

@@ -81,6 +81,7 @@ import { createWorkspace } from './seed'
 import { decodeWorkspace, encodeWorkspace, storageKey } from './persistence'
 import {
   emptyRegistry,
+  mergeRuntimeRegistry,
   readRuntimeRegistry,
   writeRuntimeRegistry,
   subscribeRuntimeRegistry,
@@ -111,7 +112,24 @@ const idleOverview = (
   pulls: null,
   pullError: null,
 })
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
+export function WorkspaceProvider({
+  children,
+  runtimeId,
+}: {
+  children: ReactNode
+  runtimeId?: string
+}) {
+  // A detached thread keeps its own computer selection without changing the main window.
+  const selectRegistry = useCallback(
+    (saved: RuntimeRegistry): RuntimeRegistry =>
+      runtimeId
+        ? {
+            ...saved,
+            activeId: saved.profiles.some((profile) => profile.id === runtimeId) ? runtimeId : null,
+          }
+        : saved,
+    [runtimeId],
+  )
   const {
     inputPreview,
     backgroundActivity,
@@ -372,7 +390,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             throw new Error(
               'Saved computers could not be loaded at startup. Restart the app before changing connections.',
             )
-          return writeRuntimeRegistry(value)
+          if (!runtimeId) return writeRuntimeRegistry(value)
+          return readRuntimeRegistry().then((saved) =>
+            writeRuntimeRegistry({
+              ...mergeRuntimeRegistry(saved, registryRef.current, value),
+              activeId: saved.activeId,
+            }).then(selectRegistry),
+          )
         },
         catch: connectionError,
       }).pipe(
@@ -389,7 +413,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ),
         Effect.asVoid,
       ),
-    [],
+    [runtimeId, selectRegistry],
   )
   const saveRegistry = useCallback(
     (change: (current: RuntimeRegistry) => RuntimeRegistry) => {
@@ -409,13 +433,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             Effect.tryPromise({
               try: readRuntimeRegistry,
               catch: connectionError,
-            }).pipe(Effect.tap((saved) => Effect.sync(() => setRegistry(saved)))),
+            }).pipe(Effect.tap((saved) => Effect.sync(() => setRegistry(selectRegistry(saved))))),
           ),
         ).catch((error: unknown) =>
           setStorageError(`Could not reload saved computers. ${String(error)}`),
         )
       }),
-    [storageLock],
+    [storageLock, selectRegistry],
   )
   const cancelPairing = useCallback(
     (address: string, proof: PairingProof) =>
@@ -624,6 +648,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }),
         () =>
           Effect.gen(function* () {
+            if (runtimeId && profile.id !== runtimeId)
+              return yield* Effect.fail(
+                new Error(
+                  'Open this computer in the main window. This window stays with its thread’s computer.',
+                ),
+              )
             const attempt = ++connecting.current
             const previousProfile = registryRef.current.profiles.find(
               (item) => item.id === profile.id,
@@ -766,7 +796,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             changingConnection.current = false
           }),
       ),
-    [adopt, synchronization, updateOverview, storageLock, persistRegistryEffect, beforeReplace],
+    [
+      adopt,
+      synchronization,
+      updateOverview,
+      storageLock,
+      persistRegistryEffect,
+      beforeReplace,
+      runtimeId,
+    ],
   )
   const openProfile = useCallback(
     (profile: RuntimeProfile, proof?: PairingProof) =>
@@ -786,8 +824,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             beforeRecoveredReplacement,
           ).pipe(
             Effect.map((saved) => {
-              const active = saved.profiles.find((item) => item.id === saved.activeId)
-              const old = before.profiles.find((item) => item.id === saved.activeId)
+              const selected = selectRegistry(saved)
+              const active = selected.profiles.find((item) => item.id === selected.activeId)
+              const old = before.profiles.find((item) => item.id === selected.activeId)
               return active &&
                 (active.connection.address !== old?.connection.address ||
                   active.connection.token !== old?.connection.token)
@@ -811,7 +850,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', foreground)
       void commands.stop()
     }
-  }, [ready, storageLock, persistRegistryEffect, openProfileEffect, beforeRecoveredReplacement])
+  }, [
+    ready,
+    storageLock,
+    persistRegistryEffect,
+    openProfileEffect,
+    beforeRecoveredReplacement,
+    selectRegistry,
+  ])
   const connect = useCallback(
     async (value: RuntimeConnection, proof?: PairingProof, replaceId?: string) => {
       const next = decode(connectionSchema, {
@@ -1339,11 +1385,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 nameIsCustom: runtimeHasCustomName(previousLocal),
               }
             : local,
-          true,
+          !runtimeId,
         )
         if (firstConnection) firstLocalConnection = local.connection
       }
+      registry = selectRegistry(registry)
       yield* native(() => saveRegistry(() => registry))
+      if (runtimeId && !registry.activeId)
+        setStorageError(
+          'This thread’s computer is no longer saved. Pair it again in the main window.',
+        )
       let migrated = true
       for (const profile of registry.profiles) {
         let lastSeen: string | null = null
@@ -1465,6 +1516,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     saveRegistry,
     updateOverview,
     cacheFor,
+    runtimeId,
+    selectRegistry,
   ])
   useEffect(() => {
     if (!ready || !writable.current) return

@@ -25,7 +25,7 @@ export const Action=({label,onPress,disabled})=><button disabled={disabled} onCl
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const SettingsAction=Action;export const SettingsSearchField=SearchField;
 export const ScreenHeader=({title})=><h1>{title}</h1>;
-export const Icon=()=>null;export const IconButton=({label,onPress})=><button onClick={onPress}>{label}</button>;
+export const Icon=()=>null;export const RuntimeIcon=()=>null;export const IconButton=({label,onPress})=><button onClick={onPress}>{label}</button>;
 export const Sheet=View;export const colors={};export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const Alert={alert:()=>{}};
 `
 const fixture = `
@@ -53,6 +53,7 @@ window.updatePreferences=changes=>{window.preferences={...window.preferences,...
 
 async function bundle(contents) {
   const mocks = {
+    './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
     '@dovo/studio-core': `import {useSyncExternalStore} from 'react';export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateAppPreferences=changes=>window.updatePreferences(changes);export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
     '@dovo/studio-core/state': state,
     '@dovo/studio-ui': controls,
@@ -374,6 +375,71 @@ try {
     await page.getByText('Main thread', { exact: true }).waitFor()
     assert.equal(await page.getByText('Independent child title', { exact: true }).count(), 0)
     assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
+    await page.evaluate(() => {
+      const base = {
+        ...window.workspace.tasks[0],
+        delegation: undefined,
+        archived: false,
+        archivedAt: undefined,
+        pinned: false,
+        snoozedUntil: undefined,
+        subagents: [],
+        status: 'completed',
+        waitingForFeedback: false,
+      }
+      window.publishTasks([
+        { ...base, id: 'active-order', title: 'Active order' },
+        { ...base, id: 'working-order', title: 'Working order', status: 'running' },
+        { ...base, id: 'waiting-order', title: 'Waiting order', waitingForFeedback: true },
+      ])
+      window.store = { ...window.store, connected: true }
+      window.updatePreferences({
+        taskGrouping: 'status',
+        workingSection: true,
+        threadSectionOrder: ['pinned', 'active', 'working', 'waiting', 'snoozed', 'settled'],
+      })
+      window.renderList(false)
+    })
+    await page.getByText('Active order', { exact: true }).waitFor()
+    if (mobile) {
+      await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
+      await page.getByRole('button', { name: 'Move waiting up', exact: true }).click()
+      await page.getByRole('button', { name: 'Move waiting up', exact: true }).click()
+      assert.deepEqual(
+        await page
+          .getByRole('button', { name: /^(Waiting|Active|Working), \d+ tasks$/ })
+          .allTextContents()
+          .then((values) => values.map((value) => value.replace(/\d+$/, '').trim())),
+        ['Waiting', 'Active', 'Working'],
+      )
+      const waitingHeader = page.getByRole('button', { name: 'Waiting, 1 tasks', exact: true })
+      await waitingHeader.click()
+      await page.getByText('Waiting order', { exact: true }).waitFor({ state: 'hidden' })
+      await waitingHeader.click()
+      await page.getByText('Waiting order', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Reset section order', exact: true }).click()
+      assert.deepEqual(await page.evaluate(() => window.preferences.threadSectionOrder), [
+        'pinned',
+        'active',
+        'working',
+        'waiting',
+        'snoozed',
+        'settled',
+      ])
+    } else {
+      await page.evaluate(() =>
+        window.updatePreferences({
+          threadSectionOrder: ['waiting', 'active', 'working', 'pinned', 'snoozed', 'settled'],
+        }),
+      )
+      assert.deepEqual(
+        await page
+          .locator('summary')
+          .allTextContents()
+          .then((values) => values.map((value) => value.replace(/\d+$/, '').trim())),
+        ['Waiting', 'Active', 'Working'],
+      )
+    }
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'}: parent-only rows, live pills, finished-agent filtering, group/child stop controls, unknown/offline visibility, remembered toggle, ended results and navigation passed.`,

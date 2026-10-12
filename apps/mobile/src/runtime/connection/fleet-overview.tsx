@@ -1,3 +1,4 @@
+import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { Pressable, ScrollView, View } from 'react-native'
@@ -88,7 +89,11 @@ export function FleetOverview({
           },
         ]}
       >
-        <Icon name="device" size={15} color={entry.connected ? colors.accent : colors.muted} />
+        <RuntimeIcon
+          icon={entry.snapshot?.runtimeIcon}
+          size={15}
+          color={entry.connected ? colors.accent : colors.muted}
+        />
         <Text
           numberOfLines={1}
           style={[
@@ -149,7 +154,7 @@ export function FleetOverview({
             },
           ]}
         >
-          <Icon name="device" size={14} color={colors.muted} />
+          <RuntimeIcon icon={sourceEntry?.snapshot?.runtimeIcon} size={14} color={colors.muted} />
           <Text
             numberOfLines={1}
             style={[
@@ -212,8 +217,8 @@ export function FleetOverview({
                   },
                 ]}
               >
-                <Icon
-                  name="device"
+                <RuntimeIcon
+                  icon={entry.snapshot?.runtimeIcon}
                   size={20}
                   color={entry.connected ? colors.accent : colors.muted}
                 />
@@ -250,8 +255,8 @@ export function FleetOverview({
                   },
                 ]}
               >
-                <Icon
-                  name="device"
+                <RuntimeIcon
+                  icon={detail.snapshot?.runtimeIcon}
                   size={22}
                   color={detail.connected ? colors.accent : colors.muted}
                 />

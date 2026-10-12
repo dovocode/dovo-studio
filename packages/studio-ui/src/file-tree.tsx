@@ -96,7 +96,6 @@ export function FileBrowserTree({
       return next
     })
   }, [selected])
-  const showViewed = files.some((file) => file.viewed !== undefined)
   const render = (nodes: FileTreeNode[], depth = 0, parent = '') =>
     nodes.map((node) => {
       if (node.kind === 'directory') {
@@ -139,14 +138,6 @@ export function FileBrowserTree({
               {node.hasStats && (
                 <FileChangeCounts additions={node.additions} deletions={node.deletions} />
               )}
-              <span
-                className="shrink-0 text-[0.625rem] tabular-nums"
-                title={
-                  showViewed ? `${node.viewed} of ${node.count} viewed` : `${node.count} files`
-                }
-              >
-                {showViewed ? `${node.viewed}/${node.count}` : node.count}
-              </span>
             </button>
             {open && (
               <div className={cn(depth < 4 && 'ml-[13px] border-l border-border/50 pl-1')}>

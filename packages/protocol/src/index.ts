@@ -212,3 +212,10 @@ export {
 
 export * from './conversation/presentation/task-files.js'
 export * from './conversation/presentation/rich-markdown.js'
+
+export * from './thread-window.js'
+export * from './runtime/connection/runtime-icon.js'
+
+export * from './tasks/thread-sections.js'
+
+export * from './tasks/task-waiting.js'

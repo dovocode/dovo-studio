@@ -134,6 +134,36 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           authorize()
           s.terminals.input(terminal.id, `${command.replace(/\r?\n/g, '\r')}\r`)
         })
+        if (newTerminal) {
+          const current = s.store.task(taskId)
+          const turn = [...(current.turns ?? [])]
+            .reverse()
+            .find((entry) => entry.status === 'running')
+          const message = turn
+            ? [...current.messages]
+                .reverse()
+                .find(
+                  (entry) =>
+                    entry.role === 'assistant' &&
+                    (entry.id === turn.assistantId || entry.turnId === turn.id),
+                )
+            : undefined
+          yield* runtimeOperation(() =>
+            s.activity.add('tool', taskId, 'Terminal command', {
+              turnId: turn?.id ?? '',
+              ...(message ? { messageId: message.id, textOffset: message.text.length } : {}),
+              toolId: `terminal:${terminal.id}`,
+              status: 'completed',
+              terminalCommand: true,
+              presentation: {
+                kind: 'command',
+                title: command,
+                input: command,
+                output: 'Started in terminal.',
+              },
+            }),
+          )
+        }
         yield* runtimeOperation(() =>
           s.activity.add(
             'terminal',

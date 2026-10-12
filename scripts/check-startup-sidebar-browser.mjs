@@ -4,6 +4,7 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]}`,
   '@dovo/studio-core': `
     export * from '@dovo/protocol';
@@ -31,6 +32,7 @@ const mocks = {
   './task-row': `export const TaskRow=({task,selected,editable,onSelect})=><button data-task-id={task.id} data-editable={editable} aria-current={selected?'true':undefined} onClick={onSelect}>{task.title} · {task.status}</button>;`,
 }
 const built = await build({
+  conditions: ['development'],
   stdin: {
     contents: `
       import {useState,useCallback} from 'react';

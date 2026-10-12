@@ -18,6 +18,7 @@ const toolPayload = mutableStruct({
   turnId: Schema.String,
   messageId: Schema.optional(Schema.String),
   toolId: Schema.String,
+  terminalCommand: Schema.optional(Schema.Boolean),
   status: Schema.String,
   textOffset: Schema.optional(
     Schema.Number.pipe(
@@ -150,7 +151,58 @@ export function recentTools(events: Event[]): Tool[] {
       })
     }
   }
-  return [...tools.values()]
+  const result = [...tools.values()]
+  const commandKey = (tool: Tool) =>
+    JSON.stringify([
+      tool.scope,
+      tool.turnId ?? '',
+      toolPresentation(tool.payload, tool.summary, tool.inputPayload).input,
+    ])
+  const commands = new Set(
+    result
+      .filter((tool) => {
+        try {
+          return object(JSON.parse(tool.payload)).terminalCommand === true
+        } catch {
+          return false
+        }
+      })
+      .map(commandKey),
+  )
+  if (!commands.size) return result
+  // The runtime records the actual command even when a harness wraps the MCP call in JS.
+  // Keep that command card instead of a second card for the direct transport invocation.
+  return result.filter((tool) => {
+    if (
+      ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status) ||
+      !commands.has(commandKey(tool))
+    )
+      return true
+    return ![tool.payload, tool.inputPayload].some((payload) => {
+      if (!payload) return false
+      let envelope: Record<string, unknown>
+      try {
+        envelope = object(JSON.parse(payload))
+      } catch {
+        return false
+      }
+      if (envelope.terminalCommand === true) return false
+      const event = object(envelope.event)
+      const item = object(event.item)
+      const blocks = decodeResult(mutableArray(record), object(event.message).content).data ?? []
+      const names = [
+        tool.summary,
+        item.tool,
+        object(object(event.properties).part).tool,
+        ...blocks.map((block) => block.name),
+      ]
+      return names.some(
+        (name) =>
+          typeof name === 'string' &&
+          /^(?:mcp__dovo_task__|dovo_task[./_])?terminal_run$/i.test(name),
+      )
+    })
+  })
 }
 
 /** Compact thread activity retains identity, status, commands and app references, never raw provider data. */

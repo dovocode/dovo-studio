@@ -5,6 +5,9 @@ import {
   Button,
   DropdownMenu,
   RepositoryOpenItems,
+  Dialog,
+  DialogContent,
+  DialogTitle,
 } from '@dovo/studio-ui'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
 import {
@@ -86,11 +89,16 @@ export function TaskMessageResponse({
   const { request, connection, connected } = useWorkspace()
   const { openExternalLink } = useStudioHost()
   const [error, setError] = useState('')
+  const [previewPath, setPreviewPath] = useState<string>()
   const openFile = useCallback(
     (path: string, download = false) => {
       setError('')
       if (!connected || !connection) {
         setError('Reconnect to the file’s computer to preview it.')
+        return
+      }
+      if (!download) {
+        setPreviewPath(path)
         return
       }
       // Open synchronously so web browsers do not reject an async popup.
@@ -168,6 +176,13 @@ export function TaskMessageResponse({
   )
   return (
     <div className="min-w-0 max-w-full">
+      {previewPath && (
+        <TaskFileDialog
+          taskId={taskId}
+          path={previewPath}
+          onClose={() => setPreviewPath(undefined)}
+        />
+      )}
       {parts.map((part) => (
         <div key={part.offset} className="min-w-0 max-w-full">
           {part.kind === 'markdown' ? (
@@ -305,5 +320,67 @@ function TaskVideo({
         )}
       </figcaption>
     </figure>
+  )
+}
+
+function TaskFileDialog({
+  taskId,
+  path,
+  onClose,
+}: {
+  taskId: string
+  path: string
+  onClose: () => void
+}) {
+  const { request, connection, connected } = useWorkspace()
+  const [revision, setRevision] = useState(0)
+  const [result, setResult] = useState<{ key: string; url?: string; error?: string }>()
+  const key = JSON.stringify([taskId, path, connection?.address, connection?.token, revision])
+  useEffect(() => {
+    if (!connected || !connection) return
+    let active = true
+    void request('/api/tasks/files/share', { taskId, path }, taskFileShareSchema).then(
+      ({ url }) => {
+        if (active) setResult({ key, url: new URL(url, connection.address).toString() })
+      },
+      (cause: unknown) => {
+        if (active)
+          setResult({ key, error: cause instanceof Error ? cause.message : String(cause) })
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [request, connected, connection, taskId, path, key])
+  const current = result?.key === key ? result : undefined
+  const error = !connected ? 'Reconnect to the file’s computer to preview it.' : current?.error
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <DialogContent className="flex h-[85dvh] max-w-5xl flex-col" aria-describedby={undefined}>
+        <DialogTitle>{markdownFileName(path)}</DialogTitle>
+        {error ? (
+          <div role="alert">
+            <p>{error}</p>
+            <Button variant="outline" onClick={() => setRevision((value) => value + 1)}>
+              Retry preview
+            </Button>
+          </div>
+        ) : current?.url ? (
+          <iframe
+            title="File preview"
+            src={current.url}
+            referrerPolicy="no-referrer"
+            className="min-h-0 w-full flex-1 rounded-md border"
+          />
+        ) : (
+          <p role="status">Loading preview…</p>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }

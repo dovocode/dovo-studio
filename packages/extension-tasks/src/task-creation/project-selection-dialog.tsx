@@ -1,3 +1,4 @@
+import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { useAppPreferences, projectActivity, useWorkspace } from '@dovo/studio-core'
 import { projectMachineGroups } from '@dovo/protocol'
 import {
@@ -8,7 +9,7 @@ import {
   DialogTitle,
   Input,
 } from '@dovo/studio-ui'
-import { ChevronRight, Folder, Monitor } from 'lucide-react'
+import { ChevronRight, Folder } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { taskCollectionKey, type TaskSource } from '../list/task-collection'
 
@@ -111,7 +112,7 @@ export function ProjectSelectionDialog({
           </p>
         )}
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Monitor className="size-4" />
+          <RuntimeIcon icon={machineSources[0]?.snapshot?.runtimeIcon} className="size-4" />
           <select
             aria-label="New thread machine"
             value={selectedMachine ?? ''}
@@ -151,7 +152,8 @@ export function ProjectSelectionDialog({
                   className="justify-start gap-2"
                   onClick={() => onSelect(taskCollectionKey(source.runtimeId, repository.id))}
                 >
-                  <Monitor className="size-4" /> {source.name}
+                  <RuntimeIcon icon={source.snapshot?.runtimeIcon} className="size-4" />{' '}
+                  {source.name}
                   {source.online ? '' : ' · Offline'}
                 </Button>
               )),
@@ -196,7 +198,7 @@ export function ProjectSelectionDialog({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{group.name}</span>
                       <span className="mt-1 flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
-                        <Monitor className="size-3" />
+                        <RuntimeIcon icon={source.snapshot?.runtimeIcon} className="size-3" />
                         {deviceCount > 1
                           ? `${deviceCount} devices · ${onlineCount} online${normalizedProjectQuery && matches.length === 1 ? ` · ${source.name}` : ''}`
                           : `${source.name}${repository.branch ? ` · ${repository.branch}` : ''}`}

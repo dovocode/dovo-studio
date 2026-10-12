@@ -1,3 +1,4 @@
+import { decode, threadWindowTargetSchema } from '@dovo/protocol'
 import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { readFile, writeFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -9,9 +10,16 @@ export function registerConnectionStorage(rendererPath: string) {
     if (event.senderFrame !== event.sender.mainFrame)
       throw new Error('Untrusted connection storage request')
     const source = new URL(event.senderFrame.url)
-    // The standalone launcher may read appearance settings; other popup frames
-    // retain their existing storage restrictions.
+    // The launcher may read appearance settings. Thread windows run the trusted
+    // workbench and need its normal settings and connection storage access.
     if (allowLauncher && source.hash === '#task-launcher') source.hash = ''
+    if (source.hash.startsWith('#thread=')) {
+      decode(
+        threadWindowTargetSchema,
+        JSON.parse(decodeURIComponent(source.hash.slice('#thread='.length))),
+      )
+      source.hash = ''
+    }
     if (source.hash) throw new Error('Untrusted connection storage request')
     if (
       process.env.VITE_DEV_SERVER_URL

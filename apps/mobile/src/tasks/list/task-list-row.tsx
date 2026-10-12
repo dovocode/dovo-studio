@@ -247,7 +247,12 @@ export function TaskListRow({
                 {branch}
               </Text>
               {showDevice && !car && (
-                <DeviceLabel task={task} runtimeHost={row.runtimeName} compact />
+                <DeviceLabel
+                  runtimeIcon={runtime?.snapshot?.runtimeIcon}
+                  task={task}
+                  runtimeHost={row.runtimeName}
+                  compact
+                />
               )}
               {row.reachability === 'offline' && (
                 <Text style={[styles.muted, { fontSize: 13 }]}>Offline</Text>

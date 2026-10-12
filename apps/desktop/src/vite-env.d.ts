@@ -2,6 +2,7 @@
 
 interface Window {
   dovo: {
+    popOutThread: import('@dovo/protocol').ThreadWindowBridge
     taskLauncher: import('@dovo/protocol').TaskLauncherBridge
     inputPreview: import('@dovo/protocol').InputPreviewBridge
     appInfo: NonNullable<import('@dovo/studio-core').StudioHostApi['appInfo']>

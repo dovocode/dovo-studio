@@ -1,3 +1,5 @@
+import { orderThreadSections } from '@dovo/protocol'
+import { SectionOrderDialog } from './section-order-dialog'
 import { useTaskSearch } from './use-task-search'
 import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
 import { flushSync } from 'react-dom'
@@ -383,14 +385,22 @@ export function TaskList({
         !preferences.workingSection || task.pinned || task.status !== 'running' || needsInput,
     )
     if (grouping === 'none')
-      return [{ id: 'all', name: '', tasks: visibleActive, open: true }, ...collapsedGroups]
+      return orderThreadSections(
+        [{ id: 'all', name: '', tasks: visibleActive, open: true }, ...collapsedGroups],
+        (group) => group.id,
+        preferences.threadSectionOrder,
+      )
     if (grouping === 'status')
-      return statusGroups.map((group) => ({
-        ...group,
-        open:
-          group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
-          (expanded[group.id] ?? group.open),
-      }))
+      return orderThreadSections(
+        statusGroups.map((group) => ({
+          ...group,
+          open:
+            group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
+            (expanded[group.id] ?? group.open),
+        })),
+        (group) => group.id,
+        preferences.threadSectionOrder,
+      )
     const byProject = new Map<string, { id: string; name: string; tasks: TaskEntry[] }>()
     for (const entry of visibleActive) {
       const repository = entry.source.workspace.repositories.find(
@@ -407,17 +417,21 @@ export function TaskList({
       group.tasks.push(entry)
       byProject.set(key, group)
     }
-    return [
-      ...[...byProject.values()]
-        .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
-        .map((group) => ({
-          ...group,
-          open:
-            group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
-            (expanded[group.id] ?? true),
-        })),
-      ...collapsedGroups,
-    ]
+    return orderThreadSections(
+      [
+        ...[...byProject.values()]
+          .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+          .map((group) => ({
+            ...group,
+            open:
+              group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
+              (expanded[group.id] ?? true),
+          })),
+        ...collapsedGroups,
+      ],
+      (group) => group.id,
+      preferences.threadSectionOrder,
+    )
   }, [
     tasks,
     now,
@@ -425,6 +439,7 @@ export function TaskList({
     expanded,
     preferences.projectGrouping,
     preferences.workingSection,
+    preferences.threadSectionOrder,
     temporaryEntry,
   ])
   useEffect(() => {
@@ -592,6 +607,7 @@ export function TaskList({
               className="h-8 border-transparent bg-transparent pl-7 shadow-none focus:border-border"
             />
           </div>
+          <SectionOrderDialog />
           <ProjectsMenu
             compact
             allDevices

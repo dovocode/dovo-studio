@@ -6,12 +6,10 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const uiRoot = root + 'packages/studio-ui/src/'
 const screenshotDirectory = process.env.DOVO_ARTIFACT_SCREENSHOTS
-const css = screenshotDirectory
-  ? readdirSync(root + 'apps/web/dist/client/assets')
-      .filter((file) => file.endsWith('.css'))
-      .map((file) => readFileSync(root + 'apps/web/dist/client/assets/' + file, 'utf8'))
-      .join('\n')
-  : ''
+const css = readdirSync(root + 'apps/web/dist/client/assets')
+  .filter((file) => file.endsWith('.css'))
+  .map((file) => readFileSync(root + 'apps/web/dist/client/assets/' + file, 'utf8'))
+  .join('\n')
 if (screenshotDirectory) mkdirSync(screenshotDirectory, { recursive: true })
 async function prepareView(page, native = false) {
   page.setDefaultTimeout(10000)
@@ -88,7 +86,7 @@ const interfaces = await Promise.all(
           ? `import {createRoot} from 'react-dom/client';import ArtifactsScreen from './src/screens/artifacts.tsx';createRoot(document.getElementById('app')).render(<ArtifactsScreen/>);`
           : platform === 'desktop'
             ? `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {ThreadArtifacts,ArtifactCard} from './src/chat/artifacts.tsx';import {ArtifactOpenContext} from './src/chat/artifact-open-context.ts';import {TaskTools} from './src/detail/task-tools.tsx';function App(){const[surface,setSurface]=useState('chat'),[taskId,setTaskId]=useState('thread'),[selection,setSelection]=useState();window.switchArtifactThread=setTaskId;return <div style={{height:'100%',display:'flex'}}><div style={{flex:1,padding:24}}><ArtifactOpenContext value={reference=>{setSelection(previous=>({taskId:reference.taskId,id:reference.id,key:(previous?.key??0)+1}));setSurface('artifacts')}}><ArtifactCard reference={{id:'interactive',taskId,title:'Counter',format:'html',revision:1}}/></ArtifactOpenContext></div>{surface==='artifacts'&&<div style={{width:480,height:'100%'}}><ThreadArtifacts key={taskId+':'+selection?.key} taskId={taskId} initialId={selection?.taskId===taskId?selection.id:undefined} onClose={()=>{setSurface('chat');setSelection(undefined)}}/></div>}<TaskTools surface={surface} onSelect={setSurface} hasDiff={false} artifactsEnabled={window.artifactsEnabled}/></div>}createRoot(document.getElementById('app')).render(<App/>);`
-            : `import {createRoot} from 'react-dom/client';import {ArtifactCard} from './src/ui/content/artifacts.tsx';createRoot(document.getElementById('app')).render(<ArtifactCard reference={{id:'notes',taskId:'thread',title:'Notes',format:'markdown',revision:2}}/>);`
+            : `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {ArtifactCard} from './src/ui/content/artifacts.tsx';function App(){const [html,setHtml]=useState(false);window.showInlineHtml=()=>setHtml(true);return <ArtifactCard reference={html?{id:'interactive',taskId:'thread',title:'Counter',format:'html',revision:1}:{id:'notes',taskId:'thread',title:'Notes',format:'markdown',revision:2}}/>}createRoot(document.getElementById('app')).render(<App/>);`
     const result = await build({
       stdin: {
         contents,
@@ -265,10 +263,16 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         exact: true,
       })
       .waitFor()
-    assert.equal(
-      await view.evaluate(() => window.artifactCalls.length),
-      0,
-      'Closed cards must not fetch artifact bodies',
+    await view.waitForFunction(() =>
+      window.artifactCalls.some((call) => call.path === '/api/artifacts/read'),
+    )
+    assert.ok(
+      (await view.evaluate(() => window.artifactCalls)).every(
+        (call) =>
+          call.path === '/api/artifacts/read' &&
+          call.input.revision === (call.input.id === 'interactive' ? 1 : 2),
+      ),
+      'Inline previews read the version referenced by the message',
     )
     if (ui.platform === 'desktop') {
       assert.equal(
@@ -280,7 +284,12 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         'Artifacts use their own Shapes icon',
       )
       await view.getByRole('button', { name: 'Open artifact Counter', exact: true }).click()
-      await view.frameLocator('iframe').frameLocator('iframe').locator('#interactive').waitFor()
+      await view
+        .locator('[aria-label="Thread artifacts"], [role="dialog"]')
+        .frameLocator('iframe')
+        .frameLocator('iframe')
+        .locator('#interactive')
+        .waitFor()
       assert.equal(await view.getByRole('dialog').count(), 0, 'Thread cards must open beside chat')
       await view.getByRole('button', { name: 'Close artifacts', exact: true }).click()
       await view.getByLabel('Artifact', { exact: true }).waitFor({ state: 'hidden' })
@@ -294,7 +303,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         exact: true,
       })
       .click()
-    await view.getByText('Current notes', { exact: true }).waitFor()
+    await view.getByText('Current notes', { exact: true }).last().waitFor()
     if (screenshotDirectory)
       await view.screenshot({ path: `${screenshotDirectory}/${ui.platform}-thread.png` })
     if (ui.platform === 'desktop') {
@@ -342,11 +351,11 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         .click()
       await view.getByText('Version 1', { exact: true }).click()
     }
-    await view.getByText('Earlier notes', { exact: true }).waitFor()
+    await view.getByText('Earlier notes', { exact: true }).last().waitFor()
     if (ui.platform === 'desktop') {
       await view.getByRole('button', { name: 'Expand artifact', exact: true }).click()
       await view.getByRole('dialog').waitFor()
-      await view.getByText('Earlier notes', { exact: true }).waitFor()
+      await view.getByText('Earlier notes', { exact: true }).last().waitFor()
       await view.getByRole('button', { name: 'Close', exact: true }).click()
       await view.getByRole('region', { name: 'Thread artifacts' }).waitFor()
       assert.equal(
@@ -361,15 +370,30 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       await view.getByRole('button', { name: 'Choose artifact', exact: true }).click()
       await view.getByText('Counter', { exact: true }).click()
     }
-    await view.frameLocator('iframe').frameLocator('iframe').locator('#interactive').waitFor()
+    await view
+      .locator('[aria-label="Thread artifacts"], [role="dialog"]')
+      .frameLocator('iframe')
+      .frameLocator('iframe')
+      .locator('#interactive')
+      .waitFor()
     if (ui.platform === 'mobile') {
       const mounts = await view.evaluate(() => window.mobilePreviewMounts)
       await view.evaluate(() => window.terminateMobilePreview())
       await view.waitForFunction((count) => window.mobilePreviewMounts === count + 1, mounts)
-      await view.frameLocator('iframe').frameLocator('iframe').locator('#interactive').waitFor()
+      await view
+        .locator('[aria-label="Thread artifacts"], [role="dialog"]')
+        .frameLocator('iframe')
+        .frameLocator('iframe')
+        .locator('#interactive')
+        .waitFor()
       await view.evaluate(() => window.crashMobilePreview())
       await view.waitForFunction((count) => window.mobilePreviewMounts === count + 2, mounts)
-      await view.frameLocator('iframe').frameLocator('iframe').locator('#interactive').waitFor()
+      await view
+        .locator('[aria-label="Thread artifacts"], [role="dialog"]')
+        .frameLocator('iframe')
+        .frameLocator('iframe')
+        .locator('#interactive')
+        .waitFor()
     }
     await view
       .getByRole('button', {
@@ -459,6 +483,30 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         await view.getByRole('link', { name: 'Open ChatGPT Site', exact: true }).count(),
         0,
       )
+    }
+    if (ui.platform === 'mobile') {
+      await view.getByRole('button', { name: 'Close artifact preview', exact: true }).click()
+      await view.evaluate(() => window.showInlineHtml())
+      const inline = view.frameLocator('iframe').frameLocator('iframe')
+      await inline.locator('#interactive').waitFor()
+      await inline
+        .locator('#interactive')
+        .evaluate((button) => (button.onclick = () => (button.textContent = 'Clicked inline')))
+      await inline.locator('#interactive').click()
+      assert.equal(await inline.locator('#interactive').innerText(), 'Clicked inline')
+      await view.getByRole('button', { name: 'View inline artifact source', exact: true }).click()
+      await view
+        .getByText('<button id="interactive">Interactive artifact</button>', { exact: true })
+        .waitFor()
+      await view.getByRole('button', { name: 'Show rendered artifact', exact: true }).click()
+      assert.equal(
+        await inline.locator('#interactive').innerText(),
+        'Clicked inline',
+        'Source toggle preserves native WebView state',
+      )
+      await view.getByRole('button', { name: 'Expand inline artifact', exact: true }).click()
+      await view.getByRole('dialog').waitFor()
+      await view.getByRole('button', { name: 'Close artifact preview', exact: true }).click()
     }
     await view.close()
     const disabled = await browser.newPage()

@@ -11,7 +11,8 @@ import { runtimeRequestEffect } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import type { RuntimeProfile } from '@dovo/studio-core'
-import { Monitor, Plus, Circle } from 'lucide-react'
+import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
+import { Plus, Circle } from 'lucide-react'
 import { responses, runtimeRequest, useWorkspace, startPolling } from '@dovo/studio-core'
 import {
   Button,
@@ -266,7 +267,12 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
         {runtimes.map((entry) => {
           return (
             <div key={entry.profile.id} className="flex flex-wrap items-center gap-3 py-3">
-              <Monitor aria-hidden="true" size={17} className="shrink-0 text-muted-foreground" />
+              <RuntimeIcon
+                icon={entry.snapshot?.runtimeIcon}
+                aria-hidden="true"
+                size={17}
+                className="shrink-0 text-muted-foreground"
+              />
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="min-w-0 break-words">{entry.profile.name}</span>

@@ -180,10 +180,20 @@ export class PullRequestWatch {
     if (!repository) throw new HttpError(404, 'The watched project is no longer available')
     return repository
   }
-  async command(input: typeof pullRequestWatchRequestSchema.Type) {
-    this.enabled()
+  command(input: typeof pullRequestWatchRequestSchema.Type) {
+    return this.execute(input, false)
+  }
+  /** Paired devices may inspect and remove existing watches even when watching is disabled. */
+  manage(input: typeof pullRequestWatchRequestSchema.Type & { action: 'status' | 'stop' }) {
+    return this.execute(input, true)
+  }
+  private async execute(input: typeof pullRequestWatchRequestSchema.Type, manageExisting: boolean) {
+    if (!manageExisting || input.action === 'watch') this.enabled()
     this.s.tasks.assertToolScope(input.taskId, input.parentRunId)
-    const task = this.writable(input.taskId)
+    const task =
+      manageExisting && input.action !== 'watch'
+        ? this.s.store.task(input.taskId)
+        : this.writable(input.taskId)
     const selected = (state: { repositoryId: string; url: string }) =>
       (!input.repositoryId || state.repositoryId === input.repositoryId) &&
       (!input.url || state.url === input.url)

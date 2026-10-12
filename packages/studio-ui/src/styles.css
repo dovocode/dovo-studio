@@ -284,6 +284,10 @@ textarea {
 .studio[data-platform='darwin'] .studio-task-thread-header[data-sidebar='false'] {
   padding-left: 60px;
 }
+.studio[data-platform='darwin'][data-thread-window='true']
+  :is(.studio-task-sidebar-header, .studio-task-thread-header[data-sidebar='false']) {
+  padding-left: 96px;
+}
 .studio-task-thread-header {
   min-width: 0;
   padding: 0 12px 0 16px;

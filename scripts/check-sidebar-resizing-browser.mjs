@@ -9,22 +9,25 @@ import { createRoot } from 'react-dom/client';
 import { useState } from 'react';
 import { ApplicationStateProvider } from '@dovo/studio-core/state';
 import { readAppPreferences } from '@dovo/studio-core';
-import { ResizablePanel, ResizablePanelGroup } from '@dovo/studio-ui';
+import { TooltipProvider, ResizablePanel, ResizablePanelGroup } from '@dovo/studio-ui';
 import { ResizableSidebar } from '../extension-tasks/src/detail/resizable-sidebar.tsx';
+import { TaskFiles } from '../extension-tasks/src/detail/task-files.tsx';
 import { FileTree } from '../extension-tasks/src/review/file-tree.tsx';
 const root=createRoot(document.getElementById('app'));
 window.saved=()=>readAppPreferences();
 function Fixture(){
+ const [project,setProject]=useState(false);window.toggleProject=()=>setProject(v=>!v);
  const [diff,setDiff]=useState(false),[selected,setSelected]=useState('src/first.ts');
  window.toggleDiff=()=>setDiff(v=>!v);
  const changedFiles=[{path:'src/first.ts',before:'old',after:'new',viewed:false},{path:'src/second.ts',before:'old',after:'new',viewed:false}];
  const diffView=<div className="flex h-screen w-screen min-h-0 min-w-0"><main className="min-w-0 flex-1" data-testid="diff-content">{selected}</main><FileTree files={changedFiles} stats={[]} selected={selected} onSelect={setSelected}/></div>;
  const [left,setLeft]=useState(true),[right,setRight]=useState(true),[files,setFiles]=useState(false),[expanded,setExpanded]=useState(false);
  window.toggleLeft=()=>setLeft(v=>!v);window.toggleRight=()=>setRight(v=>!v);window.files=()=>setFiles(v=>!v);window.expand=()=>setExpanded(v=>!v);
+ if(project)return <div className="h-screen w-screen"><TaskFiles task={{id:'project',files:[]}}/></div>;
  if(diff)return diffView;
  return <div className="flex h-screen w-screen min-w-0"><nav id="left-icons" style={{width:56,minWidth:56}} className="shrink-0">Icons</nav><div className="flex min-h-0 min-w-0 flex-1"><ResizableSidebar as="div" preference="threadSidebarWidth" side="left" label="thread sidebar" maxFraction={.45} maxWidth={640} resizable={left} className={left?'':'hidden'} data-testid="left"><div>Threads</div></ResizableSidebar><ResizablePanelGroup direction="horizontal" className="min-w-0 flex-1"><ResizablePanel id="conversation" minSize={30}><div className="relative flex h-full min-w-0"><main className={expanded?'hidden':'min-w-0 flex-1'}>Chat</main><ResizableSidebar key={files?'viewer':'tools'} preference={files?'viewerSidebarWidth':'toolsSidebarWidth'} side="right" label="tools sidebar" maxFraction={files?.5:.48} maxWidth={960} resizable={right&&!expanded} data-testid="right" className={!right?'hidden':expanded?'flex-1':'flex flex-col'}><iframe title="Preview" srcDoc="<p>Remote browser</p>" className="h-full w-full"/></ResizableSidebar><nav id="right-icons" style={{width:56,minWidth:56}} className="shrink-0">Tools</nav></div></ResizablePanel></ResizablePanelGroup></div></div>
 }
-window.mount=()=>root.render(<ApplicationStateProvider><Fixture key={Math.random()}/></ApplicationStateProvider>);window.mount();
+window.mount=()=>root.render(<ApplicationStateProvider><TooltipProvider><Fixture key={Math.random()}/></TooltipProvider></ApplicationStateProvider>);window.mount();
 `,
     resolveDir: fileURLToPath(new URL('../packages/studio-ui/', import.meta.url)),
     loader: 'tsx',
@@ -36,6 +39,22 @@ window.mount=()=>root.render(<ApplicationStateProvider><Fixture key={Math.random
   jsx: 'automatic',
   define: { 'process.env.NODE_ENV': '"production"' },
   loader: { '.css': 'empty' },
+  plugins: [
+    {
+      name: 'project-workspace',
+      setup(build) {
+        build.onResolve({ filter: /^@dovo\/studio-core$/ }, () => ({
+          path: 'core-fixture',
+          namespace: 'fixture',
+        }))
+        build.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
+          contents: `export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';const request=async()=>({files:['src/first.ts','src/second.ts']});export const useWorkspace=()=>({connected:true,request});`,
+          loader: 'ts',
+          resolveDir: fileURLToPath(new URL('../packages/studio-core/', import.meta.url)),
+        }))
+      },
+    },
+  ],
 })
 const browser = await chromium.launch({ headless: true })
 try {
@@ -168,9 +187,45 @@ try {
   await fileHandle.dblclick()
   await expectFileWidth(256)
   await page.waitForFunction(() => window.saved().diffFilesSidebarWidth === 256)
+  await page.evaluate(() => window.toggleProject())
+  const projectPane = page.getByRole('complementary', { name: 'Project file tree' })
+  const projectWidth = async (expected) => {
+    await page.waitForFunction(
+      (expected) =>
+        Math.abs(
+          document.querySelector('[aria-label="Project file tree"]').getBoundingClientRect().width -
+            expected,
+        ) < 1,
+      expected,
+    )
+  }
+  await projectPane.getByRole('button', { name: 'src/first.ts', exact: true }).waitFor()
+  if (
+    (await projectPane.getByRole('button', { name: 'src', exact: true }).innerText()).trim() !==
+    'src'
+  )
+    throw new Error('Project directory still displays a file count')
+  await projectWidth(256)
+  await drag('Resize project file tree', -80)
+  await projectWidth(336)
+  await page.waitForFunction(() => window.saved().projectFilesSidebarWidth === 336)
+  await page.getByRole('searchbox', { name: 'Search project files' }).fill('second')
+  await projectPane
+    .getByRole('button', { name: 'src/first.ts', exact: true })
+    .waitFor({ state: 'hidden' })
+  await page.evaluate(() => window.toggleProject())
+  await projectPane.waitFor({ state: 'hidden' })
+  await page.evaluate(() => window.toggleProject())
+  await projectWidth(336)
+  await page.setViewportSize({ width: 500, height: 800 })
+  await projectWidth(200)
+  await page.setViewportSize({ width: 1600, height: 800 })
+  await projectWidth(336)
+  await page.getByRole('separator', { name: 'Resize project file tree' }).dblclick()
+  await projectWidth(256)
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    '280px default, both drag directions, iframe crossing, keyboard resize, remembered widths, reset, narrow windows, viewer expansion and fixed icon bars, diff file pane resize/persistence/reset and file selection/filtering verified.',
+    '280px default, both drag directions, iframe crossing, keyboard resize, remembered widths, reset, narrow windows, viewer expansion and fixed icon bars, diff and project file pane resize/persistence/reset, project narrow-window bounds, and file filtering verified.',
   )
 } finally {
   await browser.close()

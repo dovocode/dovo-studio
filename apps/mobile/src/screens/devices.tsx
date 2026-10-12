@@ -1,3 +1,5 @@
+import { RuntimeIconSettings } from '../runtime/connection/runtime-icon-settings'
+import { runtimeIconName } from '../ui/content/runtime-icon'
 import { runtimeComputerName } from '@dovo/protocol'
 import { DeviceHostSettings } from './device-host-settings'
 import { ComputerUpdates } from './computer-updates'
@@ -145,7 +147,7 @@ export default function DevicesScreen() {
                         ? 'Offline · Saved workspace available'
                         : 'Not connected'
                 }
-                icon="device"
+                icon={runtimeIconName(entry.snapshot?.runtimeIcon)}
                 tint={entry.connected ? colors.accent : colors.muted}
                 last={index === overviews.length - 1}
                 label={`Manage ${runtimeComputerName(entry)}`}
@@ -382,6 +384,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
               {error || connectionError}
             </Text>
           )}
+          <RuntimeIconSettings />
           <RuntimePreferences />
           <TaskDefaultSettings />
           <SettingsGroup title="On this computer">

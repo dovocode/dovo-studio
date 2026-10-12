@@ -38,6 +38,7 @@ import {
   X,
 } from 'lucide-react'
 import { ArtifactIcon } from './artifact-presentation'
+import { InlineArtifact } from './inline-artifact'
 import { ArtifactOpenContext } from './artifact-open-context'
 
 export const ArtifactCard = memo(function ArtifactCard({
@@ -51,26 +52,11 @@ export const ArtifactCard = memo(function ArtifactCard({
   if (!snapshot?.artifactsEnabled) return null
   return (
     <>
-      <button
-        type="button"
-        aria-label={`Open artifact ${reference.title}`}
-        className="group my-2 flex w-full max-w-lg items-center gap-3 rounded-xl border bg-card p-3.5 text-left transition-colors hover:border-primary/30 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => (openInThread ? openInThread(reference) : setOpen(true))}
-      >
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-lg border bg-background">
-          <ArtifactIcon format={reference.format} className="size-5" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{reference.title}</span>
-          <span className="mt-1 block text-xs text-muted-foreground">
-            {artifactFormatLabels[reference.format]} · Version {reference.revision}
-          </span>
-        </span>
-        <ArrowUpRight
-          aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
-        />
-      </button>
+      <InlineArtifact
+        key={`${activeRuntimeId}:${reference.taskId}:${reference.id}:${reference.revision}`}
+        reference={reference}
+        onOpen={() => (openInThread ? openInThread(reference) : setOpen(true))}
+      />
       {open && (
         <ArtifactBrowser
           key={`${activeRuntimeId}:${reference.taskId}`}

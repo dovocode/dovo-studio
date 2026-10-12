@@ -1,7 +1,8 @@
 import { SafeModal } from '../layout/safe-modal'
 import { memo, useEffect, useState } from 'react'
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View } from 'react-native'
-import WebView from 'react-native-webview'
+import { ArtifactWebView } from './artifact-web-view'
+import { InlineArtifact } from './inline-artifact'
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import * as Crypto from 'expo-crypto'
@@ -10,7 +11,6 @@ import {
   artifactFormatLabels,
   artifactListSchema,
   artifactLinkLabel,
-  artifactPreviewHtml,
   artifactResponseSchema,
   artifactVersionsSchema,
   type Artifact,
@@ -68,6 +68,11 @@ export const ArtifactCard = memo(function ArtifactCard({
         </View>
         <Icon name="external" size={16} color={colors.muted} />
       </Pressable>
+      <InlineArtifact
+        key={`${activeId}:${reference.taskId}:${reference.id}:${reference.revision}`}
+        reference={reference}
+        onOpen={() => setOpen(true)}
+      />
       {open && (
         <ArtifactBrowser
           key={`${activeId}:${reference.taskId}`}
@@ -139,7 +144,6 @@ export function ArtifactBrowser({
   const [revision, setRevision] = useState<number>()
   const [versions, setVersions] = useState<ArtifactMetadata[]>([])
   const [reload, setReload] = useState(0)
-  const [previewGeneration, setPreviewGeneration] = useState(0)
   const selection = JSON.stringify([taskId, id, revision, reload])
   const [loaded, setLoaded] = useState<{ selection: string; artifact: Artifact }>()
   const artifact = loaded?.selection === selection ? loaded.artifact : undefined
@@ -448,24 +452,10 @@ export function ArtifactBrowser({
               )}
             </ScrollView>
           ) : (
-            <WebView
-              key={`${id}:${artifact.revision}:${previewGeneration}`}
-              source={{ html: artifactPreviewHtml(artifact.content) }}
-              style={{ flex: 1, backgroundColor: '#fff' }}
-              originWhitelist={['*']}
-              allowFileAccess={false}
-              allowFileAccessFromFileURLs={false}
-              allowUniversalAccessFromFileURLs={false}
-              javaScriptCanOpenWindowsAutomatically={false}
-              sharedCookiesEnabled={false}
-              thirdPartyCookiesEnabled={false}
-              onShouldStartLoadWithRequest={(request) =>
-                request.url === 'about:blank' ||
-                (!request.isTopFrame && /^(about:|data:|blob:)/.test(request.url))
-              }
+            <ArtifactWebView
+              key={`${id}:${artifact.revision}`}
+              content={artifact.content}
               onError={() => setPreviewError('Could not load artifact preview')}
-              onContentProcessDidTerminate={() => setPreviewGeneration((value) => value + 1)}
-              onRenderProcessGone={() => setPreviewGeneration((value) => value + 1)}
             />
           ))
         )}

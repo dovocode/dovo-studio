@@ -1,3 +1,4 @@
+import { TaskWaitingPanel } from './task-waiting-panel'
 import { checkpointFileCount, runtimeComputerName } from '@dovo/protocol'
 import { conversationPageSchema, readConversationHistory, runtimeRequest } from '@dovo/protocol'
 import {
@@ -757,6 +758,9 @@ function TaskDetailContent({
                     />
                     {quota.error && <Text style={{ color: colors.error }}>{quota.error}</Text>}
                   </View>
+                )}
+                {task.waitingForFeedback && (
+                  <TaskWaitingPanel key={`${activeId}:${task.id}`} taskId={task.id} />
                 )}
                 <TaskQuestions taskId={task.id} questionId={questionId} />
                 {(budget.tokenExceeded || budget.timeExceeded) && (

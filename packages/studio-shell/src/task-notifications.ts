@@ -108,12 +108,13 @@ export function useTaskNotifications(
   onOpen: (target: NotificationTarget) => void,
   preview?: InputPreviewBridge,
   activeTarget?: NotificationTarget,
+  enabled = true,
 ) {
   const [notice, setNotice] = useState<{ title: string; target: NotificationTarget } | null>(null)
   const { runtimes } = useWorkspace()
   const preferences = useAppPreferences()
   useEffect(() => {
-    if (!preview) return
+    if (!enabled || !preview) return
     const items: InputPreviewItem[] = []
     for (const entry of runtimes) {
       const snapshot = entry.snapshot
@@ -136,13 +137,14 @@ export function useTaskNotifications(
     void preview
       .sync({ enabled: preferences.inputPreview, items })
       .catch((error: unknown) => console.error('Could not update input preview', error))
-  }, [runtimes, preview, preferences.inputPreview])
+  }, [runtimes, preview, preferences.inputPreview, enabled])
   useEffect(
     () => preview?.onOpenThread((target) => onOpen({ ...target, viewId: 'tasks' })),
     [preview, onOpen],
   )
   const previous = useRef<Map<string, TaskState> | null>(null)
   useEffect(() => {
+    if (!enabled) return
     const current = taskStates(runtimes)
     const before = previous.current
     previous.current = current
@@ -194,7 +196,14 @@ export function useTaskNotifications(
         onOpen(event.target)
       }
     }
-  }, [runtimes, onOpen, activeTarget?.runtimeId, activeTarget?.viewId, activeTarget?.entityId])
+  }, [
+    runtimes,
+    onOpen,
+    activeTarget?.runtimeId,
+    activeTarget?.viewId,
+    activeTarget?.entityId,
+    enabled,
+  ])
   useEffect(() => {
     if (!notice) return
     const timer = setTimeout(() => setNotice(null), 8000)

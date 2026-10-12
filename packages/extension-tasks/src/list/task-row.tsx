@@ -1,3 +1,4 @@
+import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { pullStackLabel } from '@dovo/protocol'
 import { taskPullLinks } from '../detail/task-pull-links'
 import { AgentAvatar, ProjectIcon, useModelLabel } from '@dovo/studio-ui'
@@ -24,7 +25,6 @@ import {
   GitBranch,
   GitPullRequest,
   Layers,
-  Monitor,
   Pin,
 } from 'lucide-react'
 import { memo } from 'react'
@@ -207,7 +207,11 @@ function TaskRowView({
                   )}
                 </span>
               )}
-              <Monitor className="size-3 shrink-0" aria-label={host ?? 'Unknown host'} />
+              <RuntimeIcon
+                icon={source.snapshot?.runtimeIcon}
+                className="size-3 shrink-0"
+                aria-label={host ?? 'Unknown host'}
+              />
               {provider && (
                 <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5" />
               )}
@@ -227,7 +231,7 @@ function TaskRowView({
               {repository?.name ?? 'No project'}
             </p>
             <p className="flex items-center gap-2 break-all">
-              <Monitor className="size-3 shrink-0" />
+              <RuntimeIcon icon={source.snapshot?.runtimeIcon} className="size-3 shrink-0" />
               {host ?? 'Unknown host'}
             </p>
             <p className="flex items-center gap-2 break-all">

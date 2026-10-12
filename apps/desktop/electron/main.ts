@@ -11,6 +11,7 @@ import {
   writeWindowsRuntimeChoice,
   prepareWslRuntime,
 } from './windows-runtime.js'
+import { registerThreadWindows } from './thread-window.js'
 import { registerTaskLauncher } from './task-launcher.js'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
@@ -151,6 +152,8 @@ app.once('will-quit', () => {
 
 const taskLauncher = registerTaskLauncher(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => taskLauncher.dispose())
+const threadWindows = registerThreadWindows(rendererPath, join(__dirname, 'preload.mjs'))
+app.once('will-quit', () => threadWindows.dispose())
 let mainWindow: BrowserWindow | undefined
 /** The renderer reports its resolved palette; Windows and Linux paint the caption buttons
  * natively, so they would otherwise stay dark on a light theme. The last palette is kept for
@@ -162,7 +165,10 @@ ipcMain.handle('window:colors', (event, value: unknown) => {
   const window = BrowserWindow.fromWebContents(event.sender)
   if (!window || window.isDestroyed()) return
   window.setBackgroundColor(colors.background)
-  if (window === mainWindow && process.platform !== 'darwin')
+  if (
+    process.platform !== 'darwin' &&
+    (window === mainWindow || new URL(event.sender.getURL()).hash.startsWith('#thread='))
+  )
     window.setTitleBarOverlay(titleBarOverlay(colors))
   writeWindowColors(app.getPath('userData'), colors)
 })

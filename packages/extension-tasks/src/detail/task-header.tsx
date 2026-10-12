@@ -1,3 +1,4 @@
+import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { gitPrimaryAction } from './git-primary-action'
 import { RepositoryActions } from '@dovo/extension-scm/repository-actions'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -27,7 +28,6 @@ import {
   GitBranch,
   GitPullRequest,
   MessageSquare,
-  Monitor,
   PanelLeft,
   PanelRight,
   PanelBottom,
@@ -526,7 +526,7 @@ export function TaskHeader({
               className="inline-flex min-w-0 max-w-36 items-center gap-1 truncate"
               title={`Runs on ${executionHost ?? 'the selected computer'}${!connected ? ' · offline' : ''}`}
             >
-              <Monitor size={10} className="shrink-0" />
+              <RuntimeIcon icon={snapshot?.runtimeIcon} size={10} className="shrink-0" />
               <span className="truncate">{executionHost ?? 'Selected computer'}</span>
               {!connected && <span className="shrink-0">· Offline</span>}
             </span>

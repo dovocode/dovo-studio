@@ -373,7 +373,7 @@ function BrowserContent({
       if (!alive) return
       const rect = slot.current?.getBoundingClientRect()
       const obscured = document.querySelector(
-        'details[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
+        'details[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-preview-dragging="true"], [data-inline-artifact] [data-preview-overlay="true"]',
       )
       const command =
         rect && rect.width > 0 && rect.height > 0 && !obscured
@@ -420,7 +420,7 @@ function BrowserContent({
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['open'],
+      attributeFilter: ['open', 'style', 'class', 'data-preview-dragging', 'data-preview-overlay'],
     })
     window.addEventListener('resize', schedule)
     window.addEventListener('scroll', schedule, true)

@@ -80,3 +80,24 @@ it('stores encrypted connections in the runtime workspace instead of the Electro
     '/isolated/.dovo-dev/desktop/runtime-connections.enc',
   )
 })
+
+it('allows trusted thread windows to use settings and encrypted connections but rejects foreign frames', async () => {
+  registerConnectionStorage('/app/index.html')
+  const hash =
+    '#thread=' +
+    encodeURIComponent(JSON.stringify({ runtimeId: 'remote', taskId: 'task', title: 'Thread' }))
+  const thread = event('file:///app/index.html' + hash)
+  f.listeners.get('app:settings-read')?.(thread)
+  expect(thread.returnValue).toEqual({ value: { theme: 'dark' } })
+  await f.handlers.get('runtime:registry-write')?.(thread, '{}')
+  expect(f.connectionWrite).toHaveBeenCalledOnce()
+  await expect(() =>
+    f.handlers.get('runtime:registry-write')?.(event('https://foreign.test/' + hash), '{}'),
+  ).rejects.toThrow('Untrusted')
+  await expect(() =>
+    f.handlers.get('runtime:registry-write')?.(
+      event('file:///app/index.html#thread=invalid'),
+      '{}',
+    ),
+  ).rejects.toThrow(SyntaxError)
+})

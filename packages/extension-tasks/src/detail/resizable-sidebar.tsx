@@ -7,6 +7,7 @@ type WidthPreference =
   | 'toolsSidebarWidth'
   | 'viewerSidebarWidth'
   | 'diffFilesSidebarWidth'
+  | 'projectFilesSidebarWidth'
 export function ResizableSidebar({
   preference,
   side,

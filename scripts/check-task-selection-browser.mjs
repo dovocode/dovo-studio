@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url))
 const mocks = {
+  './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
   '@dovo/studio-core/state': `import {useState,useRef} from 'react'; export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref];}`,
   '@dovo/studio-core': `
 export {responses} from '@dovo/protocol';
@@ -30,6 +31,7 @@ export const ChoicePicker = ({onValueChange,children,...props})=>React.createEle
   '../detail/task-context-menu': `import React from 'react';import * as Menu from '@radix-ui/react-context-menu';export const TaskContextMenu = ({children,selectionMenu})=>React.createElement(Menu.Root,null,React.createElement(Menu.Trigger,{asChild:true},React.createElement('div',null,children)),React.createElement(Menu.Portal,null,React.createElement(Menu.Content,null,selectionMenu)));`,
 }
 const built = await build({
+  conditions: ['development'],
   stdin: {
     contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {TaskList} from './src/list/task-list.tsx';import {taskCollectionKey} from './src/list/task-collection.ts';

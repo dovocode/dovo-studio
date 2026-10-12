@@ -1,3 +1,4 @@
+import { RuntimeIconSettings } from './runtime-icon-settings'
 import { runtimeExtension } from './index'
 import { RuntimeDiagnosticsPanel } from './runtime-diagnostics'
 import { PageHeader } from '@dovo/studio-ui'
@@ -97,39 +98,42 @@ export default function RuntimeView() {
               </DialogDescription>
             </DialogHeader>
             {source ? (
-              <WorkspaceScope profile={managing}>
-                <DeviceManager key={managing.id} />
-                {source.snapshot?.owner && <RuntimeDiagnosticsPanel />}
-                {/* Per-computer settings live on their own pages, like Codex and T3 Code. */}
-                <section className="space-y-3 border-t pt-4">
-                  <h2 className="text-sm font-semibold">Computer settings</h2>
-                  <p className="text-xs text-muted-foreground">
-                    Open a page to change settings saved on this computer.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {runtimeExtension.views
-                      .filter(
-                        (view) =>
-                          view.id !== 'runtime' &&
-                          (view.settingsScope === 'computer' || view.id === 'task-defaults'),
-                      )
-                      .sort((a, b) => a.order - b.order)
-                      .map(({ id: viewId, title: label }) => (
-                        <Button
-                          key={viewId}
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setManaging(null)
-                            studio.navigate({ viewId, entityId: managing.id })
-                          }}
-                        >
-                          {label}
-                        </Button>
-                      ))}
-                  </div>
-                </section>
-              </WorkspaceScope>
+              <>
+                <RuntimeIconSettings source={source} />
+                <WorkspaceScope profile={managing}>
+                  <DeviceManager key={managing.id} />
+                  {source.snapshot?.owner && <RuntimeDiagnosticsPanel />}
+                  {/* Per-computer settings live on their own pages, like Codex and T3 Code. */}
+                  <section className="space-y-3 border-t pt-4">
+                    <h2 className="text-sm font-semibold">Computer settings</h2>
+                    <p className="text-xs text-muted-foreground">
+                      Open a page to change settings saved on this computer.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {runtimeExtension.views
+                        .filter(
+                          (view) =>
+                            view.id !== 'runtime' &&
+                            (view.settingsScope === 'computer' || view.id === 'task-defaults'),
+                        )
+                        .sort((a, b) => a.order - b.order)
+                        .map(({ id: viewId, title: label }) => (
+                          <Button
+                            key={viewId}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setManaging(null)
+                              studio.navigate({ viewId, entityId: managing.id })
+                            }}
+                          >
+                            {label}
+                          </Button>
+                        ))}
+                    </div>
+                  </section>
+                </WorkspaceScope>
+              </>
             ) : (
               <Button onClick={() => setManaging(null)}>Close</Button>
             )}

@@ -186,9 +186,11 @@ export async function serveTaskFile(
       const pdf = mime === 'application/pdf'
       const nonce = newSecret()
       response.setHeader('Content-Type', 'text/html; charset=utf-8')
+      // The scoped grant page can be embedded by Studio on a different origin.
+      // File HTML/SVG remains sandboxed in the nested content frame.
       response.setHeader(
         'Content-Security-Policy',
-        `default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; media-src 'self'; ${pdf ? `script-src 'self' 'nonce-${nonce}' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self'; font-src 'self' data:;` : ''} base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+        `default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; media-src 'self'; ${pdf ? `script-src 'self' 'nonce-${nonce}' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self'; font-src 'self' data:;` : ''} base-uri 'none'; form-action 'none'`,
       )
       const download = `${url.pathname}?download=1`
       const preview = `${url.pathname}?content=1`

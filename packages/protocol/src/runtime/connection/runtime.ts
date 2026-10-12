@@ -1,3 +1,4 @@
+import { runtimeIconSchema } from './runtime-icon.js'
 import { memorySettingsSchema } from '../memory.js'
 import { browserProfilesSchema, defaultBrowserProfiles } from '../previews/browser-profiles.js'
 import { artifactRetentionSchema } from '../../conversation/artifacts.js'
@@ -101,6 +102,7 @@ export const snapshotSchema = mutableStruct({
   lastCrash: Schema.optional(mutableStruct({ at: Schema.String, message: Schema.String })),
   protocolVersion: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isInt()))),
   runtimeHost: Schema.optional(Schema.String),
+  runtimeIcon: Schema.optional(runtimeIconSchema),
   releaseVersion: Schema.optional(Schema.String),
   releaseDistribution: Schema.optional(Schema.Literals(['desktop', 'archive', 'source'])),
   releaseCanUpdate: Schema.optional(Schema.Boolean),
@@ -305,6 +307,9 @@ export const responses = {
 }
 
 export const runtimePreferencesSchema = mutableStruct({
+  runtimeIcon: runtimeIconSchema.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 'desktop' as const)),
+  ),
   /** Allow browsing and search in every thread on this computer. Other approvals still apply. */
   allowWebRequests: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   memory: memorySettingsSchema.pipe(

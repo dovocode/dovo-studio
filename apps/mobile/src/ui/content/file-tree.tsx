@@ -113,7 +113,6 @@ export function MobileFileTree({
     if (rows.length) sections.push({ title: sections.length ? 'Other files' : '', data: rows })
     return sections
   }, [files, groups, related, search, expanded, searchClosed, selected, defaultExpandedDepth])
-  const showViewed = files.some((file) => file.viewed !== undefined)
   const row = ({ node, depth, open, flat }: Row) => {
     const folder = node.kind === 'directory'
     const active = !folder && node.path === selected
@@ -196,11 +195,6 @@ export function MobileFileTree({
             )}
             {!!node.viewed && <Icon name="check" size={13} color={colors.success} />}
           </View>
-        )}
-        {folder && (
-          <Text style={[styles.muted, { fontSize: 11, fontVariant: ['tabular-nums'] }]}>
-            {showViewed ? `${node.viewed}/${node.count}` : node.count}
-          </Text>
         )}
       </Pressable>
     )

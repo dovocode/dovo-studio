@@ -577,3 +577,39 @@ it('rejects a registration whose agent turn retires during its forge read', asyn
   await expect(registration).rejects.toThrow('parent turn has ended')
   expect(await f.status()).toEqual({ watches: [] })
 })
+
+it('lets paired devices inspect and selectively unlink waiting runs while preserving other watches', async () => {
+  const f = await setup()
+  const phone = 'waiting-panel-phone-token-at-least-32-characters'
+  f.s.devices.add('Phone', phone)
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  await f.watch(['7', '8'])
+  const origin = `http://127.0.0.1:${f.runtime.port}`
+  const request = (input: unknown, bearer = phone) =>
+    fetch(origin + '/api/tasks/waiting', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  const { taskWaitingSchema } = await import('@dovo/protocol')
+  const first = await request({ taskId: f.taskId })
+  expect(first.status).toBe(200)
+  expect(decode(taskWaitingSchema, await first.json()).dependencies).toMatchObject([
+    { kind: 'pipeline', target: '7', status: 'in_progress' },
+    { kind: 'pipeline', target: '8', status: 'in_progress' },
+  ])
+  expect((await request({ taskId: f.taskId }, 'invalid')).status).toBe(401)
+  expect((await request({ taskId: f.taskId, unlink: { kind: 'pipeline' } })).status).toBe(400)
+  f.s.preferences.save({ enablePipelineWatching: false })
+  const unlink = (target: string) =>
+    request({ taskId: f.taskId, unlink: { kind: 'pipeline', repositoryId: 'repo', target } })
+  const stopped = await unlink('7')
+  expect(stopped.status).toBe(200)
+  expect(
+    decode(taskWaitingSchema, await stopped.json()).dependencies.map((item) => item.target),
+  ).toEqual(['8'])
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  expect((await unlink('8')).status).toBe(200)
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+  expect((await unlink('8')).status).toBe(200)
+})

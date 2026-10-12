@@ -7,13 +7,13 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { mermaidBlocks, type MarkdownPart } from './mermaid-blocks'
 import { RichFile, TemplateCard } from './rich-file'
-import { memo, lazy, Suspense, useMemo } from 'react'
+import { memo, lazy, Suspense, useMemo, useState } from 'react'
 import { Alert, Platform, View } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import {
   resolveMarkdownLink,
   localMarkdownPath,
-  taskFileShareSchema,
+  markdownFileName,
   richMarkdown,
   type RichMarkdownPart,
 } from '@dovo/protocol'
@@ -258,12 +258,12 @@ export const Markdown = memo(function Markdown({
   variant?: 'default' | 'chat'
   onLinkLongPress?: (url: string) => void
 }) {
-  const { read, connection, connected } = useRuntime()
+  const { connection, connected } = useRuntime()
+  const [previewPath, setPreviewPath] = useState<string>()
   const previewFile = async (path: string) => {
     if (!taskId || !connection || !connected)
       throw new Error('Reconnect to the file’s computer to preview it.')
-    const result = await read('/api/tasks/files/share', { taskId, path }, taskFileShareSchema)
-    await openAppLink(new URL(result.url, connection.address).toString(), true)
+    setPreviewPath(path)
   }
   const theme = useTheme()
   const { styles } = theme
@@ -309,6 +309,16 @@ export const Markdown = memo(function Markdown({
         : markdownStyle
   return (
     <View style={{ width: '100%', gap: 8 }}>
+      {previewPath && (
+        <RichFile
+          key={previewPath}
+          taskId={taskId}
+          path={previewPath}
+          label={markdownFileName(previewPath)}
+          previewOnly
+          onClose={() => setPreviewPath(undefined)}
+        />
+      )}
       {parts.map((part) =>
         part.kind === 'template' ? (
           <TemplateCard key={part.offset} template={part.template} onUse={onUseTemplate} />

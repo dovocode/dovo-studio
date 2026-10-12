@@ -56,11 +56,15 @@ export function RichFile({
   path,
   label,
   video = false,
+  previewOnly = false,
+  onClose,
 }: {
   taskId?: string
   path: string
   label: string
   video?: boolean
+  previewOnly?: boolean
+  onClose?: () => void
 }) {
   const { read, connected, connection } = useRuntime()
   const { colors, styles } = useTheme()
@@ -68,7 +72,7 @@ export function RichFile({
   const [applications, setApplications] = useState<Array<{ target: string; name: string }> | null>(
     null,
   )
-  const [opened, setOpened] = useState(false)
+  const [opened, setOpened] = useState(previewOnly)
   const [revision, setRevision] = useState(0)
   const [result, setResult] = useState<{ key: string; url?: string; error?: string }>()
   const local = localMarkdownPath(path) !== undefined
@@ -135,31 +139,39 @@ export function RichFile({
   ) : null
   return (
     <View style={{ gap: 8 }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Preview ${label}`}
-        onPress={() => setOpened(true)}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 12,
-          padding: 14,
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: 12,
-        }}
-      >
-        <MobileFileTypeIcon path={path} />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1}>{label}</Text>
-          <Text numberOfLines={1} style={styles.muted}>
-            {markdownFileName(path)} · Preview
-          </Text>
-        </View>
-      </Pressable>
+      {!previewOnly && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Preview ${label}`}
+          onPress={() => setOpened(true)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            padding: 14,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 12,
+          }}
+        >
+          <MobileFileTypeIcon path={path} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={1}>{label}</Text>
+            <Text numberOfLines={1} style={styles.muted}>
+              {markdownFileName(path)} · Preview
+            </Text>
+          </View>
+        </Pressable>
+      )}
       {video && !opened && (status || preview)}
       {opened && (
-        <Sheet title={label} scrollable={false} onClose={() => setOpened(false)}>
+        <Sheet
+          title={label}
+          onClose={() => {
+            setOpened(false)
+            onClose?.()
+          }}
+        >
           <View style={{ gap: 12 }}>
             {status || preview}
             {!!action.error && <Text style={styles.muted}>{action.error}</Text>}

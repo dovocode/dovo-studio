@@ -1,15 +1,17 @@
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import type { Task } from '@dovo/protocol'
-import { Icon } from '../../ui/controls/icon'
+import type { Task, RuntimeIcon as RuntimeIconName } from '@dovo/protocol'
+import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import { useTheme } from '../../ui/theme'
 
 export function DeviceLabel({
   task,
   runtimeHost,
+  runtimeIcon,
   compact = false,
 }: {
   task: Task
+  runtimeIcon?: RuntimeIconName
   runtimeHost?: string
   compact?: boolean
 }) {
@@ -25,7 +27,7 @@ export function DeviceLabel({
       accessibilityLabel={label}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 }}
     >
-      <Icon name="device" size={13} color={colors.muted} />
+      <RuntimeIcon icon={runtimeIcon} size={13} color={colors.muted} />
       <Text numberOfLines={compact ? 1 : 2} style={[styles.muted, { flexShrink: 1 }]}>
         {compact ? (host ?? 'Unknown device') : label}
       </Text>

@@ -64,7 +64,10 @@ window.readDeviceHub=()=>window.workspaceContext.request('/api/device-hosts',und
     format: 'iife',
     jsx: 'automatic',
     conditions: ['development'],
-    alias: { '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts' },
+    alias: {
+      '@dovo/studio-ui/runtime-icon': root + 'packages/studio-ui/src/runtime-icon.tsx',
+      '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts',
+    },
     nodePaths: [
       root + 'packages/studio-core/node_modules',
       root + 'packages/studio-ui/node_modules',

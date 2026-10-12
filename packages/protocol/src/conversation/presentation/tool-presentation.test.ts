@@ -166,3 +166,104 @@ it('bounds cached presentations and skips oversized payloads', () => {
   const large = 'x'.repeat(2_000_001)
   expect(toolPresentation(large, 'Large')).not.toBe(toolPresentation(large, 'Large'))
 })
+
+it('shows authoritative terminal commands like Bash and avoids duplicate native terminal-run cards', () => {
+  const command = 'pnpm dev -- --host 0.0.0.0\npnpm test'
+  const recorded: Event = {
+    id: 'terminal',
+    kind: 'tool',
+    scope: 'task',
+    time: '2026-09-22T10:00:01Z',
+    summary: 'Terminal command',
+    payload: JSON.stringify({
+      turnId: 'turn',
+      toolId: 'terminal:1',
+      terminalCommand: true,
+      status: 'completed',
+      presentation: {
+        kind: 'command',
+        title: command,
+        input: command,
+        output: 'Started in terminal.',
+      },
+    }),
+  }
+  const start = event(
+    'transport-start',
+    'native',
+    'running',
+    {
+      item: {
+        type: 'mcpToolCall',
+        server: 'dovo_task',
+        tool: 'terminal_run',
+        arguments: { command },
+      },
+    },
+    'terminal_run',
+  )
+  const end = event(
+    'transport-end',
+    'native',
+    'completed',
+    {
+      item: {
+        type: 'mcpToolCall',
+        server: 'dovo_task',
+        tool: 'terminal_run',
+        result: { content: [{ type: 'text', text: '{"id":"1"}' }] },
+      },
+    },
+    'terminal_run',
+    '2026-09-22T10:00:02Z',
+  )
+  const calls = recentTools([start, recorded, end])
+  expect(calls).toHaveLength(1)
+  expect(toolPresentation(calls[0]!.payload, calls[0]!.summary)).toEqual({
+    kind: 'command',
+    title: command,
+    input: command,
+    output: 'Started in terminal.',
+  })
+  const bash = toolPresentation(
+    JSON.stringify({ event: { item: { type: 'commandExecution', command } } }),
+    'Bash',
+  )
+  expect(bash.kind).toBe('command')
+  expect(bash.input).toBe(command)
+  expect(activitySummary(calls)).toBe('Ran 1 command')
+})
+
+it('keeps terminal command identity through compact activity and preserves failed native calls', async () => {
+  const { compactActivityEvents } = await import('../../automation/activity')
+  const command = 'pnpm test'
+  const recorded = event('terminal-compact', 'terminal:1', 'completed', {})
+  recorded.payload = JSON.stringify({
+    turnId: 'turn',
+    toolId: 'terminal:1',
+    status: 'completed',
+    terminalCommand: true,
+    presentation: {
+      kind: 'command',
+      title: command,
+      input: command,
+      output: 'Started in terminal.',
+    },
+  })
+  const native = event(
+    'native-compact',
+    'native',
+    'completed',
+    { item: { tool: 'terminal_run', arguments: { command } } },
+    'terminal_run',
+  )
+  expect(recentTools(compactActivityEvents([native, recorded]))).toHaveLength(1)
+  expect(
+    recentTools([
+      recorded,
+      { ...native, payload: native.payload.replace('"completed"', '"failed"') },
+    ]),
+  ).toHaveLength(2)
+  const otherTurn = { ...native, payload: native.payload.replace('"turn"', '"other-turn"') }
+  expect(recentTools([recorded, otherTurn])).toHaveLength(2)
+})

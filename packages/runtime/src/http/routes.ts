@@ -1,3 +1,5 @@
+import { taskWaitingRequestSchema } from '@dovo/protocol'
+import { taskWaiting } from './endpoints/task-waiting.js'
 import { reviewRoute } from './endpoints/review-routes.js'
 import { shareTaskFile, openTaskFile } from './endpoints/task-files.js'
 import { readTaskImage } from './endpoints/task-images.js'
@@ -174,6 +176,13 @@ export function route(
           path === '/api/runtime/backup' ? s.backups.create() : runtimeDiagnostics(s),
         )
       }
+      if (method === 'POST' && path === '/api/tasks/waiting')
+        return yield* serviceResult(
+          taskWaiting(
+            s,
+            decode(taskWaitingRequestSchema, yield* serviceResult(body(request, 4096))),
+          ),
+        )
       if (method === 'POST' && path === '/api/pipeline-watch') {
         if (!device.owner)
           throw new HttpError(403, 'Pipeline watches are controlled by the thread’s agent')

@@ -8,7 +8,7 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const ui = root + '/packages/studio-ui/src'
 const mocks = {
-  '@dovo/studio-ui': `export {MessageResponse} from '${ui}/components/ai-elements/message.tsx';export {FileTypeIcon} from '${ui}/file-tree.tsx';export {Button} from '${ui}/components/ui/button.tsx';export {RepositoryOpenItems} from '${ui}/repository-open-items.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
+  '@dovo/studio-ui': `export {MessageResponse} from '${ui}/components/ai-elements/message.tsx';export {FileTypeIcon} from '${ui}/file-tree.tsx';export {Button} from '${ui}/components/ui/button.tsx';export {RepositoryOpenItems} from '${ui}/repository-open-items.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {Dialog,DialogContent,DialogTitle} from '${ui}/components/ui/dialog.tsx';`,
   '@dovo/studio-core': `export {responses} from '@dovo/protocol';export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({themePalette:'dovo'});export const useWorkspace=()=>window.runtime;const openExternalLink=async url=>window.opened.push(url);export const useStudioHost=()=>({openExternalLink});`,
   '../../runtime/connection/provider': 'export const useRuntime=()=>window.runtime;',
   '../theme': `export const useTheme=()=>({colors:{text:'#eee',muted:'#999',border:'#333',background:'#111',accent:'#88bbee'},styles:{muted:{color:'#999'}}});`,
@@ -140,7 +140,13 @@ try {
   assert.equal(await desktop.getByText('[blocked]', { exact: false }).count(), 0)
   await desktop.getByRole('button', { name: 'Website', exact: true }).waitFor()
   await desktop.getByRole('button', { name: 'Source', exact: true }).click()
-  await page.waitForFunction(() => window.opened.length === 1)
+  await page.getByRole('dialog').locator('iframe').waitFor()
+  assert.equal(await page.evaluate(() => window.opened.length), 0)
+  assert.equal(
+    await page.getByRole('dialog').locator('iframe').getAttribute('src'),
+    'http://remote-runtime.test:7777/api/tasks/files/shared/scoped-ticket',
+  )
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.evaluate(() => window.append())
   await desktop.getByText('More response text', { exact: false }).waitFor()
   assert.equal(
@@ -151,7 +157,9 @@ try {
   )
   const mobile = page.locator('[data-client="mobile"]')
   await mobile.getByRole('link', { name: 'File', exact: true }).click()
-  await page.waitForFunction(() => window.opened.length === 2)
+  await mobile.getByRole('dialog').locator('[data-video-preview]').waitFor()
+  assert.equal(await page.evaluate(() => window.opened.length), 0)
+  await mobile.getByRole('button', { name: 'Close preview', exact: true }).click()
   assert.deepEqual(
     await page.evaluate(() =>
       window.reads.filter((row) => row.path.endsWith('/share')).map((row) => row.input),
@@ -161,20 +169,31 @@ try {
       { taskId: 'task', path: 'file:///tmp/report.pdf' },
     ],
   )
-  assert.deepEqual(await page.evaluate(() => window.opened), [
-    'http://remote-runtime.test:7777/api/tasks/files/shared/scoped-ticket',
-    'http://remote-runtime.test:7777/api/tasks/files/shared/scoped-ticket',
-  ])
-  assert.equal(await page.evaluate(() => window.external), true)
   await page.evaluate(() => {
     window.fail = true
   })
   await desktop.getByRole('button', { name: 'File', exact: true }).click()
-  await desktop.getByRole('alert').filter({ hasText: 'File is no longer available' }).waitFor()
+  await page
+    .getByRole('dialog')
+    .getByRole('alert')
+    .filter({ hasText: 'File is no longer available' })
+    .waitFor()
+  await page.evaluate(() => {
+    window.fail = false
+  })
+  await page.getByRole('dialog').getByRole('button', { name: 'Retry preview', exact: true }).click()
+  await page.getByRole('dialog').locator('iframe').waitFor()
+  assert.equal(await page.evaluate(() => window.opened.length), 0)
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.evaluate(() => {
+    window.fail = true
+  })
   await mobile.getByRole('link', { name: 'Source', exact: true }).click()
-  await page.waitForFunction(() =>
-    window.alerts.some((value) => value.includes('File is no longer available')),
-  )
+  await mobile
+    .getByRole('dialog')
+    .getByText('Error: File is no longer available', { exact: true })
+    .waitFor()
+  await mobile.getByRole('button', { name: 'Close preview', exact: true }).click()
   await page.evaluate(() => {
     window.runtime.connected = false
     window.refresh()
@@ -193,10 +212,14 @@ try {
   })
   await desktop.getByRole('button', { name: 'Preview New interface', exact: true }).waitFor()
   await desktop.getByRole('button', { name: 'Preview Design report', exact: true }).click()
+  await page.getByRole('dialog').locator('iframe').waitFor()
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
   await desktop.getByRole('button', { name: 'Download', exact: true }).click()
   await page.waitForFunction(() => window.opened.some((url) => url.endsWith('?download=1')))
   await desktop.getByRole('button', { name: 'Use template', exact: true }).click()
   await desktop.getByRole('button', { name: 'app.ts:12–18', exact: true }).click()
+  await page.getByRole('dialog').locator('iframe').waitFor()
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
   await desktop.getByRole('button', { name: 'Open in…', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Open in VS Code', exact: true }).click()
   await page.waitForFunction(() =>
@@ -307,6 +330,13 @@ try {
   })
   assert.equal(response.status, 200)
   const { url } = await response.json()
+  await page.goto(origin)
+  await page.setContent('<iframe title="App file dialog" src="' + origin + url + '"></iframe>')
+  await page
+    .frameLocator('iframe[title="App file dialog"]')
+    .frameLocator('iframe')
+    .getByRole('heading', { name: 'Preview first' })
+    .waitFor()
   await page.goto(origin + url)
   await page.frameLocator('iframe').getByRole('heading', { name: 'Preview first' }).waitFor()
   assert.equal(await page.frames()[1].evaluate(() => window.executed), undefined)

@@ -51,6 +51,7 @@ export function runtimeSnapshot(
       runtimeAddresses: s.runtimeAddresses(),
       lastCrash: readLastCrash(s.db.name),
       runtimeHost: hostname(),
+      runtimeIcon: preferences.runtimeIcon,
       releaseVersion: process.env.DOVO_RELEASE_VERSION || undefined,
       desktopApp: desktopAppUpdateInfo(),
       releaseDistribution:

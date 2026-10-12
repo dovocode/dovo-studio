@@ -1,3 +1,4 @@
+import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import {
   runtimeComputerName,
   taskProjectGroups,
@@ -202,7 +203,7 @@ export function FolderPicker({
               },
             ]}
           >
-            <Icon name="device" size={16} />
+            <RuntimeIcon icon={runtime.snapshot?.runtimeIcon} size={16} />
             <Text
               numberOfLines={1}
               style={[styles.muted, stacked ? { flex: 1 } : { flexShrink: 1 }]}
@@ -271,7 +272,7 @@ export function FolderPicker({
                     },
                   ]}
                 >
-                  <Icon name="device" size={18} />
+                  <RuntimeIcon icon={source.snapshot?.runtimeIcon} size={18} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.text}>{runtimeComputerName(source)}</Text>
                     {!source.connected && <Text style={styles.muted}>Offline</Text>}
@@ -320,7 +321,7 @@ export function FolderPicker({
                       },
                     ]}
                   >
-                    <Icon name="device" size={18} />
+                    <RuntimeIcon icon={source.snapshot?.runtimeIcon} size={18} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.text}>{runtimeComputerName(source)}</Text>
                       {unavailable && (

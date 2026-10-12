@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./code-themes": "./src/code-themes.ts",
     "./styles.css": "./src/styles.css",
+    "./runtime-icon": "./src/runtime-icon.tsx",
     "./suggestion": "./src/suggestion.ts"
   },
   "scripts": {

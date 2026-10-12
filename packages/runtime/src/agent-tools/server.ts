@@ -398,7 +398,7 @@ const tools: Array<
               {
                 name: 'artifact_create',
                 description:
-                  'Create a persistent artifact when the user requests one or a viewable deliverable adds clear value. Prefer normal replies and repository files for routine work; reuse an existing artifact where appropriate. Dovo shows a preview card on desktop and mobile. Formats: markdown, self-contained html, svg and code. HTML has no external network access; embed assets and scripts. Returns the ID and revision, not the body.',
+                  'Create a persistent artifact when the user requests one or a viewable deliverable adds clear value. Prefer normal replies and repository files for routine work; reuse an existing artifact where appropriate. Dovo renders artifacts directly in the thread on desktop and mobile. Use self-contained HTML for interactive explanations, diagrams, simulations and 3D views with useful controls; previews can expand or float on desktop. Formats: markdown, self-contained html, svg and code. HTML has no external network access; embed assets and scripts. Returns the ID and revision, not the body.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {

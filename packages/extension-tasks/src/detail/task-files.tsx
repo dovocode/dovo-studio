@@ -13,6 +13,7 @@ import {
 import { RefreshCw, Search, X } from 'lucide-react'
 import { responses, useDiffOptions, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, IconButton, FileBrowserTree } from '@dovo/studio-ui'
+import { ResizableSidebar } from './resizable-sidebar'
 import { useLiveRefresh } from './live-refresh'
 import { formatCodeReference } from './code-reference'
 const createEditor: EditorFactory<undefined, undefined> = (type, options, key) =>
@@ -349,9 +350,14 @@ export function TaskFiles({
             <p className="p-4 text-xs text-muted-foreground">Choose a file to preview.</p>
           )}
         </div>
-        <aside
+        <ResizableSidebar
+          preference="projectFilesSidebarWidth"
+          side="right"
+          label="project file tree"
+          maxFraction={0.4}
+          maxWidth={640}
           aria-label="Project file tree"
-          className="flex w-64 max-w-[40%] shrink-0 flex-col border-l bg-sidebar"
+          className="flex min-h-0 flex-col border-l bg-sidebar"
         >
           <div className="relative border-b p-2">
             <Search
@@ -388,7 +394,7 @@ export function TaskFiles({
               search={filter}
             />
           </div>
-        </aside>
+        </ResizableSidebar>
       </div>
     </section>
   )

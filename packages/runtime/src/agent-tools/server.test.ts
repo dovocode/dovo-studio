@@ -850,7 +850,16 @@ it('isolates agent commands from the user shell and closes only terminals opened
     })
     const { id } = decode(mutableStruct({ id: Schema.String }), JSON.parse(decodeToolText(opened)))
     expect(id).not.toBe(user.id)
+    expect(input).toHaveBeenCalledWith(id, 'printf tool-output\r')
     expect(input.mock.calls.every(([target]) => target === id)).toBe(true)
+    const command = s.activity
+      .list('', 'task-activity', 0, task.id)
+      .events.find((event) => event.summary === 'Terminal command')
+    expect(command).toBeDefined()
+    expect(JSON.parse(command!.payload)).toMatchObject({
+      terminalCommand: true,
+      presentation: { kind: 'command', input: 'printf tool-output' },
+    })
     expect(
       (await client.callTool({ name: 'terminal_close', arguments: { id: user.id } })).isError,
     ).toBe(true)

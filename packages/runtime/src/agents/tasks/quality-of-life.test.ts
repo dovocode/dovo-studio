@@ -253,6 +253,11 @@ it('runs a chat command in the task terminal, lists files for mentions, and remo
     command: 'printf dovo-ran > ran.txt',
   })
   expect(first.status).toBe(200)
+  expect(
+    s.activity
+      .list('', 'task-activity', 0, task.id)
+      .events.filter((event) => event.summary === 'Terminal command'),
+  ).toHaveLength(0)
   const again = await call('/api/terminals/run', { taskId: task.id, command: 'true' })
   // The same open terminal is reused.
   expect(again.body.id).toBe(first.body.id)
@@ -262,6 +267,14 @@ it('runs a chat command in the task terminal, lists files for mentions, and remo
     newTerminal: true,
   })
   expect(separate.status).toBe(200)
+  const commandEvents = s.activity
+    .list('', 'task-activity', 0, task.id)
+    .events.filter((event) => event.summary === 'Terminal command')
+  expect(commandEvents).toHaveLength(1)
+  expect(JSON.parse(commandEvents[0]!.payload)).toMatchObject({
+    terminalCommand: true,
+    presentation: { kind: 'command', input: 'true' },
+  })
   expect(separate.body.id).not.toBe(first.body.id)
   await vi.waitFor(
     async () => expect(await readFile(join(f.directory, 'ran.txt'), 'utf8')).toBe('dovo-ran'),
@@ -540,4 +553,60 @@ it('starts empty threads in an existing worktree or forks its current files inde
   expect((await call('/api/tasks/worktree-thread', { id: source.id, mode: 'fork' })).status).toBe(
     409,
   )
+})
+
+it('places agent terminal commands in the current assistant message without creating a new reply', async () => {
+  const { s, call } = await setup()
+  const task = s.tasks.create({
+    title: 'CLI',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const time = new Date().toISOString()
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    status: 'running',
+    queuePaused: true,
+    queue: [],
+    turns: [
+      {
+        id: 'terminal-turn',
+        assistantId: 'assistant',
+        agentId: 'agent',
+        provider: 'codex',
+        model: '',
+        startedAt: time,
+        status: 'running',
+      },
+    ],
+    messages: [
+      {
+        id: 'assistant',
+        role: 'assistant',
+        text: 'Starting the server.',
+        createdAt: time,
+        turnId: 'terminal-turn',
+      },
+    ],
+  }))
+  const response = await call('/api/terminals/run', {
+    taskId: task.id,
+    command: 'printf started',
+    newTerminal: true,
+  })
+  expect(response.status).toBe(200)
+  const events = s.activity.list('', 'task-activity', 0, task.id).events
+  const command = events.find((event) => event.summary === 'Terminal command')
+  expect(command?.scope).toBe(task.id)
+  expect(JSON.parse(command!.payload)).toMatchObject({
+    turnId: 'terminal-turn',
+    messageId: 'assistant',
+    textOffset: 'Starting the server.'.length,
+  })
+  expect(s.store.task(task.id).messages).toHaveLength(1)
+  const { recentTools, conversationToolsByMessage } = await import('@dovo/protocol')
+  expect(
+    conversationToolsByMessage(s.store.task(task.id), recentTools(events)).get('assistant'),
+  ).toHaveLength(1)
 })

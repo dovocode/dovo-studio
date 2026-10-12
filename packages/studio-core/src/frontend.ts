@@ -45,6 +45,8 @@ export interface StudioCommand {
 export interface StudioHostApi {
   appInfo?: { version: string; channel: 'stable' | 'nightly' | 'dev' }
   updates?: import('@dovo/protocol').DesktopUpdateBridge
+  popOutThread?: import('@dovo/protocol').ThreadWindowBridge
+  threadWindow?: boolean
   taskLauncher?: import('@dovo/protocol').TaskLauncherBridge
   browser?: import('@dovo/protocol').BrowserBridge
   /** Ask where a link should open; true requests the thread sidebar browser. */
@@ -111,3 +113,5 @@ export function defineStudioExtension(
     }),
   }
 }
+
+export { useTaskWaiting } from './use-task-waiting'

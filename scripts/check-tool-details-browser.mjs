@@ -7,16 +7,17 @@ const built = await build({
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {ApplicationStateProvider} from '@dovo/studio-core/state';
 import {updateAppPreferences} from '@dovo/studio-core';
-import {TaskActivity} from './src/chat/thread/task-activity.tsx';
+import {TaskActivity} from './src/chat/thread/task-activity.tsx';import {recentTools,compactActivityEvents} from '@dovo/protocol';
 const payload=JSON.stringify({event:{item:{type:'command_execution',command:'echo command-visible',aggregatedOutput:'OUTPUT-ONLY-WHEN-ENABLED'}}});
 const tools=[{id:'command',summary:'Command',status:'completed',time:'2026-10-02T12:00:00Z',payload}];
 updateAppPreferences({toolActivity:'expanded',showToolDetails:false});
 window.setDetails=enabled=>updateAppPreferences({showToolDetails:enabled});
-window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App(){const[failed,setFailed]=useState(false);window.failTool=()=>setFailed(true);return <TaskActivity tools={failed?tools.map(tool=>({...tool,status:'failed'})):tools}/>};createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
+window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App(){const[failed,setFailed]=useState(false);const[source,setSource]=useState(tools);window.failTool=()=>setFailed(true);window.terminalCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);const command='pnpm dev -- --host 0.0.0.0';const base={kind:'tool',scope:'task',time:'2026-10-02T12:00:00Z',summary:'Terminal command'};setSource(recentTools(compactActivityEvents([{...base,id:'terminal',payload:JSON.stringify({turnId:'turn',toolId:'terminal:1',status:'completed',terminalCommand:true,presentation:{kind:'command',title:command,input:command,output:'Started in terminal.'}})},{...base,id:'native',summary:'terminal_run',payload:JSON.stringify({turnId:'turn',toolId:'native',status:'completed',event:{item:{tool:'terminal_run',arguments:{command}}}})}])))};return <TaskActivity tools={failed?source.map(tool=>({...tool,status:'failed'})):source}/>};createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
   },
+  conditions: ['development'],
   bundle: true,
   write: false,
   format: 'iife',
@@ -55,6 +56,13 @@ try {
   await page.getByRole('region', { name: 'Task tool activity' }).waitFor({ state: 'hidden' })
   await page.evaluate(() => window.failTool())
   await page.getByText(/1 failed/).waitFor()
+  await page.evaluate(() => window.terminalCase())
+  const terminalCard = page.locator('details.group\\/action')
+  await terminalCard.getByText('pnpm dev -- --host 0.0.0.0', { exact: true }).first().waitFor()
+  if ((await terminalCard.count()) !== 1)
+    throw new Error('Agent terminal commands must render once, using the Bash command card.')
+  await terminalCard.locator('summary').click()
+  await terminalCard.locator('pre').filter({ hasText: 'pnpm dev -- --host 0.0.0.0' }).waitFor()
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Commands remain visible; tool output and raw details mount only when settings enable them and unmount immediately when disabled.',

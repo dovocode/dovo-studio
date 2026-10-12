@@ -35,14 +35,16 @@ it('moves saved runtime preferences from SQLite to settings.json', () => {
     expect(preferences.get().branchPrefix).toBe('custom/')
     const path = join(directory, 'settings.json')
     expect(JSON.parse(readFileSync(path, 'utf8')).runtime.branchPrefix).toBe('custom/')
-    preferences.save({ autoContinueAfterRestart: true })
+    preferences.save({ autoContinueAfterRestart: true, runtimeIcon: 'cloud' })
     preferences.save({ allowWebRequests: true })
     preferences.save({ autoArchiveDays: 7 })
     expect(JSON.parse(readFileSync(path, 'utf8')).runtime).toMatchObject({
       branchPrefix: 'custom/',
       autoContinueAfterRestart: true,
+      runtimeIcon: 'cloud',
       allowWebRequests: true,
     })
+    expect(new RuntimePreferences(db).get().runtimeIcon).toBe('cloud')
     expect(new RuntimePreferences(db).get().allowWebRequests).toBe(true)
     expect(() => preferences.save({ allowWebRequests: 'true' })).toThrow(/allowWebRequests/)
     expect(preferences.get().allowWebRequests).toBe(true)

@@ -233,3 +233,27 @@ it('migrates older font settings, rejects invalid values and persists Nerd Font 
     terminalFontSize: 18,
   })
 })
+
+it('restores complete section orders and falls back for invalid orders', async () => {
+  const order = ['waiting', 'working', 'active', 'pinned', 'snoozed', 'settled']
+  storage.getItem = async () => JSON.stringify({ threadSectionOrder: order })
+  let preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences().threadSectionOrder).toEqual(order)
+  const writes: string[] = []
+  storage.setItem = async (value) => {
+    writes.push(value)
+  }
+  preferences.updateMobilePreferences({
+    threadSectionOrder: ['settled', 'waiting', 'working', 'active', 'pinned', 'snoozed'],
+  })
+  await vi.waitFor(() => expect(writes.length).toBeGreaterThan(0))
+  expect(JSON.parse(writes.at(-1) ?? '{}').threadSectionOrder[0]).toBe('settled')
+  storage.getItem = async () => JSON.stringify({ threadSectionOrder: ['waiting'], theme: 'light' })
+  preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences()).toMatchObject({
+    theme: 'light',
+    threadSectionOrder: ['pinned', 'active', 'working', 'waiting', 'snoozed', 'settled'],
+  })
+})

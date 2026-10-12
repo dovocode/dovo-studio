@@ -36,6 +36,8 @@ import { CommandPalette } from './command-palette'
 import { TaskLauncher } from './task-launcher'
 import { TitleBar, type DesktopPlatform } from './title-bar'
 type WorkbenchProps = {
+  threadWindow?: import('@dovo/protocol').ThreadWindowTarget
+  popOutThread?: StudioHostApi['popOutThread']
   appInfo?: StudioHostApi['appInfo']
   extensions: readonly StudioExtension[]
   pickDirectory?: StudioHostApi['pickDirectory']
@@ -115,7 +117,7 @@ function ViewLoadFailure({
 export function Workbench(props: WorkbenchProps) {
   return (
     <ApplicationStateProvider>
-      <WorkspaceProvider>
+      <WorkspaceProvider runtimeId={props.threadWindow?.runtimeId}>
         <SettingsTargetProvider>
           <TooltipProvider delayDuration={350}>
             <ErrorBoundary scope="app">
@@ -129,6 +131,8 @@ export function Workbench(props: WorkbenchProps) {
 }
 function WorkbenchContent({
   extensions,
+  threadWindow,
+  popOutThread,
   pickDirectory,
   browser,
   chooseLink,
@@ -181,7 +185,8 @@ function WorkbenchContent({
   const [switching, setSwitching] = useApplicationState(false)
   // Start with a fresh composer; explicit navigation still opens existing threads.
   const [target, updateTarget] = useApplicationState<StudioNavigation>(() => ({
-    viewId: extensions[0]?.views[0]?.id ?? '',
+    viewId: threadWindow ? 'tasks' : (extensions[0]?.views[0]?.id ?? ''),
+    entityId: threadWindow?.taskId,
   }))
   const confirmSettingsNavigation = useConfirmSettingsNavigation()
   const threadSelections = useRef(new Map<string | null, string>())
@@ -263,6 +268,7 @@ function WorkbenchContent({
           entityId: target.entityId,
         }
       : undefined,
+    !threadWindow,
   )
   const [palette, setPalette] = useApplicationState(false)
   const commands = useRef(new Map<string, StudioCommand>())
@@ -279,6 +285,8 @@ function WorkbenchContent({
   const api = useMemo<StudioHostApi>(
     () => ({
       navigate,
+      popOutThread,
+      threadWindow: !!threadWindow,
       registerCommand,
       pickDirectory,
       browser,
@@ -290,6 +298,8 @@ function WorkbenchContent({
       taskLauncher,
     }),
     [
+      popOutThread,
+      threadWindow,
       registerCommand,
       pickDirectory,
       browser,
@@ -374,7 +384,11 @@ function WorkbenchContent({
     }))
   return (
     <StudioHostProvider api={api}>
-      <div className="studio dark" data-platform={desktopPlatform}>
+      <div
+        className="studio dark"
+        data-platform={desktopPlatform}
+        data-thread-window={!!threadWindow}
+      >
         {taskNotice.notice && (
           <div
             role="status"
@@ -462,23 +476,25 @@ function WorkbenchContent({
           </p>
         )}
         <div className="studio-body">
-          <ActivityBar
-            taskHeader={taskChrome}
-            update={update}
-            onUpdate={updates ? () => void updates.install() : undefined}
-            onCheckUpdates={updates ? () => void updates.check() : undefined}
-            views={catalog.views.filter((view) =>
-              view.id === 'artifacts'
-                ? artifactsEnabled
-                : view.id === 'issues'
-                  ? showIssues
-                  : view.id === 'jira'
-                    ? showJira
-                    : true,
-            )}
-            activeId={target.viewId}
-            onSelect={navigateSection}
-          />
+          {!threadWindow && (
+            <ActivityBar
+              taskHeader={taskChrome}
+              update={update}
+              onUpdate={updates ? () => void updates.install() : undefined}
+              onCheckUpdates={updates ? () => void updates.check() : undefined}
+              views={catalog.views.filter((view) =>
+                view.id === 'artifacts'
+                  ? artifactsEnabled
+                  : view.id === 'issues'
+                    ? showIssues
+                    : view.id === 'jira'
+                      ? showJira
+                      : true,
+              )}
+              activeId={target.viewId}
+              onSelect={navigateSection}
+            />
+          )}
           <main
             className="studio-main"
             tabIndex={-1}

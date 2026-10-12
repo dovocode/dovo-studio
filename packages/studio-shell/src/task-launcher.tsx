@@ -1,3 +1,4 @@
+import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { runtimeComputerName, taskProjectGroups, preferredProjectEntry } from '@dovo/protocol'
 import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef, useState } from 'react'
@@ -20,7 +21,7 @@ import {
   ComposerSubmit,
   ComposerWorkspaceBar,
 } from '@dovo/studio-ui'
-import { ChevronDown, Folder, Monitor } from 'lucide-react'
+import { ChevronDown, Folder } from 'lucide-react'
 import {
   launcherDefaultAgent,
   type LauncherAgent,
@@ -319,7 +320,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
               <>
                 <span className="h-4 border-l border-border/60" aria-hidden="true" />
                 <label className="relative flex min-w-0 items-center gap-1.5 px-2">
-                  <Monitor className="size-3 shrink-0" />
+                  <RuntimeIcon icon={snapshot?.runtimeIcon} className="size-3 shrink-0" />
                   <select
                     aria-label="Server"
                     className={selectClass}

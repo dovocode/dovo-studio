@@ -85,6 +85,14 @@ try {
     exact: true,
   })
   await selected.waitFor()
+  for (const client of ['project', 'review']) {
+    for (const folder of await page
+      .locator(`[data-client="${client}"] button[aria-expanded]`)
+      .all()) {
+      assert.equal(await folder.locator('[title$=" files"], [title$=" viewed"]').count(), 0)
+      assert.doesNotMatch(await folder.innerText(), /\d+\/\d+/)
+    }
+  }
   await selected.focus()
   await page.keyboard.press('ArrowLeft')
   assert.equal(
@@ -131,6 +139,9 @@ try {
   await mobile
     .getByRole('button', { name: 'src/components/TaskCard.tsx, unviewed', exact: true })
     .waitFor()
+  for (const folder of await mobile.locator('button[aria-expanded]').all()) {
+    assert.doesNotMatch(await folder.innerText(), /\d/)
+  }
   await mobile.getByRole('button', { name: 'src/components', exact: true }).click()
   assert.equal(
     await mobile

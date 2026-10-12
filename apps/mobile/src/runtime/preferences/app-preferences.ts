@@ -1,3 +1,4 @@
+import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
 import { mergeSharedSettings, sharedSettingsSchema } from '@dovo/protocol'
 import { nerdFontFamily, terminalFontSizeSchema } from '@dovo/studio-core/fonts'
 import { studioThemeIds } from '@dovo/studio-core/themes'
@@ -27,6 +28,7 @@ const schema = mutableStruct({
   taskGrouping: Schema.Literals(['none', 'status', 'project']),
   hideFinishedSubagents: Schema.Boolean,
   workingSection: Schema.Boolean,
+  threadSectionOrder: threadSectionOrderSchema,
   confirmArchive: Schema.Boolean,
   confirmStop: Schema.Boolean,
   launchTab: Schema.Literals(['tasks', 'issues', 'pulls', 'jobs']),
@@ -61,6 +63,7 @@ const defaults: MobilePreferences = {
   taskGrouping: 'none',
   hideFinishedSubagents: true,
   workingSection: false,
+  threadSectionOrder: [...defaultThreadSectionOrder],
   confirmArchive: false,
   confirmStop: false,
   launchTab: 'tasks',

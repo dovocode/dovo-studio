@@ -18,6 +18,7 @@ const mocks = {
   '../../ui/content/text': controls,
   '../../ui/controls/action': controls,
   '../../ui/controls/icon': controls,
+  '../controls/icon': controls,
   '../../ui/controls/field': controls,
   '../../ui/layout/sheet': controls,
   '../../ui/theme': controls,

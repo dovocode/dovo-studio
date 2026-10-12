@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('dovo', {
+  popOutThread: (target: import('@dovo/protocol').ThreadWindowTarget): Promise<void> =>
+    ipcRenderer.invoke('thread:pop-out', target),
   taskLauncher: {
     sync: (registry: import('@dovo/protocol').RuntimeRegistry) =>
       ipcRenderer.invoke('task-launcher:sync', registry),

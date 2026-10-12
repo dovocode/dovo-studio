@@ -1,3 +1,5 @@
+import { orderThreadSections } from '@dovo/protocol'
+import { SectionOrderSheet } from '../tasks/list/section-order-sheet'
 import { useForegroundInterval } from '../runtime/state/app-active'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import {
@@ -62,6 +64,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     : car
       ? { ...view, search: '', sort: 'priority', project: '' }
       : { ...view, sort: preferences.taskSort }
+  const [organizing, setOrganizing] = useApplicationState(false)
   const [details, setDetails] = useApplicationState(''),
     [now, setNow] = useApplicationState(Date.now())
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
@@ -224,14 +227,24 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             : settled.map((entry): TaskListItem => ({ kind: 'task', entry }))),
         ]
       : []
+    const otherSections = [
+      { key: 'working', items: workingItems },
+      { key: 'waiting', items: waitingItems },
+      { key: 'snoozed', items: snoozedItems },
+      { key: 'settled', items: settledItems },
+    ]
     if (grouping === 'none')
-      return [
-        ...unsettled.map((entry): TaskListItem => ({ kind: 'task', entry })),
-        ...workingItems,
-        ...waitingItems,
-        ...snoozedItems,
-        ...settledItems,
-      ]
+      return orderThreadSections(
+        [
+          {
+            key: 'active',
+            items: unsettled.map((entry): TaskListItem => ({ kind: 'task', entry })),
+          },
+          ...otherSections,
+        ],
+        (group) => group.key,
+        preferences.threadSectionOrder,
+      ).flatMap((group) => group.items)
     const groups: { key: string; name: string; tasks: RuntimeTask[] }[] = []
     if (grouping === 'status') {
       groups.push(
@@ -268,21 +281,35 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         ),
       )
     }
-    return [
-      ...groups
-        .filter((group) => group.tasks.length)
-        .flatMap((group): TaskListItem[] => [
-          { kind: 'group', key: group.key, name: group.name, count: group.tasks.length },
-          ...(collapsed.has(`${grouping}:${group.key}`)
-            ? []
-            : group.tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))),
-        ]),
-      ...workingItems,
-      ...waitingItems,
-      ...snoozedItems,
-      ...settledItems,
-    ]
-  }, [tasks, grouping, now, projectGroups, collapsed, archived, car, preferences.workingSection])
+    return orderThreadSections(
+      [
+        ...groups
+          .filter((group) => group.tasks.length)
+          .map((group) => ({
+            key: grouping === 'status' ? group.key : 'active',
+            items: [
+              { kind: 'group', key: group.key, name: group.name, count: group.tasks.length },
+              ...(collapsed.has(`${grouping}:${group.key}`)
+                ? []
+                : group.tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))),
+            ] satisfies TaskListItem[],
+          })),
+        ...otherSections,
+      ],
+      (group) => group.key,
+      preferences.threadSectionOrder,
+    ).flatMap((group) => group.items)
+  }, [
+    tasks,
+    grouping,
+    now,
+    projectGroups,
+    collapsed,
+    archived,
+    car,
+    preferences.workingSection,
+    preferences.threadSectionOrder,
+  ])
   const bulk = async (
     action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete',
     hours?: number,
@@ -450,6 +477,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           />
         </View>
       )}
+      {organizing && <SectionOrderSheet onClose={() => setOrganizing(false)} />}
       <FlatList
         {...listScroll}
         contentInsetAdjustmentBehavior="automatic"
@@ -511,6 +539,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                     }
                   />
                 </View>
+                {!archived && (
+                  <IconButton
+                    label="Organize sections"
+                    icon="settings"
+                    onPress={() => setOrganizing(true)}
+                  />
+                )}
               </View>
               {!archived && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
@@ -552,7 +587,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               accessibilityLabel={`${item.name}, ${item.count} tasks`}
               accessibilityState={{
                 expanded: !collapsed.has(
-                  item.key === 'settled' || item.key === 'snoozed' || item.key === 'working'
+                  item.key === 'settled' ||
+                    item.key === 'snoozed' ||
+                    item.key === 'working' ||
+                    item.key === 'waiting'
                     ? item.key
                     : `${grouping}:${item.key}`,
                 ),
@@ -561,7 +599,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 setCollapsed((current) => {
                   const next = new Set(current)
                   const key =
-                    item.key === 'settled' || item.key === 'snoozed' || item.key === 'working'
+                    item.key === 'settled' ||
+                    item.key === 'snoozed' ||
+                    item.key === 'working' ||
+                    item.key === 'waiting'
                       ? item.key
                       : `${grouping}:${item.key}`
                   if (next.has(key)) next.delete(key)
@@ -574,7 +615,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               <Icon
                 name={
                   collapsed.has(
-                    item.key === 'settled' || item.key === 'snoozed' || item.key === 'working'
+                    item.key === 'settled' ||
+                      item.key === 'snoozed' ||
+                      item.key === 'working' ||
+                      item.key === 'waiting'
                       ? item.key
                       : `${grouping}:${item.key}`,
                   )

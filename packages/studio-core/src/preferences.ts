@@ -1,3 +1,4 @@
+import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
 import { sharedSettingsSchema } from '@dovo/protocol'
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
@@ -23,6 +24,7 @@ const schema = mutableStruct({
   retiredGlobalAgentPresets: mutableArray(Schema.String),
   projectGrouping: Schema.Boolean,
   workingSection: Schema.Boolean,
+  threadSectionOrder: threadSectionOrderSchema,
   projectOrder: Schema.Literals(['name', 'activity', 'user-message']),
   inAppNotifications: Schema.Boolean,
   responseStreaming: Schema.Literals(['live', 'paragraphs']),
@@ -89,6 +91,10 @@ const schema = mutableStruct({
     Schema.check(Schema.isFinite()),
     Schema.check(Schema.isBetween({ minimum: 180, maximum: 640 })),
   ),
+  projectFilesSidebarWidth: Schema.Number.pipe(
+    Schema.check(Schema.isFinite()),
+    Schema.check(Schema.isBetween({ minimum: 180, maximum: 640 })),
+  ),
   chatWidth: Schema.Literals(['standard', 'wide', 'full']),
   mergeMethod: Schema.Literals(['auto', 'merge', 'squash', 'rebase']),
   pullDraft: Schema.Boolean,
@@ -107,6 +113,7 @@ export const defaultAppPreferences: AppPreferences = {
   retiredGlobalAgentPresets: [],
   projectGrouping: true,
   workingSection: false,
+  threadSectionOrder: [...defaultThreadSectionOrder],
   projectOrder: 'name',
   inAppNotifications: true,
   responseStreaming: 'live',
@@ -157,6 +164,7 @@ export const defaultAppPreferences: AppPreferences = {
   toolsSidebarWidth: 380,
   viewerSidebarWidth: 560,
   diffFilesSidebarWidth: 256,
+  projectFilesSidebarWidth: 256,
   chatWidth: 'standard',
   mergeMethod: 'auto',
   pullDraft: false,

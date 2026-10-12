@@ -1,3 +1,4 @@
+import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { artifactFormatLabels, runtimeComputerName } from '@dovo/protocol'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import {
@@ -7,7 +8,7 @@ import {
 } from '@dovo/protocol'
 import { useWorkspace, WorkspaceScope } from '@dovo/studio-core'
 import { Button, EmptyState, Input, cn } from '@dovo/studio-ui'
-import { ArrowUpRight, Layers, LoaderCircle, Monitor, RotateCw, Search } from 'lucide-react'
+import { ArrowUpRight, Layers, LoaderCircle, RotateCw, Search } from 'lucide-react'
 import { ArtifactSnapshot } from './chat/artifact-snapshot'
 import { ArtifactLibraryActions } from './chat/artifact-library-actions'
 import { ArtifactBrowser } from './chat/artifacts'
@@ -260,7 +261,14 @@ export default function ArtifactsView() {
                       </div>
                       <div className="flex items-center justify-between gap-2 border-t pt-3 text-[0.6875rem] text-muted-foreground">
                         <span className="flex min-w-0 items-center gap-1.5">
-                          <Monitor aria-hidden="true" className="size-3 shrink-0" />
+                          <RuntimeIcon
+                            icon={
+                              runtimes.find((runtime) => runtime.profile.id === profile.id)
+                                ?.snapshot?.runtimeIcon
+                            }
+                            aria-hidden="true"
+                            className="size-3 shrink-0"
+                          />
                           <span className="truncate">{computerName}</span>
                         </span>
                         <span className="rounded-full bg-muted px-2 py-0.5 capitalize">

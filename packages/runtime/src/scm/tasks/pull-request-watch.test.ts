@@ -838,3 +838,41 @@ it('rejects a registration whose agent turn retires during its forge read', asyn
   await expect(registration).rejects.toThrow('parent turn has ended')
   expect(await f.status()).toEqual({ watches: [] })
 })
+
+it('shows PR feedback dependencies to paired devices and unlinks without removing the PR link', async () => {
+  const f = await setup()
+  const phone = 'waiting-panel-pr-phone-token-at-least-32-characters'
+  f.s.devices.add('Phone', phone)
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    status: 'review',
+    linkedPullRequests: [
+      {
+        number: 7,
+        url,
+        title: 'Fix',
+        provider: 'github',
+        repositoryUrl: 'https://github.com/team/project',
+      },
+    ],
+  }))
+  await f.watch()
+  f.s.preferences.save({ enablePullRequestWatching: false })
+  const request = (unlink?: { kind: 'pull'; repositoryId: string; target: string }) =>
+    fetch(`http://127.0.0.1:${f.runtime.port}/api/tasks/waiting`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: f.taskId, unlink }),
+    })
+  const { decode, taskWaitingSchema } = await import('@dovo/protocol')
+  const first = await request()
+  expect(first.status).toBe(200)
+  expect(decode(taskWaitingSchema, await first.json()).dependencies).toMatchObject([
+    { kind: 'pull', target: url, label: 'PR #7', status: 'Waiting for PR feedback' },
+  ])
+  const stopped = await request({ kind: 'pull', repositoryId: 'repo', target: url })
+  expect(stopped.status).toBe(200)
+  expect(decode(taskWaitingSchema, await stopped.json()).dependencies).toEqual([])
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+  expect(f.s.store.task(f.taskId).linkedPullRequests).toMatchObject([{ url }])
+})

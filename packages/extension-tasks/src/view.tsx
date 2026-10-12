@@ -1,6 +1,8 @@
+import { TaskWaitingPanel } from './detail/task-waiting-panel'
 import { fileStats } from './files/presentation'
 import { randomUUID, checkpointFileCount } from '@dovo/protocol'
 import { githubPullTarget } from '@dovo/protocol'
+import { FloatingPreview, type PreviewPlacement } from './detail/floating-preview'
 import { ResizableSidebar } from './detail/resizable-sidebar'
 import { readTaskListViewState, saveTaskListViewState } from './list/task-list-view-state'
 import { useCachedTask } from '@dovo/studio-core'
@@ -155,7 +157,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     return () => stops.forEach((stop) => stop())
   }, [store.connection, storedTask?.id, splitTask?.id])
   const [listOpen, setListOpen] = useApplicationState(false)
-  const [sidebar, setSidebar] = useApplicationState(true)
+  const [sidebar, setSidebar] = useApplicationState(!host.threadWindow)
   const [codeReference, setCodeReference] = useState<CodeReference | null>(null)
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{
@@ -171,6 +173,9 @@ export default function TasksView({ entityId }: StudioViewProps) {
     openId: string
   }>()
   const surface = threadSurfaces[threadKey] ?? 'chat'
+  const [browserPlacements, setBrowserPlacements] = useState<Record<string, PreviewPlacement>>({})
+  const browserPlacement = browserPlacements[threadKey] ?? 'inline'
+  const browserDetached = surface === 'browser' && browserPlacement !== 'inline'
   const toolsExpanded = surface !== 'chat' && surface !== 'terminal'
   const fileViewer = surface === 'files' || surface === 'changes'
   useEffect(() => {
@@ -765,6 +770,9 @@ export default function TasksView({ entityId }: StudioViewProps) {
             onBottomTerminal={toggleBottomTerminal}
           />
         )}
+        {task.waitingForFeedback && (
+          <TaskWaitingPanel key={`${activeRuntimeId}:${task.id}`} taskId={task.id} />
+        )}
         <div ref={workspacePane} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <div
             ref={(element) => {
@@ -773,7 +781,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
             tabIndex={-1}
             className={cn(
               'relative flex min-h-0 min-w-0 flex-1 flex-col',
-              ((fileViewer && viewerExpanded) || (surface !== 'chat' && compact && !fileViewer)) &&
+              ((fileViewer && viewerExpanded) ||
+                (surface !== 'chat' && compact && !fileViewer && !browserDetached)) &&
                 'hidden',
             )}
           >
@@ -868,25 +877,31 @@ export default function TasksView({ entityId }: StudioViewProps) {
             }
             maxWidth={fileViewer && !viewerDocked ? 640 : 960}
             reservedWidth={fileViewer && !viewerDocked ? 72 : 0}
-            resizable={!compact && surface !== 'chat' && !(fileViewer && viewerExpanded)}
+            resizable={
+              !compact && !browserDetached && surface !== 'chat' && !(fileViewer && viewerExpanded)
+            }
             aria-label="Workspace tools"
-            className={cn(
-              'min-h-0 min-w-0 flex-col bg-background',
-              surface === 'chat' ? 'hidden' : 'flex',
-              fileViewer
-                ? viewerExpanded
-                  ? 'flex-1 border-l'
-                  : viewerDocked && !compact
-                    ? 'shrink-0 border-l'
-                    : cn(
-                        'absolute inset-y-2 z-30 rounded-lg border shadow-2xl overflow-hidden',
-                        compact ? 'right-2' : 'right-14',
-                        compact && 'w-[min(640px,calc(100%-72px))]',
-                      )
-                : compact
-                  ? 'flex-1'
-                  : 'shrink-0 border-l',
-            )}
+            className={
+              browserDetached
+                ? 'contents'
+                : cn(
+                    'min-h-0 min-w-0 flex-col bg-background',
+                    surface === 'chat' ? 'hidden' : 'flex',
+                    fileViewer
+                      ? viewerExpanded
+                        ? 'flex-1 border-l'
+                        : viewerDocked && !compact
+                          ? 'shrink-0 border-l'
+                          : cn(
+                              'absolute inset-y-2 z-30 rounded-lg border shadow-2xl overflow-hidden',
+                              compact ? 'right-2' : 'right-14',
+                              compact && 'w-[min(640px,calc(100%-72px))]',
+                            )
+                      : compact
+                        ? 'flex-1'
+                        : 'shrink-0 border-l',
+                  )
+            }
           >
             {fileViewer && (
               <div className="flex h-9 shrink-0 items-center gap-1 border-b px-3 text-xs">
@@ -1018,17 +1033,28 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   panes.current[surface] = element
                 }}
                 tabIndex={-1}
-                className="min-h-0 min-w-0 flex-1"
+                className={browserDetached ? 'contents' : 'min-h-0 min-w-0 flex-1'}
               >
                 {surface === 'devices' ? (
                   <DevicesPane taskId={task.id} onClose={() => selectSurface('chat', true)} />
                 ) : (
-                  <BrowserPane
-                    taskId={task.id}
-                    openLink={browserLink?.taskId === task.id ? browserLink : null}
-                    onLinkOpened={() => setBrowserLink(null)}
+                  <FloatingPreview
+                    key={threadKey}
+                    title="Browser"
+                    placement={browserPlacement}
+                    onPlacementChange={(placement) =>
+                      setBrowserPlacements((current) => ({ ...current, [threadKey]: placement }))
+                    }
+                    inlineClassName="h-full"
+                    returnLabel="Dock preview"
                     onClose={() => selectSurface('chat', true)}
-                  />
+                  >
+                    <BrowserPane
+                      taskId={task.id}
+                      openLink={browserLink?.taskId === task.id ? browserLink : null}
+                      onLinkOpened={() => setBrowserLink(null)}
+                    />
+                  </FloatingPreview>
                 )}
               </div>
             )}

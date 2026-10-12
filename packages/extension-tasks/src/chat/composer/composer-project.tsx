@@ -1,3 +1,4 @@
+import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
   canChangeTaskCheckout,
   updateTask,
@@ -10,15 +11,7 @@ import {
 import { taskProjectGroups, preferredProjectEntry, projectDefaultServer } from '@dovo/protocol'
 import { Button, Input, Popover } from '@dovo/studio-ui'
 import { RepositoryDialog } from '@dovo/extension-scm/repository-dialog'
-import {
-  Check,
-  ChevronDown,
-  Folder,
-  Monitor,
-  LoaderCircle,
-  Plus,
-  MessageCircle,
-} from 'lucide-react'
+import { Check, ChevronDown, Folder, LoaderCircle, Plus, MessageCircle } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { taskSources, type TaskSource } from '../../list/task-collection'
 import { moveTaskDraft } from './task-machine-selector'
@@ -331,7 +324,7 @@ export function ComposerProject({
               aria-label="Task server"
               className="h-7 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
             >
-              <Monitor className="size-3.5" />
+              <RuntimeIcon icon={current?.snapshot?.runtimeIcon} className="size-3.5" />
               <span className="max-w-28 truncate">{current?.name ?? 'This server'}</span>
               <ChevronDown className="size-3" />
             </Button>
@@ -366,7 +359,10 @@ export function ComposerProject({
                       onClick={() => void choose(source, target)}
                       className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
                     >
-                      <Monitor className="size-4 shrink-0" />
+                      <RuntimeIcon
+                        icon={source.snapshot?.runtimeIcon}
+                        className="size-4 shrink-0"
+                      />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">{source.name}</span>
                         {(!source.online || target.gitIdentityError) && (

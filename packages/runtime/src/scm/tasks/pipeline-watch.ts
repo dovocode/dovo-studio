@@ -194,10 +194,20 @@ export class PipelineWatch {
     if (detail.run.id !== runId) throw new HttpError(409, 'The pipeline run identity changed')
     return detail
   }
-  async command(input: typeof pipelineWatchRequestSchema.Type) {
-    this.enabled()
+  command(input: typeof pipelineWatchRequestSchema.Type) {
+    return this.execute(input, false)
+  }
+  /** Paired devices may inspect and remove existing watches even when watching is disabled. */
+  manage(input: typeof pipelineWatchRequestSchema.Type & { action: 'status' | 'stop' }) {
+    return this.execute(input, true)
+  }
+  private async execute(input: typeof pipelineWatchRequestSchema.Type, manageExisting: boolean) {
+    if (!manageExisting || input.action === 'watch') this.enabled()
     this.s.tasks.assertToolScope(input.taskId, input.parentRunId)
-    const task = this.writable(input.taskId)
+    const task =
+      manageExisting && input.action !== 'watch'
+        ? this.s.store.task(input.taskId)
+        : this.writable(input.taskId)
     const selected = (state: State) =>
       (!input.repositoryId || input.repositoryId === state.repositoryId) &&
       (!input.runIds || input.runIds.includes(state.runId))

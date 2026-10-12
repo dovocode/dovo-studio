@@ -243,3 +243,14 @@ it('sends a small splice for streamed tool or reasoning JSON instead of repeatin
   ).toThrow('baseline')
   expect(applyActivityDelta(before, activityDelta(before, []), 'thread')).toEqual([])
 })
+
+it('streams a computer icon change even when the workspace revision is unchanged', () => {
+  const previous = snapshot(),
+    next = snapshot()
+  previous.runtimeIcon = 'desktop'
+  next.runtimeIcon = 'server'
+  const wire = JSON.stringify(snapshotDelta(previous, next, true))
+  const updated = applySnapshotDelta(previous, decode(snapshotDeltaSchema, JSON.parse(wire)))
+  expect(updated.runtimeIcon).toBe('server')
+  expect(updated).toEqual(next)
+})

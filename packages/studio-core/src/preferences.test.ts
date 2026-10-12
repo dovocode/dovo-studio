@@ -198,3 +198,22 @@ it.each([0, 33, 12.5, '18', null])(
     })
   },
 )
+
+it('restores section ordering across sessions and rejects incomplete saved orders', async () => {
+  const saved = storage()
+  vi.stubGlobal('localStorage', saved)
+  const preferences = await import('./preferences')
+  const order = ['waiting', 'working', 'active', 'pinned', 'snoozed', 'settled'] as const
+  preferences.updateAppPreferences({ threadSectionOrder: [...order] })
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences().threadSectionOrder).toEqual(order)
+  saved.setItem(
+    'dovo.app-preferences.v1',
+    JSON.stringify({ threadSectionOrder: ['waiting'], theme: 'light' }),
+  )
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences()).toMatchObject({
+    theme: 'light',
+    threadSectionOrder: ['pinned', 'active', 'working', 'waiting', 'snoozed', 'settled'],
+  })
+})

@@ -1,3 +1,4 @@
+import { decode, threadWindowTargetSchema } from '@dovo/protocol'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
@@ -10,6 +11,12 @@ import { agentsExtension } from '@dovo/extension-agents'
 import { jobsExtension } from '@dovo/extension-jobs'
 import { runtimeExtension, WindowsRuntimeGate } from '@dovo/extension-runtime'
 const extensions = [tasksExtension, scmExtension, agentsExtension, jobsExtension, runtimeExtension]
+const threadWindow = window.location.hash.startsWith('#thread=')
+  ? decode(
+      threadWindowTargetSchema,
+      JSON.parse(decodeURIComponent(window.location.hash.slice('#thread='.length))),
+    )
+  : undefined
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing application root')
 createRoot(root).render(
@@ -24,14 +31,16 @@ createRoot(root).render(
       <WindowsRuntimeGate>
         <Workbench
           extensions={extensions}
+          threadWindow={threadWindow}
+          popOutThread={window.dovo?.popOutThread}
           appInfo={window.dovo?.appInfo}
           desktopPlatform={window.dovo?.platform}
           pickDirectory={window.dovo?.pickDirectory}
           browser={window.dovo?.browser}
           chooseLink={window.dovo?.chooseLink}
           openExternalLink={window.dovo?.openExternalLink}
-          inputPreview={window.dovo?.inputPreview}
-          taskLauncher={window.dovo?.taskLauncher}
+          inputPreview={threadWindow ? undefined : window.dovo?.inputPreview}
+          taskLauncher={threadWindow ? undefined : window.dovo?.taskLauncher}
           updates={window.dovo?.updates}
           windowColors={window.dovo?.setWindowColors}
         />
