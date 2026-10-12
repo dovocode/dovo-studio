@@ -90,7 +90,7 @@ export function PullRow({
           ? 'text-muted-foreground'
           : 'text-emerald-400'
   return (
-    <div>
+    <div className="relative">
       <div
         className={`group flex min-w-0 items-center rounded-md border transition-colors ${selected ? 'border-primary/50 bg-accent' : 'border-transparent hover:bg-accent/60'}`}
       >
