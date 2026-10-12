@@ -33,7 +33,10 @@ async function setup() {
       example: false,
     })),
   }))
-  vi.spyOn(runtime.services.checkouts, 'directory').mockResolvedValue(directory)
+  vi.spyOn(runtime.services.checkouts, 'fileDirectory').mockResolvedValue(directory)
+  vi.spyOn(runtime.services.checkouts, 'directory').mockRejectedValue(
+    new Error('Previews must not prepare a checkout'),
+  )
   const read = (body: unknown, credential = token) =>
     fetch(`http://127.0.0.1:${runtime.port}/api/tasks/images/read`, {
       method: 'POST',

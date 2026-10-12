@@ -246,10 +246,10 @@ export class Activity {
     return changes
   }
   /** Artifact outputs follow the artifact's lifetime, rather than log retention. */
-  removeArtifacts(scope: string) {
+  removeArtifacts(scope: string, artifactId?: string) {
     const changes = this.db
-      .prepare("DELETE FROM activity WHERE scope=? AND kind='tool' AND id GLOB 'artifact:*'")
-      .run(scope).changes
+      .prepare("DELETE FROM activity WHERE scope=? AND kind='tool' AND id GLOB ?")
+      .run(scope, artifactId ? `artifact:${artifactId}:*` : 'artifact:*').changes
     if (changes) this.changed(scope)
   }
   list(query: string, kind: string, offset: number, scope = '') {

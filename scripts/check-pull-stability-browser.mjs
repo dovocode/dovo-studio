@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { readFile, readdir } from 'node:fs/promises'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
@@ -132,12 +132,15 @@ try {
   await detail.getByRole('tab', { name: 'Changes (30)', exact: true }).click()
   await page.waitForFunction(
     () =>
-      document.querySelectorAll('diffs-container').length === 30 &&
+      document.querySelectorAll('diffs-container').length > 0 &&
       [...document.querySelectorAll('diffs-container')].every((e) =>
         e.shadowRoot?.querySelector('pre'),
       ),
   )
-  assert.equal(await page.evaluate(() => window.parseCount), 30)
+  assert.ok(
+    (await page.evaluate(() => window.parseCount)) < 10,
+    'offscreen files were parsed eagerly',
+  )
   assert.equal(
     await page.evaluate(() =>
       [...document.querySelectorAll('diffs-container')].every(
@@ -150,8 +153,26 @@ try {
   await content.evaluate((e) => {
     e.scrollTop = 5000
   })
+  await page.waitForTimeout(250)
   const changesTop = await content.evaluate((e) => e.scrollTop)
   assert.ok(changesTop > 4000)
+  const pinned = detail.getByLabel('Pinned file review controls', { exact: true })
+  const pinnedBounds = await pinned.boundingBox()
+  const contentBounds = await content.boundingBox()
+  assert.ok(pinnedBounds && contentBounds)
+  assert.ok(
+    Math.abs(pinnedBounds.y - contentBounds.y) < 2,
+    'File review controls must stay directly beneath the PR header while scrolling: ' +
+      JSON.stringify({
+        pinnedBounds,
+        contentBounds,
+        style: await pinned.evaluate((e) => ({
+          position: getComputedStyle(e).position,
+          top: getComputedStyle(e).top,
+        })),
+      }),
+  )
+  assert.ok(pinnedBounds.y + pinnedBounds.height <= contentBounds.y + contentBounds.height)
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   assert.equal(await content.evaluate((e) => e.scrollTop), 0)
   const form = detail.getByRole('form', { name: 'Add a pull request comment' }).getByRole('textbox')
@@ -165,19 +186,21 @@ try {
         .querySelector('[aria-label="Code changes"] [aria-label="File viewed"]')
         .getAttribute('aria-checked') === 'true',
   )
+  await page.waitForTimeout(250)
+  const parsedBeforeRefresh = await page.evaluate(() => window.parseCount)
   await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
   await page.waitForFunction(() => window.detailReads >= 2)
   await page.waitForTimeout(100)
   assert.equal(
     await page.evaluate(() => window.parseCount),
-    30,
+    parsedBeforeRefresh,
     'unchanged refresh reparsed patches',
   )
   await page.evaluate(() => {
     window.detail.files[0].patch += '\n+changed'
   })
   await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
-  await page.waitForFunction(() => window.parseCount === 31)
+  await page.waitForFunction((count) => window.parseCount === count + 1, parsedBeforeRefresh)
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   assert.equal(await form.inputValue(), 'Keep my feedback')
   await detail.getByRole('tab', { name: 'Changes (30)', exact: true }).click()
@@ -196,6 +219,7 @@ try {
   await page.evaluate(() => {
     window.detail.pull.headSha = 'b'.repeat(40)
     window.detail.files[0].patch = '@@ -1 +1,2 @@\n old\n+updated'
+    window.detail.files[0].attributes = { binary: true, generated: false, vendored: false }
   })
   await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
   await detail.getByRole('status').filter({ hasText: 'earlier PR revision' }).waitFor()
@@ -216,6 +240,9 @@ try {
   )
   assert.equal(await inline.inputValue(), 'Keep my inline feedback across pushes')
   await inlineForm.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await detail
+    .getByText('Text diff disabled by .gitattributes (binary or -diff).', { exact: true })
+    .waitFor()
 
   await page.setViewportSize({ width: 768, height: 350 })
   await page.evaluate(() => {
@@ -276,9 +303,127 @@ try {
     ),
   )
   await bounded(content)
+  // Large PRs defer parsing; attribute-collapsed files and binary files never parse eagerly.
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.evaluate(() => {
+    window.detail.files = Array.from({ length: 120 }, (_, i) => ({
+      path: 'src/lazy-' + i + '.txt',
+      status: 'modified',
+      additions: 1,
+      deletions: 0,
+      patch: '@@ -1 +1,2 @@\n old\n+lazy change ' + i,
+      attributes: { binary: i === 0, generated: i === 1, vendored: i === 2 },
+    }))
+    window.detail.pull.headSha = 'c'.repeat(40)
+    window.detail.pull.title = 'Improve pull request reviews'
+    window.pulls = [{ ...window.detail.pull }]
+    window.parseCount = 0
+    window.showProbe()
+  })
+  await open()
+  await detail.getByRole('tab', { name: 'Changes (120)', exact: true }).click()
+  await detail
+    .getByText('Text diff disabled by .gitattributes (binary or -diff).', { exact: true })
+    .waitFor()
+  const generated = detail.locator('article').filter({ hasText: 'src/lazy-1.txt' })
+  const vendored = detail.locator('article').filter({ hasText: 'src/lazy-2.txt' })
+  assert.equal(await generated.locator('diffs-container').count(), 0)
+  assert.equal(await vendored.locator('diffs-container').count(), 0)
+  await page.waitForFunction(() => document.querySelectorAll('diffs-container').length > 0)
+  assert.ok((await page.evaluate(() => window.parseCount)) < 12)
+  await generated.getByRole('button', { name: 'Show changes', exact: true }).click()
+  await generated.locator('diffs-container').waitFor()
+  await generated.getByRole('button', { name: 'Hide changes', exact: true }).click()
+  assert.equal(
+    await generated.locator('diffs-container').count(),
+    1,
+    'collapse discarded mounted state',
+  )
+  await page.evaluate(() => {
+    window.detail.files[1].attributes.generated = false
+  })
+  await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
+  await generated
+    .getByRole('button', { name: 'Show changes', exact: true })
+    .waitFor({ state: 'detached' })
+  await generated.locator('diffs-container').waitFor({ state: 'visible' })
+  await detail
+    .getByRole('navigation', { name: 'Changed files', exact: true })
+    .getByRole('button')
+    .filter({ hasText: 'lazy-119.txt' })
+    .click()
+  const last = detail.locator('article').filter({ hasText: 'src/lazy-119.txt' })
+  await last.locator('diffs-container').waitFor()
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('diffs-container')].some((e) =>
+      e.shadowRoot?.textContent.includes('lazy change 119'),
+    ),
+  )
+  assert.ok(
+    (await page.evaluate(() => window.parseCount)) < 40,
+    'file navigation mounted the entire PR',
+  )
+  await bounded(content)
+  if (process.env.DOVO_SCREENSHOT_DIR) {
+    const directory = process.env.DOVO_SCREENSHOT_DIR
+    await mkdir(directory, { recursive: true })
+    await page.evaluate(() => {
+      window.detail.warnings = []
+      delete window.detail.refreshError
+      window.pullError = ''
+      window.source.repository.name = 'dovo-studio'
+      window.detail.files = [
+        {
+          path: 'assets/app-icon.png',
+          attributes: { binary: true, generated: false, vendored: false },
+        },
+        {
+          path: 'src/generated/api-client.ts',
+          attributes: { binary: false, generated: true, vendored: false },
+        },
+        {
+          path: 'vendor/marked/index.js',
+          attributes: { binary: false, generated: false, vendored: true },
+        },
+        {
+          path: 'src/features/pulls/file-tree.tsx',
+          attributes: { binary: false, generated: false, vendored: false },
+        },
+      ].map((file) => ({
+        ...file,
+        status: 'modified',
+        additions: 1,
+        deletions: 1,
+        patch:
+          '@@ -1 +1 @@\n-export const lazyRendering = false\n+export const lazyRendering = true',
+      }))
+      window.showProbe()
+    })
+    await open()
+    await detail.getByRole('tab', { name: 'Changes (4)', exact: true }).click()
+    await detail.getByText('Generated file · marked in .gitattributes', { exact: true }).waitFor()
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('diffs-container')].some((element) =>
+        element.shadowRoot?.querySelector('pre'),
+      ),
+    )
+    await page.evaluate(() => document.fonts.ready)
+    await page.evaluate(() => document.activeElement?.blur())
+    await page.mouse.move(0, 0)
+    await page.screenshot({ path: `${directory}/pr-diff-attributes.png` })
+    await detail
+      .locator('article')
+      .filter({ hasText: 'src/generated/api-client.ts' })
+      .getByRole('button', { name: 'Show changes', exact: true })
+      .click()
+    await page.waitForFunction(() => document.querySelectorAll('diffs-container').length >= 2)
+    await page.evaluate(() => document.activeElement?.blur())
+    await page.mouse.move(0, 0)
+    await page.screenshot({ path: `${directory}/pr-generated-file-expanded.png` })
+  }
   assert.deepEqual(errors, [])
   console.log(
-    'Real PR hook, Markdown and diff: bounded narrow/short layouts, separate tab scroll positions, preserved drafts/reviews, wrap preference, content-based parsing, and syntax failure fallback/retry passed.',
+    'Real PR hook, Markdown and diff: lazy parsing in a 120-file PR, attribute collapse/binary handling, direct navigation, bounded layouts, preserved drafts/reviews, wrap preference, and syntax failure fallback/retry passed.',
   )
 } finally {
   await browser.close()

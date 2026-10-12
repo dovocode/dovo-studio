@@ -1,3 +1,4 @@
+import { serveTaskFile } from './endpoints/task-files.js'
 import { assertForeignDeviceScope } from '../previews/device-hosts.js'
 import { attachRuntimeSync } from './support/runtime-sync.js'
 import { pairingAddresses } from './support/pairing-addresses.js'
@@ -62,6 +63,8 @@ export function createRuntimeServer(services: Services, internal = false) {
         } catch {
           throw new HttpError(400, 'Invalid request URL')
         }
+        if (request.method === 'GET' && url.pathname.startsWith('/api/tasks/files/shared/'))
+          return serveTaskFile(services, response, url, request.headers.range)
         return runClientEffect(
           route(
             request,
@@ -73,9 +76,14 @@ export function createRuntimeServer(services: Services, internal = false) {
       })
       .then((result) => {
         completeRequest(request, 200)
+        if (response.writableEnded) return
         return json(request, response, 200, result)
       })
       .catch((error: unknown) => {
+        if (response.headersSent) {
+          response.destroy(error instanceof Error ? error : undefined)
+          return
+        }
         const status =
           error instanceof HttpError ? error.status : error instanceof ValidationError ? 400 : 500
         // Schema diagnostics can embed entire submitted values, including credentials.

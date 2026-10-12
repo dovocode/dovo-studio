@@ -12,6 +12,7 @@ export const Pressable=({children,onPress,accessibilityLabel})=><button aria-lab
 export const Image=({source,accessibilityLabel,onError})=><img src={source.uri} alt={accessibilityLabel} onError={onError}/>;
 export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
+export const useAction=()=>({busy:false,error:'',act:fn=>void fn()});
 export const useTheme=()=>({styles:{},colors:{}});
 export const taskImageReadSchema={};
 const readEffect=(path,input)=>Effect.tryPromise({try:signal=>window.call(path,input,signal),catch:reason=>reason});
@@ -24,9 +25,9 @@ const built = await build({
     contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {ServerImage} from './src/ui/content/server-image';
-window.requests=[];window.aborted=[];window.fail=true;window.pending={};
+window.originals=0;window.requests=[];window.aborted=[];window.fail=true;window.pending={};
 window.call=(path,input,signal)=>{window.requests.push({path,input});if(window.fail)return Promise.reject(new Error('Temporary image failure'));if(input.path==='slow.png')return new Promise(resolve=>{window.pending.slow=resolve;signal.addEventListener('abort',()=>window.aborted.push(input.path),{once:true})});return Promise.resolve({uri:window.png})};
-function App(){const [path,setPath]=useState('shot.png');window.setPath=setPath;return <ServerImage source={{taskId:'task',path}} label="Screenshot"/>}
+function App(){const [path,setPath]=useState('shot.png');window.setPath=setPath;return <ServerImage source={{taskId:'task',path}} label="Screenshot" onOpenOriginal={async()=>{window.originals++}}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
   },
   plugins: [
@@ -40,6 +41,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           '../theme',
           './text',
           '../controls/action',
+          '../controls/use-action',
           '../layout/safe-modal',
         ])
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
@@ -73,6 +75,7 @@ try {
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByText('Temporary image failure').waitFor()
+  await page.getByRole('button', { name: 'Open original & download' }).waitFor()
   await page.evaluate(() => (window.fail = false))
   await page.getByRole('button', { name: 'Retry Screenshot' }).click()
   await page.waitForFunction(() => document.querySelector('img')?.naturalWidth === 1)
@@ -82,6 +85,8 @@ try {
   })
   await page.getByRole('button', { name: 'Open Screenshot' }).click()
   await page.getByRole('dialog').waitFor()
+  await page.getByRole('button', { name: 'Open original & download' }).click()
+  assert.equal(await page.evaluate(() => window.originals), 1)
   await page.getByRole('button', { name: 'Close image' }).click()
   await page.evaluate(() => window.setPath('slow.png'))
   await page.getByText('Loading Screenshot').waitFor()

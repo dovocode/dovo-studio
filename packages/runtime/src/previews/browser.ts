@@ -5,6 +5,7 @@ import type { Browser, BrowserContext, Dialog, Page, CDPSession } from 'playwrig
 import {
   previewUrl,
   remoteBrowserDialogSchema,
+  artifactPreviewHtml,
   type RemoteBrowserInput,
   type RemoteBrowserMessage,
 } from '@dovo/protocol'
@@ -64,6 +65,8 @@ type Session = {
 }
 const idleMs = 5 * 60 * 1000
 export class RemoteBrowsers {
+  private snapshotQueue: Promise<unknown> = Promise.resolve()
+  private pendingSnapshots = 0
   private browser?: Promise<Browser>
   private sessions = new Map<string, Promise<Session>>()
   private owners = new Map<string, string>()
@@ -113,6 +116,42 @@ export class RemoteBrowsers {
         })
     }
     return this.browser
+  }
+  /** Rasterize in a fresh, networkless guest; never use a signed-in browser profile. */
+  async artifactSnapshot(content: string) {
+    if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
+    if (this.pendingSnapshots >= 32)
+      throw new HttpError(503, 'Artifact previews are busy. Try again.')
+    this.pendingSnapshots++
+    const pending = this.snapshotQueue.then(async () => {
+      if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
+      const browser = await this.launch()
+      const context = await browser.newContext({
+        viewport: { width: 640, height: 360 },
+        serviceWorkers: 'block',
+      })
+      try {
+        await context.route('**/*', (route) => route.abort())
+        const page = await context.newPage()
+        page.setDefaultTimeout(5000)
+        await page.setContent(artifactPreviewHtml(content), { waitUntil: 'load', timeout: 5000 })
+        const image = await page.screenshot({
+          type: 'jpeg',
+          quality: 65,
+          timeout: 5000,
+          animations: 'disabled',
+        })
+        return `data:image/jpeg;base64,${image.toString('base64')}`
+      } finally {
+        await context.close()
+      }
+    })
+    this.snapshotQueue = pending.catch(() => {})
+    try {
+      return await pending
+    } finally {
+      this.pendingSnapshots--
+    }
   }
   async open(
     taskId: string,

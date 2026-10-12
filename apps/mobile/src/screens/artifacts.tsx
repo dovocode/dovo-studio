@@ -9,7 +9,8 @@ import {
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from '../shell/navigation'
 import { ArtifactBrowser } from '../ui/content/artifacts'
-import { ArtifactFormatIcon } from '../ui/content/artifact-presentation'
+import { ArtifactSnapshot } from '../ui/content/artifact-snapshot'
+import { ArtifactLibraryActions } from '../ui/content/artifact-library-actions'
 import { Text } from '../ui/content/text'
 import { SearchField } from '../ui/controls/field'
 import { Icon } from '../ui/controls/icon'
@@ -194,8 +195,11 @@ export default function ArtifactsScreen() {
       </View>
       <FlatList
         data={visible}
+        initialNumToRender={6}
+        maxToRenderPerBatch={4}
+        windowSize={5}
         keyExtractor={({ profile, artifact }) =>
-          JSON.stringify([profile.id, artifact.taskId, artifact.id])
+          JSON.stringify([profile.id, artifact.taskId, artifact.id, reload])
         }
         refreshing={loading}
         onRefresh={() => setReload((value) => value + 1)}
@@ -231,49 +235,74 @@ export default function ArtifactsScreen() {
           )
         }
         renderItem={({ item }) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Open artifact ${item.artifact.title}`}
-            onPress={() => setSelected(item)}
-            style={({ pressed }) => ({
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 12,
-              padding: 16,
-              minHeight: 112,
+          <View
+            style={{
               borderRadius: 16,
               borderWidth: 1,
               borderColor: colors.border,
               backgroundColor: colors.surface,
-              opacity: pressed ? 0.6 : 1,
-            })}
+              overflow: 'hidden',
+            }}
           >
-            <ArtifactFormatIcon format={item.artifact.format} large />
-            <View style={{ flex: 1, gap: 6 }}>
-              <Text numberOfLines={2} style={[styles.text, { fontWeight: '600' }]}>
-                {item.artifact.title}
-              </Text>
-              <Text numberOfLines={1} style={styles.muted}>
-                {item.artifact.threadTitle} · {item.computerName}
-              </Text>
-              <Text style={styles.muted}>
-                {artifactFormatLabels[item.artifact.format]} · v{item.artifact.revision} ·{' '}
-                {new Date(item.artifact.updatedAt).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </Text>
-              <Text style={{ fontSize: 11, color: colors.muted, textTransform: 'capitalize' }}>
-                {item.artifact.threadState}
-              </Text>
-              {item.artifact.deleteAt && (
-                <Text style={styles.error}>
-                  Scheduled deletion: {new Date(item.artifact.deleteAt).toLocaleDateString()}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Open artifact ${item.artifact.title}`}
+              onPress={() => setSelected(item)}
+              style={({ pressed }) => ({
+                flexDirection: 'column',
+                gap: 12,
+                opacity: pressed ? 0.6 : 1,
+              })}
+            >
+              <ArtifactSnapshot profile={item.profile} artifact={item.artifact} />
+              <View style={{ flex: 1, gap: 6, paddingHorizontal: 16, paddingBottom: 8 }}>
+                <Text numberOfLines={2} style={[styles.text, { fontWeight: '600' }]}>
+                  {item.artifact.title}
                 </Text>
-              )}
-            </View>
-            <Icon name="next" color={colors.muted} />
-          </Pressable>
+                <Text numberOfLines={1} style={styles.muted}>
+                  {item.artifact.threadTitle} · {item.computerName}
+                </Text>
+                <Text style={styles.muted}>
+                  {artifactFormatLabels[item.artifact.format]} · v{item.artifact.revision} ·{' '}
+                  {new Date(item.artifact.updatedAt).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.muted, textTransform: 'capitalize' }}>
+                  {item.artifact.threadState}
+                </Text>
+                {item.artifact.deleteAt && (
+                  <Text style={styles.error}>
+                    Scheduled deletion: {new Date(item.artifact.deleteAt).toLocaleDateString()}
+                  </Text>
+                )}
+              </View>
+            </Pressable>
+            <ArtifactLibraryActions
+              profile={item.profile}
+              artifact={item.artifact}
+              onDeleted={() => {
+                setLoaded((previous) =>
+                  previous
+                    ? {
+                        ...previous,
+                        entries: previous.entries.filter(
+                          (entry) =>
+                            entry.profile.id !== item.profile.id ||
+                            entry.artifact.id !== item.artifact.id,
+                        ),
+                      }
+                    : previous,
+                )
+                if (
+                  selected?.profile.id === item.profile.id &&
+                  selected.artifact.id === item.artifact.id
+                )
+                  setSelected(undefined)
+              }}
+            />
+          </View>
         )}
       />
       {selected && sources.some((source) => source.profile.id === selected.profile.id) && (

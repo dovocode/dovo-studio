@@ -48,6 +48,7 @@ const emptyTools: ReturnType<typeof useTaskActivity>['tools'] = []
 const emptyCompactions: NonNullable<Task['compactions']> = []
 export function ChatThread({
   task: liveTask,
+  onUseTemplate,
   onTerminal,
   pending,
   onBrowser,
@@ -62,6 +63,7 @@ export function ChatThread({
     historyBefore: Task['historyBefore']
     historyRevision: Task['historyRevision']
   }
+  onUseTemplate?: (prompt: string) => void
   /** Shows the terminal after a chat command ran in it. */
   onTerminal?: (terminalId: string) => void
   pending?: readonly PendingMessage[] | null
@@ -537,6 +539,7 @@ export function ChatThread({
                                 <Fragment key={message.id}>
                                   {message.id === firstAssistant?.id && header}
                                   <ChatMessage
+                                    onUseTemplate={onUseTemplate}
                                     workOpen={open}
                                     footer={message.id === finalAssistant?.id}
                                     final={

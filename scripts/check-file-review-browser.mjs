@@ -57,6 +57,9 @@ const mocks = {
   '../../ui/content/text': "export {Text} from 'react-native';",
   '../../ui/controls/action': `import {Pressable,Text} from 'react-native';export const Action=({label,onPress,disabled,icon})=><Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} style={{minHeight:44,minWidth:44,justifyContent:'center',maxWidth:'100%'}}><Text style={{fontSize:14,color:'#8ad5b0'}}>{icon==='back'?'←':icon==='next'?'→':label}</Text></Pressable>;`,
 }
+mocks['./text'] = mocks['../../ui/content/text']
+mocks['../theme'] = mocks['../../ui/theme']
+mocks['../controls/icon'] = 'export const Icon=({name})=><span aria-hidden data-icon={name} />;'
 const bundle = await build({
   stdin: {
     contents: `import {createRoot} from 'react-dom/client';import {useMemo,useState} from 'react';import {useFiles} from 'test-store';import {changedFileFingerprint,reviewFileState,orderReviewFiles} from '@dovo/protocol';import {useFileReview as useDesktopReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';import {useFileReview as useMobileReview} from '${root}/apps/mobile/src/scm/review/use-file-review.ts';import {ReviewFiles,FileReviewControls} from '${root}/packages/studio-ui/src/review/file-review.tsx';import {OrganizeReview} from '${root}/packages/studio-ui/src/review/organize-review.tsx';import {MobileFileReview} from '${root}/apps/mobile/src/scm/review/file-review.tsx';import {MobileOrganizeReview} from '${root}/apps/mobile/src/scm/review/organize-review.tsx';

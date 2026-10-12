@@ -73,6 +73,20 @@ export const artifactReadSchema = mutableStruct({
   id: uuidSchema,
   revision: Schema.optional(revisionSchema),
 })
+export const artifactDeleteSchema = mutableStruct({
+  ...artifactScopeSchema.fields,
+  id: uuidSchema,
+  expectedRevision: revisionSchema,
+})
+export const artifactAttachSchema = mutableStruct({
+  ...artifactReadSchema.fields,
+  targetTaskId: artifactScopeSchema.fields.taskId,
+})
+export const artifactSnapshotSchema = mutableStruct({
+  image: Schema.optional(Schema.String),
+  excerpt: Schema.String,
+})
+export const artifactDeleteResponseSchema = mutableStruct({ ok: Schema.Boolean })
 export const artifactLinkSchema = mutableStruct({
   url: Schema.String,
   title: titleSchema,

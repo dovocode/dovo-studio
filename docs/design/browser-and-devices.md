@@ -304,6 +304,25 @@ forwarded port before reporting success. Use a hostname/IP reachable from the ph
 not resolve there. Alternatively, use a directly reachable development-server URL or platform USB
 forwarding. Loopback forwarding alone is not reachable through the destination’s LAN IP.
 
+### Reviewing this checkout on an iOS simulator
+
+Launching an installed Release app loads its embedded JavaScript bundle, even when Metro is running.
+For current-code review, install a **Debug** simulator build first
+(`pnpm --filter @dovo/mobile ios --configuration Debug` on a Mac). A remote coding checkout can run
+`pnpm dev:mobile` and forward Metro's port (8081 by default) to the Mac through Device Hub. The
+Debug app then requests `.expo/.virtual-metro-entry.bundle` from the forwarded Metro server. Native
+dependency changes require rebuilding the app on the Mac; JavaScript comes from the coding checkout.
+Keep both Metro and the bounded forwarding session running during review.
+
+Keep simulator code signing enabled (Xcode's ad hoc simulator signing is sufficient). Building with
+`CODE_SIGNING_ALLOWED=NO` omits the entitlements SecureStore needs and can prevent saved runtime
+connections from loading.
+
+Check `http://localhost:8081/status` on the Mac before relaunching, then confirm Metro logs an iOS
+bundle request from the simulator. A successful app launch or a manual bundle fetch alone does not
+verify that the simulator loaded the checkout. On Linux, Expo's `--localhost` can bind IPv6 `::1`;
+use `localhost` or `[::1]` for local checks rather than assuming `127.0.0.1`.
+
 Both computers need SSH tooling. Artifact transfer requires OpenSSH 8.7 or newer on the coding
 computer because Dovo forces SFTP rather than legacy shell-based SCP. The destination needs an SSH
 server, and its SSH user must be the OS user running Dovo so it can write private staging files.

@@ -1,13 +1,5 @@
 import { parseDiffFromFile } from '@pierre/diffs'
-import {
-  File,
-  FileCode2,
-  FileImage,
-  FileJson,
-  FileText,
-  FileTerminal,
-  Settings2,
-} from 'lucide-react'
+import { FileTypeIcon } from '@dovo/studio-ui'
 import type { ChangedFile } from '@dovo/studio-core'
 const statsCache = new WeakMap<
   ChangedFile,
@@ -41,21 +33,7 @@ export function fileStats(file: ChangedFile) {
   return stats
 }
 export function FileIcon({ path }: { path: string }) {
-  const extension = path.split('.').at(-1)?.toLowerCase() ?? ''
-  const Icon = /^(tsx?|jsx?|py|rb|go|rs|java|css|scss|html|vue|svelte)$/.test(extension)
-    ? FileCode2
-    : /^(png|jpe?g|gif|svg|webp|heic|ico)$/.test(extension)
-      ? FileImage
-      : /^(json|jsonc)$/.test(extension)
-        ? FileJson
-        : /^(ya?ml|toml|ini|env)$/.test(extension)
-          ? Settings2
-          : /^(sh|bash|zsh)$/.test(extension)
-            ? FileTerminal
-            : /^(md|txt|log)$/.test(extension)
-              ? FileText
-              : File
-  return <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+  return <FileTypeIcon path={path} />
 }
 export function DiffAmounts({
   stats,

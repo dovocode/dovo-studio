@@ -32,7 +32,7 @@ const built = await build({
 })
 const mocks = {
   // The real markdown renderer now follows the selected Studio palette.
-  '@dovo/studio-core': `export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo'});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
+  '@dovo/studio-core': `export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo'});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
   '@dovo/studio-ui': `
 import React from 'react';import {Button} from '${uiRoot}components/ui/button.tsx';
 export {Button};export {cn} from '${uiRoot}lib/utils.ts';
@@ -50,9 +50,9 @@ export const flatten=style=>Object.assign({},...(Array.isArray(style)?style.flat
 const webStyle=style=>{const value=flatten(style);if(typeof value.lineHeight==='number')value.lineHeight=value.lineHeight+'px';if(value.paddingHorizontal!==undefined){value.paddingLeft=value.paddingRight=value.paddingHorizontal;delete value.paddingHorizontal}if(value.paddingVertical!==undefined){value.paddingTop=value.paddingBottom=value.paddingVertical;delete value.paddingVertical}if(value.marginVertical!==undefined){value.marginTop=value.marginBottom=value.marginVertical;delete value.marginVertical}return value};
 export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',boxSizing:'border-box',flexShrink:0,...webStyle(style)}}>{children}</div>;
 export const ScrollView=({children,style,contentContainerStyle,horizontal})=><View style={[{overflow:'auto',flexShrink:1},style]}><View style={[horizontal?{flexDirection:'row'}:{},contentContainerStyle]}>{children}</View></View>;
-export const Modal=({children})=><View style={{position:'fixed',inset:0}}>{children}</View>;export const ActivityIndicator=()=> <p>Loading</p>;
+export const Modal=({children,visible=true})=>visible?<div role="dialog" style={{position:'fixed',inset:0,zIndex:100,background:'#0a0a0a'}}>{children}</div>:null;export const ActivityIndicator=()=> <p>Loading</p>;
 export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,disabled,style})=><button onClick={onPress} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',color:'#e8e9ed',textAlign:'left',fontFamily:'system-ui',flexShrink:0,...webStyle(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
-export const Text=({children,style})=><span style={webStyle(style)}>{children}</span>;
+export const Image=({source,style})=><img src={source.uri} style={webStyle(style)}/>;export const Text=({children,style})=><span style={webStyle(style)}>{children}</span>;
 export const FlatList=({data,renderItem,ListEmptyComponent,contentContainerStyle})=><ScrollView contentContainerStyle={contentContainerStyle}>{data.length?data.map((item,index)=><React.Fragment key={index}>{renderItem({item})}</React.Fragment>):ListEmptyComponent}</ScrollView>;
 export const Alert={alert:()=>{}};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};
 `,
@@ -70,12 +70,15 @@ export const Alert={alert:()=>{}};export const StyleSheet={create:x=>x};export c
   '../ui/controls/icon': `export {Icon} from '../controls/icon';`,
   '../controls/icon-button': `import React from 'react';import {Icon} from '../controls/icon';export const IconButton=({label,icon,onPress,disabled})=><button aria-label={label} data-icon={icon} disabled={disabled} onClick={onPress} style={{width:44,height:44,display:'flex',alignItems:'center',justifyContent:'center',background:'transparent',border:0,opacity:disabled?0.4:1}}><Icon name={icon}/></button>;`,
   '../runtime/connection/provider': `import {useWorkspace,WorkspaceScope} from '@dovo/studio-core';export const useRuntime=()=>useWorkspace();export const RuntimeScope=({runtimeId,children})=><WorkspaceScope profile={window.artifactWorkspace.overviews.find(x=>x.profile.id===runtimeId).profile}>{children}</WorkspaceScope>;`,
-  '../shell/navigation': `export const useNavigation=()=>({focused:true});`,
+  '../shell/navigation': `export const useNavigation=()=>({focused:true,navigate:(view,entityId,runtimeId)=>window.artifactNavigation={view,entityId,runtimeId}});`,
   '../ui/layout/screen-header': `export const ScreenHeader=({title,subtitle,buttons})=><header><h1>{title}</h1><p>{subtitle}</p>{buttons.map(button=><button key={button.label} aria-label={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;`,
   '../ui/controls/field': `export const SearchField=({label,value,onChangeText,placeholder})=><input aria-label={label} value={value} placeholder={placeholder} onChange={event=>onChangeText(event.target.value)}/>;`,
   '../ui/controls/choice': `export const Choice=({label,value,items,onChange})=><select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;`,
   '../ui/controls/action': `export {Action} from '../controls/action';`,
 }
+mocks['../../shell/navigation'] = mocks['../shell/navigation']
+mocks['../controls/choice'] = mocks['../ui/controls/choice']
+mocks['../controls/field'] = mocks['../ui/controls/field']
 const interfaces = await Promise.all(
   ['desktop', 'mobile', 'library', 'mobile-library'].map(async (platform) => {
     const contents =
@@ -510,17 +513,34 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       const sources = profiles.map((profile, index) => ({
         profile,
         connected: index !== 2,
-        snapshot: { artifactsEnabled: true },
+        snapshot: {
+          artifactsEnabled: true,
+          workspace: { agents: [], tasks: [{ id: 'destination', title: 'Destination thread' }] },
+        },
       }))
       window.libraryCalls = []
       window.previewHosts = []
+      window.snapshotCalls = []
+      window.artifactMutations = []
       window.artifactWorkspace = {
         connected: true,
         activeRuntimeId: '0',
         snapshot: { artifactsEnabled: true },
         runtimes: sources,
         overviews: sources,
-        readRuntime: async (profile) => {
+        switchRuntime: async () => {},
+        readRuntime: async (profile, path, input) => {
+          if (path.endsWith('/snapshot')) {
+            window.snapshotCalls.push([profile.id, input.id])
+            return { excerpt: 'Snapshot from Host ' + profile.id }
+          }
+          if (path.endsWith('/attach') || path.endsWith('/delete')) {
+            window.artifactMutations.push({ profile: profile.id, path, input })
+            if (window.failArtifactMutation) throw new Error('Artifact action failed')
+            return path.endsWith('/delete')
+              ? { ok: true }
+              : { artifact: { ...artifactsFor(profile.id)[0], taskId: input.targetTaskId } }
+          }
           window.libraryCalls.push(profile.id)
           return { artifacts: artifactsFor(profile.id) }
         },
@@ -561,7 +581,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     assert.deepEqual(
       await library.evaluate(() => window.previewHosts),
       [],
-      'Browsing the gallery must not fetch artifact bodies',
+      'Browsing the gallery must fetch snapshots, not full artifact bodies',
     )
     if (screenshotDirectory) {
       await library.screenshot({
@@ -624,11 +644,69 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       ['0', '1'],
       'Snapshot rerenders and previews must not reload the global library',
     )
+    await library.getByLabel('Search artifacts').fill('')
+    await library.getByRole('button', { name: 'All formats', exact: true }).click()
+    const firstCard = library.getByRole('button', { name: 'Open artifact API client' }).first()
+    const cardContainer = firstCard.locator('..')
+    await cardContainer.getByRole('button', { name: 'Add to thread', exact: true }).click()
+    await library.getByLabel('Destination thread', { exact: true }).selectOption('destination')
+    await library
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Add to thread', exact: true })
+      .click()
+    await library.getByText('Added to thread.', { exact: false }).first().waitFor()
+    let mutations = await library.evaluate(() => window.artifactMutations)
+    assert.equal(mutations[0].input.targetTaskId, 'destination')
+    assert.equal(mutations[0].profile, '0')
+    await cardContainer
+      .getByRole('button', {
+        name: native ? 'Delete artifact' : 'Delete artifact API client',
+        exact: true,
+      })
+      .click()
+    await library.getByRole('button', { name: 'Cancel', exact: true }).click()
+    assert.equal(
+      (await library.evaluate(() => window.artifactMutations)).length,
+      1,
+      'Cancel must not delete',
+    )
+    await cardContainer
+      .getByRole('button', {
+        name: native ? 'Delete artifact' : 'Delete artifact API client',
+        exact: true,
+      })
+      .click()
+    await library.evaluate(() => (window.failArtifactMutation = true))
+    await library
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Delete artifact', exact: true })
+      .click()
+    await library.getByText('Error: Artifact action failed', { exact: true }).waitFor()
+    assert.equal(
+      await library.locator('[aria-label^="Open artifact "]').count(),
+      8,
+      'Failed deletion keeps the artifact',
+    )
+    await library.evaluate(() => (window.failArtifactMutation = false))
+    await library
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Delete artifact', exact: true })
+      .click()
+    await library.waitForFunction(
+      () => document.querySelectorAll('[aria-label="Open artifact API client"]').length === 1,
+    )
+    assert.equal(await library.getByRole('button', { name: /^Open artifact / }).count(), 7)
+    mutations = await library.evaluate(() => window.artifactMutations)
+    assert.equal(mutations.at(-1).input.expectedRevision, 1)
+    assert.ok(
+      (await library.evaluate(() => window.snapshotCalls)).length > 0,
+      'Visible cards request snapshots',
+    )
     await library.close()
   }
   assert.deepEqual(pageErrors, [], 'Artifact interfaces must not raise browser errors')
   console.log(
-    'Artifacts: thread cards open beside chat, expanded versions, desktop/mobile galleries and filters, hosted links, thread and host isolation, interactive HTML/SVG, sandbox, lazy loading, versions, copy and source views passed.',
+    'Artifacts: thread cards open beside chat, expanded versions, desktop/mobile galleries and filters, hosted links, thread and host isolation, interactive HTML/SVG, sandbox, lazy snapshots, versions, add to thread, deletion/cancellation/error recovery, copy and source views passed.',
   )
 } finally {
   await browser.close()

@@ -31,6 +31,7 @@ export * from './scm/repositories/branches.js'
 
 export * from './shared/attachments.js'
 export * from './scm/repositories/repositories.js'
+export * from './scm/repositories/file-tree.js'
 export * from './scm/repositories/file-previews.js'
 export * from './scm/repositories/repository-pickers.js'
 
@@ -208,3 +209,6 @@ export {
   runtimeTransportAddress,
   invalidateRuntimeRoute,
 } from './runtime/connection/routes.js'
+
+export * from './conversation/presentation/task-files.js'
+export * from './conversation/presentation/rich-markdown.js'

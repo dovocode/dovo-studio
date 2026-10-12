@@ -493,3 +493,136 @@ it('cancels archive cleanup on restore and restarts settlement retention', async
     clock.mockRestore()
   }
 })
+
+it('lets paired devices copy artifacts between writable threads and delete all versions independently', async () => {
+  const f = await fixture()
+  const paired = 'paired-artifacts-library-at-least-thirty-two-characters'
+  f.runtime.services.devices.add('Phone', paired)
+  const artifacts = f.runtime.services.artifacts
+  const input = {
+    taskId: f.taskId,
+    title: 'Reusable',
+    format: 'markdown' as const,
+    content: '# Original',
+  }
+  const original = artifacts.write(input)
+  const sibling = artifacts.write({ ...input, title: 'Keep me' })
+  artifacts.write({ ...input, id: original.id, expectedRevision: 1, content: '# Latest' })
+  expect(
+    (await f.post('attach', { taskId: f.otherId, id: original.id, targetTaskId: f.taskId }, paired))
+      .status,
+  ).toBe(404)
+  expect(
+    (await f.post('attach', { taskId: f.taskId, id: original.id, targetTaskId: f.taskId }, paired))
+      .status,
+  ).toBe(409)
+  const copied = await f.post(
+    'attach',
+    { taskId: f.taskId, id: original.id, targetTaskId: f.otherId },
+    paired,
+  )
+  expect(copied.status).toBe(200)
+  const copy = decode(artifactWriteResponseSchema, copied.value).artifact
+  expect(copy.id).not.toBe(original.id)
+  expect(copy.revision).toBe(1)
+  expect(artifacts.read(f.otherId, copy.id).content).toBe('# Latest')
+  expect(
+    (await f.post('delete', { taskId: f.otherId, id: original.id, expectedRevision: 2 }, paired))
+      .status,
+  ).toBe(404)
+  expect(
+    (await f.post('delete', { taskId: f.taskId, id: original.id, expectedRevision: 1 }, paired))
+      .status,
+  ).toBe(409)
+  expect(
+    (
+      await f.post(
+        'delete',
+        { taskId: f.taskId, id: original.id, expectedRevision: 2 },
+        'invalid-token',
+      )
+    ).status,
+  ).toBe(401)
+  expect(
+    (await f.post('delete', { taskId: f.taskId, id: original.id, expectedRevision: 2 }, paired))
+      .status,
+  ).toBe(200)
+  expect(artifacts.versions(f.taskId, original.id)).toEqual([])
+  expect(artifacts.read(f.otherId, copy.id).content).toBe('# Latest')
+  expect(artifacts.read(f.taskId, sibling.id)).toBeDefined()
+  const references = f.runtime.services.activity
+    .list('', '', 0, f.taskId)
+    .events.flatMap((event) => artifactReferences(event.payload))
+  expect(references.map((reference) => reference.id)).toEqual([sibling.id])
+})
+
+it('rejects copying into settled, archived, missing and read-only threads', async () => {
+  const f = await fixture()
+  const source = f.runtime.services.artifacts.write({
+    taskId: f.taskId,
+    title: 'Source',
+    format: 'code',
+    content: 'const value = 1',
+  })
+  const input = { taskId: f.taskId, id: source.id, targetTaskId: f.otherId }
+  f.runtime.services.store.updateTask(f.otherId, (task) => ({ ...task, archived: true }))
+  expect((await f.post('attach', input)).status).toBe(409)
+  f.runtime.services.store.updateTask(f.otherId, (task) => ({
+    ...task,
+    archived: false,
+    archivedAt: new Date().toISOString(),
+  }))
+  expect((await f.post('attach', input)).status).toBe(409)
+  expect((await f.post('attach', { ...input, targetTaskId: randomUUID() })).status).toBe(404)
+  f.runtime.services.store.updateTask(f.otherId, (task) => ({
+    ...task,
+    archivedAt: undefined,
+    harness: {
+      provider: 'claude',
+      permission: 'read-only',
+      model: '',
+      endpoint: '',
+      reasoning: '',
+      instructions: '',
+    },
+  }))
+  expect((await f.post('attach', input)).status).toBe(403)
+})
+
+it('caches revision snapshots, checks scope on cache hits, and invalidates deleted previews', async () => {
+  const f = await fixture()
+  const artifacts = f.runtime.services.artifacts
+  const input = {
+    taskId: f.taskId,
+    title: 'Preview',
+    format: 'html' as const,
+    content: '<h1>Hello</h1>',
+  }
+  const saved = artifacts.write(input)
+  const render = vi
+    .spyOn(f.runtime.services.browsers, 'artifactSnapshot')
+    .mockResolvedValue('data:image/jpeg;base64,cHJldmlldw==')
+  const request = { taskId: f.taskId, id: saved.id }
+  expect((await f.post('snapshot', request)).value).toEqual({
+    image: 'data:image/jpeg;base64,cHJldmlldw==',
+    excerpt: '',
+  })
+  await f.post('snapshot', request)
+  expect(render).toHaveBeenCalledTimes(1)
+  expect((await f.post('snapshot', { ...request, taskId: f.otherId })).status).toBe(404)
+  artifacts.write({ ...input, id: saved.id, expectedRevision: 1, content: '<h1>Updated</h1>' })
+  await f.post('snapshot', request)
+  expect(render).toHaveBeenCalledTimes(2)
+  artifacts.delete(f.taskId, saved.id, 2)
+  expect((await f.post('snapshot', request)).status).toBe(404)
+  const text = artifacts.write({ ...input, format: 'markdown', content: 'x'.repeat(2000) })
+  expect((await f.post('snapshot', { taskId: f.taskId, id: text.id })).value).toEqual({
+    excerpt: 'x'.repeat(1200),
+  })
+  expect(render).toHaveBeenCalledTimes(2)
+  const retry = artifacts.write(input)
+  render.mockRejectedValueOnce(new Error('Browser unavailable'))
+  expect((await f.post('snapshot', { taskId: f.taskId, id: retry.id })).status).toBe(500)
+  expect((await f.post('snapshot', { taskId: f.taskId, id: retry.id })).status).toBe(200)
+  render.mockRestore()
+})

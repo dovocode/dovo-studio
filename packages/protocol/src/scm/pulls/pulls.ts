@@ -120,6 +120,13 @@ export const pullDetailSchema = mutableStruct({
       additions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       deletions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       patch: Schema.optional(Schema.String),
+      attributes: Schema.optional(
+        mutableStruct({
+          binary: Schema.Boolean,
+          generated: Schema.Boolean,
+          vendored: Schema.Boolean,
+        }),
+      ),
     }),
   ),
   checks: mutableArray(

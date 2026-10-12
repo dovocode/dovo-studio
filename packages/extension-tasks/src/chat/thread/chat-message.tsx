@@ -14,7 +14,8 @@ import {
   type PendingMessage,
   type recentTools,
 } from '@dovo/protocol'
-import { Message, MessageContent, MessageResponse, Button } from '@dovo/studio-ui'
+import { Message, MessageContent, Button } from '@dovo/studio-ui'
+import { TaskMessageResponse } from './task-message-response'
 import { Star } from 'lucide-react'
 import { threadTimeline, finalReplyIndex } from './thread-timeline'
 import { TurnCheckpoint } from './turn-checkpoint'
@@ -27,6 +28,7 @@ import { TaskActivity } from './task-activity'
 
 export const ChatMessage = memo(function ChatMessage({
   taskId,
+  onUseTemplate,
   message,
   turn,
   tools,
@@ -45,6 +47,7 @@ export const ChatMessage = memo(function ChatMessage({
   footer = true,
 }: {
   taskId: string
+  onUseTemplate?: (prompt: string) => void
   message: Task['messages'][number]
   turn?: TaskTurn
   tools: ReturnType<typeof recentTools>
@@ -162,7 +165,9 @@ export const ChatMessage = memo(function ChatMessage({
                 </p>
               ) : (
                 <MessageContent key={`text-${block.offset}`}>
-                  <MessageResponse
+                  <TaskMessageResponse
+                    onUseTemplate={onUseTemplate}
+                    taskId={taskId}
                     isStreaming={
                       turn?.status === 'running' &&
                       turn.assistantId === message.id &&
@@ -174,7 +179,7 @@ export const ChatMessage = memo(function ChatMessage({
                     index === timeline.length - 1
                       ? completedStreamingText(block.text)
                       : block.text}
-                  </MessageResponse>
+                  </TaskMessageResponse>
                 </MessageContent>
               ),
             )}
@@ -211,7 +216,9 @@ export const ChatMessage = memo(function ChatMessage({
                 </span>
               )}
               {message.text ? (
-                <MessageResponse>{message.text}</MessageResponse>
+                <TaskMessageResponse onUseTemplate={onUseTemplate} taskId={taskId}>
+                  {message.text}
+                </TaskMessageResponse>
               ) : (
                 <span className="text-xs text-muted-foreground">
                   {message.attachments?.length ? '' : 'No response text'}

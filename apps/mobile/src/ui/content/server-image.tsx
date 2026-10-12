@@ -7,13 +7,23 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../theme'
 import { Text } from './text'
 import { Action } from '../controls/action'
+import { useAction } from '../controls/use-action'
 import { SafeModal } from '../layout/safe-modal'
 
 type Source =
   | { taskId: string; path: string }
   | { taskId: string; reference: ToolImageReference }
   | { uri: string }
-export function ServerImage({ source, label = 'Image' }: { source: Source; label?: string }) {
+export function ServerImage({
+  source,
+  label = 'Image',
+  onOpenOriginal,
+}: {
+  source: Source
+  label?: string
+  onOpenOriginal?: () => Promise<void>
+}) {
+  const original = useAction()
   const { readEffect, connected, connection } = useRuntime(),
     { styles, colors } = useTheme()
   const identity = JSON.stringify([connection?.address, connection?.token, source]),
@@ -73,6 +83,19 @@ export function ServerImage({ source, label = 'Image' }: { source: Source; label
       {error ? (
         <View style={{ gap: 6 }}>
           <Text style={styles.muted}>{error}</Text>
+          {onOpenOriginal && (
+            <Action
+              secondary
+              label="Open original & download"
+              disabled={original.busy}
+              onPress={() => original.act(onOpenOriginal)}
+            />
+          )}
+          {!!original.error && (
+            <Text accessibilityRole="alert" style={styles.muted}>
+              {original.error}
+            </Text>
+          )}
           <Action
             secondary
             label={`Retry ${label}`}
@@ -110,6 +133,19 @@ export function ServerImage({ source, label = 'Image' }: { source: Source; label
             minimumZoomScale={1}
           >
             <Action secondary label="Close image" onPress={() => setPreview(false)} />
+            {onOpenOriginal && (
+              <Action
+                secondary
+                label="Open original & download"
+                disabled={original.busy}
+                onPress={() => original.act(onOpenOriginal)}
+              />
+            )}
+            {!!original.error && (
+              <Text accessibilityRole="alert" style={styles.muted}>
+                {original.error}
+              </Text>
+            )}
             {uri && (
               <Image
                 source={{ uri }}

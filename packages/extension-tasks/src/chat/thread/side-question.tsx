@@ -15,7 +15,6 @@ import {
   DialogTitle,
   DropdownMenu,
   Input,
-  MessageResponse,
   Select,
   SelectContent,
   SelectItem,
@@ -23,6 +22,8 @@ import {
   SelectValue,
   Textarea,
 } from '@dovo/studio-ui'
+
+import { TaskMessageResponse } from './task-message-response'
 
 const answerSchema = mutableStruct({ answer: Schema.String })
 const savedSchema = mutableStruct({ id: Schema.String })
@@ -246,7 +247,9 @@ export function SideQuestion({
               </div>
               {entry.answer && (
                 <div className="space-y-1 text-sm">
-                  <MessageResponse>{entry.answer}</MessageResponse>
+                  <TaskMessageResponse onUseTemplate={onAddToComposer} taskId={task.id}>
+                    {entry.answer}
+                  </TaskMessageResponse>
                   <Button
                     variant="ghost"
                     size="sm"

@@ -12,6 +12,7 @@ import {
 } from '@dovo/studio-core'
 import { Button, Checkbox } from '@dovo/studio-ui'
 import { PullPatch } from './patch'
+import { DeferredPullFile } from './deferred-file'
 import { PullComments } from './comments'
 export function PullChanges({
   detail,
@@ -61,6 +62,16 @@ export function PullChanges({
     [files, fingerprints, review.progress],
   )
   const { request, connected } = useWorkspace()
+  const commentsByPath = useMemo(() => {
+    const byPath = new Map<string, PullDetail['comments']>()
+    for (const comment of detail.comments) {
+      if (comment.kind !== 'inline' || !comment.path) continue
+      const comments = byPath.get(comment.path) ?? []
+      comments.push(comment)
+      byPath.set(comment.path, comments)
+    }
+    return byPath
+  }, [detail.comments])
   const [selected, setSelected] = useApplicationState(files[0]?.path ?? ''),
     [split, setSplit] = useApplicationState(
       !embedded && readAppPreferences().diffLayout === 'split',
@@ -69,7 +80,7 @@ export function PullChanges({
   const cards = useRef(new Map<string, HTMLElement>())
   const selectFile = (path: string) => {
     setSelected(path)
-    cards.current.get(path)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    cards.current.get(path)?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }
   const selectedFile = files.find((file) => file.path === selected) ?? files[0]
   if (!files.length)
@@ -93,33 +104,42 @@ export function PullChanges({
         </Button>
       </div>
       <OrganizeReview review={review} onOrganized={() => setRelated(true)} />
-      <FileReviewControls
-        files={files.map((file) => ({ path: file.path, viewed: viewed.has(file.path) }))}
-        selected={selectedFile?.path ?? ''}
-        onSelect={selectFile}
-        onViewed={(viewed) => {
-          if (selectedFile)
-            review.setViewed(selectedFile.path, fingerprints.get(selectedFile.path) ?? '', viewed)
-        }}
-        disabled={
-          !review.ready ||
-          !selectedFile ||
-          !reviewFileState(
-            review.progress,
-            selectedFile.path,
-            fingerprints.get(selectedFile.path) ?? '',
-          )
-        }
-        busy={review.busy}
-        error={review.error}
-        onRetry={review.reload}
-      />
+      <div
+        aria-label="Pinned file review controls"
+        className="sticky -top-4 z-20 -mx-4 bg-background shadow-sm"
+      >
+        <FileReviewControls
+          files={files.map((file) => ({ path: file.path, viewed: viewed.has(file.path) }))}
+          selected={selectedFile?.path ?? ''}
+          onSelect={selectFile}
+          onViewed={(viewed) => {
+            if (selectedFile)
+              review.setViewed(selectedFile.path, fingerprints.get(selectedFile.path) ?? '', viewed)
+          }}
+          disabled={
+            !review.ready ||
+            !selectedFile ||
+            !reviewFileState(
+              review.progress,
+              selectedFile.path,
+              fingerprints.get(selectedFile.path) ?? '',
+            )
+          }
+          busy={review.busy}
+          error={review.error}
+          onRetry={review.reload}
+        />
+      </div>
       <div className="flex min-w-0 flex-col-reverse gap-3 @4xl:flex-row">
         <div className="min-w-0 flex-1 space-y-4 py-3">
           {files.map((file) => {
-            const comments = detail.comments.filter(
-              (c) => c.kind === 'inline' && (c.path === file.path || c.path === file.previousPath),
-            )
+            const comments = file.previousPath
+              ? detail.comments.filter(
+                  (comment) =>
+                    comment.kind === 'inline' &&
+                    (comment.path === file.path || comment.path === file.previousPath),
+                )
+              : (commentsByPath.get(file.path) ?? [])
             return (
               <article
                 key={file.path}
@@ -167,72 +187,75 @@ export function PullChanges({
                       Viewed
                     </label>
                   </div>
-                  <PullPatch
-                    key={file.path}
-                    file={file}
-                    headSha={detail.pull.headSha}
-                    split={split}
-                    provider={detail.pull.provider}
-                    allowInlineComment={
-                      detail.capabilities?.actions.includes('inline-comment') ?? true
-                    }
-                    allowInlineRange={detail.capabilities?.inlineRange ?? true}
-                    onComment={
-                      connected
-                        ? async (body, range, destination, baseline) => {
-                            if (destination === 'github') {
-                              if (baseline.headSha !== detail.pull.headSha)
-                                throw new Error(
-                                  'The PR changed while you were writing. Your draft is preserved. Copy it, cancel, and select lines on the current revision before posting.',
+                  <DeferredPullFile file={file} selected={selected === file.path}>
+                    <PullPatch
+                      key={file.path}
+                      file={file}
+                      headSha={detail.pull.headSha}
+                      split={split}
+                      provider={detail.pull.provider}
+                      allowInlineComment={
+                        detail.capabilities?.actions.includes('inline-comment') ?? true
+                      }
+                      allowInlineRange={detail.capabilities?.inlineRange ?? true}
+                      onComment={
+                        connected
+                          ? async (body, range, destination, baseline) => {
+                              if (destination === 'github') {
+                                if (baseline.headSha !== detail.pull.headSha)
+                                  throw new Error(
+                                    'The PR changed while you were writing. Your draft is preserved. Copy it, cancel, and select lines on the current revision before posting.',
+                                  )
+                                await request(
+                                  '/api/scm/pulls/comment',
+                                  {
+                                    repositoryId,
+                                    number: detail.pull.number,
+                                    headSha: baseline.headSha,
+                                    path: baseline.path,
+                                    body,
+                                    ...range,
+                                  },
+                                  pullLineCommentResponse,
                                 )
-                              await request(
-                                '/api/scm/pulls/comment',
-                                {
-                                  repositoryId,
-                                  number: detail.pull.number,
-                                  headSha: baseline.headSha,
-                                  path: baseline.path,
-                                  body,
-                                  ...range,
-                                },
-                                pullLineCommentResponse,
-                              )
-                              onPosted()
-                            } else
-                              onSteer(
-                                `Address this feedback on ${baseline.path}:${range.start}-${range.end} (${range.side === 'additions' ? 'new' : 'old'} version), PR commit ${baseline.headSha}:\n${body}\n\nReference patch at time of comment:\n${baseline.patch.slice(0, 1500)}`,
-                              )
-                          }
-                        : undefined
-                    }
-                  />
-                  <h4 className="my-3 text-xs font-medium">
-                    Feedback on this file ({comments.length})
-                  </h4>
-                  <PullComments
-                    comments={comments}
-                    fileBaseURL={
-                      detail.fileBaseUrl ??
-                      `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
-                    }
-                    actionContext={{
-                      repositoryId,
-                      detail,
-                      onDone: onPosted,
-                    }}
-                  />
+                                onPosted()
+                              } else
+                                onSteer(
+                                  `Address this feedback on ${baseline.path}:${range.start}-${range.end} (${range.side === 'additions' ? 'new' : 'old'} version), PR commit ${baseline.headSha}:\n${body}\n\nReference patch at time of comment:\n${baseline.patch.slice(0, 1500)}`,
+                                )
+                            }
+                          : undefined
+                      }
+                    />
+                    <h4 className="my-3 text-xs font-medium">
+                      Feedback on this file ({comments.length})
+                    </h4>
+                    <PullComments
+                      comments={comments}
+                      fileBaseURL={
+                        detail.fileBaseUrl ??
+                        `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
+                      }
+                      actionContext={{
+                        repositoryId,
+                        detail,
+                        onDone: onPosted,
+                      }}
+                    />
+                  </DeferredPullFile>
                 </div>
               </article>
             )
           })}
         </div>
         {treeOpen && (
-          <aside className="flex max-h-[65vh] min-h-0 shrink-0 flex-col overflow-hidden border-b p-2 @4xl:sticky @4xl:top-2 @4xl:w-56 @4xl:self-start @4xl:border-b-0 @4xl:border-l">
+          <aside className="flex max-h-[65vh] min-h-0 shrink-0 flex-col overflow-hidden border-b p-2 @4xl:sticky @4xl:top-2 @4xl:w-64 @4xl:self-start @4xl:border-b-0 @4xl:border-l">
             <ReviewFiles
               files={files.map((file) => ({
                 path: file.path,
                 viewed: viewed.has(file.path),
-                label: `+${file.additions ?? 0} −${file.deletions ?? 0}`,
+                additions: file.additions ?? 0,
+                deletions: file.deletions ?? 0,
               }))}
               groups={review.progress?.groups ?? []}
               related={related}

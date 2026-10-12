@@ -59,6 +59,10 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   const registered = await s.git.command(f.directory, ['worktree', 'list', '--porcelain', '-z'])
   const revision = s.store.version()
   expect(await s.checkouts.reviewDirectory(isolated.id)).toBeUndefined()
+  await expect(s.checkouts.fileDirectory(isolated.id)).rejects.toThrow(
+    'checkout is no longer available',
+  )
+  expect(await s.checkouts.fileDirectory(main.id)).toBe(f.directory)
   expect(await s.git.command(f.directory, ['worktree', 'list', '--porcelain', '-z'])).toBe(
     registered,
   )
@@ -80,6 +84,7 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
   expect(cwd).toMatch(/\.dovo\/worktrees\/local\/[\w.-]+-isolated-[a-f0-9]{8}$/)
   expect(cwd).toBe(same)
   expect(await s.checkouts.reviewDirectory(isolated.id)).toBe(cwd)
+  expect(await s.checkouts.fileDirectory(isolated.id)).toBe(cwd)
   const inspect = vi.spyOn(s.git, 'inspect')
   const command = vi.spyOn(s.git, 'command')
   expect(await s.checkouts.directory(isolated.id)).toBe(cwd)

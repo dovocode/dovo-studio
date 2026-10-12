@@ -1,11 +1,21 @@
 // Adapted from Vercel AI Elements (MIT), packages/elements/src/message.tsx.
-import { memo, lazy, Suspense, useCallback, useMemo, type HTMLAttributes } from 'react'
-import { resolveMarkdownLink } from '@dovo/protocol'
-import { Streamdown } from 'streamdown'
+import {
+  memo,
+  lazy,
+  Suspense,
+  useCallback,
+  useMemo,
+  type ReactNode,
+  type ComponentProps,
+  type HTMLAttributes,
+} from 'react'
+import { resolveMarkdownLink, localMarkdownURL, markdownURLLocalPath } from '@dovo/protocol'
+import { Streamdown, defaultComponents } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { studioSyntaxTheme, useAppPreferences } from '@dovo/studio-core'
 import { cn } from '../../lib/utils'
 import { IconButton } from '../icon-button'
+import { FileTypeIcon } from '../../file-tree'
 import { markdownPluginsForLinks } from './markdown-plugins'
 const MermaidResponse = lazy(() => import('./mermaid-response'))
 const markdownControls = {
@@ -45,11 +55,13 @@ export const MessageResponse = memo(function MessageResponse({
   isStreaming = false,
   baseURL,
   fileBaseURL,
+  localFiles,
 }: {
   children: string
   isStreaming?: boolean
   baseURL?: string
   fileBaseURL?: string
+  localFiles?: { open: (path: string) => void; image: (path: string, alt: string) => ReactNode }
 }) {
   const { themePalette } = useAppPreferences()
   const markdownPlugins = useMemo(
@@ -61,12 +73,51 @@ export const MessageResponse = memo(function MessageResponse({
     [themePalette],
   )
   const urlTransform = useCallback(
-    (url: string) => resolveMarkdownLink(url, baseURL, fileBaseURL) ?? '',
-    [baseURL, fileBaseURL],
+    (url: string) => {
+      if (localFiles && !baseURL && !fileBaseURL) {
+        if (markdownURLLocalPath(url) !== undefined) return url
+        const local = localMarkdownURL(url)
+        if (local) return local
+      }
+      return resolveMarkdownLink(url, baseURL, fileBaseURL) ?? ''
+    },
+    [baseURL, fileBaseURL, localFiles],
   )
   const rehypePlugins = useMemo(
-    () => markdownPluginsForLinks(baseURL, fileBaseURL),
-    [baseURL, fileBaseURL],
+    () => markdownPluginsForLinks(baseURL, fileBaseURL, !!localFiles),
+    [baseURL, fileBaseURL, localFiles],
+  )
+  const components = useMemo(
+    () =>
+      localFiles
+        ? {
+            a: (props: ComponentProps<'a'>) => {
+              const path = props.href ? markdownURLLocalPath(props.href) : undefined
+              return path !== undefined ? (
+                <button
+                  type="button"
+                  title={path}
+                  className="inline-flex max-w-full items-baseline gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-left text-xs font-medium text-primary hover:bg-muted"
+                  onClick={() => localFiles.open(path)}
+                >
+                  <FileTypeIcon path={path} />
+                  <span className="wrap-anywhere">{props.children}</span>
+                </button>
+              ) : (
+                <defaultComponents.a {...props} />
+              )
+            },
+            img: ({ src, alt }: { src?: string; alt?: string }) => {
+              const path = src ? markdownURLLocalPath(src) : undefined
+              return path !== undefined ? (
+                localFiles.image(path, alt ?? 'Image')
+              ) : (
+                <defaultComponents.img src={src} alt={alt} />
+              )
+            },
+          }
+        : undefined,
+    [localFiles],
   )
   const props = {
     className: 'studio-markdown min-w-0 max-w-full',
@@ -80,6 +131,7 @@ export const MessageResponse = memo(function MessageResponse({
     mode: isStreaming ? ('streaming' as const) : ('static' as const),
     isAnimating: isStreaming,
     children,
+    components,
   }
   const markdown = <Streamdown {...props} />
   return /(?:^|\n) {0,3}(?:`{3,}|~{3,})mermaid(?:\s|$)/i.test(children) ? (

@@ -25,3 +25,20 @@ it('resolves repository links before hardening while retaining Markdown and HTML
   expect(html).not.toContain('javascript:')
   expect(html).not.toContain('<script>')
 })
+
+it('renders local chat files before sanitization without allowing script links', () => {
+  const html = renderToStaticMarkup(
+    createElement(Streamdown, {
+      mode: 'static',
+      linkSafety: { enabled: false },
+      rehypePlugins: markdownPluginsForLinks(undefined, undefined, true),
+      children:
+        '[Screenshot](</tmp/a b.png>) · [Source](src/app.ts:12) · [File](file:///tmp/report.pdf)\n\n![Image](/tmp/shot.png)\n\n[Unsafe](javascript:alert(1))',
+    }),
+  )
+  expect(html).toContain('https://dovo-local-file.invalid/?path=%2Ftmp%2Fa%2520b.png')
+  expect(html).toContain('https://dovo-local-file.invalid/?path=src%2Fapp.ts')
+  expect(html).toContain('https://dovo-local-file.invalid/?path=file%3A%2F%2F%2Ftmp%2Freport.pdf')
+  expect(html).toContain('https://dovo-local-file.invalid/?path=%2Ftmp%2Fshot.png')
+  expect(html).not.toContain('javascript:')
+})

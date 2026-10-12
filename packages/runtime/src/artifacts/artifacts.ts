@@ -34,6 +34,7 @@ const stateOf = (task: Task) =>
       ? ('settled' as const)
       : ('active' as const)
 export class Artifacts {
+  private snapshots = new Map<string, Promise<{ image?: string; excerpt: string }>>()
   constructor(
     private db: Database.Database,
     private store: WorkspaceStore,
@@ -70,6 +71,8 @@ export class Artifacts {
   private remove(taskId: string) {
     const changes = this.db.prepare('DELETE FROM artifacts WHERE task_id=?').run(taskId).changes
     this.activity.removeArtifacts(taskId)
+    for (const key of this.snapshots.keys())
+      if (key.startsWith(`${taskId}:`)) this.snapshots.delete(key)
     return changes
   }
   private recordState(task: Task, now = Date.now()) {
@@ -234,7 +237,59 @@ export class Artifacts {
       .all(taskId, id)
       .map((row) => decode(artifactMetadataSchema, JSON.parse(decode(stored, row).value)))
   }
-  write(input: ArtifactCreate | ArtifactUpdate) {
+  delete(taskId: string, id: string, expectedRevision: number) {
+    return this.db.transaction(() => {
+      const artifact = this.read(taskId, id)
+      if (artifact.revision !== expectedRevision)
+        throw new HttpError(409, 'Artifact changed. Refresh before deleting it.')
+      this.db.prepare('DELETE FROM artifacts WHERE task_id=? AND id=?').run(taskId, id)
+      this.activity.removeArtifacts(taskId, id)
+      for (const key of this.snapshots.keys())
+        if (key.startsWith(`${taskId}:${id}:`)) this.snapshots.delete(key)
+      return { ok: true }
+    })()
+  }
+  attach(taskId: string, id: string, targetTaskId: string, revision?: number) {
+    if (taskId === targetTaskId) throw new HttpError(409, 'Artifact is already in this thread')
+    const target = this.store.task(targetTaskId)
+    if (target.archived || target.archivedAt)
+      throw new HttpError(409, 'Reopen the destination thread before adding artifacts')
+    const { title, format, content, language } = this.read(taskId, id, revision)
+    return this.write({ taskId: targetTaskId, title, format, content, language }, false)
+  }
+  snapshot(
+    taskId: string,
+    id: string,
+    revision: number | undefined,
+    render: (content: string) => Promise<string>,
+  ) {
+    // Reauthorize every request, including cached snapshots after retention or deletion.
+    const artifact = this.read(taskId, id, revision)
+    const key = `${taskId}:${id}:${artifact.revision}`
+    const cached = this.snapshots.get(key)
+    if (cached) return cached
+    const pending = (async () => {
+      const excerpt =
+        artifact.format === 'html' || artifact.format === 'svg'
+          ? ''
+          : artifact.content.slice(0, 1200)
+      return artifact.format === 'html' || artifact.format === 'svg'
+        ? { image: await render(artifact.content), excerpt }
+        : { excerpt }
+    })()
+    this.snapshots.set(key, pending)
+    // Small raster previews only; never retain artifact bodies in this cache.
+    while (this.snapshots.size > 64) {
+      const oldest = this.snapshots.keys().next().value
+      if (oldest === undefined) break
+      this.snapshots.delete(oldest)
+    }
+    void pending.catch(() => {
+      if (this.snapshots.get(key) === pending) this.snapshots.delete(key)
+    })
+    return pending
+  }
+  write(input: ArtifactCreate | ArtifactUpdate, fromAgent = true) {
     if (!this.preferences().enableArtifacts)
       throw new HttpError(403, 'Enable Dovo Artifacts in this computer’s settings first')
     const task = this.store.task(input.taskId)
@@ -269,7 +324,7 @@ export class Artifacts {
           JSON.stringify(artifact),
         )
       this.recordState(task)
-      const turn = task.turns?.at(-1)
+      const turn = fromAgent ? task.turns?.at(-1) : undefined
       const message = task.messages.find((message) => message.id === turn?.assistantId)
       this.activity.add(
         'tool',

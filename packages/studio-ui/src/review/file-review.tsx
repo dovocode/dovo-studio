@@ -1,8 +1,10 @@
 import { useDeferredValue, useMemo, useState } from 'react'
-import type { ReviewGroup } from '@dovo/protocol'
+import type { ReviewGroup, FileTreeEntry } from '@dovo/protocol'
+import { ChevronRight, Layers, Search, X } from 'lucide-react'
+import { FileBrowserTree } from '../file-tree'
 import { Button } from '../components/ui/button'
 import { Checkbox } from '../components/ui/checkbox'
-export type ReviewListFile = { path: string; viewed: boolean; label?: string }
+export type ReviewListFile = FileTreeEntry & { viewed: boolean }
 export function FileReviewControls({
   files,
   selected,
@@ -120,7 +122,7 @@ export function ReviewFiles({
       ),
     [files, filter, unviewed],
   )
-  const sections = useMemo(() => {
+  const grouped = useMemo(() => {
     const remaining = new Map(filtered.map((file) => [file.path, file]))
     const sections: {
       label: string
@@ -131,6 +133,7 @@ export function ReviewFiles({
     }[] = []
     if (related)
       for (const group of groups) {
+        if (group.basis === 'folder') continue
         const members = group.paths.flatMap((path) => {
           const file = remaining.get(path)
           if (!file) return []
@@ -139,29 +142,35 @@ export function ReviewFiles({
         })
         if (members.length) sections.push({ ...group, files: members })
       }
-    const folders = new Map<string, ReviewListFile[]>()
-    for (const file of [...remaining.values()].sort((a, b) => a.path.localeCompare(b.path))) {
-      const folder = file.path.includes('/')
-        ? file.path.slice(0, file.path.lastIndexOf('/'))
-        : 'Root files'
-      const members = folders.get(folder) ?? []
-      members.push(file)
-      folders.set(folder, members)
-    }
-    for (const [label, files] of folders) sections.push({ label, files, basis: 'folder' })
-    return sections
+    return { sections, remaining: [...remaining.values()] }
   }, [filtered, related, groups])
   return (
     <>
-      <div className="shrink-0 space-y-2 border-b p-2">
-        <input
-          type="search"
-          aria-label="Search changed files"
-          placeholder="Search files…"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          className="h-8 w-full rounded border bg-background px-2 text-xs"
-        />
+      <div className="shrink-0 space-y-2 border-b bg-sidebar/40 p-2">
+        <div className="relative">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
+          />
+          <input
+            type="search"
+            aria-label="Search changed files"
+            placeholder="Search files…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="h-9 w-full rounded-md border border-border/60 bg-background pl-8 pr-8 text-xs outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+          />
+          {query && (
+            <button
+              type="button"
+              aria-label="Clear file search"
+              onClick={() => setQuery('')}
+              className="absolute right-1 top-1 flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-accent"
+            >
+              <X aria-hidden className="size-3.5" />
+            </button>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <Button
             size="sm"
@@ -186,71 +195,62 @@ export function ReviewFiles({
       </div>
       <nav
         aria-label="Changed files"
-        className="min-h-0 flex-1 overflow-auto overscroll-contain p-2"
+        className="min-h-0 flex-1 overflow-auto overscroll-contain p-1.5"
       >
         {!filtered.length && (
           <p className="p-2 text-xs text-muted-foreground">
             {unviewed && !filter ? 'All files viewed.' : 'No matching files.'}
           </p>
         )}
-        {sections.map((section) => (
-          <details key={`${section.basis}:${section.label}`} open className="mb-2">
+        {grouped.sections.map((section) => (
+          <details
+            key={`${section.basis}:${section.label}`}
+            open
+            className="group/review mb-2 rounded-lg border border-border/40 bg-card/20"
+          >
             <summary
-              className="cursor-pointer break-all px-2 py-2 text-xs font-medium text-muted-foreground"
+              className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-2 text-xs font-medium"
               title={
                 section.basis === 'feature'
-                  ? 'Model-proposed feature group; verify the summary against its diffs'
-                  : section.basis === 'ast'
-                    ? 'Dependencies first, followed by files that import them'
-                    : 'Folder order; no reliable dependency link available'
+                  ? 'Model-proposed feature group; verify against its diffs'
+                  : 'Dependencies first, followed by files that import them'
               }
             >
-              {section.basis === 'feature'
-                ? 'Feature · '
-                : section.basis === 'ast'
-                  ? 'Related · '
-                  : 'Folder · '}
-              {section.label}
+              <ChevronRight
+                aria-hidden
+                className="size-3 shrink-0 transition-transform group-open/review:rotate-90"
+              />
+              <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">{section.label}</span>
+              <span className="text-[0.625rem] tabular-nums text-muted-foreground">
+                {section.files.filter((file) => file.viewed).length}/{section.files.length}
+              </span>
             </summary>
-            {section.summary && <p className="px-2 pb-2 text-xs">{section.summary}</p>}
+            {section.summary && <p className="px-3 pb-2 text-xs">{section.summary}</p>}
             {section.impact && (
-              <p className="px-2 pb-2 text-xs text-muted-foreground">
+              <p className="px-3 pb-2 text-xs text-muted-foreground">
                 <span className="font-medium">Linked impact: </span>
                 {section.impact}
               </p>
             )}
-            {section.files.map((file) => (
-              <button
-                key={file.path}
-                title={file.path}
-                aria-current={selected === file.path ? 'true' : undefined}
+            <div className="p-1 pt-0">
+              <FileBrowserTree
+                files={section.files}
+                flat
+                selected={selected}
+                onSelect={onSelect}
                 disabled={disabled}
-                onClick={() => onSelect(file.path)}
-                className={`flex min-h-10 w-full items-center gap-2 rounded px-2 py-2 text-left text-xs disabled:opacity-50 ${selected === file.path ? 'bg-accent' : 'hover:bg-accent/50'}`}
-              >
-                <span
-                  aria-label={file.viewed ? 'Viewed' : 'Unviewed'}
-                  className={file.viewed ? 'text-emerald-500' : 'text-muted-foreground'}
-                >
-                  {file.viewed ? '✓' : '○'}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{file.path.split('/').at(-1)}</span>
-                  {section.basis !== 'folder' && (
-                    <span className="block truncate text-[0.6875rem] text-muted-foreground">
-                      {file.path.slice(0, file.path.lastIndexOf('/')) || 'Root'}
-                    </span>
-                  )}
-                </span>
-                {file.label && (
-                  <span className="shrink-0 text-[0.6875rem] text-muted-foreground">
-                    {file.label}
-                  </span>
-                )}
-              </button>
-            ))}
+              />
+            </div>
           </details>
         ))}
+        <FileBrowserTree
+          files={grouped.remaining}
+          selected={selected}
+          onSelect={onSelect}
+          disabled={disabled}
+          search={filter}
+        />
       </nav>
     </>
   )

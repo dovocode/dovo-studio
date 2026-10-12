@@ -1,7 +1,8 @@
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { realpath, rm } from 'node:fs/promises'
+import { realpath, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { Schema } from 'effect'
 import { forgeConnectionSchema, pullDetailSchema, pullPageSchema } from '@dovo/protocol'
 import { fixture } from '../../../testing/fixture.js'
@@ -12,7 +13,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
   for (const dispose of cleanup.splice(0).reverse()) await dispose()
 })
-async function setup() {
+async function setup(withAttributes = false) {
   const f = await fixture()
   cleanup.push(f.cleanup)
   const owner = 'forge-routing-fixture-owner-token-with-32-characters'
@@ -25,6 +26,11 @@ async function setup() {
   const services = runtime.services
   f.workspace.repositories[0]!.path = await realpath(f.directory)
   services.store.update(() => f.workspace)
+  if (withAttributes) {
+    await writeFile(join(f.directory, '.gitattributes'), '*.dat binary linguist-generated\n')
+    await services.git.command(f.directory, ['add', '.gitattributes'])
+    await services.git.command(f.directory, ['commit', '-m', 'PR attributes'])
+  }
   const sha = (await services.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()
   const clientFetch = fetch
   const writes: Array<{
@@ -136,7 +142,16 @@ async function setup() {
       })
     if (url.pathname.endsWith('/diffstat'))
       return Response.json({
-        values: [],
+        values: withAttributes
+          ? [
+              {
+                new: { path: 'generated.dat' },
+                status: 'modified',
+                lines_added: 1,
+                lines_removed: 0,
+              },
+            ]
+          : [],
       })
     throw new Error(`Unexpected fixture endpoint: ${url.pathname}`)
   })
@@ -188,6 +203,19 @@ async function setup() {
     },
   }
 }
+it('includes PR revision attributes in provider detail responses and the cached schema', async () => {
+  const { request, f } = await setup(true)
+  await writeFile(join(f.directory, '.gitattributes'), '*.dat diff -linguist-generated\n')
+  const first = await request('pulls/detail', { repositoryId: 'repo', number: 7 })
+  expect(first.status).toBe(200)
+  const detail = decode(pullDetailSchema, first.data)
+  expect(detail.files[0].attributes).toEqual({ binary: true, generated: true, vendored: false })
+  expect(detail.warnings).toEqual([])
+  const cached = await request('pulls/detail', { repositoryId: 'repo', number: 7 })
+  expect(decode(pullDetailSchema, cached.data).files[0].attributes).toEqual(
+    detail.files[0].attributes,
+  )
+})
 it('routes a bound provider through HTTP, keeps credentials private, invalidates account caches and rejects stale mutations', async () => {
   const { services, request, connection, sha, writes, setTitle } = await setup()
   const listed = await request('pulls/overview', {

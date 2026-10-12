@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { processEnvironment } from '../../process.js'
 import { LinkedCheckouts } from './linked-checkouts.js'
 import { PendingCheckouts } from './pending-checkouts.js'
@@ -116,6 +117,32 @@ export class TaskCheckout {
       if (path && isTaskWorktree(path, keys, branch)) return path
     }
     return undefined
+  }
+  /** Chat previews read an existing checkout and never run setup or create a worktree. */
+  async fileDirectory(
+    id: string,
+    checkoutId?: string,
+    visited = new Set<string>(),
+  ): Promise<string> {
+    if (visited.has(id)) throw new HttpError(400, 'Invalid child agent ancestry')
+    visited.add(id)
+    const task = this.store.task(id)
+    if (task.delegation && !checkoutId)
+      return this.fileDirectory(task.delegation.parentTaskId, task.delegation.checkoutId, visited)
+    const link = checkoutId
+      ? task.linkedCheckouts?.find((item) => item.id === checkoutId)
+      : undefined
+    if (checkoutId && !link) throw new HttpError(404, 'Linked checkout not found')
+    const repo = this.store
+      .get()
+      .repositories.find((item) => item.id === (link?.repositoryId ?? task.repositoryId))
+    if (!repo) throw new HttpError(404, 'Repository not found')
+    if (repo.kind === 'scratch')
+      return join(repo.path, createHash('sha256').update(task.id).digest('hex'))
+    if (repo.kind) return repo.path
+    const directory = await this.reviewDirectory(id, checkoutId)
+    if (!directory) throw new HttpError(404, 'This task checkout is no longer available')
+    return directory
   }
   directory(id: string, signal?: AbortSignal): Promise<string> {
     return this.pending.run(id, (sharedSignal) => this.preparedDirectory(id, sharedSignal), signal)

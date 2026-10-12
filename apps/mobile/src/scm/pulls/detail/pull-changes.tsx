@@ -55,8 +55,15 @@ export function PullChanges({
     [detail.files, review.progress, fingerprints, related],
   )
   const [selected, setSelected] = useApplicationState(detail.files[0]?.path ?? '')
+  const [expanded, setExpanded] = useApplicationState(new Set<string>())
   const file = files.find((file) => file.path === selected) ?? files[0]
   if (!file) return <Text style={styles.muted}>No changed files returned.</Text>
+  const reason = file.attributes?.generated
+    ? 'Generated file'
+    : file.attributes?.vendored
+      ? 'Vendored file'
+      : ''
+  const collapsed = !!reason && !expanded.has(file.path)
   return (
     <View
       style={{
@@ -68,7 +75,8 @@ export function PullChanges({
         files={files.map((file) => ({
           path: file.path,
           viewed: file.viewed,
-          label: `+${file.additions ?? 0} −${file.deletions ?? 0}`,
+          additions: file.additions ?? 0,
+          deletions: file.deletions ?? 0,
         }))}
         groups={review.progress?.groups ?? []}
         related={related}
@@ -103,7 +111,26 @@ export function PullChanges({
           {file.deletions === null ? '' : `−${file.deletions}`}
         </Text>
       </Text>
-      {file.patch ? (
+      {reason && !file.attributes?.binary && (
+        <>
+          <Text style={styles.muted}>{reason} · marked in .gitattributes</Text>
+          <Action
+            secondary
+            label={collapsed ? 'Show changes' : 'Hide changes'}
+            onPress={() =>
+              setExpanded((previous) => {
+                const next = new Set(previous)
+                if (collapsed) next.add(file.path)
+                else next.delete(file.path)
+                return next
+              })
+            }
+          />
+        </>
+      )}
+      {file.attributes?.binary ? (
+        <Text style={styles.muted}>Text diff disabled by .gitattributes (binary or -diff).</Text>
+      ) : collapsed ? null : file.patch ? (
         <View
           style={{
             height: Math.max(280, Math.min(600, height * 0.55)),
@@ -126,9 +153,13 @@ export function PullChanges({
       >
         Feedback on this file
       </Text>
-      {onLineComment && file.patch && detail.capabilities?.actions.includes('inline-comment') && (
-        <Action secondary label="Comment on line" onPress={() => onLineComment(file.path)} />
-      )}
+      {onLineComment &&
+        !file.attributes?.binary &&
+        !collapsed &&
+        file.patch &&
+        detail.capabilities?.actions.includes('inline-comment') && (
+          <Action secondary label="Comment on line" onPress={() => onLineComment(file.path)} />
+        )}
       <PullComments
         comments={detail.comments.filter(
           (c) => c.kind === 'inline' && (c.path === file.path || c.path === file.previousPath),

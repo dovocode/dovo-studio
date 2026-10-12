@@ -1,4 +1,4 @@
-import { fileStats, FileIcon, DiffAmounts } from '../files/presentation'
+import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCallback, useEffect, useMemo, useRef, useDeferredValue } from 'react'
 import { getFiletypeFromFileName } from '@pierre/diffs'
@@ -10,9 +10,9 @@ import {
   type EditorFactory,
   type FileOptions,
 } from '@pierre/diffs/react'
-import { ChevronDown, Folder, RefreshCw } from 'lucide-react'
+import { RefreshCw, Search, X } from 'lucide-react'
 import { responses, useDiffOptions, useWorkspace, type Task } from '@dovo/studio-core'
-import { Button, IconButton, cn } from '@dovo/studio-ui'
+import { Button, IconButton, FileBrowserTree } from '@dovo/studio-ui'
 import { useLiveRefresh } from './live-refresh'
 import { formatCodeReference } from './code-reference'
 const createEditor: EditorFactory<undefined, undefined> = (type, options, key) =>
@@ -226,91 +226,6 @@ function HighlightedFile({
   )
 }
 
-type Directory = { folders: Map<string, Directory>; files: string[] }
-function tree(paths: string[]) {
-  const root: Directory = { folders: new Map(), files: [] }
-  for (const path of paths) {
-    const parts = path.split('/')
-    let node = root
-    for (const part of parts.slice(0, -1)) {
-      let child = node.folders.get(part)
-      if (!child) {
-        child = { folders: new Map(), files: [] }
-        node.folders.set(part, child)
-      }
-      node = child
-    }
-    node.files.push(path)
-  }
-  return root
-}
-function DirectoryRows({
-  node,
-  selected,
-  select,
-  stats,
-  prefix = '',
-}: {
-  prefix?: string
-  stats: Map<string, ReturnType<typeof fileStats>>
-  node: Directory
-  selected: string
-  select: (path: string) => void
-}) {
-  return (
-    <>
-      {[...node.folders]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, child]) => (
-          <details key={name} className="group/folder" open>
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent/50">
-              <ChevronDown className="size-3 shrink-0 -rotate-90 transition-transform group-open/folder:rotate-0" />
-              <Folder className="size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{name}</span>
-              <DiffAmounts
-                stats={[...stats.values()]
-                  .filter((stat) => stat.path.startsWith(`${prefix}${name}/`))
-                  .reduce(
-                    (total, stat) => ({
-                      additions: total.additions + stat.additions,
-                      deletions: total.deletions + stat.deletions,
-                    }),
-                    { additions: 0, deletions: 0 },
-                  )}
-              />
-            </summary>
-            <div className="ml-3 border-l border-border/60 pl-1">
-              <DirectoryRows
-                node={child}
-                selected={selected}
-                select={select}
-                stats={stats}
-                prefix={`${prefix}${name}/`}
-              />
-            </div>
-          </details>
-        ))}
-      {node.files
-        .sort((a, b) => a.localeCompare(b))
-        .map((path) => (
-          <Button
-            key={path}
-            variant="ghost"
-            title={path}
-            onClick={() => select(path)}
-            className={cn(
-              'h-7 w-full justify-start gap-2 rounded px-2 text-xs font-normal',
-              selected === path && 'bg-accent text-foreground',
-            )}
-          >
-            <FileIcon path={path} />
-            <span className="min-w-0 flex-1 truncate text-left">{path.split('/').at(-1)}</span>
-            <DiffAmounts stats={stats.get(path)} />
-          </Button>
-        ))}
-    </>
-  )
-}
 export function TaskFiles({
   task,
   onReference,
@@ -381,8 +296,11 @@ export function TaskFiles({
   }, [request, task.id, selected, revision])
   const refreshError = useLiveRefresh(connected, refresh)
   const root = useMemo(
-    () => tree(paths.filter((path) => path.toLowerCase().includes(filter))),
-    [paths, filter],
+    () =>
+      paths
+        .filter((path) => path.toLowerCase().includes(filter))
+        .map((path) => ({ ...stats.get(path), path })),
+    [paths, filter, stats],
   )
   return (
     <section className="flex h-full min-w-0 flex-col bg-background" aria-label="Project files">
@@ -435,21 +353,40 @@ export function TaskFiles({
           aria-label="Project file tree"
           className="flex w-64 max-w-[40%] shrink-0 flex-col border-l bg-sidebar"
         >
-          <div className="border-b p-2">
+          <div className="relative border-b p-2">
+            <Search
+              aria-hidden
+              className="pointer-events-none absolute left-4 top-5 size-3.5 text-muted-foreground"
+            />
             <input
               type="search"
               aria-label="Search project files"
               placeholder="Search files…"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              className="h-7 w-full rounded border bg-background px-2 text-xs"
+              className="h-9 w-full rounded-md border border-border/60 bg-background pl-8 pr-8 text-xs outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
             />
+            {query && (
+              <button
+                type="button"
+                aria-label="Clear file search"
+                onClick={() => setQuery('')}
+                className="absolute right-3 top-3 flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-accent"
+              >
+                <X aria-hidden className="size-3.5" />
+              </button>
+            )}
           </div>
-          <div className="min-h-0 overflow-auto p-2">
-            {filter && !root.files.length && !root.folders.size && (
+          <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-1.5">
+            {filter && !root.length && (
               <p className="px-2 py-1 text-xs text-muted-foreground">No matching files.</p>
             )}
-            <DirectoryRows node={root} selected={selected} select={setSelected} stats={stats} />
+            <FileBrowserTree
+              files={root}
+              selected={selected}
+              onSelect={setSelected}
+              search={filter}
+            />
           </div>
         </aside>
       </div>

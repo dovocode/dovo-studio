@@ -6,10 +6,18 @@ import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { mermaidBlocks, type MarkdownPart } from './mermaid-blocks'
+import { RichFile, TemplateCard } from './rich-file'
 import { memo, lazy, Suspense, useMemo } from 'react'
 import { Alert, Platform, View } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
-import { resolveMarkdownLink } from '@dovo/protocol'
+import {
+  resolveMarkdownLink,
+  localMarkdownPath,
+  taskFileShareSchema,
+  richMarkdown,
+  type RichMarkdownPart,
+} from '@dovo/protocol'
+import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme, type MobileTheme } from '../theme'
 import { carZoom, useCarMode } from '../../runtime/preferences/app-preferences'
 const MermaidDiagram = lazy(() =>
@@ -121,6 +129,14 @@ function createMarkdownStyles({ colors, styles }: MobileTheme) {
       color: colors.accent,
       underline: true,
     },
+    linkVariants: {
+      '^(?:file:|/(?!/)|[A-Za-z]:[\\\\/]|[^:/?#]+(?:/[^\\s]*)?$)': {
+        color: colors.accent,
+        backgroundColor: colors.elevated,
+        underline: false,
+        fontFamily: monospace,
+      },
+    },
     strong: {
       color: colors.text,
     },
@@ -231,15 +247,24 @@ export const Markdown = memo(function Markdown({
   variant = 'default',
   onLinkLongPress,
   taskId,
+  onUseTemplate,
 }: {
   text: string
   taskId?: string
+  onUseTemplate?: (prompt: string) => void
   baseURL?: string
   fileBaseURL?: string
   preserveLineBreaks?: boolean
   variant?: 'default' | 'chat'
   onLinkLongPress?: (url: string) => void
 }) {
+  const { read, connection, connected } = useRuntime()
+  const previewFile = async (path: string) => {
+    if (!taskId || !connection || !connected)
+      throw new Error('Reconnect to the file’s computer to preview it.')
+    const result = await read('/api/tasks/files/share', { taskId, path }, taskFileShareSchema)
+    await openAppLink(new URL(result.url, connection.address).toString(), true)
+  }
   const theme = useTheme()
   const { styles } = theme
   const { markdownStyle, chatMarkdownStyle, carMarkdownStyle, carChatMarkdownStyle } = useMemo(
@@ -248,21 +273,30 @@ export const Markdown = memo(function Markdown({
   )
   const parts = useMemo(
     () =>
-      mermaidBlocks(text).flatMap<MarkdownPart | Extract<MarkdownImagePart, { kind: 'image' }>>(
-        (part) =>
-          part.kind === 'mermaid'
-            ? [part]
-            : markdownImages(part.text).map((image) =>
-                image.kind === 'text'
-                  ? {
-                      kind: 'markdown' as const,
-                      text: image.text,
-                      offset: part.offset + image.offset,
-                    }
-                  : { ...image, offset: part.offset + image.offset },
-              ),
+      richMarkdown(text, !!taskId && !baseURL && !fileBaseURL).flatMap<
+        | Exclude<RichMarkdownPart, { kind: 'markdown' }>
+        | MarkdownPart
+        | Extract<MarkdownImagePart, { kind: 'image' }>
+      >((rich) =>
+        rich.kind !== 'markdown'
+          ? [rich]
+          : mermaidBlocks(rich.text).flatMap<
+              MarkdownPart | Extract<MarkdownImagePart, { kind: 'image' }>
+            >((part) =>
+              part.kind === 'mermaid'
+                ? [{ ...part, offset: rich.offset + part.offset }]
+                : markdownImages(part.text).map((image) =>
+                    image.kind === 'text'
+                      ? {
+                          kind: 'markdown' as const,
+                          text: image.text,
+                          offset: rich.offset + part.offset + image.offset,
+                        }
+                      : { ...image, offset: rich.offset + part.offset + image.offset },
+                  ),
+            ),
       ),
-    [text],
+    [text, taskId, baseURL, fileBaseURL],
   )
   const car = useCarMode()
   const style =
@@ -276,7 +310,17 @@ export const Markdown = memo(function Markdown({
   return (
     <View style={{ width: '100%', gap: 8 }}>
       {parts.map((part) =>
-        part.kind === 'mermaid' ? (
+        part.kind === 'template' ? (
+          <TemplateCard key={part.offset} template={part.template} onUse={onUseTemplate} />
+        ) : part.kind === 'file' || part.kind === 'video' ? (
+          <RichFile
+            key={part.offset}
+            taskId={taskId}
+            path={part.path}
+            label={part.label}
+            video={part.kind === 'video'}
+          />
+        ) : part.kind === 'mermaid' ? (
           <Suspense
             key={part.offset}
             fallback={<Text style={styles.muted}>Rendering diagram…</Text>}
@@ -285,24 +329,31 @@ export const Markdown = memo(function Markdown({
           </Suspense>
         ) : part.kind === 'image' ? (
           (() => {
+            const imageURL = 'url' in part ? part.url : part.path
+            const imageLabel = 'alt' in part ? part.alt : part.label
             let uri: string | undefined
             try {
-              const url = new URL(part.url, fileBaseURL ?? baseURL)
+              const url = new URL(imageURL, fileBaseURL ?? baseURL)
               if (
                 ['http:', 'https:'].includes(url.protocol) ||
-                /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(part.url)
+                /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(imageURL)
               )
                 uri = url.toString()
             } catch {
               /* A server-local path is resolved through its thread. */
             }
             return uri ? (
-              <ServerImage key={part.offset} source={{ uri }} label={part.alt} />
+              <ServerImage key={part.offset} source={{ uri }} label={imageLabel} />
             ) : taskId ? (
-              <ServerImage key={part.offset} source={{ taskId, path: part.url }} label={part.alt} />
+              <ServerImage
+                key={part.offset}
+                source={{ taskId, path: imageURL }}
+                label={imageLabel}
+                onOpenOriginal={() => previewFile(imageURL)}
+              />
             ) : (
               <Text key={part.offset} style={styles.muted}>
-                Image unavailable: {part.alt}
+                Image unavailable: {imageLabel}
               </Text>
             )
           })()
@@ -327,6 +378,15 @@ export const Markdown = memo(function Markdown({
               flexShrink: 1,
             }}
             onLinkPress={({ url }) => {
+              if (taskId && !baseURL && !fileBaseURL && localMarkdownPath(url) !== undefined) {
+                void previewFile(url).catch((error: unknown) =>
+                  Alert.alert(
+                    'Could not preview file',
+                    error instanceof Error ? error.message : String(error),
+                  ),
+                )
+                return
+              }
               const target = resolveMarkdownLink(url, baseURL, fileBaseURL)
               if (target) {
                 void runClientEffect(
@@ -343,6 +403,20 @@ export const Markdown = memo(function Markdown({
             onLinkLongPress={
               onLinkLongPress
                 ? ({ url }) => {
+                    if (
+                      taskId &&
+                      !baseURL &&
+                      !fileBaseURL &&
+                      localMarkdownPath(url) !== undefined
+                    ) {
+                      void previewFile(url).catch((error: unknown) =>
+                        Alert.alert(
+                          'Could not preview file',
+                          error instanceof Error ? error.message : String(error),
+                        ),
+                      )
+                      return
+                    }
                     const target = resolveMarkdownLink(url, baseURL, fileBaseURL)
                     if (target) onLinkLongPress(target)
                   }

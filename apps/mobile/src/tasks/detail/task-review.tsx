@@ -295,9 +295,9 @@ export function TaskReview({
               return {
                 path: file.path,
                 viewed: file.viewed,
-                label: file.preview
-                  ? filePreviewLabel(file)
-                  : `+${amounts?.additions ?? 0} −${amounts?.deletions ?? 0}`,
+                label: file.preview ? filePreviewLabel(file) : undefined,
+                additions: file.preview ? undefined : (amounts?.additions ?? 0),
+                deletions: file.preview ? undefined : (amounts?.deletions ?? 0),
               }
             })}
             groups={review.progress?.groups ?? []}

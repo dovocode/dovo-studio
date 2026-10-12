@@ -51,7 +51,9 @@ export function PullPatch({
   const [highlightAttempt, setHighlightAttempt] = useApplicationState(0)
   // Keep the original diff and range mounted while a push refreshes the live PR.
   const draftFile = selection?.file ?? file
+  const binary = !!file.attributes?.binary && !selection
   const parsed = useMemo(() => {
+    if (binary) return { diff: undefined, error: '' }
     try {
       const diff = parsePatchFiles(
         pullFilePatch(
@@ -89,11 +91,13 @@ export function PullPatch({
     draftFile.additions,
     draftFile.deletions,
     reviewContext,
+    binary,
   ])
   useEffect(() => {
     let stopped = false
     setReady(false)
     setError('')
+    if (binary) return
     void preloadStudioHighlighter(getFiletypeFromFileName(file.path))
       .then(() => {
         if (!stopped) setReady(true)
@@ -104,7 +108,13 @@ export function PullPatch({
     return () => {
       stopped = true
     }
-  }, [file.path, highlightAttempt])
+  }, [file.path, highlightAttempt, binary])
+  if (binary)
+    return (
+      <p className="p-4 text-xs text-muted-foreground">
+        Text diff disabled by .gitattributes (binary or -diff).
+      </p>
+    )
   if (!draftFile.patch)
     return (
       <p className="p-4 text-xs text-muted-foreground">

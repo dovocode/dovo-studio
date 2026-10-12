@@ -392,9 +392,15 @@ export class GitService {
   }
   async openFolder(path: string, target: RepositoryOpenTarget) {
     const cwd = await repositoryPath(path)
+    return this.openDesktopPath(cwd, cwd, target)
+  }
+  async openFile(path: string, target: RepositoryOpenTarget) {
+    return this.openDesktopPath(path, dirname(path), target)
+  }
+  private async openDesktopPath(path: string, cwd: string, target: RepositoryOpenTarget) {
     // A pending listing that fails must not fail this open; it rescans and reports its own error.
     const cached = await this.installedOpeners?.catch(() => undefined)
-    const { executable, args, detached } = await folderOpenCommand(cwd, target, cached)
+    const { executable, args, detached } = await folderOpenCommand(path, target, cached)
     if (!detached) {
       await this.run(cwd, executable, args, 10000, 1024 * 1024)
       return

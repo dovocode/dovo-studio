@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { resolveMarkdownLink } from './markdown-links.js'
+import {
+  resolveMarkdownLink,
+  localMarkdownPath,
+  localMarkdownURL,
+  markdownURLLocalPath,
+} from './markdown-links.js'
 
 describe('Markdown links', () => {
   const discussion = 'https://github.com/dovo/studio/pull/7#issuecomment-1'
@@ -52,4 +57,27 @@ describe('Markdown links', () => {
     expect(resolveMarkdownLink('/Users/dominic/project/file.ts')).toBeUndefined()
     expect(resolveMarkdownLink('relative.md')).toBeUndefined()
   })
+})
+
+it('retains runtime paths, source line suffixes, and encoded names without accepting external schemes', () => {
+  for (const [value, path] of [
+    ['/tmp/shot.png', '/tmp/shot.png'],
+    ['src/app.ts:12:3', 'src/app.ts'],
+    ['file:///tmp/a%20b.pdf:12', 'file:///tmp/a%20b.pdf'],
+    ['C:\\Users\\dominic\\report.txt:9', 'C:\\Users\\dominic\\report.txt'],
+    ['docs/readme.md#L12', 'docs/readme.md'],
+  ]) {
+    expect(localMarkdownPath(value!)).toBe(path)
+    expect(markdownURLLocalPath(localMarkdownURL(value!)!)).toBe(path)
+  }
+  for (const url of [
+    'https://example.com',
+    'mailto:a@example.com',
+    '//example.com/file',
+    '#section',
+    'javascript:alert(1)',
+    'data:text/html,test',
+  ])
+    expect(localMarkdownPath(url)).toBeUndefined()
+  expect(markdownURLLocalPath('https://example.com/?path=/tmp/test')).toBeUndefined()
 })

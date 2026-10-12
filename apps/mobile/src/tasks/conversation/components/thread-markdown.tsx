@@ -36,6 +36,7 @@ export function ThreadMarkdown({
 }) {
   const { styles } = useTheme()
 
+  const draft = useConversationSelector((value) => value.actions.draft)
   const taskId = useConversationSelector((value) => value.task.id)
   const scope = useConversationSelector((value) => value.actions.threadScope)
   const hasPullLink = useMemo(
@@ -71,6 +72,9 @@ export function ThreadMarkdown({
         <Markdown
           {...props}
           taskId={taskId}
+          onUseTemplate={(prompt) =>
+            draft.update([draft.text.trimEnd(), prompt].filter(Boolean).join('\n\n'))
+          }
           text={markdown}
           variant={plainText ? 'chat' : props.variant}
           onLinkLongPress={

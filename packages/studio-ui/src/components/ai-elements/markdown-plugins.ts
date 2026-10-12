@@ -1,5 +1,5 @@
 import { defaultRehypePlugins, type StreamdownProps } from 'streamdown'
-import { resolveMarkdownLink } from '@dovo/protocol'
+import { resolveMarkdownLink, localMarkdownURL, markdownURLLocalPath } from '@dovo/protocol'
 
 type MarkdownNode = {
   children?: MarkdownNode[]
@@ -10,11 +10,20 @@ type MarkdownNode = {
 export function markdownPluginsForLinks(
   baseURL?: string,
   fileBaseURL?: string,
+  localFiles = false,
 ): StreamdownProps['rehypePlugins'] {
   const resolveLinks = () => (tree: MarkdownNode) => {
+    const link = (url: string) =>
+      localFiles && !baseURL && !fileBaseURL
+        ? ((markdownURLLocalPath(url) !== undefined ? url : localMarkdownURL(url)) ??
+          resolveMarkdownLink(url) ??
+          '')
+        : (resolveMarkdownLink(url, baseURL, fileBaseURL) ?? '')
     const visit = (node: MarkdownNode) => {
       if (node.tagName === 'a' && typeof node.properties?.href === 'string')
-        node.properties.href = resolveMarkdownLink(node.properties.href, baseURL, fileBaseURL) ?? ''
+        node.properties.href = link(node.properties.href)
+      if (localFiles && node.tagName === 'img' && typeof node.properties?.src === 'string')
+        node.properties.src = link(node.properties.src)
       for (const child of node.children ?? []) visit(child)
     }
     visit(tree)
@@ -22,6 +31,6 @@ export function markdownPluginsForLinks(
   // Bare repository paths must become URLs before rehype-harden checks them.
   // Keep Streamdown's HTML parsing, sanitization and hardening in their original order.
   return Object.entries(defaultRehypePlugins).flatMap(([name, plugin]) =>
-    name === 'harden' ? [resolveLinks, plugin] : [plugin],
+    name === (localFiles ? 'sanitize' : 'harden') ? [resolveLinks, plugin] : [plugin],
   )
 }

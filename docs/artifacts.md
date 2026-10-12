@@ -38,10 +38,23 @@ sources; mobile can share the selected version through the system share sheet.
 The desktop left sidebar and mobile navigation also expose **Artifacts** when a connected computer
 has the feature enabled. This library lists artifacts across enabled computers, most recently
 updated first, with search, format and thread-state filters. Cards identify documents, interactive
-artifacts, graphics and code, along with their originating thread and computer. Desktop cards use
-format illustrations without fetching or running artifact bodies. Use Refresh to update the list.
-Each preview is fetched from its owning computer only when opened; unavailable computers show an
-error without blocking the other computers.
+artifacts, graphics and code, along with their originating thread and computer. Cards show small
+snapshots: document/code excerpts and cached raster images for HTML/SVG. Desktop loads snapshots as
+cards approach the viewport; mobile uses a bounded, virtualized list. HTML/SVG snapshots render on
+the owning runtime in an isolated, networkless browser context, never inside the library page. If
+Chrome is unavailable, the format illustration remains with “Snapshot unavailable”; the full
+artifact can still be opened. Use Refresh to update the list. Each full preview is fetched from its
+owning computer only when opened; unavailable computers show an error without blocking the other
+computers.
+
+Each library card offers **Add to thread** and **Delete artifact**. Add to thread copies the
+selected version into an active, writable thread on the same computer and offers **Open thread**.
+The copy gets its own ID and version history, appears in the destination's Artifacts viewer, and is
+available to its agent through `artifact_list` and `artifact_read`. Editing or deleting either
+artifact does not affect the other. Delete requires confirmation and permanently removes all saved
+versions and artifact activity tiles. If the artifact changed since the library loaded, refresh
+before deleting. Paired devices can perform both actions; copying respects the destination's
+read-only permissions.
 
 Computer settings offer separate retention rules for settled and archived threads: keep forever (the
 default), delete immediately, or delete after 7, 30 or 90 days. Archive retention takes priority
@@ -52,13 +65,14 @@ or settings save. Delayed cleanup runs at startup and every 15 minutes. Retentio
 Dovo Artifacts is disabled, and deletion permanently removes all revisions.
 
 Bodies are stored separately in SQLite, never in workspace snapshots or artifact reference events.
-Viewers fetch content only when opened. The existing tool details preference still controls raw
-provider input/output. Each revision is limited to 2 MB of UTF-8 content. Deleting a thread removes
-all its artifact revisions. Paired devices can read artifacts; creation and updates use the
-runtime's host credential and respect read-only thread permissions.
+Full viewers fetch content only when opened; library snapshots contain only a bounded excerpt or a
+small image. The existing tool details preference still controls raw provider input/output. Each
+revision is limited to 2 MB of UTF-8 content. Deleting a thread removes all its artifact revisions.
+Paired devices can read artifacts; creation and updates use the runtime's host credential and
+respect read-only thread permissions.
 
 Run `pnpm test:artifacts:browser` for sandbox and desktop/mobile viewer interaction checks. Run the
 runtime artifact and agent-tools tests for HTTP authorization, revision conflicts, persistence,
 thread scoping, retention and real provider MCP transport coverage. Browser checks also verify
-multi-computer library routing and lazy content loading. Native WebView and OS share-sheet behavior
-still require device verification.
+multi-computer library routing, lazy snapshots, copy/delete actions and failure recovery. Native
+WebView and OS share-sheet behavior still require device verification.

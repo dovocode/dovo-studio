@@ -42,9 +42,9 @@ export function FileTree({
           return {
             path: file.path,
             viewed: file.viewed,
-            label: file.preview
-              ? filePreviewLabel(file)
-              : `+${stats?.additions ?? 0} −${stats?.deletions ?? 0}`,
+            label: file.preview ? filePreviewLabel(file) : undefined,
+            additions: file.preview ? undefined : (stats?.additions ?? 0),
+            deletions: file.preview ? undefined : (stats?.deletions ?? 0),
           }
         })}
         groups={groups}

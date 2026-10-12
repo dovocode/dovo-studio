@@ -1,11 +1,12 @@
 import { useDeferredValue, useMemo, useState } from 'react'
-import { Modal, Pressable, SectionList, Switch, TextInput, View } from 'react-native'
+import { Modal, Pressable, Switch, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import type { ReviewGroup } from '@dovo/protocol'
+import type { ReviewGroup, FileTreeEntry } from '@dovo/protocol'
+import { MobileFileTree, MobileFileTypeIcon } from '../../ui/content/file-tree'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
 import { useTheme } from '../../ui/theme'
-export type ReviewListFile = { path: string; viewed: boolean; label?: string }
+export type ReviewListFile = FileTreeEntry & { viewed: boolean }
 export function MobileFileReview({
   files,
   groups,
@@ -39,42 +40,13 @@ export function MobileFileReview({
     [query, setQuery] = useState(''),
     [unviewed, setUnviewed] = useState(false)
   const filter = useDeferredValue(query.trim().toLowerCase())
-  const sections = useMemo(() => {
-    const remaining = new Map(
-      files
-        .filter((file) => (!unviewed || !file.viewed) && file.path.toLowerCase().includes(filter))
-        .map((file) => [file.path, file]),
-    )
-    const sections: { title: string; summary?: string; impact?: string; data: ReviewListFile[] }[] =
-      []
-    if (related)
-      for (const group of groups) {
-        const data = group.paths.flatMap((path) => {
-          const file = remaining.get(path)
-          if (!file) return []
-          remaining.delete(path)
-          return [file]
-        })
-        if (data.length)
-          sections.push({
-            title: `${group.basis === 'feature' ? 'Feature' : group.basis === 'ast' ? 'Related' : 'Folder'} · ${group.label}`,
-            summary: group.summary,
-            impact: group.impact,
-            data,
-          })
-      }
-    const folders = new Map<string, ReviewListFile[]>()
-    for (const file of [...remaining.values()].sort((a, b) => a.path.localeCompare(b.path))) {
-      const folder = file.path.includes('/')
-        ? file.path.slice(0, file.path.lastIndexOf('/'))
-        : 'Root files'
-      const data = folders.get(folder) ?? []
-      data.push(file)
-      folders.set(folder, data)
-    }
-    for (const [title, data] of folders) sections.push({ title: `Folder · ${title}`, data })
-    return sections
-  }, [files, groups, related, filter, unviewed])
+  const filtered = useMemo(
+    () =>
+      files.filter(
+        (file) => (!unviewed || !file.viewed) && file.path.toLowerCase().includes(filter),
+      ),
+    [files, filter, unviewed],
+  )
   const index = files.findIndex((file) => file.path === selected)
   const file = files[index]
   const nextUnviewed = [...files.slice(index + 1), ...files.slice(0, index)].find(
@@ -102,9 +74,15 @@ export function MobileFileReview({
           opacity: navigationDisabled ? 0.5 : 1,
         }}
       >
-        <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>
-          {file?.path ?? 'Browse changed files'}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {file && <MobileFileTypeIcon path={file.path} />}
+          <Text
+            numberOfLines={1}
+            style={{ color: colors.text, fontSize: 14, fontWeight: '600', flex: 1 }}
+          >
+            {file?.path ?? 'Browse changed files'}
+          </Text>
+        </View>
         <Text style={styles.muted}>
           {index >= 0 ? `${index + 1} of ${files.length} · ` : ''}
           {files.filter((file) => file.viewed).length} viewed · Find files
@@ -208,63 +186,21 @@ export function MobileFileReview({
               />
             </View>
           </View>
-          <SectionList
-            sections={sections}
-            keyExtractor={(file) => file.path}
-            keyboardShouldPersistTaps="handled"
-            automaticallyAdjustKeyboardInsets
-            stickySectionHeadersEnabled={false}
-            ListEmptyComponent={
-              <Text style={styles.muted}>
-                {unviewed && !filter ? 'All files viewed.' : 'No matching files.'}
-              </Text>
-            }
-            renderSectionHeader={({ section }) => (
-              <View style={{ paddingVertical: 12, gap: 6 }}>
-                <Text accessibilityRole="header" style={[styles.muted, { fontWeight: '600' }]}>
-                  {section.title}
-                </Text>
-                {!!section.summary && (
-                  <Text style={{ color: colors.text, fontSize: 14 }}>{section.summary}</Text>
-                )}
-                {!!section.impact && (
-                  <Text style={styles.muted}>Linked impact: {section.impact}</Text>
-                )}
-              </View>
-            )}
-            renderItem={({ item }) => (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${item.path}${item.viewed ? ', viewed' : ', unviewed'}`}
-                accessibilityState={{ selected: item.path === selected }}
-                onPress={() => select(item.path)}
-                style={{
-                  minHeight: 56,
-                  padding: 10,
-                  borderRadius: 8,
-                  backgroundColor: item.path === selected ? colors.surface : colors.background,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 10,
-                }}
-              >
-                <Text style={{ color: item.viewed ? colors.success : colors.muted }}>
-                  {item.viewed ? '✓' : '○'}
-                </Text>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ color: colors.text, fontSize: 15 }}>
-                    {item.path.split('/').at(-1)}
-                  </Text>
-                  <Text style={styles.muted}>
-                    {item.path.includes('/')
-                      ? item.path.slice(0, item.path.lastIndexOf('/'))
-                      : 'Root'}
-                    {item.label ? ` · ${item.label}` : ''}
-                  </Text>
-                </View>
-              </Pressable>
-            )}
-          />
+          {!filtered.length ? (
+            <Text style={styles.muted}>
+              {unviewed && !filter ? 'All files viewed.' : 'No matching files.'}
+            </Text>
+          ) : (
+            <MobileFileTree
+              files={filtered}
+              groups={groups}
+              related={related}
+              search={filter}
+              selected={selected}
+              onSelect={select}
+              disabled={navigationDisabled}
+            />
+          )}
         </View>
       </Modal>
     </View>

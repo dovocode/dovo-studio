@@ -71,6 +71,12 @@ export function TaskConversation({
   onComposerInsertApplied?: () => void
 }) {
   const { collapseComposerOnScroll } = useAppPreferences()
+  const [templateInsert, setTemplateInsert] = useState<{
+    id: string
+    text: string
+    taskId: string
+  } | null>(null)
+  const pendingTemplate = templateInsert?.taskId === task.id ? templateInsert : null
   const [composerCollapsed, setComposerCollapsed] = useState(false)
   const composer = useRef<HTMLDivElement>(null)
   const readingHistory = useCallback(() => {
@@ -191,6 +197,9 @@ export function TaskConversation({
       ) : (
         <ArtifactOpenContext value={onArtifact}>
           <ChatThread
+            onUseTemplate={(text) =>
+              setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
+            }
             active={visible}
             onReadingHistory={readingHistory}
             onManagePulls={() => setManagePullTask(task.id)}
@@ -285,8 +294,10 @@ export function TaskConversation({
           onPending={onPending}
           onAside={onAside}
           codeReference={codeReference}
-          composerInsert={composerInsert}
-          onComposerInsertApplied={onComposerInsertApplied}
+          composerInsert={pendingTemplate ?? composerInsert}
+          onComposerInsertApplied={
+            pendingTemplate ? () => setTemplateInsert(null) : onComposerInsertApplied
+          }
         />
       </div>
       {managePullTask === task.id && (

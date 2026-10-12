@@ -1,14 +1,14 @@
 import { whitespaceOnlyFile } from '@dovo/studio-core'
 import { SavedFilePreview } from '../../files/saved-file-preview'
 import { checkpointFiles, filePreviewLabel } from '@dovo/protocol'
-import { fileStats, FileIcon, DiffAmounts } from '../../files/presentation'
+import { fileStats, DiffAmounts } from '../../files/presentation'
 import { responses, useDiffOptions, useWorkspace, useAppPreferences } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo } from 'react'
 import { getFiletypeFromFileName, parseDiffFromFile } from '@pierre/diffs'
 import { preloadStudioHighlighter } from '@dovo/studio-ui/code-themes'
 import { FileDiff } from '@pierre/diffs/react'
-import { BookmarkCheck, ChevronRight, Folder, Undo2 } from 'lucide-react'
+import { BookmarkCheck, ChevronRight, Undo2 } from 'lucide-react'
 import type { ChangedFile, TaskTurn } from '@dovo/studio-core'
 import {
   Button,
@@ -18,6 +18,7 @@ import {
   DialogDescription,
   DialogTitle,
   ErrorBoundary,
+  FileBrowserTree,
 } from '@dovo/studio-ui'
 export function CheckpointDiff({ file }: { file: ChangedFile }) {
   const [ready, setReady] = useApplicationState(false)
@@ -110,7 +111,15 @@ export function TurnCheckpoint({
     [turn.checkpoint, hideWhitespaceChanges],
   )
   const stats = useMemo(() => files.filter((file) => !file.preview).map(fileStats), [files])
-  const byPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files])
+  const treeFiles = useMemo(() => {
+    const amounts = new Map(stats.map((stat) => [stat.path, stat]))
+    return files.map((file) => ({
+      path: file.path,
+      additions: amounts.get(file.path)?.additions,
+      deletions: amounts.get(file.path)?.deletions,
+      label: file.preview ? filePreviewLabel(file) : undefined,
+    }))
+  }, [files, stats])
   const totals = stats.reduce(
     (sum, file) => ({
       additions: sum.additions + file.additions,
@@ -126,13 +135,6 @@ export function TurnCheckpoint({
   // Show checkpoint controls only once the turn has a result to inspect.
   if ((!checkpoint.after && !checkpoint.error) || (!count && checkpoint.after && !checkpoint.error))
     return null
-  const folders = new Map<string, string[]>()
-  for (const path of files.map((entry) => entry.path)) {
-    const directory = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
-    const paths = folders.get(directory) ?? []
-    paths.push(path)
-    folders.set(directory, paths)
-  }
   return (
     <div className="mt-2 w-full rounded-xl bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
       <div className="flex flex-wrap items-center gap-2">
@@ -172,78 +174,16 @@ export function TurnCheckpoint({
         </span>
       </div>
       {showFiles && (
-        <div className="mt-2">
-          {(folders.get('') ?? []).map((path) => (
-            <button
-              key={path}
-              type="button"
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left font-mono hover:bg-muted hover:text-foreground"
-              onClick={() => {
-                setSelected(path)
-                setOpen(true)
-              }}
-            >
-              <FileIcon path={path} />
-              <span className="min-w-0 flex-1 truncate">{path}</span>
-              {byPath.get(path)?.preview ? (
-                <span className="text-[0.625rem] text-muted-foreground">
-                  {filePreviewLabel(byPath.get(path))}
-                </span>
-              ) : (
-                <DiffAmounts stats={stats.find((file) => file.path === path)} />
-              )}
-            </button>
-          ))}
-          {Array.from(folders)
-            .filter(([directory]) => !!directory)
-            .map(([directory, paths]) => (
-              <details key={directory} className="mt-2">
-                <summary className="flex cursor-pointer list-none items-center gap-2 rounded py-1.5 hover:text-foreground">
-                  <ChevronRight size={12} />
-                  <Folder size={14} />
-                  <span className="min-w-0 flex-1 truncate font-mono" title={directory}>
-                    {directory}
-                  </span>
-                  <DiffAmounts
-                    stats={stats
-                      .filter((file) => paths.includes(file.path))
-                      .reduce(
-                        (sum, file) => ({
-                          additions: sum.additions + file.additions,
-                          deletions: sum.deletions + file.deletions,
-                        }),
-                        { additions: 0, deletions: 0 },
-                      )}
-                  />
-                </summary>
-                <div className="ml-5 border-l pl-2">
-                  {paths.map((path) => (
-                    <button
-                      key={path}
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left font-mono hover:bg-muted hover:text-foreground"
-                      title={path}
-                      onClick={() => {
-                        setSelected(path)
-                        setOpen(true)
-                      }}
-                    >
-                      <FileIcon path={path} />
-                      <span className="min-w-0 flex-1 truncate">
-                        {path.slice(path.lastIndexOf('/') + 1)}
-                      </span>
-                      {byPath.get(path)?.preview ? (
-                        <span className="text-[0.625rem] text-muted-foreground">
-                          {filePreviewLabel(byPath.get(path))}
-                        </span>
-                      ) : (
-                        <DiffAmounts stats={stats.find((file) => file.path === path)} />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </details>
-            ))}
+        <div className="mt-2 border-t border-border/40 pt-2">
+          <FileBrowserTree
+            files={treeFiles}
+            selected={selected}
+            defaultExpandedDepth={0}
+            onSelect={(path) => {
+              setSelected(path)
+              setOpen(true)
+            }}
+          />
         </div>
       )}
       <Dialog open={open} onOpenChange={setOpen}>

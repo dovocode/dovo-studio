@@ -218,7 +218,7 @@ export function SideQuestion({
           <Action secondary label="Add question to thread" onPress={() => add(entry.question)} />
           {entry.answer && (
             <>
-              <ThreadMarkdown text={entry.answer} variant="chat" />
+              <ThreadMarkdown taskId={task.id} text={entry.answer} variant="chat" />
               <Action
                 secondary
                 label="Add answer to thread"

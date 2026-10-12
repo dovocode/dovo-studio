@@ -11,6 +11,7 @@ import {
   type PullCreate,
 } from '@dovo/protocol'
 import { PullRequests } from '../../pulls/pulls.js'
+import { pullAttributes } from '../../pulls/pull-attributes.js'
 import { GiteaForge } from '../providers/forge-gitea.js'
 import { BitbucketForge } from '../providers/forge-bitbucket.js'
 import { AzureForge } from '../providers/forge-azure.js'
@@ -219,7 +220,7 @@ export class ForgePullRequests {
     const binding = await this.binding(cwd)
     if (!binding) return this.github.status(cwd, number, background)
     const connection = this.connections.get(binding.connectionId)
-    if (connection.provider !== 'github') return this.detail(cwd, number)
+    if (connection.provider !== 'github') return this.readDetail(cwd, number)
     const detail = await this.githubTarget(
       connection.id,
       connection.revision,
@@ -231,6 +232,9 @@ export class ForgePullRequests {
     return detail
   }
   async detail(cwd: string, number: number) {
+    return pullAttributes(this.git, cwd, await this.readDetail(cwd, number))
+  }
+  private async readDetail(cwd: string, number: number) {
     const binding = await this.binding(cwd)
     const detail = binding
       ? await this.adapter(binding.connectionId, binding.repository, cwd).detail(number)
@@ -244,7 +248,7 @@ export class ForgePullRequests {
     const binding = await this.binding(cwd)
     if (!binding) return this.github.feedback(cwd, number)
     const connection = this.connections.get(binding.connectionId)
-    if (connection.provider !== 'github') return this.detail(cwd, number)
+    if (connection.provider !== 'github') return this.readDetail(cwd, number)
     const detail = await this.githubTarget(
       connection.id,
       connection.revision,

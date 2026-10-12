@@ -8,8 +8,10 @@ import {
 import { useWorkspace, WorkspaceScope } from '@dovo/studio-core'
 import { Button, EmptyState, Input, cn } from '@dovo/studio-ui'
 import { ArrowUpRight, Layers, LoaderCircle, Monitor, RotateCw, Search } from 'lucide-react'
+import { ArtifactSnapshot } from './chat/artifact-snapshot'
+import { ArtifactLibraryActions } from './chat/artifact-library-actions'
 import { ArtifactBrowser } from './chat/artifacts'
-import { ArtifactIcon, ArtifactThumbnail } from './chat/artifact-presentation'
+import { ArtifactIcon } from './chat/artifact-presentation'
 
 type Entry = { profile: RuntimeProfile; computerName: string; artifact: ArtifactLibraryEntry }
 export default function ArtifactsView() {
@@ -214,61 +216,88 @@ export default function ArtifactsView() {
             {visible.map((entry) => {
               const { profile, computerName, artifact } = entry
               return (
-                <button
-                  type="button"
-                  key={`${profile.id}:${artifact.id}`}
-                  aria-label={`Open artifact ${artifact.title}`}
-                  onClick={() => setSelected(entry)}
-                  className="group flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                <div
+                  key={`${profile.id}:${artifact.id}:${reload}`}
+                  className="min-w-0 overflow-hidden rounded-xl border bg-card"
                 >
-                  <ArtifactThumbnail format={artifact.format} />
-                  <div className="flex flex-1 flex-col gap-3 p-4">
-                    <div className="flex items-start gap-2">
-                      <h2
-                        className="min-w-0 flex-1 truncate text-sm font-medium"
-                        title={artifact.title}
+                  <button
+                    type="button"
+                    aria-label={`Open artifact ${artifact.title}`}
+                    onClick={() => setSelected(entry)}
+                    className="group flex w-full min-w-0 flex-col overflow-hidden text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <ArtifactSnapshot profile={profile} artifact={artifact} />
+                    <div className="flex flex-1 flex-col gap-3 p-4">
+                      <div className="flex items-start gap-2">
+                        <h2
+                          className="min-w-0 flex-1 truncate text-sm font-medium"
+                          title={artifact.title}
+                        >
+                          {artifact.title}
+                        </h2>
+                        <ArrowUpRight
+                          aria-hidden="true"
+                          className="size-4 shrink-0 text-muted-foreground/60 group-hover:text-foreground"
+                        />
+                      </div>
+                      <p
+                        className="truncate text-xs text-muted-foreground"
+                        title={artifact.threadTitle}
                       >
-                        {artifact.title}
-                      </h2>
-                      <ArrowUpRight
-                        aria-hidden="true"
-                        className="size-4 shrink-0 text-muted-foreground/60 group-hover:text-foreground"
-                      />
-                    </div>
-                    <p
-                      className="truncate text-xs text-muted-foreground"
-                      title={artifact.threadTitle}
-                    >
-                      {artifact.threadTitle}
-                    </p>
-                    <div className="mt-auto flex items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <ArtifactIcon format={artifact.format} className="size-3.5" />
-                        {artifactFormatLabels[artifact.format]} · v{artifact.revision}
-                      </span>
-                      <time dateTime={artifact.updatedAt}>
-                        {new Date(artifact.updatedAt).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </time>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 border-t pt-3 text-[0.6875rem] text-muted-foreground">
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <Monitor aria-hidden="true" className="size-3 shrink-0" />
-                        <span className="truncate">{computerName}</span>
-                      </span>
-                      <span className="rounded-full bg-muted px-2 py-0.5 capitalize">
-                        {artifact.threadState}
-                      </span>
-                    </div>
-                    {artifact.deleteAt && (
-                      <p className="text-[0.6875rem] text-destructive">
-                        Scheduled deletion: {new Date(artifact.deleteAt).toLocaleString()}
+                        {artifact.threadTitle}
                       </p>
-                    )}
-                  </div>
-                </button>
+                      <div className="mt-auto flex items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
+                        <span className="flex items-center gap-1.5">
+                          <ArtifactIcon format={artifact.format} className="size-3.5" />
+                          {artifactFormatLabels[artifact.format]} · v{artifact.revision}
+                        </span>
+                        <time dateTime={artifact.updatedAt}>
+                          {new Date(artifact.updatedAt).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </time>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 border-t pt-3 text-[0.6875rem] text-muted-foreground">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <Monitor aria-hidden="true" className="size-3 shrink-0" />
+                          <span className="truncate">{computerName}</span>
+                        </span>
+                        <span className="rounded-full bg-muted px-2 py-0.5 capitalize">
+                          {artifact.threadState}
+                        </span>
+                      </div>
+                      {artifact.deleteAt && (
+                        <p className="text-[0.6875rem] text-destructive">
+                          Scheduled deletion: {new Date(artifact.deleteAt).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                  <ArtifactLibraryActions
+                    profile={profile}
+                    artifact={artifact}
+                    onDeleted={() => {
+                      setLoaded((previous) =>
+                        previous
+                          ? {
+                              ...previous,
+                              entries: previous.entries.filter(
+                                (item) =>
+                                  item.profile.id !== profile.id ||
+                                  item.artifact.id !== artifact.id,
+                              ),
+                            }
+                          : previous,
+                      )
+                      if (
+                        selected?.profile.id === profile.id &&
+                        selected.artifact.id === artifact.id
+                      )
+                        setSelected(undefined)
+                    }}
+                  />
+                </div>
               )
             })}
           </div>

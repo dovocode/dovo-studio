@@ -25,12 +25,26 @@ local files by basename. PR and historical module metadata comes from the same i
 revisions as the code. Nested modules and build-system aliases without a known mapping retain the
 folder fallback. Reading optional review metadata never creates a task checkout or runs its setup.
 
+File browsers use nested, collapsible folders with compact single-folder paths, file-type icons,
+change counts and viewed progress. Search reveals matching paths. Desktop arrow keys navigate rows
+and expand or collapse folders; mobile uses a virtualized list. Dependency and feature groups keep
+their review order.
+
 On mobile, tap the file path to open a searchable file browser. Both clients offer an **Unviewed
 only** filter and previous, next and next-unviewed navigation. File and checkout navigation pause
 while a task diff has an active edit. Mobile edits retain their text and disk baseline when
 switching task panes. Cancel remains available if a refresh removes the file or replaces its text
 with a preview. Desktop inline PR drafts retain their original revision and range across pushes;
 stale drafts cannot post against the new revision.
+
+Desktop/web PR diffs mount as files enter the viewport; file navigation loads the destination
+directly. Loaded diffs stay mounted to preserve inline drafts. Mobile renders only the selected
+file. Both viewers honor `.gitattributes` from the exact PR head commit: `binary` and `-diff`
+disable text diffs, while `linguist-generated` and `linguist-vendored` files default to collapsed
+changes with a **Show changes** action. Nested patterns, macros and overrides use Git's attribute
+rules; dirty checkout files and global attributes do not affect the PR. A missing PR commit is
+fetched once without switching the checkout. Attribute read failures show a warning and retain the
+available patches. Custom diff drivers and textconv are not executed.
 
 Progress survives reopening a viewer and restarting the host. Task working-tree flags use workspace
 synchronization with persisted monotonic file versions, so toggling a flag twice or removing and

@@ -744,6 +744,21 @@ importers:
       effect:
         specifier: 4.0.1
         version: 4.0.1
+      mdast-util-directive:
+        specifier: ^3.1.1
+        version: 3.1.1(supports-color@8.1.1)
+      mdast-util-from-markdown:
+        specifier: ^2.1.0
+        version: 2.1.0(supports-color@8.1.1)
+      mdast-util-gfm:
+        specifier: ^3.1.0
+        version: 3.1.0(supports-color@8.1.1)
+      micromark-extension-directive:
+        specifier: ^4.0.0
+        version: 4.0.0
+      micromark-extension-gfm:
+        specifier: ^3.0.0
+        version: 3.0.0
       proper-lockfile:
         specifier: 4.1.2
         version: 4.1.2
@@ -751,6 +766,9 @@ importers:
         specifier: ^14.0.2
         version: 14.0.2
     devDependencies:
+      '@types/mdast':
+        specifier: ^4.0.4
+        version: 4.0.4
       '@types/proper-lockfile':
         specifier: ^4.1.4
         version: 4.1.4
@@ -853,6 +871,9 @@ importers:
       node-pty:
         specifier: 1.2.0-beta.15
         version: 1.2.0-beta.15(patch_hash=37fdac163ed4da76b410333015449ae5101dd110c1cff818ae62a379e7771bfa)
+      pdfjs-dist:
+        specifier: ^6.4.299
+        version: 6.4.299
       playwright:
         specifier: ^1.63.0
         version: 1.63.0
@@ -2597,6 +2618,81 @@ packages:
     peerDependenciesMeta:
       '@types/node':
         optional: true
+
+  '@napi-rs/canvas-android-arm64@1.0.11':
+    resolution: {integrity: sha512-dtJS4FQEfH9OwSYLtMrEnj7T8DzBbJc/97LI/OkiWOYpW/iW5t6R/gcxVrUXS8l45gCVpwMufgucRe/pe0ISqA==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [android]
+
+  '@napi-rs/canvas-darwin-arm64@1.0.11':
+    resolution: {integrity: sha512-J/JylWoJTG8OQqZaiqly4IODyAxNofUlZo0wtSBJtHk6AdymbdIkPynAM1JvQaZpPaG5h+msk9QuK8y4i1ooqw==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@napi-rs/canvas-darwin-x64@1.0.11':
+    resolution: {integrity: sha512-nlecCk3xy06eAGC7krZtzNDm9UNTHKuHQYK8ZYegdjzgSL8anGt/eLJZm86OWaNgZkwQwvDqfSmG8Nqe6MPZNQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@napi-rs/canvas-linux-arm-gnueabihf@1.0.11':
+    resolution: {integrity: sha512-DKImmG+sTPolE0kGPsYPBxTtOjb3INALp32O2lW2CfSr0bAzSEKKuu+GrQbtilClyoPOahUErS3OrznFDraoWA==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [linux]
+
+  '@napi-rs/canvas-linux-arm64-gnu@1.0.11':
+    resolution: {integrity: sha512-55sykACGENj5j1rhj+81AO8JbR9HYgGjRZ7/H+pNr4VE1DvINKYNMTcutk8ZmWxk276jAQvUKJ3+Kdj9GXU3lQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@napi-rs/canvas-linux-arm64-musl@1.0.11':
+    resolution: {integrity: sha512-6Jz6jys17yXydO+WdJgu7JhoB4K7/w9sWHByzzTmLjQghUx3TDMWvLv+UcCdnWhg4oprET67EMymnrETdeGNAg==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@napi-rs/canvas-linux-riscv64-gnu@1.0.11':
+    resolution: {integrity: sha512-lf2XeEebWiUYVOVEjLXxF7dfXrBBSEOBn9AqBh39VYXrPt5cDqI+1t58IFSjn8npqkg5jIOs8TQbjKABbFW1gQ==}
+    engines: {node: '>= 10'}
+    cpu: [riscv64]
+    os: [linux]
+    libc: [glibc]
+
+  '@napi-rs/canvas-linux-x64-gnu@1.0.11':
+    resolution: {integrity: sha512-iDapw7nFSE5tsmQxcH2+KotJhyfVPmHd6vUOQN/Em+8WNbkZJwJ/rDowlJMFnMl0SYSDSfgKCNUGi6Sn5++Smg==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@napi-rs/canvas-linux-x64-musl@1.0.11':
+    resolution: {integrity: sha512-26q26AyITo3CGZX4HWFIMgBMA1lu3YN07gxzBm4tW6Hglq/OVyTP50kDrmWuKybCX6dh3m8Ly+c7YhI+sqCgCQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@napi-rs/canvas-win32-arm64-msvc@1.0.11':
+    resolution: {integrity: sha512-cUO96IdsfvIj2S+2PNcDSkTcLhjPj8pIOEWRV1Kj70MOP4wnE9zSk7N4C1EKHlFGRcgdR5AkbnBZj0dfHK9nbQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@napi-rs/canvas-win32-x64-msvc@1.0.11':
+    resolution: {integrity: sha512-DFYp/ZQRdKunI/LPc0UkRXG1vlNjJKOJf8O8Ctb8+wm2Nt2ELg9Eamc31D2VoakkfGo8L+z0Iejz6WtFbQwyGw==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [win32]
+
+  '@napi-rs/canvas@1.0.11':
+    resolution: {integrity: sha512-vt5tog1cr+QKadIddGe+3LrcX0EmjEd0izF717Uwf92mBmgYfq2XRmL2r4bZU40spB69exxhrBn9I91HYEr/7w==}
+    engines: {node: '>= 10'}
 
   '@next/env@16.4.0':
     resolution: {integrity: sha512-pyLlT5oafGlX8X7xjgGNXz5dNIDSxREm+qD6i9VLSZiZFopA/XWl8NM/KPmLx/8EG/++c49iid3gNWSQW1+2dQ==}
@@ -7096,6 +7192,9 @@ packages:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
 
+  mdast-util-directive@3.1.1:
+    resolution: {integrity: sha512-Gqpa3MHorXYEZ0VfbroyvBlVKUfz371V6mIERqOYMcb0W1D3LwmFq1ZW4O2TDrbn+4ZmGLwMWeFRJgYZ+bc5fQ==}
+
   mdast-util-find-and-replace@3.0.3:
     resolution: {integrity: sha512-xPgpDNl0/OXHsI7TlaIs22lWnH3KlpvZdXG1ET/m/YT2Hhdkx8lJV4kLphE6l9simyM4KPDFBwas08BgEob6Jw==}
 
@@ -7238,6 +7337,9 @@ packages:
 
   micromark-core-commonmark@2.0.4:
     resolution: {integrity: sha512-wxEeE8v8XVvOrxn1TZj74qYhAtTQsSqufHVS3uNVyT1MupXxhyaHk8/9xDNPh9BmL77QNDgWTkZ3RsYHB2ry7w==}
+
+  micromark-extension-directive@4.0.0:
+    resolution: {integrity: sha512-/C2nqVmXXmiseSSuCdItCMho7ybwwop6RrrRPk0KbOHW21JKoCldC+8rFOaundDoRBUWBnJJcxeA/Kvi34WQXg==}
 
   micromark-extension-gfm-autolink-literal@2.1.0:
     resolution: {integrity: sha512-oOg7knzhicgQ3t4QCjCWgTmfNhvQbDDnJeVu9v81r7NltNCVmhPy1fJRX27pISafdjL+SVc4d3l48Gb6pbRypw==}
@@ -7702,6 +7804,10 @@ packages:
 
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
+
+  pdfjs-dist@6.4.299:
+    resolution: {integrity: sha512-AVl138zALtfaAPvADulE0PZThbYzCBS79nL4pOSL/6Sm/4AH5A21BD9VHt97OlCuzJuCpmeZtAtkinisF4Vb1g==}
+    engines: {node: '>=22.13.0 || >=24'}
 
   pe-library@0.4.1:
     resolution: {integrity: sha512-eRWB5LBz7PpDu4PUlwT0PhnQfTQJlDDdPa35urV4Osrm0t0AqQFGn+UIkU3klZvwJ8KPO3VbBFsXquA6p6kqZw==}
@@ -9397,15 +9503,42 @@ snapshots:
     transitivePeerDependencies:
       - react
 
+  '@atlaskit/adf-schema@24.0.3(react@19.3.0)':
+    dependencies:
+      '@atlaskit/codemod-utils': 4.3.0
+      '@atlaskit/editor-palette': 0.1.0
+      '@atlaskit/editor-tables': 2.10.23(react@19.3.0)
+      '@babel/runtime': 7.29.7
+      '@types/linkify-it': 2.1.0
+      '@types/prosemirror-model': 1.17.0
+      '@types/prosemirror-state': 1.4.0
+      css-color-names: 0.0.4
+      linkify-it: 5.0.2
+      memoize-one: 6.0.0
+      prosemirror-model: 1.14.3
+      prosemirror-transform: 1.3.2
+    transitivePeerDependencies:
+      - react
+
   '@atlaskit/atlassian-context@0.11.0(react@18.3.1)':
     dependencies:
       '@babel/runtime': 7.29.7
       react: 18.3.1
 
+  '@atlaskit/atlassian-context@0.11.0(react@19.3.0)':
+    dependencies:
+      '@babel/runtime': 7.29.7
+      react: 19.3.0
+
   '@atlaskit/browser-apis@0.0.2(react@18.3.1)':
     dependencies:
       '@babel/runtime': 7.29.7
       react: 18.3.1
+
+  '@atlaskit/browser-apis@0.0.2(react@19.3.0)':
+    dependencies:
+      '@babel/runtime': 7.29.7
+      react: 19.3.0
 
   '@atlaskit/codemod-utils@4.3.0':
     dependencies:
@@ -9438,9 +9571,28 @@ snapshots:
     transitivePeerDependencies:
       - react
 
+  '@atlaskit/editor-tables@2.10.23(react@19.3.0)':
+    dependencies:
+      '@atlaskit/editor-prosemirror': 7.3.0
+      '@atlaskit/platform-feature-flags': 1.1.3(react@19.3.0)
+      '@atlaskit/tmp-editor-statsig': 103.0.1(react@19.3.0)
+      '@babel/runtime': 7.29.7
+    transitivePeerDependencies:
+      - react
+
   '@atlaskit/feature-gate-js-client@5.8.0(react@18.3.1)':
     dependencies:
       '@atlaskit/atlassian-context': 0.11.0(react@18.3.1)
+      '@babel/runtime': 7.29.7
+      '@statsig/client-core': 3.33.5
+      '@statsig/js-client': 3.33.5
+      eventemitter3: 4.0.7
+    transitivePeerDependencies:
+      - react
+
+  '@atlaskit/feature-gate-js-client@5.8.0(react@19.3.0)':
+    dependencies:
+      '@atlaskit/atlassian-context': 0.11.0(react@19.3.0)
       '@babel/runtime': 7.29.7
       '@statsig/client-core': 3.33.5
       '@statsig/js-client': 3.33.5
@@ -9453,9 +9605,21 @@ snapshots:
       '@babel/runtime': 7.29.7
       react: 18.3.1
 
+  '@atlaskit/interaction-context@3.1.0(react@19.3.0)':
+    dependencies:
+      '@babel/runtime': 7.29.7
+      react: 19.3.0
+
   '@atlaskit/platform-feature-flags@1.1.3(react@18.3.1)':
     dependencies:
       '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
+      '@babel/runtime': 7.29.7
+    transitivePeerDependencies:
+      - react
+
+  '@atlaskit/platform-feature-flags@1.1.3(react@19.3.0)':
+    dependencies:
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.3.0)
       '@babel/runtime': 7.29.7
     transitivePeerDependencies:
       - react
@@ -9475,6 +9639,21 @@ snapshots:
       scheduler: 0.23.2
       uuid: 11.1.1
 
+  '@atlaskit/react-ufo@6.7.5(react@19.3.0)':
+    dependencies:
+      '@atlaskit/atlassian-context': 0.11.0(react@19.3.0)
+      '@atlaskit/browser-apis': 0.0.2(react@19.3.0)
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.3.0)
+      '@atlaskit/interaction-context': 3.1.0(react@19.3.0)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@19.3.0)
+      '@babel/runtime': 7.29.7
+      '@opentelemetry/api': 1.9.1
+      bind-event-listener: 3.0.0
+      bowser-ultralight: 1.0.6
+      react: 19.3.0
+      scheduler: 0.23.2
+      uuid: 11.1.1
+
   '@atlaskit/tmp-editor-statsig@103.0.1(react@18.3.1)':
     dependencies:
       '@atlaskit/feature-gate-js-client': 5.8.0(react@18.3.1)
@@ -9482,6 +9661,14 @@ snapshots:
       '@atlaskit/react-ufo': 6.7.5(react@18.3.1)
       '@babel/runtime': 7.29.7
       react: 18.3.1
+
+  '@atlaskit/tmp-editor-statsig@103.0.1(react@19.3.0)':
+    dependencies:
+      '@atlaskit/feature-gate-js-client': 5.8.0(react@19.3.0)
+      '@atlaskit/platform-feature-flags': 1.1.3(react@19.3.0)
+      '@atlaskit/react-ufo': 6.7.5(react@19.3.0)
+      '@babel/runtime': 7.29.7
+      react: 19.3.0
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -11150,6 +11337,54 @@ snapshots:
   '@muse-code/sdk@1.4.2(@types/node@26.6.4)':
     optionalDependencies:
       '@types/node': 26.6.4
+
+  '@napi-rs/canvas-android-arm64@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas-darwin-arm64@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas-darwin-x64@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas-linux-arm-gnueabihf@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas-linux-arm64-gnu@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas-linux-arm64-musl@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas-linux-riscv64-gnu@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas-linux-x64-gnu@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas-linux-x64-musl@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas-win32-arm64-msvc@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas-win32-x64-msvc@1.0.11':
+    optional: true
+
+  '@napi-rs/canvas@1.0.11':
+    optionalDependencies:
+      '@napi-rs/canvas-android-arm64': 1.0.11
+      '@napi-rs/canvas-darwin-arm64': 1.0.11
+      '@napi-rs/canvas-darwin-x64': 1.0.11
+      '@napi-rs/canvas-linux-arm-gnueabihf': 1.0.11
+      '@napi-rs/canvas-linux-arm64-gnu': 1.0.11
+      '@napi-rs/canvas-linux-arm64-musl': 1.0.11
+      '@napi-rs/canvas-linux-riscv64-gnu': 1.0.11
+      '@napi-rs/canvas-linux-x64-gnu': 1.0.11
+      '@napi-rs/canvas-linux-x64-musl': 1.0.11
+      '@napi-rs/canvas-win32-arm64-msvc': 1.0.11
+      '@napi-rs/canvas-win32-x64-msvc': 1.0.11
+    optional: true
 
   '@next/env@16.4.0': {}
 
@@ -15972,6 +16207,21 @@ snapshots:
 
   math-intrinsics@1.1.0: {}
 
+  mdast-util-directive@3.1.1(supports-color@8.1.1):
+    dependencies:
+      '@types/mdast': 4.0.4
+      '@types/unist': 3.0.3
+      ccount: 2.0.1
+      devlop: 1.1.0
+      mdast-util-from-markdown: 2.1.0(supports-color@8.1.1)
+      mdast-util-to-markdown: 2.2.0
+      micromark-util-character: 2.1.1
+      parse-entities: 4.0.2
+      stringify-entities: 4.0.4
+      unist-util-visit-parents: 6.0.2
+    transitivePeerDependencies:
+      - supports-color
+
   mdast-util-find-and-replace@3.0.3:
     dependencies:
       '@types/mdast': 4.0.4
@@ -16394,6 +16644,16 @@ snapshots:
       micromark-util-subtokenize: 2.1.0
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.3
+
+  micromark-extension-directive@4.0.0:
+    dependencies:
+      devlop: 1.1.0
+      micromark-factory-space: 2.1.0
+      micromark-factory-whitespace: 2.0.1
+      micromark-util-character: 2.1.1
+      micromark-util-symbol: 2.0.1
+      micromark-util-types: 2.0.3
+      parse-entities: 4.0.2
 
   micromark-extension-gfm-autolink-literal@2.1.0:
     dependencies:
@@ -16939,6 +17199,10 @@ snapshots:
   path-to-regexp@8.4.2: {}
 
   pathe@2.0.3: {}
+
+  pdfjs-dist@6.4.299:
+    optionalDependencies:
+      '@napi-rs/canvas': 1.0.11
 
   pe-library@0.4.1: {}
 

@@ -22,3 +22,28 @@ export function resolveMarkdownLink(url: string, baseURL?: string, fileBaseURL?:
     return undefined
   }
 }
+
+/** Local Markdown destinations, including source line suffixes, retain their runtime identity. */
+export function localMarkdownPath(url: string): string | undefined {
+  if (!url || url.startsWith('#') || url.startsWith('//')) return undefined
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^file:/i.test(url) && !/^[a-z]:[\\/]/i.test(url))
+    return undefined
+  return url.split('#')[0]!.replace(/:\d+(?::\d+)?$/, '') || undefined
+}
+
+// A render-only URL: clients intercept it and request a file-scoped preview from the runtime.
+const localLinkOrigin = 'https://dovo-local-file.invalid'
+export function localMarkdownURL(url: string) {
+  const path = localMarkdownPath(url)
+  return path === undefined ? undefined : `${localLinkOrigin}/?path=${encodeURIComponent(path)}`
+}
+export function markdownURLLocalPath(url: string) {
+  try {
+    const value = new URL(url)
+    return value.origin === localLinkOrigin
+      ? (value.searchParams.get('path') ?? undefined)
+      : undefined
+  } catch {
+    return undefined
+  }
+}

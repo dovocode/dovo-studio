@@ -1,4 +1,5 @@
 import { reviewRoute } from './endpoints/review-routes.js'
+import { shareTaskFile, openTaskFile } from './endpoints/task-files.js'
 import { readTaskImage } from './endpoints/task-images.js'
 import { deviceHostRoute } from './endpoints/device-host-routes.js'
 import { memoryRoute } from './endpoints/memory-routes.js'
@@ -19,6 +20,8 @@ import {
   artifactCreateSchema,
   artifactUpdateSchema,
   artifactReadSchema,
+  artifactDeleteSchema,
+  artifactAttachSchema,
   artifactScopeSchema,
 } from '@dovo/protocol'
 import { mutableArray } from '@dovo/protocol'
@@ -228,6 +231,33 @@ export function route(
           throw new HttpError(403, 'Enable Dovo Artifacts in this computer’s settings first')
         if (path === '/api/artifacts/library')
           return yield* serviceResult({ artifacts: s.artifacts.library() })
+        if (path === '/api/artifacts/delete') {
+          const { taskId, id, expectedRevision } = decode(
+            artifactDeleteSchema,
+            yield* serviceResult(body(request, 4096)),
+          )
+          return yield* serviceResult(s.artifacts.delete(taskId, id, expectedRevision))
+        }
+        if (path === '/api/artifacts/attach') {
+          const { taskId, id, targetTaskId, revision } = decode(
+            artifactAttachSchema,
+            yield* serviceResult(body(request, 4096)),
+          )
+          return yield* serviceResult({
+            artifact: s.artifacts.attach(taskId, id, targetTaskId, revision),
+          })
+        }
+        if (path === '/api/artifacts/snapshot') {
+          const { taskId, id, revision } = decode(
+            artifactReadSchema,
+            yield* serviceResult(body(request, 4096)),
+          )
+          return yield* serviceResult(
+            s.artifacts.snapshot(taskId, id, revision, (content) =>
+              s.browsers.artifactSnapshot(content),
+            ),
+          )
+        }
         if (path === '/api/artifacts/create' || path === '/api/artifacts/update') {
           if (!device.owner) throw new HttpError(403, 'Artifacts are created by the thread’s agent')
           // JSON can escape each content byte as six characters; metadata stays small.
@@ -536,6 +566,12 @@ export function route(
           revision: s.store.version(),
         })
       }
+      if (method === 'POST' && path === '/api/tasks/files/open')
+        return yield* serviceResult(openTaskFile(s, yield* serviceResult(body(request, 8192))))
+      if (method === 'POST' && path === '/api/tasks/files/share')
+        return yield* serviceResult(
+          shareTaskFile(s, yield* serviceResult(body(request, 8192)), token),
+        )
       if (method === 'POST' && path === '/api/tasks/images/read')
         return yield* serviceResult(readTaskImage(s, yield* serviceResult(body(request, 8192))))
       if (method === 'POST' && path === '/api/activity') {

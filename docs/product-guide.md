@@ -958,6 +958,15 @@ runtime as their destination. Historical turns without a recorded host show an u
 rather than attributing them to the currently connected runtime. Task rows reserve space for the
 device beside the branch.
 
+Local file links in task chat (absolute paths, relative checkout paths, and `file://` URLs) open a
+preview served by the connected runtime on desktop/web and mobile. Source line suffixes are removed
+from the file lookup. Images render inline; mobile image previews also offer the original file. The
+preview page renders images, text and sandboxed HTML, and PDFs and offers **Download original**;
+unsupported formats retain the download action. Files outside the checkout must be explicitly linked
+by the assistant in that thread. Preview URLs expire after 15 minutes, contain no device token, and
+stop working when the device is revoked. Opening a chat file never creates a checkout or runs its
+setup. HTTP runtime connections remain supported.
+
 The mobile Markdown dependency has a pnpm patch for live iOS accessibility geometry: wrapped
 paragraphs and links recompute their screen coordinates after scrolling, keyboard changes and native
 tab transitions, preserving VoiceOver navigation without flattening Markdown into a single label.
@@ -1168,3 +1177,22 @@ Fenced `mermaid` blocks render as diagrams on desktop and mobile. Desktop diagra
 download, fullscreen and pan/zoom controls. Mobile renders completed fences offline; unfinished
 streaming fences stay as source. Invalid diagrams keep their readable source instead of breaking the
 message. Diagram rendering loads only when needed and uses Mermaid's strict security mode.
+
+### Rich thread rendering
+
+On desktop/web and mobile, an image or video link alone on a top-level line renders inline,
+including ordinary `[Screenshot](path)` links and bare HTTP media URLs. File links alone on a line
+become compact cards with file-type icons. Links in sentences, lists, quotes, tables and code keep
+their normal presentation. Runtime-local paths resolve on the thread’s computer.
+
+File cards preview first. Desktop cards offer Download and Open in actions; mobile cards open an
+in-app preview sheet with browser/download fallbacks and applications on the runtime computer.
+Images retain the existing native mobile image viewer. Videos have playback controls. PDFs use
+self-hosted PDF.js with page navigation and zoom, loading one page at a time without an external
+viewer service. File access uses the existing paired connection and scoped, expiring URLs; HTTP
+LAN/VPN connections remain supported. HTML/SVG file previews remain sandboxed.
+
+Valid Codex file citations render as file links with source line ranges. Valid artifact-template
+directives render as template cards. Use template appends a prompt to the current composer draft
+without sending it; standalone Markdown surfaces offer Copy template prompt instead. Invalid or
+unfinished directives and examples inside code remain literal text.
