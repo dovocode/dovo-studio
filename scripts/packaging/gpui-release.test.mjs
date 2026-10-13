@@ -120,6 +120,8 @@ test('build workflow keeps signed downloads in Actions without creating releases
     await readFile(new URL('../../.github/workflows/release-gpui.yml', import.meta.url), 'utf8'),
   )
   assert.equal(workflow.permissions.contents, 'read')
+  assert.equal(workflow.jobs.build.env.DOVO_BUILD_TARGET, 'gpui')
+  assert.ok(workflow.jobs.build.steps.some((step) => step.run === 'pnpm install --frozen-lockfile'))
   assert.equal(workflow.on.pull_request, undefined)
   assert.deepEqual(gpuiBuildTargets.map(({ os, arch }) => `${os}-${arch}`).sort(), [
     'linux-arm64',

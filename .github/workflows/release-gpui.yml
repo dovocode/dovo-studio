@@ -57,6 +57,7 @@ jobs:
     env:
       DOVO_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       DOVO_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      DOVO_BUILD_TARGET: gpui
       CARGO_BUILD_JOBS: '3'
       MACOSX_DEPLOYMENT_TARGET: '13.0'
       RUST_TOOLCHAIN: stable-${{ matrix.rust_host }}
@@ -95,7 +96,7 @@ jobs:
       - run: cargo +"$RUST_TOOLCHAIN" fmt --manifest-path apps/desktop-gpui/Cargo.toml --check
       - run: cargo +"$RUST_TOOLCHAIN" clippy --locked --manifest-path apps/desktop-gpui/Cargo.toml --all-targets -- -D warnings
       - run: cargo +"$RUST_TOOLCHAIN" test --locked --manifest-path apps/desktop-gpui/Cargo.toml
-      - run: node --test scripts/packaging/gpui-release.test.mjs scripts/packaging/gpui-launcher.test.mjs
+      - run: node --test scripts/postinstall.test.mjs scripts/packaging/gpui-release.test.mjs scripts/packaging/gpui-launcher.test.mjs
       - run: cargo +"$RUST_TOOLCHAIN" build --locked --manifest-path apps/desktop-gpui/Cargo.toml --release
       - run: pnpm run package:prepare-runtime
         env:

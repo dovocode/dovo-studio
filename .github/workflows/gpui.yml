@@ -9,6 +9,8 @@ on:
       - 'packages/studio-ui/mcp-apps/**'
       - 'scripts/check-mcp-apps-browser.mjs'
       - 'scripts/build-gpui-assets.mjs'
+      - 'scripts/postinstall.mjs'
+      - 'scripts/postinstall.test.mjs'
       - 'scripts/fixtures/gpui-forge.mjs'
       - 'scripts/fixtures/gpui-task-revisions.mjs'
       - 'scripts/fixtures/gpui-child-agents.mjs'
@@ -35,6 +37,8 @@ on:
       - 'scripts/build-mcp-apps.mjs'
       - 'pnpm-lock.yaml'
       - 'scripts/build-gpui-assets.mjs'
+      - 'scripts/postinstall.mjs'
+      - 'scripts/postinstall.test.mjs'
       - 'scripts/fixtures/gpui-forge.mjs'
       - 'scripts/fixtures/gpui-task-revisions.mjs'
       - 'scripts/fixtures/gpui-child-agents.mjs'
@@ -58,6 +62,7 @@ jobs:
     timeout-minutes: 45
     env:
       CARGO_BUILD_JOBS: '2'
+      DOVO_BUILD_TARGET: gpui
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-build
@@ -95,4 +100,4 @@ jobs:
       - run: cargo +stable build --locked --manifest-path apps/desktop-gpui/Cargo.toml
       - run: pnpm test:gpui:composer
       - run: pnpm test:gpui:browser
-      - run: node --test scripts/packaging/generate-distribution.test.mjs scripts/packaging/gpui-launcher.test.mjs scripts/packaging/gpui-release.test.mjs
+      - run: node --test scripts/postinstall.test.mjs scripts/packaging/generate-distribution.test.mjs scripts/packaging/gpui-launcher.test.mjs scripts/packaging/gpui-release.test.mjs
