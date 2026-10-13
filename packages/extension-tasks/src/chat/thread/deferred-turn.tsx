@@ -59,7 +59,8 @@ function selectionWithin(element: Element) {
 
 /**
  * Builds a turn's Markdown and tool trees only near the viewport and releases them again far
- * away, keeping the last measured height. Pinned turns, focus and selected text stay mounted.
+ * away, keeping the last measured height. Pinned turns, focus, selected text and detached previews
+ * stay mounted.
  */
 export function DeferredTurn({
   id,
@@ -78,10 +79,11 @@ export function DeferredTurn({
   // Removing a focused control fires no blur, so check that it is still the active element.
   const focused = useRef<EventTarget | null>(null)
   const hasFocus = () => !!focused.current && focused.current === document.activeElement
+  const hasInteraction = (target: Element) =>
+    hasFocus() || selectionWithin(target) || !!target.querySelector('[data-preview-overlay="true"]')
   // A pin can be removed before the observer runs. Preserve interaction during that commit;
   // the effect below then records the hold before any focused or selected content disappears.
-  const interacting =
-    !pinned && !near && !!element.current && (hasFocus() || selectionWithin(element.current))
+  const interacting = !pinned && !near && !!element.current && hasInteraction(element.current)
   const mounted = pinned || near || held || interacting
   const rendered = useRef(mounted)
   useLayoutEffect(() => {
@@ -91,7 +93,7 @@ export function DeferredTurn({
   useEffect(() => () => turns?.setMounted(id, false), [turns, id])
   const hold = () => {
     const target = element.current
-    if (target && (hasFocus() || selectionWithin(target))) setHeld(true)
+    if (target && hasInteraction(target)) setHeld(true)
   }
   useEffect(() => {
     const target = element.current
@@ -130,15 +132,23 @@ export function DeferredTurn({
       clearTimeout(timer)
       // Focus moving between two controls blurs before it lands.
       timer = setTimeout(() => {
-        if (!hasFocus() && !selectionWithin(target)) setHeld(false)
+        if (!hasInteraction(target)) setHeld(false)
       })
     }
     // A removed control blurs silently; the reader's next interaction re-checks the hold.
     const events = ['selectionchange', 'focusin', 'focusout', 'pointerdown'] as const
     for (const event of events) document.addEventListener(event, release)
+    // Docking or closing a preview can release a turn without moving focus.
+    const observer = new MutationObserver(release)
+    observer.observe(target, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-preview-overlay'],
+    })
     return () => {
       clearTimeout(timer)
       for (const event of events) document.removeEventListener(event, release)
+      observer.disconnect()
     }
   }, [held])
   useEffect(() => {

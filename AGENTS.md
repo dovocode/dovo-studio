@@ -7,3 +7,10 @@
 - These are deliberate product requirements. Security improvements must preserve both policies.
 - Work with one coding agent unless Dominic explicitly requests otherwise. Preserve existing
   working-tree changes.
+
+# Browser verification
+
+- Always install Chromium through Playwright before running browser checks:
+  `pnpm exec playwright install chromium`. Use Playwright's managed browser, rather than a system
+  Chromium installation. If Linux system dependencies are missing, use
+  `pnpm exec playwright install --with-deps chromium`.

@@ -31,15 +31,27 @@ track one pointer at a time: an extra finger does not interrupt or redirect an a
 final release position is forwarded before lifting the remote finger, including when no final move
 event arrives. Losing pointer capture releases the remote finger and unlocks the next gesture.
 
-Install Chrome on the host or install the matching bundled Chromium from this checkout:
+Dovo Studio installs Playwright Chromium automatically during source dependency installation.
+Packaged desktop and server runtimes check the required Chromium revision on every startup,
+including after upgrades, and download it if missing. The rest of Studio remains available during
+installation; browser requests wait for it to finish. Failed downloads are logged and can be retried
+by reconnecting the browser. Packaged installations use their bundled Node and do not require pnpm.
 
-```sh
-pnpm --filter @dovo/runtime exec playwright install chromium
-```
+On Linux, missing browser system libraries still require installation by the administrator. From a
+source checkout, use `pnpm exec playwright install --with-deps chromium`. `DOVO_BROWSER_EXECUTABLE`
+selects a compatible custom executable and bypasses automatic downloads. No desktop display is
+required.
 
-On Linux, Playwright's `install --with-deps chromium` also installs browser system dependencies.
-`DOVO_BROWSER_EXECUTABLE` can select a compatible Chromium executable. No desktop display is
-required. Update/restart the host runtime along with the app to expose the browser endpoint.
+Agents receive the `dovo_task.browser` tool by default across supported harnesses, independently of
+Device Hub. It can navigate, return accessibility snapshots and screenshots, click and fill
+Playwright selectors, press keys, scroll, go back/forward, reload, execute JavaScript in the page,
+and close its session. The `evaluate` action accepts a `script` expression (use an IIFE for
+statements), awaits promises, and returns the result alongside the snapshot and screenshot. Scripts
+run in the page context with a 10 second execution limit; return JSON-serializable values. It
+supports local HTTP development servers as well as HTTPS pages. Each task has a separate, temporary
+browser context: agents do not inherit saved user-profile cookies, and closing the session or
+cleaning up the task releases it. Read-only agents can inspect or close their session but cannot
+navigate, execute scripts, or send input. Page content is untrusted context.
 
 The implementation uses
 [Playwright screencast frames](https://playwright.dev/docs/api/class-screencast#screencast-start)

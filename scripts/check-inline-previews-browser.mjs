@@ -17,7 +17,7 @@ function App(){
  const [thread,setThread]=useState('one'),[host,setHost]=useState('first'),[tick,setTick]=useState(0),[browser,setBrowser]=useState(false),[placement,setPlacement]=useState('inline');
  window.changeThread=setThread;window.changeHost=setHost;window.updatePreview=()=>setTick(x=>x+1);window.showBrowser=()=>setBrowser(true);
  window.previewWorkspace={...window.previewWorkspace,activeRuntimeId:host};
- return <TooltipProvider><main className="flex h-screen min-w-0"><div className="min-w-0 flex-1 overflow-auto p-5"><p>Conversation stays here</p><ArtifactCard reference={{id:'counter',taskId:thread,title:'Interactive counter',format:'html',revision:3}}/><div style={{height:1500}}/><ArtifactCard reference={{id:'offscreen',taskId:thread,title:'Offscreen',format:'html',revision:1}}/></div>{browser&&<aside className={placement==='inline'?'shrink-0 border-l':'contents'} style={placement==='inline'?{width:500}:undefined}><FloatingPreview title="Browser" placement={placement} onPlacementChange={setPlacement} inlineClassName="h-full" returnLabel="Dock preview" onClose={()=>setBrowser(false)}><BrowserPane taskId={thread}/></FloatingPreview></aside>}</main></TooltipProvider>
+ return <TooltipProvider><main className="flex h-screen min-w-0"><div className="min-w-0 flex-1 overflow-auto p-5"><p>Conversation stays here</p><section className="studio-chat-turn" style={{contentVisibility:'auto',containIntrinsicSize:'auto 240px'}}><div className="max-w-full overflow-hidden" style={{width:420}}><ArtifactCard reference={{id:'counter',taskId:thread,title:'Interactive counter',format:'html',revision:3}}/></div></section><div style={{height:1500}}/><ArtifactCard reference={{id:'offscreen',taskId:thread,title:'Offscreen',format:'html',revision:1}}/></div>{browser&&<aside className={placement==='inline'?'shrink-0 border-l':'contents'} style={placement==='inline'?{width:500}:undefined}><FloatingPreview title="Browser" placement={placement} onPlacementChange={setPlacement} inlineClassName="h-full" returnLabel="Dock preview" onClose={()=>setBrowser(false)}><BrowserPane taskId={thread}/></FloatingPreview></aside>}</main></TooltipProvider>
 }
 createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
 `,
@@ -130,6 +130,14 @@ try {
     await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, { steps: 10 })
     await page.mouse.up()
   }
+  assert.equal(
+    await floating.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + 20))
+    }),
+    true,
+    'Floating previews must escape completed-turn containment and message clipping',
+  )
   const before = await floating.boundingBox()
   await drag(inline.getByRole('button', { name: 'Move Interactive counter preview' }), -140, -100)
   const moved = await floating.boundingBox()

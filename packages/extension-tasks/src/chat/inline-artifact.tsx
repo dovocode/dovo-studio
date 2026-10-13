@@ -9,6 +9,7 @@ import {
 import { useWorkspace } from '@dovo/studio-core'
 import { Button, IconButton, MessageResponse } from '@dovo/studio-ui'
 import { FloatingPreview, type PreviewPlacement } from '../detail/floating-preview'
+import { useArtifactPreviewTheme } from './preview-theme'
 
 export function InlineArtifact({
   reference,
@@ -18,6 +19,7 @@ export function InlineArtifact({
   onOpen: () => void
 }) {
   const { request, connected } = useWorkspace()
+  const previewTheme = useArtifactPreviewTheme()
   const root = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
   const [artifact, setArtifact] = useState<Artifact>()
@@ -123,8 +125,8 @@ export function InlineArtifact({
                 title={artifact.title}
                 sandbox="allow-scripts"
                 referrerPolicy="no-referrer"
-                srcDoc={artifactPreviewHtml(artifact.content)}
-                className={source ? 'hidden' : 'min-h-0 w-full flex-1 border-0 bg-white'}
+                srcDoc={artifactPreviewHtml(artifact.content, previewTheme)}
+                className={source ? 'hidden' : 'min-h-0 w-full flex-1 border-0 bg-background'}
               />
             )}
             {(source || artifact.format === 'code') && (

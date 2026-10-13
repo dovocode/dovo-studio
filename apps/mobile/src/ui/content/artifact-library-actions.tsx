@@ -87,6 +87,8 @@ export function ArtifactLibraryActions({
           onPress={() => {
             setError('')
             setAdded('')
+            setQuery('')
+            setTarget('')
             setAction('add')
           }}
         />
@@ -139,13 +141,21 @@ export function ArtifactLibraryActions({
                 value={target}
                 items={[
                   { id: '', name: 'Choose a thread…' },
-                  ...tasks.map((task) => ({ id: task.id, name: task.title })),
+                  ...tasks.map((task) => ({
+                    id: task.id,
+                    name: `${task.title} · ${runtime?.snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.name ?? 'No project'}`,
+                  })),
                 ]}
                 onChange={setTarget}
               />
+              {!!query.trim() && !tasks.length && (
+                <Action secondary label="Clear thread search" onPress={() => setQuery('')} />
+              )}
               {!tasks.length && (
                 <Text style={styles.muted}>
-                  No matching writable threads. Create or reopen a thread on this computer first.
+                  {query.trim()
+                    ? 'No threads match this search. Clear the search to see available threads.'
+                    : 'No writable threads. Create or reopen a thread on this computer first.'}
                 </Text>
               )}
             </>

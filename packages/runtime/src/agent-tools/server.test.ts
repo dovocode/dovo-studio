@@ -83,6 +83,63 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
     })
     await client.connect(transport)
     expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('terminal_run')
+    const browser = vi.spyOn(runtime.services.browsers, 'agentCommand').mockResolvedValue({
+      ok: true,
+      url: 'http://localhost:3000/',
+      title: 'Test',
+      snapshot: '- heading "Test"',
+      image: 'aGVsbG8=',
+    })
+    const browserResult = await client.callTool({
+      name: 'browser',
+      arguments: { action: 'navigate', url: 'http://localhost:3000/', taskId: 'other' },
+    })
+    expect(browserResult.isError).not.toBe(true)
+    expect(browser).toHaveBeenCalledWith(
+      'task',
+      { action: 'navigate', url: 'http://localhost:3000/' },
+      expect.any(Function),
+    )
+    expect(browserResult.content).toEqual([
+      {
+        type: 'text',
+        text: JSON.stringify({
+          ok: true,
+          url: 'http://localhost:3000/',
+          title: 'Test',
+          snapshot: '- heading "Test"',
+        }),
+      },
+      { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' },
+    ])
+    const invalidBrowser = await client.callTool({
+      name: 'browser',
+      arguments: { action: 'fill', selector: 'input' },
+    })
+    expect(invalidBrowser.isError).toBe(true)
+    expect(browser).toHaveBeenCalledTimes(1)
+    browser.mockResolvedValueOnce({
+      ok: true,
+      result: { answer: 42 },
+      url: 'http://localhost:3000/',
+      title: 'Test',
+      snapshot: '',
+      image: 'aGVsbG8=',
+    })
+    const evaluated = await client.callTool({
+      name: 'browser',
+      arguments: { action: 'evaluate', script: '({ answer: 42 })' },
+    })
+    expect(evaluated.isError).not.toBe(true)
+    expect(JSON.parse(decodeToolText(evaluated))).toMatchObject({ result: { answer: 42 } })
+    expect(browser).toHaveBeenLastCalledWith(
+      'task',
+      { action: 'evaluate', script: '({ answer: 42 })' },
+      expect.any(Function),
+    )
+    expect(
+      (await client.callTool({ name: 'browser', arguments: { action: 'evaluate' } })).isError,
+    ).toBe(true)
     expect((await client.callTool({ name: 'devices' })).isError).not.toBe(true)
     const invalid = await client.callTool({ name: 'device', arguments: { id: 3, action: 'boot' } })
     expect(invalid.isError).toBe(true)
@@ -439,6 +496,7 @@ it('keeps read-only providers from sending task terminal or device input', async
   try {
     await client.connect(transport)
     expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+      'browser',
       'subagent_spawn',
       'subagent_list',
       'subagent_read',
@@ -449,6 +507,22 @@ it('keeps read-only providers from sending task terminal or device input', async
       'devices',
       'device',
     ])
+    expect(
+      (
+        await client.callTool({
+          name: 'browser',
+          arguments: { action: 'navigate', url: 'http://localhost:3000' },
+        })
+      ).isError,
+    ).toBe(true)
+    expect(
+      (
+        await client.callTool({
+          name: 'browser',
+          arguments: { action: 'evaluate', script: '1 + 1' },
+        })
+      ).isError,
+    ).toBe(true)
     expect(
       (
         await client.callTool({
@@ -1193,6 +1267,7 @@ it('keeps device tools hidden while Device Hub is off', async () => {
   try {
     await client.connect(transport)
     const names = (await client.listTools()).tools.map((tool) => tool.name)
+    expect(names).toContain('browser')
     for (const name of [
       'devices',
       'device',

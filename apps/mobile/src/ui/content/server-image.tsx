@@ -72,6 +72,48 @@ export function ServerImage({
       void requests.stop()
     }
   }, [identity, revision, connected, readEffect])
+  const [expandedImage, setExpandedImage] = useState<{
+    identity: string
+    uri?: string
+    error?: string
+  }>()
+  useEffect(() => {
+    if (!preview || !connected || 'uri' in source) return
+    let active = true
+    const requests = clientTaskScope()
+    setExpandedImage(undefined)
+    const input =
+      'reference' in source
+        ? {
+            taskId: source.taskId,
+            eventId: source.reference.eventId,
+            index: source.reference.index,
+          }
+        : { taskId: source.taskId, path: source.path }
+    void requests.run(
+      readEffect('/api/tasks/images/read', { ...input, maxSize: 2048 }, taskImageReadSchema).pipe(
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            if (active) setExpandedImage({ identity, uri: result.uri })
+          }),
+        ),
+        Effect.catch((reason) =>
+          Effect.sync(() => {
+            if (active)
+              setExpandedImage({
+                identity,
+                error: `Showing the smaller preview. ${reason.message}`,
+              })
+          }),
+        ),
+      ),
+    )
+    return () => {
+      active = false
+      void requests.stop()
+    }
+  }, [preview, identity, connected, readEffect])
+  const expanded = expandedImage?.identity === identity ? expandedImage : undefined
   const fail = () =>
     setLoaded((current) =>
       current?.identity === identity
@@ -146,13 +188,24 @@ export function ServerImage({
                 {original.error}
               </Text>
             )}
+            {expanded?.error && <Text style={styles.muted}>{expanded.error}</Text>}
+            {preview && connected && !('uri' in source) && !expanded && (
+              <ActivityIndicator color={colors.muted} accessibilityLabel="Loading sharper image" />
+            )}
             {uri && (
               <Image
-                source={{ uri }}
+                source={{ uri: expanded?.uri ?? uri }}
                 accessibilityLabel={label}
                 resizeMode="contain"
                 style={{ width: '100%', height: 600 }}
-                onError={fail}
+                onError={() => {
+                  if (expanded?.uri)
+                    setExpandedImage({
+                      identity,
+                      error: 'Could not display the sharper image. Showing the smaller preview.',
+                    })
+                  else fail()
+                }}
               />
             )}
           </ScrollView>

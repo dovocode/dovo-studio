@@ -8,7 +8,7 @@ import {
   uuidSchema,
 } from '../shared/schema.js'
 
-export const ARTIFACT_MAX_BYTES = 2 * 1024 * 1024
+export const ARTIFACT_MAX_BYTES = 100 * 1024 * 1024
 export const artifactRetentionSchema = Schema.Literals([
   'forever',
   'immediately',
@@ -153,11 +153,56 @@ export function artifactFile(artifact: Artifact) {
     }[artifact.format],
   }
 }
+export type ArtifactPreviewTheme = {
+  mode: 'light' | 'dark'
+  background: string
+  foreground: string
+  surface: string
+  border: string
+  accent: string
+}
 /** Guest gets no host APIs, runtime credentials, network or navigation privileges. */
-export function artifactPreviewHtml(content: string) {
+export function artifactPreviewHtml(content: string, theme?: ArtifactPreviewTheme) {
+  const dark = theme?.mode === 'dark'
+  const defaults = dark
+    ? {
+        background: '#080808',
+        foreground: '#ededed',
+        surface: '#101010',
+        border: '#282828',
+        accent: '#7cc9ff',
+      }
+    : {
+        background: '#f7f8fa',
+        foreground: '#151515',
+        surface: '#ffffff',
+        border: '#dddddd',
+        accent: '#0965b5',
+      }
+  // Restrict interpolated colors so theme values can never inject guest or wrapper markup.
+  const color = (name: keyof typeof defaults) => {
+    const value = theme?.[name]
+    return value && /^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i.test(value)
+      ? value
+      : defaults[name]
+  }
+  const variables = (['background', 'foreground', 'surface', 'border', 'accent'] as const)
+    .map((name) => `--preview-${name}:${color(name)}`)
+    .join(';')
+  const themeStyle = `:where(:root){${variables};color-scheme:${dark ? 'dark' : 'light'}}
+:where(html){min-height:100%;background:var(--preview-background);color:var(--preview-foreground)}
+:where(body){font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;line-height:1.6}
+:where(button,input,select,textarea){font:inherit;color:inherit}
+:where(button,input:not([type=range]):not([type=checkbox]):not([type=radio]),select,textarea){background:var(--preview-surface);border:1px solid var(--preview-border);border-radius:8px;padding:6px 10px}
+:where(button){cursor:pointer}
+:where(a){color:var(--preview-accent);text-underline-offset:3px}
+:where(:focus-visible){outline:2px solid var(--preview-accent);outline-offset:2px}
+:where(code,pre){font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+:where(table){border-collapse:collapse}
+:where(th,td){padding:8px 12px;border-bottom:1px solid var(--preview-border);text-align:left}`
   const policy =
     "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; worker-src 'none'"
-  const html = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}">${content}`
+  const html = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${themeStyle}</style>${content}`
   const escaped = html
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
@@ -165,5 +210,17 @@ export function artifactPreviewHtml(content: string) {
     .replace(/>/g, '&gt;')
   // The outer document is trusted and has no bridge to the guest. This also isolates iOS's native WebView channel.
   const outerPolicy = policy.replace("frame-src 'none'", 'frame-src about:')
-  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${outerPolicy}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;height:100%;background:#fff}iframe{border:0;width:100%;height:100%;display:block}</style><iframe title="Artifact preview" sandbox="allow-scripts" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'" srcdoc="${escaped}"></iframe>`
+  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${outerPolicy}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;height:100%;background:${color('background')};color:${color('foreground')};color-scheme:${dark ? 'dark' : 'light'}}iframe{border:0;width:100%;height:100%;display:block}</style><iframe title="Artifact preview" sandbox="allow-scripts" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'" srcdoc="${escaped}"></iframe>`
+}
+
+/** Fence arbitrary source without allowing embedded fences to become Markdown markup. */
+export function artifactSourceMarkdown(
+  artifact: Pick<Artifact, 'content' | 'format' | 'language'>,
+) {
+  const runs = artifact.content.match(/`+/g) ?? []
+  const fence = '`'.repeat(runs.reduce((length, run) => Math.max(length, run.length + 1), 3))
+  const language =
+    artifact.language ??
+    (artifact.format === 'code' ? 'text' : artifact.format === 'svg' ? 'xml' : artifact.format)
+  return `${fence}${/^[\w+-]+$/.test(language) ? language : 'text'}\n${artifact.content}\n${fence}`
 }

@@ -1,3 +1,4 @@
+import { taskFileShareSchema } from '@dovo/protocol'
 import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCallback, useEffect, useMemo, useRef, useDeferredValue } from 'react'
@@ -11,7 +12,13 @@ import {
   type FileOptions,
 } from '@pierre/diffs/react'
 import { RefreshCw, Search, X } from 'lucide-react'
-import { responses, useDiffOptions, useWorkspace, type Task } from '@dovo/studio-core'
+import {
+  responses,
+  useDiffOptions,
+  useWorkspace,
+  useStudioHost,
+  type Task,
+} from '@dovo/studio-core'
 import { Button, IconButton, FileBrowserTree } from '@dovo/studio-ui'
 import { ResizableSidebar } from './resizable-sidebar'
 import { useLiveRefresh } from './live-refresh'
@@ -26,7 +33,9 @@ function HighlightedFile({
   onReference,
   onSave,
   onEditingChange,
+  readOnly,
 }: {
+  readOnly: boolean
   taskId: string
   path: string
   contents: string
@@ -172,7 +181,7 @@ function HighlightedFile({
             size="sm"
             variant="outline"
             className="h-6 px-2 text-[0.625rem]"
-            disabled={!!selection || saving}
+            disabled={readOnly || !!selection || saving}
             onClick={() => setEditing(true)}
           >
             Edit
@@ -220,8 +229,10 @@ function HighlightedFile({
       </div>
       <div className="border-t px-3 py-1 text-[0.625rem] text-muted-foreground">
         {editing
-          ? 'Editing file · ⌘Z undo · ⌘F find'
-          : 'Drag line numbers or Shift-click for a range · Click + for one line'}
+          ? `Editing file · ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}Z undo · ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}F find`
+          : readOnly
+            ? 'Read-only preview · Files over 1 MB must be edited externally'
+            : 'Drag line numbers or Shift-click for a range · Click + for one line'}
       </div>
     </>
   )
@@ -240,12 +251,19 @@ export function TaskFiles({
     () => new Map(task.files.map((file) => [file.path, fileStats(file)])),
     [task.files],
   )
-  const { request, connected } = useWorkspace()
+  const { request, connected, connection } = useWorkspace()
+  const { openExternalLink } = useStudioHost()
+  const [readError, setReadError] = useApplicationState('')
+  const [loadedPath, setLoadedPath] = useApplicationState('')
   const [paths, setPaths] = useApplicationState<string[]>([])
   const [selected, setSelected] = useApplicationState('')
   const selectedRef = useRef(selected)
   selectedRef.current = selected
   const [contents, setContents] = useApplicationState('')
+  const readOnly = useMemo(
+    () => new TextEncoder().encode(contents).byteLength > 1024 * 1024,
+    [contents],
+  )
   const [loading, setLoading] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
   const editing = useRef(false)
@@ -262,37 +280,51 @@ export function TaskFiles({
   const filter = useDeferredValue(query.trim().toLowerCase())
   useEffect(() => {
     setContents('')
+    setReadError('')
+    setLoadedPath('')
     setLoading(!!selected)
   }, [selected])
   const refresh = useCallback(async () => {
-    const listing = await request(
-      '/api/tasks/files/list',
-      { id: task.id },
-      responses.projectFileList,
-    )
-    setPaths((previous) =>
-      previous.length === listing.files.length &&
-      previous.every((path, index) => path === listing.files[index])
-        ? previous
-        : listing.files,
-    )
-    if (selected && !editing.current) {
-      const generation = editGeneration.current
-      try {
-        const result = await request(
-          '/api/tasks/files/read',
-          { id: task.id, path: selected },
-          responses.projectFile,
-        )
-        if (
-          selectedRef.current === selected &&
-          !editing.current &&
-          generation === editGeneration.current
-        )
-          setContents(result.contents)
-      } finally {
-        if (selectedRef.current === selected) setLoading(false)
+    try {
+      const listing = await request(
+        '/api/tasks/files/list',
+        { id: task.id },
+        responses.projectFileList,
+      )
+      setPaths((previous) =>
+        previous.length === listing.files.length &&
+        previous.every((path, index) => path === listing.files[index])
+          ? previous
+          : listing.files,
+      )
+      if (selected && !editing.current) {
+        const generation = editGeneration.current
+        try {
+          const result = await request(
+            '/api/tasks/files/read',
+            { id: task.id, path: selected },
+            responses.projectFile,
+          )
+          if (
+            selectedRef.current === selected &&
+            !editing.current &&
+            generation === editGeneration.current
+          ) {
+            setContents(result.contents)
+            setLoadedPath(selected)
+            setReadError('')
+          }
+        } catch (cause: unknown) {
+          if (
+            selectedRef.current === selected &&
+            !editing.current &&
+            generation === editGeneration.current
+          )
+            setReadError(cause instanceof Error ? cause.message : String(cause))
+        }
       }
+    } finally {
+      if (selectedRef.current === selected) setLoading(false)
     }
   }, [request, task.id, selected, revision])
   const refreshError = useLiveRefresh(connected, refresh)
@@ -316,7 +348,7 @@ export function TaskFiles({
           <RefreshCw size={14} />
         </IconButton>
       </header>
-      {refreshError && (
+      {refreshError && (!selected || loadedPath === selected) && (
         <p role="alert" className="border-b px-3 py-2 text-xs text-destructive">
           {refreshError}
         </p>
@@ -325,7 +357,48 @@ export function TaskFiles({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {selected ? (
             <>
-              {loading ? (
+              {readError || (refreshError && loadedPath !== selected) ? (
+                <div role="alert" className="space-y-3 p-4 text-sm">
+                  <p>{readError || refreshError}</p>
+                  <div className="flex gap-2">
+                    <Button
+                      disabled={!connected || loading}
+                      onClick={() => setRevision((value) => value + 1)}
+                    >
+                      Retry file
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={!connected}
+                      onClick={() => {
+                        const preview = openExternalLink
+                          ? null
+                          : window.open('about:blank', '_blank')
+                        if (preview) preview.opener = null
+                        void request(
+                          '/api/tasks/files/share',
+                          { taskId: task.id, path: selected },
+                          taskFileShareSchema,
+                        )
+                          .then(async ({ url }) => {
+                            if (!connection) throw new Error('Reconnect to open this file.')
+                            const address = new URL(url, connection.address).toString()
+                            if (openExternalLink) await openExternalLink(address)
+                            else if (preview) preview.location.href = address
+                            else throw new Error('Allow popups to open this file.')
+                          })
+                          .catch((cause: unknown) => {
+                            preview?.close()
+                            if (selectedRef.current === selected)
+                              setReadError(cause instanceof Error ? cause.message : String(cause))
+                          })
+                      }}
+                    >
+                      Open in browser
+                    </Button>
+                  </div>
+                </div>
+              ) : loading ? (
                 <p className="p-4 text-xs text-muted-foreground">Loading file…</p>
               ) : (
                 <HighlightedFile
@@ -334,6 +407,7 @@ export function TaskFiles({
                   taskId={task.id}
                   path={selected}
                   contents={contents}
+                  readOnly={readOnly}
                   onReference={onReference}
                   onSave={async (next, expectedContents) => {
                     await request(

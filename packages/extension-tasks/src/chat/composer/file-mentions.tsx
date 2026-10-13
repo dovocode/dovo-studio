@@ -1,5 +1,5 @@
 import { useAppPreferences } from '@dovo/studio-core'
-import { useEffect, useState, type KeyboardEvent, type RefObject } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import { Schema } from 'effect'
 import { FileText, Hash, Plug, Settings2, Sparkles, SquareSlash } from 'lucide-react'
 import {
@@ -53,10 +53,13 @@ export function useFileMentions({
   prompts?: readonly SavedPrompt[]
   onManagePrompts?: () => void
 }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, connection } = useWorkspace()
   const [caret, setCaret] = useState(0)
-  const [files, setFiles] = useState<string[]>([])
-  const [active, setActive] = useState(0)
+  const [lookup, setLookup] = useState<{ key: string; files: string[]; error: string }>()
+  const [retry, setRetry] = useState(0)
+  const list = useRef<HTMLDivElement>(null)
+  const menuId = useId()
+  const [activeKey, setActiveKey] = useState('')
   const [dismissed, setDismissed] = useState<number | null>(null)
   const { showSkillsInSlashMenu } = useAppPreferences()
   const mention = composerMention(draft, caret)
@@ -94,21 +97,38 @@ export function useFileMentions({
           detail: prompt.text.replace(/\s+/g, ' ').slice(0, 120),
         }))
       : []
+  const lookupKey = JSON.stringify([
+    taskId,
+    connection?.address,
+    connection?.token,
+    trigger,
+    query,
+    connected,
+    retry,
+  ])
+  const files = lookup?.key === lookupKey ? lookup.files : []
+  const lookupError = lookup?.key === lookupKey ? lookup.error : ''
+  const searching = trigger === '@' && connected && lookup?.key !== lookupKey
   const suggestions: Suggestion[] = [
     ...promptItems,
     ...commandItems,
     ...resourceItems,
     ...(trigger === '@' ? files.map((path) => ({ kind: 'file' as const, value: path })) : []),
   ]
+  const itemKey = (item: Suggestion) => `${item.kind}:${item.value}`
+  const active = Math.max(
+    0,
+    suggestions.findIndex((item) => itemKey(item) === activeKey),
+  )
   // A bare "#" always opens, so the saved prompts editor stays one keystroke away.
   const managing = mention?.trigger === '#' && !!onManagePrompts
   const open =
     !!mention &&
     dismissed !== mention.start &&
-    (suggestions.length > 0 || (managing && !mention.query))
+    (suggestions.length > 0 || searching || !!lookupError || (managing && !mention.query))
   useEffect(() => {
     if (trigger !== '@' || query === undefined || !connected) {
-      setFiles([])
+      setLookup(undefined)
       return
     }
     let disposed = false
@@ -116,10 +136,15 @@ export function useFileMentions({
       void request('/api/tasks/files', { id: taskId, query }, filesSchema).then(
         (result) => {
           if (disposed) return
-          setFiles(result.files)
+          setLookup({ key: lookupKey, files: result.files, error: '' })
         },
-        () => {
-          if (!disposed) setFiles([])
+        (cause: unknown) => {
+          if (!disposed)
+            setLookup({
+              key: lookupKey,
+              files: [],
+              error: cause instanceof Error ? cause.message : String(cause),
+            })
         },
       )
     }, 120)
@@ -127,8 +152,12 @@ export function useFileMentions({
       disposed = true
       clearTimeout(timer)
     }
-  }, [trigger, query, taskId, connected, request])
-  useEffect(() => setActive(0), [trigger, query])
+  }, [trigger, query, taskId, connected, request, lookupKey])
+  useEffect(() => setActiveKey(''), [trigger, query])
+  useEffect(() => {
+    if (open)
+      list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [open, activeKey, lookup, trigger, query])
   const track = () => setCaret(input.current?.selectionStart ?? draft.length)
   const choose = (item: Suggestion | undefined) => {
     if (!mention || !item) return
@@ -147,7 +176,7 @@ export function useFileMentions({
     if (item.kind === 'command') {
       const text = draft.slice(0, mention.start) + draft.slice(caret)
       setDraft(text)
-      setFiles([])
+      setLookup(undefined)
       requestAnimationFrame(() => {
         input.current?.focus()
         input.current?.setSelectionRange(mention.start, mention.start)
@@ -158,7 +187,7 @@ export function useFileMentions({
     }
     const next = insertMention(draft, mention.start, caret, item.value, mention.trigger)
     setDraft(next.text)
-    setFiles([])
+    setLookup(undefined)
     requestAnimationFrame(() => {
       input.current?.focus()
       input.current?.setSelectionRange(next.caret, next.caret)
@@ -170,7 +199,10 @@ export function useFileMentions({
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       const step = event.key === 'ArrowDown' ? 1 : -1
-      setActive((index) => (index + step + suggestions.length) % suggestions.length)
+      if (suggestions.length)
+        setActiveKey(
+          itemKey(suggestions[(active + step + suggestions.length) % suggestions.length]),
+        )
     } else if (event.key === 'Enter' || event.key === 'Tab') {
       event.preventDefault()
       choose(suggestions[active] ?? suggestions[0])
@@ -181,6 +213,8 @@ export function useFileMentions({
   }
   const menu = open ? (
     <div
+      ref={list}
+      id={menuId}
       role="listbox"
       aria-label={
         trigger === '@'
@@ -208,12 +242,13 @@ export function useFileMentions({
           item.kind === 'file' ? (slash > 0 ? item.value.slice(0, slash) : '') : item.detail
         return (
           <button
-            key={`${item.kind}:${item.value}`}
+            key={itemKey(item)}
+            id={`${menuId}-${index}`}
             type="button"
             role="option"
             aria-selected={index === active}
             onMouseDown={(event) => event.preventDefault()}
-            onMouseEnter={() => setActive(index)}
+            onMouseEnter={() => setActiveKey(itemKey(item))}
             onClick={() => choose(item)}
             className={cn(
               'flex w-full min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs',
@@ -227,6 +262,23 @@ export function useFileMentions({
           </button>
         )
       })}
+      {searching && (
+        <p role="status" className="px-2 py-1.5 text-xs text-muted-foreground">
+          Searching files…
+        </p>
+      )}
+      {lookupError && (
+        <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
+          <p>{lookupError}</p>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setRetry((value) => value + 1)}
+          >
+            Retry file search
+          </button>
+        </div>
+      )}
       {managing && (
         <button
           type="button"
@@ -243,5 +295,12 @@ export function useFileMentions({
       )}
     </div>
   ) : null
-  return { onKeyDown, track, menu, open }
+  return {
+    menuId,
+    activeId: suggestions[active] ? `${menuId}-${active}` : undefined,
+    onKeyDown,
+    track,
+    menu,
+    open,
+  }
 }

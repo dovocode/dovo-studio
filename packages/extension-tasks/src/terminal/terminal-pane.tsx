@@ -42,6 +42,13 @@ export function TerminalPane({
     sessions.map((session) => session.id),
   )
   const group = groups.find((group) => group.sessions.includes(active?.id ?? ''))
+  const checkoutLabel = (session: (typeof sessions)[number]) => {
+    const link = task?.linkedCheckouts?.find((item) => item.id === session.checkoutId)
+    const repository = workspace.repositories.find(
+      (repo) => repo.id === (link?.repositoryId ?? task?.repositoryId),
+    )
+    return `${repository?.name ?? 'Project'} · ${link?.branch ?? (link ? link.execution : (task?.checkoutBranch ?? 'Primary checkout'))}`
+  }
   const layout = group?.layout ?? 'columns'
   const task = workspace.tasks.find((item) => item.id === taskId)
   const shellReady =
@@ -118,6 +125,7 @@ export function TerminalPane({
                 {tab.sessions.length > 1
                   ? `Terminal ${index + 1} · ${tab.sessions.length} panes`
                   : session.title}
+                {task?.linkedCheckouts?.length ? ` · ${checkoutLabel(session)}` : ''}
                 {session.exited ? ' · exited' : ''}
               </Button>
               <IconButton
@@ -183,7 +191,9 @@ export function TerminalPane({
             >
               {group && group.sessions.length > 1 && (
                 <div className="flex h-7 shrink-0 items-center justify-between px-2 text-[0.625rem] text-muted-foreground">
-                  <span>{session.title}</span>
+                  <span title={checkoutLabel(session)}>
+                    {session.title} · {checkoutLabel(session)}
+                  </span>
                   <IconButton
                     label={`Close ${session.title} pane`}
                     className="size-6"

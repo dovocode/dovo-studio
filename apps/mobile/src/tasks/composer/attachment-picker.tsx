@@ -1,9 +1,9 @@
+import { Effect } from 'effect'
 import { useRef } from 'react'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { Alert, Keyboard, Linking, Platform } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'
-import { isHeicAttachment, jpegAttachmentName } from './attachment-images'
+import { optimizeAttachmentImage } from './optimize-attachment-image'
 import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
@@ -22,43 +22,40 @@ export function useAttachmentPicker(taskId: string) {
     mobileWorkflow(function* () {
       const count =
         snapshot?.workspace.tasks.find((task) => task.id === taskId)?.draftAttachments?.length ?? 0
-      if (count + assets.length > MAX_ATTACHMENTS)
-        throw new Error('Attach up to 5 files per message.')
+      let accepted = 0
+      const rejected: string[] = []
       for (const asset of assets) {
-        const prepared = yield* nativeEffect(async () => {
-          if (!isHeicAttachment(asset)) return asset
-          const context = ImageManipulator.manipulate(asset.uri)
-          try {
-            const image = await context.renderAsync()
+        if (count + accepted >= MAX_ATTACHMENTS) {
+          rejected.push(`${asset.name}: attach up to 5 files per message.`)
+          continue
+        }
+        yield* mobileWorkflow(function* () {
+          const prepared = yield* nativeEffect(() => optimizeAttachmentImage(asset))
+          const data = yield* nativeEffect(async () => {
+            const file = new File(prepared.uri)
             try {
-              const converted = await image.saveAsync({
-                format: SaveFormat.JPEG,
-                compress: 0.8,
-              })
-              return { ...asset, uri: converted.uri, name: jpegAttachmentName(asset.name) }
+              if (file.size > MAX_ATTACHMENT_BYTES)
+                throw new Error(`${prepared.name} is larger than 5 MB`)
+              return await file.base64()
             } finally {
-              image.release()
+              if (prepared.uri !== asset.uri) file.delete()
             }
-          } finally {
-            context.release()
-          }
-        })
-        const data = yield* nativeEffect(async () => {
-          const file = new File(prepared.uri)
-          try {
-            if (file.size > MAX_ATTACHMENT_BYTES)
-              throw new Error(`${prepared.name} is larger than 4 MB`)
-            return await file.base64()
-          } finally {
-            if (prepared.uri !== asset.uri) file.delete()
-          }
-        })
-        yield* callEffect(
-          '/api/attachments/upload',
-          { taskId, id: randomUUID(), name: prepared.name, data },
-          attachmentResultSchema,
+          })
+          yield* callEffect(
+            '/api/attachments/upload',
+            { taskId, id: randomUUID(), name: prepared.name, data },
+            attachmentResultSchema,
+          )
+          accepted++
+        }).pipe(
+          Effect.catch((cause) =>
+            Effect.sync(() => {
+              rejected.push(`${asset.name}: ${cause.message}`)
+            }),
+          ),
         )
       }
+      if (rejected.length) throw new Error(rejected.join('\n'))
     })
   const upload = (assets: AttachmentAsset[]) => {
     if (!connected) return Promise.reject(new Error('Reconnect to attach files.'))
@@ -93,11 +90,11 @@ export function useAttachmentPicker(taskId: string) {
           }
           const photos =
             source === 'camera'
-              ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 })
+              ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 })
               : await ImagePicker.launchImageLibraryAsync({
                   mediaTypes: ['images'],
                   allowsMultipleSelection: true,
-                  quality: 0.8,
+                  quality: 1,
                 })
           return {
             canceled: photos.canceled,

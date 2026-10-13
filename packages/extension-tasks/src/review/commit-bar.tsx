@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Schema } from 'effect'
 import { GitCommitHorizontal, Sparkles } from 'lucide-react'
-import { mutableStruct } from '@dovo/protocol'
+import { mutableStruct, responses } from '@dovo/protocol'
 import { useWorkspace, type Task } from '@dovo/studio-core'
 import { Button, Textarea } from '@dovo/studio-ui'
 
@@ -16,29 +16,57 @@ const commitSchema = mutableStruct({
 export function CommitBar({ task }: { task: Task }) {
   const { request, connected } = useWorkspace()
   const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState<'' | 'write' | 'commit'>('')
+  const [busy, setBusy] = useState<'' | 'write' | 'commit' | 'push'>('')
   const [status, setStatus] = useState('')
+  const [suggestion, setSuggestion] = useState('')
+  const [pushPending, setPushPending] = useState(false)
+  const messageRef = useRef(message)
+  messageRef.current = message
   if (!task.files.length && !status) return null
   const idle = connected && !busy && task.status !== 'running'
   const write = () => {
+    if (!idle) return
+    setSuggestion('')
     setBusy('write')
     setStatus('')
     void request('/api/tasks/commit-message', { id: task.id }, messageSchema)
-      .then((result) => setMessage(result.message))
+      .then((result) => {
+        if (!messageRef.current.trim()) setMessage(result.message)
+        else setSuggestion(result.message)
+      })
       .catch((cause: unknown) => setStatus(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(''))
   }
   const commit = (push: boolean) => {
+    if (!idle || !message.trim()) return
+    const submitted = message
     setBusy('commit')
     setStatus('')
     void request('/api/tasks/commit', { id: task.id, message, push }, commitSchema)
       .then((result) => {
-        setMessage('')
+        setMessage((current) => (current === submitted ? '' : current))
+        setSuggestion('')
+        setPushPending(!!result.pushError)
         setStatus(
           result.pushError
             ? `Committed ${result.commit.slice(0, 8)}, but push failed: ${result.pushError}`
             : `Committed ${result.commit.slice(0, 8)}${push ? ' and pushed' : ''}.`,
         )
+      })
+      .catch((cause: unknown) => setStatus(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setBusy(''))
+  }
+  const push = () => {
+    if (!idle) return
+    setBusy('push')
+    void request(
+      '/api/scm/push',
+      { repositoryId: task.repositoryId, taskId: task.id },
+      responses.ok,
+    )
+      .then(() => {
+        setPushPending(false)
+        setStatus('Branch pushed.')
       })
       .catch((cause: unknown) => setStatus(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(''))
@@ -51,6 +79,7 @@ export function CommitBar({ task }: { task: Task }) {
           placeholder="Commit message"
           value={message}
           maxLength={4000}
+          readOnly={busy === 'commit' || busy === 'push'}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
             if (
@@ -80,7 +109,26 @@ export function CommitBar({ task }: { task: Task }) {
           />
         </Button>
       </div>
-      <div className="flex items-center gap-2">
+      {suggestion && (
+        <div className="space-y-2 rounded border p-2 text-xs">
+          <p>Generated message</p>
+          <pre className="whitespace-pre-wrap break-words">{suggestion}</pre>
+          <Button
+            size="sm"
+            disabled={!!busy}
+            onClick={() => {
+              setMessage(suggestion)
+              setSuggestion('')
+            }}
+          >
+            Use generated message
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSuggestion('')}>
+            Keep my message
+          </Button>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
           variant="outline"
@@ -99,10 +147,15 @@ export function CommitBar({ task }: { task: Task }) {
         >
           Commit &amp; push
         </Button>
+        {pushPending && (
+          <Button size="sm" disabled={!idle} onClick={push}>
+            {busy === 'push' ? 'Pushing…' : 'Retry push'}
+          </Button>
+        )}
         {status && (
           <span
             role="status"
-            className="min-w-0 flex-1 truncate text-[0.6875rem] text-muted-foreground"
+            className="w-full whitespace-pre-wrap break-words text-[0.6875rem] text-muted-foreground"
             title={status}
           >
             {status}

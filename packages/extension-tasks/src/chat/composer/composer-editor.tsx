@@ -1,4 +1,5 @@
-import { memo, useCallback, useSyncExternalStore, type RefObject } from 'react'
+import { createComposerHistory } from './composer-history'
+import { memo, useCallback, useEffect, useRef, useSyncExternalStore, type RefObject } from 'react'
 import { ComposerTextarea } from '@dovo/studio-ui'
 import type { ResourceSettings, SavedPrompt } from '@dovo/protocol'
 import { useFileMentions, type ComposerCommandId } from './file-mentions'
@@ -19,6 +20,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   submitBusy,
   submittedText,
   placeholder,
+  messages = [],
 }: {
   controller: ReturnType<typeof createComposerDraft>
   taskId: string
@@ -32,6 +34,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   disabled: boolean
   submitBusy: boolean
   submittedText: string | null
+  messages?: readonly { role: string; text: string }[]
   placeholder: string
 }) {
   const draft = useSyncExternalStore(
@@ -45,6 +48,8 @@ export const ComposerEditor = memo(function ComposerEditor({
     },
     [controller],
   )
+  const history = useRef(createComposerHistory())
+  useEffect(() => history.current.reset(), [controller, taskId])
   const mentions = useFileMentions({
     taskId,
     draft,
@@ -64,14 +69,44 @@ export const ComposerEditor = memo(function ComposerEditor({
         aria-label="Message task"
         data-task-id={taskId}
         aria-autocomplete="list"
+        aria-controls={mentions.open ? mentions.menuId : undefined}
+        aria-activedescendant={mentions.open ? mentions.activeId : undefined}
         aria-expanded={mentions.open && !submitBusy}
         hidden={hidden}
         value={submitBusy && submittedText !== null && draft.trim() === submittedText ? '' : draft}
         disabled={disabled}
         readOnly={submitBusy}
-        onKeyDown={mentions.onKeyDown}
+        onKeyDown={(event) => {
+          mentions.onKeyDown(event)
+          if (
+            event.defaultPrevented ||
+            submitBusy ||
+            event.nativeEvent.isComposing ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey
+          )
+            return
+          if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+          if (event.currentTarget.selectionStart !== event.currentTarget.selectionEnd) return
+          if (!history.current.active && event.currentTarget.selectionStart !== 0) return
+          const recalled = history.current.move(
+            event.key === 'ArrowUp' ? 'older' : 'newer',
+            controller.text,
+            messages,
+          )
+          if (recalled === undefined) return
+          event.preventDefault()
+          setDraft(recalled)
+          requestAnimationFrame(() => {
+            input.current?.setSelectionRange(0, 0)
+            mentions.track()
+          })
+        }}
         onSelect={mentions.track}
         onChange={(event) => {
+          history.current.reset()
           setDraft(event.target.value)
           mentions.track()
         }}

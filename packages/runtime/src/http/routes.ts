@@ -1,3 +1,4 @@
+import { agentBrowserRequestSchema } from '../previews/agent-browser.js'
 import { taskWaitingRequestSchema } from '@dovo/protocol'
 import { McpError } from '@modelcontextprotocol/sdk/types.js'
 import { taskWaiting } from './endpoints/task-waiting.js'
@@ -512,6 +513,19 @@ export function route(
         return yield* serviceResult({
           profiles: s.preferences.save({ browserProfiles: profiles }).browserProfiles,
         })
+      }
+      if (method === 'POST' && path === '/api/previews/browser/agent') {
+        const { taskId, command } = decode(
+          agentBrowserRequestSchema,
+          yield* serviceResult(body(request)),
+        )
+        s.store.taskSummary(taskId)
+        return yield* serviceResult(
+          s.browsers.agentCommand(taskId, command, () => {
+            s.devices.authenticate(token)
+            s.store.taskSummary(taskId)
+          }),
+        )
       }
       if (method === 'POST' && path === '/api/previews/browser/open') {
         const {

@@ -31,6 +31,9 @@ jobs:
       # Native config errors (plugins, bundle identifiers, entitlements) fail here, not at build.
       - run: pnpm --filter @dovo/mobile exec expo config --type public > /dev/null
       # All packages were compiled above; the local test command intentionally builds first.
+      - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
+      # The agent browser integration test uses sandboxed managed Chromium.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm exec vp test --maxWorkers=4
       - run: node --test scripts/packaging/*.test.mjs
   # Bounded browser gate for shared hooks that render in both desktop and mobile bundles.

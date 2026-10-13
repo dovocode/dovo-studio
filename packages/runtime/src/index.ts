@@ -94,6 +94,8 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => disposeRuntimeSync(services),
       ]
       for (const close of finalizers) yield* Effect.addFinalizer(() => release(close))
+      // In-memory runtimes are ephemeral (tests and packaging smoke checks).
+      if (db.name !== ':memory:') services.browsers.prepare()
       const http = yield* Effect.acquireRelease(
         Effect.try({
           try: () => createRuntimeServer(services, Boolean(options.external)),

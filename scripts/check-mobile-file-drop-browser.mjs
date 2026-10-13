@@ -8,7 +8,7 @@ const result = await bundleBrowser(
     stdin: {
       resolveDir: mobile,
       loader: 'tsx',
-      contents: `import {createRoot} from 'react-dom/client';import {FileDropTarget} from './src/tasks/composer/file-drop-target';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';import {useState} from 'react';window.uploads=[];window.released=[];window.alerts=[];window.count=0;function App(){const picker=useAttachmentPicker('task');const [enabled,setEnabled]=useState(true);window.enableDrop=setEnabled;window.uploadAssets=picker.upload;return <FileDropTarget enabled={enabled&&!picker.busy} upload={picker.upload}><textarea aria-label="Message" defaultValue="Keep my draft"/><div role="alert">{picker.error}</div></FileDropTarget>};createRoot(document.getElementById('app')).render(<App/>);`,
+      contents: `import {createRoot} from 'react-dom/client';import {FileDropTarget} from './src/tasks/composer/file-drop-target';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';import {useState} from 'react';window.uploads=[];window.released=[];window.optimized=[];window.deleted=[];window.imageRefsReleased=0;window.contextsReleased=0;window.alerts=[];window.count=0;function App(){const picker=useAttachmentPicker('task');const [enabled,setEnabled]=useState(true);window.enableDrop=setEnabled;window.uploadAssets=picker.upload;return <FileDropTarget enabled={enabled&&!picker.busy} upload={picker.upload}><textarea aria-label="Message" defaultValue="Keep my draft"/><div role="alert">{picker.error}</div></FileDropTarget>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -46,7 +46,7 @@ const result = await bundleBrowser(
     },
     {
       path: 'expo-file-system',
-      contents: `export class File{constructor(uri){this.uri=uri;this.size=uri.includes('large')?5*1024*1024:10}async base64(){return btoa(this.uri)}delete(){}}`,
+      contents: `export class File{constructor(uri){this.uri=uri;this.size=uri.includes('large-image')?8*1024*1024:uri.includes('large')?5*1024*1024+1:uri.includes('boundary')?5*1024*1024:10}async bytes(){return new Uint8Array(20)}async base64(){return btoa(this.uri)}delete(){window.deleted.push(this.uri)}}`,
     },
     { path: 'expo-crypto', contents: `export const randomUUID=()=>crypto.randomUUID();` },
     {
@@ -59,7 +59,7 @@ const result = await bundleBrowser(
     },
     {
       path: 'expo-image-manipulator',
-      contents: `export const SaveFormat={JPEG:'jpeg'};export const ImageManipulator={manipulate(){throw new Error('No HEIC in this fixture')}};`,
+      contents: `export const SaveFormat={JPEG:'jpeg',WEBP:'webp'};export const ImageManipulator={manipulate(uri){let size=uri.includes('large-image')||uri.includes('heic')?{width:4096,height:2048}:{width:100,height:50};const context={reset(){return context},resize(next){size=next;return context},async renderAsync(){return {...size,release(){window.imageRefsReleased++},async saveAsync(options){const result={uri:'file:///cache/optimized-'+window.optimized.length,...size,...options};window.optimized.push(result);return result}}},release(){window.contextsReleased++}};return context}};`,
     },
   ],
 )
@@ -90,22 +90,43 @@ try {
   ])
   assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Keep my draft')
   assert.equal((await page.evaluate(() => window.uploads[0])).path, '/api/attachments/upload')
-  await drop([{ uri: 'file:///cache/dovo-file-drops/large', name: 'large.pdf' }])
+  await drop([
+    { uri: 'file:///cache/dovo-file-drops/large', name: 'large.pdf' },
+    { uri: 'file:///cache/dovo-file-drops/large-image', name: 'large.png', mimeType: 'image/png' },
+    { uri: 'file:///cache/dovo-file-drops/heic', name: 'photo.HEIC', mimeType: 'image/heic' },
+    { uri: 'file:///cache/dovo-file-drops/boundary', name: 'boundary.txt' },
+  ])
   await page.waitForFunction(() => window.released.length === 2)
-  await page.getByRole('alert').filter({ hasText: 'larger than 4 MB' }).waitFor()
-  assert.equal(await page.evaluate(() => window.uploads.length), 2)
+  await page.getByRole('alert').filter({ hasText: 'larger than 5 MB' }).waitFor()
+  assert.equal(await page.evaluate(() => window.uploads.length), 5)
+  assert.deepEqual(
+    await page.evaluate(() => window.uploads.slice(2).map((call) => call.input.name)),
+    ['large.webp', 'photo.jpg', 'boundary.txt'],
+  )
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.optimized.map((image) => [image.width, image.height, image.format]),
+    ),
+    [
+      [2048, 1024, 'webp'],
+      [2048, 1024, 'jpeg'],
+    ],
+  )
+  assert.equal(await page.evaluate(() => window.deleted.length), 2)
+  assert.equal(await page.evaluate(() => window.contextsReleased), 3)
+  assert.equal(await page.evaluate(() => window.imageRefsReleased), 5)
   await page.evaluate(() => {
     window.count = 5
     window.enableDrop(false)
   })
   await drop([{ uri: 'file:///cache/dovo-file-drops/c', name: 'blocked.txt' }])
   await page.waitForFunction(() => window.released.length === 3)
-  assert.equal(await page.evaluate(() => window.uploads.length), 2)
+  assert.equal(await page.evaluate(() => window.uploads.length), 5)
   await page.evaluate(() => window.enableDrop(true))
   await drop([{ uri: 'file:///cache/dovo-file-drops/d', name: 'sixth.txt' }])
   await page.waitForFunction(() => window.released.length === 4)
   await page.getByRole('alert').filter({ hasText: 'up to 5 files' }).waitFor()
-  assert.equal(await page.evaluate(() => window.uploads.length), 2)
+  assert.equal(await page.evaluate(() => window.uploads.length), 5)
   assert.deepEqual(errors, [])
   console.log(
     'Mobile native-drop boundary: ordered uploads, draft preservation, size/count limits, disabled composer and temporary-file cleanup passed',

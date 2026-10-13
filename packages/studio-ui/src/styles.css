@@ -12,6 +12,11 @@
 @source '../node_modules/@streamdown/mermaid/dist/*.js';
 @custom-variant dark (&:is(.dark *));
 
+/* Render containment clips fixed descendants. Keep detached previews in viewport coordinates. */
+.studio-chat-turn:has([data-preview-overlay='true']) {
+  content-visibility: visible !important;
+}
+
 @font-face {
   font-family: 'JetBrains Mono Nerd Font';
   src: url('./assets/fonts/jetbrains-mono-nerd-regular.woff2') format('woff2');

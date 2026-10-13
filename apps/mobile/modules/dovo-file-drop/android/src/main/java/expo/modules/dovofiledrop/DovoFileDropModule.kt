@@ -75,6 +75,9 @@ class DovoFileDropView(context: Context, private val dropContext: AppContext) : 
             resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
               if (cursor.moveToFirst()) name = cursor.getString(0) ?: name
             }
+            val isImage = mime.startsWith("image/") || name.substringAfterLast('.', "").lowercase() in setOf("png", "jpg", "jpeg", "webp", "heic", "heif", "gif")
+            // Match the JS optimizer's 50 MB source bound and the 5 MB upload bound.
+            val maxBytes = (if (isImage) 50 else 5) * 1024 * 1024
             val destination = File(directory, UUID.randomUUID().toString())
             target = destination
             resolver.openInputStream(uri)?.use { input ->
@@ -85,7 +88,7 @@ class DovoFileDropView(context: Context, private val dropContext: AppContext) : 
                   val count = input.read(buffer)
                   if (count < 0) break
                   total += count
-                  if (total > 4 * 1024 * 1024) throw IllegalArgumentException("Each attachment must be 4 MB or smaller.")
+                  if (total > maxBytes) throw IllegalArgumentException(if (isImage) "Choose an image up to 50 MB to optimize." else "Each attachment must be 5 MB or smaller.")
                   output.write(buffer, 0, count)
                 }
               }

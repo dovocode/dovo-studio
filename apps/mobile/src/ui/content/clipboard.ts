@@ -12,8 +12,8 @@ const clipboard = requireOptionalNativeModule<ClipboardModule>('ExpoClipboard')
  * sheet was shown instead, so callers only claim "Copied" when it is true. */
 export async function copyText(text: string): Promise<'copied' | 'shared'> {
   if (clipboard) {
-    await clipboard.setStringAsync(text, { inputFormat: 'plainText' })
-    return 'copied'
+    if (await clipboard.setStringAsync(text, { inputFormat: 'plainText' })) return 'copied'
+    throw new Error('Could not copy to the clipboard. Try again or use Share.')
   }
   await Share.share({ message: text })
   return 'shared'

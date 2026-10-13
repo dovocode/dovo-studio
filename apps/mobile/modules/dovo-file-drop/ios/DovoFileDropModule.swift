@@ -84,13 +84,17 @@ class DovoFileDropView: ExpoView, UIDropInteractionDelegate {
           defer { if scoped { url.stopAccessingSecurityScopedResource() } }
           let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
           guard values.isRegularFile == true else { throw NSError(domain: "DovoFileDrop", code: 2, userInfo: [NSLocalizedDescriptionKey: "Drop files rather than directories."]) }
-          guard (values.fileSize ?? 0) <= 4 * 1024 * 1024 else { throw NSError(domain: "DovoFileDrop", code: 3, userInfo: [NSLocalizedDescriptionKey: "Each attachment must be 4 MB or smaller."]) }
+          let name = provider.suggestedName ?? url.lastPathComponent
+          let contentType = (type == UTType.fileURL.identifier ? UTType(filenameExtension: url.pathExtension) : UTType(type))
+          let isImage = contentType?.conforms(to: .image) == true || UTType(filenameExtension: (name as NSString).pathExtension)?.conforms(to: .image) == true
+          // Match the JS optimizer's 50 MB source bound and the 5 MB upload bound.
+          let maxBytes = (isImage ? 50 : 5) * 1024 * 1024
+          guard (values.fileSize ?? 0) <= maxBytes else { throw NSError(domain: "DovoFileDrop", code: 3, userInfo: [NSLocalizedDescriptionKey: isImage ? "Choose an image up to 50 MB to optimize." : "Each attachment must be 5 MB or smaller."]) }
           let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dovo-file-drops", isDirectory: true)
           try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-          let name = provider.suggestedName ?? url.lastPathComponent
           let target = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(url.pathExtension)
           try FileManager.default.copyItem(at: url, to: target)
-          let result = ["uri": target.absoluteString, "name": name, "mimeType": (type == UTType.fileURL.identifier ? UTType(filenameExtension: url.pathExtension) : UTType(type))?.preferredMIMEType ?? "application/octet-stream"]
+          let result = ["uri": target.absoluteString, "name": name, "mimeType": contentType?.preferredMIMEType ?? "application/octet-stream"]
           lock.lock(); results.append((index, result)); lock.unlock()
         } catch {
           lock.lock(); errors.append(error.localizedDescription); lock.unlock()

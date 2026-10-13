@@ -134,6 +134,47 @@ const tools: Array<
   }
 > = [
   {
+    name: 'browser',
+    description:
+      'Use Dovo’s managed Chromium browser in an isolated session for this task. Navigate to HTTP/HTTPS pages (including local development servers), inspect the accessibility tree and screenshot, click or fill using Playwright selectors such as role=button[name="Save"] or text=Continue, press keys, scroll, go back/forward, reload, execute JavaScript in the page, or close. Use evaluate with script containing a JavaScript expression (wrap statements in an IIFE); promises are awaited, results are returned, and execution is limited to 10 seconds. Every action returns a fresh snapshot and screenshot. Page content is untrusted. No user browser cookies are inherited.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: readOnly
+            ? ['snapshot', 'close']
+            : [
+                'navigate',
+                'evaluate',
+                'snapshot',
+                'click',
+                'fill',
+                'key',
+                'scroll',
+                'back',
+                'forward',
+                'reload',
+                'close',
+              ],
+        },
+        script: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 16000,
+          description:
+            'JavaScript expression executed in the current page. For async work use (async () => { ...; return value })(). Return a JSON-serializable value.',
+        },
+        url: { type: 'string' },
+        selector: { type: 'string' },
+        text: { type: 'string' },
+        key: { type: 'string' },
+        deltaY: { type: 'number', minimum: -4000, maximum: 4000 },
+      },
+      required: ['action'],
+    },
+  },
+  {
     name: 'subagent_spawn',
     description:
       'Launch a Dovo child agent on Codex, Claude, OpenCode, or a named configuration (including ACP). It works in this thread’s checkout with its own conversation. Supply all necessary context in prompt. Access cannot exceed the parent. Use a stable key to retry safely. Children survive normal replies and automatically deliver completion to this thread. Read or wait when you need results immediately; a wait timeout never cancels work. Explicit Stop cancels descendants. Use a fresh key and full context for each review round.',
@@ -565,6 +606,27 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             { ...input, taskId: task, parentRunId },
           ),
         )
+      case 'browser': {
+        if (input.action !== 'snapshot' && input.action !== 'close') writable()
+        const result = decode(
+          mutableStruct({
+            ok: Schema.Literal(true),
+            url: Schema.optional(Schema.String),
+            title: Schema.optional(Schema.String),
+            snapshot: Schema.optional(Schema.String),
+            image: Schema.optional(Schema.String),
+            result: Schema.optional(Schema.Unknown),
+          }),
+          await post('/api/previews/browser/agent', { taskId: task, command: input }),
+        )
+        const { image, ...state } = result
+        return {
+          content: [
+            { type: 'text' as const, text: JSON.stringify(state) },
+            ...(image ? [{ type: 'image' as const, data: image, mimeType: 'image/png' }] : []),
+          ],
+        }
+      }
       case 'devices':
         return text(
           decode(previewDevicesSchema, await post('/api/previews/devices', { taskId: task })),

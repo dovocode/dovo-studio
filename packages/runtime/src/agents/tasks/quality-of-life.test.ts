@@ -210,6 +210,35 @@ it('undoes and redoes a turn’s file changes without touching the branch or ind
   expect(s.store.task(task.id).turns?.at(-1)?.checkpoint?.undone).toBeUndefined()
 })
 
+it('previews text files up to 100 MB while preserving the 1 MB editing limit', async () => {
+  const { f, s, call } = await setup()
+  const task = s.tasks.create({
+    title: 'Large files',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: '',
+  })
+  const contents = 'é'.repeat(50 * 1024 * 1024)
+  await writeFile(join(f.directory, 'large.txt'), contents)
+  const preview = await call('/api/tasks/files/read', { id: task.id, path: 'large.txt' })
+  expect(preview.status).toBe(200)
+  expect(preview.body).toEqual({ path: 'large.txt', contents })
+  const write = await call('/api/tasks/files/write', {
+    id: task.id,
+    path: 'large.txt',
+    contents: 'small',
+    expectedContents: 'small',
+  })
+  expect(write.status).toBe(413)
+  expect(await readFile(join(f.directory, 'large.txt'), 'utf8')).toBe(contents)
+  await writeFile(join(f.directory, 'large.txt'), contents + 'x')
+  expect((await call('/api/tasks/files/read', { id: task.id, path: 'large.txt' })).status).toBe(413)
+  await writeFile(join(f.directory, 'binary.txt'), 'text\0binary')
+  expect((await call('/api/tasks/files/read', { id: task.id, path: 'binary.txt' })).status).toBe(
+    415,
+  )
+})
+
 it('runs a chat command in the task terminal, lists files for mentions, and removes unsent comments', async () => {
   const { f, s, call } = await setup()
   await writeFile(join(f.directory, 'notes.md'), 'untracked\n')

@@ -11,7 +11,7 @@ const mocks = {
   '@dovo/studio-ui': `export {MessageResponse} from '${ui}/components/ai-elements/message.tsx';export {FileTypeIcon} from '${ui}/file-tree.tsx';export {Button} from '${ui}/components/ui/button.tsx';export {IconButton} from '${ui}/components/icon-button.tsx';export {TooltipProvider} from '${ui}/components/ui/tooltip.tsx';export {RepositoryOpenItems} from '${ui}/repository-open-items.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {cn} from '${ui}/lib/utils.ts';export {Dialog,DialogContent,DialogTitle} from '${ui}/components/ui/dialog.tsx';`,
   '@dovo/studio-core': `export {responses} from '@dovo/protocol';export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({themePalette:'dovo'});export const useWorkspace=()=>window.runtime;const openExternalLink=async url=>window.opened.push(url);export const useStudioHost=()=>({openExternalLink});`,
   '../../runtime/connection/provider': 'export const useRuntime=()=>window.runtime;',
-  '../theme': `export const useTheme=()=>({colors:{text:'#eee',muted:'#999',border:'#333',background:'#111',accent:'#88bbee'},styles:{muted:{color:'#999'}}});`,
+  '../theme': `export const useTheme=()=>({mode:'dark',colors:{surface:'#181818',text:'#eee',muted:'#999',border:'#333',background:'#111',accent:'#88bbee'},styles:{muted:{color:'#999'}}});`,
   '../../runtime/preferences/app-preferences':
     'export const carZoom=1;export const useCarMode=()=>false;',
   '../layout/safe-modal':
@@ -33,14 +33,14 @@ const mocks = {
   './mermaid-diagram': 'export const MermaidDiagram=()=>null;',
   './open-link':
     'export const openAppLink=async(url,external)=>{window.opened.push(url);window.external=external};',
-  'react-native': `export const ActivityIndicator=()=>null;export const ScrollView=({children})=><div>{children}</div>;export const Platform={OS:'ios'};export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',minWidth:0,...style}}>{children}</div>;export const Pressable=({children,onPress,accessibilityLabel,style})=><button aria-label={accessibilityLabel} onClick={onPress} style={{display:'flex',font:'inherit',textAlign:'left',color:'inherit',background:'transparent',...style}}>{children}</button>;export const Alert={alert:(title,message)=>window.alerts.push(title+': '+message)};`,
+  'react-native': `export const useWindowDimensions=()=>({height:844,width:390});export const ActivityIndicator=()=>null;export const ScrollView=({children})=><div>{children}</div>;export const Platform={OS:'ios'};export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',minWidth:0,...style}}>{children}</div>;export const Pressable=({children,onPress,accessibilityLabel,style})=><button aria-label={accessibilityLabel} onClick={onPress} style={{display:'flex',font:'inherit',textAlign:'left',color:'inherit',background:'transparent',...style}}>{children}</button>;export const Alert={alert:(title,message)=>window.alerts.push(title+': '+message)};`,
   'react-native-enriched-markdown': `import {fromMarkdown} from 'mdast-util-from-markdown';const nativeStyle=style=>{const {underline,...rest}=style??{};return {...rest,textDecoration:underline?'underline':undefined,lineHeight:style?.lineHeight?style.lineHeight+'px':undefined}};export const EnrichedMarkdownText=({markdown,onLinkPress,markdownStyle})=>{const render=node=>node.type==='link'?<a style={nativeStyle({...markdownStyle.link,...Object.entries(markdownStyle.linkVariants??{}).find(([pattern])=>new RegExp(pattern).test(node.url))?.[1]})} href={node.url} onClick={event=>{event.preventDefault();onLinkPress({url:node.url})}}>{node.children.map(render)}</a>:node.type==='paragraph'?<p style={nativeStyle(markdownStyle.paragraph)}>{node.children.map(render)}</p>:node.type==='heading'?<h2 style={nativeStyle(markdownStyle['h'+node.depth])}>{node.children.map(render)}</h2>:node.children?<>{node.children.map((child,index)=><span key={index}>{render(child)}</span>)}</>:node.value??'';return <div>{render(fromMarkdown(markdown))}</div>};`,
 }
 const built = await build({
   stdin: {
     resolveDir: root + '/packages/studio-ui',
     loader: 'tsx',
-    contents: `import {TooltipProvider} from '@dovo/studio-ui';import {useState} from 'react';import {createRoot} from 'react-dom/client';import {TaskMessageResponse} from '${root}/packages/extension-tasks/src/chat/thread/task-message-response.tsx';import {Markdown} from '${root}/apps/mobile/src/ui/content/markdown.tsx';window.opened=[];window.alerts=[];window.reads=[];window.prompts=[];window.runtime={connected:true,connection:{address:'http://remote-runtime.test:7777',token:'device-secret'},request:async(path,input)=>{window.reads.push({path,input});if(window.fail)throw new Error('File is no longer available');return path.endsWith('/visualizations/read')?{path:input.path,contents:'<button id="sample-counter" onclick="this.textContent=Number(this.textContent)+1">0</button>'}:path.endsWith('/open-targets')?{targets:['vscode']}:path.endsWith('/open')?{ok:true,revision:1}:path.endsWith('/share')?{url:'/api/tasks/files/shared/scoped-ticket'}:{uri:window.imageURI??'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6K0sAAAAASUVORK5CYII='}}};window.runtime.read=window.runtime.request;const richText='## Release preview\\n\\nScreenshot ready:\\n[New interface](/tmp/interface.png)\\n\\n[Demo video](/tmp/demo.mp4)\\n\\n[Design report](/tmp/report.pdf)\\n\\nImplementation: :codex-file-citation{path="/tmp/app.ts" line_range_start="12" line_range_end="18"}.\\n\\n::artifact-template{artifact_kind="site" display_name="Product landing page" skill_name="artifact-template-site" skill_directory="/tmp/skills/site"}';const visualText=String.fromCharCode(0xe200)+'visualize'+String.fromCharCode(0xe202)+JSON.stringify({path:'/tmp/demo.html',title:'Interactive demo',mode:'wide'})+String.fromCharCode(0xe201);function App(){const [visual,setVisual]=useState(false);window.renderVisualization=()=>setVisual(true);const [rich,setRich]=useState(false);window.renderRich=()=>setRich(true);const [revision,setRevision]=useState(0),[suffix,setSuffix]=useState('');window.append=()=>setSuffix(String.fromCharCode(10,10)+'More response text');window.refresh=()=>setRevision(value=>value+1);return <main key={revision} className="studio" style={{padding:24,background:'var(--background)',color:'var(--foreground)',fontFamily:'system-ui'}}>{rich ? <><section data-client="desktop"><TaskMessageResponse taskId="task" onUseTemplate={value=>window.prompts.push(value)}>{visual?visualText:richText}</TaskMessageResponse></section><section data-client="mobile"><Markdown taskId="task" text={visual?visualText:richText} onUseTemplate={value=>window.prompts.push(value)}/></section></> : <><section data-client="desktop"><TaskMessageResponse taskId="task">{'[Source](</Users/dominic/a b.ts:12>) · [File](file:///tmp/report.pdf) · [Website](https://example.com)\\n\\n![Screenshot](/tmp/shot.png)'+suffix}</TaskMessageResponse></section><section data-client="mobile"><Markdown taskId="task" text={'[Source](</Users/dominic/a b.ts:12>) · [File](file:///tmp/report.pdf) · [Website](https://example.com)'}/></section></>}</main>}createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);`,
+    contents: `import {TooltipProvider} from '@dovo/studio-ui';import {useState} from 'react';import {createRoot} from 'react-dom/client';import {TaskMessageResponse} from '${root}/packages/extension-tasks/src/chat/thread/task-message-response.tsx';import {Markdown} from '${root}/apps/mobile/src/ui/content/markdown.tsx';window.opened=[];window.alerts=[];window.reads=[];window.prompts=[];window.runtime={connected:true,connection:{address:'http://remote-runtime.test:7777',token:'device-secret'},request:async(path,input)=>{window.reads.push({path,input});if(window.fail)throw new Error('File is no longer available');return path.endsWith('/visualizations/read')?{path:input.path,contents:'<button id="sample-counter" onclick="this.textContent=Number(this.textContent)+1">0</button>'}:path.endsWith('/open-targets')?{targets:['vscode']}:path.endsWith('/open')?{ok:true,revision:1}:path.endsWith('/share')?{url:'/api/tasks/files/shared/scoped-ticket'}:{uri:window.imageURI??'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6K0sAAAAASUVORK5CYII='}}};window.runtime.read=window.runtime.request;const richText='## Release preview\\n\\nScreenshot ready:\\n[New interface](/tmp/interface.png)\\n\\n[Demo video](/tmp/demo.mp4)\\n\\n[Design report](/tmp/report.pdf)\\n\\nImplementation: :codex-file-citation{path="/tmp/app.ts" line_range_start="12" line_range_end="18"}.\\n\\n::artifact-template{artifact_kind="site" display_name="Product landing page" skill_name="artifact-template-site" skill_directory="/tmp/skills/site"}';const visualText=String.fromCharCode(0xe200)+'visualize'+String.fromCharCode(0xe202)+JSON.stringify({path:'/tmp/demo.html',title:'Interactive demo',mode:'wide'})+String.fromCharCode(0xe201);function App(){const [visual,setVisual]=useState(false);window.renderVisualization=()=>setVisual(true);const [rich,setRich]=useState(false);window.renderRich=()=>setRich(true);const [revision,setRevision]=useState(0),[suffix,setSuffix]=useState(''),[connectionRevision,setConnectionRevision]=useState(0);window.setConnected=value=>{window.runtime.connected=value;setConnectionRevision(v=>v+1)};window.append=()=>setSuffix(String.fromCharCode(10,10)+'More response text');window.refresh=()=>setRevision(value=>value+1);return <main key={revision} className="studio" style={{padding:24,background:'var(--background)',color:'var(--foreground)',fontFamily:'system-ui'}}>{rich ? <><section data-client="desktop"><TaskMessageResponse taskId="task" onUseTemplate={value=>window.prompts.push(value)}>{visual?visualText:richText}</TaskMessageResponse></section><section data-client="mobile"><Markdown taskId="task" text={visual?visualText:richText} onUseTemplate={value=>window.prompts.push(value)}/></section></> : <><section data-client="desktop"><TaskMessageResponse taskId="task">{'[Source](</Users/dominic/a b.ts:12>) · [File](file:///tmp/report.pdf) · [Website](https://example.com)\\n\\n![Screenshot](/tmp/shot.png)'+suffix}</TaskMessageResponse></section><section data-client="mobile"><Markdown taskId="task" text={'[Source](</Users/dominic/a b.ts:12>) · [File](file:///tmp/report.pdf) · [Website](https://example.com)'}/></section></>}</main>}createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);`,
   },
   nodePaths: [root + '/apps/desktop/node_modules', root + '/packages/runtime/node_modules'],
   bundle: true,
@@ -143,6 +143,18 @@ try {
   await desktop.getByRole('button', { name: 'Website', exact: true }).waitFor()
   await desktop.getByRole('button', { name: 'Source', exact: true }).click()
   await page.getByRole('dialog').locator('iframe').waitFor()
+  const sharesBeforeRefresh = await page.evaluate(
+    () => window.reads.filter((row) => row.path.endsWith('/share')).length,
+  )
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Refresh preview', exact: true })
+    .click()
+  await page.waitForFunction(
+    (count) => window.reads.filter((row) => row.path.endsWith('/share')).length > count,
+    sharesBeforeRefresh,
+  )
+  await page.getByRole('dialog').locator('iframe').waitFor()
   assert.equal(await page.evaluate(() => window.opened.length), 0)
   assert.equal(
     await page.getByRole('dialog').locator('iframe').getAttribute('src'),
@@ -167,6 +179,7 @@ try {
       window.reads.filter((row) => row.path.endsWith('/share')).map((row) => row.input),
     ),
     [
+      { taskId: 'task', path: '/Users/dominic/a%20b.ts' },
       { taskId: 'task', path: '/Users/dominic/a%20b.ts' },
       { taskId: 'task', path: 'file:///tmp/report.pdf' },
     ],
@@ -238,6 +251,14 @@ try {
   )
   await mobile.getByRole('button', { name: 'Preview Design report', exact: true }).click()
   await mobile.getByRole('dialog').locator('[data-video-preview]').waitFor()
+  const mobileSharesBeforeRefresh = await page.evaluate(
+    () => window.reads.filter((row) => row.path.endsWith('/share')).length,
+  )
+  await mobile.getByRole('button', { name: 'Refresh preview', exact: true }).click()
+  await page.waitForFunction(
+    (count) => window.reads.filter((row) => row.path.endsWith('/share')).length > count,
+    mobileSharesBeforeRefresh,
+  )
   await mobile.getByRole('button', { name: 'Download original', exact: true }).click()
   await mobile.getByRole('button', { name: 'Open on runtime computer…', exact: true }).click()
   await mobile.getByRole('button', { name: 'Open in VS Code', exact: true }).click()
@@ -335,10 +356,58 @@ try {
     .locator('[data-client="mobile"]')
     .getByRole('button', { name: 'Expand visualization', exact: true })
     .click()
+  assert.equal(
+    await mobile
+      .frameLocator('iframe')
+      .frameLocator('iframe')
+      .locator('#sample-counter')
+      .innerText(),
+    '1',
+  )
   await page
     .locator('[data-client="mobile"]')
-    .getByRole('button', { name: 'Close visualization', exact: true })
+    .getByRole('button', { name: 'Collapse visualization', exact: true })
     .click()
+  const mobileCounter = mobile
+    .frameLocator('iframe')
+    .frameLocator('iframe')
+    .locator('#sample-counter')
+  assert.equal(await mobileCounter.innerText(), '1')
+  await mobileCounter.click()
+  assert.equal(await mobileCounter.innerText(), '2')
+  await page.evaluate(() => window.setConnected(false))
+  for (const client of ['desktop', 'mobile']) {
+    const section = page.locator(`[data-client="${client}"]`)
+    await section.getByText('Computer offline · Showing loaded preview', { exact: true }).waitFor()
+    assert.equal(
+      await section
+        .frameLocator('iframe')
+        .frameLocator('iframe')
+        .locator('#sample-counter')
+        .innerText(),
+      client === 'mobile' ? '2' : '1',
+    )
+  }
+  const visualizationReads = await page.evaluate(
+    () => window.reads.filter((row) => row.path.endsWith('/visualizations/read')).length,
+  )
+  await page.evaluate(() => window.setConnected(true))
+  await desktop.getByRole('button', { name: 'Refresh visualization', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.reads.filter((row) => row.path.endsWith('/visualizations/read')).length,
+    ),
+    visualizationReads,
+  )
+  assert.equal(await mobileCounter.innerText(), '2')
+  await mobile.getByRole('button', { name: 'Refresh visualization', exact: true }).click()
+  await page.waitForFunction(
+    (count) =>
+      window.reads.filter((row) => row.path.endsWith('/visualizations/read')).length === count + 1,
+    visualizationReads,
+  )
+  await mobileCounter.waitFor()
+  assert.equal(await mobileCounter.innerText(), '0')
   directory = await mkdtemp(join(tmpdir(), 'dovo-chat-files-browser-'))
   server = await startRuntime({ databasePath: ':memory:', ownerToken: credential, port: 0 })
   server.services.store.update((workspace) => ({

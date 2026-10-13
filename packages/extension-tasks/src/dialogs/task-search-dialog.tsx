@@ -1,5 +1,5 @@
 import { useTaskSearch } from '../list/use-task-search'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { MessageSquare, Search } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle, Input, cn } from '@dovo/studio-ui'
 import type { TaskEntry } from '../list/task-collection'
@@ -23,8 +23,10 @@ export function TaskSearchDialog({
   onSelect: (entry: TaskEntry, messageId?: string) => void
 }) {
   const [query, setQuery] = useState('')
-  const [active, setActive] = useState(0)
-  useEffect(() => setActive(0), [query, mode])
+  const [activeKey, setActiveKey] = useState('')
+  const list = useRef<HTMLUListElement>(null)
+  const listId = useId()
+  useEffect(() => setActiveKey(''), [query, mode])
   useEffect(() => {
     if (!mode) setQuery('')
   }, [mode])
@@ -48,6 +50,13 @@ export function TaskSearchDialog({
           })),
     [entries, query, mode, search.hits],
   )
+  const active = Math.max(
+    0,
+    results.findIndex((result) => result.key === activeKey),
+  )
+  useEffect(() => {
+    list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [activeKey, results])
   const open = (index: number) => {
     const result = results[index]
     if (!result) return
@@ -79,7 +88,8 @@ export function TaskSearchDialog({
             autoFocus
             role="combobox"
             aria-expanded
-            aria-controls="task-search-results"
+            aria-controls={listId}
+            aria-activedescendant={results[active] ? `${listId}-${active}` : undefined}
             aria-label={mode === 'messages' ? 'Search conversations' : 'Go to task'}
             placeholder={mode === 'messages' ? 'Search all conversations…' : 'Go to task…'}
             value={query}
@@ -89,7 +99,7 @@ export function TaskSearchDialog({
                 event.preventDefault()
                 if (!results.length) return
                 const step = event.key === 'ArrowDown' ? 1 : -1
-                setActive((index) => (index + step + results.length) % results.length)
+                setActiveKey(results[(active + step + results.length) % results.length].key)
               } else if (event.key === 'Enter') {
                 event.preventDefault()
                 open(active)
@@ -104,12 +114,17 @@ export function TaskSearchDialog({
             Tab: {mode === 'messages' ? 'tasks' : 'messages'}
           </span>
         </div>
-        <ul id="task-search-results" role="listbox" className="max-h-[50vh] overflow-y-auto">
+        <ul ref={list} id={listId} role="listbox" className="max-h-[50vh] overflow-y-auto">
           {results.map((result, index) => (
-            <li key={result.key} role="option" aria-selected={index === active}>
+            <li
+              key={result.key}
+              id={`${listId}-${index}`}
+              role="option"
+              aria-selected={index === active}
+            >
               <button
                 type="button"
-                onMouseEnter={() => setActive(index)}
+                onMouseEnter={() => setActiveKey(result.key)}
                 onClick={() => open(index)}
                 className={cn(
                   'flex w-full min-w-0 flex-col rounded-md px-3 py-2 text-left',
@@ -121,7 +136,7 @@ export function TaskSearchDialog({
               </button>
             </li>
           ))}
-          {!results.length && (
+          {!results.length && !search.loading && (
             <li className="px-3 py-6 text-center text-xs text-muted-foreground">
               {mode === 'messages' && query.trim().length < 2
                 ? 'Type at least two characters.'

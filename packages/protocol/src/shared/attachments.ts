@@ -2,7 +2,7 @@ import { uuidSchema } from './schema.js'
 import { mutableStruct, mutableArray } from './schema.js'
 import { minValue, maxValue, refine } from './schema.js'
 import { Schema } from 'effect'
-export const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024
+export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 export const MAX_ATTACHMENTS = 5
 export const attachmentSchema = mutableStruct({
   id: uuidSchema,

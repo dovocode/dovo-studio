@@ -178,6 +178,101 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     ),
     JSON.stringify({ requests, failures }),
   )
+  const themed = await browser.newPage()
+  for (const theme of [
+    {
+      mode: 'dark',
+      background: '#080808',
+      foreground: '#ededed',
+      surface: '#101010',
+      border: '#282828',
+      accent: '#7cc9ff',
+    },
+    {
+      mode: 'light',
+      background: '#f7f8fa',
+      foreground: '#151515',
+      surface: '#ffffff',
+      border: '#dddddd',
+      accent: '#0965b5',
+    },
+  ]) {
+    const themedHtml = await page.evaluate(
+      (theme) =>
+        window.preview(
+          '<h1>Preview heading</h1><button>Action</button><input placeholder="Name"><a href="#">Link</a>',
+          theme,
+        ),
+      theme,
+    )
+    await themed.setContent(themedHtml)
+    const themedFrame = themed.frameLocator('iframe')
+    assert.equal(
+      await themedFrame
+        .locator('html')
+        .evaluate((element) => getComputedStyle(element).colorScheme),
+      theme.mode,
+    )
+    const outerBackground = await themed
+      .locator('body')
+      .evaluate((element) => getComputedStyle(element).backgroundColor)
+    assert.equal(
+      await themedFrame
+        .locator('html')
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
+      outerBackground,
+    )
+    assert.equal(outerBackground, theme.mode === 'dark' ? 'rgb(8, 8, 8)' : 'rgb(247, 248, 250)')
+    assert.equal(
+      await themedFrame
+        .getByRole('button', { name: 'Action' })
+        .evaluate((element) => getComputedStyle(element).borderRadius),
+      '8px',
+    )
+    assert.equal(
+      await themedFrame
+        .locator('body')
+        .evaluate((element) => getComputedStyle(element).fontFamily.includes('system-ui')),
+      true,
+    )
+  }
+  await themed.setContent(
+    await page.evaluate(() =>
+      window.preview(
+        '<style>body{background:#ffffff;color:#123456;font-family:Georgia}button{border-radius:0}</style><button>Custom</button>',
+        {
+          mode: 'dark',
+          background: '#080808',
+          foreground: '#ededed',
+          surface: '#101010',
+          border: '#282828',
+          accent: '#7cc9ff',
+        },
+      ),
+    ),
+  )
+  assert.equal(
+    await themed
+      .frameLocator('iframe')
+      .locator('body')
+      .evaluate((element) => getComputedStyle(element).backgroundColor),
+    'rgb(255, 255, 255)',
+  )
+  assert.equal(
+    await themed
+      .frameLocator('iframe')
+      .locator('body')
+      .evaluate((element) => getComputedStyle(element).color),
+    'rgb(18, 52, 86)',
+  )
+  assert.equal(
+    await themed
+      .frameLocator('iframe')
+      .getByRole('button', { name: 'Custom' })
+      .evaluate((element) => getComputedStyle(element).borderRadius),
+    '0px',
+  )
+  await themed.close()
   // Exercise the iOS shape: trusted WebView document directly hosts an opaque guest.
   const mobile = await browser.newPage({ viewport: { width: 390, height: 700 } })
   const html = await page.evaluate(() =>
@@ -251,7 +346,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
                   : input.taskId === 'other-thread'
                     ? 'Other thread notes'
                     : 'Current notes'
-                : '<button id="interactive">Interactive artifact</button>',
+                : '<button id="interactive" onclick="this.textContent=Number(this.textContent)||1">Interactive artifact</button>',
           },
         }
       }
@@ -395,6 +490,12 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         .locator('#interactive')
         .waitFor()
     }
+    const interactiveFrame = view
+      .locator('[aria-label="Thread artifacts"], [role="dialog"]')
+      .frameLocator('iframe')
+      .frameLocator('iframe')
+    await interactiveFrame.locator('#interactive').click()
+    assert.equal(await interactiveFrame.locator('#interactive').textContent(), '1')
     await view
       .getByRole('button', {
         name: ui.platform === 'desktop' ? 'Source' : 'View artifact source code',
@@ -402,8 +503,20 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       })
       .click()
     await view
-      .getByText('<button id="interactive">Interactive artifact</button>', { exact: true })
+      .getByText(/<button id="interactive"/)
+      .last()
       .waitFor()
+    await view
+      .getByRole('button', {
+        name: ui.platform === 'desktop' ? 'Preview' : 'Show artifact preview',
+        exact: true,
+      })
+      .click()
+    assert.equal(
+      await interactiveFrame.locator('#interactive').textContent(),
+      '1',
+      'Viewing source preserves artifact interaction',
+    )
 
     const chooseLink = async (title, url) => {
       if (ui.platform === 'desktop')
@@ -496,7 +609,10 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       assert.equal(await inline.locator('#interactive').innerText(), 'Clicked inline')
       await view.getByRole('button', { name: 'View inline artifact source', exact: true }).click()
       await view
-        .getByText('<button id="interactive">Interactive artifact</button>', { exact: true })
+        .getByText(
+          '<button id="interactive" onclick="this.textContent=Number(this.textContent)||1">Interactive artifact</button>',
+          { exact: true },
+        )
         .waitFor()
       await view.getByRole('button', { name: 'Show rendered artifact', exact: true }).click()
       assert.equal(
@@ -563,7 +679,11 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         connected: index !== 2,
         snapshot: {
           artifactsEnabled: true,
-          workspace: { agents: [], tasks: [{ id: 'destination', title: 'Destination thread' }] },
+          workspace: {
+            agents: [],
+            repositories: [{ id: 'repo', name: 'Project' }],
+            tasks: [{ id: 'destination', title: 'Destination thread', repositoryId: 'repo' }],
+          },
         },
       }))
       window.libraryCalls = []

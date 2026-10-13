@@ -16,6 +16,37 @@ afterEach(async () => {
 const token = 'attachment-test-owner-token-with-32-characters'
 const png =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1kAAAAASUVORK5CYII='
+it('accepts a 5 MB file over HTTP and rejects one byte over without storing it', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const r = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(r.close)
+  r.services.store.update(() => f.workspace)
+  const task = r.services.tasks.create({
+    title: 'Size boundary',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const upload = (bytes: number) =>
+    fetch(`http://127.0.0.1:${r.port}/api/attachments/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        taskId: task.id,
+        id: randomUUID(),
+        name: 'notes.txt',
+        data: Buffer.alloc(bytes, 'x').toString('base64'),
+      }),
+    })
+  const accepted = await upload(5 * 1024 * 1024)
+  expect(accepted.status).toBe(200)
+  expect(r.services.store.task(task.id).draftAttachments?.[0]?.size).toBe(5 * 1024 * 1024)
+  const rejected = await upload(5 * 1024 * 1024 + 1)
+  expect(rejected.status).toBe(413)
+  expect(await rejected.text()).toContain('5 MB')
+  expect(r.services.store.task(task.id).draftAttachments).toHaveLength(1)
+})
 it('validates uploads, deduplicates concurrent retries, isolates tasks and logs metadata without file bodies', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)

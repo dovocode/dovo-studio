@@ -732,10 +732,16 @@ controls.
 
 ### Attachments and branches
 
-Use the paperclip in the desktop/web composer to attach up to five files, 4 MB each. Dropping files
+Use the paperclip in the desktop/web composer to attach up to five files, 5 MB each. Dropping files
 or pasting an image works too. iOS and Android use the native file picker. Uploads require a runtime
 connection; attachment drafts live on the host and appear on paired devices. File-only messages are
 supported. Queued messages retain their files; the runtime deduplicates repeated upload/message IDs.
+
+Desktop/web and mobile optimize large PNG, JPEG, WebP and HEIC/HEIF images locally before upload.
+Images up to 50 MB can be resized to a maximum 2048-pixel edge and compressed below 3.75 MB to leave
+room for base64 encoding. Smaller images remain unchanged, transparency is preserved, and animated
+GIF, PNG and WebP files are kept intact (and must fit the 5 MB attachment limit). Mobile converts
+HEIC/HEIF to JPEG; browser support for decoding HEIC/HEIF varies. The original source file is kept.
 
 Click a file chip to preview an image or text, download it on desktop/web, or share it on mobile.
 PNG, JPEG, GIF and WebP images use native provider image inputs; ACP does this only when its agent

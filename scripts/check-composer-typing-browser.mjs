@@ -16,7 +16,7 @@ function Composer() {
   const hasText = useSyncExternalStore(controller.subscribe, () => !!controller.text.trim());
   window.parentRenders++;
   const input = useRef(null);
-  return <><ComposerEditor controller={controller} taskId="test" input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
+  return <><ComposerEditor controller={controller} taskId="test" messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
     <button disabled={!hasText}>Send</button>{Array.from({length:500},(_,i)=><span key={i}>Control {i}</span>)}</>;
 }
 createRoot(document.getElementById('app')).render(<Composer/>);
@@ -76,6 +76,30 @@ try {
   await page.getByRole('button', { name: 'Send' }).waitFor()
   if (!(await page.getByRole('button', { name: 'Send' }).isDisabled()))
     throw new Error('Empty input did not disable Send')
+  await input.press('ArrowUp')
+  await page.waitForFunction(() => window.controller.text === 'Second message')
+  await input.press('ArrowUp')
+  await page.waitForFunction(() => window.controller.text === 'First message')
+  await input.press('ArrowUp')
+  if ((await input.inputValue()) !== 'First message')
+    throw new Error('History moved beyond the oldest message')
+  await input.press('ArrowDown')
+  await page.waitForFunction(() => window.controller.text === 'Second message')
+  await input.press('ArrowDown')
+  await page.waitForFunction(() => window.controller.text === '')
+  await input.fill('Keep my draft')
+  await input.evaluate((element) => element.setSelectionRange(0, 0))
+  await input.press('ArrowUp')
+  if ((await input.inputValue()) !== 'Keep my draft')
+    throw new Error('History replaced a typed draft')
+  await input.fill('')
+  await input.press('ArrowUp')
+  await page.waitForFunction(() => window.controller.text === 'Second message')
+  await input.fill('Edited recalled message')
+  await input.evaluate((element) => element.setSelectionRange(0, 0))
+  await input.press('ArrowUp')
+  if ((await input.inputValue()) !== 'Edited recalled message')
+    throw new Error('History replaced an edited message')
   console.log(
     `Typed ${text.length} characters without losing text; composer parent rendered twice; input-to-frame p95 ${p95.toFixed(1)}ms.`,
   )

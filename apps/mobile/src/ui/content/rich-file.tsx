@@ -174,6 +174,14 @@ export function RichFile({
         >
           <View style={{ gap: 12 }}>
             {status || preview}
+            {local && (
+              <Action
+                label="Refresh preview"
+                secondary
+                disabled={!connected || !taskId || (!url && !error)}
+                onPress={() => setRevision((value) => value + 1)}
+              />
+            )}
             {!!action.error && <Text style={styles.muted}>{action.error}</Text>}
             <Action
               label="Open preview in browser"

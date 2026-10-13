@@ -986,7 +986,7 @@ function BrowserContent({
               )}
               <div
                 ref={slot}
-                className="mx-auto overflow-hidden bg-white"
+                className="mx-auto overflow-hidden bg-background"
                 style={
                   !browser && size.width
                     ? {

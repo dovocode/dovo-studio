@@ -80,7 +80,7 @@ export class Attachments {
     if (data.toString('base64') !== input.data) throw new HttpError(400, 'Invalid file data')
     const name = attachmentFileName(input.name)
     if (data.length > MAX_ATTACHMENT_BYTES)
-      throw new HttpError(413, 'Files must be 4 MB or smaller')
+      throw new HttpError(413, 'Files must be 5 MB or smaller')
     const existing = this.db.prepare('SELECT id FROM attachments WHERE id=?').get(input.id)
     if (existing) {
       const previous = this.read(input.taskId, input.id)

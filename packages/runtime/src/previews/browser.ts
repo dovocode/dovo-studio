@@ -1,17 +1,21 @@
+import { browserScript } from './browser-script.js'
 import { decode } from '@dovo/protocol'
-import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
+import type { AgentBrowserCommand } from './agent-browser.js'
 import type { Browser, BrowserContext, Dialog, Page, CDPSession } from 'playwright'
 import {
   previewUrl,
   remoteBrowserDialogSchema,
   artifactPreviewHtml,
+  remoteBrowserInputSchema,
   type RemoteBrowserInput,
   type RemoteBrowserMessage,
 } from '@dovo/protocol'
+import { ChromiumInstallation } from './chromium-installation.js'
 import { HttpError, errorMessage } from '../errors.js'
-// playwright is large and only needed once a remote browser is opened. Loading it lazily
-// keeps it out of the runtime's startup module graph.
+// Keep Playwright out of the synchronous startup module graph; browser preparation
+// and browser requests load it asynchronously.
 let chromiumModule: typeof import('playwright').chromium | undefined
 async function loadChromium() {
   chromiumModule ??= (await import('playwright')).chromium
@@ -73,26 +77,24 @@ export class RemoteBrowsers {
   private profiles = new Map<string, { context: Promise<BrowserContext>; users: number }>()
   private closingProfiles = new Map<string, Promise<void>>()
   private disposed = false
+  private installation = new ChromiumInstallation()
   constructor(private profileDirectory?: string) {}
+  prepare() {
+    void this.installation.ensure().catch((error) => {
+      if (!this.disposed) console.error('Could not install Playwright Chromium', error)
+    })
+  }
   private async executable() {
     const chromium = await loadChromium()
-    const bundled = chromium.executablePath()
-    const installed =
-      process.platform === 'darwin'
-        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-        : process.platform === 'win32'
-          ? `${process.env.PROGRAMFILES}\\Google\\Chrome\\Application\\chrome.exe`
-          : ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'].find(
-              existsSync,
-            )
-    const executablePath =
-      process.env.DOVO_BROWSER_EXECUTABLE ||
-      (existsSync(bundled) ? bundled : installed && existsSync(installed) ? installed : undefined)
-    if (!executablePath)
+    let executablePath: string
+    try {
+      executablePath = await this.installation.ensure()
+    } catch (error) {
       throw new HttpError(
         503,
-        'Install Chrome on the host, or run pnpm --filter @dovo/runtime exec playwright install chromium. Then reconnect the browser.',
+        `Chromium installation failed: ${errorMessage(error)}. Check the runtime logs and reconnect to retry.`,
       )
+    }
     return { chromium, executablePath }
   }
   private async launch() {
@@ -158,6 +160,7 @@ export class RemoteBrowsers {
     owner = taskId,
     profileId = 'default',
     initialUrl?: string,
+    isolated = false,
   ): Promise<void> {
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
     let pending = this.sessions.get(taskId)
@@ -167,7 +170,7 @@ export class RemoteBrowsers {
       if (!/^[a-zA-Z0-9_-]{1,100}$/.test(profileId))
         throw new HttpError(400, 'Invalid browser profile')
       const target = initialUrl ? previewUrl(initialUrl) : undefined
-      pending = this.create(taskId, profileId, target)
+      pending = this.create(taskId, profileId, target, isolated)
       this.sessions.set(taskId, pending)
       this.owners.set(taskId, owner)
       void pending.catch(() => {
@@ -180,9 +183,10 @@ export class RemoteBrowsers {
     const session = await pending
     if (!session.listeners.size) this.scheduleClose(taskId, session)
   }
-  private async profile(profileId: string) {
-    await this.closingProfiles.get(profileId)
-    let entry = this.profiles.get(profileId)
+  private async profile(profileId: string, isolated = false) {
+    const key = isolated ? `isolated:${profileId}` : profileId
+    await this.closingProfiles.get(key)
+    let entry = this.profiles.get(key)
     if (!entry) {
       const create = async () => {
         const options = {
@@ -193,7 +197,7 @@ export class RemoteBrowsers {
           hasTouch: true,
         }
         let context: BrowserContext
-        if (this.profileDirectory) {
+        if (this.profileDirectory && !isolated) {
           const { chromium, executablePath } = await this.executable()
           context = await chromium.launchPersistentContext(join(this.profileDirectory, profileId), {
             ...options,
@@ -203,7 +207,8 @@ export class RemoteBrowsers {
           })
         } else context = await (await this.launch()).newContext(options)
         try {
-          if (this.profileDirectory) for (const page of context.pages()) await page.close()
+          if (this.profileDirectory && !isolated)
+            for (const page of context.pages()) await page.close()
           // No runtime credentials, personal browser profile, file access or native permissions
           // are exposed to the preview. Local HTTP services are intentionally reachable.
           await context.route('**/*', (route) => {
@@ -217,7 +222,7 @@ export class RemoteBrowsers {
         }
       }
       entry = { context: create(), users: 0 }
-      this.profiles.set(profileId, entry)
+      this.profiles.set(key, entry)
     }
     const current = entry
     current.users++
@@ -225,26 +230,24 @@ export class RemoteBrowsers {
     const release = () =>
       (released ??= (async () => {
         if (--current.users) return
-        if (this.profiles.get(profileId) === current) this.profiles.delete(profileId)
+        if (this.profiles.get(key) === current) this.profiles.delete(key)
         const closing = current.context.then((context) => context.close())
-        this.closingProfiles.set(profileId, closing)
+        this.closingProfiles.set(key, closing)
         try {
           await closing
         } finally {
-          if (this.closingProfiles.get(profileId) === closing)
-            this.closingProfiles.delete(profileId)
+          if (this.closingProfiles.get(key) === closing) this.closingProfiles.delete(key)
         }
       })())
     try {
       return { context: await current.context, release }
     } catch (error) {
-      if (!--current.users && this.profiles.get(profileId) === current)
-        this.profiles.delete(profileId)
+      if (!--current.users && this.profiles.get(key) === current) this.profiles.delete(key)
       throw error
     }
   }
-  private async create(taskId: string, profileId: string, initialUrl?: string) {
-    const { context, release } = await this.profile(profileId)
+  private async create(taskId: string, profileId: string, initialUrl?: string, isolated = false) {
+    const { context, release } = await this.profile(profileId, isolated)
     let createdPage: Page | undefined
     try {
       const page = await context.newPage()
@@ -655,6 +658,77 @@ export class RemoteBrowsers {
       })
     await operation
   }
+  /** Agent sessions have no access to persistent user profiles or runtime credentials. */
+  async agentCommand(taskId: string, command: AgentBrowserCommand, authorize: () => void) {
+    authorize()
+    const resource = `agent-browser:${taskId}`
+    if (command.action === 'close') {
+      await this.close(resource)
+      return { ok: true as const }
+    }
+    const profile = `agent-${createHash('sha256').update(taskId).digest('hex')}`
+    await this.open(resource, taskId, profile, undefined, true)
+    const session = await this.sessions.get(resource)
+    if (!session) throw new HttpError(404, 'Agent browser session expired. Retry the command.')
+    if (session.queued >= 100)
+      throw new HttpError(429, 'Agent browser is busy. Wait for the page to respond.')
+    session.queued++
+    const operation = session.queue.then(async () => {
+      authorize()
+      const page = session.page
+      let scriptResult: unknown
+      switch (command.action) {
+        case 'evaluate':
+          scriptResult = await browserScript(session.cdp, command.script)
+          break
+        case 'navigate':
+          await page.goto(previewUrl(command.url), { waitUntil: 'domcontentloaded' })
+          break
+        case 'back':
+          await page.goBack({ waitUntil: 'domcontentloaded' })
+          break
+        case 'forward':
+          await page.goForward({ waitUntil: 'domcontentloaded' })
+          break
+        case 'reload':
+          await page.reload({ waitUntil: 'domcontentloaded' })
+          break
+        case 'click':
+          await page.locator(command.selector).click()
+          break
+        case 'fill':
+          await page.locator(command.selector).fill(command.text)
+          break
+        case 'key':
+          decode(remoteBrowserInputSchema, { type: 'key', key: command.key })
+          await page.keyboard.press(command.key)
+          break
+        case 'scroll':
+          await page.mouse.wheel(0, command.deltaY)
+          break
+        case 'snapshot':
+          break
+      }
+      this.scheduleClose(resource, session)
+      return {
+        ok: true as const,
+        ...(command.action === 'evaluate' ? { result: scriptResult } : {}),
+        url: page.url(),
+        title: await page.title(),
+        snapshot: (await page.locator('body').ariaSnapshot()).slice(0, 32000),
+        image: (await page.screenshot({ type: 'png', timeout: 10000 })).toString('base64'),
+      }
+    })
+    session.queue = operation
+      .then(
+        () => {},
+        () => {},
+      )
+      .finally(() => {
+        session.queued--
+      })
+    return operation
+  }
   async closeTask(taskId: string) {
     await Promise.all(
       [...this.owners].filter(([, owner]) => owner === taskId).map(([id]) => this.close(id)),
@@ -673,6 +747,7 @@ export class RemoteBrowsers {
   }
   async dispose() {
     this.disposed = true
+    await this.installation.dispose()
     const results = await Promise.allSettled([...this.sessions.keys()].map((id) => this.close(id)))
     for (const result of results)
       if (result.status === 'rejected')

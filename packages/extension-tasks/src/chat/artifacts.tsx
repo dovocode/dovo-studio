@@ -1,6 +1,8 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { memo, useContext, useEffect, useState } from 'react'
 import {
   artifactFile,
+  artifactSourceMarkdown,
   artifactFormatLabels,
   artifactListSchema,
   artifactLinkLabel,
@@ -39,6 +41,7 @@ import {
 } from 'lucide-react'
 import { ArtifactIcon } from './artifact-presentation'
 import { InlineArtifact } from './inline-artifact'
+import { useArtifactPreviewTheme } from './preview-theme'
 import { ArtifactOpenContext } from './artifact-open-context'
 
 export const ArtifactCard = memo(function ArtifactCard({
@@ -93,6 +96,7 @@ export function ArtifactBrowser({
   initialId?: string
 } & ({ embedded: true; onClose?: () => void } | { embedded?: false; onClose: () => void })) {
   const { request, connected } = useWorkspace()
+  const previewTheme = useArtifactPreviewTheme()
   const [items, setItems] = useState<ArtifactMetadata[]>()
   const [links, setLinks] = useState<ArtifactLink[]>([])
   const [id, setId] = useState(initialId)
@@ -106,6 +110,7 @@ export function ArtifactBrowser({
   const artifact = loaded?.selection === selection ? loaded.artifact : undefined
   const [listError, setListError] = useState('')
   const [previewError, setPreviewError] = useState('')
+  const [versionsError, setVersionsError] = useState('')
   const [actionError, setActionError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const error = listError || previewError || actionError
@@ -155,18 +160,23 @@ export function ArtifactBrowser({
     setActionError('')
     setCopied(false)
     if (!id || !metadata || !connected) return
-    void Promise.all([
-      request('/api/artifacts/read', { taskId, id, revision }, artifactResponseSchema),
-      request('/api/artifacts/versions', { taskId, id }, artifactVersionsSchema),
-    ])
-      .then(([result, history]) => {
-        if (!disposed) {
-          setLoaded({ selection, artifact: result.artifact })
-          setVersions(history.versions)
-        }
+    setVersionsError('')
+    void request('/api/artifacts/read', { taskId, id, revision }, artifactResponseSchema)
+      .then((result) => {
+        if (!disposed) setLoaded({ selection, artifact: result.artifact })
       })
       .catch((cause: unknown) => {
-        if (!disposed) setPreviewError(String(cause))
+        if (!disposed) setPreviewError(cause instanceof Error ? cause.message : String(cause))
+      })
+    void request('/api/artifacts/versions', { taskId, id }, artifactVersionsSchema)
+      .then((history) => {
+        if (!disposed) setVersions(history.versions)
+      })
+      .catch((cause: unknown) => {
+        if (!disposed)
+          setVersionsError(
+            `Version history unavailable: ${cause instanceof Error ? cause.message : String(cause)}`,
+          )
       })
     return () => {
       disposed = true
@@ -186,9 +196,7 @@ export function ArtifactBrowser({
     if (!artifact) return
     setActionError('')
     try {
-      if (!navigator.clipboard)
-        throw new Error('Clipboard unavailable. Download the source instead.')
-      await navigator.clipboard.writeText(artifact.content)
+      await copyTextToClipboard(artifact.content)
       setCopied(true)
     } catch (cause) {
       setActionError(String(cause))
@@ -311,7 +319,7 @@ export function ArtifactBrowser({
               <option value="">Latest version</option>
               {versions.map((item) => (
                 <option key={item.revision} value={item.revision}>
-                  Version {item.revision}
+                  Version {item.revision} · {new Date(item.updatedAt).toLocaleString()}
                 </option>
               ))}
             </select>
@@ -328,6 +336,11 @@ export function ArtifactBrowser({
             </IconButton>
           </div>
         </div>
+      )}
+      {versionsError && (
+        <p role="alert" className="border-b px-4 py-2 text-xs text-muted-foreground">
+          {versionsError}
+        </p>
       )}
       {error && (
         <p role="alert" className="shrink-0 border-b px-4 py-3 text-xs text-destructive">
@@ -380,25 +393,37 @@ export function ArtifactBrowser({
             </Button>
           </div>
         )}
-        {artifact &&
-          (source || artifact.format === 'code' ? (
-            <pre className="min-h-full whitespace-pre-wrap break-words bg-background p-5 font-mono text-xs leading-6">
-              <code>{artifact.content}</code>
-            </pre>
-          ) : artifact.format === 'markdown' ? (
-            <div className="mx-auto min-h-full max-w-3xl bg-background px-6 py-8 sm:px-10">
-              <MessageResponse>{artifact.content}</MessageResponse>
+        {artifact && (
+          <>
+            <div hidden={source || artifact.format === 'code'} className="h-full">
+              {artifact.format === 'markdown' ? (
+                <div className="mx-auto min-h-full max-w-3xl bg-background px-6 py-8 sm:px-10">
+                  <MessageResponse>{artifact.content}</MessageResponse>
+                </div>
+              ) : artifact.format !== 'code' ? (
+                <iframe
+                  key={`${id}:${artifact.revision}`}
+                  title={artifact.title}
+                  className="h-full min-h-80 w-full border-0 bg-background"
+                  sandbox="allow-scripts"
+                  referrerPolicy="no-referrer"
+                  srcDoc={artifactPreviewHtml(artifact.content, previewTheme)}
+                />
+              ) : null}
             </div>
-          ) : (
-            <iframe
-              key={`${id}:${artifact.revision}`}
-              title={artifact.title}
-              className="h-full min-h-80 w-full border-0 bg-white"
-              sandbox="allow-scripts"
-              referrerPolicy="no-referrer"
-              srcDoc={artifactPreviewHtml(artifact.content)}
-            />
-          ))}
+            {(source || artifact.format === 'code') && (
+              <div className="min-h-full bg-background p-5 font-mono text-xs leading-6">
+                {artifact.content.length <= 1024 * 1024 ? (
+                  <MessageResponse>{artifactSourceMarkdown(artifact)}</MessageResponse>
+                ) : (
+                  <pre className="whitespace-pre-wrap break-words">
+                    <code>{artifact.content}</code>
+                  </pre>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </div>
       {artifact && (
         <footer className="flex shrink-0 items-center justify-between gap-3 border-t px-4 py-2 text-[0.6875rem] text-muted-foreground">

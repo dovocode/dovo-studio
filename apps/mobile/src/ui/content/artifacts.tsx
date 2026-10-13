@@ -8,6 +8,7 @@ import * as Sharing from 'expo-sharing'
 import * as Crypto from 'expo-crypto'
 import {
   artifactFile,
+  artifactSourceMarkdown,
   artifactFormatLabels,
   artifactListSchema,
   artifactLinkLabel,
@@ -149,6 +150,7 @@ export function ArtifactBrowser({
   const artifact = loaded?.selection === selection ? loaded.artifact : undefined
   const [listError, setListError] = useState('')
   const [previewError, setPreviewError] = useState('')
+  const [versionsError, setVersionsError] = useState('')
   const error = listError || previewError
   const [source, setSource] = useState(false)
   const [sharing, setSharing] = useState(false)
@@ -185,18 +187,23 @@ export function ArtifactBrowser({
     setVersions([])
     setPreviewError('')
     if (!id || !metadata || !connected) return
-    void Promise.all([
-      read('/api/artifacts/read', { taskId, id, revision }, artifactResponseSchema),
-      read('/api/artifacts/versions', { taskId, id }, artifactVersionsSchema),
-    ])
-      .then(([result, history]) => {
-        if (!disposed) {
-          setLoaded({ selection, artifact: result.artifact })
-          setVersions(history.versions)
-        }
+    setVersionsError('')
+    void read('/api/artifacts/read', { taskId, id, revision }, artifactResponseSchema)
+      .then((result) => {
+        if (!disposed) setLoaded({ selection, artifact: result.artifact })
       })
       .catch((cause: unknown) => {
-        if (!disposed) setPreviewError(String(cause))
+        if (!disposed) setPreviewError(cause instanceof Error ? cause.message : String(cause))
+      })
+    void read('/api/artifacts/versions', { taskId, id }, artifactVersionsSchema)
+      .then((history) => {
+        if (!disposed) setVersions(history.versions)
+      })
+      .catch((cause: unknown) => {
+        if (!disposed)
+          setVersionsError(
+            `Version history unavailable: ${cause instanceof Error ? cause.message : String(cause)}`,
+          )
       })
     return () => {
       disposed = true
@@ -311,6 +318,7 @@ export function ArtifactBrowser({
               onPress={onClose}
             />
           </View>
+          {!!versionsError && <Text style={styles.muted}>{versionsError}</Text>}
           {!!error && <Text style={styles.error}>{error}</Text>}
           {!error && (!items || (!!id && !link && !artifact)) && <ActivityIndicator />}
           {items?.length === 0 && links.length === 0 && (
@@ -430,34 +438,44 @@ export function ArtifactBrowser({
             />
           </ScrollView>
         ) : (
-          artifact &&
-          (source || artifact.format === 'code' || artifact.format === 'markdown' ? (
-            <ScrollView
-              contentContainerStyle={{ padding: source || artifact.format === 'code' ? 20 : 24 }}
-            >
-              {!source && artifact.format === 'markdown' ? (
-                <Markdown text={artifact.content} />
-              ) : (
-                <Text
-                  selectable
-                  style={{
-                    color: colors.text,
-                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                    fontSize: 13,
-                    lineHeight: 22,
+          artifact && (
+            <>
+              {(artifact.format === 'html' || artifact.format === 'svg') && (
+                <View style={{ flex: 1, display: source ? 'none' : 'flex' }}>
+                  <ArtifactWebView
+                    key={`${id}:${artifact.revision}`}
+                    content={artifact.content}
+                    onError={() => setPreviewError('Could not load artifact preview')}
+                  />
+                </View>
+              )}
+              {(source || artifact.format === 'code' || artifact.format === 'markdown') && (
+                <ScrollView
+                  contentContainerStyle={{
+                    padding: source || artifact.format === 'code' ? 20 : 24,
                   }}
                 >
-                  {artifact.content}
-                </Text>
+                  {!source && artifact.format === 'markdown' ? (
+                    <Markdown text={artifact.content} />
+                  ) : artifact.content.length <= 1024 * 1024 ? (
+                    <Markdown text={artifactSourceMarkdown(artifact)} />
+                  ) : (
+                    <Text
+                      selectable
+                      style={{
+                        color: colors.text,
+                        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                        fontSize: 13,
+                        lineHeight: 22,
+                      }}
+                    >
+                      {artifact.content}
+                    </Text>
+                  )}
+                </ScrollView>
               )}
-            </ScrollView>
-          ) : (
-            <ArtifactWebView
-              key={`${id}:${artifact.revision}`}
-              content={artifact.content}
-              onError={() => setPreviewError('Could not load artifact preview')}
-            />
-          ))
+            </>
+          )
         )}
       </View>
     </SafeModal>

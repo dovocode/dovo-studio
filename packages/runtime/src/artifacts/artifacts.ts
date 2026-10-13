@@ -295,7 +295,7 @@ export class Artifacts {
     if (resolveTaskAgent(task, this.store.get().agents)?.permission === 'read-only')
       throw new HttpError(403, 'Creating artifacts is disabled for read-only threads')
     if (Buffer.byteLength(input.content, 'utf8') > ARTIFACT_MAX_BYTES)
-      throw new HttpError(413, 'Artifact exceeds the 2 MB limit')
+      throw new HttpError(413, 'Artifact exceeds the 100 MB limit')
     return this.db.transaction(() => {
       const previous = 'id' in input ? this.read(input.taskId, input.id) : undefined
       if ('expectedRevision' in input && previous?.revision !== input.expectedRevision)

@@ -85,6 +85,9 @@ try {
   })
   await page.getByRole('button', { name: 'Open Screenshot' }).click()
   await page.getByRole('dialog').waitFor()
+  await page.waitForFunction(() =>
+    window.requests.some((request) => request.input.maxSize === 2048),
+  )
   await page.getByRole('button', { name: 'Open original & download' }).click()
   assert.equal(await page.evaluate(() => window.originals), 1)
   await page.getByRole('button', { name: 'Close image' }).click()

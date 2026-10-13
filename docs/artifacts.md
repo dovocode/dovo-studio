@@ -26,6 +26,11 @@ scripts and assets for interactive artifacts. HTML and SVG previews run in an op
 external network, host DOM, runtime credentials, filesystem, native bridge or popup access.
 Artifacts do not receive the interactive MCP Apps tool bridge.
 
+HTML and SVG viewers follow the app's light/dark mode and color palette, with themed typography,
+links and form controls when the artifact does not supply its own styles. Authored styles take
+precedence. Interactive pages can use the `--preview-background`, `--preview-foreground`,
+`--preview-surface`, `--preview-border` and `--preview-accent` CSS variables.
+
 Desktop exposes **Artifacts** in the thread toolbar. Conversation cards open the selected artifact
 beside chat, with an option to expand the preview. Mobile exposes artifacts in the thread menu and
 opens conversation cards in a full-screen viewer. Tool activity shows artifact cards even when the
@@ -67,9 +72,9 @@ Dovo Artifacts is disabled, and deletion permanently removes all revisions.
 Bodies are stored separately in SQLite, never in workspace snapshots or artifact reference events.
 Full viewers fetch content only when opened; library snapshots contain only a bounded excerpt or a
 small image. The existing tool details preference still controls raw provider input/output. Each
-revision is limited to 2 MB of UTF-8 content. Deleting a thread removes all its artifact revisions.
-Paired devices can read artifacts; creation and updates use the runtime's host credential and
-respect read-only thread permissions.
+revision is limited to 100 MB of UTF-8 content. Deleting a thread removes all its artifact
+revisions. Paired devices can read artifacts; creation and updates use the runtime's host credential
+and respect read-only thread permissions.
 
 Run `pnpm test:artifacts:browser` for sandbox and desktop/mobile viewer interaction checks. Run the
 runtime artifact and agent-tools tests for HTTP authorization, revision conflicts, persistence,

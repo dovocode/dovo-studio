@@ -73,10 +73,13 @@ export function RunInTerminal({
               {commands.map((entry, index) => (
                 <DropdownMenu.Item
                   key={index}
-                  className={`${item} truncate font-mono`}
+                  className={`${item} flex flex-col items-start gap-1 font-mono`}
                   onSelect={() => run(entry.command)}
                 >
-                  {entry.label}
+                  <span>{entry.label}</span>
+                  <pre className="max-h-48 max-w-full overflow-auto whitespace-pre-wrap break-words text-[0.6875rem] text-muted-foreground">
+                    {entry.command}
+                  </pre>
                 </DropdownMenu.Item>
               ))}
             </DropdownMenu.Content>

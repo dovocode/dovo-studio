@@ -132,8 +132,8 @@ export async function readTaskVisualization(s: Services, value: unknown) {
   const { target, handle } = await openSharedFile(s, input.taskId, input.path)
   try {
     const info = await handle.stat()
-    if (!info.isFile() || info.size > 1024 * 1024)
-      throw new HttpError(413, 'Visualizations must be HTML files up to 1 MB')
+    if (!info.isFile() || info.size > 100 * 1024 * 1024)
+      throw new HttpError(413, 'Visualizations must be HTML files up to 100 MB')
     if (!/\.html?$/i.test(target)) throw new HttpError(415, 'Use an HTML visualization')
     const contents = await handle.readFile('utf8')
     if (contents.includes('\0')) throw new HttpError(415, 'Binary files cannot be visualizations')

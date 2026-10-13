@@ -1,5 +1,6 @@
 import { randomUUID } from '@dovo/protocol'
 import { draftAttachments, type LocalAttachment } from './draft-attachments'
+import { optimizeAttachmentImage } from './attachment-images'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -63,11 +64,28 @@ export function useAttachments(task: Task) {
     setWorking(true)
     setError('')
     try {
-      if (files.length + selected.length > MAX_ATTACHMENTS)
-        throw new Error('Attach up to 5 files per message.')
-      if (selected.some((file) => file.size > MAX_ATTACHMENT_BYTES))
-        throw new Error('Each attachment must be 4 MB or smaller.')
-      const batch = selected.map((file) => {
+      const accepted: File[] = []
+      const rejected: string[] = []
+      for (const original of selected) {
+        if (files.length + accepted.length >= MAX_ATTACHMENTS) {
+          rejected.push(`${original.name}: attach up to 5 files per message.`)
+          continue
+        }
+        let file: File
+        try {
+          file = await optimizeAttachmentImage(original)
+        } catch (cause) {
+          rejected.push(
+            `${original.name}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          )
+          continue
+        }
+        if (file.size > MAX_ATTACHMENT_BYTES)
+          rejected.push(`${file.name}: must be 5 MB or smaller.`)
+        else accepted.push(file)
+      }
+      setError(rejected.join('\n'))
+      const batch = accepted.map((file) => {
         const attachment = {
           id: randomUUID(),
           name: file.name,

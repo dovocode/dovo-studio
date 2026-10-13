@@ -365,7 +365,17 @@ function TaskFileDialog({
       }}
     >
       <DialogContent className="flex h-[85dvh] max-w-5xl flex-col" aria-describedby={undefined}>
-        <DialogTitle>{markdownFileName(path)}</DialogTitle>
+        <div className="flex items-center justify-between gap-3 pr-6">
+          <DialogTitle>{markdownFileName(path)}</DialogTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!connected || (!current?.url && !current?.error)}
+            onClick={() => setRevision((value) => value + 1)}
+          >
+            Refresh preview
+          </Button>
+        </div>
         {error ? (
           <div role="alert">
             <p>{error}</p>

@@ -1,15 +1,29 @@
 import { useMemo, useState } from 'react'
 import WebView from 'react-native-webview'
 import { artifactPreviewHtml } from '@dovo/protocol'
+import { useTheme } from '../theme'
 
 export function ArtifactWebView({ content, onError }: { content: string; onError: () => void }) {
   const [generation, setGeneration] = useState(0)
-  const source = useMemo(() => ({ html: artifactPreviewHtml(content) }), [content])
+  const { mode, colors } = useTheme()
+  const source = useMemo(
+    () => ({
+      html: artifactPreviewHtml(content, {
+        mode,
+        background: colors.background,
+        foreground: colors.text,
+        surface: colors.surface,
+        border: colors.border,
+        accent: colors.accent,
+      }),
+    }),
+    [content, mode, colors],
+  )
   return (
     <WebView
       key={generation}
       source={source}
-      style={{ flex: 1, backgroundColor: '#fff' }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       originWhitelist={['*']}
       allowFileAccess={false}
       allowFileAccessFromFileURLs={false}

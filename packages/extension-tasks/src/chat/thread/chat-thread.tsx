@@ -525,7 +525,7 @@ export function ChatThread({
                     key={group.id}
                     id={`turn-${task.id}-${group.id}`}
                     aria-label={`User request · ${conversationTurnLabel(group.status)}`}
-                    className="flex min-w-0 flex-col gap-3"
+                    className="studio-chat-turn flex min-w-0 flex-col gap-3"
                     style={
                       group.status === 'completed'
                         ? {

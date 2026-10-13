@@ -32,6 +32,7 @@ export function CommitSection({ task }: { task: Task }) {
   const { connected, profile, snapshot, readEffect, callEffect } = useRuntime()
   const foreground = useAppActive()
   const { act, busy, error } = useAction()
+  const [suggestion, setSuggestion] = useApplicationState('')
   const [message, setMessage] = useApplicationState('')
   const [status, setStatus] = useApplicationState('')
   const repo = snapshot?.workspace.repositories.find((item) => item.id === task.repositoryId)
@@ -157,6 +158,23 @@ export function CommitSection({ task }: { task: Task }) {
         maxLength={4000}
         editable={!busy}
       />
+      {!!suggestion && (
+        <View style={{ gap: 8 }}>
+          <Text style={styles.muted}>Generated message</Text>
+          <Text selectable style={styles.text}>
+            {suggestion}
+          </Text>
+          <Action
+            label="Use generated message"
+            disabled={busy}
+            onPress={() => {
+              setMessage(suggestion)
+              setSuggestion('')
+            }}
+          />
+          <Action secondary label="Keep my message" onPress={() => setSuggestion('')} />
+        </View>
+      )}
       <View style={styles.row}>
         <Action
           secondary
@@ -165,7 +183,12 @@ export function CommitSection({ task }: { task: Task }) {
           onPress={() =>
             act(() =>
               callEffect('/api/tasks/commit-message', { id: task.id }, messageSchema).pipe(
-                Effect.tap((value) => Effect.sync(() => setMessage(value.message))),
+                Effect.tap((value) =>
+                  Effect.sync(() => {
+                    if (!message.trim()) setMessage(value.message)
+                    else setSuggestion(value.message)
+                  }),
+                ),
               ),
             )
           }

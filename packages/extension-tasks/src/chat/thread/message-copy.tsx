@@ -1,3 +1,4 @@
+import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import { Check, Copy } from 'lucide-react'
@@ -16,8 +17,7 @@ export function MessageCopy({ text }: { text: string }) {
         label={copied ? 'Copied message' : 'Copy message'}
         className="size-6 text-muted-foreground"
         onClick={() => {
-          void navigator.clipboard
-            .writeText(text)
+          void copyTextToClipboard(text)
             .then(() => {
               setCopied(true)
               setError('')

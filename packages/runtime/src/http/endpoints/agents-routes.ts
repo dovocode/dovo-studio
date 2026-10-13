@@ -1050,8 +1050,15 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           safeFile(yield* serviceResult(repositoryPath(cwd)), input.path),
         )
         const details = yield* serviceResult(stat(filename))
-        if (!details.isFile() || details.size > 1024 * 1024)
-          throw new HttpError(413, 'Only text files up to 1 MB can be previewed')
+        if (!details.isFile()) throw new HttpError(400, 'Choose a regular file')
+        const maxBytes = path === '/api/tasks/files/write' ? 1024 * 1024 : 100 * 1024 * 1024
+        if (details.size > maxBytes)
+          throw new HttpError(
+            413,
+            path === '/api/tasks/files/write'
+              ? 'Only text files up to 1 MB can be edited'
+              : 'Only text files up to 100 MB can be previewed',
+          )
         const contents = yield* serviceResult(readFile(filename, 'utf8'))
         if (contents.includes('\0')) throw new HttpError(415, 'Binary files cannot be previewed')
         if (path === '/api/tasks/files/write') {

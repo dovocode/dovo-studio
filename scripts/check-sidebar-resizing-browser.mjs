@@ -48,7 +48,7 @@ window.mount=()=>root.render(<ApplicationStateProvider><TooltipProvider><Fixture
           namespace: 'fixture',
         }))
         build.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
-          contents: `export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';const request=async()=>({files:['src/first.ts','src/second.ts']});export const useWorkspace=()=>({connected:true,request});`,
+          contents: `export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useStudioHost=()=>({});const request=async()=>({files:['src/first.ts','src/second.ts']});export const useWorkspace=()=>({connected:true,request});`,
           loader: 'ts',
           resolveDir: fileURLToPath(new URL('../packages/studio-core/', import.meta.url)),
         }))

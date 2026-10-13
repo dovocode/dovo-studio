@@ -618,6 +618,7 @@ export function Composer({
         )}
         <ComposerEditor
           controller={composerDraft.controller}
+          messages={task.messages}
           taskId={task.id}
           input={input}
           resources={resources}
