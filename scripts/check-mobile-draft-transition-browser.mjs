@@ -133,10 +133,12 @@ for (const [path, names] of Object.entries({
   '../conversation/components/preparation-progress': ['PreparationProgress'],
   '../conversation/components/review-comments': ['ReviewComments'],
   '../conversation/components/plan-approval': ['PlanApproval'],
+  '../conversation/components/native-todos': ['NativeTodos'],
   '../conversation/components/side-question': ['SideQuestion'],
   './project-instructions': ['ProjectInstructions'],
   '../conversation/components/review-findings': ['ReviewFindings'],
   '../../scm/review/code-review-card': ['CodeReviewCard'],
+  '../../scm/review/code-review-report': ['CodeReviewReport'],
 }))
   mocks[path] = names.map((name) => `export const ${name}=()=>null;`).join('\n')
 

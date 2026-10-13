@@ -70,6 +70,7 @@ export function runtimeSnapshot(
       taskBehaviorSupported: true,
       worktreeDeletionOverrideSupported: true,
       artifactsEnabled: preferences.enableArtifacts,
+      codeReviewsEnabled: preferences.enableCodeReviews,
       allowWebRequests: preferences.allowWebRequests,
       acpInstallations: s.acpInstallations.list(),
       revision,

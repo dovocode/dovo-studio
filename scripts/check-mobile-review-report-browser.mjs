@@ -14,7 +14,7 @@ const finding={id:'finding',path:'src/editor/save.ts',line:42,severity:'high',ti
 const approval={approvedAt:'2026-10-12',baseline:'tree',head:'head'};
 const head = 'head'
 const latest={id:'review',reviewer:'Reviewer',model:'Thread model',status:'completed',createdAt:'2026-10-12',baseline:'tree',head,findings:[finding],summary:'Inspected persistence and callers',notVerified:['Physical iPhone behavior'],approval};
-function App(){const [tab,setTab]=useState('diff'),[scope,setScope]=useState('working');return <CodeReviewReport task={{id:'task',files:[],status:'review'}} tab={tab} onTab={setTab} scope={scope} onScope={setScope} focusedFinding={finding} onOpen={f=>{window.opened=f;setTab('diff')}} onSince={id=>window.since=id} review={{busy:false,error:'',refresh(){},run:(action,input)=>window.action={action,input},report:{reviews:[latest],current:true,approved:true,evidenceLimited:false,commands:[{id:'command',command:'pnpm test save',status:'passed',source:'reviewer',revision:'tree',time:'2026-10-12',output:'Save regression passed',exitCode:0}]}}}/>};createRoot(document.getElementById('app')).render(<App/>);`,
+window.reviewsEnabled=false;function App(){const [enabled,setEnabled]=useState(false),[tab,setTab]=useState('diff'),[scope,setScope]=useState('working');window.setReviewsEnabled=value=>{window.reviewsEnabled=value;setEnabled(value)};return <CodeReviewReport task={{id:'task',files:[],status:'review'}} tab={tab} onTab={setTab} scope={scope} onScope={setScope} focusedFinding={finding} onOpen={f=>{window.opened=f;setTab('diff')}} onSince={id=>window.since=id} review={{busy:false,error:'',refresh(){},run:(action,input)=>window.action={action,input},report:{reviews:[latest],current:true,approved:true,evidenceLimited:false,commands:[{id:'command',command:'pnpm test save',status:'passed',source:'reviewer',revision:'tree',time:'2026-10-12',output:'Save regression passed',exitCode:0}]}}}/>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -36,7 +36,7 @@ function App(){const [tab,setTab]=useState('diff'),[scope,setScope]=useState('wo
     {
       path: '../../runtime/connection/provider',
       importer: mobile,
-      contents: `export const useRuntime=()=>({connected:true,snapshot:{workspace:{agents:[]}}});`,
+      contents: `export const useRuntime=()=>({connected:true,snapshot:{codeReviewsEnabled:window.reviewsEnabled,workspace:{agents:[]}}});`,
     },
     {
       path: '../../ui/theme',
@@ -73,6 +73,9 @@ try {
     '<style>body{margin:0;background:#171717;color:#eee;font:14px system-ui}button,select{min-height:44px;border:1px solid #444;background:#252525;color:#eee;border-radius:8px;padding:8px}span{overflow-wrap:anywhere}</style><div id="app"></div>',
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  assert.equal(await page.getByRole('button', { name: 'Local edits', exact: true }).count(), 0)
+  await page.evaluate(() => window.setReviewsEnabled(true))
+  await page.getByRole('button', { name: 'Local edits', exact: true }).waitFor()
   assert.equal(await page.getByRole('combobox', { name: 'Reviewer configuration' }).count(), 0)
   await page.getByRole('button', { name: 'Local edits', exact: true }).click()
   await page.getByRole('button', { name: 'Re-review', exact: true }).click()
@@ -106,6 +109,8 @@ try {
       true,
     )
   }
+  await page.evaluate(() => window.setReviewsEnabled(false))
+  await page.waitForFunction(() => document.getElementById('app').textContent === '')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile report: compact options, scope, focused finding, evidence, fix delta and stale verification passed',

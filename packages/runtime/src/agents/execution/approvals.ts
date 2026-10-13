@@ -89,9 +89,7 @@ export class Approvals {
           title,
           detail,
           createdAt: new Date().toISOString(),
-          ...(scopes
-            ? { scopes: { session: !!scopes.session, always: !!scopes.always } }
-            : {}),
+          ...(scopes ? { scopes: { session: !!scopes.session, always: !!scopes.always } } : {}),
           rememberRule: project && (command || web) ? (web ? 'web' : 'command') : null,
         },
         resolve: finish,

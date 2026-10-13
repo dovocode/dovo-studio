@@ -49,7 +49,8 @@ export function TaskReview({
   const { call, connected, callEffect, snapshot } = useRuntime(),
     { busy, error, act } = useAction()
   const [checkpoint, setCheckpoint] = useApplicationState(initialCheckpoint)
-  const [tab, setTab] = useState<ReviewTab>(initialTab)
+  const [requestedTab, setTab] = useState<ReviewTab>(initialTab)
+  const tab = snapshot?.codeReviewsEnabled ? requestedTab : 'diff'
   const codeReview = useTaskReview(
     task.id,
     JSON.stringify([
@@ -357,9 +358,7 @@ export function TaskReview({
               Snapshot diff for this turn. Select Current changes to edit files.
             </Text>
           )}
-          {toolsOpen && !checkoutId && !checkpoint && (
-            <CommitSection task={task} approved={!!codeReview.report?.approved} />
-          )}
+          {toolsOpen && !checkoutId && !checkpoint && <CommitSection task={task} />}
           <View style={styles.row}>
             <Action
               secondary

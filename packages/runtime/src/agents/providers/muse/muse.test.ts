@@ -363,12 +363,16 @@ it('resolves Windows script launchers through PATH and PATHEXT under cmd.exe', (
   })
   // A path without spaces escapes cmd metacharacters instead of quoting.
   const plain = { ...env, PATH: 'C:\\Tools' }
-  expect(museLaunch('muse', 'win32', plain, (path) => path.toLowerCase() === 'c:\\tools\\muse.bat')).toEqual({
+  expect(
+    museLaunch('muse', 'win32', plain, (path) => path.toLowerCase() === 'c:\\tools\\muse.bat'),
+  ).toEqual({
     command: 'C:\\Windows\\System32\\cmd.exe',
     args: ['/d', '/c', 'C:\\Tools\\muse.BAT'],
   })
   // Real executables run directly, and unresolved names pass through unchanged.
-  expect(museLaunch('muse', 'win32', env, (path) => path.toLowerCase() === 'c:\\tools\\muse.exe')).toEqual({
+  expect(
+    museLaunch('muse', 'win32', env, (path) => path.toLowerCase() === 'c:\\tools\\muse.exe'),
+  ).toEqual({
     command: 'C:\\Tools\\muse.EXE',
     args: [],
   })

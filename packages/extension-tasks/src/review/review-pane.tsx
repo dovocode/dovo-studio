@@ -61,10 +61,11 @@ function PrimaryReviewPane({
   onReference?: (text: string) => void
 }) {
   const { hideWhitespaceChanges } = useAppPreferences()
-  const { setWorkspace, request, connected } = useWorkspace()
+  const { setWorkspace, request, connected, snapshot } = useWorkspace()
   const [selected, setSelected] = useApplicationState(initialFinding?.path ?? '')
   const [focusedFinding, setFocusedFinding] = useApplicationState(initialFinding)
-  const [tab, setTab] = useApplicationState<ReviewTab>(initialTab)
+  const [requestedTab, setTab] = useApplicationState<ReviewTab>(initialTab)
+  const tab = snapshot?.codeReviewsEnabled ? requestedTab : 'diff'
   const codeReview = useTaskReview(
     task.id,
     JSON.stringify([
@@ -495,7 +496,7 @@ function PrimaryReviewPane({
                     chooseFile(finding.path)
                 }}
               />
-              <CommitBar task={task} approved={!!codeReview.report?.approved} />
+              <CommitBar task={task} />
               {file && !pendingDraft && <DiskActions task={task} file={file} />}
               {file && <ReviewFeedback key={file.path} task={task} file={file} />}
             </div>

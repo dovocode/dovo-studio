@@ -45,7 +45,12 @@ it('shows supplied computer-use titles, readable commands and output without pro
     output: 'Desktop ready',
   })
   // New optional context fields stay absent when a harness supplies none.
-  expect(toolPresentation('{}', 'Tool')).toEqual({ title: 'Tool', input: '', output: '', kind: 'tool' })
+  expect(toolPresentation('{}', 'Tool')).toEqual({
+    title: 'Tool',
+    input: '',
+    output: '',
+    kind: 'tool',
+  })
   expect(
     toolPresentation(
       JSON.stringify({
@@ -263,7 +268,11 @@ it('shows Muse bash, read and edit context from item args, visible output and pa
           item: {
             kind: 'toolCall',
             tool: 'bash',
-            args: JSON.stringify({ command: 'pnpm test', description: 'Run tests', yield_time_ms: 60000 }),
+            args: JSON.stringify({
+              command: 'pnpm test',
+              description: 'Run tests',
+              yield_time_ms: 60000,
+            }),
             visibleOutput: 'ok',
           },
         },

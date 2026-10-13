@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
 import { runtimeIntegration } from '../testing/integration.js'
-import { decode, taskReviewReportSchema } from '@dovo/protocol'
+import { decode, snapshotSchema, taskReviewReportSchema } from '@dovo/protocol'
 import type { AgentAdapter, AgentRun } from '../agents/execution/types.js'
 vi.setConfig(runtimeIntegration)
 const cleanups: (() => Promise<void>)[] = []
@@ -28,7 +28,10 @@ const output = JSON.stringify({
     },
   ],
 })
-async function setup(run: AgentAdapter['run'] = async (context) => context.onText(output)) {
+async function setup(
+  run: AgentAdapter['run'] = async (context) => context.onText(output),
+  enabled = true,
+) {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
@@ -38,6 +41,7 @@ async function setup(run: AgentAdapter['run'] = async (context) => context.onTex
   })
   cleanups.push(runtime.close)
   const s = runtime.services
+  if (enabled) s.preferences.save({ enableCodeReviews: true })
   s.store.update(() => f.workspace)
   const task = s.tasks.create({
     title: 'Implement greeting',
@@ -69,6 +73,42 @@ async function setup(run: AgentAdapter['run'] = async (context) => context.onTex
     decode(taskReviewReportSchema, await (await call('read', { taskId: task.id })).json())
   return { f, runtime, s, task, calls, call, read }
 }
+it('requires experimental opt-in and preserves saved reviews when disabled', async () => {
+  const f = await setup(undefined, false)
+  const snapshot = async () =>
+    decode(
+      snapshotSchema,
+      await (
+        await fetch(`http://127.0.0.1:${f.runtime.port}/api/snapshot`, {
+          headers: { Authorization: 'Bearer review-owner-token-at-least-32-characters' },
+        })
+      ).json(),
+    )
+  expect(f.s.preferences.get().enableCodeReviews).toBe(false)
+  expect((await snapshot()).codeReviewsEnabled).toBe(false)
+  expect((await f.call('read', { taskId: f.task.id })).status).toBe(403)
+  expect((await f.call('start', { taskId: f.task.id, requestId: randomUUID() })).status).toBe(403)
+  expect(f.calls).toHaveLength(0)
+  const save = (enableCodeReviews: boolean) =>
+    fetch(`http://127.0.0.1:${f.runtime.port}/api/runtime/preferences/save`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer review-owner-token-at-least-32-characters',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ enableCodeReviews }),
+    })
+  expect((await save(true)).status).toBe(200)
+  expect((await snapshot()).codeReviewsEnabled).toBe(true)
+  expect((await f.call('start', { taskId: f.task.id, requestId: randomUUID() })).status).toBe(200)
+  await vi.waitFor(async () => expect((await f.read()).reviews[0].status).toBe('completed'))
+  const reviewId = (await f.read()).reviews[0].id
+  expect((await save(false)).status).toBe(200)
+  expect((await snapshot()).codeReviewsEnabled).toBe(false)
+  expect((await f.call('read', { taskId: f.task.id })).status).toBe(403)
+  expect((await save(true)).status).toBe(200)
+  expect((await f.read()).reviews[0].id).toBe(reviewId)
+})
 it('launches a fresh restricted reviewer, persists evidence, compares snapshots and sends fixes to the author', async () => {
   const f = await setup()
   expect(

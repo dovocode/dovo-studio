@@ -66,10 +66,9 @@ type MuseCatalogRow = {
   defaultReasoningEffort?: string
   reasoningEffortVariants?: Array<{ tier: string; description?: string }>
 }
-export function museReasoningOptions(row?: Pick<
-  MuseCatalogRow,
-  'variants' | 'defaultReasoningEffort' | 'reasoningEffortVariants'
->): {
+export function museReasoningOptions(
+  row?: Pick<MuseCatalogRow, 'variants' | 'defaultReasoningEffort' | 'reasoningEffortVariants'>,
+): {
   defaultEffort: string | undefined
   reasoning: Array<{ id: string; name: string; description?: string }>
 } {
@@ -160,8 +159,7 @@ export function museLaunch(
   if (!/\.(?:cmd|bat)$/i.test(resolved)) return { command: resolved, args: [] }
   const systemRoot = envValue('SystemRoot')
   return {
-    command:
-      envValue('ComSpec') ?? (systemRoot ? `${systemRoot}\\System32\\cmd.exe` : 'cmd.exe'),
+    command: envValue('ComSpec') ?? (systemRoot ? `${systemRoot}\\System32\\cmd.exe` : 'cmd.exe'),
     // /d skips cmd's AutoRun commands, which could write into Muse's stdout.
     // cmd /c drops the quotes from a command that starts with one and holds
     // `&`, `@`, `^` or a parenthesis, so a quoted path follows a bare `@`
@@ -673,9 +671,7 @@ export function createMuseAdapter(): AgentAdapter {
               ? { sessionId: run.sessionId, excludeItems: true, config: { mcpServers } }
               : {
                   workspaceRoot,
-                  ...(model
-                    ? { providerId: model.providerId, modelId: model.modelId }
-                    : {}),
+                  ...(model ? { providerId: model.providerId, modelId: model.modelId } : {}),
                   approvalMode:
                     run.agent.permission === 'full-access' ? 'allowAll' : 'promptUnmatched',
                   config: { mcpServers },
@@ -792,15 +788,12 @@ export function createMuseAdapter(): AgentAdapter {
             try {
               const catalog = decode(
                 rows,
-                await nativeWait(
-                  connection.connection.request('model/list'),
-                  signal,
-                  30000,
-                ),
+                await nativeWait(connection.connection.request('model/list'), signal, 30000),
               )
               const row = model
                 ? catalog.models.find(
-                    (entry) => entry.providerId === model.providerId && entry.modelId === model.modelId,
+                    (entry) =>
+                      entry.providerId === model.providerId && entry.modelId === model.modelId,
                   )
                 : catalog.models.find((entry) => entry.isDefault)
               if (row) effort = resolveMuseReasoningEffort(row, effort)

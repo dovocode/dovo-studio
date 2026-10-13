@@ -1146,6 +1146,13 @@ returns. On desktop, address replacement preserves unsent edits under the new co
 
 ### Project Git actions
 
+Independent code reviews are experimental and off by default. Enable **Independent code reviews
+(experimental)** in the computer's **Settings → Pull requests & pipelines** on desktop, or **Enable
+experimental code reviews** in its runtime settings on mobile. The setting applies to every client
+connected to that computer. It enables independent agent reviews, findings, verification and
+optional review approval. Disabling it hides those controls and preserves saved reviews. Review is
+never required to commit or push; ordinary diffs and file browsing remain available.
+
 Project checkout controls and the desktop thread’s **Commit & push** button offer staging,
 committing, pushing, and opening the working folder on the runtime computer. **Open** detects
 installed applications each time you open the menu and shows only available choices: Finder on

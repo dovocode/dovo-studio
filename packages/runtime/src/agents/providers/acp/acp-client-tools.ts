@@ -113,7 +113,7 @@ export async function acpClientTools(
           if (
             !fullAccess &&
             run.agent.permission !== 'workspace-write' &&
-            ((await run.approve('ACP write file', file)) === 'deny')
+            (await run.approve('ACP write file', file)) === 'deny'
           )
             throw new Error('ACP file write declined')
           checkSession(params.sessionId)
@@ -160,10 +160,10 @@ export async function acpClientTools(
           if (params.cwd) await checkedPath(params.cwd)
           if (
             !fullAccess &&
-            ((await run.approve(
+            (await run.approve(
               'ACP run command',
               [params.command, ...(params.args ?? [])].join(' '),
-            )) === 'deny')
+            )) === 'deny'
           )
             throw new Error('ACP terminal declined')
           checkSession(params.sessionId)

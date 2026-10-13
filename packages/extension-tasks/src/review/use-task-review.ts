@@ -6,12 +6,13 @@ import {
   type TaskReviewSessionState,
 } from '@dovo/protocol'
 export function useTaskReview(taskId: string, version: string, enabled = true) {
-  const { request, connected, activeRuntimeId } = useWorkspace()
+  const { request, connected, activeRuntimeId, snapshot } = useWorkspace()
+  const active = enabled && snapshot?.codeReviewsEnabled === true
   const key = JSON.stringify([activeRuntimeId, taskId])
   const [value, setValue] = useState<{ key: string; state: TaskReviewSessionState } | null>(null)
   const session = useRef<ReturnType<typeof createTaskReviewSession> | null>(null)
   useEffect(() => {
-    if (!connected || !enabled) return
+    if (!connected || !active) return
     const current = createTaskReviewSession(
       taskId,
       (path, input) => request(path, input, taskReviewReportSchema),
@@ -26,11 +27,11 @@ export function useTaskReview(taskId: string, version: string, enabled = true) {
       document.removeEventListener('visibilitychange', changed)
       if (session.current === current) session.current = null
     }
-  }, [key, request, connected, enabled])
+  }, [key, request, connected, active])
   useEffect(() => {
     void session.current?.refresh()
   }, [key, version])
-  const state = value?.key === key ? value.state : null
+  const state = active && value?.key === key ? value.state : null
   return {
     report: state?.report ?? null,
     busy: state?.busy ?? false,

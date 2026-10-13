@@ -87,7 +87,8 @@ export function journalProvider(
             if (active()) input.onSteer?.(steer)
           },
           ask: (...args) => (active() ? input.ask(...args) : Promise.resolve(null)),
-          approve: (...args) => (active() ? input.approve(...args) : Promise.resolve('deny' as const)),
+          approve: (...args) =>
+            active() ? input.approve(...args) : Promise.resolve('deny' as const),
         })
         store.providerActions.transition(actionId, 'completed')
       } finally {

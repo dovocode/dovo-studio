@@ -241,6 +241,19 @@ export function RuntimePreferences() {
               </Text>
             </View>
           </Section>
+          <Section title="Code reviews (experimental)">
+            <SettingsSwitchRow
+              first
+              label="Enable experimental code reviews"
+              value={value?.enableCodeReviews ?? false}
+              disabled={disabled}
+              onValueChange={(enableCodeReviews) => save({ enableCodeReviews })}
+            />
+            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+              Opt in to agent reviews, findings, verification and optional review approval on this
+              computer. Review is never required to commit or push.
+            </Text>
+          </Section>
           <Section title="Pull requests & pipelines">
             <View style={{ gap: 6 }}>
               <SettingsSwitchRow

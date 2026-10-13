@@ -24,7 +24,7 @@ export function CodeReviewCard({
       <Text style={styles.muted}>
         {latest.reviewer} · {findings.length} open findings
         {report?.current ? '' : ' · changes since review'}
-        {report?.approved ? ' · approved for push' : ''}
+        {report?.approved ? ' · approved' : ''}
       </Text>
       <Action secondary label="Open review" onPress={() => onOpen()} />
       {findings.slice(0, 3).map((finding) => (

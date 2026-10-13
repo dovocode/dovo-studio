@@ -854,11 +854,6 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           throw new HttpError(400, 'This project does not use Git')
         if (s.store.task(input.id).status === 'running')
           throw new HttpError(409, 'Wait for the agent to finish before committing.')
-        if (input.push && !(yield* serviceResult(s.taskReviews.isApproved(input.id))))
-          throw new HttpError(
-            409,
-            'Approve the current reviewed changes before pushing. Run a review, resolve its findings, and approve.',
-          )
         const cwd = yield* serviceResult(s.checkouts.directory(input.id))
         let message = input.message
         if (!message) {

@@ -8,10 +8,10 @@ import {
 import { useRuntime } from '../../runtime/connection/provider'
 import { useNavigation } from '../../shell/navigation'
 export function useTaskReview(taskId: string, version: string, enabled = true) {
-  const { read, call, connected, profile } = useRuntime(),
+  const { read, call, connected, profile, snapshot } = useRuntime(),
     { focused } = useNavigation()
   const key = JSON.stringify([profile?.id, taskId]),
-    active = enabled && focused
+    active = enabled && focused && snapshot?.codeReviewsEnabled === true
   const [value, setValue] = useState<{ key: string; state: TaskReviewSessionState } | null>(null)
   const session = useRef<ReturnType<typeof createTaskReviewSession> | null>(null)
   useEffect(() => {
@@ -35,7 +35,7 @@ export function useTaskReview(taskId: string, version: string, enabled = true) {
   useEffect(() => {
     void session.current?.refresh()
   }, [key, version])
-  const state = value?.key === key ? value.state : null
+  const state = active && value?.key === key ? value.state : null
   return {
     report: state?.report ?? null,
     busy: state?.busy ?? false,

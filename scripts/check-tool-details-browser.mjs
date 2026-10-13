@@ -83,7 +83,8 @@ try {
     '-a',
     '+b',
   ])
-    if (!(await text()).includes(expected)) throw new Error(`Muse tool context missing: ${expected}`)
+    if (!(await text()).includes(expected))
+      throw new Error(`Muse tool context missing: ${expected}`)
   const editRows = page.locator('details.group\\/action').filter({ hasText: 'Edit app.ts' })
   await editRows.locator('summary').click()
   await editRows.getByText('+b', { exact: true }).waitFor()

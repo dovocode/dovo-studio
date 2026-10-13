@@ -320,7 +320,12 @@ export function createClaudeAdapter(): AgentAdapter {
         const interactions = owner.nativeAgentInteractions
         return {
           ...owner,
-          approve: (title: string, detail: string, kind?: 'web', options?: { session?: boolean; always?: boolean }) =>
+          approve: (
+            title: string,
+            detail: string,
+            kind?: 'web',
+            options?: { session?: boolean; always?: boolean },
+          ) =>
             interactions.approve(
               title,
               detail,

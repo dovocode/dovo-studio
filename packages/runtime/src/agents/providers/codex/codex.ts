@@ -264,7 +264,7 @@ export function createCodexAdapter(): AgentAdapter {
             ['http', 'https'].includes(String(context.protocol))
           const allowed =
             requestRun.agent.permission !== 'read-only' &&
-            ((await requestRun.approve(
+            (await requestRun.approve(
               web
                 ? 'Web request'
                 : method.includes('command')
@@ -272,7 +272,7 @@ export function createCodexAdapter(): AgentAdapter {
                   : 'Apply file changes',
               JSON.stringify(params, null, 2),
               web ? 'web' : undefined,
-            )) !== 'deny')
+            )) !== 'deny'
           return {
             decision: allowed ? 'accept' : 'decline',
           }

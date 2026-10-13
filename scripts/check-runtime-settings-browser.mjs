@@ -188,6 +188,22 @@ try {
   assert.equal(runtime.services.preferences.get().maxActiveChildAgents, 13)
   assert.equal(await page.getByRole('switch', { name: /watcher/ }).count(), 0)
   await page.evaluate(() => window.show('pulls'))
+  const codeReviews = page.getByRole('switch', {
+    name: 'Independent code reviews (experimental)',
+    exact: true,
+  })
+  await codeReviews.waitFor()
+  await page.waitForFunction(
+    () =>
+      !document.querySelector('[aria-label="Independent code reviews (experimental)"]').disabled,
+  )
+  assert.equal(await codeReviews.isChecked(), false)
+  await codeReviews.click()
+  await page.waitForFunction(() => {
+    const toggle = document.querySelector('[aria-label="Independent code reviews (experimental)"]')
+    return toggle.getAttribute('aria-checked') === 'true' && !toggle.disabled
+  })
+  assert.equal(runtime.services.preferences.get().enableCodeReviews, true)
   const watcher = page.getByRole('switch', {
     name: 'Pipeline watcher (experimental)',
     exact: true,

@@ -11,7 +11,7 @@ const finding={id:'finding',path:'src/save.ts',line:42,severity:'high',title:'Mi
 const round={id:'round',taskId:'task',reviewer:'Reviewer',model:'model',createdAt:'2026-10-12',status:'completed',baseline:'tree',head:'head',directory:'/repo',files:[],findings:[finding],summary:'Inspected save and callers',notVerified:['Device restart']};
 let report={reviews:[],commands:[{id:'cmd',command:'pnpm test',time:'2026-10-12',status:'failed',exitCode:1,output:'Save test failed',source:'author'},{id:'unknown',command:'pnpm lint',time:'2026-10-12',status:'unknown',output:'',source:'author'}],current:true,evidenceLimited:false,approved:false};
 window.reviewRequest=async(path,input)=>{window.requests.push({path,input});if(path.endsWith('/start')) report={...report,reviews:[round]};if(path.endsWith('/finding')) report={...report,reviews:[{...report.reviews[0],findings:[{...finding,status:input.status}]}]};if(path.endsWith('/fix')) report={...report,reviews:[{...round,findings:[{...finding,status:'addressed'}]}]};if(path.endsWith('/approve')) report={...report,approved:input.approved,reviews:report.reviews.map((r,i)=>i===0?{...r,approval:input.approved?{approvedAt:'2026-10-12',baseline:r.baseline,head:r.head}:(({approval,...rest})=>rest)(r)}:r)};return structuredClone(report)};window.requests=[];window.verifiedFix=()=>{report={...report,reviews:[{...round,id:'followup',findings:[],verifiedFixes:[{findingId:'finding',command:'pnpm test save',evidence:'Awaited persistence; save regression passed'}]},round]};document.dispatchEvent(new Event('visibilitychange'))};
-function App(){const [tab,setTab]=useState('diff');const review=useTaskReview('task','version');return <CodeReviewReport task={{id:'task',files:[{path:'src/save.ts'}],status:'review'}} review={review} tab={tab} onTab={setTab} onOpen={f=>window.opened=f} onSince={id=>window.since=id}/>};createRoot(document.getElementById('app')).render(<App/>);`,
+window.reviewsEnabled=false;function App(){const [tab,setTab]=useState('diff'),[enabled,setEnabled]=useState(false);window.setReviewsEnabled=value=>{window.reviewsEnabled=value;setEnabled(value)};const review=useTaskReview('task','version');return <CodeReviewReport task={{id:'task',files:[{path:'src/save.ts'}],status:'review'}} review={review} tab={tab} onTab={setTab} onOpen={f=>window.opened=f} onSince={id=>window.since=id}/>};createRoot(document.getElementById('app')).render(<App/>);`,
     loader: 'tsx',
     resolveDir: root + '/packages/studio-ui',
   },
@@ -37,7 +37,7 @@ function App(){const [tab,setTab]=useState('diff');const review=useTaskReview('t
           loader: 'tsx',
           resolveDir: root + '/packages/studio-ui',
           contents: path.endsWith('core')
-            ? `const request=(...args)=>window.reviewRequest(...args);export const useWorkspace=()=>({workspace:{agents:[]},connected:true,activeRuntimeId:'runtime',request});`
+            ? `const request=(...args)=>window.reviewRequest(...args);export const useWorkspace=()=>({workspace:{agents:[]},snapshot:{codeReviewsEnabled:window.reviewsEnabled},connected:true,activeRuntimeId:'runtime',request});`
             : screenshots
               ? `export {Button} from './src/components/ui/button';export {ChoicePicker} from './src/choice-picker';`
               : `export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;export const ChoicePicker=({onValueChange,children,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;`,
@@ -68,6 +68,12 @@ try {
     })
   }
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
+  assert.equal(
+    await page.getByRole('button', { name: 'Independent review', exact: true }).count(),
+    0,
+  )
+  assert.deepEqual(await page.evaluate(() => window.requests), [])
+  await page.evaluate(() => window.setReviewsEnabled(true))
   await page.getByRole('button', { name: 'Independent review', exact: true }).click()
   await page.getByText('Missing await', { exact: true }).waitFor()
   if (screenshots)
@@ -89,15 +95,13 @@ try {
   assert.equal(await page.getByText('Save test failed', { exact: true }).isVisible(), true)
   // Approval is gated while a finding is open, then enabled once resolved and recorded.
   await page.getByRole('tab', { name: /Findings/ }).click()
-  await page.evaluate(() =>
-    window.requests.splice(0).length, // drain
+  await page.evaluate(
+    () => window.requests.splice(0).length, // drain
   )
   await page.getByRole('button', { name: 'Resolve manually', exact: true }).click()
   await page.getByText('Resolved manually', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Approve changes', exact: true }).click()
-  await page
-    .getByText(/Commit & push enabled for this reviewed revision/)
-    .waitFor()
+  await page.getByText(/Approval is current for this reviewed revision/).waitFor()
   await page.getByRole('button', { name: 'Approved · Undo', exact: true }).click()
   assert.equal(
     await page.evaluate(
@@ -121,9 +125,11 @@ try {
   await verified.locator('summary').click()
   await page.getByText('Awaited persistence; save regression passed', { exact: true }).waitFor()
   await page.getByText('pnpm test save · passed on reviewed revision', { exact: true }).waitFor()
+  await page.evaluate(() => window.setReviewsEnabled(false))
+  await page.waitForFunction(() => document.getElementById('app').textContent === '')
   assert.deepEqual(errors, [])
   console.log(
-    'Code review: start, exact finding navigation, fix, resolve/reopen, since-review, approval gating and failed/unknown verification passed',
+    'Code review: start, exact finding navigation, fix, resolve/reopen, since-review, optional review approval and failed/unknown verification passed',
   )
 } finally {
   await browser.close()

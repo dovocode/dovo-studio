@@ -27,7 +27,7 @@ const commitSchema = mutableStruct({
 })
 type GitState = Schema.Schema.Type<typeof responses.gitActionState>
 
-export function CommitSection({ task, approved }: { task: Task; approved?: boolean }) {
+export function CommitSection({ task }: { task: Task }) {
   const { styles } = useTheme()
   const { connected, profile, snapshot, readEffect, callEffect } = useRuntime()
   const foreground = useAppActive()
@@ -140,12 +140,9 @@ export function CommitSection({ task, approved }: { task: Task; approved?: boole
         Effect.ensuring(refresh().pipe(Effect.catch(() => Effect.void))),
       ),
     )
-  const primaryNeedsApproval = primary === 'Commit & push' && !approved
   const primaryAction = () => {
     setStatus('')
     if (primary === 'Open PR' && pullUrl) act(() => nativeEffect(() => openAppLink(pullUrl)))
-    else if (primaryNeedsApproval)
-      setStatus('Approve the current reviewed changes before pushing.')
     else if (primary === 'Push branch') push()
     else commit(primary === 'Commit & push')
   }
@@ -208,11 +205,6 @@ export function CommitSection({ task, approved }: { task: Task; approved?: boole
           {git.behind
             ? 'Branch is behind its upstream. Update it before pushing.'
             : 'No changes to commit or push.'}
-        </Text>
-      )}
-      {primary === 'Commit & push' && !approved && (
-        <Text style={styles.muted}>
-          Push needs approval of the current review. Commit stays available.
         </Text>
       )}
       {!!status && <Text style={styles.muted}>{status}</Text>}

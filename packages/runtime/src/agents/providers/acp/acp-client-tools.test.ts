@@ -35,7 +35,7 @@ async function setup(permission: AgentRun['agent']['permission'] = 'ask', approv
     onSession: () => {},
     onText: () => {},
     onActivity: () => {},
-    approve: async () => (approved ? 'approve' : 'deny') as const,
+    approve: async () => (approved ? 'approve' : 'deny'),
     ask: async () => null,
   }
   return { cwd, controller, run, tools: await acpClientTools(run, () => 'session') }

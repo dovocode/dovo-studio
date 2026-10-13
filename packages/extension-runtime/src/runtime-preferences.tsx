@@ -199,6 +199,19 @@ export function PullRequestPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <SettingsGroup title="Code reviews (experimental)">
+        <SettingRow
+          label="Independent code reviews (experimental)"
+          description="Opt in to agent reviews, findings, verification and optional review approval on this computer. Review is never required to commit or push."
+        >
+          <Toggle
+            label="Independent code reviews (experimental)"
+            checked={value?.enableCodeReviews ?? false}
+            disabled={disabled}
+            onChange={(enableCodeReviews) => save({ enableCodeReviews })}
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Pull requests">
         <SettingRow
           label="Automatically link pull requests"

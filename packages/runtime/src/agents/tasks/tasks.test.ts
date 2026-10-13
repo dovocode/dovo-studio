@@ -307,7 +307,7 @@ it('serializes repository runs and cancellation denies pending approvals and rel
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
     run: async (run) => {
-      expect(await run.approve('Command', 'test')).toBe(false)
+      expect(await run.approve('Command', 'test')).toBe('deny')
       run.signal.throwIfAborted()
     },
   })
@@ -1668,7 +1668,7 @@ it('settles provider output before checkpointing and rejects callbacks from a re
     provider?.onEvent?.('item/started', {
       item: { type: 'subAgentActivity', agentThreadId: 'stale', kind: 'started' },
     })
-    expect(await provider?.approve('Too late', 'Must not appear')).toBe(false)
+    expect(await provider?.approve('Too late', 'Must not appear')).toBe('deny')
     expect(
       await provider?.ask(
         decode(questionPromptSchema, {
@@ -2150,4 +2150,3 @@ it.each(['accept', 'reject'] as const)(
     await execution.done
   },
 )
-

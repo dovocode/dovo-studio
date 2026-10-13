@@ -20,6 +20,12 @@ export function reviewRoute(request: IncomingMessage, path: string) {
   return routeProgram(
     Effect.gen(function* () {
       const s = yield* RuntimeServices
+      if (
+        path.startsWith('/api/review/task/') &&
+        path !== '/api/review/task/stop' &&
+        !s.preferences.get().enableCodeReviews
+      )
+        throw new HttpError(403, 'Enable experimental code reviews in computer settings first.')
       const input = yield* serviceResult(
         body(request, path === '/api/review/organize' ? 2_500_000 : 16_000),
       )

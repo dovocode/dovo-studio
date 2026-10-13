@@ -178,7 +178,10 @@ export class TaskReviews {
       }
     }
     const approved =
-      !!latest && current && approvalIsCurrent(latest) && !latest.findings.some((f) => f.status === 'open' || f.status === 'addressed')
+      !!latest &&
+      current &&
+      approvalIsCurrent(latest) &&
+      !latest.findings.some((f) => f.status === 'open' || f.status === 'addressed')
     return {
       reviews,
       current,

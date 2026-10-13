@@ -87,7 +87,8 @@ describe('Readable tool details', () => {
               tool: 'edit_file',
               args: JSON.stringify({ path: 'src/app.ts', find: 'a', replace: 'b' }),
               patchSummary: { added: 1, files: 1, removed: 1 },
-              visibleOutput: 'edited\nchanged lines: line 3\n--- original\n+++ updated\n@@ -1 +1 @@\n-a\n+b',
+              visibleOutput:
+                'edited\nchanged lines: line 3\n--- original\n+++ updated\n@@ -1 +1 @@\n-a\n+b',
             },
           },
         }),

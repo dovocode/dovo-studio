@@ -255,13 +255,13 @@ export function createHermesAdapter(): AgentAdapter {
               run.agent.permission === 'full-access' ||
               (run.agent.permission === 'workspace-write' &&
                 ['file_write', 'file_patch'].includes(text(params.tool_name))) ||
-              ((await nativeWait(
+              (await nativeWait(
                 run.approve(
                   text(params.description) || 'Hermes tool request',
                   text(params.command),
                 ),
                 signal,
-              )) !== 'deny')
+              )) !== 'deny'
             return { choice: !signal.aborted && !settled && allowed ? 'once' : 'deny' }
           }
           if (method === 'clarify') return await hermesQuestions(params, run, signal)

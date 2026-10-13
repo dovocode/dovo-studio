@@ -123,11 +123,16 @@ export function ToolActivityRow({
               },
             ]}
           >
-            {running && detail.kind === 'command' && detail.title === detail.input ? 'Running ' : ''}
+            {running && detail.kind === 'command' && detail.title === detail.input
+              ? 'Running '
+              : ''}
             {detail.title}
           </Text>
           {!!detail.detail && (
-            <Text numberOfLines={1} style={[styles.muted, { fontSize: 11, lineHeight: 15, opacity: 0.75 }]}>
+            <Text
+              numberOfLines={1}
+              style={[styles.muted, { fontSize: 11, lineHeight: 15, opacity: 0.75 }]}
+            >
               {detail.detail}
             </Text>
           )}
@@ -179,21 +184,22 @@ export function ToolActivityRow({
             gap: 8,
           }}
         >
-          {!!detail.input && (showToolDetails || detail.kind === 'command' || detail.kind === 'file') && (
-            <Text
-              selectable
-              style={[
-                styles.muted,
-                {
-                  fontFamily: detail.kind === 'command' ? 'Menlo' : undefined,
-                  fontSize: 12,
-                  lineHeight: 18,
-                },
-              ]}
-            >
-              {detail.input}
-            </Text>
-          )}
+          {!!detail.input &&
+            (showToolDetails || detail.kind === 'command' || detail.kind === 'file') && (
+              <Text
+                selectable
+                style={[
+                  styles.muted,
+                  {
+                    fontFamily: detail.kind === 'command' ? 'Menlo' : undefined,
+                    fontSize: 12,
+                    lineHeight: 18,
+                  },
+                ]}
+              >
+                {detail.input}
+              </Text>
+            )}
           {!!detail.diff && <MobileDiffText text={detail.diff} colors={colors} />}
           {showToolDetails &&
             !!detail.output &&

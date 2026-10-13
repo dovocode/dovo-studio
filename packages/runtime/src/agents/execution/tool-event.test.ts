@@ -33,7 +33,9 @@ it('recognizes tool lifecycle events from all four providers and ignores text de
 
 it('derives Muse row labels from tool args instead of the bare tool name', () => {
   const muse = (item: Record<string, unknown>) =>
-    toolEvent('muse', 'item/started', { item: { kind: 'toolCall', itemId: '1', status: 'inProgress', ...item } })
+    toolEvent('muse', 'item/started', {
+      item: { kind: 'toolCall', itemId: '1', status: 'inProgress', ...item },
+    })
   expect(
     muse({
       tool: 'bash',
@@ -44,7 +46,10 @@ it('derives Muse row labels from tool args instead of the bare tool name', () =>
     muse({ tool: 'read_file', args: JSON.stringify({ path: 'packages/app.ts' }) }),
   ).toMatchObject({ title: 'Read app.ts' })
   expect(
-    muse({ tool: 'edit_file', args: JSON.stringify({ path: 'packages/app.ts', find: 'a', replace: 'b' }) }),
+    muse({
+      tool: 'edit_file',
+      args: JSON.stringify({ path: 'packages/app.ts', find: 'a', replace: 'b' }),
+    }),
   ).toMatchObject({ title: 'Edit app.ts' })
   expect(
     muse({ tool: 'search', args: JSON.stringify({ pattern: 'needle', paths: ['packages'] }) }),

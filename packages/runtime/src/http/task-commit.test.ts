@@ -55,7 +55,6 @@ async function setup() {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: 'task', ...input }),
     })
-  vi.spyOn(runtime.services.taskReviews, 'isApproved').mockResolvedValue(true)
   return { runtime, path, git, generate, push, commit }
 }
 it('generates with the title service, commits the actual checkout and pushes automatically', async () => {
@@ -86,13 +85,13 @@ it('does not commit or push when message generation fails', async () => {
   expect(git('log', '-1', '--format=%s')).toBe('Initial')
   expect(push).not.toHaveBeenCalled()
 })
-it('refuses to push without an approved current review but still allows a local commit', async () => {
-  const { runtime, git, commit } = await setup()
-  vi.spyOn(runtime.services.taskReviews, 'isApproved').mockResolvedValue(false)
-  expect((await commit({ message: 'Local only', push: true })).status).toBe(409)
-  expect(git('log', '-1', '--format=%s')).toBe('Initial')
-  expect((await commit({ message: 'Local only', push: false })).status).toBe(200)
-  expect(git('log', '-1', '--format=%s')).toBe('Local only')
+it('commits and pushes without a review approval', async () => {
+  const { runtime, git, push, commit } = await setup()
+  const approval = vi.spyOn(runtime.services.taskReviews, 'isApproved').mockResolvedValue(false)
+  expect((await commit({ message: 'Unreviewed changes', push: true })).status).toBe(200)
+  expect(git('log', '-1', '--format=%s')).toBe('Unreviewed changes')
+  expect(push).toHaveBeenCalledOnce()
+  expect(approval).not.toHaveBeenCalled()
 })
 it('refuses a commit if a turn starts while the message is being generated', async () => {
   const { runtime, git, generate, push, commit } = await setup()

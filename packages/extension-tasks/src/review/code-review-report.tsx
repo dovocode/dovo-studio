@@ -29,9 +29,10 @@ export function CodeReviewReport({
   onOpen: (finding: CodeFinding) => void
   onSince: (id: string) => void
 }) {
-  const { workspace, connected } = useWorkspace()
+  const { workspace, connected, snapshot } = useWorkspace()
   const [agentId, setAgentId] = useState(''),
     [selectedId, setSelectedId] = useState('')
+  if (!snapshot?.codeReviewsEnabled) return null
   const reports = review.report?.reviews ?? [],
     latest = reports[0],
     selected = reports.find((report) => report.id === selectedId) ?? latest
@@ -225,12 +226,12 @@ export function CodeReviewReport({
               </p>
               {approvalIsCurrent(selected) ? (
                 <p role="status" className="text-emerald-600 dark:text-emerald-400">
-                  Approved {new Date(selected.approval!.approvedAt).toLocaleString()} · Commit &amp;
-                  push enabled for this reviewed revision.
+                  Approved {new Date(selected.approval!.approvedAt).toLocaleString()} · Approval is
+                  current for this reviewed revision.
                 </p>
               ) : selected.approval ? (
                 <p role="status" className="text-amber-600 dark:text-amber-400">
-                  Approved revision moved or was superseded. Re-review before pushing.
+                  Approved revision moved or was superseded. Review approval is no longer current.
                 </p>
               ) : null}
               {selected.summary && <p>{selected.summary}</p>}

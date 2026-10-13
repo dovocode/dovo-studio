@@ -120,7 +120,8 @@ function computePresentation(
   if (compact) {
     // Compacted starts lose the raw args; deriving context again is only safe while the
     // full raw payload is retained. The marker keeps later raw updates on this path.
-    if (compact.kind === 'search' && !compact.contextAt) return computePresentation(payload, summary)
+    if (compact.kind === 'search' && !compact.contextAt)
+      return computePresentation(payload, summary)
     if (!inputPayload || inputPayload === payload) return compact
     const start = toolPresentation(inputPayload, summary)
     return {
@@ -165,8 +166,7 @@ function computePresentation(
   const paths = Array.isArray(args.paths)
     ? args.paths.filter((value): value is string => typeof value === 'string')
     : []
-  const path =
-    text(args.file_path) || text(args.path) || text(args.filePath) || paths.join(', ')
+  const path = text(args.file_path) || text(args.path) || text(args.filePath) || paths.join(', ')
   const computer =
     /(?:computer|cua[_./]|cua$|browser[_./](?:click|type|navigate|snapshot)|playwright)/i.test(
       `${text(item.server)} ${name}`,
@@ -183,7 +183,9 @@ function computePresentation(
     (search ? text(args.search) : '')
   const kind: ToolKind = computer
     ? 'computer'
-    : command || item.type === 'commandExecution' || /^(?:bash|exec_command|run_command|shell)$/i.test(name)
+    : command ||
+        item.type === 'commandExecution' ||
+        /^(?:bash|exec_command|run_command|shell)$/i.test(name)
       ? 'command'
       : item.type === 'webSearch' || /(?:web[_ ]?search|search_query|web_fetch)/i.test(name)
         ? 'web'
@@ -292,7 +294,12 @@ function computePresentation(
     text(args.url) ||
     text(args.patch) ||
     text(args.input)
-  return recomputeFromInput({ title, input, output, kind, detail, diff }, payload, summary, inputPayload)
+  return recomputeFromInput(
+    { title, input, output, kind, detail, diff },
+    payload,
+    summary,
+    inputPayload,
+  )
 }
 
 function recomputeFromInput(

@@ -98,6 +98,7 @@ export const snapshotSchema = mutableStruct({
   /** Computer-wide web approval rule, derived from its persisted preferences. */
   allowWebRequests: Schema.optional(Schema.Boolean),
   artifactsEnabled: Schema.optional(Schema.Boolean),
+  codeReviewsEnabled: Schema.optional(Schema.Boolean),
   scopedAgentsSupported: Schema.optional(Schema.Boolean),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
@@ -360,6 +361,8 @@ export const runtimePreferencesSchema = mutableStruct({
     Schema.withDecodingDefaultType(Effect.sync(() => 'forever' as const)),
   ),
   enableArtifacts: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
+  /** Experimental: enable independent agent reviews, findings and verification. */
+  enableCodeReviews: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   /** Experimental: let agents hand PR feedback monitoring to this runtime. */
   enablePullRequestWatching: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),

@@ -9,7 +9,10 @@ export function NativeTodos({ task }: { task: Task }) {
   if (!summary) return null
   const todos = task.nativeTodos ?? []
   return (
-    <section aria-label="Agent checklist" className="mx-auto w-full max-w-[var(--chat-max)] px-5 pb-2">
+    <section
+      aria-label="Agent checklist"
+      className="mx-auto w-full max-w-[var(--chat-max)] px-5 pb-2"
+    >
       <div className="rounded-lg border border-border/70 bg-card/60 px-3 py-2">
         <button
           type="button"

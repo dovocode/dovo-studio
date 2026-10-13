@@ -45,6 +45,7 @@ export function CodeReviewReport({
     [expandedCommand, setExpandedCommand] = useState(''),
     [optionsOpen, setOptionsOpen] = useState(false),
     [expandedFinding, setExpandedFinding] = useState('')
+  if (!snapshot?.codeReviewsEnabled) return null
   const reports = review.report?.reviews ?? [],
     latest = reports[0],
     selected = reports.find((report) => report.id === selectedId) ?? latest
@@ -174,12 +175,12 @@ export function CodeReviewReport({
       {selected?.status === 'completed' &&
         (approvalIsCurrent(selected) ? (
           <Text accessibilityRole="summary" style={styles.muted}>
-            Approved {new Date(selected.approval!.approvedAt).toLocaleString()} · Commit &amp; push
-            enabled for this reviewed revision.
+            Approved {new Date(selected.approval!.approvedAt).toLocaleString()} · This reviewed
+            revision.
           </Text>
         ) : selected.approval ? (
           <Text accessibilityRole="alert" style={styles.muted}>
-            Approved revision moved or was superseded. Re-review before pushing.
+            Approved revision moved or was superseded. Review approval is no longer current.
           </Text>
         ) : open.length ? (
           <Text style={styles.muted}>Resolve or dismiss open findings to approve changes.</Text>

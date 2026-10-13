@@ -367,10 +367,15 @@ const ActivityEntry = memo(function ActivityEntry({
           aria-hidden
           className={`size-3.5 shrink-0 ${state === 'running' ? 'animate-pulse motion-reduce:animate-none' : ''}`}
         />
-        <span className="flex min-w-0 flex-1 items-baseline gap-2 truncate" title={presentation.detail ? `${title} · ${presentation.detail}` : title}>
+        <span
+          className="flex min-w-0 flex-1 items-baseline gap-2 truncate"
+          title={presentation.detail ? `${title} · ${presentation.detail}` : title}
+        >
           <span className="min-w-0 truncate">{title}</span>
           {presentation.detail && (
-            <span className="min-w-0 flex-1 truncate text-[0.625rem] text-muted-foreground/70">{presentation.detail}</span>
+            <span className="min-w-0 flex-1 truncate text-[0.625rem] text-muted-foreground/70">
+              {presentation.detail}
+            </span>
           )}
         </span>
         {status && (
