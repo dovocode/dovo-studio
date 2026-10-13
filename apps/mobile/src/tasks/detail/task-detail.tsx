@@ -868,7 +868,7 @@ function TaskDetailContent({
             }}
           />
         </View>
-        {pane === 'agents' && <TaskAgents task={task} />}
+        {pane === 'agents' && <TaskAgents key={task.id} task={task} />}
         {asking && (
           <SideQuestion
             task={task}

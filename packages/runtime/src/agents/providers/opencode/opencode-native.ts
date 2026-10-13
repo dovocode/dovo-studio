@@ -2,6 +2,7 @@ import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import type { AgentRun } from '../../execution/types.js'
 import { updateSubagents } from '../../execution/subagents.js'
+import { readOpencodeThread } from './opencode-thread.js'
 
 /** OpenCode serves child sessions independently; drain them before releasing MCP/event bindings. */
 export function opencodeNative(
@@ -40,7 +41,10 @@ export function opencodeNative(
     )
     await refresh(true)
   }
-  run.onNativeSession?.({ stop: cancel }, sessionId)
+  run.onNativeSession?.(
+    { stop: cancel, readThread: (id) => readOpencodeThread(run.agent, id, run.cwd) },
+    sessionId,
+  )
   return {
     update,
     owns: (id: string) => agents.some((agent) => agent.id === id),

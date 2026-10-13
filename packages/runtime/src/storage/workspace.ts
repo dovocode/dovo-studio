@@ -370,6 +370,22 @@ export class WorkspaceStore {
           : 'Runtime stopped while this task was running. Resume to continue.',
       }
     }
+    if (task.activeRunId && (task.status === 'failed' || task.status === 'cancelled'))
+      // This marker belonged to the previous runtime's execution, not a resumable
+      // live owner. Keep the failure, history and uncertain provider receipts, and
+      // require manual continuation rather than replaying its queued input.
+      return {
+        ...task,
+        activeRunId: undefined,
+        runPhase: undefined,
+        preparation: undefined,
+        activity: undefined,
+        queuePaused: true,
+        restartRecovery:
+          task.status === 'failed' && task.restartRecovery
+            ? { ...task.restartRecovery, automatic: false }
+            : undefined,
+      }
     return task.queue?.length
       ? {
           ...task,

@@ -1034,7 +1034,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 tabIndex={-1}
                 className="min-h-0 flex-1 overflow-y-auto"
               >
-                <TaskAgents task={task} />
+                <TaskAgents key={task.id} task={task} />
               </div>
             )}
             {(surface === 'browser' || surface === 'devices') && (

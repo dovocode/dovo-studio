@@ -5,14 +5,42 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Schema } from 'effect'
 import type { AgentRun, AgentSteer } from '../../execution/types'
-import { codexAdapter } from './codex'
+import { codexAdapter, createCodexAdapter } from './codex'
+import * as owned from '../../execution/stop-owned-child'
 const directories: string[] = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const directory of directories.splice(0))
     await rm(directory, {
       recursive: true,
       force: true,
     })
+})
+it('reports a late confirmed shutdown to native-agent tracking after close initially fails', async () => {
+  const { run } = await fixture('child-events')
+  const events = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  run.onSubagentEvent = events
+  let confirm!: () => void
+  const confirmed = new Promise<void>((resolve) => {
+    confirm = resolve
+  })
+  const stop = owned.stopOwnedChild
+  vi.spyOn(owned, 'stopOwnedChild').mockImplementation(async (child) => {
+    await stop(child)
+    throw new owned.OwnedProcessShutdownError('Provider shutdown was not confirmed', { confirmed })
+  })
+  try {
+    await expect(createCodexAdapter().run(run)).rejects.toThrow('shutdown was not confirmed')
+    expect(events.mock.calls.filter(([method]) => method === 'dovo/session/closed')).toHaveLength(0)
+    confirm()
+    await vi.waitFor(() =>
+      expect(events.mock.calls.filter(([method]) => method === 'dovo/session/closed')).toEqual([
+        ['dovo/session/closed', {}, 'thread-1'],
+      ]),
+    )
+  } finally {
+    confirm()
+  }
 })
 async function fixture(
   mode: 'steer' | 'question' | 'clear-question' | 'reject-steer' | 'message-form' | 'child-events',

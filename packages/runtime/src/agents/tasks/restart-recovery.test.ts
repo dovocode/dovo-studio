@@ -84,24 +84,28 @@ it.each([false, true])(
       status: 'running',
       activeRunId: 'retired-parent-attempt',
     }))
-    const childIds = (['draft', 'running', 'review'] as const).map((status) => {
-      const child = first.tasks.create({
-        title: `Child ${status}`,
-        repositoryId: 'repo',
-        agentId: 'agent',
-        objective: 'Inspect',
-      })
-      first.store.updateTask(child.id, (task) => ({
-        ...task,
-        status,
-        delegation: {
-          parentTaskId: parent.id,
-          parentRunId: 'retired-parent-attempt',
-          key: status,
-        },
-      }))
-      return child.id
-    })
+    const childIds = (['draft', 'running', 'review', 'failed', 'cancelled'] as const).map(
+      (status) => {
+        const child = first.tasks.create({
+          title: `Child ${status}`,
+          repositoryId: 'repo',
+          agentId: 'agent',
+          objective: 'Inspect',
+        })
+        first.store.updateTask(child.id, (task) => ({
+          ...task,
+          status,
+          activeRunId:
+            status === 'failed' || status === 'cancelled' ? `stale-${status}` : undefined,
+          delegation: {
+            parentTaskId: parent.id,
+            parentRunId: 'retired-parent-attempt',
+            key: status,
+          },
+        }))
+        return child.id
+      },
+    )
     expect(first.store.task(childIds[0]).restartRecovery).toBeUndefined()
     await first.tasks.dispose()
     db.close()
@@ -111,6 +115,8 @@ it.each([false, true])(
         'cancelled',
         'cancelled',
         'review',
+        'failed',
+        'cancelled',
       ])
       context.onText('Continued')
     })
@@ -127,6 +133,8 @@ it.each([false, true])(
         'cancelled',
         'cancelled',
         'review',
+        'failed',
+        'cancelled',
       ]),
     )
     expect(runtime.tasks.subagentList(parent.id).every((child) => !child.running)).toBe(true)
@@ -134,6 +142,8 @@ it.each([false, true])(
       'stopped',
       'stopped',
       'completed',
+      'failed',
+      'stopped',
     ])
     expect(runtime.store.task(childIds[0]).restartRecovery).toBeUndefined()
     await expect(runtime.tasks.start(childIds[0])).rejects.toThrow('parent turn has ended')
@@ -141,6 +151,45 @@ it.each([false, true])(
       expect(runtime.store.task(parent.id).status).toBe(enabled ? 'review' : 'failed'),
     )
     expect(run).toHaveBeenCalledTimes(enabled ? 1 : 0)
+  },
+)
+it.each(['failed', 'cancelled'] as const)(
+  'clears a stale %s run marker at startup without replaying queued input or uncertain actions',
+  async (status) => {
+    const messages: Task['messages'] = [
+      { id: 'input', role: 'user', text: 'Original input', createdAt: '' },
+      { id: 'partial', role: 'assistant', text: 'Retained output', createdAt: '' },
+    ]
+    const { options, id } = await seed(
+      true,
+      {
+        status,
+        activeRunId: 'unconfirmed-attempt',
+        activity: 'Stale activity',
+        error: 'Provider shutdown was not confirmed',
+        messages,
+        queue: [{ id: 'held', role: 'user', text: 'Do not replay', createdAt: '' }],
+      },
+      true,
+    )
+    const run = vi.fn<AgentAdapter['run']>(async () => {})
+    adapter(run)
+    const runtime = await startRuntime(options)
+    cleanups.push(runtime.close)
+    const s = runtime.services
+    expect(s.store.task(id)).toMatchObject({
+      status,
+      error: 'Provider shutdown was not confirmed',
+      queuePaused: true,
+      messages,
+    })
+    expect(s.store.task(id).activeRunId).toBeUndefined()
+    expect(s.store.task(id).activity).toBeUndefined()
+    expect(s.store.task(id).queue).toHaveLength(1)
+    expect(s.store.providerActions.state('unconfirmed')).toBe('uncertain')
+    expect(s.tasks.hasWorkingFamily(id)).toBe(false)
+    expect(() => s.tasks.requireIdle(id)).not.toThrow()
+    expect(run).not.toHaveBeenCalled()
   },
 )
 it('defaults to manual continuation and keeps a recoverable interrupted task', async () => {

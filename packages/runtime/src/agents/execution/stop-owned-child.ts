@@ -1,7 +1,14 @@
 import { execFile, type ChildProcess } from 'node:child_process'
 import { win32 } from 'node:path'
 
-export class OwnedProcessShutdownError extends Error {}
+export class OwnedProcessShutdownError extends Error {
+  /** Resolves only when the owned process tree is confirmed gone, even after a timeout. */
+  readonly confirmed?: Promise<void>
+  constructor(message: string, options?: ErrorOptions & { confirmed?: Promise<void> }) {
+    super(message, options)
+    this.confirmed = options?.confirmed
+  }
+}
 
 const stopping = new WeakMap<ChildProcess, Promise<void>>()
 
@@ -9,8 +16,15 @@ const stopping = new WeakMap<ChildProcess, Promise<void>>()
 export function stopOwnedChild(child: ChildProcess): Promise<void> {
   const existing = stopping.get(child)
   if (existing) return existing
+  let confirm!: () => void
+  const confirmed = new Promise<void>((resolve) => {
+    confirm = resolve
+  })
   const stopped = new Promise<void>((resolve, reject) => {
-    if (!child.pid) return resolve()
+    if (!child.pid) {
+      confirm()
+      return resolve()
+    }
     const group = process.platform !== 'win32'
     const pid = group ? -child.pid : child.pid
     const alive = () => {
@@ -26,24 +40,49 @@ export function stopOwnedChild(child: ChildProcess): Promise<void> {
     let poll: ReturnType<typeof setInterval> | undefined
     let escalation: ReturnType<typeof setTimeout> | undefined
     let deadline: ReturnType<typeof setTimeout> | undefined
+    let settled = false
+    const drained = () =>
+      (child.exitCode !== null || child.signalCode !== null) &&
+      (!child.stdout || child.stdout.destroyed || child.stdout.readableEnded) &&
+      (!child.stderr || child.stderr.destroyed || child.stderr.readableEnded)
+    const observe = () => {
+      // Observation never signals an old PID. A launcher exit alone does not prove
+      // its descendants stopped; Unix must lose the group, Windows must drain stdio.
+      try {
+        if (group ? alive() : !drained()) return
+      } catch {
+        // A failed liveness probe cannot release the reservation. The original
+        // shutdown error remains reported while we wait for positive confirmation.
+        return
+      }
+      clearInterval(poll)
+      confirm()
+    }
     const finish = (error?: unknown) => {
+      if (settled) return
+      settled = true
       clearInterval(poll)
       clearTimeout(escalation)
       clearTimeout(deadline)
-      if (error)
+      if (error) {
+        // Keep observing, without retries or further signals, after reporting the
+        // bounded shutdown failure. This timer must not keep the runtime alive.
+        poll = setInterval(observe, 250)
+        poll.unref()
+        observe()
         reject(
           new OwnedProcessShutdownError(
             `Provider shutdown was not confirmed: ${error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown shutdown error'}`,
+            { cause: error, confirmed },
           ),
         )
-      else resolve()
+      } else {
+        confirm()
+        resolve()
+      }
     }
     if (!group) {
-      const drained = () =>
-        (child.exitCode !== null || child.signalCode !== null) &&
-        (!child.stdout || child.stdout.destroyed || child.stdout.readableEnded) &&
-        (!child.stderr || child.stderr.destroyed || child.stderr.readableEnded)
-      if (drained()) return resolve()
+      if (drained()) return finish()
       const waitForDrain = () => {
         if (drained()) return finish()
         poll = setInterval(() => {
@@ -82,7 +121,7 @@ export function stopOwnedChild(child: ChildProcess): Promise<void> {
       }
     }
     try {
-      if (!alive()) return resolve()
+      if (!alive()) return finish()
       signal('SIGTERM')
       poll = setInterval(() => {
         try {
@@ -114,6 +153,9 @@ export function stopOwnedChild(child: ChildProcess): Promise<void> {
     }
   })
   stopping.set(child, stopped)
+  // Preserve the failed result until exit is proven. Once confirmed, future cleanup
+  // calls succeed without signalling a PID that may have been reused.
+  void confirmed.then(() => stopping.set(child, confirmed))
   // Abort handlers may begin cleanup without awaiting it; the owner still awaits this same promise.
   void stopped.catch(() => undefined)
   return stopped

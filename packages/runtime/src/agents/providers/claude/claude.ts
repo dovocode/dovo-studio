@@ -18,6 +18,7 @@ import { processEnvironment } from '../../../process.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { updateSubagents } from '../../execution/subagents.js'
 import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
+import { readClaudeThread } from './claude-thread.js'
 function claudeStream(
   run: AgentRun,
   controller: AbortController,
@@ -485,6 +486,7 @@ export function createClaudeAdapter(): AgentAdapter {
     }
   }
   return {
+    readNativeThread: readClaudeThread,
     releaseTask: (taskId) => idle.release(taskId),
     models: claudeModels,
     probe: async (agent) => ({

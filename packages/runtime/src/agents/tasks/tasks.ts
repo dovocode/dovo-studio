@@ -1,6 +1,7 @@
 import type { MemoryScope } from '@dovo/protocol'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
 import { OwnedProcessShutdownError } from '../execution/stop-owned-child.js'
+import type { NativeThreadRead, NativeThreadPage, NativeThreadEntry } from '@dovo/protocol'
 import type { McpApps } from '../../mcp-apps/bridge.js'
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -46,7 +47,7 @@ type Running = {
   id: string
   runId: string
   retiring?: boolean
-  shutdownUnconfirmed?: boolean
+  shutdownUnconfirmed?: OwnedProcessShutdownError
   controller: AbortController
   fiber?: Fiber.Fiber<void, RuntimeFailure>
   cwd?: string
@@ -72,7 +73,7 @@ export class Tasks {
   constructor(
     private store: WorkspaceStore,
     private git: GitService,
-    registry: AgentRegistry,
+    private registry: AgentRegistry,
     approvals: Approvals,
     private checkouts: TaskCheckout,
     commands: Commands,
@@ -1274,7 +1275,7 @@ export class Tasks {
                   error instanceof RuntimeOperationError &&
                   error.cause instanceof OwnedProcessShutdownError
                 ) {
-                  run.shutdownUnconfirmed = true
+                  run.shutdownUnconfirmed = error.cause
                   const interrupt = this.store.providerActions.state(`interrupt:${run.id}`)
                   if (interrupt)
                     this.store.providerActions.transition(`interrupt:${run.id}`, 'uncertain')
@@ -1327,16 +1328,22 @@ export class Tasks {
                       ? undefined
                       : run.id,
                   )
-                  // A settled fiber does not prove the provider stopped. Keep its directory
-                  // reservation until the runtime is explicitly recovered.
-                  if (run.shutdownUnconfirmed) return
-                  this.running.delete(id)
-                  const interrupt = this.store.providerActions.state(`interrupt:${run.id}`)
-                  if (interrupt && interrupt !== 'uncertain')
-                    this.store.providerActions.transition(`interrupt:${run.id}`, 'completed')
-                  this.store.updateTask(id, (task) =>
-                    task.activeRunId === run.id ? { ...task, activeRunId: undefined } : task,
-                  )
+                  // A settled fiber does not prove the provider stopped. Release
+                  // ownership only if this error can later confirm the entire tree's exit.
+                  if (run.shutdownUnconfirmed) {
+                    void run.shutdownUnconfirmed.confirmed
+                      ?.then(() => {
+                        if (this.stopping || this.running.get(id) !== run) return
+                        run.shutdownUnconfirmed = undefined
+                        this.releaseRun(id, run)
+                        this.deliverCompletions(true, id)
+                      })
+                      .catch((error: unknown) =>
+                        console.error('Could not release a confirmed stopped provider:', error),
+                      )
+                    return
+                  }
+                  this.releaseRun(id, run)
                 }
                 this.deliverCompletions(true, id)
                 const next = this.store.taskSummary(id)
@@ -1465,6 +1472,33 @@ export class Tasks {
       }))
     })
   }
+  private releaseRun(id: string, run: Running) {
+    const interrupt = this.store.providerActions.state(`interrupt:${run.id}`)
+    this.store.transaction(() => {
+      if (interrupt) this.store.providerActions.transition(`interrupt:${run.id}`, 'completed')
+      this.store.updateTask(id, (task) =>
+        task.activeRunId === run.id ? { ...task, activeRunId: undefined } : task,
+      )
+    })
+    this.running.delete(id)
+  }
+  private cancelOrphan(id: string, error: string) {
+    // No live execution or native-session owner may be discarded by a metadata repair.
+    if (this.running.has(id) || this.nativeSessions.has(id) || this.nativeStopping.has(id)) return
+    const task = this.store.taskSummary(id)
+    if (task.status !== 'draft' && task.status !== 'failed' && task.status !== 'cancelled') return
+    this.store.updateTask(id, (task) => ({
+      ...task,
+      status: 'cancelled',
+      activeRunId: undefined,
+      runPhase: undefined,
+      preparation: undefined,
+      activity: undefined,
+      queuePaused: true,
+      restartRecovery: undefined,
+      error,
+    }))
+  }
   cancel(id: string, expectedRunId?: string) {
     const run = this.running.get(id)
     if (!run) throw new HttpError(409, 'Task is not running')
@@ -1480,6 +1514,7 @@ export class Tasks {
       id,
       (t) => ({
         ...t,
+        status: run.shutdownUnconfirmed ? 'cancelled' : t.status,
         queuePaused: true,
         restartRecovery: undefined,
       }),
@@ -1489,7 +1524,7 @@ export class Tasks {
         taskId: id,
         attemptId: run.id,
         kind: 'interrupt',
-        state: 'dispatched',
+        state: run.shutdownUnconfirmed ? 'uncertain' : 'dispatched',
       },
     )
     this.questions.cancelTask(id)
@@ -1623,13 +1658,8 @@ export class Tasks {
       if (run) {
         if (run.fiber) fibers.push(run.fiber)
         if (!run.controller.signal.aborted) this.cancel(child.id)
-      } else if (child.status === 'draft')
-        this.store.updateTask(child.id, (task) => ({
-          ...task,
-          status: 'cancelled',
-          error: 'Delegation stopped before this child started',
-          restartRecovery: undefined,
-        }))
+      } else if (child.status === 'draft' || child.activeRunId || child.restartRecovery)
+        this.cancelOrphan(child.id, 'Delegation stopped by parent')
       if (!run) {
         void this.stopNativeFamily(child.id).catch((error: unknown) =>
           console.error('Could not stop native descendants:', error),
@@ -1829,13 +1859,59 @@ export class Tasks {
       console.error('Could not stop native descendants:', error),
     )
     if (this.running.has(id)) this.cancel(id)
-    else if (this.store.taskSummary(id).status === 'draft')
-      this.store.updateTask(id, (task) => ({
-        ...task,
-        status: 'cancelled',
-        error: 'Cancelled by parent',
-      }))
+    else this.cancelOrphan(id, 'Cancelled by parent')
     return this.subagentResult(taskId, id)
+  }
+  async nativeThread(input: NativeThreadRead): Promise<NativeThreadPage> {
+    const task = this.store.taskSummary(input.taskId)
+    const child = task.subagents?.find(
+      (agent) =>
+        agent.source !== 'dovo' &&
+        agent.provider === input.provider &&
+        agent.id === input.id &&
+        agent.sessionId === input.sessionId,
+    )
+    if (!child) throw new HttpError(404, 'Native agent not found in this thread')
+    const session = this.nativeSessions.get(task.id)
+    let entries: NativeThreadEntry[] | undefined
+    if (session && session.sessionId === child.sessionId && session.control.readThread)
+      entries = await session.control.readThread(child.threadId ?? child.id)
+    else {
+      const resolved = resolveTaskAgent(task, this.store.agentsFor(task.repositoryId))
+      const cwd = await this.checkouts.reviewDirectory(task.id)
+      if (resolved?.provider === child.provider) {
+        const adapter = await this.registry.get(resolved.provider)
+        if (adapter.readNativeThread)
+          entries = await adapter.readNativeThread(
+            resolved,
+            child.threadId ?? child.id,
+            child.sessionId,
+            cwd,
+          )
+      }
+    }
+    const notice =
+      entries === undefined
+        ? 'Full native history is unavailable for this agent. Showing the saved prompt and result.'
+        : !entries.length
+          ? 'No transcript messages are available. Showing the saved prompt and result.'
+          : undefined
+    if (!entries?.length)
+      entries = [
+        ...(child.prompt ? [{ id: 'prompt', role: 'user' as const, text: child.prompt }] : []),
+        ...(child.result ? [{ id: 'result', role: 'assistant' as const, text: child.result }] : []),
+      ]
+    const end = input.before
+      ? entries.findIndex((entry) => entry.id === input.before)
+      : entries.length
+    if (end < 0) throw new HttpError(409, 'Reload this native thread before loading older messages')
+    const start = Math.max(0, end - 50)
+    const page = entries.slice(start, end)
+    return {
+      entries: page,
+      notice,
+      before: start > 0 ? page[0]?.id : undefined,
+    }
   }
   async subagentWait(taskId: string, id: string, timeoutMs = 20000, parentRunId?: string) {
     const deadline = Date.now() + timeoutMs

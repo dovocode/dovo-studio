@@ -81,6 +81,7 @@ export * from './conversation/presentation/tool-presentation.js'
 export * from './runtime/previews/live-activities.js'
 
 export * from './conversation/workflow/subagents.js'
+export * from './conversation/workflow/native-thread.js'
 
 export * from './shared/schema.js'
 

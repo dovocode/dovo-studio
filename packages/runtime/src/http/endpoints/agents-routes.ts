@@ -40,6 +40,7 @@ import { Schema, Effect } from 'effect'
 import { RuntimeServices } from '../../services.js'
 import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
+import { nativeThreadReadSchema } from '@dovo/protocol'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 const modelCaches = new WeakMap<object, ModelCatalogCache>()
 const availabilityCaches = new WeakMap<object, HarnessAvailabilityCache>()
@@ -1097,6 +1098,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         yield* serviceResult(s.tasks.stopAgents(input.id, input.runToken, input.childId))
         return yield* serviceResult({ ok: true })
+      }
+      if (method === 'POST' && path === '/api/tasks/native-thread') {
+        const input = decode(nativeThreadReadSchema, yield* serviceResult(body(request)))
+        return yield* serviceResult(s.tasks.nativeThread(input))
       }
       if (method === 'POST' && path === '/api/tasks/cancel') {
         const input = decode(

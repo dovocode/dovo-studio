@@ -1,7 +1,7 @@
 import { ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { stopOwnedChild } from './stop-owned-child'
+import { OwnedProcessShutdownError, stopOwnedChild } from './stop-owned-child'
 
 const mocked = vi.hoisted(() => ({
   execFile:
@@ -92,4 +92,28 @@ it('bounds waiting for inherited pipes after a successful taskkill', async () =>
   expect(await failed).toMatchObject({
     message: expect.stringContaining('process tree did not drain'),
   })
+})
+it('confirms late pipe drainage and forgets the cached failure without repeating taskkill', async () => {
+  const { child, stdout, stderr } = launcher()
+  const stopping = stopOwnedChild(child)
+  const failed = stopping.catch((error: unknown) => error)
+  Object.assign(child, { exitCode: 0 })
+  mocked.execFile.mock.calls[0]![3](null)
+  await vi.advanceTimersByTimeAsync(2000)
+  const error = await failed
+  if (!(error instanceof OwnedProcessShutdownError)) throw new Error('Expected shutdown error')
+  let confirmed = false
+  void error.confirmed?.then(() => {
+    confirmed = true
+  })
+  stdout.destroy()
+  await vi.advanceTimersByTimeAsync(250)
+  expect(confirmed).toBe(false)
+  stderr.destroy()
+  await vi.advanceTimersByTimeAsync(250)
+  await error.confirmed
+  expect(confirmed).toBe(true)
+  expect(vi.getTimerCount()).toBe(0)
+  await expect(stopOwnedChild(child)).resolves.toBeUndefined()
+  expect(mocked.execFile).toHaveBeenCalledOnce()
 })

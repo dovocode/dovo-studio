@@ -10,7 +10,7 @@ import {
 import { codexAuthenticated, codexModels } from '../../catalogs/codex.js'
 import { codexQuestions, codexAsyncQuestions } from './codex-questions.js'
 import { formQuestions } from '../shared/form-questions.js'
-import { stopOwnedChild } from '../../execution/stop-owned-child.js'
+import { OwnedProcessShutdownError, stopOwnedChild } from '../../execution/stop-owned-child.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createMessageConnection } from 'vscode-jsonrpc/node'
@@ -18,6 +18,9 @@ import { Schema } from 'effect'
 import type { AgentAdapter, AgentInput, AgentRun } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
 import { JsonLineReader, JsonLineWriter } from './codex-transport.js'
+import { codexThreadEntries } from '../../execution/native-thread.js'
+import { readCodexThread } from './codex-thread.js'
+import { nativeWait } from '../shared/native.js'
 const turnInput = (input: Pick<AgentInput, 'prompt' | 'attachments'>) => [
   {
     type: 'text',
@@ -53,18 +56,35 @@ export function createCodexAdapter(): AgentAdapter {
   )
   const close = (connection: CodexConnection): Promise<void> => {
     if (connection.closing) return connection.closing
+    const finish = () => {
+      connection.onSubagentEvent?.('dovo/session/closed', {}, connection.sessionId)
+      connection.onSubagentEvent = undefined
+    }
     connection.closing = (async () => {
       connection.lifetime.abort()
       connection.requests?.dispose()
       connection.rpc.dispose()
-      await stopOwnedChild(connection.child)
-      connection.onSubagentEvent?.('dovo/session/closed', {}, connection.sessionId)
-      connection.onSubagentEvent = undefined
+      try {
+        await stopOwnedChild(connection.child)
+      } catch (error) {
+        if (error instanceof OwnedProcessShutdownError && error.confirmed)
+          void error.confirmed
+            .then(() => {
+              finish()
+              connection.closing = Promise.resolve()
+            })
+            .catch((error: unknown) =>
+              console.error('Could not report a confirmed Codex shutdown:', error),
+            )
+        throw error
+      }
+      finish()
     })()
     return connection.closing
   }
 
   return {
+    readNativeThread: (agent, id, _sessionId, cwd) => readCodexThread(agent, id, cwd),
     releaseTask: (taskId) => idle.release(taskId),
     models: codexModels,
     probe: async (agent) => ({
@@ -558,6 +578,16 @@ export function createCodexAdapter(): AgentAdapter {
         run.onSession(thread.id)
         run.onNativeSession?.(
           {
+            readThread: async (id) =>
+              transport.closing
+                ? readCodexThread(run.agent, id, run.cwd)
+                : codexThreadEntries(
+                    await nativeWait(
+                      rpc.sendRequest('thread/read', { threadId: id, includeTurns: true }),
+                      transport.lifetime.signal,
+                      10000,
+                    ),
+                  ),
             stop: async (id) => {
               if (!id && turnFinished) {
                 if (run.taskId) idle.delete(run.taskId)

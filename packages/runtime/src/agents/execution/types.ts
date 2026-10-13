@@ -9,6 +9,7 @@ export type AgentSteer = (input: AgentInput) => Promise<void>
 export type NativeAgentSession = {
   /** Stop one native child, or all children owned by this session, and await cleanup. */
   stop: (id?: string) => Promise<void>
+  readThread?: (id: string) => Promise<import('@dovo/protocol').NativeThreadEntry[]>
 }
 export type ApprovalDecision = 'approve' | 'session' | 'always' | 'deny'
 export interface AcpLaunch {
@@ -82,6 +83,13 @@ export interface AgentRun {
   ) => Promise<QuestionAnswers | null>
 }
 export interface AgentAdapter {
+  /** Read a provider-native child transcript without starting a model turn. */
+  readNativeThread?: (
+    agent: Agent,
+    id: string,
+    sessionId: string | undefined,
+    cwd?: string,
+  ) => Promise<import('@dovo/protocol').NativeThreadEntry[]>
   models?: (agent: AgentDiscovery, launch?: AcpLaunch) => Promise<ModelCatalog>
   run: (run: AgentRun) => Promise<void>
   probe: (agent: Agent, launch?: AcpLaunch) => Promise<ProviderStatus>

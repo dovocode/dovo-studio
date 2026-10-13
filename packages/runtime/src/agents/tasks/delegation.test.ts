@@ -6,6 +6,7 @@ import { defaultTaskHarness, taskFamilyRunToken } from '@dovo/protocol'
 import type { AgentAdapter, AgentRun } from '../execution/types'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { OwnedProcessShutdownError } from '../execution/stop-owned-child'
 vi.setConfig(runtimeIntegration)
 function barrier() {
   let resolve!: () => void
@@ -80,6 +81,146 @@ async function setup() {
   runtime.services.store.update(() => f.workspace)
   return runtime.services
 }
+it.each(['failed', 'cancelled'] as const)(
+  'cancels an orphan %s child and its descendants without losing their histories',
+  async (status) => {
+    const s = await setup()
+    const parent = s.tasks.create({
+      title: 'Parent',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Delegate',
+    })
+    s.store.updateTask(parent.id, (task) => ({ ...task, status: 'review' }))
+    const children = [parent.id]
+    for (const key of ['child', 'descendant']) {
+      const child = s.tasks.create({
+        title: key,
+        repositoryId: 'repo',
+        agentId: 'agent',
+        objective: 'Inspect',
+      })
+      s.store.updateTaskHistory(child.id, (task) => ({
+        ...task,
+        status,
+        activeRunId: `orphan-${key}`,
+        activity: 'Stale activity',
+        queuePaused: false,
+        queue: [{ id: `queued-${key}`, role: 'user', text: 'Held input', createdAt: '' }],
+        delegation: {
+          parentTaskId: children.at(-1)!,
+          parentRunId: 'retired-parent',
+          key,
+          completion: 'disposed',
+        },
+        messages: [
+          ...task.messages,
+          {
+            id: `answer-${key}`,
+            role: 'assistant',
+            text: 'Retained answer',
+            createdAt: '',
+          },
+        ],
+      }))
+      children.push(child.id)
+    }
+    const histories = children.slice(1).map((id) => s.store.task(id).messages)
+    const result = s.tasks.subagentCancel(parent.id, children[1])
+    expect(result).toMatchObject({
+      status: 'cancelled',
+      running: false,
+      subagent: { status: 'stopped' },
+    })
+    for (const [index, id] of children.slice(1).entries()) {
+      expect(s.store.task(id)).toMatchObject({
+        status: 'cancelled',
+        queuePaused: true,
+        delegation: { completion: 'disposed' },
+      })
+      expect(s.store.task(id).activeRunId).toBeUndefined()
+      expect(s.store.task(id).activity).toBeUndefined()
+      expect(s.store.task(id).messages).toEqual(histories[index])
+      expect(s.store.task(id).queue).toHaveLength(1)
+    }
+    expect(s.tasks.hasWorkingFamily(parent.id)).toBe(false)
+    expect(s.tasks.subagentCancel(parent.id, children[1]).running).toBe(false)
+  },
+)
+it('releases a failed child only after late shutdown confirmation and keeps its queue paused', async () => {
+  const s = await setup()
+  const confirmed = barrier()
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Delegate',
+  })
+  // Keep the parent tool binding live while the failed child owns the shared checkout.
+  const parentRelease = barrier()
+  let childId = ''
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (run.agent.provider === 'claude') {
+        run.onText('Retained partial answer')
+        throw new OwnedProcessShutdownError('Provider shutdown was not confirmed', {
+          confirmed: confirmed.promise,
+        })
+      }
+      childId = s.tasks.subagentSpawn({
+        taskId: taskId(run),
+        key: 'late-exit',
+        name: 'Child',
+        prompt: 'Inspect',
+        provider: 'claude',
+      }).id
+      await parentRelease.promise
+      run.onText('Done')
+    },
+  })
+  const running = await s.tasks.start(parent.id)
+  try {
+    await waitForRuntime(() => expect(childId).not.toBe(''))
+    await waitForRuntime(() => expect(s.store.task(childId).status).toBe('failed'))
+    const attempt = s.store.task(childId).activeRunId
+    expect(attempt).toBeTypeOf('string')
+    expect(s.store.task(childId).turns?.at(-1)?.checkpoint?.after).toBeUndefined()
+    s.store.updateTask(childId, (task) => ({
+      ...task,
+      queue: [{ id: 'held', role: 'user', text: 'Do not replay', createdAt: '' }],
+    }))
+    expect(s.tasks.subagentCancel(parent.id, childId).running).toBe(true)
+    expect(s.store.providerActions.state(`interrupt:${attempt}`)).toBe('uncertain')
+    expect(s.tasks.subagentCancel(parent.id, childId).running).toBe(true)
+    expect(s.store.providerActions.state(`interrupt:${attempt}`)).toBe('uncertain')
+    await expect(s.tasks.start(childId)).rejects.toThrow('delegation was stopped')
+    const competing = s.tasks.create({
+      title: 'Competing',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Wait',
+    })
+    await expect(s.tasks.start(competing.id)).rejects.toThrow('Another task is running')
+    confirmed.resolve()
+    await waitForRuntime(() =>
+      expect(s.tasks.subagentResult(parent.id, childId).running).toBe(false),
+    )
+    expect(s.store.task(childId).activeRunId).toBeUndefined()
+    expect(s.store.task(childId).queuePaused).toBe(true)
+    expect(s.store.task(childId).queue).toHaveLength(1)
+    expect(
+      s.store.task(childId).messages.some((message) => message.text === 'Retained partial answer'),
+    ).toBe(true)
+    expect(s.store.providerActions.state(`interrupt:${attempt}`)).toBe('completed')
+    expect(s.tasks.subagentResult(parent.id, childId).subagent?.status).toBe('stopped')
+    expect(() => s.tasks.requireIdle(childId)).not.toThrow()
+  } finally {
+    confirmed.resolve()
+    parentRelease.resolve()
+    await running.done
+  }
+})
 it('runs read-only audits without Git checkpoints and releases their completed provider', async () => {
   const s = await setup()
   const linked = await fixture()

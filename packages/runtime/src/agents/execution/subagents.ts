@@ -179,6 +179,7 @@ export function updateSubagents(
     ) {
       put(id, {
         name: text(event.description) ?? text(event.subagent_type) ?? id,
+        threadId: text(event.agent_id) ?? previous?.threadId,
         status: 'working',
         background:
           typeof event.is_backgrounded === 'boolean' ? event.is_backgrounded : previous?.background,
@@ -201,7 +202,13 @@ export function updateSubagents(
         tokens: number(usage.total_tokens) ?? previous.tokens,
         durationMs: number(usage.duration_ms) ?? previous.durationMs,
         ...(event.subtype === 'task_notification'
-          ? { result: text(event.summary)?.slice(-64000) }
+          ? {
+              result: text(event.summary)?.slice(-64000),
+              threadId:
+                text(event.output_file)?.match(
+                  /(?:^|[/\\])(?:agent-)?([^/\\]+)\.(?:output|jsonl)$/,
+                )?.[1] ?? previous.threadId,
+            }
           : {}),
       })
     }

@@ -100,6 +100,7 @@ it('distinguishes Claude agents from background shell tasks and preserves report
       task_id: 'agent',
       status: 'failed',
       summary: 'Connection lost',
+      output_file: '/tmp/provider/tasks/agent-transcript-id.output',
     },
     now,
   )
@@ -109,7 +110,20 @@ it('distinguishes Claude agents from background shell tasks and preserves report
     tokens: 1200,
     durationMs: 8000,
     activity: 'Connection lost',
+    threadId: 'transcript-id',
   })
+  const resumed = updateSubagents(
+    ended,
+    'claude',
+    {
+      type: 'system',
+      subtype: 'task_started',
+      task_type: 'local_agent',
+      task_id: 'agent',
+    },
+    now,
+  )
+  expect(resumed[0].threadId).toBe('transcript-id')
 })
 it('keeps unreported state unknown and handles interruption and resume', () => {
   const unknown = updateSubagents(

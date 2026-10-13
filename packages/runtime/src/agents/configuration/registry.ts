@@ -105,7 +105,18 @@ export class AgentRegistry {
       if (!adapter)
         return yield* Effect.fail(runtimeFailure(new Error('Provider failed to activate')))
       const models = adapter.models
+      const readNativeThread = adapter.readNativeThread
       return {
+        ...(readNativeThread
+          ? {
+              readNativeThread: (
+                agent: Agent,
+                id: string,
+                sessionId: string | undefined,
+                cwd?: string,
+              ) => readNativeThread(this.configure(agent), id, sessionId, cwd),
+            }
+          : {}),
         run: (run) =>
           adapter.run({
             ...run,

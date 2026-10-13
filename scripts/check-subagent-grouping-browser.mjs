@@ -13,6 +13,7 @@ export const Input=props=><input {...props}/>;
 export const ChoicePicker=({children,value,onValueChange,...props})=><select value={value} onChange={e=>onValueChange(e.target.value)} {...props}>{children}</select>;
 export const cn=(...values)=>values.filter(Boolean).join(' ');
 export const AgentAvatar=()=>null;export const ProjectIcon=()=>null;export const useModelLabel=()=>'';
+export const MessageResponse=({children})=><div>{children}</div>;
 export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=Tooltip;export const TooltipContent=()=>null;
 export const PageHeader=({title})=><h1>{title}</h1>;
 export const ContextMenu={Label:({children})=><span>{children}</span>,Item:Tooltip,Sub:Tooltip,SubTrigger:Tooltip,Portal:Tooltip,SubContent:Tooltip};
@@ -42,7 +43,7 @@ const profile={id:'linux',name:'Linux',connection:{address:'http://linux.local:5
 window.source={runtimeId:'linux',address:profile.connection.address,name:'Linux',workspace:window.workspace,snapshot,online:true};
 window.overview={profile,snapshot,connected:true,lastSeen:null,error:null,pulls:null,pullError:null};
 window.opened=[];window.routes=[];window.switches=[];window.orders=[];window.requests=[];
-window.request=async(path,input)=>{window.requests.push({path,input});return {ok:true}};
+window.request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/native-thread'){if(window.nativeReadError){window.nativeReadError=false;throw new Error('Native thread unavailable')}return input.before?{entries:[{id:'older',role:'user',text:'Earlier native prompt'}]}:{before:'prompt',entries:[{id:'prompt',role:'user',text:'Native prompt'},{id:'tool',role:'tool',label:'Read',text:'Native tool output'},{id:'reply',role:'assistant',text:'Native final answer'}]}};return {ok:true}};
 window.host={navigate:target=>window.routes.push(target)};
 window.store={request:window.request,call:window.request,callEffect:(path,input)=>Effect.promise(()=>window.request(path,input)),workspace:window.workspace,snapshot,connected:true,activeRuntimeId:'mac',activeId:'mac',runtimeRegistry:{profiles:[profile]},profiles:[profile],overviews:[window.overview],runtimes:[window.overview],profile,ready:true,refreshAll:async()=>{},refreshRuntimes:async()=>{},selectRuntimeEffect:id=>Effect.sync(()=>window.switches.push(id))};
 window.publishTasks=tasks=>{window.workspace={...window.workspace,tasks};const next={...window.store.snapshot,workspace:window.workspace};window.source={...window.source,workspace:window.workspace,snapshot:next};window.overview={...window.overview,snapshot:next};window.store={...window.store,workspace:window.workspace,snapshot:next,overviews:[window.overview],runtimes:[window.overview]};};
@@ -69,6 +70,7 @@ async function bundle(contents) {
     './task-swipe-actions':
       'export const TaskSwipeActions=({children})=><div data-swipe="true">{children}</div>;',
     './device-label': 'export const DeviceLabel=()=>null;',
+    '../../ui/content/markdown': 'export const Markdown=({text})=><span>{text}</span>;',
     '../../agents/harness-icon': 'export const HarnessIcon=()=>null;',
     '../../agents/use-model-catalog':
       'export const useCachedModelCatalog=()=>({modelName:"",catalog:null});',
@@ -270,6 +272,60 @@ try {
       .click()
     assert.equal(await page.locator('button button').count(), 0)
     assert.equal(await page.evaluate(() => window.routes.at(-1).entityId), 'done')
+    await page.getByText('Native worker', { exact: true }).click()
+    await page
+      .getByRole('button', { name: 'View native thread · codex', exact: true })
+      .first()
+      .click()
+    await page.getByText('Native final answer', { exact: true }).waitFor()
+    await page.getByText('Native tool output', { exact: true }).waitFor()
+    const nativeRead = await page.evaluate(() => window.requests.at(-1))
+    assert.equal(nativeRead.path, '/api/tasks/native-thread')
+    assert.equal(nativeRead.input.taskId, 'parent')
+    assert.equal(nativeRead.input.id, 'native')
+    assert.equal(nativeRead.input.provider, 'codex')
+    await page.getByRole('button', { name: 'Load older messages', exact: true }).click()
+    await page.getByText('Earlier native prompt', { exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.requests.at(-1).input.before), 'prompt')
+    await page.evaluate(() => {
+      window.store = { ...window.store, connected: false }
+      window.renderAgents()
+    })
+    await page.getByText('Reconnect to load this native thread.', { exact: true }).waitFor()
+    assert.equal(
+      await page.getByRole('button', { name: 'Refresh thread', exact: true }).isDisabled(),
+      true,
+    )
+    await page.evaluate(() => {
+      window.store = { ...window.store, connected: true }
+      window.renderAgents()
+    })
+    await page.waitForFunction(
+      () =>
+        window.requests.filter((request) => request.path === '/api/tasks/native-thread').length ===
+        3,
+    )
+    assert.equal(await page.getByText('Earlier native prompt', { exact: true }).count(), 1)
+    await page.evaluate(() => {
+      window.nativeReadError = true
+    })
+    await page.getByRole('button', { name: 'Refresh thread', exact: true }).click()
+    await page.getByText('Native thread unavailable', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Refresh thread', exact: true }).click()
+    await page
+      .getByText('Native thread unavailable', { exact: true })
+      .waitFor({ state: 'detached' })
+    await page.getByText('Earlier native prompt', { exact: true }).waitFor({ state: 'detached' })
+    await page.getByRole('button', { name: 'Back to agents', exact: true }).click()
+    await page.getByText('Nested native', { exact: true }).click()
+    await page
+      .getByRole('button', { name: 'View native thread · codex', exact: true })
+      .first()
+      .click()
+    await page.getByText('Native final answer', { exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.requests.at(-1).input.taskId), 'child')
+    assert.equal(await page.evaluate(() => window.requests.at(-1).input.id), 'nested-native')
+    await page.getByRole('button', { name: 'Back to agents', exact: true }).click()
     await page.evaluate(() => {
       window.publishTasks(
         window.workspace.tasks.map((task) =>
@@ -487,7 +543,7 @@ try {
     }
     assert.deepEqual(errors, [])
     console.log(
-      `${mobile ? 'Mobile' : 'Desktop'}: parent-only rows, live pills, finished-agent filtering, group/child stop controls, unknown/offline visibility, remembered toggle, ended results and navigation passed.`,
+      `${mobile ? 'Mobile' : 'Desktop'}: grouping, stop controls, native thread viewing and paging, finished-agent filtering, offline visibility and navigation passed.`,
     )
     await page.close()
   }

@@ -11,6 +11,7 @@ import type { AgentAdapter } from '../../execution/types.js'
 import { OpenCodeServers, opencodeHeaders } from './opencode-server.js'
 import { opencodeV2Adapter, isOpencodeV2 } from './opencode-v2.js'
 import { OpenCodeClientCache } from './client-cache.js'
+import { readOpencodeThread } from './opencode-thread.js'
 const clients = new OpenCodeClientCache<ReturnType<typeof createOpencodeClient>>()
 function client(address: string, cwd?: string, env?: Record<string, string>, active = false) {
   const authorization = opencodeHeaders(env).Authorization
@@ -566,6 +567,8 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
   const resolve = async <T extends import('@dovo/protocol').AgentDiscovery>(agent: T) =>
     servers.resolve(agent)
   return {
+    readNativeThread: async (agent, id, _sessionId, cwd) =>
+      readOpencodeThread(await resolve(agent), id, cwd),
     models: async (agent) => remoteAdapter.models!(await resolve(agent)),
     probe: async (agent) => {
       try {
