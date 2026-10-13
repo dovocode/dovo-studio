@@ -98,7 +98,7 @@ await test('stages the release version for server diagnostics without editing so
   const temporary = await mkdtemp(join(tmpdir(), 'dovo-stage-version-'))
   try {
     const root = join(temporary, 'source')
-    for (const dir of ['apps/api/dist', 'packages/push/dist', 'patches', 'scripts'])
+    for (const dir of ['apps/api/dist', 'apps/desktop-gpui/src', 'packages/push/dist', 'patches', 'scripts'])
       await mkdir(join(root, dir), { recursive: true })
     await writeFile(
       join(root, 'packages/push/package.json'),

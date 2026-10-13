@@ -352,11 +352,18 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
   }
   proxyURL = URL.createObjectURL(new Blob([sandbox], { type: 'text/html' }))
   frame = document.createElement('iframe')
-  frame.setAttribute('sandbox', 'allow-scripts')
+  const directSandbox = document.documentElement.hasAttribute('data-sandbox-direct')
+  frame.setAttribute('sandbox', directSandbox ? 'allow-scripts allow-forms' : 'allow-scripts')
+  frame.setAttribute(
+    'allow',
+    "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'",
+  )
   frame.style.cssText = 'border:0;width:100%;height:100%;min-height:160px;display:block'
   rootElement.append(frame)
   await current.connect(new PostMessageTransport(frame.contentWindow!, frame.contentWindow!))
-  frame.src = proxyURL
+  // Native WebKit uses one opaque guest frame; the browser host retains its proxy relay.
+  if (directSandbox) frame.srcdoc = protectHtml(html, csp(policy))
+  else frame.src = proxyURL
 }
 function notify() {
   if (!bridge) return

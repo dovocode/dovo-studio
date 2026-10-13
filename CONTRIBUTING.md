@@ -15,6 +15,7 @@ The root scripts prepare each app's workspace dependencies where needed:
 
 ```sh
 pnpm dev:desktop
+pnpm dev:gpui
 pnpm dev:web
 pnpm dev:mobile
 pnpm dev:site
@@ -22,6 +23,9 @@ pnpm dev:site
 
 The public brand website runs independently at http://localhost:3001. See
 [its README](apps/site/README.md) for static deployment and browser checks.
+
+The experimental Rust client has separate setup and parity notes in
+[its README](apps/desktop-gpui/README.md).
 
 Desktop starts its own runtime. For web, also run `pnpm dev:api` in a separate terminal. Mobile
 starts Expo and needs a running runtime plus a native development build; Expo Go does not include

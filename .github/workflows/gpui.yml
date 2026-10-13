@@ -1,0 +1,98 @@
+name: GPUI
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop-gpui/**'
+      - 'apps/api/**'
+      - 'packages/runtime/**'
+      - 'packages/protocol/**'
+      - 'packages/studio-ui/mcp-apps/**'
+      - 'scripts/check-mcp-apps-browser.mjs'
+      - 'scripts/build-gpui-assets.mjs'
+      - 'scripts/fixtures/gpui-forge.mjs'
+      - 'scripts/fixtures/gpui-task-revisions.mjs'
+      - 'scripts/fixtures/gpui-child-agents.mjs'
+      - 'scripts/fixtures/gpui-acp.mjs'
+      - 'scripts/fixtures/gpui-composer.mjs'
+      - 'scripts/check-gpui-composer.mjs'
+      - 'scripts/fixtures/gpui-browser.mjs'
+      - 'scripts/check-gpui-browser.mjs'
+      - 'scripts/packaging/**'
+      - 'package.json'
+      - 'scripts/build-mcp-apps.mjs'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/gpui.yml'
+      - '.github/workflows/release-gpui.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/desktop-gpui/**'
+      - 'apps/api/**'
+      - 'packages/runtime/**'
+      - 'packages/protocol/**'
+      - 'packages/studio-ui/mcp-apps/**'
+      - 'scripts/check-mcp-apps-browser.mjs'
+      - 'scripts/build-mcp-apps.mjs'
+      - 'pnpm-lock.yaml'
+      - 'scripts/build-gpui-assets.mjs'
+      - 'scripts/fixtures/gpui-forge.mjs'
+      - 'scripts/fixtures/gpui-task-revisions.mjs'
+      - 'scripts/fixtures/gpui-child-agents.mjs'
+      - 'scripts/fixtures/gpui-acp.mjs'
+      - 'scripts/fixtures/gpui-composer.mjs'
+      - 'scripts/check-gpui-composer.mjs'
+      - 'scripts/fixtures/gpui-browser.mjs'
+      - 'scripts/check-gpui-browser.mjs'
+      - 'scripts/packaging/**'
+      - 'package.json'
+      - '.github/workflows/gpui.yml'
+      - '.github/workflows/release-gpui.yml'
+permissions:
+  contents: read
+concurrency:
+  group: gpui-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+      - run: pnpm install --frozen-lockfile
+      - name: Install native build dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          pkg-config cmake clang libssl-dev libzstd-dev libvulkan-dev
+          libwayland-dev libfontconfig1-dev libfreetype-dev
+          libxcb1-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-randr0-dev
+          libxcb-render0-dev libxcb-xinput-dev libxkbcommon-dev libxkbcommon-x11-dev
+          libasound2-dev libdbus-1-dev libgtk-3-dev libwebkit2gtk-4.1-dev fonts-dejavu-core xvfb xdotool
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop-gpui/target
+          key: gpui-linux-${{ hashFiles('apps/desktop-gpui/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            gpui-linux-${{ hashFiles('apps/desktop-gpui/Cargo.lock') }}-
+            gpui-linux-
+      - run: pnpm --filter @dovo/api... -r build
+      - run: node scripts/build-gpui-assets.mjs
+      - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
+      # Match the runtime browser checks; keep Chromium's sandbox enabled.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: cargo +stable fmt --manifest-path apps/desktop-gpui/Cargo.toml --check
+      - run: cargo +stable clippy --locked --manifest-path apps/desktop-gpui/Cargo.toml --all-targets -- -D warnings
+      - run: cargo +stable test --locked --manifest-path apps/desktop-gpui/Cargo.toml
+      - run: cargo +stable test --locked --manifest-path apps/desktop-gpui/Cargo.toml -- --ignored
+
+      - run: cargo +stable build --locked --manifest-path apps/desktop-gpui/Cargo.toml
+      - run: pnpm test:gpui:composer
+      - run: pnpm test:gpui:browser
+      - run: node --test scripts/packaging/generate-distribution.test.mjs scripts/packaging/gpui-launcher.test.mjs scripts/packaging/gpui-release.test.mjs

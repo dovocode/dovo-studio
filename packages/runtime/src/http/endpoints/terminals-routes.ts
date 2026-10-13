@@ -195,7 +195,10 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           yield* serviceResult(body(request)),
         )
         yield* runtimeOperation(() => s.terminals.get(id))
-        return { ticket: yield* runtimeOperation(() => s.tickets.issue(token, id)) }
+        return {
+          ticket: yield* runtimeOperation(() => s.tickets.issue(token, id)),
+          byteInput: true,
+        }
       }
       throw new HttpError(404, 'Endpoint not found')
     }),

@@ -6,6 +6,12 @@
     "dev": "pnpm --filter @dovo/client-runtime build && vp run --parallel dev",
     "dev:api": "pnpm --filter @dovo/runtime... -r build && vp -C apps/api dev",
     "dev:desktop": "pnpm --filter @dovo/api... -r build && vp -C apps/desktop dev",
+    "dev:gpui": "pnpm --filter @dovo/api... -r build && node scripts/build-gpui-assets.mjs && cargo run --manifest-path apps/desktop-gpui/Cargo.toml --",
+    "build:gpui": "pnpm --filter @dovo/api... -r build && node scripts/build-gpui-assets.mjs && cargo build --manifest-path apps/desktop-gpui/Cargo.toml --release",
+    "test:gpui": "pnpm --filter @dovo/protocol build && node scripts/build-gpui-assets.mjs && cargo test --manifest-path apps/desktop-gpui/Cargo.toml",
+    "test:gpui:composer": "node scripts/check-gpui-composer.mjs",
+    "test:gpui:browser": "node scripts/check-gpui-browser.mjs",
+    "test:gpui:integration": "pnpm --filter @dovo/api... -r build && node scripts/build-gpui-assets.mjs && cargo test --manifest-path apps/desktop-gpui/Cargo.toml -- --ignored",
     "dev:mobile": "node scripts/build-mcp-apps.mjs && pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build && node scripts/build-mobile-terminal.mjs && node scripts/build-mobile-mermaid.mjs && pnpm --filter @dovo/mobile start",
     "dev:web": "pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build && vp -C apps/web dev",
     "build": "node scripts/build-mcp-apps.mjs && vp run -r --cache build",
@@ -28,7 +34,7 @@
     "server": "pnpm --filter @dovo/api exec tsx src/server-cli.ts",
     "mobile:update": "node scripts/update-mobile.mjs",
     "verify": "pnpm typecheck && pnpm test && pnpm check && pnpm build",
-    "test:mcp-apps:browser": "node scripts/build-mcp-apps.mjs && node scripts/check-mcp-apps-browser.mjs",
+    "test:mcp-apps:browser": "node scripts/build-mcp-apps.mjs && node scripts/check-mcp-apps-browser.mjs && node scripts/check-mcp-apps-browser.mjs --direct-sandbox",
     "test:artifacts:browser": "pnpm --filter @dovo/web build && node scripts/check-artifacts-browser.mjs && node scripts/check-inline-previews-browser.mjs",
     "test:windows-runtime:browser": "node scripts/check-windows-runtime-browser.mjs",
     "test:turn-grouping:browser": "node scripts/check-turn-grouping-browser.mjs",
@@ -116,7 +122,8 @@
     "test:workspace-recovery:browser": "node scripts/check-workspace-recovery-browser.mjs",
     "test:browser": "node scripts/run-browser-suites.mjs",
     "test:code-review:browser": "node scripts/check-code-review-browser.mjs && node scripts/check-mobile-review-browser.mjs && node scripts/check-mobile-review-report-browser.mjs",
-    "test:file-drop:browser": "node scripts/check-composer-send-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs"
+    "test:file-drop:browser": "node scripts/check-composer-send-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs",
+    "package:gpui": "pnpm build:gpui && node scripts/packaging/package-gpui.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

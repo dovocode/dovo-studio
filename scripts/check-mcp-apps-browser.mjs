@@ -1,6 +1,7 @@
 import { chromium } from './browser/harness.mjs'
 import { build } from 'esbuild'
 import { readFile } from 'node:fs/promises'
+const directSandbox = process.argv.includes('--direct-sandbox')
 const host = JSON.parse(await readFile('packages/studio-ui/mcp-apps/host.json', 'utf8'))
 const guest = (
   await build({
@@ -47,13 +48,16 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 650 } })
   page.on('pageerror', (e) => console.log('error:', e.stack))
   await page.setContent(
-    host.replace(
+    (directSandbox ? host.replace('<html>', '<html data-sandbox-direct>') : host).replace(
       '<script>',
       '<script>window.reports=[];window.ReactNativeWebView={postMessage:(text)=>window.reports.push(JSON.parse(text))};',
     ),
   )
   await page.evaluate((app) => window.dovoMcpLoad(app, 'test-nonce', 'dark'), app)
-  const result = page.frameLocator('iframe').frameLocator('iframe').locator('#result')
+  const appFrame = directSandbox
+    ? page.frameLocator('iframe')
+    : page.frameLocator('iframe').frameLocator('iframe')
+  const result = appFrame.locator('#result')
   await result.waitFor({ timeout: 3000 })
   await page.waitForFunction(
     () => window.reports.some((r) => r.type === 'error') || document.querySelector('iframe'),
@@ -62,7 +66,7 @@ try {
     .frames()
     .at(-1)
     .waitForFunction(() => document.querySelector('#result')?.textContent === '1')
-  await page.frameLocator('iframe').frameLocator('iframe').locator('button').click()
+  await appFrame.locator('button').click()
   await page.waitForFunction(() => window.reports.some((r) => r.type === 'request'))
   const request = await page.evaluate(() => window.reports.find((r) => r.type === 'request'))
   if (request.method !== 'tools/call' || request.nonce !== 'test-nonce')
@@ -110,7 +114,7 @@ try {
     .evaluate(() => {
       window.fixtureRequestTimeout = 250
     })
-  await page.frameLocator('iframe').frameLocator('iframe').locator('button').click()
+  await appFrame.locator('button').click()
   await page.waitForFunction(
     (first) =>
       window.reports.some(
@@ -207,7 +211,7 @@ try {
     }
   })
   if (!blocked) throw new Error('Undeclared network access was allowed')
-  await page.frameLocator('iframe').frameLocator('iframe').locator('button').click()
+  await appFrame.locator('button').click()
   const completedIds = [request.requestId, slowRequest.requestId]
   await page.waitForFunction(
     (ids) =>

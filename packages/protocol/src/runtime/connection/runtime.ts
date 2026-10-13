@@ -188,6 +188,19 @@ export const terminalInputSchema = Schema.Union([
     data: maxValue(Schema.String, 65536),
   }),
   mutableStruct({
+    type: Schema.Literal('input-bytes'),
+    // Canonical padded base64, including zero padding bits, for at most 64 KiB.
+    data: refine(
+      maxValue(minValue(Schema.String, 4), 87384),
+      (data) =>
+        /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$/.test(
+          data,
+        ) &&
+        (data.length / 4) * 3 - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0) <= 65536,
+      'Terminal byte input must be canonical base64 containing 1–65536 bytes',
+    ),
+  }),
+  mutableStruct({
     type: Schema.Literal('resize'),
     cols: maxValue(
       minValue(
@@ -285,6 +298,8 @@ export const responses = {
   }),
   ticket: mutableStruct({
     ticket: Schema.String,
+    /** Terminal byte input capability; omitted by older runtimes and other socket tickets. */
+    byteInput: Schema.optional(Schema.Boolean),
   }),
   terminal: terminalSchema,
   provider: providerStatusSchema,

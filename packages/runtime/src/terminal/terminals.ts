@@ -223,7 +223,7 @@ export class Terminals {
     session.listeners.add(listener)
     return () => session.listeners.delete(listener)
   }
-  input(id: string, data: string) {
+  input(id: string, data: string | Buffer) {
     const session = this.get(id)
     if (!session.info.exited) session.process.write(data)
   }

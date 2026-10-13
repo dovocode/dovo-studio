@@ -33,6 +33,10 @@ packages/protocol/src/generated/browser-viewer.ts
 
 # Native physical-device helper build cache
 packages/runtime/native/ios-device/target/
+apps/desktop-gpui/target/
+apps/desktop-gpui/assets/browser-viewer.html
+apps/desktop-gpui/assets/mcp-host.html
+apps/desktop-gpui/assets/automation-choices.json
 
 # Local reference downloads, QA captures and release worktrees
 /work/

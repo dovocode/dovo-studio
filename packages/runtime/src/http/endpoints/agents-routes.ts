@@ -784,9 +784,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         const source = s.store.taskSummary(input.sourceId)
         let cursor = source
         const seen = new Set([input.id])
-        while (cursor.startAfter) {
+        while (true) {
           if (seen.has(cursor.id)) throw new HttpError(400, 'Task chain would form a cycle')
           seen.add(cursor.id)
+          if (!cursor.startAfter) break
           cursor = s.store.taskSummary(cursor.startAfter.taskId)
         }
         if (

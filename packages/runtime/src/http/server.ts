@@ -348,6 +348,10 @@ export function createRuntimeServer(services: Services, internal = false) {
             } else if (input.type === 'input') {
               recordInput(ticket.resourceId, input.data.length)
               services.terminals.input(ticket.resourceId, input.data)
+            } else if (input.type === 'input-bytes') {
+              const bytes = Buffer.from(input.data, 'base64')
+              recordInput(ticket.resourceId, bytes.length)
+              services.terminals.input(ticket.resourceId, bytes)
             } else services.terminals.resize(ticket.resourceId, input.cols, input.rows)
           } catch {
             client.close(1008, 'Invalid terminal request')

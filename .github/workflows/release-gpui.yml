@@ -1,0 +1,303 @@
+name: Build GPUI packages
+on:
+  push:
+    branches: ['dovo/gpui-signed-builds']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version matching package.json; leave empty for a GPUI nightly
+        required: false
+      platforms:
+        description: Native platforms to package
+        type: choice
+        options: [all, windows-macos, linux]
+        default: all
+permissions:
+  contents: read
+concurrency:
+  group: release-gpui-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.variant.outputs.version }}
+      channel: ${{ steps.variant.outputs.channel }}
+      matrix: ${{ steps.variant.outputs.matrix }}
+      platforms: ${{ steps.variant.outputs.platforms }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: variant
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs'
+          import { gpuiTargets } from './scripts/packaging/gpui-targets.mjs'
+          const base = JSON.parse(readFileSync('package.json')).version
+          const requested = process.env.INPUT_VERSION || (process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME.slice(1) : '')
+          const version = requested || `${base}-nightly.${process.env.GITHUB_RUN_NUMBER}`
+          if (version !== base && !new RegExp(`^${base.replaceAll('.', '\\.')}-nightly\\.\\d+$`).test(version)) throw Error('Release version must match package.json')
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nchannel=${version.includes('-nightly.') ? 'nightly' : 'stable'}\n`)
+          const platforms = process.env.INPUT_PLATFORMS || (process.env.GITHUB_EVENT_NAME === 'push' ? 'windows-macos' : 'all')
+          appendFileSync(process.env.GITHUB_OUTPUT, `platforms=${platforms}\nmatrix=${JSON.stringify(gpuiTargets(platforms))}\n`)
+          JS
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      DOVO_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      DOVO_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      CARGO_BUILD_JOBS: '3'
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      RUST_TOOLCHAIN: stable-${{ matrix.rust_host }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+        with:
+          architecture: ${{ matrix.arch }}
+      - name: Verify native architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: node -e "if(process.arch !== process.env.EXPECTED_ARCH) throw Error('Native architecture mismatch')"
+      - run: pnpm install --frozen-lockfile
+      - name: Install Linux native and packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config cmake clang libssl-dev libzstd-dev libvulkan-dev libwayland-dev libfontconfig1-dev libfreetype-dev libxcb1-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-randr0-dev libxcb-render0-dev libxcb-xinput-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libdbus-1-dev libgtk-3-dev libwebkit2gtk-4.1-dev fonts-dejavu-core rpm ruby-dev
+          sudo gem install --no-document fpm
+      - name: Install macOS build tools
+        if: runner.os == 'macOS'
+        run: brew install cmake pkg-config
+      - name: Install Rust
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop-gpui/target
+          key: gpui-release-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('apps/desktop-gpui/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            gpui-release-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('apps/desktop-gpui/Cargo.lock') }}-
+      - run: pnpm --filter @dovo/api... -r build
+      - run: node scripts/build-gpui-assets.mjs
+      - run: cargo +"$RUST_TOOLCHAIN" fmt --manifest-path apps/desktop-gpui/Cargo.toml --check
+      - run: cargo +"$RUST_TOOLCHAIN" clippy --locked --manifest-path apps/desktop-gpui/Cargo.toml --all-targets -- -D warnings
+      - run: cargo +"$RUST_TOOLCHAIN" test --locked --manifest-path apps/desktop-gpui/Cargo.toml
+      - run: node --test scripts/packaging/gpui-release.test.mjs scripts/packaging/gpui-launcher.test.mjs
+      - run: cargo +"$RUST_TOOLCHAIN" build --locked --manifest-path apps/desktop-gpui/Cargo.toml --release
+      - run: pnpm run package:prepare-runtime
+        env:
+          DOVO_PREPARED_RUNTIME: ${{ runner.temp }}/dovo-gpui-runtime
+      - name: Package Linux with declared dependencies
+        if: runner.os == 'Linux'
+        run: node scripts/packaging/package-gpui.mjs --release --linux-packages
+      - name: Verify clean Fedora and Ubuntu installation and native startup
+        if: runner.os == 'Linux'
+        run: |
+          for version in 43 44; do
+            docker run --rm -v "$PWD/release:/packages:ro" -v "$PWD:/verification:ro" "fedora:$version" sh -ec '
+              dnf install -y --nogpgcheck /packages/*.rpm
+              dnf install -y xorg-x11-server-Xvfb xdotool
+              sh /verification/scripts/packaging/check-gpui-linux-install.sh
+            '
+          done
+          docker run --rm -v "$PWD/release:/packages:ro" -v "$PWD:/verification:ro" ubuntu:24.04 sh -ec '
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y /packages/*.deb xvfb xauth xdotool
+            sh /verification/scripts/packaging/check-gpui-linux-install.sh
+          '
+      - name: Sign and notarize macOS bundle with existing Apple credentials
+        if: runner.os == 'macOS'
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          CSC_NAME: ${{ secrets.MAC_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/packaging/package-gpui.mjs --release
+      - name: Smoke test packaged macOS runtime
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p work/gpui-smoke
+          tar -xzf release/Dovo-GPUI*-macos-*.tar.gz -C work/gpui-smoke
+          codesign --verify --deep --strict "work/gpui-smoke/Dovo Studio GPUI.app"
+          xcrun stapler validate "work/gpui-smoke/Dovo Studio GPUI.app"
+          spctl --assess --type execute "work/gpui-smoke/Dovo Studio GPUI.app"
+          node scripts/packaging/gpui-smoke.mjs work/gpui-smoke
+      - name: Stage Windows app for signing
+        if: runner.os == 'Windows'
+        run: |
+          node scripts/packaging/package-gpui.mjs --release --dir
+          node scripts/packaging/gpui-smoke.mjs release/gpui-windows-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Windows'
+        with:
+          name: gpui-unsigned-windows-${{ matrix.arch }}
+          compression-level: 0
+          if-no-files-found: error
+          path: release/gpui-windows-${{ matrix.arch }}/
+          retention-days: 1
+      - uses: actions/upload-artifact@v7
+        if: runner.os != 'Windows'
+        with:
+          name: gpui-release-${{ matrix.os }}-${{ matrix.arch }}
+          compression-level: 0
+          if-no-files-found: error
+          path: release/Dovo-GPUI*
+          retention-days: 30
+  windows-sign:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.platforms != 'linux'
+    runs-on: windows-2025
+    timeout-minutes: 45
+    environment: windows-signing
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    env:
+      DOVO_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      DOVO_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      AZURE_SIGNING_PUBLISHER: ${{ vars.AZURE_SIGNING_PUBLISHER }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+      - name: Verify existing signing configuration
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          foreach ($name in @('AZURE_CLIENT_ID','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID','AZURE_SIGNING_ENDPOINT','AZURE_SIGNING_ACCOUNT','AZURE_SIGNING_PROFILE','AZURE_SIGNING_PUBLISHER')) {
+            if (-not [Environment]::GetEnvironmentVariable($name)) { throw "Missing $name" }
+          }
+      - uses: actions/download-artifact@v8
+        with:
+          name: gpui-unsigned-windows-${{ matrix.arch }}
+          path: work/windows-app
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Select native PE binaries
+        id: signing-files
+        run: node scripts/packaging/windows-signing-files.mjs work/windows-app
+      - uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files: ${{ steps.signing-files.outputs.files }}
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Verify embedded signatures and publisher
+        shell: pwsh
+        run: |
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signTool) { throw 'Windows SDK SignTool missing' }
+          foreach ($path in (Get-Content work/windows-signing-files.json -Raw | ConvertFrom-Json)) {
+            & $signTool.FullName verify /pa /v $path
+            if ($LASTEXITCODE -ne 0) { throw "Invalid embedded signature: $path" }
+            $signed = [System.Security.Cryptography.X509Certificates.X509Certificate]::CreateFromSignedFile($path)
+            $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($signed)
+            try {
+              $publisher = $certificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+              if ($publisher -cne $env:AZURE_SIGNING_PUBLISHER) { throw "Unexpected publisher: $path" }
+            } finally { $certificate.Dispose(); $signed.Dispose() }
+          }
+      - name: Archive final signed binaries
+        run: node scripts/packaging/gpui-archive.mjs work/windows-app ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gpui-release-windows-${{ matrix.arch }}
+          compression-level: 0
+          if-no-files-found: error
+          path: release/Dovo-GPUI*.zip
+          retention-days: 30
+  windows-smoke:
+    needs: windows-sign
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+        with:
+          architecture: ${{ matrix.arch }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: gpui-release-windows-${{ matrix.arch }}
+          path: release
+      - name: Exercise signed native app and SQLite/PTY runtime on its native architecture
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force work/gpui-smoke | Out-Null
+          $archive = (Get-ChildItem release -Filter *.zip).FullName
+          tar -xf $archive -C work/gpui-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Archive extraction failed' }
+          node scripts/packaging/gpui-smoke.mjs work/gpui-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Signed runtime smoke test failed' }
+  artifacts:
+    needs: [prepare, build, windows-sign, windows-smoke]
+    if: >-
+      always() && needs.build.result == 'success' &&
+      (needs.windows-sign.result == 'success' || needs.windows-sign.result == 'skipped') &&
+      (needs.windows-smoke.result == 'success' || needs.windows-smoke.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: gpui-release-*
+          merge-multiple: true
+          path: release
+      - name: Verify complete asset matrix and generate checksums
+        env:
+          DOVO_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          DOVO_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+          DOVO_GPUI_PLATFORMS: ${{ needs.prepare.outputs.platforms }}
+        run: node scripts/packaging/verify-gpui-release.mjs
+      # Linux has no existing package-signing key. GitHub signs build provenance for
+      # every final artifact; Apple and Azure retain their existing native identities.
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: 'release/Dovo-GPUI*'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gpui-packages-${{ needs.prepare.outputs.version }}
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+          path: release/Dovo-GPUI*

@@ -21,6 +21,7 @@ export async function stageWorkspace(root, target) {
     for (const entry of await readdir(join(root, category), { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
       const relative = `${category}/${entry.name}`
+      if (!(await readdir(join(root, relative))).includes('package.json')) continue
       await mkdir(join(target, relative), { recursive: true })
       await cp(join(root, relative, 'package.json'), join(target, relative, 'package.json'))
       if (relative === 'apps/api') {

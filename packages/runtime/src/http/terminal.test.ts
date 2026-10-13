@@ -6,6 +6,64 @@ import { fixture } from '../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration'
 vi.setConfig(runtimeIntegration)
 
+it('negotiates byte input and delivers legacy mouse bytes unchanged to a real PTY', async () => {
+  const f = await fixture(),
+    runtime = await startRuntime({
+      databasePath: ':memory:',
+      ownerToken: 'test-owner-token-with-at-least-32-characters',
+      port: 0,
+    })
+  let socket: WebSocket | undefined
+  try {
+    const token = 'test-device-token-with-at-least-32-characters'
+    runtime.services.devices.add('Native client', token)
+    const terminal = runtime.services.terminals.createCommand(
+      'task',
+      f.directory,
+      {
+        command: process.execPath,
+        args: [
+          '-e',
+          `process.stdin.setRawMode(true);
+           process.stdin.on('data', data => console.log('bytes:' + data.toString('hex')));
+           console.log('ready-for-bytes');`,
+        ],
+        env: {},
+      },
+      'Raw mouse input',
+    )
+    await waitForRuntime(() =>
+      expect(runtime.services.terminals.get(terminal.id).buffer).toContain('ready-for-bytes'),
+    )
+    const ticketResponse = await fetch(`http://127.0.0.1:${runtime.port}/api/terminals/ticket`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: terminal.id }),
+    })
+    expect(ticketResponse.status).toBe(200)
+    const ticket = await ticketResponse.json()
+    expect(ticket.byteInput).toBe(true)
+    socket = new WebSocket(`ws://127.0.0.1:${runtime.port}/ws/terminal?ticket=${ticket.ticket}`)
+    await once(socket, 'open')
+    socket.send(
+      JSON.stringify({
+        type: 'input-bytes',
+        data: Buffer.from([27, 91, 77, 32, 255, 183]).toString('base64'),
+      }),
+    )
+    await waitForRuntime(() =>
+      expect(runtime.services.terminals.get(terminal.id).buffer).toContain('bytes:1b5b4d20ffb7'),
+    )
+    const closed = once(socket, 'close')
+    socket.send(JSON.stringify({ type: 'input-bytes', data: 'gB==' }))
+    expect((await closed)[0]).toBe(1008)
+  } finally {
+    socket?.terminate()
+    await runtime.close()
+    await f.cleanup()
+  }
+})
+
 it('reconnects to the same running command after a terminal socket disconnects', async () => {
   const f = await fixture(),
     runtime = await startRuntime({
