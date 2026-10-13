@@ -1,3 +1,4 @@
+import { resolveTaskAgent } from '@dovo/protocol'
 import { TaskReviews } from './scm/reviews/task-reviews.js'
 import { ReviewMarks } from './scm/reviews/progress.js'
 import { FileReviews, pullReviewScope, pullReviewFiles } from './scm/reviews/reviews.js'
@@ -61,7 +62,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     throw new Error('Invalid persisted runtime identity')
   const activity = new Activity(db)
   const commands = new Commands(db)
-  const preferences = new RuntimePreferences(db)
+  const preferences = new RuntimePreferences(db, () => store.update((workspace) => workspace))
   const deviceHostUploads = new DeviceHostUploads()
   const deviceHosts = new DeviceHosts(
     db,
@@ -237,9 +238,10 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   // Older runtimes retained watches on settled threads; do not resume those after an upgrade.
   pullRequestWatch.reconcile(store.get().tasks)
   pipelineWatch.reconcile(store.get().tasks)
-  store.setTaskWatchLifecycle((entries) => {
+  store.setTaskWatchLifecycle((entries, agents) => {
     const pulls = pullRequestWatch.reconcile(entries)
     const pipelines = pipelineWatch.reconcile(entries)
+    const settings = preferences.get()
     return entries.map((task) => {
       const waiting =
         !task.archived &&
@@ -250,7 +252,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         !task.draft.trim() &&
         !task.draftAttachments?.length &&
         !task.error &&
-        (pulls.has(task.id) || pipelines.has(task.id))
+        resolveTaskAgent(task, agents)?.permission !== 'read-only' &&
+        ((settings.enablePullRequestWatching && pulls.has(task.id)) ||
+          (settings.enablePipelineWatching && pipelines.has(task.id)))
       return !!task.waitingForFeedback === waiting
         ? task
         : { ...task, waitingForFeedback: waiting || undefined }

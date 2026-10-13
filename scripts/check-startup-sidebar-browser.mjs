@@ -15,6 +15,7 @@ const mocks = {
     const host={}; export const useStudioHost=()=>host;
     export const readAppPreferences=()=>window.preferences;
     export const useAppPreferences=readAppPreferences;
+    export const updateAppPreferences=changes=>Object.assign(window.preferences, changes);
   `,
   '@dovo/studio-ui': `
     export const Button=({children,onClick,disabled})=><button disabled={disabled} onClick={onClick}>{children}</button>;
@@ -44,7 +45,7 @@ const built = await build({
       import {collectTasks,taskCollectionKey} from '../extension-tasks/src/list/task-collection';
       import {saveTaskListViewState} from '../extension-tasks/src/list/task-list-view-state';
       saveTaskListViewState(useStudioHost(), {query:'does-not-match',expanded:{active:false,'project:["mac","scratch"]':false}});
-      window.preferences={taskSort:'priority',taskGrouping:window.testGrouping||'status',workingSection:true};
+      window.preferences={taskSort:'priority',taskGrouping:window.testGrouping||'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled']};
       window.commits=0;window.requests=[];
       function App(){
         const [workspace,setWorkspace]=useState({tasks:[],agents:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]});

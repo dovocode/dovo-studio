@@ -9,12 +9,14 @@ const browser = await chromium.launch({ headless: true })
 try {
   for (const mobile of [false, true]) {
     const mocks = {
-      '@dovo/studio-core': `export {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting.ts';export const useWorkspace=()=>window.store;`,
+      '@dovo/studio-core': `export {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting.ts';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openExternalLink:url=>window.opened=url});`,
       '@dovo/studio-ui':
         'export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;',
       '../../runtime/connection/provider': 'export const useRuntime=()=>window.store;',
+      '../../ui/content/open-link': 'export const openAppLink=async url=>{window.opened=url};',
+      '../../ui/controls/icon': 'export const Icon=()=> <span>×</span>;',
       'react-native':
-        'export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;',
+        'export const Alert={alert:(title,message,buttons)=>{if(window.confirm(title)) buttons.find(b=>b.style==="destructive").onPress()}};export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,disabled})=><button role={accessibilityRole} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;',
       '../../ui/content/text':
         'export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;',
       '../../ui/controls/action':
@@ -59,6 +61,7 @@ try {
     const page = await browser.newPage()
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
+    await page.clock.install()
     await page.setContent('<div id="app"></div>')
     await page.evaluate(() => {
       window.target = 'first'
@@ -95,12 +98,22 @@ try {
       window.store = { connected: true, request, call: request }
     })
     await page.addScriptTag({ content: built.outputFiles[0].text })
-    await page.getByRole('button', { name: 'Unlink PR #7', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Stop watching PR #7', exact: true }).waitFor()
     assert.match(await page.locator('#app').innerText(), /Waiting for approval/)
-    await page.getByRole('button', { name: 'Unlink PR #7', exact: true }).click()
+    const link = page.getByRole('link', {
+      name: mobile ? 'Open PR #7' : 'Project · PR #7',
+      exact: true,
+    })
+    await link.click()
+    assert.equal(await page.evaluate(() => window.opened), 'https://github.com/team/project/pull/7')
+    page.once('dialog', (dialog) => dialog.dismiss())
+    await page.getByRole('button', { name: 'Stop watching PR #7', exact: true }).click()
+    assert.equal(await page.evaluate(() => window.calls.some((call) => call.unlink)), false)
+    page.on('dialog', (dialog) => dialog.accept())
+    await page.getByRole('button', { name: 'Stop watching PR #7', exact: true }).click()
     await page.waitForFunction(() => !document.body.textContent.includes('PR #7'))
     assert.equal(
-      await page.getByRole('button', { name: 'Unlink Pipeline run 8', exact: true }).count(),
+      await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).count(),
       1,
     )
     const call = await page.evaluate(() => window.calls.find((item) => item.unlink))
@@ -117,7 +130,7 @@ try {
     await page.getByRole('alert').waitFor()
     assert.match(await page.getByRole('alert').innerText(), /Connection failed/)
     assert.equal(
-      await page.getByRole('button', { name: 'Unlink Pipeline run 8', exact: true }).count(),
+      await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).count(),
       1,
     )
     await page.evaluate(() => {
@@ -125,14 +138,45 @@ try {
     })
     await page.getByRole('button', { name: /Refresh/ }).click()
     await page.waitForFunction(() => !document.querySelector('[role=alert]'))
-    await page.getByRole('button', { name: 'Unlink Pipeline run 8', exact: true }).click()
-    await page.waitForFunction(() => document.body.textContent.includes('No active waiting items.'))
+    await page.evaluate(() => {
+      window.items[0].pausedReason = 'Monitoring paused: watcher disabled in runtime settings'
+    })
+    await page.getByRole('button', { name: /Refresh/ }).click()
+    await page.getByText('Paused', { exact: true }).waitFor()
     await page.evaluate(() => {
       window.store.connected = false
       window.render()
     })
     await page.waitForFunction(() => document.body.textContent.includes('Connect the runtime'))
     assert.equal(await page.getByRole('button', { name: /Refresh/ }).isDisabled(), true)
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true })
+        .isDisabled(),
+      true,
+    )
+    await page.evaluate(() => {
+      window.store.connected = true
+      window.render()
+    })
+    await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).click()
+    await page.waitForFunction(() => document.getElementById('app').textContent === '')
+    // The empty panel keeps discovering new watches without taking up space.
+    await page.evaluate(() => {
+      window.items = [
+        {
+          kind: 'pipeline',
+          repositoryId: 'repo',
+          target: '10',
+          label: 'Pipeline run 10',
+          project: 'Project',
+          url: 'https://github.com/team/project/actions/runs/10',
+          status: 'running',
+        },
+      ]
+    })
+    await page.clock.fastForward(15000)
+    await page.getByRole('button', { name: 'Stop watching Pipeline run 10', exact: true }).waitFor()
     await page.evaluate(() => {
       window.store.connected = true
       window.target = 'second'
@@ -149,9 +193,9 @@ try {
       ]
       window.render()
     })
-    await page.getByRole('button', { name: 'Unlink Pipeline run 9', exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Unlink Pipeline run 9', exact: true }).click()
-    await page.waitForFunction(() => document.body.textContent.includes('No active waiting items.'))
+    await page.getByRole('button', { name: 'Stop watching Pipeline run 9', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Stop watching Pipeline run 9', exact: true }).click()
+    await page.waitForFunction(() => document.getElementById('app').textContent === '')
     assert.equal(await page.evaluate(() => window.calls.at(-1).taskId), 'second')
     assert.deepEqual(errors, [])
     await page.close()

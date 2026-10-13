@@ -687,9 +687,14 @@ export class WorkspaceStore {
               ),
     }
   }
-  private taskWatchLifecycle?: (tasks: TaskSummary[]) => TaskSummary[]
+  private taskWatchLifecycle?: (
+    tasks: TaskSummary[],
+    agents: WorkspaceSummary['agents'],
+  ) => TaskSummary[]
   /** Reconcile watch cancellation and the Waiting projection inside the workspace transaction. */
-  setTaskWatchLifecycle(reconcile: (tasks: TaskSummary[]) => TaskSummary[]) {
+  setTaskWatchLifecycle(
+    reconcile: (tasks: TaskSummary[], agents: WorkspaceSummary['agents']) => TaskSummary[],
+  ) {
     this.taskWatchLifecycle = reconcile
   }
   /** The complete task for a committed summary, without retaining it. */
@@ -911,7 +916,7 @@ export class WorkspaceStore {
               decode(rowSchema, old).value,
             )
       }
-      if (this.taskWatchLifecycle) next.tasks = this.taskWatchLifecycle(next.tasks)
+      if (this.taskWatchLifecycle) next.tasks = this.taskWatchLifecycle(next.tasks, next.agents)
       // Only written histories are recorded. Version 1 migration seeds every history at once.
       const recorded: Task[] = []
       const recordedBefore = new Map<string, Task>()

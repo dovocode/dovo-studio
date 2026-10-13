@@ -29,7 +29,7 @@ export const ScreenHeader=({title})=><h1>{title}</h1>;
 const theme={styles:{},colors:{}};export const useTheme=()=>theme;
 `
 const preferenceModule = `
-const preferences={computerRefresh:'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[],taskSort:'newest',taskGrouping:'none',threadSectionOrder:['active','working','waiting','snoozed','settled'],workingSection:false,confirmArchive:false};
+const preferences={computerRefresh:'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[],taskSort:'newest',taskGrouping:'none',threadSectionOrder:['active','working','waiting','snoozed','settled'],workingSection:false,collapsedThreadSections:['working','snoozed','settled'],confirmArchive:false};
 export const useMobilePreferences=()=>preferences;export const readMobilePreferences=()=>preferences;export const updateMobilePreferences=()=>{};export const preferencesReady=Promise.resolve();export const useCarMode=()=>false;
 `
 const stubs = [

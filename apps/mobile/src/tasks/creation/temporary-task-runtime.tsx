@@ -64,6 +64,7 @@ export function TemporaryTaskRuntime({
           const needsTask =
             (path.startsWith('/api/tasks/') &&
               path !== '/api/tasks/title' &&
+              path !== '/api/tasks/waiting' &&
               path !== '/api/tasks/dictation/cleanup') ||
             path.startsWith('/api/attachments/')
           if (needsTask && !committed.current) {
@@ -86,7 +87,13 @@ export function TemporaryTaskRuntime({
           const result = await runClientEffect(
             (needsTask || committed.current ? rootCall : rootRead)(path, input, schema, method),
           )
-          if (committed.current && !notified.current && mounted.current) {
+          // Background watcher reads must not finalize a draft after a failed first action.
+          if (
+            path !== '/api/tasks/waiting' &&
+            committed.current &&
+            !notified.current &&
+            mounted.current
+          ) {
             notified.current = true
             committedCallback.current(current.current)
           }

@@ -8,7 +8,10 @@ import { worktreesRoot } from '../scm/tasks/task-worktree-keys.js'
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 export class RuntimePreferences {
   private readonly settingsPath: string | null
-  constructor(private db: Database.Database) {
+  constructor(
+    private db: Database.Database,
+    private onWatchSettingsChange?: () => void,
+  ) {
     this.settingsPath =
       db.name === ':memory:'
         ? null
@@ -30,7 +33,8 @@ export class RuntimePreferences {
    * (for example an older phone) never resets the others to their defaults. */
   save(value: unknown) {
     const changes = value && typeof value === 'object' ? value : {}
-    const settings = decode(runtimePreferencesSchema, { ...this.get(), ...changes })
+    const previous = this.get()
+    const settings = decode(runtimePreferencesSchema, { ...previous, ...changes })
     const root = settings.worktreesRoot.trim()
     if (root && root !== '~' && !root.startsWith('~/') && !isAbsolute(root))
       throw new HttpError(400, 'Worktree location must be an absolute path on this computer')
@@ -42,6 +46,11 @@ export class RuntimePreferences {
           'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
         )
         .run('runtime-preferences', JSON.stringify(settings))
+    if (
+      previous.enablePipelineWatching !== settings.enablePipelineWatching ||
+      previous.enablePullRequestWatching !== settings.enablePullRequestWatching
+    )
+      this.onWatchSettingsChange?.()
     return settings
   }
   worktreesRoot() {

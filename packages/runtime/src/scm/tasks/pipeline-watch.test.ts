@@ -608,8 +608,166 @@ it('lets paired devices inspect and selectively unlink waiting runs while preser
   expect(
     decode(taskWaitingSchema, await stopped.json()).dependencies.map((item) => item.target),
   ).toEqual(['8'])
-  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
   expect((await unlink('8')).status).toBe(200)
   expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
   expect((await unlink('8')).status).toBe(200)
+})
+
+it.each(['job', 'step'])(
+  'ends the watch and wakes the thread on an early %s failure',
+  async (part) => {
+    const f = await setup()
+    f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+    await f.watch()
+    f.read.mockResolvedValue(
+      detail('7', 'in_progress', {
+        jobs: [
+          {
+            id: 'build',
+            name: 'Build',
+            url: detail().run.url,
+            status: part === 'job' ? 'failure' : 'in_progress',
+            steps: [
+              { id: 'compile', name: 'Compile', status: 'failure', errors: ['Compilation failed'] },
+            ],
+          },
+        ],
+      }),
+    )
+    await f.s.pipelineWatch.tick()
+    await f.s.pipelineWatch.tick()
+    expect(await f.status()).toMatchObject({
+      watches: [{ status: 'completed', runStatus: 'in_progress' }],
+    })
+    expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+    expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+    expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('Compilation failed')
+  },
+)
+
+it('returns and finishes an already failed part at registration without duplicate delivery', async () => {
+  const f = await setup()
+  f.read.mockResolvedValue(
+    detail('7', 'running', {
+      jobs: [{ id: 'build', name: 'Build', url: detail().run.url, status: 'failure' }],
+    }),
+  )
+  expect(await f.watch()).toMatchObject({ watches: [{ status: 'completed' }] })
+  await f.s.pipelineWatch.tick()
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
+})
+
+it('reads all job pages for registration and detects early failures beyond the first page', async () => {
+  const f = await setup()
+  const querySchema = mutableStruct({ id: Schema.String, cursor: Schema.optional(Schema.String) })
+  const passed = Array.from({ length: 50 }, (_, index) => ({
+    id: String(index),
+    name: `Passed ${index}`,
+    status: 'success',
+    url: detail().run.url,
+  }))
+  let failed = false
+  f.read.mockImplementation(async (_repo, _operation, input) => {
+    const query = decode(querySchema, input)
+    if (!query.cursor) return detail(query.id, 'running', { jobs: passed, next: '2' })
+    if (query.cursor === '2')
+      return detail(query.id, 'running', {
+        jobs: [
+          {
+            id: '50',
+            name: 'Late build',
+            status: failed ? 'failure' : 'running',
+            url: detail().run.url,
+          },
+        ],
+        next: '3',
+      })
+    return detail(query.id, 'running', {
+      jobs: [{ id: '51', name: 'Last build', status: 'running', url: detail().run.url }],
+    })
+  })
+  expect(await f.watch()).toMatchObject({
+    runs: [
+      {
+        jobs: expect.arrayContaining([
+          { id: '51', name: 'Last build', status: 'running', url: detail().run.url },
+        ]),
+      },
+    ],
+  })
+  expect(f.read).toHaveBeenCalledWith('repo', 'pipelines/detail', {
+    id: '7',
+    cursor: '3',
+    refresh: true,
+  })
+  failed = true
+  await f.s.pipelineWatch.tick()
+  await f.s.pipelineWatch.tick()
+  expect(await f.status()).toMatchObject({ watches: [{ status: 'completed' }] })
+  expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
+  expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('Late build: failure')
+})
+
+it.each(['stale', 'changed-attempt', 'repeated-cursor'])(
+  'retains a watch when job pagination is %s',
+  async (problem) => {
+    const f = await setup()
+    await f.watch()
+    f.read.mockImplementation(async (_repo, _operation, input) => {
+      const query = decode(mutableStruct({ cursor: Schema.optional(Schema.String) }), input)
+      if (!query.cursor) return detail('7', 'running', { next: '2' })
+      if (problem === 'stale')
+        return detail('7', 'success', { stale: true, refreshError: 'Jobs unavailable' })
+      if (problem === 'changed-attempt')
+        return { ...detail('7', 'success'), run: { ...detail().run, attempt: 2 } }
+      return detail('7', 'running', { next: '2' })
+    })
+    await f.s.pipelineWatch.tick()
+    expect(await f.status()).toMatchObject({
+      watches: [{ status: 'watching', error: expect.any(String) }],
+    })
+    expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
+    expect(f.read).toHaveBeenCalledTimes(3)
+  },
+)
+
+it('shows retained pipeline watches as paused and restores Waiting immediately on re-enable', async () => {
+  const f = await setup()
+  const { taskWaiting } = await import('../../http/endpoints/task-waiting.js')
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  await f.watch()
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  f.s.preferences.save({ enablePipelineWatching: false })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+  expect(await taskWaiting(f.s, { taskId: f.taskId })).toMatchObject({
+    dependencies: [
+      { target: '7', pausedReason: 'Monitoring paused: watcher disabled in runtime settings' },
+    ],
+  })
+  f.s.preferences.save({ enablePipelineWatching: true })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  expect(
+    (await taskWaiting(f.s, { taskId: f.taskId })).dependencies[0]?.pausedReason,
+  ).toBeUndefined()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'running' }))
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+  expect((await taskWaiting(f.s, { taskId: f.taskId })).dependencies).toHaveLength(1)
+})
+
+it('shows read-only monitoring as paused without leaving the thread in Waiting', async () => {
+  const f = await setup()
+  const { taskWaiting } = await import('../../http/endpoints/task-waiting.js')
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  await f.watch()
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({ ...agent, permission: 'read-only' })),
+  }))
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+  expect((await taskWaiting(f.s, { taskId: f.taskId })).dependencies[0]?.pausedReason).toContain(
+    'read-only',
+  )
+  f.s.store.update((workspace) => ({ ...workspace, agents: f.f.workspace.agents }))
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
 })

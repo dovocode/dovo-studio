@@ -257,3 +257,23 @@ it('restores complete section orders and falls back for invalid orders', async (
     threadSectionOrder: ['pinned', 'active', 'working', 'waiting', 'snoozed', 'settled'],
   })
 })
+
+it('restores section collapse choices across phone restarts independently of list items', async () => {
+  let saved: string | null = null
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const first = await loadPreferences()
+  await first.preferencesReady
+  first.updateMobilePreferences({ collapsedThreadSections: ['waiting', 'settled'] })
+  await vi.waitFor(() => expect(saved).not.toBeNull())
+  const restarted = await loadPreferences()
+  await restarted.preferencesReady
+  expect(restarted.readMobilePreferences().collapsedThreadSections).toEqual(['waiting', 'settled'])
+  restarted.updateMobilePreferences({ collapsedThreadSections: [] })
+  await vi.waitFor(() => expect(JSON.parse(saved ?? '{}').collapsedThreadSections).toEqual([]))
+  const expanded = await loadPreferences()
+  await expanded.preferencesReady
+  expect(expanded.readMobilePreferences().collapsedThreadSections).toEqual([])
+})

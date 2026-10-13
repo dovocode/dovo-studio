@@ -8,6 +8,7 @@ import { useStudioHost } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   readAppPreferences,
+  updateAppPreferences,
   latestCompletedTaskTurn,
   resolveTaskAgent,
   useAppPreferences,
@@ -378,7 +379,14 @@ export function TaskList({
       setBulkBusy(false)
     }
   }
+  const revealedEntryKey =
+    temporaryEntry?.key ?? (selectedEntry?.task.status === 'draft' ? selectedMainKey : undefined)
   const groups = useMemo(() => {
+    const sectionOpen = (id: string) =>
+      ['working', 'waiting', 'snoozed', 'settled'].includes(id)
+        ? !preferences.collapsedThreadSections.includes(id)
+        : expanded[id]
+
     const ordered = (sections: { id: string; name: string; tasks: TaskEntry[]; open: boolean }[]) =>
       orderThreadSections(sections, (group) => group.id, preferences.threadSectionOrder).map(
         (group, index) => (index === 0 && group.id === 'active' ? { ...group, open: true } : group),
@@ -458,7 +466,7 @@ export function TaskList({
       )
       .map((group) => ({
         ...group,
-        open: expanded[group.id] ?? false,
+        open: sectionOpen(group.id) ?? false,
       }))
     const visibleActive = active.filter(
       ({ task, needsInput }) =>
@@ -473,7 +481,7 @@ export function TaskList({
                 name: 'Open',
                 tasks: visibleActive,
                 open:
-                  visibleActive.some((entry) => entry.key === temporaryEntry?.key) ||
+                  visibleActive.some((entry) => entry.key === revealedEntryKey) ||
                   (expanded.active ?? true),
               },
             ]
@@ -485,8 +493,8 @@ export function TaskList({
         statusGroups.map((group) => ({
           ...group,
           open:
-            group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
-            (expanded[group.id] ?? group.open),
+            group.tasks.some((entry) => entry.key === revealedEntryKey) ||
+            (sectionOpen(group.id) ?? group.open),
         })),
       )
     const byProject = new Map<string, { id: string; name: string; tasks: TaskEntry[] }>()
@@ -511,7 +519,7 @@ export function TaskList({
         .map((group) => ({
           ...group,
           open:
-            group.tasks.some((entry) => entry.key === temporaryEntry?.key) ||
+            group.tasks.some((entry) => entry.key === revealedEntryKey) ||
             (expanded[group.id] ?? true),
         })),
       ...collapsedGroups,
@@ -524,7 +532,8 @@ export function TaskList({
     preferences.projectGrouping,
     preferences.workingSection,
     preferences.threadSectionOrder,
-    temporaryEntry,
+    preferences.collapsedThreadSections,
+    revealedEntryKey,
   ])
   useEffect(() => {
     onOrderChange?.(
@@ -852,18 +861,24 @@ export function TaskList({
             })
           if (index === 0 && group.id === 'active') return <div key={group.id}>{rows}</div>
           return (
-            <details
-              key={group.id}
-              open={group.open}
-              onToggle={(event) => {
-                const open = event.currentTarget.open
-                setExpanded((current) =>
-                  current[group.id] === open ? current : { ...current, [group.id]: open },
-                )
-              }}
-              className="group mb-1"
-            >
-              <summary className="flex cursor-pointer list-none items-center gap-1 px-2 py-1 text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground">
+            <details key={group.id} open={group.open} className="group mb-1">
+              <summary
+                onClick={(event) => {
+                  // Native toggle events also fire for programmatic reveals. Only save user clicks
+                  // (including keyboard activation), leaving temporary expansion out of preferences.
+                  event.preventDefault()
+                  const open = !group.open
+                  if (['working', 'waiting', 'snoozed', 'settled'].includes(group.id)) {
+                    const collapsed = new Set(readAppPreferences().collapsedThreadSections)
+                    if (open) collapsed.delete(group.id)
+                    else collapsed.add(group.id)
+                    updateAppPreferences({ collapsedThreadSections: [...collapsed] })
+                  } else {
+                    setExpanded((current) => ({ ...current, [group.id]: open }))
+                  }
+                }}
+                className="flex cursor-pointer list-none items-center gap-1 px-2 py-1 text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground"
+              >
                 <ChevronDown size={11} />
                 <span className="min-w-0 flex-1 truncate">{group.name}</span>
                 <span>{group.tasks.length}</span>

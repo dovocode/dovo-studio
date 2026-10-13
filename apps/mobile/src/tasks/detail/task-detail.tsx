@@ -765,7 +765,7 @@ function TaskDetailContent({
                     {quota.error && <Text style={{ color: colors.error }}>{quota.error}</Text>}
                   </View>
                 )}
-                {task.waitingForFeedback && (
+                {!startup?.temporary && (
                   <TaskWaitingPanel key={`${activeId}:${task.id}`} taskId={task.id} />
                 )}
                 <TaskQuestions taskId={task.id} questionId={questionId} />

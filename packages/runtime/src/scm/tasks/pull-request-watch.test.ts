@@ -876,3 +876,58 @@ it('shows PR feedback dependencies to paired devices and unlinks without removin
   expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
   expect(f.s.store.task(f.taskId).linkedPullRequests).toMatchObject([{ url }])
 })
+
+it('shows retained PR watches as paused and restores Waiting immediately on re-enable', async () => {
+  const f = await setup()
+  const { taskWaiting } = await import('../../http/endpoints/task-waiting.js')
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  await f.watch()
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  f.s.preferences.save({ enablePullRequestWatching: false })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+  expect(await taskWaiting(f.s, { taskId: f.taskId })).toMatchObject({
+    dependencies: [
+      { target: url, pausedReason: 'Monitoring paused: watcher disabled in runtime settings' },
+    ],
+  })
+  f.s.preferences.save({ enablePullRequestWatching: true })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  expect(
+    (await taskWaiting(f.s, { taskId: f.taskId })).dependencies[0]?.pausedReason,
+  ).toBeUndefined()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'running' }))
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+  expect((await taskWaiting(f.s, { taskId: f.taskId })).dependencies).toHaveLength(1)
+})
+
+it('keeps Waiting for another enabled watcher when pipeline monitoring is disabled', async () => {
+  const f = await setup()
+  f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))
+  await f.watch()
+  f.s.preferences.save({ enablePipelineWatching: true })
+  vi.spyOn(f.s.forgeWork, 'request').mockResolvedValue({
+    run: {
+      id: '8',
+      title: 'Build',
+      url: 'https://github.com/team/project/actions/runs/8',
+      ref: 'main',
+      sha: 'a'.repeat(40),
+      actor: 'author',
+      status: 'running',
+      createdAt: '2026-10-09T10:00:00Z',
+      updatedAt: '2026-10-09T10:00:00Z',
+    },
+    jobs: [],
+    cachedAt: new Date().toISOString(),
+  })
+  await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'watch', runIds: ['8'] })
+  f.s.preferences.save({ enablePipelineWatching: false })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+  const { taskWaiting } = await import('../../http/endpoints/task-waiting.js')
+  const dependencies = (await taskWaiting(f.s, { taskId: f.taskId })).dependencies
+  expect(dependencies.find((item) => item.kind === 'pull')?.pausedReason).toBeUndefined()
+  expect(dependencies.find((item) => item.kind === 'pipeline')?.pausedReason).toContain('disabled')
+  f.s.preferences.save({ enablePullRequestWatching: false })
+  expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
+  expect((await taskWaiting(f.s, { taskId: f.taskId })).dependencies).toHaveLength(2)
+})

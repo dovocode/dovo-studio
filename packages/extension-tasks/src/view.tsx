@@ -776,9 +776,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
             onBottomTerminal={toggleBottomTerminal}
           />
         )}
-        {task.waitingForFeedback && (
-          <TaskWaitingPanel key={`${activeRuntimeId}:${task.id}`} taskId={task.id} />
-        )}
+        {!temporary && <TaskWaitingPanel key={`${activeRuntimeId}:${task.id}`} taskId={task.id} />}
         <div ref={workspacePane} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <div
             ref={(element) => {

@@ -76,8 +76,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       return next
     })
   const [bulkBusy, setBulkBusy] = useApplicationState(false)
-  const [collapsed, setCollapsed] = useApplicationState<Set<string>>(
-    () => new Set(['working', 'snoozed', 'settled']),
+  const collapsed = useMemo(
+    () => new Set(preferences.collapsedThreadSections),
+    [preferences.collapsedThreadSections],
   )
   useForegroundInterval(() => setNow(Date.now()), focused ? 15000 : null)
   useEffect(() => {
@@ -632,22 +633,20 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                     : `${grouping}:${item.key}`,
                 ),
               }}
-              onPress={() =>
-                setCollapsed((current) => {
-                  const next = new Set(current)
-                  const key =
-                    item.key === 'settled' ||
-                    item.key === 'snoozed' ||
-                    item.key === 'working' ||
-                    item.key === 'waiting' ||
-                    item.key === 'active'
-                      ? item.key
-                      : `${grouping}:${item.key}`
-                  if (next.has(key)) next.delete(key)
-                  else next.add(key)
-                  return next
-                })
-              }
+              onPress={() => {
+                const next = new Set(collapsed)
+                const key =
+                  item.key === 'settled' ||
+                  item.key === 'snoozed' ||
+                  item.key === 'working' ||
+                  item.key === 'waiting' ||
+                  item.key === 'active'
+                    ? item.key
+                    : `${grouping}:${item.key}`
+                if (next.has(key)) next.delete(key)
+                else next.add(key)
+                updateMobilePreferences({ collapsedThreadSections: [...next] })
+              }}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 }}
             >
               <Icon

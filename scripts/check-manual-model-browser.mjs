@@ -18,7 +18,7 @@ const mocks = {
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const WorkspaceScope=({children})=>children;
     export const useStudioHost=()=>window.host;
-    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,followUp:'queue'});
+    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
     export const updateAppPreferences=()=>{};
     export const useResolvedTheme=()=> 'dark';
@@ -112,6 +112,7 @@ const built = await build({
         const snapshot={workspace,questions:[],approvals:[],defaults:{harness:{provider:window.defaultProvider,model:'default',permission:'full-access',endpoint:'',instructions:''}},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
         window.hydrate=()=>setRevision(value=>value+1);
         const request=async(path,input)=>{
+          if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
           window.requests.push({path,input});
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true},{id:'harness:claude',available:true}];
           if(path==='/api/agents/models')return {models:[{id:'default',name:'Default (recommended)',isDefault:true},{id:'opus',name:'Opus 5.5'},{id:'sonnet',name:'Sonnet 5.5'}],reasoning:[]};

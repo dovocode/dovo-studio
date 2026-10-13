@@ -217,3 +217,15 @@ it('restores section ordering across sessions and rejects incomplete saved order
     threadSectionOrder: ['pinned', 'active', 'working', 'waiting', 'snoozed', 'settled'],
   })
 })
+
+it('restores section collapse choices across restarts without depending on list items', async () => {
+  vi.stubGlobal('localStorage', storage())
+  const first = await import('./preferences')
+  first.updateAppPreferences({ collapsedThreadSections: ['waiting', 'settled'] })
+  vi.resetModules()
+  const restarted = await import('./preferences')
+  expect(restarted.readAppPreferences().collapsedThreadSections).toEqual(['waiting', 'settled'])
+  restarted.updateAppPreferences({ collapsedThreadSections: [] })
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences().collapsedThreadSections).toEqual([])
+})

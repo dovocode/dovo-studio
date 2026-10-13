@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
@@ -24,7 +25,10 @@ const mocks = {
     };
   `,
   'expo-crypto': `let id=0;export const randomUUID=()=> 'thread-'+(++id);`,
+  '../../ui/content/open-link': 'export const openAppLink=async()=>{};',
+  '../../ui/controls/icon': 'export const Icon=()=>null;',
   'react-native': `
+    export const Pressable=({children,onPress,disabled,accessibilityRole,accessibilityLabel})=><button role={accessibilityRole} aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>{children}</button>;
     export const View=({children})=><div>{children}</div>;
     export const ScrollView=({children})=><div>{children}</div>;
     export const ActivityIndicator=()=> <span>Loading</span>;
@@ -44,6 +48,7 @@ const mocks = {
   `,
   '../../runtime/connection/provider': `
     import {createContext,useContext} from 'react';
+    import {Effect} from 'effect';
     export const RuntimeContext=createContext(null);
     export const useRuntime=()=>useContext(RuntimeContext);
     export const RuntimeScope=({runtimeId,children})=>{
@@ -52,6 +57,7 @@ const mocks = {
       return <RuntimeContext.Provider value={{...root,activeId:runtimeId,profile:entry.profile,
         snapshot:entry.snapshot,connected:entry.connected,readCache:window.caches[runtimeId]??null,
         readEffect:(...args)=>root.request(runtimeId,...args),
+        call:(...args)=>Effect.runPromise(root.request(runtimeId,...args)),
         callEffect:(...args)=>root.request(runtimeId,...args)}}>{children}</RuntimeContext.Provider>;
     };
   `,
@@ -160,7 +166,12 @@ mocks['../../ui/controls/choice'] = 'export const Choice=()=>null;'
 mocks['../../ui/controls/field'] =
   'export const Field=({label,value,onChangeText,editable})=> <textarea aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/>;'
 
+const mobileRequire = createRequire(root + 'apps/mobile/package.json')
 const built = await build({
+  alias: {
+    react: mobileRequire.resolve('react'),
+    'react/jsx-runtime': mobileRequire.resolve('react/jsx-runtime'),
+  },
   stdin: {
     contents: `
       import {useState} from 'react';
@@ -213,6 +224,7 @@ const built = await build({
         window.makeGit=runtimeId=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],workspace:{...s[runtimeId].workspace,repositories:s[runtimeId].workspace.repositories.map(repo=>({...repo,id:window.created.repositoryId,kind:undefined}))}}}));
         const overviews=profiles.map(profile=>({profile,connected:online,snapshot:snapshots[profile.id]}));
         const request=(runtimeId,path,input)=>Effect.tryPromise({try:async()=>{
+          if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
           window.requests.push({runtimeId,path,input});
           if(path==='/api/workspace'){window.created=input.create;return {revision:1}}
           if(window.holdMessage&&path==='/api/tasks/message')await new Promise(resolve=>window.releaseMessage=resolve);
@@ -306,7 +318,18 @@ try {
   )
   assert.equal(await input.evaluate((element) => element === window.originalInput), true)
   assert.equal(await page.evaluate(() => window.created.setupCommand), 'pnpm install')
-  await page.evaluate(() =>
+  await page.evaluate(() => {
+    window.watchedItems = [
+      {
+        kind: 'pipeline',
+        repositoryId: window.created.repositoryId,
+        target: '8',
+        label: 'Pipeline run 8',
+        project: 'Project',
+        url: 'https://github.com/team/project/actions/runs/8',
+        status: 'running',
+      },
+    ]
     window.publish(
       'a',
       {
@@ -315,8 +338,9 @@ try {
         messages: [{ id: 'sent', role: 'user', text: 'First prompt' }],
       },
       false,
-    ),
-  )
+    )
+  })
+  await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()
   await page.getByText('First prompt', { exact: true }).waitFor()
   assert.equal(await input.evaluate((element) => element === window.originalInput), true)
   await input.fill('Follow-up')

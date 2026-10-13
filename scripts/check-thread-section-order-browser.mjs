@@ -13,7 +13,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {TaskList} from './src/list/task-list.tsx';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {TooltipProvider} from '@dovo/studio-ui';import {readAppPreferences,updateAppPreferences} from '@dovo/studio-core';window.savedOrder=()=>readAppPreferences().threadSectionOrder;window.groupBy=taskGrouping=>updateAppPreferences({taskGrouping});const render=()=>root.render(<ApplicationStateProvider><TooltipProvider><TaskList projectId="" onProjectChange={()=>{}} selectedId="" onSelect={()=>{}} onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.keyboardOrder=entries.map(entry=>entry.task.id)} sources={[window.source]} activeRuntimeId="runtime" busy={false} error=""/></TooltipProvider></ApplicationStateProvider>);const root=createRoot(document.getElementById('app'));window.remount=async()=>{root.render(null);await new Promise(resolve=>requestAnimationFrame(resolve));render()};render();`,
+    contents: `import {createRoot} from 'react-dom/client';import {TaskList} from './src/list/task-list.tsx';import {ApplicationStateProvider} from '@dovo/studio-core/state';import {TooltipProvider} from '@dovo/studio-ui';import {readAppPreferences,updateAppPreferences} from '@dovo/studio-core';window.savedOrder=()=>readAppPreferences().threadSectionOrder;window.collapsedSections=()=>readAppPreferences().collapsedThreadSections;window.groupBy=taskGrouping=>updateAppPreferences({taskGrouping});const render=()=>root.render(<ApplicationStateProvider><TooltipProvider><TaskList projectId="" onProjectChange={()=>{}} selectedId="" temporaryEntry={window.temporary} onSelect={()=>{}} onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.keyboardOrder=entries.map(entry=>entry.task.id)} sources={[window.source]} activeRuntimeId="runtime" busy={false} error=""/></TooltipProvider></ApplicationStateProvider>);const root=createRoot(document.getElementById('app'));window.render=render;window.remount=async()=>{root.render(null);await new Promise(resolve=>requestAnimationFrame(resolve));render()};render();`,
     loader: 'tsx',
     resolveDir: root + 'packages/extension-tasks/',
   },
@@ -91,6 +91,43 @@ try {
   const names = async () => (await headings()).map((text) => text.replace(/\d+$/, '').trim())
   await page.getByText('Active thread', { exact: true }).waitFor()
   assert.deepEqual(await names(), ['Working', 'Waiting'])
+  const savedCollapse = await page.evaluate(() => window.collapsedSections())
+  await page.evaluate(() => {
+    window.temporary = {
+      key: JSON.stringify(['runtime', 'working']),
+      task: window.source.workspace.tasks.find((task) => task.id === 'working'),
+      source: window.source,
+      needsInput: false,
+      projectKey: JSON.stringify(['runtime', 'repo']),
+      projectName: 'Project',
+    }
+    window.render()
+  })
+  await page.getByText('Working thread', { exact: true }).waitFor()
+  assert.deepEqual(
+    await page.evaluate(() => window.collapsedSections()),
+    savedCollapse,
+    'Automatic reveal must not persist section state',
+  )
+  await page.evaluate(() => {
+    window.temporary = undefined
+    window.render()
+  })
+  await page.waitForFunction(
+    () =>
+      ![...document.querySelectorAll('details')].find((element) =>
+        element.querySelector('summary').textContent.includes('Working'),
+      ).open,
+  )
+  assert.deepEqual(await page.evaluate(() => window.collapsedSections()), savedCollapse)
+  // Keyboard activation is a user toggle and must persist, just like a pointer click.
+  const workingSummary = page.locator('summary').filter({ hasText: 'Working' })
+  await workingSummary.focus()
+  await page.keyboard.press('Enter')
+  await page.getByText('Working thread', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.collapsedSections().includes('working')), false)
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => window.collapsedSections().includes('working'))
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
@@ -108,6 +145,12 @@ try {
   await page.locator('summary').filter({ hasText: 'Waiting' }).click()
   await page.getByText('Waiting thread', { exact: true }).waitFor()
   await page.waitForFunction(() => window.keyboardOrder[0] === 'waiting')
+  const savedTasks = await page.evaluate(() => window.source.workspace.tasks)
+  await page.evaluate(async () => {
+    window.source.workspace.tasks = []
+    await window.remount()
+  })
+  await page.waitForFunction(() => !document.querySelector('summary'))
   await page.reload()
   // Preferences survive a cold page reload; reconstruct only the UI fixture.
   await page.evaluate(() => {
@@ -129,6 +172,28 @@ try {
     'snoozed',
     'settled',
   ])
+  await page.evaluate(async (tasks) => {
+    window.source.workspace.tasks = tasks
+    window.source.workspace.repositories = [{ id: 'repo', name: 'Project', path: '/project' }]
+    await window.remount()
+  }, savedTasks)
+  await page.getByText('Waiting thread', { exact: true }).waitFor()
+  assert.equal(
+    await page
+      .locator('details')
+      .filter({ has: page.getByText('Waiting', { exact: true }) })
+      .evaluate((element) => element.open),
+    true,
+    'Empty sections retain their expanded state across cold starts',
+  )
+  assert.equal(
+    await page
+      .locator('details')
+      .filter({ has: page.getByText('Working', { exact: true }) })
+      .evaluate((element) => element.open),
+    false,
+    'Collapsed sections retain their state across cold starts',
+  )
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
   await dialog.getByRole('button', { name: 'Move pinned up', exact: true }).waitFor()
   assert.equal(

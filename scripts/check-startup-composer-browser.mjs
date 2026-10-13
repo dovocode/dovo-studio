@@ -15,7 +15,7 @@ const mocks = {
     export {useCachedTask} from '../studio-core/src/workspace/use-cached-task';
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const useStudioHost=()=>window.host;
-    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,followUp:'queue'});
+    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
     export const updateAppPreferences=()=>{};
     export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});
@@ -111,6 +111,7 @@ const built = await build({
         const snapshot={questions:[],approvals:[],defaults:{},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
         window.hydrate=()=>setRevision(value=>value+1);
         const request=async(path,input)=>{
+          if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
           window.requests.push({path,input});
           if(path==='/api/tasks/title')return {title:'New task'};
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:'message',role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
@@ -217,8 +218,22 @@ try {
   // Sending and runtime state changes keep the same composer too.
   await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
   await page.waitForFunction(() => typeof window.finishSend === 'function')
-  await page.evaluate(() => window.finishSend())
+  await page.evaluate(() => {
+    window.watchedItems = [
+      {
+        kind: 'pipeline',
+        repositoryId: 'scratch',
+        target: '8',
+        label: 'Pipeline run 8',
+        project: 'Project',
+        url: 'https://github.com/team/project/actions/runs/8',
+        status: 'running',
+      },
+    ]
+    window.finishSend()
+  })
   await page.waitForFunction(() => window.saved.some((task) => task.status === 'running'))
+  await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()
   assert.equal(await editor.evaluate((element) => element === window.originalEditor), true)
   await editor.fill('Next input')
   await page.waitForFunction(() => window.saved.some((task) => task.draft === 'Next input'))

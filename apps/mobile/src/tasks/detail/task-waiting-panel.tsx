@@ -1,10 +1,11 @@
 import { useCallback } from 'react'
-import { View } from 'react-native'
+import { Alert, Pressable, View } from 'react-native'
 import { taskWaitingSchema, type taskWaitingRequestSchema } from '@dovo/protocol'
 import { useTaskWaiting } from '@dovo/studio-core'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from '../../ui/content/text'
-import { Action } from '../../ui/controls/action'
+import { Icon } from '../../ui/controls/icon'
+import { openAppLink } from '../../ui/content/open-link'
 import { useTheme } from '../../ui/theme'
 
 export function TaskWaitingPanel({ taskId }: { taskId: string }) {
@@ -16,47 +17,91 @@ export function TaskWaitingPanel({ taskId }: { taskId: string }) {
     [call],
   )
   const { data, error, busy, refresh } = useTaskWaiting(taskId, connected, read)
+  if (!error && !data?.dependencies.length) return null
   return (
-    <View accessibilityLabel="Waiting for" style={{ padding: 12, gap: 8 }}>
-      <Text style={styles.text}>Waiting for</Text>
-      <Text style={styles.muted}>Unlink stops monitoring this item for this thread.</Text>
+    <View
+      accessibilityLabel="Waiting for"
+      style={{
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        gap: 6,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+      }}
+    >
       {!connected && <Text style={styles.muted}>Connect the runtime to manage waiting items.</Text>}
       {error && (
         <Text accessibilityRole="alert" style={{ color: colors.error }}>
           {error}
         </Text>
       )}
-      {!data && connected && !error && <Text style={styles.muted}>Loading waiting items…</Text>}
-      {data?.dependencies.length === 0 && (
-        <Text style={styles.muted}>No active waiting items.</Text>
-      )}
       {data?.dependencies.map((item) => (
         <View
           key={JSON.stringify([item.kind, item.repositoryId, item.target])}
-          style={{ gap: 4, paddingVertical: 8 }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: colors.muted,
+            borderRadius: 24,
+            maxWidth: '100%',
+          }}
         >
-          <Text style={styles.text}>
-            {item.project} · {item.label}
-          </Text>
-          <Text style={styles.muted}>{item.status}</Text>
-          <Text style={styles.muted}>{item.url}</Text>
-          {item.error && <Text style={{ color: colors.error }}>{item.error}</Text>}
-          <Action
-            secondary
-            label={`Unlink ${item.label}`}
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel={`Open ${item.label}${item.pausedReason ? `, ${item.pausedReason}` : ''}`}
+            onPress={() => void openAppLink(item.url)}
+            style={{ flexShrink: 1, paddingLeft: 12, paddingVertical: 8 }}
+          >
+            <Text numberOfLines={1} style={styles.text}>
+              {item.project} · {item.label}
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Stop watching ${item.label}`}
             disabled={!connected || busy}
+            style={{ padding: 12, opacity: busy || !connected ? 0.4 : 1 }}
             onPress={() =>
-              refresh({ kind: item.kind, repositoryId: item.repositoryId, target: item.target })
+              Alert.alert(
+                `Stop watching ${item.label}?`,
+                'This stops monitoring this item for this thread.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Stop watching',
+                    style: 'destructive',
+                    onPress: () =>
+                      void refresh({
+                        kind: item.kind,
+                        repositoryId: item.repositoryId,
+                        target: item.target,
+                      }),
+                  },
+                ],
+              )
             }
-          />
+          >
+            <Icon name="close" size={12} color={colors.muted} />
+          </Pressable>
+          {item.pausedReason && (
+            <Text accessibilityLabel={item.pausedReason} style={styles.muted}>
+              Paused
+            </Text>
+          )}
+          {item.error && <Text style={{ color: colors.error }}>{item.error}</Text>}
         </View>
       ))}
-      <Action
-        secondary
-        label="Refresh waiting items"
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Refresh waiting items"
         disabled={!connected || busy}
-        onPress={() => refresh()}
-      />
+        onPress={() => void refresh()}
+        style={{ padding: 10 }}
+      >
+        <Text style={styles.muted}>↻</Text>
+      </Pressable>
     </View>
   )
 }
