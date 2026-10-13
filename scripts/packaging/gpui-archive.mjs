@@ -4,6 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { releaseVariant } from './release-variant.mjs'
 
+// Git Bash can put GNU tar first on PATH; it treats Windows drive letters as
+// remote hosts and cannot create ZIPs. Windows ships a ZIP-capable bsdtar.
+export const tarExecutable =
+  process.platform === 'win32' ? join(process.env.SystemRoot, 'System32', 'tar.exe') : 'tar'
+
 export async function gpuiArchive({ directory, output, version, nightly, platform, arch }) {
   if (!['darwin', 'linux', 'win32'].includes(platform) || !['x64', 'arm64'].includes(arch))
     throw new Error('Unsupported GPUI archive platform or architecture')
@@ -22,7 +27,9 @@ export async function gpuiArchive({ directory, output, version, nightly, platfor
     output,
     `Dovo-GPUI${nightly ? '-Nightly' : ''}-${version}-${os}-${arch}.${windows ? 'zip' : 'tar.gz'}`,
   )
-  execFileSync('tar', [windows ? '-acf' : '-czf', path, '-C', directory, '.'], { stdio: 'inherit' })
+  execFileSync(tarExecutable, [windows ? '-acf' : '-czf', path, '-C', directory, '.'], {
+    stdio: 'inherit',
+  })
   return path
 }
 

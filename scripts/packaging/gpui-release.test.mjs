@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { linuxDependencies, requiredGlibc } from './gpui-linux.mjs'
 import { macInfoPlist, macSigningFiles, signMacGpui } from './gpui-mac.mjs'
-import { gpuiArchive } from './gpui-archive.mjs'
+import { gpuiArchive, tarExecutable } from './gpui-archive.mjs'
 import { gpuiReleaseAssets, verifyGpuiRelease } from './verify-gpui-release.mjs'
 import { gpuiBuildTargets, gpuiTargets } from './gpui-targets.mjs'
 
@@ -62,8 +62,10 @@ test('archive preserves final bytes and deployed runtime layout after relocation
   const temporary = await mkdtemp(join(tmpdir(), 'gpui-archive-test-'))
   try {
     const directory = join(temporary, 'signed app')
+    const windows = process.platform === 'win32'
+    const binary = `dovo-desktop-gpui${windows ? '.exe' : ''}`
     await mkdir(join(directory, 'libexec/server/dist'), { recursive: true })
-    await writeFile(join(directory, 'dovo-desktop-gpui'), 'final signed bytes', { mode: 0o755 })
+    await writeFile(join(directory, binary), 'final signed bytes', { mode: 0o755 })
     await writeFile(join(directory, 'libexec/node'), 'node')
     await writeFile(join(directory, 'libexec/server/dist/server-cli.js'), 'runtime')
     const path = await gpuiArchive({
@@ -71,13 +73,17 @@ test('archive preserves final bytes and deployed runtime layout after relocation
       output: join(temporary, 'release'),
       version: '1.2.3',
       nightly: false,
-      platform: 'linux',
+      platform: windows ? 'win32' : 'linux',
       arch: 'arm64',
     })
     const extracted = join(temporary, 'relocated')
     await mkdir(extracted)
-    execFileSync('tar', ['-xzf', path, '-C', extracted])
-    assert.equal(await readFile(join(extracted, 'dovo-desktop-gpui'), 'utf8'), 'final signed bytes')
+    // Check the actual archive format as well as round-tripping its contents.
+    const header = (await readFile(path)).subarray(0, 2)
+    assert.equal(header.toString('hex'), windows ? '504b' : '1f8b')
+    if (windows) assert.equal(tarExecutable, join(process.env.SystemRoot, 'System32', 'tar.exe'))
+    execFileSync(tarExecutable, ['-xf', path, '-C', extracted])
+    assert.equal(await readFile(join(extracted, binary), 'utf8'), 'final signed bytes')
     assert.equal(
       await readFile(join(extracted, 'libexec/server/dist/server-cli.js'), 'utf8'),
       'runtime',

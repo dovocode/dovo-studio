@@ -1,7 +1,9 @@
 use anyhow::{Context as AnyhowContext, Result};
 use gpui_kit::*;
 use gpui_webview::WebView;
-use raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle as RawWindow};
+#[cfg(target_os = "linux")]
+use raw_window_handle::RawWindowHandle;
+use raw_window_handle::{HasWindowHandle, WindowHandle as RawWindow};
 
 // GPUI exposes XCB handles on Linux; Wry's GTK backend accepts Xlib handles.
 // Both contain the same X11 window ID, on the same display initialized by GTK.
@@ -9,6 +11,7 @@ struct BrowserParent<'a>(&'a Window);
 impl HasWindowHandle for BrowserParent<'_> {
     fn window_handle(&self) -> Result<RawWindow<'_>, raw_window_handle::HandleError> {
         let handle = HasWindowHandle::window_handle(self.0)?;
+        #[cfg(target_os = "linux")]
         let raw = match handle.as_raw() {
             RawWindowHandle::Xcb(handle) => {
                 let mut xlib = raw_window_handle::XlibWindowHandle::new(handle.window.get().into());
@@ -17,6 +20,8 @@ impl HasWindowHandle for BrowserParent<'_> {
             }
             handle => handle,
         };
+        #[cfg(not(target_os = "linux"))]
+        let raw = handle.as_raw();
         // SAFETY: The converted handle refers to the same live native window.
         // Its borrow remains bounded by BrowserParent's borrow of the GPUI Window.
         Ok(unsafe { RawWindow::borrow_raw(raw) })
