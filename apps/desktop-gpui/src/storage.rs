@@ -25,6 +25,36 @@ pub struct Registry {
     pub profiles: Vec<Profile>,
 }
 
+impl Registry {
+    pub fn profile_at(&self, address: &str) -> Option<&Profile> {
+        self.profiles
+            .iter()
+            .find(|profile| {
+                profile.address == address && self.active_id.as_ref() == Some(&profile.id)
+            })
+            .or_else(|| {
+                self.profiles
+                    .iter()
+                    .rev()
+                    .find(|profile| profile.address == address)
+            })
+    }
+    pub fn rename_profile(&mut self, id: &str, name: &str) -> Result<()> {
+        let name = name.trim();
+        anyhow::ensure!(
+            !name.is_empty() && name.encode_utf16().count() <= 100,
+            "Server names need 1–100 characters"
+        );
+        let profile = self
+            .profiles
+            .iter_mut()
+            .find(|profile| profile.id == id)
+            .context("This server was removed. Reload Computers before editing it.")?;
+        profile.name = name.to_owned();
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
 pub struct Storage {
     pub directory: PathBuf,
@@ -97,6 +127,44 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn server_rename_preserves_credential_identity_and_other_servers() {
+        let mut registry = Registry {
+            active_id: Some("one".into()),
+            profiles: vec![
+                Profile {
+                    id: "one".into(),
+                    name: "One".into(),
+                    address: "http://one:8787".into(),
+                },
+                Profile {
+                    id: "two".into(),
+                    name: "Two".into(),
+                    address: "http://two:8787".into(),
+                },
+            ],
+        };
+        registry.rename_profile("one", "  Home server  ").unwrap();
+        assert_eq!(registry.profiles[0].name, "Home server");
+        assert_eq!(registry.profiles[0].address, "http://one:8787");
+        assert_eq!(registry.profiles[0].id, "one");
+        assert_eq!(registry.profiles[1].name, "Two");
+        assert_eq!(registry.active_id.as_deref(), Some("one"));
+        assert!(registry.rename_profile("one", " ").is_err());
+        assert!(registry.rename_profile("one", &"🦀".repeat(51)).is_err());
+        assert!(registry.rename_profile("removed", "Other").is_err());
+        registry.profiles.push(Profile {
+            id: "one-repaired".into(),
+            name: "Repaired".into(),
+            address: "http://one:8787".into(),
+        });
+        assert_eq!(registry.profile_at("http://one:8787").unwrap().id, "one");
+        registry.active_id = Some("two".into());
+        assert_eq!(
+            registry.profile_at("http://one:8787").unwrap().id,
+            "one-repaired"
+        );
+    }
     #[test]
     fn metadata_never_contains_device_tokens() {
         let directory = tempfile::tempdir().unwrap();

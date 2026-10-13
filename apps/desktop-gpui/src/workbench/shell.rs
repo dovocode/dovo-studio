@@ -208,6 +208,7 @@ impl Workbench {
                             .gap_2()
                             .min_w_0()
                             .child(div().font_weight(FontWeight::SEMIBOLD).child("dovo"))
+                            .child(self.server_picker(cx))
                             .children(project.map(|name| {
                                 div()
                                     .flex()
@@ -322,12 +323,12 @@ impl Workbench {
                     .compact()
                     .h(px(22.))
                     .icon(Icon::new(UiIcon::Monitor).size(px(12.)))
-                    .label(if self.address.is_empty() {
-                        "Connect a computer".into()
+                    .label(self.server_label())
+                    .tooltip(if self.address.is_empty() {
+                        "Manage connected computers".into()
                     } else {
                         self.address.clone()
                     })
-                    .tooltip("Manage connected computers")
                     .on_click(cx.listener(|this, _, _, cx| this.navigate(Page::Computers, cx))),
             )
             .into_any_element()

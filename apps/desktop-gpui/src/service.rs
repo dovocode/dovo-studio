@@ -25,6 +25,7 @@ pub enum Command {
         generation: u64,
         request: u64,
         profiles: Vec<Profile>,
+        sessions: Vec<Connection>,
     },
     McpTools {
         generation: u64,
@@ -287,6 +288,7 @@ async fn run(
                 generation: expected,
                 request,
                 profiles,
+                sessions,
             } if expected == generation => {
                 if let Some(worker) = fleet_worker.take() {
                     worker.abort();
@@ -305,7 +307,7 @@ async fn run(
                                 Ok(client),
                             ));
                         }
-                        for profile in profiles {
+                        for profile in profiles.into_iter().rev() {
                             if sources
                                 .iter()
                                 .any(|(_, _, address, _)| address == &profile.address)
@@ -315,6 +317,21 @@ async fn run(
                             let connection =
                                 storage.connection(&profile).and_then(RuntimeClient::new);
                             sources.push((profile.id, profile.name, profile.address, connection));
+                        }
+                        for connection in sessions {
+                            if sources
+                                .iter()
+                                .any(|(_, _, address, _)| address == &connection.address)
+                            {
+                                continue;
+                            }
+                            let address = connection.address.clone();
+                            sources.push((
+                                format!("session:{address}"),
+                                address.clone(),
+                                address,
+                                RuntimeClient::new(connection),
+                            ));
                         }
                         sources
                     })

@@ -33,7 +33,7 @@ fn main() {
 
 fn run() -> Result<()> {
     let storage = Storage::new()?;
-    let mut initial = None;
+    let mut initial = Vec::new();
     let mut preview = None;
     let mut arguments = std::env::args().skip(1);
     while let Some(argument) = arguments.next() {
@@ -44,7 +44,7 @@ fn run() -> Result<()> {
                     .context("--connection-file requires a path")?;
                 let bytes =
                     std::fs::read(path).context("Could not read the runtime connection file")?;
-                initial = Some(
+                initial.push(
                     serde_json::from_slice::<connection::Connection>(&bytes)
                         .context("Invalid runtime connection file")?,
                 );
@@ -56,7 +56,7 @@ fn run() -> Result<()> {
             }
             "--help" | "-h" => {
                 println!(
-                    "Dovo Studio GPUI\n\nUsage: dovo-desktop-gpui [--connection-file PATH]\n\nPair a remote computer in Computers, or attach to an existing local runtime using its runtime-connection.json file."
+                    "Dovo Studio GPUI\n\nUsage: dovo-desktop-gpui [--connection-file PATH]...\n\nPair remote computers in Computers, or attach to existing runtimes using their runtime-connection.json files. Repeat --connection-file to load multiple servers for this session; the first is selected."
                 );
                 return Ok(());
             }

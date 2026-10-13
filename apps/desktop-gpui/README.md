@@ -34,6 +34,16 @@ under a separate GPUI identity. Saved drafts and uncertain message receipts are 
 to the runtime credential. Retrying a send retains its original message ID; uncertain mutations are
 never retried automatically.
 
+Use the server picker in the title bar to switch between paired computers. **Computers** lets you
+pair more servers, give them recognizable names, and search tasks across their separate workspaces.
+Switching back restores that server's last selected task and its private composer draft. The
+selected server owns the workbench, while the overview fetches all servers independently.
+
+For development or an existing connection-file deployment, repeat `--connection-file PATH` to load
+multiple servers for the current app session. The first file is selected; tokens stay in memory and
+are not added to saved connection metadata. Pair servers through Computers to keep their device
+tokens in the OS keychain across restarts.
+
 Linux currently uses X11/XWayland. Wry requires GTK 3 and WebKitGTK 4.1; GPUI requires Vulkan,
 fontconfig, a usable system font and the usual X11 development libraries. On Ubuntu, the build
 packages include:
@@ -60,6 +70,7 @@ pnpm test:gpui:integration
 pnpm test:gpui:composer
 # Requires Chromium on the runtime host (or Playwright’s installed Chromium):
 pnpm test:gpui:browser
+pnpm test:gpui:servers
 cargo fmt --manifest-path apps/desktop-gpui/Cargo.toml --check
 cargo clippy --manifest-path apps/desktop-gpui/Cargo.toml --all-targets -- -D warnings
 pnpm build:gpui

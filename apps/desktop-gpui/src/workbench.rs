@@ -44,6 +44,7 @@ mod scm_settings;
 mod scm_work;
 pub(crate) mod scoped_agents;
 mod scoped_defaults;
+mod servers;
 mod shell;
 mod task_controls;
 pub(crate) mod task_defaults;
@@ -137,6 +138,7 @@ pub struct Workbench {
     storage: Storage,
     appearance: crate::storage::Appearance,
     registry: Registry,
+    servers: servers::Servers,
     fleet_serial: u64,
     fleet_limits: HashMap<String, usize>,
     pending_open_task: Option<String>,
@@ -238,7 +240,7 @@ pub struct Workbench {
 impl Workbench {
     pub fn new(
         storage: Storage,
-        initial: Option<Connection>,
+        initial: Vec<Connection>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<Self> {
@@ -301,6 +303,7 @@ impl Workbench {
             storage,
             appearance,
             registry,
+            servers: servers::Servers::new(&initial)?,
             fleet_serial: 0,
             fleet_limits: HashMap::new(),
             pending_open_task: None,
@@ -398,7 +401,7 @@ impl Workbench {
             browser_windows: HashMap::new(),
             _events: events,
         };
-        let initial = initial.or_else(|| {
+        let initial = initial.into_iter().next().or_else(|| {
             this.registry
                 .active_id
                 .as_ref()
@@ -417,10 +420,7 @@ impl Workbench {
                 })
         });
         if let Some(connection) = initial {
-            this.command(Command::Connect {
-                connection,
-                open_task: None,
-            });
+            this.connect_server(connection, None, cx);
         }
         cx.spawn(async move |this, cx| {
             loop {
@@ -515,6 +515,7 @@ impl Workbench {
                             .into_iter()
                             .filter(|entry| {
                                 entry.id == "current" && entry.address == self.address
+                                    || self.servers.contains(&entry.address)
                                     || self.registry.profiles.iter().any(|profile| {
                                         profile.id == entry.id && profile.address == entry.address
                                     })
@@ -576,10 +577,7 @@ impl Workbench {
             Event::LocalRuntime(result) => {
                 self.pending.remove("local-runtime");
                 match result {
-                    Ok(connection) => self.command(Command::Connect {
-                        connection,
-                        open_task: None,
-                    }),
+                    Ok(connection) => self.connect_server(connection, None, cx),
                     Err(error) => self.error = Some(error),
                 }
             }
@@ -588,6 +586,7 @@ impl Workbench {
                 address,
                 open_task,
             } => {
+                self.servers.switching = false;
                 for (_, session) in self.mcp_windows.drain() {
                     let _ = session
                         .window
@@ -664,7 +663,10 @@ impl Workbench {
                 generation,
                 online,
                 detail,
-            } if generation >= self.generation => {
+            } if generation > self.generation
+                || generation == self.generation && !self.servers.switching =>
+            {
+                self.servers.switching = false;
                 if generation > self.generation {
                     self.fleet_entries.clear();
                     self.fleet_updated = None;
@@ -702,7 +704,10 @@ impl Workbench {
                 generation,
                 task,
                 snapshot,
-            } if generation == self.generation && task == self.selected_task => {
+            } if generation == self.generation
+                && task == self.selected_task
+                && !self.servers.switching =>
+            {
                 if self.snapshot.as_ref().is_some_and(|previous| {
                     previous.runtime_instance_id == snapshot.runtime_instance_id
                         && previous.revision > snapshot.revision
@@ -1159,10 +1164,7 @@ impl Workbench {
                 self.registry = registry;
                 self.pairing_pending = false;
                 self.notice = Some("Computer paired successfully".into());
-                self.command(Command::Connect {
-                    connection,
-                    open_task: None,
-                });
+                self.connect_server(connection, None, cx);
             }
             Event::DeviceClosed { generation, id } if generation == self.generation => {
                 if self
@@ -1580,7 +1582,12 @@ impl Focusable for Workbench {
 }
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let content = if self.search_open {
+        let content = if self.servers.switching {
+            Self::empty(
+                "Switching server",
+                "Loading this server’s workspace and saved drafts…",
+            )
+        } else if self.search_open {
             self.search_page(window, cx)
         } else {
             match self.page {

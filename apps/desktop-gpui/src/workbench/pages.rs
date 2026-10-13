@@ -11,6 +11,7 @@ impl Workbench {
             generation: self.generation,
             request: self.fleet_serial,
             profiles: self.registry.profiles.clone(),
+            sessions: self.servers.session_connections(&self.registry),
         });
     }
     pub(super) fn projects_page(
@@ -262,34 +263,9 @@ impl Workbench {
             }
             return;
         }
-        let Some(profile) = self
-            .registry
-            .profiles
-            .iter()
-            .find(|p| p.address == address)
-            .cloned()
-        else {
-            self.error = Some("Pair this computer again before opening its tasks.".into());
-            return;
-        };
-        match self.storage.connection(&profile) {
-            Ok(connection) => {
-                let mut registry = self.registry.clone();
-                registry.active_id = Some(profile.id.clone());
-                match self.storage.write(&registry) {
-                    Ok(()) => {
-                        self.registry = registry;
-                        self.command(Command::Connect {
-                            connection,
-                            open_task: Some(id.to_owned()),
-                        });
-                    }
-                    Err(error) => self.error = Some(error.to_string()),
-                }
-            }
-            Err(error) => self.error = Some(error.to_string()),
-        }
+        self.switch_server(address, Some(id.to_owned()), cx);
     }
+
     pub(super) fn computers_page(
         &mut self,
         window: &mut Window,
@@ -388,7 +364,8 @@ impl Workbench {
                     let address = entry.address.clone();
                     let id = task.id.clone();
                     let can_open = address == self.address
-                        || self.registry.profiles.iter().any(|p| p.address == address);
+                        || self.registry.profiles.iter().any(|p| p.address == address)
+                        || self.servers.contains(&address);
                     card = card.child(
                         Button::new(SharedString::from(format!(
                             "fleet-task:{}:{}",
@@ -430,27 +407,48 @@ impl Workbench {
             let active = profile.address == self.address;
             let id = profile.id.clone();
             let forgotten = profile.clone();
+            let name_key = format!("server-name-{id}");
+            let name = self.input(&name_key, &profile.name, "Server name", window, cx);
+            let rename_id = id.clone();
+            let changed = self.value(&name_key, cx).trim() != profile.name;
             root = root.child(
                 div()
                     .flex()
+                    .flex_wrap()
+                    .gap_2()
                     .justify_between()
                     .items_center()
                     .p_3()
                     .border_1()
                     .border_color(cx.theme().border)
                     .rounded_md()
-                    .child(format!("{} · {}", profile.name, profile.address))
+                    .child(div().w(px(180.)).child(Input::new(&name)))
+                    .child(Button::new(SharedString::from(format!("rename-server-{id}")))
+                        .label("Save name").disabled(!changed || self.servers.switching)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            let mut registry = this.registry.clone();
+                            match registry.rename_profile(&rename_id, &this.value(&name_key, cx))
+                                .and_then(|()| this.storage.write(&registry)) {
+                                Ok(()) => { this.registry = registry; this.fleet_updated = None; }
+                                Err(error) => this.error = Some(error.to_string()),
+                            }
+                            cx.notify();
+                        })))
+                    .child(div().flex_1().min_w_0().truncate().child(profile.address.clone()))
                     .child(
                         Button::new(SharedString::from(format!("connect-{id}")))
                             .label(if active { "Reconnect" } else { "Connect" })
+                            .disabled(self.servers.switching)
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 match this.storage.connection(&profile) {
                                     Ok(connection) => {
-                                        this.registry.active_id = Some(profile.id.clone());
-                                        if let Err(error) = this.storage.write(&this.registry) {
+                                        let mut registry = this.registry.clone();
+                                        registry.active_id = Some(profile.id.clone());
+                                        if let Err(error) = this.storage.write(&registry) {
                                             this.error = Some(error.to_string());
                                         } else {
-                                            this.command(Command::Connect { connection, open_task: None });
+                                            this.registry = registry;
+                                            this.connect_server(connection, None, cx);
                                         }
                                     }
                                     Err(error) => this.error = Some(error.to_string()),
@@ -466,6 +464,7 @@ impl Workbench {
                             match this.storage.write(&registry) {
                                 Ok(())=>{
                                     this.registry=registry;
+                                    this.servers.forget(&forgotten.address);
                                     if forgotten.address==this.address {this.command(Command::Disconnect);}
                                     if let Err(error)=this.storage.forget(&forgotten){this.error=Some(format!("Computer removed, but its keychain entry could not be deleted: {error}"));}
                                 }

@@ -2558,6 +2558,7 @@ async fn native_fleet_task_connection_intent_matches_its_snapshot() -> Result<()
     for (runtime, title, expected_generation) in [
         (&first, "First computer task", 1),
         (&second, "Second computer task", 2),
+        (&first, "First computer task", 3),
     ] {
         crate::drafts::Drafts::open(storage.path(), &runtime.client.connection)?
             .save("shared-id".into(), format!("Unsent {title}"))?;
@@ -2623,6 +2624,52 @@ async fn native_fleet_task_connection_intent_matches_its_snapshot() -> Result<()
             "Fleet omitted task navigation entries"
         );
     }
+    service.send(ClientCommand::ReadFleet {
+        generation: 3,
+        request: 1,
+        profiles: vec![],
+        sessions: vec![
+            first.client.connection.clone(),
+            second.client.connection.clone(),
+        ],
+    })?;
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            if let Event::Fleet {
+                generation: 3,
+                request: 1,
+                result,
+            } = events.recv().await?
+            {
+                let entries = result.map_err(anyhow::Error::msg)?;
+                ensure!(
+                    entries.len() == 2,
+                    "Session servers were omitted or duplicated"
+                );
+                for (runtime, title) in [
+                    (&first, "First computer task"),
+                    (&second, "Second computer task"),
+                ] {
+                    let entry = entries
+                        .iter()
+                        .find(|entry| entry.address == runtime.client.connection.address)
+                        .context("Session server was omitted")?;
+                    ensure!(
+                        entry
+                            .result
+                            .as_ref()
+                            .map_err(|error| anyhow::anyhow!("{error}"))?
+                            .task_entries
+                            .iter()
+                            .any(|task| task.id == "shared-id" && task.title == title),
+                        "Session server data crossed origins"
+                    );
+                }
+                return Ok::<(), anyhow::Error>(());
+            }
+        }
+    })
+    .await??;
     service.send(ClientCommand::Disconnect)?;
     drop(service);
     Ok(())

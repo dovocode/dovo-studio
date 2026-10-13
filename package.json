@@ -11,6 +11,7 @@
     "test:gpui": "pnpm --filter @dovo/protocol build && node scripts/build-gpui-assets.mjs && cargo test --manifest-path apps/desktop-gpui/Cargo.toml",
     "test:gpui:composer": "node scripts/check-gpui-composer.mjs",
     "test:gpui:browser": "node scripts/check-gpui-browser.mjs",
+    "test:gpui:servers": "node scripts/check-gpui-servers.mjs",
     "test:gpui:integration": "pnpm --filter @dovo/api... -r build && node scripts/build-gpui-assets.mjs && cargo test --manifest-path apps/desktop-gpui/Cargo.toml -- --ignored",
     "dev:mobile": "node scripts/build-mcp-apps.mjs && pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build && node scripts/build-mobile-terminal.mjs && node scripts/build-mobile-mermaid.mjs && pnpm --filter @dovo/mobile start",
     "dev:web": "pnpm --filter @dovo/protocol --filter @dovo/client-runtime -r build && vp -C apps/web dev",
