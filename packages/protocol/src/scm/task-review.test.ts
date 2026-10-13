@@ -3,6 +3,7 @@ import {
   parseCodeReviewOutput,
   verificationCommand,
   compareCodeReviews,
+  approvalIsCurrent,
   type CodeReview,
 } from './task-review.js'
 import { recentTools } from '../automation/activity.js'
@@ -68,4 +69,22 @@ it('matches repeated findings across line shifts and keeps disappeared findings 
   expect(changes.persisting).toHaveLength(1)
   expect(changes.newFindings).toEqual([])
   expect(compareCodeReviews({ ...base, findings: [] }, base).noLongerReported).toEqual([finding])
+})
+it('treats approval as current only for the exact approved snapshot of a completed review', () => {
+  const review: Pick<CodeReview, 'approval' | 'baseline' | 'head' | 'status'> = {
+    status: 'completed',
+    baseline: 'tree',
+    head: 'head',
+    approval: { approvedAt: '2026-01-01', baseline: 'tree', head: 'head' },
+  }
+  expect(approvalIsCurrent(review)).toBe(true)
+  expect(approvalIsCurrent({ ...review, status: 'running' })).toBe(false)
+  expect(approvalIsCurrent({ ...review, approval: undefined })).toBe(false)
+  expect(approvalIsCurrent({ ...review, head: 'moved' })).toBe(false)
+  expect(
+    approvalIsCurrent({
+      ...review,
+      approval: { approvedAt: '2026-01-01', baseline: 'other', head: 'head' },
+    }),
+  ).toBe(false)
 })

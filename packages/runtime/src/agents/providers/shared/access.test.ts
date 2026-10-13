@@ -54,7 +54,7 @@ function run(permission: AgentRun['agent']['permission']): AgentRun {
     onSession() {},
     onText() {},
     onActivity() {},
-    approve: vi.fn<AgentRun['approve']>(async () => false),
+    approve: vi.fn<AgentRun['approve']>(async () => 'deny' as const),
     ask: vi.fn<AgentRun['ask']>(async () => null),
   }
 }

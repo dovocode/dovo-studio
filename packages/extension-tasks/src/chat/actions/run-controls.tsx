@@ -1,4 +1,4 @@
-import { runtimeComputerName, approvalRememberLabel } from '@dovo/protocol'
+import { runtimeComputerName, approvalActions } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
@@ -126,42 +126,24 @@ export function RunControls({ task }: { task: Task }) {
           <pre className="my-2 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[0.6875rem] text-muted-foreground">
             {approval.detail}
           </pre>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              disabled={busy || !connected}
-              onClick={() =>
-                act('/api/approvals', {
-                  id: approval.id,
-                  allow: true,
-                })
-              }
-            >
-              Allow once
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy || !connected || !approvalRememberLabel(approval)}
-              onClick={() =>
-                act('/api/approvals', { id: approval.id, allow: true, remember: true })
-              }
-            >
-              {approvalRememberLabel(approval) ?? 'Always allow in this project'}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy || !connected}
-              onClick={() =>
-                act('/api/approvals', {
-                  id: approval.id,
-                  allow: false,
-                })
-              }
-            >
-              Deny
-            </Button>
+          <div className="flex flex-wrap gap-2">
+            {approvalActions(approval).map((action) => (
+              <Button
+                key={action.decision}
+                size="sm"
+                variant={action.decision === 'approve' ? 'default' : 'outline'}
+                disabled={busy || !connected}
+                onClick={() =>
+                  act('/api/approvals', {
+                    id: approval.id,
+                    allow: action.decision !== 'deny',
+                    decision: action.decision,
+                  })
+                }
+              >
+                {action.label}
+              </Button>
+            ))}
           </div>
         </div>
       ))}

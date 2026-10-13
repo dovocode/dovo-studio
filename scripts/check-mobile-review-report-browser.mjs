@@ -11,8 +11,10 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {CodeReviewReport} from './src/scm/review/code-review-report';
 const finding={id:'finding',path:'src/editor/save.ts',line:42,severity:'high',title:'Closing can lose unsaved changes',trigger:'Close while persistence is pending',impact:'Latest changes are lost',suggestion:'Wait for persistence before closing',status:'addressed'};
-const latest={id:'review',reviewer:'Reviewer',model:'Thread model',status:'completed',createdAt:'2026-10-12',baseline:'tree',findings:[finding],summary:'Inspected persistence and callers',notVerified:['Physical iPhone behavior']};
-function App(){const [tab,setTab]=useState('diff'),[scope,setScope]=useState('working');return <CodeReviewReport task={{id:'task',files:[],status:'review'}} tab={tab} onTab={setTab} scope={scope} onScope={setScope} focusedFinding={finding} onOpen={f=>{window.opened=f;setTab('diff')}} onSince={id=>window.since=id} review={{busy:false,error:'',refresh(){},run:(action,input)=>window.action={action,input},report:{reviews:[latest],current:false,evidenceLimited:false,commands:[{id:'command',command:'pnpm test save',status:'passed',source:'reviewer',revision:'tree',time:'2026-10-12',output:'Save regression passed',exitCode:0}]}}}/>};createRoot(document.getElementById('app')).render(<App/>);`,
+const approval={approvedAt:'2026-10-12',baseline:'tree',head:'head'};
+const head = 'head'
+const latest={id:'review',reviewer:'Reviewer',model:'Thread model',status:'completed',createdAt:'2026-10-12',baseline:'tree',head,findings:[finding],summary:'Inspected persistence and callers',notVerified:['Physical iPhone behavior'],approval};
+function App(){const [tab,setTab]=useState('diff'),[scope,setScope]=useState('working');return <CodeReviewReport task={{id:'task',files:[],status:'review'}} tab={tab} onTab={setTab} scope={scope} onScope={setScope} focusedFinding={finding} onOpen={f=>{window.opened=f;setTab('diff')}} onSince={id=>window.since=id} review={{busy:false,error:'',refresh(){},run:(action,input)=>window.action={action,input},report:{reviews:[latest],current:true,approved:true,evidenceLimited:false,commands:[{id:'command',command:'pnpm test save',status:'passed',source:'reviewer',revision:'tree',time:'2026-10-12',output:'Save regression passed',exitCode:0}]}}}/>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -84,8 +86,10 @@ try {
   await page.getByText('Trigger: Close while persistence is pending', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Inspect fix delta', exact: true }).click()
   assert.equal(await page.evaluate(() => window.since), 'review')
+  await page.getByRole('button', { name: 'Approved · Undo', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.action.input.approved), false)
   await page.getByRole('button', { name: 'Verification', exact: true }).click()
-  await page.getByText(/Older reviewed snapshot · rerun checks/).waitFor()
+  await page.getByText(/Current reviewed snapshot · read-only session/).waitFor()
   await page.getByRole('button', { name: 'Show output', exact: true }).click()
   await page.getByText('Save regression passed', { exact: true }).waitFor()
   if (process.env.DOVO_REVIEW_SCREENSHOTS) {

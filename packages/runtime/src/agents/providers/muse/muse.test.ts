@@ -1,8 +1,21 @@
 import { decode, mcpServerSchema } from '@dovo/protocol'
 import { spawnMspConnection } from '@muse-code/sdk'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { rm } from 'node:fs/promises'
-import { createMuseAdapter } from './muse.js'
+import { readFile, rm } from 'node:fs/promises'
+import {
+  createMuseAdapter,
+  museApprovalChoice,
+  museApprovalScopes,
+  museApprovalTitle,
+  museLaunch,
+  museReasoningOptions,
+  museSelection,
+  museServeArgs,
+  museVerbatimPath,
+  museWorkspaceRoot,
+  parseMuseVersion,
+  resolveMuseReasoningEffort,
+} from './muse.js'
 import * as warmProcesses from '../../execution/warm-processes.js'
 import type { AgentRun } from '../../execution/types.js'
 import { providerFixture } from '../shared/provider-fixture.js'
@@ -11,38 +24,8 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
 })
 async function fixture() {
-  const f = await providerFixture(
-    'muse',
-    String.raw`
-const {createInterface}=require('node:readline');const {writeFileSync}=require('node:fs');const messages=[];let cursor=0,turn='';
-const send=value=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...value})+'\n');const reply=(id,result)=>send({id,result});
-const event=(method,params={})=>send({method,params:{sessionId:'s',viewCursor:String(++cursor),sourceRange:{first:{line:cursor},last:{line:cursor},stream:{id:'s',kind:'session'}},...params}});
-const item=(id,text,status='inProgress',revision=1,kind='agentMessage')=>({itemId:id,kind,turnId:turn,status,revision,text});
-function finish(){event('item/started',{item:item('p','')});event('item/delta',{itemId:'p',delta:'Working.'});event('item/completed',{item:item('p','Working.','completed',2)});event('item/started',{item:item('f','')});event('item/delta',{itemId:'f',delta:'Done.'});event('item/completed',{item:item('f','Done.','completed',2)});event('turn/completed',{turnId:turn,terminal:'completed'})}
-createInterface({input:process.stdin}).on('line',line=>{
- const v=JSON.parse(line),p=v.params||{};messages.push(v);writeFileSync(process.env.TEST_RECORD,JSON.stringify(messages));
- if(v.method==='initialize'&&!/^[a-z0-9_]+$/.test(p.clientInfo?.name||''))return send({id:v.id,error:{code:-32602,message:'invalid initialize params: clientInfo.name must be a machine identifier matching ^[a-z0-9_]+$ (SS1.4.1)',data:{kind:'invalidParams'}}});
- if(v.method==='initialize')return reply(v.id,{schema:{version:1,fingerprint:'test'},grantedCapabilities:process.env.NO_MCP?[]:['sessionMcp'],experimentalApi:false,sessionDurability:'durable',serverInfo:{name:'fixture',version:'1'},museHome:'/tmp/muse',platformFamily:'unix',platformOs:'macos',userAgent:'test'});
- if(v.method==='initialized')return;
- if(v.method==='model/list')return reply(v.id,{models:[{modelId:'a',providerId:'meta',displayLabel:'A',variants:['low','high'],defaultReasoningEffort:'low',isDefault:true,isActive:false}],providerId:'meta',profileId:null,source:'fakeCatalog'});
- if(v.method==='session/start'||v.method==='session/resume')return reply(v.id,{session:{sessionId:'s'},viewCursor:'0'});
- if(v.method==='turn/start'){
-  turn=p.commandId;reply(v.id,{commandId:turn,status:'accepted',disposition:'started',startedNewTurn:true,turnId:turn});event('turn/started',{turnId:turn,commandId:turn});
-  if(p.input[0].text==='native'){event('item/started',{item:{itemId:'child-item',kind:'subagent',subagentId:'child',agentPath:'child',controlStatus:'running',status:'inProgress',revision:1,turnId:turn}});event('turn/completed',{turnId:turn,terminal:'completed'});setTimeout(()=>event('approval/requested',{approvalId:'approve',itemId:'tool',taskId:'task',toolCallId:'tool',judgeEscalated:false,protectedWrite:false,rawArgs:'pwd',currentRequirementId:'requirement',subagentOrigin:{subagentId:'child',childSessionId:'child-session',agentPath:'child'},subject:{kind:'shell',command:'pwd'},availableChoices:[{choiceId:'once',decision:'approved',scope:'once',label:'Allow'},{choiceId:'deny',decision:'denied',scope:'once',label:'Deny'}]}),30);return}
-  if(p.input[0].text==='hold')return;
-  if(p.input[0].text==='disconnect')return setTimeout(()=>process.exit(0),10);
-  if(p.input[0].text==='approval'){event('approval/requested',{approvalId:'approve',itemId:'tool',taskId:'task',toolCallId:'tool',judgeEscalated:false,protectedWrite:false,rawArgs:'pwd',currentRequirementId:'requirement',subject:{kind:'shell',command:'pwd'},availableChoices:[{choiceId:'once',decision:'approved',scope:'once',label:'Allow'},{choiceId:'deny',decision:'denied',scope:'once',label:'Deny'}]});return}
-  if(p.input[0].text==='question'){event('userInput/requested',{userInputId:'question',itemId:'tool',toolCallId:'tool',toolName:'ask_user',turnId:turn,questions:[{id:'answer',header:'Question',question:'Continue?',options:[{label:'yes'},{label:'no'}],selection:{mode:'single'}}]});return}
-  if(p.input[0].text==='fail'){event('turn/completed',{turnId:turn,terminal:'failed',error:{kind:'providerError',message:'Model failed',retryable:false}});return}
-  finish();return;
- }
- if(v.method==='subagent/stop'){reply(v.id,{commandId:p.commandId,status:'accepted'});event('item/completed',{item:{itemId:'child-item',kind:'subagent',subagentId:'child',controlStatus:'closed',status:'completed',revision:2,turnId:turn}});return}
- if(v.method==='turn/steer'){reply(v.id,{commandId:p.commandId,status:'accepted',turnId:turn});finish();return}
- if(v.method==='approval/decide'||v.method==='userInput/answer'){reply(v.id,{commandId:p.commandId,status:'accepted'});finish();return}
- if(v.method==='session/compact'){reply(v.id,{commandId:p.commandId,status:'accepted'});event('item/completed',{item:{itemId:'compact',kind:'compaction',turnId:null,status:'completed',revision:1,outcome:'compacted'}});return}
- if(v.id!==undefined)reply(v.id,{commandId:p.commandId,status:'accepted'});
-});`,
-  )
+  const host = await readFile(new URL('./fixtures/muse-host.cjs', import.meta.url), 'utf8')
+  const f = await providerFixture('muse', host)
   directories.push(f.cwd)
   return { ...f, adapter: createMuseAdapter() }
 }
@@ -93,7 +76,10 @@ it('uses the SDK session fold for text boundaries, completion and provider-quali
     name: 'A',
     isDefault: true,
     defaultReasoning: 'low',
-    reasoning: [{ id: 'low' }, { id: 'high' }],
+    reasoning: [
+      { id: 'low', name: 'Low' },
+      { id: 'high', name: 'High' },
+    ],
   })
 })
 it('requires granted session MCP and passes scoped tools without touching global settings', async () => {
@@ -137,6 +123,24 @@ it('resumes without replaying history, applies native approval mode, and compact
   })
   expect(f.events.map((event) => event.name)).toContain('dovo/compaction/completed')
 })
+it('starts with a provider-qualified model and applies it on resume as a nested model selection', async () => {
+  const f = await fixture()
+  const model = JSON.stringify({ providerId: 'meta', modelId: 'a' })
+  await f.adapter.run({ ...f.run, agent: { ...f.run.agent, model } })
+  const started = (await f.messages()).find((frame) => frame.method === 'session/start')?.params
+  expect(started).toMatchObject({ providerId: 'meta', modelId: 'a' })
+  expect(started).not.toHaveProperty('model')
+  await f.adapter.run({ ...f.run, agent: { ...f.run.agent, model }, sessionId: 's' })
+  const wire = await f.messages()
+  const setModel = wire.find((frame) => frame.method === 'session/setModel')?.params
+  expect(setModel).toMatchObject({
+    sessionId: 's',
+    model: { providerId: 'meta', modelId: 'a' },
+    commandId: expect.any(String),
+  })
+  expect(setModel).not.toHaveProperty('modelId')
+  expect(setModel).not.toHaveProperty('providerId')
+})
 it('steers a live turn and reports failed or cancelled work', async () => {
   const f = await fixture()
   await f.adapter.run({
@@ -161,9 +165,19 @@ it('steers a live turn and reports failed or cancelled work', async () => {
   ).rejects.toThrow('Stop')
   expect((await f.messages()).some((frame) => frame.method === 'turn/interrupt')).toBe(true)
 })
-it('refuses unsupported restricted tool-free execution', async () => {
+it('runs tool-free and read-only turns on a restricted host', async () => {
   const f = await fixture()
-  await expect(f.adapter.run({ ...f.run, tools: 'none' })).rejects.toThrow('tool-free')
+  await f.adapter.run({ ...f.run, tools: 'none' })
+  expect(f.output.join('')).toBe('Working.Done.')
+  const wire = await f.messages()
+  const started = wire.find((frame) => frame.method === 'session/start')?.params
+  expect(started).toMatchObject({ config: { mcpServers: {} } })
+  const again = await fixture()
+  await again.adapter.run({
+    ...again.run,
+    agent: { ...again.run.agent, permission: 'read-only' },
+  })
+  expect(again.output.join('')).toBe('Working.Done.')
 })
 it('settles the SDK turn on host EOF', async () => {
   const f = await fixture()
@@ -174,7 +188,7 @@ it('settles the SDK turn on host EOF', async () => {
 
 it('routes SDK approvals and native question commands', async () => {
   const f = await fixture(),
-    approve = vi.fn<() => Promise<boolean>>(async () => true)
+    approve = vi.fn<() => Promise<'approve'>>(async () => 'approve' as const)
   await f.adapter.run({ ...f.run, prompt: 'approval', approve })
   expect(approve).toHaveBeenCalledOnce()
   expect(
@@ -191,7 +205,7 @@ it('retains native children and approvals after a reply, reuses the host, and ex
   const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(true)
   const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
   const approve = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
-    async () => true,
+    async () => 'approve' as const,
   )
   let controls: Parameters<NonNullable<AgentRun['onNativeSession']>>[0] | undefined
   const run = {
@@ -225,3 +239,208 @@ it('retains native children and approvals after a reply, reuses the host, and ex
     pressure.mockRestore()
   }
 })
+
+it('maps scoped approval decisions to the native choice and names the subject', async () => {
+  const f = await fixture()
+  const approve = vi.fn<AgentRun['approve']>(async () => 'session' as const)
+  await f.adapter.run({ ...f.run, prompt: 'approval', approve })
+  expect(approve).toHaveBeenCalledWith('Muse shell command: pwd', 'pwd', undefined, {
+    session: true,
+    always: true,
+  })
+  expect(
+    (await f.messages()).find((frame) => frame.method === 'approval/decide')?.params,
+  ).toMatchObject({ choiceId: 'session' })
+})
+
+it('surfaces retry, usage and todo events from the session', async () => {
+  const f = await fixture()
+  const activity: string[] = []
+  await f.adapter.run({
+    ...f.run,
+    prompt: 'usage',
+    onActivity: (value) => activity.push(value),
+  })
+  const names = f.events.map((event) => event.name)
+  expect(names).toContain('session/contextUsage')
+  expect(names).toContain('session/tokenUsage')
+  expect(names).toContain('session/todoListChanged')
+  const retried = await fixture()
+  const retryActivity: string[] = []
+  await retried.adapter.run({
+    ...retried.run,
+    prompt: 'retry',
+    onActivity: (value) => retryActivity.push(value),
+  })
+  expect(retryActivity.some((value) => value.includes('retrying this turn (attempt 2 of 3)'))).toBe(
+    true,
+  )
+})
+
+it('builds reasoning options with labels, descriptions and fallbacks', () => {
+  expect(
+    museReasoningOptions({
+      variants: ['low', 'high'],
+      defaultReasoningEffort: 'high',
+      reasoningEffortVariants: [{ tier: 'high', description: 'Deepest' }],
+    }),
+  ).toEqual({
+    defaultEffort: 'high',
+    reasoning: [
+      { id: 'low', name: 'Low' },
+      { id: 'high', name: 'High', description: 'Deepest' },
+    ],
+  })
+  const fallback = museReasoningOptions({ variants: 'unknown' })
+  expect(fallback.defaultEffort).toBe('high')
+  expect(fallback.reasoning.map((option) => option.id)).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+  ])
+  expect(museReasoningOptions({ variants: ['bogus'] }).reasoning).toEqual([])
+  expect(
+    resolveMuseReasoningEffort({ variants: ['low', 'high'], defaultReasoningEffort: 'low' }, 'max'),
+  ).toBe('low')
+  expect(resolveMuseReasoningEffort({ variants: 'unknown' }, undefined)).toBe('high')
+})
+
+it('derives serve arguments, custom selections, approval helpers and versions', () => {
+  expect(museServeArgs({})).toEqual(['serve', '--trust-workspace'])
+  expect(museServeArgs({ fullAccess: true })).toEqual([
+    'serve',
+    '--trust-workspace',
+    '--disable-sandbox',
+  ])
+  expect(museServeArgs({ readOnly: true })).toEqual([
+    'serve',
+    '--disable-shell',
+    '--disable-write',
+    '--no-session-log',
+  ])
+  expect(museServeArgs({ readOnly: true, sessionLogging: true })).toEqual([
+    'serve',
+    '--disable-shell',
+    '--disable-write',
+  ])
+  expect(museSelection('')).toBeUndefined()
+  expect(museSelection('{"providerId":"meta","modelId":"a"}')).toEqual({
+    providerId: 'meta',
+    modelId: 'a',
+  })
+  expect(museSelection('custom-model-x')).toEqual({ providerId: 'meta', modelId: 'custom-model-x' })
+  const request = {
+    rawArgs: 'pwd',
+    subject: { kind: 'shell', command: 'pwd' },
+    availableChoices: [
+      { choiceId: 'once', decision: 'approved', scope: 'once', label: 'Allow' },
+      { choiceId: 'sess', decision: 'approvedForSession', scope: 'session', label: 'Session' },
+      { choiceId: 'abort', decision: 'abort', scope: 'once', label: 'Reject' },
+    ],
+  }
+  expect(museApprovalTitle(request)).toBe('Muse shell command: pwd')
+  expect(museApprovalScopes(request)).toEqual({ session: true, always: false })
+  expect(museApprovalChoice(request, 'approve')?.choiceId).toBe('once')
+  expect(museApprovalChoice(request, 'session')?.choiceId).toBe('sess')
+  expect(museApprovalChoice(request, 'deny')?.choiceId).toBe('abort')
+  expect(museApprovalChoice(request, 'always')).toBeUndefined()
+  expect(parseMuseVersion('muse 1.3.0-R2\n')).toBe('1.3.0-R2')
+  expect(parseMuseVersion('no version')).toBeUndefined()
+})
+
+it('resolves Windows script launchers through PATH and PATHEXT under cmd.exe', () => {
+  const env = {
+    PATH: 'C:\\Tools;D:\\Muse Bin',
+    PATHEXT: '.COM;.EXE;.BAT;.CMD',
+    ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+  }
+  const exists = (path: string) => path === 'D:\\Muse Bin\\muse.CMD'
+  expect(museLaunch('muse', 'win32', env, exists)).toEqual({
+    command: 'C:\\Windows\\System32\\cmd.exe',
+    args: ['/d', '/c', '@', 'D:\\Muse Bin\\muse.CMD'],
+  })
+  // A path without spaces escapes cmd metacharacters instead of quoting.
+  const plain = { ...env, PATH: 'C:\\Tools' }
+  expect(museLaunch('muse', 'win32', plain, (path) => path.toLowerCase() === 'c:\\tools\\muse.bat')).toEqual({
+    command: 'C:\\Windows\\System32\\cmd.exe',
+    args: ['/d', '/c', 'C:\\Tools\\muse.BAT'],
+  })
+  // Real executables run directly, and unresolved names pass through unchanged.
+  expect(museLaunch('muse', 'win32', env, (path) => path.toLowerCase() === 'c:\\tools\\muse.exe')).toEqual({
+    command: 'C:\\Tools\\muse.EXE',
+    args: [],
+  })
+  expect(museLaunch('muse', 'win32', env, () => false)).toEqual({ command: 'muse', args: [] })
+  expect(museLaunch('C:\\Muse\\muse.cmd', 'win32', env, () => true)).toEqual({
+    command: 'C:\\Windows\\System32\\cmd.exe',
+    args: ['/d', '/c', 'C:\\Muse\\muse.cmd'],
+  })
+  expect(museLaunch('C:\\Muse Apps\\muse.cmd', 'win32', env, () => true)).toEqual({
+    command: 'C:\\Windows\\System32\\cmd.exe',
+    args: ['/d', '/c', '@', 'C:\\Muse Apps\\muse.cmd'],
+  })
+  expect(museLaunch('muse', 'linux', env, () => false)).toEqual({ command: 'muse', args: [] })
+})
+
+it('forms verbatim Windows workspace roots and leaves other platforms alone', async () => {
+  expect(museVerbatimPath('C:\\repo')).toBe('\\\\?\\C:\\repo')
+  expect(museVerbatimPath('\\\\server\\share\\repo')).toBe('\\\\?\\UNC\\server\\share\\repo')
+  expect(museVerbatimPath('\\\\?\\C:\\repo')).toBe('\\\\?\\C:\\repo')
+  expect(await museWorkspaceRoot('/tmp/repo', 'linux')).toBe('/tmp/repo')
+  expect(await museWorkspaceRoot('C:/missing/repo', 'win32')).toBe('\\\\?\\C:\\missing\\repo')
+})
+
+it.each(['approval-scoped', 'approval-always', 'subagent-approval'] as const)(
+  'replays the recorded %s transcript through the adapter',
+  async (name) => {
+    const transcript = JSON.parse(
+      await readFile(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'),
+    ) as {
+      prompt: string
+      decision: 'approve' | 'session' | 'always' | 'deny'
+      expectChoiceId: string
+      expectSubagent?: boolean
+      frames: Array<{ direction: string; frame: { method?: string; params?: unknown } }>
+    }
+    expect(transcript.frames.every((entry) => entry.direction === 'out')).toBe(true)
+    const methods = transcript.frames.map((entry) => entry.frame.method)
+    expect(methods).toContain('approval/requested')
+    if (transcript.expectSubagent) expect(methods).toContain('item/started')
+    const f = await fixture()
+    const approve = vi.fn<AgentRun['approve']>(async () => transcript.decision)
+    const nativeApprove = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
+      async () => transcript.decision,
+    )
+    const nativeEvents: string[] = []
+    await f.adapter.run({
+      ...f.run,
+      prompt: transcript.prompt,
+      approve,
+      ...(transcript.expectSubagent
+        ? {
+            taskId: `replay-${name}`,
+            onSubagentEvent: (event: string) => nativeEvents.push(event),
+            nativeAgentInteractions: { approve: nativeApprove, ask: f.run.ask },
+          }
+        : {}),
+    })
+    if (transcript.expectSubagent) {
+      await vi.waitFor(() => expect(nativeApprove).toHaveBeenCalled())
+      expect(nativeEvents.length).toBeGreaterThan(0)
+    }
+    const decide = (await f.messages()).find((frame) => frame.method === 'approval/decide')
+    expect(decide?.params).toMatchObject({ choiceId: transcript.expectChoiceId })
+    if (transcript.expectSubagent) {
+      await f.adapter.dispose?.()
+    } else {
+      expect(approve).toHaveBeenCalledWith(
+        'Muse shell command: pwd',
+        'pwd',
+        undefined,
+        expect.objectContaining({ session: true, always: true }),
+      )
+    }
+  },
+)

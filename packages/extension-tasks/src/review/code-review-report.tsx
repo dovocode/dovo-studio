@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { Button, ChoicePicker } from '@dovo/studio-ui'
 import { useWorkspace, type Task } from '@dovo/studio-core'
-import { randomUUID, compareCodeReviews, supportsAccess, type CodeFinding } from '@dovo/protocol'
+import {
+  randomUUID,
+  compareCodeReviews,
+  supportsAccess,
+  approvalIsCurrent,
+  type CodeFinding,
+} from '@dovo/protocol'
 import type { TaskReviewController } from './use-task-review'
 export type ReviewTab = 'diff' | 'findings' | 'verification'
 export function CodeReviewReport({
@@ -124,6 +130,43 @@ export function CodeReviewReport({
               Since {selected === latest ? 'last' : 'this'} review
             </Button>
           )}
+          {selected?.status === 'completed' &&
+            (approvalIsCurrent(selected) ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                disabled={review.busy || !connected}
+                onClick={() =>
+                  void review.run('approve', { reviewId: selected.id, approved: false })
+                }
+              >
+                Approved · Undo
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="h-8 text-xs"
+                disabled={
+                  review.busy ||
+                  !connected ||
+                  !!open.length ||
+                  !(selected === latest && review.report?.current)
+                }
+                title={
+                  open.length
+                    ? 'Resolve or dismiss open findings first'
+                    : selected !== latest || !review.report?.current
+                      ? 'Review the current changes before approving'
+                      : undefined
+                }
+                onClick={() =>
+                  void review.run('approve', { reviewId: selected.id, approved: true })
+                }
+              >
+                Approve changes
+              </Button>
+            ))}
         </div>
       )}
       {review.error && (
@@ -180,6 +223,16 @@ export function CodeReviewReport({
               <p className="font-medium">
                 {selected.reviewer} · {selected.model || 'Default model'} · {selected.status}
               </p>
+              {approvalIsCurrent(selected) ? (
+                <p role="status" className="text-emerald-600 dark:text-emerald-400">
+                  Approved {new Date(selected.approval!.approvedAt).toLocaleString()} · Commit &amp;
+                  push enabled for this reviewed revision.
+                </p>
+              ) : selected.approval ? (
+                <p role="status" className="text-amber-600 dark:text-amber-400">
+                  Approved revision moved or was superseded. Re-review before pushing.
+                </p>
+              ) : null}
               {selected.summary && <p>{selected.summary}</p>}
               {selected.error && (
                 <p role="alert" className="text-destructive">

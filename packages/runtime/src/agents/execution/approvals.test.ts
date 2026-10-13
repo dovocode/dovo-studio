@@ -53,18 +53,18 @@ it('applies the computer-wide rule across projects and projectless threads and p
   const files = request('Apply file changes')
   preferences.save({ allowWebRequests: true })
   approvals.applyWebRules()
-  await expect(Promise.all(pending)).resolves.toEqual([true, true, true])
+  await expect(Promise.all(pending)).resolves.toEqual(['approve', 'approve', 'approve'])
   expect(approvals.list().map((item) => item.title)).toEqual(['Run command', 'Apply file changes'])
   const reopened = new Approvals(undefined, new WorkspaceStore(db), new RuntimePreferences(db))
   cleanups.push(() => reopened.dispose())
   for (const taskId of ['one', 'two', 'no-project'])
     await expect(
       reopened.request(taskId, 'WebFetch', '{}', new AbortController().signal, 'web'),
-    ).resolves.toBe(true)
+    ).resolves.toBe('approve')
   expect(store.get().repositories.every((project) => !project.approvedWebRequests)).toBe(true)
   approvals.dispose()
-  await expect(shell).resolves.toBe(false)
-  await expect(files).resolves.toBe(false)
+  await expect(shell).resolves.toBe('deny')
+  await expect(files).resolves.toBe('deny')
 })
 
 it('turning off the computer-wide flag restores project rules without changing them', async () => {
@@ -77,16 +77,16 @@ it('turning off the computer-wide flag restores project rules without changing t
     })),
   }))
   preferences.save({ allowWebRequests: true })
-  await expect(webRequest('WebFetch', '{}', 'two')).resolves.toBe(true)
+  await expect(webRequest('WebFetch', '{}', 'two')).resolves.toBe('approve')
   preferences.save({ allowWebRequests: false })
-  await expect(webRequest('WebSearch')).resolves.toBe(true)
+  await expect(webRequest('WebSearch')).resolves.toBe('approve')
   const second = webRequest('WebSearch', '{}', 'two')
   const projectless = webRequest('WebSearch', '{}', 'no-project')
   approvals.applyWebRules()
   expect(approvals.list()).toHaveLength(2)
   approvals.dispose()
-  await expect(second).resolves.toBe(false)
-  await expect(projectless).resolves.toBe(false)
+  await expect(second).resolves.toBe('deny')
+  await expect(projectless).resolves.toBe('deny')
 })
 
 it('remembers web browsing and search across threads and restarts, then respects revocation', async () => {
@@ -94,7 +94,7 @@ it('remembers web browsing and search across threads and restarts, then respects
   const first = webRequest('WebFetch', JSON.stringify({ url: 'https://example.com' }))
   expect(approvals.list()[0].rememberRule).toBe('web')
   approvals.respond(approvals.list()[0].id, true, true)
-  await expect(first).resolves.toBe(true)
+  await expect(first).resolves.toBe('approve')
   expect(store.get().repositories[0].approvedWebRequests).toBe(true)
   expect(store.get().repositories[0].approvedCommands).toBeUndefined()
   const reopened = new Approvals(undefined, new WorkspaceStore(db))
@@ -107,7 +107,7 @@ it('remembers web browsing and search across threads and restarts, then respects
       new AbortController().signal,
       'web',
     ),
-  ).resolves.toBe(true)
+  ).resolves.toBe('approve')
   await expect(
     reopened.request(
       'one',
@@ -116,7 +116,7 @@ it('remembers web browsing and search across threads and restarts, then respects
       new AbortController().signal,
       'web',
     ),
-  ).resolves.toBe(true)
+  ).resolves.toBe('approve')
   expect(reopened.list()).toHaveLength(0)
   store.update((workspace) => ({
     ...workspace,
@@ -128,7 +128,7 @@ it('remembers web browsing and search across threads and restarts, then respects
   const next = webRequest('WebSearch')
   expect(approvals.list()).toHaveLength(1)
   approvals.respond(approvals.list()[0].id, false)
-  await expect(next).resolves.toBe(false)
+  await expect(next).resolves.toBe('deny')
 })
 
 it('resolves concurrent web requests in the approved project without approving another project or commands', async () => {
@@ -139,24 +139,24 @@ it('resolves concurrent web requests in the approved project without approving a
   const shell = request('Run command', '{"command":"curl https://example.com"}')
   const files = request('Apply file changes')
   approvals.respond(approvals.list()[0].id, true, true)
-  await expect(first).resolves.toBe(true)
-  await expect(parallel).resolves.toBe(true)
+  await expect(first).resolves.toBe('approve')
+  await expect(parallel).resolves.toBe('approve')
   expect(approvals.list().map((item) => item.title)).toEqual([
     'WebFetch',
     'Run command',
     'Apply file changes',
   ])
   approvals.dispose()
-  await expect(other).resolves.toBe(false)
-  await expect(shell).resolves.toBe(false)
-  await expect(files).resolves.toBe(false)
+  await expect(other).resolves.toBe('deny')
+  await expect(shell).resolves.toBe('deny')
+  await expect(files).resolves.toBe('deny')
 })
 
 it.each([false, true])('allow once / deny (allow=%s) never save a web rule', async (allow) => {
   const { store, approvals, webRequest } = fixture()
   const pending = webRequest('WebSearch')
   approvals.respond(approvals.list()[0].id, allow, !allow)
-  await expect(pending).resolves.toBe(allow)
+  await expect(pending).resolves.toBe(allow ? 'approve' : 'deny')
   expect(store.get().repositories[0].approvedWebRequests).toBeUndefined()
 })
 
@@ -167,7 +167,7 @@ it('does not offer a project rule when no project exists', async () => {
   expect(approvals.list()[0].rememberRule).toBeNull()
   expect(() => approvals.respond(id, true, true)).toThrow('cannot be saved as a project rule')
   approvals.respond(id, true)
-  await expect(pending).resolves.toBe(true)
+  await expect(pending).resolves.toBe('approve')
 })
 
 it.each(['WebFetch', 'WebSearch', 'Copilot url request', 'Web request'])(
@@ -186,6 +186,41 @@ it.each(['WebFetch', 'WebSearch', 'Copilot url request', 'Web request'])(
     expect(approvals.list()[0].rememberRule).toBeNull()
     expect(() => approvals.respond(id, true, true)).toThrow('cannot be saved as a project rule')
     approvals.respond(id, false)
-    await expect(pending).resolves.toBe(false)
+    await expect(pending).resolves.toBe('deny')
   },
 )
+
+it('resolves scoped decisions and rejects scopes the request never offered', async () => {
+  const { approvals, request } = fixture()
+  const pending = request('Run command', '{"command":"pnpm test"}')
+  // No scopes were offered with this request.
+  expect(() => approvals.decide(approvals.list()[0].id, 'session')).toThrow('session scope')
+  approvals.decide(approvals.list()[0].id, 'approve')
+  await expect(pending).resolves.toBe('approve')
+})
+
+it('passes a native always decision through without inventing a Dovo rule', async () => {
+  const { store, approvals } = fixture()
+  const pending = approvals.request(
+    'one',
+    'Apply file changes',
+    'src/app.ts',
+    new AbortController().signal,
+    undefined,
+    { session: true, always: true },
+  )
+  expect(approvals.list()[0].scopes).toEqual({ session: true, always: true })
+  approvals.decide(approvals.list()[0].id, 'always')
+  await expect(pending).resolves.toBe('always')
+  expect(store.get().repositories[0].approvedCommands).toBeUndefined()
+  const second = approvals.request(
+    'one',
+    'Apply file changes',
+    'src/app.ts',
+    new AbortController().signal,
+    undefined,
+    { session: true, always: true },
+  )
+  approvals.decide(approvals.list()[0].id, 'session')
+  await expect(second).resolves.toBe('session')
+})

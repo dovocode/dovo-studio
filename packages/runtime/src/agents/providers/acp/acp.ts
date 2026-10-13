@@ -117,8 +117,8 @@ export function createAcpAdapter(): AgentAdapter {
         if (!ownsChild(id) || !interactions) return
         return {
           ...run,
-          approve: (title, detail, kind) =>
-            interactions.approve(title, detail, lifetime.signal, kind),
+          approve: (title, detail, kind, options) =>
+            interactions.approve(title, detail, lifetime.signal, kind, options),
           ask: interactions.ask,
         }
       }
@@ -126,11 +126,11 @@ export function createAcpAdapter(): AgentAdapter {
       Object.assign(toolRun, {
         ...run,
         signal: lifetime.signal,
-        approve: (title: string, detail: string, kind?: 'web') =>
+        approve: (title: string, detail: string, kind?: 'web', options?: { session?: boolean; always?: boolean }) =>
           prompting
-            ? run.approve(title, detail, kind)
-            : (run.nativeAgentInteractions?.approve(title, detail, lifetime.signal, kind) ??
-              Promise.resolve(false)),
+            ? run.approve(title, detail, kind, options)
+            : (run.nativeAgentInteractions?.approve(title, detail, lifetime.signal, kind, options) ??
+              Promise.resolve('deny' as const)),
       })
       const tools =
         native?.tools ??
@@ -191,11 +191,11 @@ export function createAcpAdapter(): AgentAdapter {
             run.tools !== 'none' &&
             (run.agent.permission === 'full-access' ||
               (run.agent.permission === 'workspace-write' && params.toolCall.kind === 'edit') ||
-              (await owner.approve(
+              ((await owner.approve(
                 params.toolCall.title ?? 'ACP tool request',
                 JSON.stringify(params.toolCall, null, 2),
                 params.toolCall.kind === 'fetch' ? 'web' : undefined,
-              )))
+              )) !== 'deny'))
           if (cancelling || run.signal.aborted) return { outcome: { outcome: 'cancelled' } }
           const option = params.options.find(
             (option) => option.kind === (allow ? 'allow_once' : 'reject_once'),

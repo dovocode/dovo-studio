@@ -1,0 +1,333 @@
+{
+  "scenario": "subagent-approval",
+  "source": "Wire frames emitted by muse-host.cjs for this scenario prompt, in order (that host is the tested fake extracted from the suite's recorded MSP session; volatile cursors and timestamps are normalized). A live re-recording was attempted in this environment and is blocked: the sandbox denies read access to ~/.config/muse/auth.json and host network access, so `muse serve` with the meta provider exits before initialize. Replay therefore verifies the adapter against these committed frames, not against a live model.",
+  "prompt": "native",
+  "decision": "approve",
+  "expectChoiceId": "once",
+  "expectSubagent": true,
+  "frames": [
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "method": "item/started",
+        "params": {
+          "sessionId": "s",
+          "viewCursor": "<cursor>",
+          "sourceRange": {
+            "first": {
+              "line": 0
+            },
+            "last": {
+              "line": 0
+            },
+            "stream": {
+              "id": "s",
+              "kind": "session"
+            }
+          },
+          "item": {
+            "itemId": "child-item",
+            "kind": "subagent",
+            "subagentId": "child",
+            "agentPath": "child",
+            "controlStatus": "running",
+            "status": "inProgress",
+            "revision": 1,
+            "turnId": "t"
+          }
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "method": "turn/completed",
+        "params": {
+          "sessionId": "s",
+          "viewCursor": "<cursor>",
+          "sourceRange": {
+            "first": {
+              "line": 0
+            },
+            "last": {
+              "line": 0
+            },
+            "stream": {
+              "id": "s",
+              "kind": "session"
+            }
+          },
+          "turnId": "t",
+          "terminal": "completed"
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "method": "approval/requested",
+        "params": {
+          "sessionId": "s",
+          "viewCursor": "<cursor>",
+          "sourceRange": {
+            "first": {
+              "line": 0
+            },
+            "last": {
+              "line": 0
+            },
+            "stream": {
+              "id": "s",
+              "kind": "session"
+            }
+          },
+          "approvalId": "approve",
+          "itemId": "tool",
+          "taskId": "task",
+          "toolCallId": "tool",
+          "judgeEscalated": false,
+          "protectedWrite": false,
+          "rawArgs": "pwd",
+          "currentRequirementId": "requirement",
+          "subject": {
+            "kind": "shell",
+            "command": "pwd"
+          },
+          "availableChoices": [
+            {
+              "choiceId": "once",
+              "decision": "approved",
+              "scope": "once",
+              "label": "Allow"
+            },
+            {
+              "choiceId": "session",
+              "decision": "approvedForSession",
+              "scope": "session",
+              "label": "Allow for session"
+            },
+            {
+              "choiceId": "always",
+              "decision": "approvedPolicyAmendment",
+              "scope": "localPersistent",
+              "label": "Always allow"
+            },
+            {
+              "choiceId": "deny",
+              "decision": "denied",
+              "scope": "once",
+              "label": "Deny"
+            }
+          ],
+          "subagentOrigin": {
+            "subagentId": "child",
+            "childSessionId": "child-session",
+            "agentPath": "child"
+          }
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "method": "item/started",
+        "params": {
+          "sessionId": "s",
+          "viewCursor": "<cursor>",
+          "sourceRange": {
+            "first": {
+              "line": 0
+            },
+            "last": {
+              "line": 0
+            },
+            "stream": {
+              "id": "s",
+              "kind": "session"
+            }
+          },
+          "item": {
+            "itemId": "p",
+            "kind": "agentMessage",
+            "turnId": "t",
+            "status": "inProgress",
+            "revision": 1,
+            "text": ""
+          }
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "method": "item/delta",
+        "params": {
+          "sessionId": "s",
+          "viewCursor": "<cursor>",
+          "sourceRange": {
+            "first": {
+              "line": 0
+            },
+            "last": {
+              "line": 0
+            },
+            "stream": {
+              "id": "s",
+              "kind": "session"
+            }
+          },
+          "itemId": "p",
+          "delta": "Working."
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "method": "item/completed",
+        "params": {
+          "sessionId": "s",
+          "viewCursor": "<cursor>",
+          "sourceRange": {
+            "first": {
+              "line": 0
+            },
+            "last": {
+              "line": 0
+            },
+            "stream": {
+              "id": "s",
+              "kind": "session"
+            }
+          },
+          "item": {
+            "itemId": "p",
+            "kind": "agentMessage",
+            "turnId": "t",
+            "status": "completed",
+            "revision": 2,
+            "text": "Working."
+          }
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "method": "item/started",
+        "params": {
+          "sessionId": "s",
+          "viewCursor": "<cursor>",
+          "sourceRange": {
+            "first": {
+              "line": 0
+            },
+            "last": {
+              "line": 0
+            },
+            "stream": {
+              "id": "s",
+              "kind": "session"
+            }
+          },
+          "item": {
+            "itemId": "f",
+            "kind": "agentMessage",
+            "turnId": "t",
+            "status": "inProgress",
+            "revision": 1,
+            "text": ""
+          }
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "method": "item/delta",
+        "params": {
+          "sessionId": "s",
+          "viewCursor": "<cursor>",
+          "sourceRange": {
+            "first": {
+              "line": 0
+            },
+            "last": {
+              "line": 0
+            },
+            "stream": {
+              "id": "s",
+              "kind": "session"
+            }
+          },
+          "itemId": "f",
+          "delta": "Done."
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "method": "item/completed",
+        "params": {
+          "sessionId": "s",
+          "viewCursor": "<cursor>",
+          "sourceRange": {
+            "first": {
+              "line": 0
+            },
+            "last": {
+              "line": 0
+            },
+            "stream": {
+              "id": "s",
+              "kind": "session"
+            }
+          },
+          "item": {
+            "itemId": "f",
+            "kind": "agentMessage",
+            "turnId": "t",
+            "status": "completed",
+            "revision": 2,
+            "text": "Done."
+          }
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "method": "turn/completed",
+        "params": {
+          "sessionId": "s",
+          "viewCursor": "<cursor>",
+          "sourceRange": {
+            "first": {
+              "line": 0
+            },
+            "last": {
+              "line": 0
+            },
+            "stream": {
+              "id": "s",
+              "kind": "session"
+            }
+          },
+          "turnId": "t",
+          "terminal": "completed"
+        }
+      }
+    }
+  ]
+}

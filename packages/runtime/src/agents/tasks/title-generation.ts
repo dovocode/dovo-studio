@@ -490,7 +490,7 @@ export class TitleGeneration {
                   controller.abort(new Error(`The ${config.label} model returned too much text`))
                 else output = replacement
               },
-              approve: async () => false,
+              approve: async () => 'deny' as const,
               ask: async () => null,
             }),
           ).pipe(

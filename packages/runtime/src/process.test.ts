@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, it, vi } from 'vite-plus/test'
 import { execFile } from 'node:child_process'
-import { exec, execEffect, ProcessError } from './process.js'
+import { exec, execEffect, processEnvironment, ProcessError } from './process.js'
 
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>()
@@ -51,5 +51,21 @@ it('kills and reaps an interrupted subprocess before completing interruption', a
   } finally {
     await Effect.runPromise(Fiber.interrupt(fiber))
     await rm(directory, { recursive: true, force: true })
+  }
+})
+
+it('never forwards a Meta API key to child processes', () => {
+  const previous = process.env.META_API_KEY
+  process.env.META_API_KEY = 'inherited-secret'
+  try {
+    expect(processEnvironment().META_API_KEY).toBeUndefined()
+    expect(processEnvironment({ META_API_KEY: 'explicit-secret' }).META_API_KEY).toBeUndefined()
+    expect(processEnvironment({ meta_api_key: 'lowercase-secret' })).not.toHaveProperty(
+      'meta_api_key',
+    )
+    expect(processEnvironment({ OTHER_TOKEN: 'kept' }).OTHER_TOKEN).toBe('kept')
+  } finally {
+    if (previous === undefined) delete process.env.META_API_KEY
+    else process.env.META_API_KEY = previous
   }
 })

@@ -110,7 +110,7 @@ it('preserves multiple Claude tool identities while dropping result text and ful
   ])
   expect(compact[1]!.payload).not.toContain('hidden-argument')
   expect(toolPresentation(compact[1]!.payload, compact[1]!.summary).input).toBe('')
-  expect(toolPresentation(compact[1]!.payload, compact[1]!.summary).title).toBe('readme.md')
+  expect(toolPresentation(compact[1]!.payload, compact[1]!.summary).title).toBe('Read readme.md')
 })
 it('keeps the original command after a provider sends a separate result event', () => {
   const start = event({

@@ -96,7 +96,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
     onPromptAccepted: vi.fn<NonNullable<AgentRun['onPromptAccepted']>>(),
     onText: vi.fn<AgentRun['onText']>(),
     onActivity: vi.fn<AgentRun['onActivity']>(),
-    approve: vi.fn<AgentRun['approve']>(async () => false),
+    approve: vi.fn<AgentRun['approve']>(async () => 'deny' as const),
     ask: vi.fn<AgentRun['ask']>(async () => null),
   }
   const requests = async () =>
@@ -128,7 +128,7 @@ it.each(['ask', 'read-only'] as const)(
   async (permission) => {
     const { run, requests } = await fixture('0.155.1', false, false, false, false, false, true)
     run.agent.permission = permission
-    run.approve = vi.fn<AgentRun['approve']>(async () => true)
+    run.approve = vi.fn<AgentRun['approve']>(async () => 'approve' as const)
     const adapter = createCodexAdapter()
     try {
       await adapter.run(run)
@@ -366,7 +366,7 @@ it('retains native RPC handlers and the loaded process under pressure across fol
   const adapter = createCodexAdapter()
   const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(true)
   const approve = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
-    async () => true,
+    async () => 'approve' as const,
   )
   const rootApprove = vi.fn<AgentRun['approve']>(async () => {
     throw new Error('Retired root approval')

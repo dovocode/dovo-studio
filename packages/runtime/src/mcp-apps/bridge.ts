@@ -414,13 +414,13 @@ export class McpApps {
           throw new HttpError(409, 'Reopen this thread before using its MCP Apps')
         if (scope.permission === 'read-only')
           throw new HttpError(403, 'Interactive tool calls are disabled for read-only threads')
-        const allowed = await this.approvals.request(
+        const decision = await this.approvals.request(
           scope.taskId,
           `MCP App · ${tool.name}`,
           JSON.stringify(input.arguments ?? {}),
           signal,
         )
-        if (!allowed) throw new HttpError(403, 'MCP App tool call was declined')
+        if (decision === 'deny') throw new HttpError(403, 'MCP App tool call was declined')
         const latest = this.current(scope.taskId, scope.server.name)
         if (
           fingerprint(latest.server) !== fingerprint(scope.server) ||

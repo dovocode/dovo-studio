@@ -16,6 +16,7 @@ import {
   resolveTaskAgent,
   checkpointFiles,
   findingIdentity,
+  approvalIsCurrent,
   type CodeReview,
   type TaskReviewReport,
   type CodeFinding,
@@ -176,11 +177,14 @@ export class TaskReviews {
         if (command) commands.push(command)
       }
     }
+    const approved =
+      !!latest && current && approvalIsCurrent(latest) && !latest.findings.some((f) => f.status === 'open' || f.status === 'addressed')
     return {
       reviews,
       current,
       commands: commands.sort((a, b) => b.time.localeCompare(a.time)).slice(0, 100),
       evidenceLimited: evidenceLimited || commands.length > 100,
+      approved,
     }
   }
   async start(
@@ -315,6 +319,36 @@ export class TaskReviews {
     if (!review) throw new HttpError(404, 'Code review not found')
     return review
   }
+  async approve(taskId: string, reviewId: string, approvedValue: boolean) {
+    const review = this.review(taskId, reviewId)
+    if (!approvedValue) {
+      const { approval: _approval, ...rest } = review
+      this.save(rest)
+      return this.read(taskId)
+    }
+    if (review.status !== 'completed')
+      throw new HttpError(409, 'Run a completed review before approving changes.')
+    const report = await this.read(taskId)
+    if (!report.current || report.reviews[0]?.id !== review.id)
+      throw new HttpError(
+        409,
+        'Changes have moved since this review. Run a fresh review before approving.',
+      )
+    if (review.findings.some((f) => f.status === 'open' || f.status === 'addressed'))
+      throw new HttpError(
+        409,
+        'Resolve or dismiss every open finding before approving. Addressed findings need a fresh review.',
+      )
+    this.save({
+      ...review,
+      approval: {
+        approvedAt: new Date().toISOString(),
+        baseline: review.baseline,
+        head: review.head,
+      },
+    })
+    return this.read(taskId)
+  }
   async finding(
     taskId: string,
     reviewId: string,
@@ -332,6 +366,10 @@ export class TaskReviews {
       ),
     })
     return this.read(taskId)
+  }
+  /** Latest completed, still-current review approved with no open findings, if any. */
+  async isApproved(taskId: string): Promise<boolean> {
+    return (await this.read(taskId)).approved
   }
   async fix(taskId: string, reviewId: string, findingIds: string[], messageId: string) {
     const review = this.review(taskId, reviewId)

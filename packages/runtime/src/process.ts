@@ -94,6 +94,8 @@ export function processEnvironment(overrides: Record<string, string> = {}) {
   const env = { ...process.env, ...overrides }
   delete env.DOVO_OWNER_TOKEN
   delete env.ELECTRON_RUN_AS_NODE
+  for (const key of Object.keys(env))
+    if (key.toUpperCase() === 'META_API_KEY') delete env[key]
   for (const key of [
     'GH_REPO',
     'GH_HOST',

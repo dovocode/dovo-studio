@@ -32,6 +32,7 @@ import {
   FileCode2,
   Globe,
   Monitor,
+  Search,
   Terminal,
   Wrench,
 } from 'lucide-react'
@@ -135,6 +136,7 @@ const icons = {
   command: Terminal,
   computer: Monitor,
   web: Globe,
+  search: Search,
   file: FileCode2,
   tool: Wrench,
   reasoning: BrainCircuit,
@@ -148,6 +150,32 @@ function activeTitle(presentation: Presentation) {
     return presentation.title === 'Computer Use' ? 'Using Computer Use' : presentation.title
   return presentation.title
 }
+export function DiffText({ text }: { text: string }) {
+  return (
+    <pre className="max-h-72 overflow-auto whitespace-pre font-mono text-[0.6875rem] leading-relaxed">
+      {text.split('\n').map((line, index) => (
+        <span
+          key={index}
+          className={
+            line.startsWith('+') && !line.startsWith('+++')
+              ? 'block text-emerald-400'
+              : line.startsWith('-') && !line.startsWith('---')
+                ? 'block text-red-400'
+                : 'block'
+          }
+          {...(line.startsWith('+') && !line.startsWith('+++')
+            ? { 'data-diff': 'added' }
+            : line.startsWith('-') && !line.startsWith('---')
+              ? { 'data-diff': 'removed' }
+              : {})}
+        >
+          {line || ' '}
+        </span>
+      ))}
+    </pre>
+  )
+}
+
 export function TaskActivity({
   tools,
   error = '',
@@ -214,9 +242,9 @@ export function TaskActivity({
     !expanded && current
       ? [activeTitle(current.presentation), outcome].filter(Boolean).join(' · ')
       : [activitySummary(tools), outcome].filter(Boolean).join(' · ')
-  const summaryKind = (['computer', 'command', 'file', 'web', 'tool', 'reasoning'] as const).find(
-    (kind) => entries.some((entry) => entry.presentation.kind === kind),
-  )
+  const summaryKind = (
+    ['computer', 'command', 'file', 'web', 'search', 'tool', 'reasoning'] as const
+  ).find((kind) => entries.some((entry) => entry.presentation.kind === kind))
   const Icon =
     !expanded && current ? icons[current.presentation.kind] : icons[summaryKind ?? 'tool']
   return (
@@ -323,7 +351,11 @@ const ActivityEntry = memo(function ActivityEntry({
           ? 'Interrupted'
           : ''
   const reasoning = presentation.kind === 'reasoning'
-  const expandable = showDetails || (presentation.kind === 'command' && !!presentation.input)
+  const expandable =
+    showDetails ||
+    (presentation.kind === 'command' && !!presentation.input) ||
+    !!presentation.diff ||
+    (presentation.kind === 'file' && !!presentation.input)
   const Container = expandable ? 'details' : 'div'
   const Header = expandable ? 'summary' : 'div'
   return (
@@ -335,8 +367,11 @@ const ActivityEntry = memo(function ActivityEntry({
           aria-hidden
           className={`size-3.5 shrink-0 ${state === 'running' ? 'animate-pulse motion-reduce:animate-none' : ''}`}
         />
-        <span className="min-w-0 flex-1 truncate" title={title}>
-          {title}
+        <span className="flex min-w-0 flex-1 items-baseline gap-2 truncate" title={presentation.detail ? `${title} · ${presentation.detail}` : title}>
+          <span className="min-w-0 truncate">{title}</span>
+          {presentation.detail && (
+            <span className="min-w-0 flex-1 truncate text-[0.625rem] text-muted-foreground/70">{presentation.detail}</span>
+          )}
         </span>
         {status && (
           <span
@@ -354,14 +389,21 @@ const ActivityEntry = memo(function ActivityEntry({
       </Header>
       {expandable && (
         <div className="mb-2 ml-2.5 space-y-3 border-l pl-4 text-[0.6875rem] leading-relaxed text-muted-foreground">
-          {!!presentation.input && (showDetails || presentation.kind === 'command') && (
+          {!!presentation.input &&
+            (showDetails || presentation.kind === 'command' || presentation.kind === 'file') && (
+              <div>
+                <p className="mb-1 text-[0.625rem] text-muted-foreground/65">
+                  {presentation.kind === 'command' ? 'Command' : 'Input'}
+                </p>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed">
+                  {presentation.input}
+                </pre>
+              </div>
+            )}
+          {!!presentation.diff && (
             <div>
-              <p className="mb-1 text-[0.625rem] text-muted-foreground/65">
-                {presentation.kind === 'command' ? 'Command' : 'Input'}
-              </p>
-              <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed">
-                {presentation.input}
-              </pre>
+              <p className="mb-1 text-[0.625rem] text-muted-foreground/65">Diff</p>
+              <DiffText text={presentation.diff} />
             </div>
           )}
           {showDetails &&
@@ -380,7 +422,7 @@ const ActivityEntry = memo(function ActivityEntry({
                 </pre>
               </div>
             ))}
-          {showDetails && !presentation.input && !presentation.output && (
+          {showDetails && !presentation.input && !presentation.output && !presentation.diff && (
             <p>{state === 'running' ? 'Waiting for output…' : 'No text output recorded.'}</p>
           )}
           {showDetails && (

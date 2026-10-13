@@ -364,7 +364,7 @@ rpc.onRequest('run',async input=>{
     onText: (text) => texts.push(text),
     onSession: (id) => sessions.push(id),
     onActivity: () => {},
-    approve: async () => false,
+    approve: async () => 'deny' as const,
     ask: async () => null,
   }
   return { adapter, run, texts, sessions }

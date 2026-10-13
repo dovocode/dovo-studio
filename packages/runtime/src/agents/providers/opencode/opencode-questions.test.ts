@@ -155,7 +155,7 @@ it.each([
       onSession: () => {},
       onText: () => {},
       onActivity: () => {},
-      approve: async () => false,
+      approve: async () => 'deny' as const,
       ask,
     })
     expect(asked).toBe(1)

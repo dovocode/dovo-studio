@@ -61,7 +61,7 @@ it('persists independent title settings and generates using a temporary read-onl
     expect(captured?.sessionId).toBeUndefined()
     expect(captured?.ephemeral).toBe(true)
     expect(existsSync(captured?.cwd ?? '')).toBe(false)
-    expect(await captured?.approve('Write', 'file')).toBe(false)
+    expect(await captured?.approve('Write', 'file')).toBe('deny')
     expect(s.store.get().agents[0].model).toBe('task-model')
     expect(s.store.get().tasks).toEqual([])
   } finally {

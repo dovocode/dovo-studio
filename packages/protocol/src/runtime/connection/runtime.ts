@@ -18,11 +18,20 @@ export const deviceSchema = mutableStruct({
   createdAt: Schema.String,
   revokedAt: Schema.NullOr(Schema.String),
 })
+export const approvalDecisionSchema = Schema.Literals(['approve', 'session', 'always', 'deny'])
+export type ApprovalDecision = Schema.Schema.Type<typeof approvalDecisionSchema>
 export const approvalSchema = mutableStruct({
   id: Schema.String,
   taskId: Schema.String,
   title: Schema.String,
   detail: Schema.String,
+  /** Native approval scopes offered by the provider for this request. Older runtimes omit them. */
+  scopes: Schema.optional(
+    mutableStruct({
+      session: Schema.Boolean,
+      always: Schema.Boolean,
+    }),
+  ),
   /** Null means unsupported; omitted by older runtimes that only remember command rules. */
   rememberRule: Schema.optional(Schema.NullOr(Schema.Literals(['command', 'web']))),
   createdAt: Schema.String,
@@ -228,6 +237,23 @@ export function approvalRememberLabel(approval: Pick<Approval, 'title' | 'rememb
   )
     return 'Always allow in this project'
   return undefined
+}
+/** Actions a client may offer for a pending approval, widest last. */
+export function approvalActions(
+  approval: Pick<Approval, 'title' | 'rememberRule' | 'scopes'>,
+): Array<{ decision: ApprovalDecision; label: string }> {
+  const actions: Array<{ decision: ApprovalDecision; label: string }> = [
+    { decision: 'approve', label: 'Allow once' },
+  ]
+  if (approval.scopes?.session) actions.push({ decision: 'session', label: 'Allow for session' })
+  if (approval.scopes?.always)
+    actions.push({ decision: 'always', label: approvalRememberLabel(approval) ?? 'Always allow' })
+  else {
+    const remember = approvalRememberLabel(approval)
+    if (remember) actions.push({ decision: 'always', label: remember })
+  }
+  actions.push({ decision: 'deny', label: 'Deny' })
+  return actions
 }
 export type TerminalInfo = Schema.Schema.Type<typeof terminalSchema>
 export type JobRun = Schema.Schema.Type<typeof jobRunSchema>

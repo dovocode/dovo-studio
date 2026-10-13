@@ -7,6 +7,7 @@ const empty: TaskReviewReport = {
   commands: [],
   current: false,
   evidenceLimited: false,
+  approved: false,
 }
 it('keeps newer action results when an older read finishes and stops publishing after unmount', async () => {
   let resolve!: (value: TaskReviewReport) => void

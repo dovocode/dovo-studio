@@ -219,8 +219,8 @@ export function createCodexAdapter(): AgentAdapter {
           native && interactions
             ? {
                 ...run,
-                approve: (title, detail, kind) =>
-                  interactions.approve(title, detail, transport.lifetime.signal, kind),
+                approve: (title, detail, kind, options) =>
+                  interactions.approve(title, detail, transport.lifetime.signal, kind, options),
                 ask: (prompt, signal, validate) =>
                   interactions.ask(
                     prompt,
@@ -264,7 +264,7 @@ export function createCodexAdapter(): AgentAdapter {
             ['http', 'https'].includes(String(context.protocol))
           const allowed =
             requestRun.agent.permission !== 'read-only' &&
-            (await requestRun.approve(
+            ((await requestRun.approve(
               web
                 ? 'Web request'
                 : method.includes('command')
@@ -272,7 +272,7 @@ export function createCodexAdapter(): AgentAdapter {
                   : 'Apply file changes',
               JSON.stringify(params, null, 2),
               web ? 'web' : undefined,
-            ))
+            )) !== 'deny')
           return {
             decision: allowed ? 'accept' : 'decline',
           }

@@ -251,7 +251,7 @@ it('requires UI approval and deduplicates calls, including persisted completed a
   const ref = recentTools(
     s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events,
   ).flatMap((event) => mcpAppReferences(event.payload))[0]
-  const approve = vi.spyOn(s.runtime.services.approvals, 'request').mockResolvedValue(true)
+  const approve = vi.spyOn(s.runtime.services.approvals, 'request').mockResolvedValue('approve')
   const [a, b] = await Promise.all([
     bridge.action(s.task.id, ref.id, 'same', 'tools/call', { name: 'refresh' }),
     bridge.action(s.task.id, ref.id, 'same', 'tools/call', { name: 'refresh' }),
@@ -262,7 +262,7 @@ it('requires UI approval and deduplicates calls, including persisted completed a
   await expect(
     bridge.action(s.task.id, ref.id, 'same', 'tools/call', { name: 'chart' }),
   ).rejects.toThrow('reused')
-  approve.mockResolvedValue(false)
+  approve.mockResolvedValue('deny' as const)
   await expect(
     bridge.action(s.task.id, ref.id, 'declined', 'tools/call', { name: 'refresh' }),
   ).rejects.toThrow('declined')
@@ -277,7 +277,7 @@ it('keeps the UI request alive through approval and a slow upstream tool without
   ).flatMap((event) => mcpAppReferences(event.payload))[0]
   const approve = vi.spyOn(s.runtime.services.approvals, 'request').mockImplementation(async () => {
     await new Promise((resolve) => setTimeout(resolve, 500))
-    return true
+    return 'approve' as const
   })
   const input = {
     taskId: s.task.id,
@@ -473,7 +473,7 @@ it('recovers saved apps and completed actions, and never replays interrupted cal
   const ref = recentTools(
     s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events,
   ).flatMap((event) => mcpAppReferences(event.payload))[0]
-  vi.spyOn(s.runtime.services.approvals, 'request').mockResolvedValue(true)
+  vi.spyOn(s.runtime.services.approvals, 'request').mockResolvedValue('approve')
   const result = await bridge.action(s.task.id, ref.id, 'durable', 'tools/call', {
     name: 'refresh',
   })
@@ -511,7 +511,7 @@ it('rechecks device authorization after an approval and rejects read-only app mu
   let revoked = false
   vi.spyOn(s.runtime.services.approvals, 'request').mockImplementation(async () => {
     revoked = true
-    return true
+    return 'approve' as const
   })
   await expect(
     bridge.action(s.task.id, ref.id, 'revoked', 'tools/call', { name: 'refresh' }, () => {

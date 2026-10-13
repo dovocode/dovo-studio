@@ -28,6 +28,7 @@ import type { AgentSteer, AgentRun, NativeAgentSession } from './types.js'
 import {
   REVIEW_MODE_INSTRUCTION,
   mentionedResources,
+  nativeTodos,
   supportsAccess,
   resolveTaskAgent,
   lockedTaskProvider,
@@ -403,8 +404,8 @@ ${
             status: 'running',
             runPhase: 'provider',
             preparation: undefined,
-            // A new session starts with an empty context.
-            ...(sessionId ? {} : { contextUsage: undefined }),
+            // A new session starts with an empty context and no native todos.
+            ...(sessionId ? {} : { contextUsage: undefined, nativeTodos: undefined }),
             runAttempt: {
               ...t.runAttempt,
               inputMessageIds: currentMessages.map((m) => m.id),
@@ -662,16 +663,6 @@ ${
           }))
           buffer = ''
         }
-        yield* Effect.forkScoped(
-          Effect.sleep(2 * 60 * 60 * 1000).pipe(
-            Effect.andThen(
-              Effect.sync(() =>
-                controller.abort(new Error('Task exceeded the two-hour runtime limit')),
-              ),
-            ),
-            Effect.interruptible,
-          ),
-        )
         yield* Effect.gen({ self: this }, function* () {
           const questionController = new AbortController()
           const questionSignal = AbortSignal.any([controller.signal, questionController.signal])
@@ -1079,6 +1070,22 @@ ${
                   }
                   recordUsage(name, payload)
                   tokens.accept(name, payload)
+                  const todos = nativeTodos(name, payload)
+                  if (todos && agent.provider === 'muse') {
+                    const current = this.store.task(id).nativeTodos
+                    const changed =
+                      current?.length !== todos.length ||
+                      todos.some(
+                        (todo, index) =>
+                          current?.[index]?.text !== todo.text ||
+                          current?.[index]?.status !== todo.status,
+                      )
+                    if (changed)
+                      this.store.updateTask(id, (task) => ({
+                        ...task,
+                        nativeTodos: todos.length ? todos : undefined,
+                      }))
+                  }
                   const current = this.store.task(id).subagents ?? []
                   const subagents = updateSubagents(
                     current,
@@ -1127,7 +1134,7 @@ ${
                   this.store.updateTask(id, (t) => ({ ...t, activity: text }))
                 },
                 nativeAgentInteractions: {
-                  approve: (title, detail, signal, kind) =>
+                  approve: (title, detail, signal, kind, options) =>
                     acceptsNativeInteractions()
                       ? this.approvals.request(
                           id,
@@ -1135,8 +1142,9 @@ ${
                           detail,
                           AbortSignal.any([controller.signal, signal]),
                           kind,
+                          options,
                         )
-                      : Promise.resolve(false),
+                      : Promise.resolve('deny' as const),
                   ask: (prompt, signal, validate) =>
                     acceptsNativeInteractions()
                       ? this.questions.request(
@@ -1155,10 +1163,10 @@ ${
                         )
                       : Promise.resolve(null),
                 },
-                approve: (title, detail, kind) =>
+                approve: (title, detail, kind, options) =>
                   acceptsProviderEvents()
-                    ? this.approvals.request(id, title, detail, questionSignal, kind)
-                    : Promise.resolve(false),
+                    ? this.approvals.request(id, title, detail, questionSignal, kind, options)
+                    : Promise.resolve('deny' as const),
                 ask: (prompt, signal, validate) =>
                   acceptsProviderEvents()
                     ? this.questions.request(

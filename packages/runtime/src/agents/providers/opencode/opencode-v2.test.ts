@@ -153,7 +153,7 @@ it('runs an OpenCode 2 prompt through its asynchronous event stream', async () =
       onTextBoundary: () => text.push('boundary'),
       onEvent: (name) => eventNames.push(name),
       onActivity: () => {},
-      approve: async () => false,
+      approve: async () => 'deny' as const,
       ask: async () => null,
     })
     expect(childFinished).toBe(true)
@@ -224,7 +224,7 @@ it('waits for OpenCode 2 manual compaction to finish', async () => {
       onText: () => {},
       onActivity: () => {},
       onEvent: (name) => events.push(name),
-      approve: async () => false,
+      approve: async () => 'deny' as const,
       ask: async () => null,
     })
     expect(paths).toContain('/api/session/session/compact')

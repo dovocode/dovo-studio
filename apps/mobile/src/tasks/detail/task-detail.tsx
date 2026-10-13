@@ -57,6 +57,7 @@ import { copyText } from '../../ui/content/clipboard'
 import { PreparationProgress } from '../conversation/components/preparation-progress'
 import { ReviewComments } from '../conversation/components/review-comments'
 import { PlanApproval } from '../conversation/components/plan-approval'
+import { NativeTodos } from '../conversation/components/native-todos'
 import { SideQuestion } from '../conversation/components/side-question'
 import { ProjectInstructions } from './project-instructions'
 import { ProjectApprovalRules } from './project-approval-rules'
@@ -842,6 +843,7 @@ function TaskDetailContent({
                   </View>
                 )}
                 <PlanApproval task={task} />
+                <NativeTodos task={task} />
                 <CodeReviewCard
                   task={task}
                   onOpen={(finding) => {

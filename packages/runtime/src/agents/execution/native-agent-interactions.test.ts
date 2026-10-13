@@ -90,12 +90,12 @@ it('keeps native approvals and questions usable after a reply while retiring par
       { id: 'direction', header: 'Direction', question: 'Which direction?', options: [] },
     ],
   })
-  expect(await owner.approve('Retired', '')).toBe(false)
+  expect(await owner.approve('Retired', '')).toBe('deny')
   expect(await owner.ask(prompt, signal)).toBeNull()
   const approval = interactions.approve('Child command', 'pwd', signal)
   expect(s.approvals.list()).toMatchObject([{ taskId: task.id, title: 'Child command' }])
   s.approvals.respond(s.approvals.list()[0].id, true)
-  expect(await approval).toBe(true)
+  expect(await approval).toBe('approve')
   const question = interactions.ask(prompt, signal)
   const questionId = s.questions.list()[0].id
   const answers = { direction: ['Continue'] }
@@ -108,10 +108,10 @@ it('keeps native approvals and questions usable after a reply while retiring par
   const controller = new AbortController()
   const cancelled = interactions.approve('Cancelled child request', '', controller.signal)
   controller.abort()
-  expect(await cancelled).toBe(false)
+  expect(await cancelled).toBe('deny')
   expect(s.approvals.list()).toEqual([])
   owner.onSubagentEvent?.('dovo/session/closed', {}, 'native-session')
-  expect(await interactions.approve('Closed', '', signal)).toBe(false)
+  expect(await interactions.approve('Closed', '', signal)).toBe('deny')
   expect(await interactions.ask(prompt, signal)).toBeNull()
 })
 
@@ -125,7 +125,7 @@ it.each(['permission', 'session'] as const)(
         ? { harness: { ...defaultTaskHarness('claude'), permission: 'read-only' as const } }
         : { sessionId: 'replacement-session' }),
     }))
-    expect(await interactions.approve('Stale', '', new AbortController().signal)).toBe(false)
+    expect(await interactions.approve('Stale', '', new AbortController().signal)).toBe('deny')
     expect(s.approvals.list()).toEqual([])
   },
 )

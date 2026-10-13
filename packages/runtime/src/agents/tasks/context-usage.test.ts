@@ -209,3 +209,23 @@ it('adds child request usage without counting cumulative Claude session models a
   expect(counter.total()).toBe(207)
   expect(counter.usage()).toEqual({ input: 110, output: 25, cacheRead: 70, cacheWrite: 2 })
 })
+
+it('reads Muse context usage and accumulates per-request token usage', () => {
+  expect(
+    contextUsage('muse', 'session/contextUsage', { usedTokens: 12_000, windowTokens: 200_000 }),
+  ).toEqual({ used: 12_000, limit: 200_000 })
+  const counter = turnTokenCounter('muse', () => 's')
+  counter.accept('session/tokenUsage', {
+    turnId: 't',
+    promptTokens: 100,
+    usage: { inputTokens: 90, outputTokens: 10, cachedTokens: 40, reasoningTokens: 3 },
+  })
+  counter.accept('session/tokenUsage', {
+    turnId: 't',
+    promptTokens: 50,
+    usage: { inputTokens: 45, outputTokens: 5, cacheReadTokens: 20, cacheWriteTokens: 2 },
+  })
+  expect(counter.usage()).toEqual({ input: 150, output: 15, cacheRead: 60, cacheWrite: 2 })
+  expect(counter.total()).toBe(227)
+  expect(turnTokenCounter('muse', () => 's').total()).toBeUndefined()
+})

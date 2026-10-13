@@ -105,7 +105,7 @@ it('fails SDK turn errors and cancels admitted turns', async () => {
 })
 it('resolves installed commands on PATH and refuses workspace-write symlink escapes', async () => {
   const f = await fixture(),
-    approve = vi.fn<() => Promise<boolean>>(async () => false)
+    approve = vi.fn<() => Promise<'deny'>>(async () => 'deny' as const)
   expect(await copilotExecutable(process.execPath, {}, f.cwd)).toBe(process.execPath)
   const outside = join(f.cwd, '..', `outside-${Date.now()}`)
   directories.push(outside)
@@ -134,7 +134,7 @@ it('resolves installed commands on PATH and refuses workspace-write symlink esca
 
 it('routes SDK approval and question callbacks to Dovo', async () => {
   const f = await fixture(),
-    approve = vi.fn<() => Promise<boolean>>(async () => true)
+    approve = vi.fn<() => Promise<'approve'>>(async () => 'approve' as const)
   await f.adapter.run({ ...f.run, prompt: 'approval', approve })
   expect(approve).toHaveBeenCalledOnce()
   expect(
@@ -159,7 +159,7 @@ it.each([
   'classifies Copilot URL approvals without remembering elevated or non-web requests (%j)',
   async ({ web, ...fields }) => {
     const f = await fixture()
-    const approve = vi.fn<AgentRun['approve']>(async () => false)
+    const approve = vi.fn<AgentRun['approve']>(async () => 'deny' as const)
     const input = { kind: 'url' as const, intention: 'Read a website', ...fields }
     await copilotPermission({ ...f.run, approve }, f.run.signal)(input, { sessionId: 's' })
     expect(approve).toHaveBeenCalledWith(

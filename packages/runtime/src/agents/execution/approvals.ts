@@ -1,6 +1,6 @@
 import type { Activity } from '../../storage/activity.js'
 import { randomUUID } from 'node:crypto'
-import type { Approval } from '@dovo/protocol'
+import type { Approval, ApprovalDecision } from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { RuntimePreferences } from '../../storage/runtime-preferences.js'
@@ -27,13 +27,20 @@ export class Approvals {
   ) {}
   private requests = new Map<
     string,
-    { info: Approval; web: boolean; resolve: (allow: boolean) => void }
+    { info: Approval; web: boolean; resolve: (decision: ApprovalDecision) => void }
   >()
   list() {
     return [...this.requests.values()].map((r) => r.info)
   }
-  request(taskId: string, title: string, detail: string, signal: AbortSignal, kind?: 'web') {
-    if (signal.aborted) return Promise.resolve(false)
+  request(
+    taskId: string,
+    title: string,
+    detail: string,
+    signal: AbortSignal,
+    kind?: 'web',
+    scopes?: { session?: boolean; always?: boolean },
+  ): Promise<ApprovalDecision> {
+    if (signal.aborted) return Promise.resolve('deny' as const)
     const command = commandForApproval(title, detail)
     // Only the provider adapter can classify a web request; display text is not authoritative.
     const web = kind === 'web'
@@ -50,24 +57,29 @@ export class Approvals {
         web,
         status: globalWeb ? 'allowed-by-runtime-rule' : 'allowed-by-project-rule',
       })
-      return Promise.resolve(true)
+      return Promise.resolve('approve' as const)
     }
     const id = randomUUID()
     this.activity?.add('approval', taskId, title, { id, detail, status: 'requested' })
-    return new Promise<boolean>((resolve) => {
-      const finish = (allow: boolean) => {
+    return new Promise<ApprovalDecision>((resolve) => {
+      const finish = (decision: ApprovalDecision) => {
         clearTimeout(timer)
         signal.removeEventListener('abort', abort)
         this.requests.delete(id)
         // The agent waits on this promise: a failed audit write must not leave it waiting.
         try {
-          this.activity?.add('approval', taskId, title, { id, allow, status: 'resolved' })
+          this.activity?.add('approval', taskId, title, {
+            id,
+            allow: decision !== 'deny',
+            decision,
+            status: 'resolved',
+          })
         } catch (error) {
           console.error('Could not record approval', error)
         }
-        resolve(allow)
+        resolve(decision)
       }
-      const abort = () => finish(false)
+      const abort = () => finish('deny')
       const timer = setTimeout(abort, 10 * 60 * 1000)
       this.requests.set(id, {
         web,
@@ -77,6 +89,9 @@ export class Approvals {
           title,
           detail,
           createdAt: new Date().toISOString(),
+          ...(scopes
+            ? { scopes: { session: !!scopes.session, always: !!scopes.always } }
+            : {}),
           rememberRule: project && (command || web) ? (web ? 'web' : 'command') : null,
         },
         resolve: finish,
@@ -85,14 +100,24 @@ export class Approvals {
     })
   }
   respond(id: string, allow: boolean, remember = false) {
+    return this.decide(id, allow ? (remember ? 'always' : 'approve') : 'deny')
+  }
+  decide(id: string, decision: ApprovalDecision) {
     const request = this.requests.get(id)
     if (!request) throw new HttpError(404, 'Approval expired')
-    if (remember && allow) {
+    if (decision === 'always') {
       const command = commandForApproval(request.info.title, request.info.detail)
       const web = request.info.rememberRule === 'web'
+      const native = !!request.info.scopes?.always
       const task = this.store?.get().tasks.find((item) => item.id === request.info.taskId)
+      if (!native && !command && !web)
+        throw new HttpError(400, 'This approval cannot be saved as a project rule.')
+      if (native && !command && !web) {
+        // The provider persists its own policy amendment; Dovo has no rule to save.
+        request.resolve('always')
+        return
+      }
       if (
-        (!command && !web) ||
         !task?.repositoryId ||
         !this.store ||
         !this.store.get().repositories.some((project) => project.id === task.repositoryId)
@@ -122,7 +147,9 @@ export class Approvals {
         return
       }
     }
-    request.resolve(allow)
+    if (decision === 'session' && !request.info.scopes?.session)
+      throw new HttpError(400, 'This approval does not offer a session scope.')
+    request.resolve(decision)
   }
   /** Apply saved rules to requests already waiting when a setting is enabled. */
   applyWebRules() {
@@ -132,10 +159,10 @@ export class Approvals {
       if (!pending.web) continue
       const task = workspace?.tasks.find((item) => item.id === pending.info.taskId)
       const project = workspace?.repositories.find((item) => item.id === task?.repositoryId)
-      if (globalWeb || project?.approvedWebRequests) pending.resolve(true)
+      if (globalWeb || project?.approvedWebRequests) pending.resolve('approve')
     }
   }
   dispose() {
-    for (const request of this.requests.values()) request.resolve(false)
+    for (const request of this.requests.values()) request.resolve('deny')
   }
 }

@@ -30,6 +30,7 @@ export function CodeReviewCard({
       <p className="text-muted-foreground">
         {latest.reviewer} · {findings.length} open {findings.length === 1 ? 'finding' : 'findings'}
         {report?.current ? '' : ' · changes since review'}
+        {report?.approved ? ' · approved for push' : ''}
       </p>
       {findings.slice(0, 3).map((finding) => (
         <button

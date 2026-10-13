@@ -1,4 +1,4 @@
-import { runtimeComputerName, approvalRememberLabel } from '@dovo/protocol'
+import { runtimeComputerName, approvalActions } from '@dovo/protocol'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { responses } from '@dovo/protocol'
@@ -34,10 +34,11 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
               {item.detail}
             </Text>
             <View style={styles.row}>
-              {approvalRememberLabel(item) && (
+              {approvalActions(item).map((action) => (
                 <Action
-                  label={approvalRememberLabel(item) ?? ''}
-                  secondary
+                  key={action.decision}
+                  label={action.label}
+                  secondary={action.decision !== 'approve'}
                   disabled={busy || !connected}
                   onPress={() =>
                     act(() =>
@@ -45,28 +46,8 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
                         '/api/approvals',
                         {
                           id: item.id,
-                          allow: true,
-                          remember: true,
-                        },
-                        responses.ok,
-                      ),
-                    )
-                  }
-                />
-              )}
-              {[true, false].map((allow) => (
-                <Action
-                  key={String(allow)}
-                  label={allow ? 'Allow once' : 'Deny'}
-                  secondary={!allow}
-                  disabled={busy || !connected}
-                  onPress={() =>
-                    act(() =>
-                      callEffect(
-                        '/api/approvals',
-                        {
-                          id: item.id,
-                          allow,
+                          allow: action.decision !== 'deny',
+                          decision: action.decision,
                         },
                         responses.ok,
                       ),

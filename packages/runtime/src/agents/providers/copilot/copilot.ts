@@ -105,7 +105,7 @@ export const copilotPermission =
           request.kind === 'write' &&
           (await workspaceWrite(run, request.fileName))))
     if (run.agent.permission === 'read-only' && !automatic) return { kind: 'reject' }
-    const approved =
+    const decision =
       automatic ||
       (await nativeWait(
         run.approve(
@@ -121,7 +121,7 @@ export const copilotPermission =
         ),
         signal,
       ))
-    return signal.aborted || !approved
+    return signal.aborted || decision === 'deny'
       ? { kind: 'reject' }
       : { kind: 'approve-once', approvedInteractively: !automatic }
   }

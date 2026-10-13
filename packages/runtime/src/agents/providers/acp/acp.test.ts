@@ -96,7 +96,7 @@ function run(cwd: string, launch: AgentRun['acpLaunch'], overrides: Partial<Agen
     onSession: (id) => sessions.push(id),
     onText: (text) => output.push(text),
     onActivity: () => {},
-    approve: async () => true,
+    approve: async () => 'approve' as const,
     ask: async () => null,
     ...overrides,
   }
@@ -204,7 +204,7 @@ it('closes and deletes an ephemeral ACP utility session when supported', async (
 
 it('auto-accepts ACP edits while asking for commands in auto-accept edits mode', async () => {
   const { cwd, record, launch } = await fixture(false, false, false, ['edit', 'execute'])
-  const approve = vi.fn<AgentRun['approve']>(async () => false)
+  const approve = vi.fn<AgentRun['approve']>(async () => 'deny' as const)
   const input = run(cwd, launch, { approve })
   input.run.agent.permission = 'workspace-write'
   await acpAdapter.run(input.run)
@@ -222,7 +222,7 @@ it('auto-accepts ACP edits while asking for commands in auto-accept edits mode',
 })
 it('classifies ACP fetch permissions independently of display titles and keeps edits supervised', async () => {
   const { cwd, launch } = await fixture(false, false, false, ['fetch', 'edit', 'execute'])
-  const approve = vi.fn<AgentRun['approve']>(async () => true)
+  const approve = vi.fn<AgentRun['approve']>(async () => 'approve' as const)
   const input = run(cwd, launch, { approve })
   input.run.agent.permission = 'ask'
   await acpAdapter.run(input.run)
@@ -255,7 +255,7 @@ it('keeps ACP child traffic and controls connected after the parent returns and 
   const f = await fixture(false, false, false, [], true)
   const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(true)
   const approve = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
-    async () => true,
+    async () => 'approve' as const,
   )
   const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
   let control: Parameters<NonNullable<AgentRun['onNativeSession']>>[0] | undefined

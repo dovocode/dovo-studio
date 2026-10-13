@@ -914,6 +914,7 @@ export class WorkspaceStore {
           record.runAttempt !== undefined ||
           record.preparation !== undefined ||
           record.pullStatus !== undefined ||
+          record.nativeTodos !== undefined ||
           record.contextUsage !== undefined ||
           record.sideChats !== undefined ||
           record.forkedFrom !== undefined ||

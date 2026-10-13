@@ -52,7 +52,7 @@ it('runs the Claude compact command and reports its boundary', async () => {
     onText: () => {},
     onActivity: () => {},
     onEvent: (name) => events.push(name),
-    approve: async () => false,
+    approve: async () => 'deny' as const,
     ask: async () => null,
   }
   await claudeAdapter.run(run)
@@ -156,7 +156,7 @@ it('keeps a streaming Claude connection across turns', async () => {
     onTextBoundary: () => output.push('boundary'),
     onActivity: () => {},
     onEvent: (name) => events.push(name),
-    approve: async () => false,
+    approve: async () => 'deny' as const,
     ask: async () => null,
   }
   try {
@@ -253,7 +253,7 @@ it('continues native-agent discovery after a warm parent turn ends and rebinds i
     onActivity: () => {},
     onEvent: events,
     onSubagentEvent: native,
-    approve: async () => false,
+    approve: async () => 'deny' as const,
     ask: async () => null,
   }
   try {
@@ -377,7 +377,7 @@ function nativeRun(onSubagentEvent: AgentRun['onSubagentEvent']): AgentRun {
     onText: () => {},
     onActivity: () => {},
     onSubagentEvent,
-    approve: vi.fn<AgentRun['approve']>(async () => false),
+    approve: vi.fn<AgentRun['approve']>(async () => 'deny' as const),
     ask: vi.fn<AgentRun['ask']>(async () => null),
   }
 }
@@ -446,7 +446,7 @@ it('routes only live native-agent approvals and questions through the session af
   const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
   const run = nativeRun(native)
   const approve = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
-    async () => true,
+    async () => 'approve' as const,
   )
   const ask = vi.fn<AgentRun['ask']>(async () => ({ '0': ['Small change'] }))
   run.nativeAgentInteractions = { approve, ask }
@@ -467,6 +467,7 @@ it('routes only live native-agent approvals and questions through the session af
       'Bash',
       expect.stringContaining('pwd'),
       expect.any(AbortSignal),
+      undefined,
       undefined,
     )
     await expect(

@@ -495,7 +495,7 @@ function PrimaryReviewPane({
                     chooseFile(finding.path)
                 }}
               />
-              <CommitBar task={task} />
+              <CommitBar task={task} approved={!!codeReview.report?.approved} />
               {file && !pendingDraft && <DiskActions task={task} file={file} />}
               {file && <ReviewFeedback key={file.path} task={task} file={file} />}
             </div>

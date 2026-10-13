@@ -1,6 +1,6 @@
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
 import { runtimeOperation } from '../../errors.js'
-import { linkedCheckoutsSchema } from '@dovo/protocol'
+import { approvalDecisionSchema, linkedCheckoutsSchema } from '@dovo/protocol'
 import { settingsScopeSchema, settingsScopes, scopedAgentEntries } from '@dovo/protocol'
 import { scopedSettingsRoute } from './scoped-settings-routes.js'
 import { decodeResult } from '@dovo/protocol'
@@ -600,10 +600,12 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             id: idSchema,
             allow: Schema.Boolean,
             remember: Schema.optional(Schema.Boolean),
+            decision: Schema.optional(approvalDecisionSchema),
           }),
           yield* serviceResult(body(request)),
         )
-        s.approvals.respond(input.id, input.allow, input.remember)
+        if (input.decision) s.approvals.decide(input.id, input.decision)
+        else s.approvals.respond(input.id, input.allow, input.remember)
         return yield* serviceResult({
           ok: true,
         })
@@ -852,6 +854,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           throw new HttpError(400, 'This project does not use Git')
         if (s.store.task(input.id).status === 'running')
           throw new HttpError(409, 'Wait for the agent to finish before committing.')
+        if (input.push && !(yield* serviceResult(s.taskReviews.isApproved(input.id))))
+          throw new HttpError(
+            409,
+            'Approve the current reviewed changes before pushing. Run a review, resolve its findings, and approve.',
+          )
         const cwd = yield* serviceResult(s.checkouts.directory(input.id))
         let message = input.message
         if (!message) {

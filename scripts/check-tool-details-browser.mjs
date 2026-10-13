@@ -10,9 +10,16 @@ import {updateAppPreferences} from '@dovo/studio-core';
 import {TaskActivity} from './src/chat/thread/task-activity.tsx';import {recentTools,compactActivityEvents} from '@dovo/protocol';
 const payload=JSON.stringify({event:{item:{type:'command_execution',command:'echo command-visible',aggregatedOutput:'OUTPUT-ONLY-WHEN-ENABLED'}}});
 const tools=[{id:'command',summary:'Command',status:'completed',time:'2026-10-02T12:00:00Z',payload}];
+const museTool=(id,tool,args,extra={})=>({id,summary:tool,status:'completed',time:'2026-10-02T12:00:00Z',payload:JSON.stringify({event:{item:{kind:'toolCall',tool,args:JSON.stringify(args),...extra}}})});
+const museTools=[
+ museTool('muse-bash','bash',{command:'pnpm test',description:'Run tests'},{visibleOutput:'ok'}),
+ museTool('muse-read','read_file',{path:'src/app.ts',limit:120},{visibleOutput:['Read text file src/app.ts.','1|one','2|two'].join(String.fromCharCode(10))}),
+ museTool('muse-edit','edit_file',{path:'src/app.ts',find:'a',replace:'b'},{patchSummary:{added:1,files:1,removed:1},visibleOutput:['edited','changed lines: line 3','--- original','+++ updated','@@ -1 +1 @@','-a','+b'].join(String.fromCharCode(10))}),
+ museTool('muse-search','search',{pattern:'needle',paths:['src']},{visibleOutput:''}),
+];
 updateAppPreferences({toolActivity:'expanded',showToolDetails:false});
 window.setDetails=enabled=>updateAppPreferences({showToolDetails:enabled});
-window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App(){const[failed,setFailed]=useState(false);const[source,setSource]=useState(tools);window.failTool=()=>setFailed(true);window.terminalCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);const command='pnpm dev -- --host 0.0.0.0';const base={kind:'tool',scope:'task',time:'2026-10-02T12:00:00Z',summary:'Terminal command'};setSource(recentTools(compactActivityEvents([{...base,id:'terminal',payload:JSON.stringify({turnId:'turn',toolId:'terminal:1',status:'completed',terminalCommand:true,presentation:{kind:'command',title:command,input:command,output:'Started in terminal.'}})},{...base,id:'native',summary:'terminal_run',payload:JSON.stringify({turnId:'turn',toolId:'native',status:'completed',event:{item:{tool:'terminal_run',arguments:{command}}}})}])))};return <TaskActivity tools={failed?source.map(tool=>({...tool,status:'failed'})):source}/>};createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
+window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App(){const[failed,setFailed]=useState(false);const[source,setSource]=useState(tools);window.museCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);setSource(museTools)};window.failTool=()=>setFailed(true);window.terminalCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);const command='pnpm dev -- --host 0.0.0.0';const base={kind:'tool',scope:'task',time:'2026-10-02T12:00:00Z',summary:'Terminal command'};setSource(recentTools(compactActivityEvents([{...base,id:'terminal',payload:JSON.stringify({turnId:'turn',toolId:'terminal:1',status:'completed',terminalCommand:true,presentation:{kind:'command',title:command,input:command,output:'Started in terminal.'}})},{...base,id:'native',summary:'terminal_run',payload:JSON.stringify({turnId:'turn',toolId:'native',status:'completed',event:{item:{tool:'terminal_run',arguments:{command}}}})}])))};return <TaskActivity tools={failed?source.map(tool=>({...tool,status:'failed'})):source}/>};createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -63,6 +70,27 @@ try {
     throw new Error('Agent terminal commands must render once, using the Bash command card.')
   await terminalCard.locator('summary').click()
   await terminalCard.locator('pre').filter({ hasText: 'pnpm dev -- --host 0.0.0.0' }).waitFor()
+  await page.evaluate(() => window.museCase())
+  const text = () => page.locator('body').textContent()
+  await page.getByText('Read app.ts', { exact: true }).waitFor()
+  for (const expected of [
+    'Run tests',
+    'src/app.ts · lines 1–2',
+    'Edit app.ts',
+    'src/app.ts · +1 −1',
+    'Search needle',
+    '@@ -1 +1 @@',
+    '-a',
+    '+b',
+  ])
+    if (!(await text()).includes(expected)) throw new Error(`Muse tool context missing: ${expected}`)
+  const editRows = page.locator('details.group\\/action').filter({ hasText: 'Edit app.ts' })
+  await editRows.locator('summary').click()
+  await editRows.getByText('+b', { exact: true }).waitFor()
+  if ((await editRows.locator('[data-diff="added"]').count()) !== 1)
+    throw new Error('Diff additions must carry the added marker rendered green in the app.')
+  if ((await editRows.locator('[data-diff="removed"]').count()) !== 1)
+    throw new Error('Diff removals must carry the removed marker rendered red in the app.')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Commands remain visible; tool output and raw details mount only when settings enable them and unmount immediately when disabled.',

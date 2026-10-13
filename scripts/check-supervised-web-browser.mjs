@@ -166,7 +166,7 @@ try {
     assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
       id: 'approval',
       allow: true,
-      remember: true,
+      decision: 'always',
     })
     for (const allow of [true, false]) {
       await ui.getByRole('button', { name: allow ? 'Allow once' : 'Deny', exact: true }).click()
@@ -176,6 +176,7 @@ try {
       assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
         id: 'approval',
         allow,
+        decision: allow ? 'approve' : 'deny',
       })
     }
   }
@@ -209,8 +210,8 @@ try {
     await page
       .locator('#desktop')
       .getByRole('button', { name: 'Always allow in this project', exact: true })
-      .isDisabled(),
-    true,
+      .count(),
+    0,
   )
   // Older runtimes still expose their existing command-only remembering behavior.
   await page.evaluate(() => window.approval({ title: 'Run command', rememberRule: undefined }))

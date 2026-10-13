@@ -25,11 +25,13 @@ export const activityIcon = (kind: ReturnType<typeof toolPresentation>['kind']):
       ? 'terminal'
       : kind === 'web'
         ? 'web'
-        : kind === 'file'
-          ? 'folder'
-          : kind === 'reasoning'
-            ? 'chat'
-            : 'settings'
+        : kind === 'search'
+          ? 'search'
+          : kind === 'file'
+            ? 'folder'
+            : kind === 'reasoning'
+              ? 'chat'
+              : 'settings'
 export const activityStatus = (status: string) =>
   ['failed', 'error'].includes(status)
     ? 'Failed'
@@ -38,6 +40,31 @@ export const activityStatus = (status: string) =>
       : status === 'interrupted'
         ? 'Interrupted'
         : ''
+export function MobileDiffText({ text, colors }: { text: string; colors: { text: string } }) {
+  return (
+    <>
+      {text.split('\n').map((line, index) => (
+        <Text
+          key={index}
+          selectable
+          style={{
+            fontFamily: 'Menlo',
+            fontSize: 11,
+            lineHeight: 16,
+            color:
+              line.startsWith('+') && !line.startsWith('+++')
+                ? '#1a7f37'
+                : line.startsWith('-') && !line.startsWith('---')
+                  ? '#cf222e'
+                  : colors.text,
+          }}
+        >
+          {line || ' '}
+        </Text>
+      ))}
+    </>
+  )
+}
 export function ToolActivityRow({
   event,
   compact = false,
@@ -55,7 +82,11 @@ export function ToolActivityRow({
     () => (references.length ? [] : toolImages(event.payload)),
     [event.payload, references],
   )
-  const expandable = showToolDetails || (detail.kind === 'command' && !!detail.input)
+  const expandable =
+    showToolDetails ||
+    (detail.kind === 'command' && !!detail.input) ||
+    !!detail.diff ||
+    (detail.kind === 'file' && !!detail.input)
   const running = pendingActivity(event.status)
   const status = activityStatus(event.status)
   return (
@@ -81,20 +112,26 @@ export function ToolActivityRow({
         })}
       >
         <Icon name={activityIcon(detail.kind)} size={14} color={colors.muted} />
-        <Text
-          numberOfLines={compact ? 1 : 2}
-          style={[
-            styles.muted,
-            {
-              flex: 1,
-              fontSize: 13,
-              lineHeight: 18,
-            },
-          ]}
-        >
-          {running && detail.kind === 'command' && detail.title === detail.input ? 'Running ' : ''}
-          {detail.title}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            numberOfLines={compact ? 1 : 2}
+            style={[
+              styles.muted,
+              {
+                fontSize: 13,
+                lineHeight: 18,
+              },
+            ]}
+          >
+            {running && detail.kind === 'command' && detail.title === detail.input ? 'Running ' : ''}
+            {detail.title}
+          </Text>
+          {!!detail.detail && (
+            <Text numberOfLines={1} style={[styles.muted, { fontSize: 11, lineHeight: 15, opacity: 0.75 }]}>
+              {detail.detail}
+            </Text>
+          )}
+        </View>
         {running ? (
           <ActivityIndicator size="small" color={colors.muted} />
         ) : (
@@ -142,7 +179,7 @@ export function ToolActivityRow({
             gap: 8,
           }}
         >
-          {!!detail.input && (showToolDetails || detail.kind === 'command') && (
+          {!!detail.input && (showToolDetails || detail.kind === 'command' || detail.kind === 'file') && (
             <Text
               selectable
               style={[
@@ -157,6 +194,7 @@ export function ToolActivityRow({
               {detail.input}
             </Text>
           )}
+          {!!detail.diff && <MobileDiffText text={detail.diff} colors={colors} />}
           {showToolDetails &&
             !!detail.output &&
             (detail.kind === 'reasoning' ? (

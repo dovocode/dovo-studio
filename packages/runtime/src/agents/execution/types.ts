@@ -10,6 +10,7 @@ export type NativeAgentSession = {
   /** Stop one native child, or all children owned by this session, and await cleanup. */
   stop: (id?: string) => Promise<void>
 }
+export type ApprovalDecision = 'approve' | 'session' | 'always' | 'deny'
 export interface AcpLaunch {
   /** Built-in headless authentication; custom ACP installs keep their own flow. */
   authentication?: 'grok'
@@ -53,10 +54,27 @@ export interface AgentRun {
   onNativeTurnEnd?: () => void
   /** Session-owned interactions for native agents that outlive the parent turn. */
   nativeAgentInteractions?: {
-    approve: (title: string, detail: string, signal: AbortSignal, kind?: 'web') => Promise<boolean>
+    approve: (
+      title: string,
+      detail: string,
+      signal: AbortSignal,
+      kind?: 'web',
+      options?: {
+        session?: boolean
+        always?: boolean
+      },
+    ) => Promise<ApprovalDecision>
     ask: AgentRun['ask']
   }
-  approve: (title: string, detail: string, kind?: 'web') => Promise<boolean>
+  approve: (
+    title: string,
+    detail: string,
+    kind?: 'web',
+    options?: {
+      session?: boolean
+      always?: boolean
+    },
+  ) => Promise<ApprovalDecision>
   ask: (
     prompt: QuestionPrompt,
     signal?: AbortSignal,

@@ -136,7 +136,7 @@ it('retains approval requests and decisions, redacting CLI credentials without l
     )
     const id = approvals.list()[0].id
     approvals.respond(id, true)
-    await expect(result).resolves.toBe(true)
+    await expect(result).resolves.toBe('approve')
     expect(log.list('', 'approval', 0).events).toHaveLength(2)
     expect(redact({ args: ['cli', '--token', 'private'], exitCode: 1 })).toEqual({
       args: ['cli', '--token', '[redacted]'],
@@ -177,7 +177,7 @@ it('remembers exact command approvals per project and allows them after restart'
       new AbortController().signal,
     )
     approvals.respond(approvals.list()[0].id, true, true)
-    await expect(first).resolves.toBe(true)
+    await expect(first).resolves.toBe('always')
     expect(store.get().repositories[0].approvedCommands).toEqual(['pnpm test'])
     const reopened = new Approvals(undefined, new WorkspaceStore(db))
     await expect(
@@ -187,7 +187,7 @@ it('remembers exact command approvals per project and allows them after restart'
         JSON.stringify({ command: 'pnpm test' }),
         new AbortController().signal,
       ),
-    ).resolves.toBe(true)
+    ).resolves.toBe('approve')
     expect(reopened.list()).toHaveLength(0)
     const other = reopened.request(
       'task',
@@ -197,7 +197,7 @@ it('remembers exact command approvals per project and allows them after restart'
     )
     expect(reopened.list()).toHaveLength(1)
     reopened.respond(reopened.list()[0].id, false)
-    await expect(other).resolves.toBe(false)
+    await expect(other).resolves.toBe('deny')
   } finally {
     db.close()
   }

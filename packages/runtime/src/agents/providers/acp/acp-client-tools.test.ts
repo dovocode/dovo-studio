@@ -35,7 +35,7 @@ async function setup(permission: AgentRun['agent']['permission'] = 'ask', approv
     onSession: () => {},
     onText: () => {},
     onActivity: () => {},
-    approve: async () => approved,
+    approve: async () => (approved ? 'approve' : 'deny') as const,
     ask: async () => null,
   }
   return { cwd, controller, run, tools: await acpClientTools(run, () => 'session') }
@@ -80,7 +80,7 @@ it('rejects an approved terminal request after client tools have closed', async 
   run.approve = async () => {
     approving.resolve()
     await release.promise
-    return true
+    return 'approve' as const
   }
   const request = tools.client.createTerminal?.({ sessionId: 'session', command: process.execPath })
   try {

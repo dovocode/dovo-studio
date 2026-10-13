@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
-import { compareCodeReviews, supportsAccess, type Task, type CodeFinding } from '@dovo/protocol'
+import {
+  compareCodeReviews,
+  supportsAccess,
+  approvalIsCurrent,
+  type Task,
+  type CodeFinding,
+} from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../../ui/theme'
 import { Text } from '../../ui/content/text'
@@ -143,7 +149,41 @@ export function CodeReviewReport({
             onPress={() => onSince(selected.id)}
           />
         )}
+        {selected?.status === 'completed' &&
+          (approvalIsCurrent(selected) ? (
+            <Action
+              secondary
+              label="Approved · Undo"
+              disabled={review.busy || !connected || editing}
+              onPress={() => void review.run('approve', { reviewId: selected.id, approved: false })}
+            />
+          ) : (
+            <Action
+              label="Approve changes"
+              disabled={
+                review.busy ||
+                !connected ||
+                editing ||
+                !!open.length ||
+                !(selected === latest && review.report?.current)
+              }
+              onPress={() => void review.run('approve', { reviewId: selected.id, approved: true })}
+            />
+          ))}
       </View>
+      {selected?.status === 'completed' &&
+        (approvalIsCurrent(selected) ? (
+          <Text accessibilityRole="summary" style={styles.muted}>
+            Approved {new Date(selected.approval!.approvedAt).toLocaleString()} · Commit &amp; push
+            enabled for this reviewed revision.
+          </Text>
+        ) : selected.approval ? (
+          <Text accessibilityRole="alert" style={styles.muted}>
+            Approved revision moved or was superseded. Re-review before pushing.
+          </Text>
+        ) : open.length ? (
+          <Text style={styles.muted}>Resolve or dismiss open findings to approve changes.</Text>
+        ) : null)}
       {!!review.error && (
         <>
           <Text accessibilityRole="alert" style={styles.error}>

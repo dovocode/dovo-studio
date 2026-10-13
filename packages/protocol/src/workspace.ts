@@ -535,6 +535,18 @@ export const taskSchema = mutableStruct({
       snapshot: Schema.optional(Schema.String),
     }),
   ),
+  // Runtime-owned: the provider's native todo list, replaced whole on every update.
+  nativeTodos: Schema.optional(
+    maxValue(
+      mutableArray(
+        mutableStruct({
+          text: maxValue(minValue(Schema.String, 1), 2000),
+          status: Schema.Literals(['pending', 'in-progress', 'completed']),
+        }),
+      ),
+      100,
+    ),
+  ),
   // Runtime-owned: how full the agent's context window is, from its latest usage report.
   contextUsage: Schema.optional(
     mutableStruct({

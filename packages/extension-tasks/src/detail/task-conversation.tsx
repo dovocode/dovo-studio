@@ -29,6 +29,7 @@ import type { CodeReference } from './code-reference'
 import { PreparationProgress } from '../chat/thread/preparation-progress'
 import { ReviewCommentsTray } from '../chat/thread/review-comments-tray'
 import { PlanApproval } from '../chat/thread/plan-approval'
+import { NativeTodos } from '../chat/thread/native-todos'
 import { ReviewFindings } from '../chat/thread/review-findings'
 import { useTaskViewed } from '../chat/thread/use-task-viewed'
 import { Button } from '@dovo/studio-ui'
@@ -285,6 +286,7 @@ export function TaskConversation({
       <TaskQuestions taskId={task.id} />
       <RunControls task={task} />
       <PlanApproval task={task} />
+      <NativeTodos task={task} />
       {onCodeReview && <CodeReviewCard task={task} onOpen={onCodeReview} visible={visible} />}
       <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />
       <ReviewCommentsTray task={task} className="px-5 pb-2" />

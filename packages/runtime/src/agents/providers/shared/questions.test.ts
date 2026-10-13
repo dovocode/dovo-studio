@@ -21,7 +21,7 @@ function run(ask: AgentRun['ask']): AgentRun {
     onSession: () => {},
     onText: () => {},
     onActivity: () => {},
-    approve: async () => false,
+    approve: async () => 'deny' as const,
     ask,
   }
 }

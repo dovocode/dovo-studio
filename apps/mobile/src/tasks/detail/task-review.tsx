@@ -357,7 +357,9 @@ export function TaskReview({
               Snapshot diff for this turn. Select Current changes to edit files.
             </Text>
           )}
-          {toolsOpen && !checkoutId && !checkpoint && <CommitSection task={task} />}
+          {toolsOpen && !checkoutId && !checkpoint && (
+            <CommitSection task={task} approved={!!codeReview.report?.approved} />
+          )}
           <View style={styles.row}>
             <Action
               secondary

@@ -5,6 +5,16 @@ import type { Agent } from '@dovo/protocol'
 const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const string = (value: unknown) => (typeof value === 'string' ? value : '')
+function parseArgs(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string') return object(value)
+  try {
+    return object(JSON.parse(value))
+  } catch {
+    return {}
+  }
+}
+const argText = (value: unknown) => (typeof value === 'string' ? value : '')
+const truncate = (value: string) => (value.length > 120 ? `${value.slice(0, 117)}…` : value)
 export function toolEvent(provider: Agent['provider'], name: string, payload: unknown) {
   const data = object(payload)
   if (provider === 'codex' && ['item/started', 'item/completed'].includes(name)) {
@@ -72,13 +82,30 @@ export function toolEvent(provider: Agent['provider'], name: string, payload: un
   if (provider === 'muse' && ['item/started', 'item/updated', 'item/completed'].includes(name)) {
     const item = object(data.item)
     if (!['toolCall', 'userShell', 'subagent', 'workflow'].includes(string(item.kind))) return
+    const tool = string(item.tool)
+    // Muse tool items carry their arguments as JSON in `item.args` and never set an
+    // explicit title, so derive the row label from the call's own context here; the
+    // client re-derives the same context from the retained payload for detail rows.
+    const args = parseArgs(item.args)
+    const command = argText(item.commandText) || argText(args.command) || argText(args.cmd)
+    const target =
+      argText(args.file_path) ||
+      argText(args.path) ||
+      argText(args.filePath) ||
+      (Array.isArray(args.paths)
+        ? args.paths.filter((value): value is string => typeof value === 'string').join(', ')
+        : '')
+    const base = target ? target.split(/[\\/]/).at(-1) || target : ''
+    const title = command
+      ? command
+      : /^(?:search|grep|glob)$/i.test(tool)
+        ? `Search ${truncate(argText(args.pattern) || argText(args.query) || argText(args.glob) || tool)}`
+        : base
+          ? `${/edit|patch/i.test(tool) ? 'Edit' : /write/i.test(tool) ? 'Write' : 'Read'} ${base}`
+          : tool || string(item.fallbackText) || string(item.kind)
     return {
       toolId: string(item.itemId),
-      title:
-        string(item.tool) ||
-        string(item.commandText) ||
-        string(item.fallbackText) ||
-        string(item.kind),
+      title,
       status:
         item.status === 'inProgress'
           ? 'running'

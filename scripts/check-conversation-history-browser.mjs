@@ -545,6 +545,7 @@ return <div>{h.task.messages.map(message=><div data-pending-message={message.id}
                 'preparation-progress': 'PreparationProgress',
                 'review-comments-tray': 'ReviewCommentsTray',
                 'plan-approval': 'PlanApproval',
+                'native-todos': 'NativeTodos',
                 'review-findings': 'ReviewFindings',
                 'code-review-card': 'CodeReviewCard',
                 'task-pull-link-dialog': 'TaskPullLinkDialog',

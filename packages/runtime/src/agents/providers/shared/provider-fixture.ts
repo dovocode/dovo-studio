@@ -34,7 +34,7 @@ export async function providerFixture(provider: Agent['provider'], code: string)
     onSession: (id) => sessions.push(id),
     onActivity: () => {},
     onEvent: (name, value) => events.push({ name, value }),
-    approve: async () => true,
+    approve: async () => 'approve' as const,
     ask: async () => ({ answer: ['yes'] }),
   }
   const messages = async (): Promise<

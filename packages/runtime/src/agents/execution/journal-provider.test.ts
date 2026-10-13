@@ -44,7 +44,7 @@ it('retires callbacks after every physical execution, including hook repair atte
       onSession: vi.fn<AgentRun['onSession']>(),
       onPromptAccepted: vi.fn<NonNullable<AgentRun['onPromptAccepted']>>(),
       ask: vi.fn<AgentRun['ask']>().mockResolvedValue(null),
-      approve: vi.fn<AgentRun['approve']>().mockResolvedValue(false),
+      approve: vi.fn<AgentRun['approve']>().mockResolvedValue('deny' as const),
     }
     store.providerActions.record({
       id: 'start:attempt',
@@ -88,7 +88,7 @@ it('retires callbacks after every physical execution, including hook repair atte
     await provider.run(input)
     previous?.onText('Late repair text')
     previous?.onTextReplace?.('Late replacement', 0)
-    expect(retiredReplies).toEqual([false, null])
+    expect(retiredReplies).toEqual(['deny', null])
     expect(unownedTextError).toEqual(
       new Error('Provider text replacement exceeds its streamed output'),
     )

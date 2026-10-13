@@ -364,7 +364,7 @@ const remoteAdapter: AgentAdapter = {
                       ['webfetch', 'websearch'].includes(event.properties.permission)
                         ? 'web'
                         : undefined,
-                    ),
+                    ).then((decision) => decision !== 'deny'),
                 eventsController.signal,
               ))
             await api.permission.reply(

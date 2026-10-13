@@ -10,6 +10,7 @@ import {
   taskReviewFindingSchema,
   taskReviewFixSchema,
   taskReviewChangesSchema,
+  taskReviewApprovalSchema,
 } from '@dovo/protocol'
 import { RuntimeServices } from '../../services.js'
 import { body } from '../support/body.js'
@@ -41,6 +42,10 @@ export function reviewRoute(request: IncomingMessage, path: string) {
       if (path === '/api/review/task/fix') {
         const { taskId, reviewId, findingIds, messageId } = decode(taskReviewFixSchema, input)
         return yield* serviceResult(s.taskReviews.fix(taskId, reviewId, findingIds, messageId))
+      }
+      if (path === '/api/review/task/approve') {
+        const { taskId, reviewId, approved } = decode(taskReviewApprovalSchema, input)
+        return yield* serviceResult(s.taskReviews.approve(taskId, reviewId, approved))
       }
       if (path === '/api/review/task/changes' || path === '/api/review/task/stop') {
         const { taskId, reviewId } = decode(taskReviewChangesSchema, input)

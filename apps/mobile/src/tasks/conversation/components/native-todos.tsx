@@ -1,0 +1,71 @@
+import { useState } from 'react'
+import { Pressable, View } from 'react-native'
+import { nativeTodoSummary, type Task } from '@dovo/protocol'
+import { Icon } from '../../../ui/controls/icon'
+import { Text } from '../../../ui/content/text'
+import { useTheme } from '../../../ui/theme'
+
+/** The provider's native todo list (Muse `session/todoListChanged`), latest state only. */
+export function NativeTodos({ task }: { task: Task }) {
+  const { colors, styles } = useTheme()
+  const [open, setOpen] = useState(false)
+  const summary = nativeTodoSummary(task)
+  if (!summary) return null
+  const todos = task.nativeTodos ?? []
+  return (
+    <View style={[styles.card, { marginHorizontal: 16, marginBottom: 6, gap: 8 }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`Checklist, ${summary.completed} of ${summary.total} done`}
+        onPress={() => setOpen((value) => !value)}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 }}
+      >
+        <Icon name="checklist" size={15} color={colors.muted} />
+        <Text style={[styles.text, { fontWeight: '600' }]}>
+          Checklist · {summary.completed} of {summary.total} done
+        </Text>
+        {!!summary.active && !open && (
+          <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
+            {summary.active}
+          </Text>
+        )}
+      </Pressable>
+      {open &&
+        todos.map((todo, index) => (
+          <View key={index} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+            <Icon
+              name={
+                todo.status === 'completed'
+                  ? 'checkCircle'
+                  : todo.status === 'in-progress'
+                    ? 'loader'
+                    : 'circle'
+              }
+              size={14}
+              color={
+                todo.status === 'completed'
+                  ? colors.success
+                  : todo.status === 'in-progress'
+                    ? colors.accent
+                    : colors.muted
+              }
+            />
+            <Text
+              style={[
+                styles.text,
+                { flex: 1 },
+                todo.status === 'completed'
+                  ? { color: colors.muted, textDecorationLine: 'line-through' }
+                  : todo.status === 'in-progress'
+                    ? { fontWeight: '600' }
+                    : undefined,
+              ]}
+            >
+              {todo.text}
+            </Text>
+          </View>
+        ))}
+    </View>
+  )
+}

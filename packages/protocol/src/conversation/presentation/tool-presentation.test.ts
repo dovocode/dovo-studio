@@ -44,6 +44,8 @@ it('shows supplied computer-use titles, readable commands and output without pro
     input: 'await app.getAXState()',
     output: 'Desktop ready',
   })
+  // New optional context fields stay absent when a harness supplies none.
+  expect(toolPresentation('{}', 'Tool')).toEqual({ title: 'Tool', input: '', output: '', kind: 'tool' })
   expect(
     toolPresentation(
       JSON.stringify({
@@ -53,7 +55,14 @@ it('shows supplied computer-use titles, readable commands and output without pro
       }),
       'commandExecution',
     ),
-  ).toEqual({ title: 'git status', kind: 'command', input: 'git status', output: 'Clean' })
+  ).toEqual({
+    title: 'git status',
+    kind: 'command',
+    input: 'git status',
+    output: 'Clean',
+    detail: undefined,
+    diff: undefined,
+  })
 })
 it('splits batched Claude tools and preserves each input when separate results arrive', () => {
   const start = event(
@@ -86,6 +95,8 @@ it('splits batched Claude tools and preserves each input when separate results a
     input: 'rg todo',
     output: 'Found 2',
     kind: 'command',
+    detail: undefined,
+    diff: undefined,
   })
   expect(activitySummary(calls)).toBe('Ran 1 command and 1 file operation')
 })
@@ -133,7 +144,14 @@ it('summarizes distinct activity without counting reasoning as a tool', () => {
   expect(activitySummary(calls)).toBe('Used Computer Use, ran 1 command, and used 1 tool')
   expect(
     toolPresentation(calls.find((call) => call.kind === 'reasoning')!.payload, 'Reasoning'),
-  ).toEqual({ title: 'Reasoning', input: '', output: 'Check the source first.', kind: 'reasoning' })
+  ).toEqual({
+    title: 'Reasoning',
+    input: '',
+    output: 'Check the source first.',
+    kind: 'reasoning',
+    detail: undefined,
+    diff: undefined,
+  })
 })
 it('handles legacy text, unknown payloads and truncated event JSON without crashing', () => {
   expect(toolPresentation('raw output', 'Old tool')).toEqual({
@@ -142,6 +160,7 @@ it('handles legacy text, unknown payloads and truncated event JSON without crash
     output: 'raw output',
     kind: 'tool',
   })
+  expect(toolPresentation('raw output', 'Old tool')).not.toHaveProperty('detail')
   expect(toolPresentation('{}', 'Tool').output).toBe('')
   expect(recentTools([{ ...event('x', 'x', 'recorded', {}), payload: '{broken' }])).toHaveLength(1)
 })
@@ -224,6 +243,8 @@ it('shows authoritative terminal commands like Bash and avoids duplicate native 
     title: command,
     input: command,
     output: 'Started in terminal.',
+    detail: undefined,
+    diff: undefined,
   })
   const bash = toolPresentation(
     JSON.stringify({ event: { item: { type: 'commandExecution', command } } }),
@@ -232,6 +253,109 @@ it('shows authoritative terminal commands like Bash and avoids duplicate native 
   expect(bash.kind).toBe('command')
   expect(bash.input).toBe(command)
   expect(activitySummary(calls)).toBe('Ran 1 command')
+})
+
+it('shows Muse bash, read and edit context from item args, visible output and patch counts', () => {
+  expect(
+    toolPresentation(
+      JSON.stringify({
+        event: {
+          item: {
+            kind: 'toolCall',
+            tool: 'bash',
+            args: JSON.stringify({ command: 'pnpm test', description: 'Run tests', yield_time_ms: 60000 }),
+            visibleOutput: 'ok',
+          },
+        },
+      }),
+      'bash',
+    ),
+  ).toEqual({
+    title: 'pnpm test',
+    input: 'pnpm test',
+    output: 'ok',
+    kind: 'command',
+    detail: 'Run tests',
+    diff: undefined,
+  })
+  expect(
+    toolPresentation(
+      JSON.stringify({
+        event: {
+          item: {
+            kind: 'toolCall',
+            tool: 'read_file',
+            args: JSON.stringify({ path: 'packages/app.ts', limit: 120 }),
+            visibleOutput: 'Read text file `packages/app.ts`.\n1|first\n2|second',
+          },
+        },
+      }),
+      'read_file',
+    ),
+  ).toEqual({
+    title: 'Read app.ts',
+    input: 'packages/app.ts',
+    output: 'Read text file `packages/app.ts`.\n1|first\n2|second',
+    kind: 'file',
+    detail: 'packages/app.ts · lines 1–2',
+    diff: undefined,
+  })
+  const body = [
+    'edited',
+    'changed lines: line 15',
+    '--- original',
+    '+++ updated',
+    '@@ -1,2 +1,3 @@',
+    ' keep',
+    '-old',
+    '+new',
+    '+added',
+  ].join('\n')
+  expect(
+    toolPresentation(
+      JSON.stringify({
+        event: {
+          item: {
+            kind: 'toolCall',
+            tool: 'edit_file',
+            args: JSON.stringify({ path: 'packages/app.ts', find: 'old', replace: 'new' }),
+            patchSummary: { added: 2, files: 1, removed: 1 },
+            visibleOutput: body,
+          },
+        },
+      }),
+      'edit_file',
+    ),
+  ).toEqual({
+    title: 'Edit app.ts',
+    input: 'packages/app.ts',
+    output: '',
+    kind: 'file',
+    detail: 'packages/app.ts · +2 −1',
+    diff: '@@ -1,2 +1,3 @@\n keep\n-old\n+new\n+added',
+  })
+  expect(
+    toolPresentation(
+      JSON.stringify({
+        event: {
+          item: {
+            kind: 'toolCall',
+            tool: 'search',
+            args: JSON.stringify({ pattern: 'toolPresentation', paths: ['packages/protocol/src'] }),
+            visibleOutput: '',
+          },
+        },
+      }),
+      'search',
+    ),
+  ).toEqual({
+    title: 'Search toolPresentation',
+    input: 'toolPresentation',
+    output: '',
+    kind: 'search',
+    detail: 'toolPresentation',
+    diff: undefined,
+  })
 })
 
 it('keeps terminal command identity through compact activity and preserves failed native calls', async () => {

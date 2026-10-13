@@ -236,6 +236,11 @@ export function compactActivityEvents(events: Event[]): Event[] {
             ...presentation,
             input: presentation.kind === 'command' ? presentation.input : '',
             output: '',
+            // Compact search keeps its pattern in `detail`; otherwise mark that context
+            // still has to be derived from the retained raw args.
+            ...(presentation.kind === 'search' && !presentation.detail
+              ? { contextAt: 1 }
+              : {}),
           },
           ...(apps.length ? { mcpApps: apps } : {}),
           ...(artifacts.length ? { artifacts } : {}),

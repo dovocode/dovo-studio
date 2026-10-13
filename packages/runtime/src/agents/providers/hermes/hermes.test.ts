@@ -317,7 +317,7 @@ it('uses native compression acknowledgements', async () => {
 })
 it('routes native approvals and clarification replies', async () => {
   const f = await fixture(),
-    approve = vi.fn<() => Promise<boolean>>(async () => true)
+    approve = vi.fn<() => Promise<'approve'>>(async () => 'approve' as const)
   await f.adapter.run({ ...f.run, prompt: 'approval', approve })
   expect(approve).toHaveBeenCalledWith('Run command', 'pwd')
   expect((await f.messages()).find((frame) => frame.id === 'a-1')?.result).toEqual({

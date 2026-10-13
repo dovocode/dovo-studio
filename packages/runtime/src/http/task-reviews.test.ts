@@ -140,6 +140,53 @@ it('rejects invalid reports and concurrent reviews without waking the author', a
   expect((await f.read()).reviews[0].error).toContain('structured report')
   expect(f.s.store.task(f.task.id).queue).toBeUndefined()
 })
+it('approves only a completed current review with no open findings, and stale edits revoke it', async () => {
+  const f = await setup()
+  await f.call('start', { taskId: f.task.id, requestId: randomUUID() })
+  await vi.waitFor(async () => expect((await f.read()).reviews[0].status).toBe('completed'))
+  const review = (await f.read()).reviews[0]
+  // Open finding blocks approval.
+  expect(
+    (await f.call('approve', { taskId: f.task.id, reviewId: review.id, approved: true })).status,
+  ).toBe(409)
+  expect((await f.read()).approved).toBe(false)
+  await f.call('finding', {
+    taskId: f.task.id,
+    reviewId: review.id,
+    findingId: review.findings[0].id,
+    status: 'resolved',
+    resolution: 'Checked the fix',
+  })
+  expect(
+    (await f.call('approve', { taskId: f.task.id, reviewId: review.id, approved: true })).status,
+  ).toBe(200)
+  const approved = await f.read()
+  expect(approved.approved).toBe(true)
+  expect(approved.reviews[0].approval?.baseline).toBe(review.baseline)
+  // A file change after approval revokes it (no longer current).
+  await writeFile(join(f.f.directory, 'hello.txt'), 'changed again\n')
+  const stale = await f.read()
+  expect(stale.current).toBe(false)
+  expect(stale.approved).toBe(false)
+  expect(
+    (await f.call('approve', { taskId: f.task.id, reviewId: review.id, approved: true })).status,
+  ).toBe(409)
+  // Undo clears the approval. Note the review snapshot was taken when the file held
+  // 'changed\n'; restoring that exact content makes the review current again.
+  await writeFile(join(f.f.directory, 'hello.txt'), 'changed\n')
+  await vi.waitFor(async () => expect((await f.read()).current).toBe(true))
+  await f.call('finding', {
+    taskId: f.task.id,
+    reviewId: review.id,
+    findingId: review.findings[0].id,
+    status: 'resolved',
+    resolution: 'Checked the fix',
+  })
+  await f.call('approve', { taskId: f.task.id, reviewId: review.id, approved: true })
+  expect((await f.read()).approved).toBe(true)
+  await f.call('approve', { taskId: f.task.id, reviewId: review.id, approved: false })
+  expect((await f.read()).approved).toBe(false)
+})
 it('never claims successful dispatch is verified and retains command exit evidence', async () => {
   const f = await setup()
   f.s.activity.add('tool', f.task.id, 'pnpm test', {

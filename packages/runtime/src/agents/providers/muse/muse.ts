@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { Session, spawnMspConnection, readSessionDurability } from '@muse-code/sdk'
 import { Schema } from 'effect'
@@ -12,7 +14,7 @@ import {
 } from '@dovo/protocol'
 import type { AgentDiscovery } from '@dovo/protocol'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
-import { processEnvironment } from '../../../process.js'
+import { exec, processEnvironment } from '../../../process.js'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
 import { updateSubagents } from '../../execution/subagents.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
@@ -21,6 +23,7 @@ import { nativeObject as object, nativeText as text, nativeWait } from '../share
 const clientInfo = { name: 'dovo_studio', version: '0.1.0' }
 
 const rows = mutableStruct({
+  providerId: Schema.optional(Schema.String),
   models: mutableArray(
     mutableStruct({
       modelId: Schema.String,
@@ -31,9 +34,73 @@ const rows = mutableStruct({
       ),
       isDefault: Schema.optional(Schema.Boolean),
       defaultReasoningEffort: Schema.optional(Schema.String),
+      reasoningEffortVariants: Schema.optional(
+        mutableArray(
+          mutableStruct({
+            tier: Schema.String,
+            description: Schema.optional(Schema.String),
+          }),
+        ),
+      ),
     }),
   ),
 })
+export const REASONING_EFFORT_LABELS: Record<string, string> = {
+  none: 'None',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
+  ultra: 'Ultra',
+}
+const FALLBACK_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+const FALLBACK_DEFAULT_EFFORT = 'high'
+type MuseCatalogRow = {
+  modelId: string
+  providerId: string
+  displayLabel: string
+  variants?: string[] | 'unknown'
+  isDefault?: boolean
+  defaultReasoningEffort?: string
+  reasoningEffortVariants?: Array<{ tier: string; description?: string }>
+}
+export function museReasoningOptions(row?: Pick<
+  MuseCatalogRow,
+  'variants' | 'defaultReasoningEffort' | 'reasoningEffortVariants'
+>): {
+  defaultEffort: string | undefined
+  reasoning: Array<{ id: string; name: string; description?: string }>
+} {
+  const reported = row?.variants !== undefined && row.variants !== 'unknown'
+  const efforts: string[] = (reported ? (row.variants as string[]) : FALLBACK_EFFORTS).filter(
+    (id: string) => id in REASONING_EFFORT_LABELS,
+  )
+  const preferred = reported ? row.defaultReasoningEffort : FALLBACK_DEFAULT_EFFORT
+  const defaultEffort = efforts.find((id: string) => id === preferred) ?? efforts[0]
+  return {
+    defaultEffort,
+    reasoning: efforts.map((id: string) => {
+      const description = row?.reasoningEffortVariants?.find(
+        (variant) => variant.tier === id,
+      )?.description
+      return {
+        id,
+        name: REASONING_EFFORT_LABELS[id] ?? id,
+        ...(description ? { description } : {}),
+      }
+    }),
+  }
+}
+export function resolveMuseReasoningEffort(
+  row: Pick<MuseCatalogRow, 'variants' | 'defaultReasoningEffort' | 'reasoningEffortVariants'>,
+  effort: string | undefined,
+): string | undefined {
+  const { reasoning, defaultEffort } = museReasoningOptions(row)
+  if (!effort) return defaultEffort
+  return reasoning.some((option) => option.id === effort) ? effort : defaultEffort
+}
 const promptSchema = mutableStruct({
   userInputId: Schema.String,
   questions: mutableArray(
@@ -52,23 +119,212 @@ const promptSchema = mutableStruct({
     }),
   ),
 })
-function launch(agent: AgentDiscovery, cwd: string) {
+export function museServeArgs(options: {
+  readOnly?: boolean
+  fullAccess?: boolean
+  sessionLogging?: boolean
+}) {
+  const args = ['serve']
+  if (options.readOnly) {
+    args.push('--disable-shell', '--disable-write')
+    // Read-only generation still needs item notifications, which Muse only
+    // emits with its session log enabled.
+    if (options.sessionLogging !== true) args.push('--no-session-log')
+  } else {
+    args.push('--trust-workspace')
+    if (options.fullAccess) args.push('--disable-sandbox')
+  }
+  return args
+}
+/**
+ * How to start Muse on Windows. The SDK spawns without a shell, which neither
+ * resolves a bare `muse` through PATHEXT nor runs a `.cmd`/`.bat` launcher
+ * (Muse's own Windows launcher is one), so resolve the binary through PATH
+ * and PATHEXT and run script launchers under cmd.exe. Everywhere else the
+ * binary runs as given.
+ */
+export function museLaunch(
+  binaryPath: string,
+  platform: NodeJS.Platform = process.platform,
+  environment: NodeJS.ProcessEnv = process.env,
+  pathExists: (path: string) => boolean = existsSync,
+): { command: string; args: string[] } {
+  if (platform !== 'win32') return { command: binaryPath, args: [] }
+  const envValue = (name: string) => {
+    const key = Object.keys(environment).find(
+      (candidate) => candidate.toUpperCase() === name.toUpperCase(),
+    )
+    return key === undefined ? undefined : environment[key]
+  }
+  const resolved = resolveWindowsExecutable(binaryPath, envValue, pathExists) ?? binaryPath
+  if (!/\.(?:cmd|bat)$/i.test(resolved)) return { command: resolved, args: [] }
+  const systemRoot = envValue('SystemRoot')
+  return {
+    command:
+      envValue('ComSpec') ?? (systemRoot ? `${systemRoot}\\System32\\cmd.exe` : 'cmd.exe'),
+    // /d skips cmd's AutoRun commands, which could write into Muse's stdout.
+    // cmd /c drops the quotes from a command that starts with one and holds
+    // `&`, `@`, `^` or a parenthesis, so a quoted path follows a bare `@`
+    // (echo off), which keeps them; an unquoted path escapes them instead.
+    args: [
+      '/d',
+      '/c',
+      ...(/\s/.test(resolved) ? ['@', resolved] : [resolved.replace(/[()&<>@^|]/g, '^$&')]),
+    ],
+  }
+}
+/** Windows' verbatim form of a canonical path: `\\?\C:\…`, or `\\?\UNC\server\share\…`. */
+export function museVerbatimPath(path: string) {
+  if (path.startsWith('\\\\?\\')) return path
+  return path.startsWith('\\\\') ? `\\\\?\\UNC\\${path.slice(2)}` : `\\\\?\\${path}`
+}
+/**
+ * A workspace root in the form `session/start` accepts. On Windows Muse
+ * rejects anything but the verbatim canonical path, true case and long names
+ * included, so resolve with the native realpath. Muse itself still starts in
+ * the plain path: the `muse.cmd` launcher runs under cmd.exe, which cannot
+ * use a verbatim directory.
+ */
+export async function museWorkspaceRoot(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+) {
+  if (platform !== 'win32') return path
+  const canonical = await realpath(path).catch(() => path.replaceAll('/', '\\'))
+  return museVerbatimPath(canonical)
+}
+function resolveWindowsExecutable(
+  binaryPath: string,
+  envValue: (name: string) => string | undefined,
+  pathExists: (path: string) => boolean,
+) {
+  const hasDirectory = /[\\/]/.test(binaryPath)
+  const extensions = (envValue('PATHEXT') ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
+  const candidates = (base: string) =>
+    /\.[A-Za-z0-9]+$/.test(base.split('\\').at(-1) ?? '')
+      ? [base]
+      : extensions.map((extension) => base + extension)
+  if (hasDirectory) return candidates(binaryPath).find(pathExists)
+  for (const directory of (envValue('PATH') ?? '').split(';').filter(Boolean))
+    for (const candidate of candidates(`${directory}\\${binaryPath}`))
+      if (pathExists(candidate)) return candidate
+  return undefined
+}
+function launch(
+  agent: AgentDiscovery,
+  cwd: string,
+  options: { readOnly?: boolean; fullAccess?: boolean; sessionLogging?: boolean } = {},
+) {
+  const env = { ...processEnvironment(agent.env), MUSE_NO_AUTO_UPDATE: '1' }
+  const resolved = museLaunch(agent.endpoint || 'muse', process.platform, env)
   return spawnMspConnection({
-    command: agent.endpoint || 'muse',
-    args: agent.args?.length ? agent.args : ['serve'],
+    command: resolved.command,
+    args: [...resolved.args, ...(agent.args?.length ? agent.args : museServeArgs(options))],
     cwd,
-    env: processEnvironment(agent.env),
+    env,
     connection: { frameLimitBytes: 32 * 1024 * 1024 },
   })
 }
-export function museSelection(model: string) {
-  if (!model) return {}
+export type MuseSelection = { providerId: string; modelId: string }
+export function museSelection(model: string): MuseSelection | undefined {
+  if (!model) return undefined
   try {
     const selected: unknown = JSON.parse(model)
     return decode(mutableStruct({ providerId: Schema.String, modelId: Schema.String }), selected)
-  } catch (error) {
-    throw new Error('Select a provider-qualified Muse model from its catalog', { cause: error })
+  } catch {
+    // A bare model id is a custom model Muse resolves itself (for accounts
+    // that cannot use the listed catalog); keep Dovo's provider qualifier.
+    return { providerId: 'meta', modelId: model }
   }
+}
+export type MuseApprovalRequest = {
+  toolName?: string
+  subagentOrigin?: { subagentId: string }
+  rawArgs: string
+  subject?: {
+    kind: string
+    command?: string
+    path?: string
+    host?: string
+    target?: string
+    toolName?: string
+  }
+  availableChoices: Array<{ choiceId: string; decision: string; scope: string; label: string }>
+}
+export function museApprovalTitle(request: MuseApprovalRequest) {
+  const subject = request.subject
+  const detail =
+    subject?.command ?? subject?.path ?? subject?.host ?? subject?.target ?? subject?.toolName
+  const kind = !subject
+    ? 'tool'
+    : subject.kind === 'shell'
+      ? 'shell command'
+      : subject.kind === 'fileAccess'
+        ? 'file access'
+        : subject.kind === 'network'
+          ? 'network request'
+          : subject.kind
+  return detail ? `Muse ${kind}: ${detail}` : `Muse ${kind} request`
+}
+export function museApprovalScopes(request: MuseApprovalRequest) {
+  const approved = request.availableChoices.filter(
+    (choice) =>
+      choice.decision === 'approved' ||
+      choice.decision === 'approvedForSession' ||
+      choice.decision === 'approvedPolicyAmendment',
+  )
+  return {
+    session: approved.some(
+      (choice) => choice.decision === 'approvedForSession' || choice.scope === 'session',
+    ),
+    always: approved.some(
+      (choice) =>
+        choice.decision === 'approvedPolicyAmendment' || choice.scope === 'localPersistent',
+    ),
+  }
+}
+export function museApprovalChoice(
+  request: MuseApprovalRequest,
+  decision: 'approve' | 'session' | 'always' | 'deny',
+) {
+  const choices = request.availableChoices
+  const rank = (choice: MuseApprovalRequest['availableChoices'][number]) =>
+    (choice.scope === 'once' ? 0 : choice.scope === 'session' ? 2 : 4) +
+    (choice.decision.endsWith('PolicyAmendment') ? 1 : 0)
+  const pick = (candidates: MuseApprovalRequest['availableChoices']) =>
+    candidates.sort((a, b) => rank(a) - rank(b))[0]
+  if (decision === 'deny')
+    return (
+      choices.find((choice) => choice.decision === 'denied') ??
+      choices.find((choice) => choice.decision === 'abort')
+    )
+  if (decision === 'session')
+    return pick(
+      choices.filter(
+        (choice) =>
+          choice.decision === 'approvedForSession' ||
+          (choice.decision === 'approvedPolicyAmendment' && choice.scope === 'session') ||
+          (choice.decision === 'approved' && choice.scope === 'session'),
+      ),
+    )
+  if (decision === 'always')
+    return pick(
+      choices.filter(
+        (choice) =>
+          choice.decision === 'approvedPolicyAmendment' || choice.scope === 'localPersistent',
+      ),
+    )
+  return pick(
+    choices.filter(
+      (choice) =>
+        choice.decision === 'approved' ||
+        choice.decision === 'approvedForSession' ||
+        choice.decision === 'approvedPolicyAmendment',
+    ),
+  )
+}
+export function parseMuseVersion(output: string) {
+  return output.match(/(\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?)/)?.[1]
 }
 export function createMuseAdapter(): AgentAdapter {
   const idle = new IdleProviders<{
@@ -89,7 +345,7 @@ export function createMuseAdapter(): AgentAdapter {
       await Promise.all(sessions.map((session) => session.close()))
     },
     async models(agent) {
-      const host = launch(agent, homedir())
+      const host = launch(agent, homedir(), { readOnly: true })
       try {
         const ready = await nativeWait(
           host.initialize({ clientInfo }),
@@ -104,29 +360,53 @@ export function createMuseAdapter(): AgentAdapter {
             30000,
           ),
         )
-        const models = catalog.models.map((row) => ({
-          id: JSON.stringify({ providerId: row.providerId, modelId: row.modelId }),
-          name: row.displayLabel || row.modelId,
-          description: row.providerId,
-          isDefault: row.isDefault,
-          defaultReasoning: row.defaultReasoningEffort,
-          reasoning: Array.isArray(row.variants)
-            ? row.variants
-                .filter((id): id is string => typeof id === 'string')
-                .map((id) => ({ id, name: id }))
-            : [],
-        }))
+        if (catalog.providerId !== undefined && catalog.providerId !== 'meta')
+          throw new Error('Muse returned a model catalog for another provider')
+        const seen = new Set<string>()
+        const models = catalog.models.flatMap((row) => {
+          if (row.providerId !== 'meta' || seen.has(row.modelId)) return []
+          seen.add(row.modelId)
+          const options = museReasoningOptions(row)
+          return [
+            {
+              id: JSON.stringify({ providerId: row.providerId, modelId: row.modelId }),
+              name: row.displayLabel.trim() || row.modelId,
+              description: row.providerId,
+              isDefault: row.isDefault,
+              defaultReasoning: options.defaultEffort,
+              reasoning: options.reasoning,
+            },
+          ]
+        })
         return {
           models,
           reasoning: [
-            ...new Set(models.flatMap((model) => model.reasoning.map((effort) => effort.id))),
-          ].map((id) => ({ id, name: id })),
+            ...new Map(
+              models.flatMap((model) =>
+                model.reasoning.map((effort: { id: string; name: string }) => [
+                  effort.id,
+                  { id: effort.id, name: effort.name },
+                ]),
+              ),
+            ).values(),
+          ],
         }
       } finally {
         await host.close()
       }
     },
     async probe(agent) {
+      let version: string | undefined
+      try {
+        const output = await exec(agent.endpoint || 'muse', ['--version'], {
+          timeout: 5000,
+          env: { ...processEnvironment(agent.env), MUSE_NO_AUTO_UPDATE: '1' },
+          maxBuffer: 1024 * 1024,
+        })
+        version = parseMuseVersion(`${output.stdout}\n${output.stderr}`)
+      } catch {
+        // The MSP handshake below reports the actionable failure.
+      }
       const host = launch(agent, homedir())
       try {
         const ready = await nativeWait(
@@ -137,11 +417,13 @@ export function createMuseAdapter(): AgentAdapter {
           new AbortController().signal,
           30000,
         )
+        const granted = ready.initializeResult.grantedCapabilities.includes('sessionMcp')
+        // MSP exposes no auth signal, so never claim the user is signed in.
         return {
           provider: 'muse',
-          available: ready.initializeResult.grantedCapabilities.includes('sessionMcp'),
-          detail: ready.initializeResult.grantedCapabilities.includes('sessionMcp')
-            ? 'Muse native MSP host is available. Authenticate using the Muse Code CLI on this runtime.'
+          available: granted,
+          detail: granted
+            ? `Muse${version ? ` ${version}` : ''} native MSP host is ready. Sign-in status cannot be verified over MSP; run muse login on this runtime if turns fail.`
             : 'Update Muse to a host that grants sessionMcp for Dovo tools.',
         }
       } catch (error) {
@@ -174,11 +456,13 @@ export function createMuseAdapter(): AgentAdapter {
         if (run.taskId) idle.delete(run.taskId)
       }
       run.signal.throwIfAborted()
-      if (run.tools === 'none' || run.agent.permission === 'read-only')
-        throw new Error(
-          'Muse does not expose tool-free or read-only sessions. Choose another provider for restricted tasks and utilities.',
-        )
-      const host = launch(run.agent, run.cwd),
+      const readOnly = run.tools === 'none' || run.agent.permission === 'read-only'
+      const host = launch(run.agent, run.cwd, {
+          readOnly,
+          fullAccess: run.agent.permission === 'full-access',
+          // Utility turns still need item notifications to stream their reply.
+          sessionLogging: run.tools === 'none',
+        }),
         lifetime = new AbortController()
       let signal = AbortSignal.any([run.signal, lifetime.signal])
       let session: Session | undefined,
@@ -303,6 +587,13 @@ export function createMuseAdapter(): AgentAdapter {
             void answer(event.params).catch(reject)
           if (!active) return
           run.onEvent?.(event.method, event.params)
+          if (event.method === 'turn/retryScheduled') {
+            const count = (value: unknown) =>
+              typeof value === 'number' && Number.isFinite(value) ? String(value) : '?'
+            run.onActivity(
+              `Muse is retrying this turn (attempt ${count(params.nextAttempt)} of ${count(params.maxAttempts)}): ${text(params.reason)}`,
+            )
+          }
           if (event.method.startsWith('item/')) {
             const itemId = text(params.itemId) || text(object(params.item).itemId)
             const item = session.fold.items.get(itemId)
@@ -344,7 +635,7 @@ export function createMuseAdapter(): AgentAdapter {
           host.initialize({
             clientInfo,
             capabilities: {
-              requestedCapabilities: ['sessionMcp'],
+              requestedCapabilities: readOnly ? [] : ['sessionMcp'],
               experimentalApi: false,
               userInputDialogs: true,
             },
@@ -352,14 +643,14 @@ export function createMuseAdapter(): AgentAdapter {
           signal,
           30000,
         )
-        if (!connection.initializeResult.grantedCapabilities.includes('sessionMcp'))
+        if (!readOnly && !connection.initializeResult.grantedCapabilities.includes('sessionMcp'))
           throw new Error('Muse must grant sessionMcp to bind Dovo tools; update your Muse host')
         if (connection.fingerprintWarning)
           run.onActivity(
             'Muse host schema differs from the SDK; using its stable forward-compatible protocol',
           )
         const mcpServers = Object.fromEntries(
-          (run.agent.resources?.mcpServers ?? [])
+          (readOnly ? [] : (run.agent.resources?.mcpServers ?? []))
             .filter((server) => server.enabled)
             .map((server) => [
               server.name,
@@ -373,14 +664,18 @@ export function createMuseAdapter(): AgentAdapter {
                 : { transport: 'streamableHttp', url: server.url, headers: mcpHeaders(server) },
             ]),
         )
+        const model = museSelection(run.agent.model)
+        const workspaceRoot = run.sessionId ? run.cwd : await museWorkspaceRoot(run.cwd)
         const response = await nativeWait(
           connection.connection.command(
             run.sessionId ? 'session/resume' : 'session/start',
             run.sessionId
               ? { sessionId: run.sessionId, excludeItems: true, config: { mcpServers } }
               : {
-                  workspaceRoot: run.cwd,
-                  ...museSelection(run.agent.model),
+                  workspaceRoot,
+                  ...(model
+                    ? { providerId: model.providerId, modelId: model.modelId }
+                    : {}),
                   approvalMode:
                     run.agent.permission === 'full-access' ? 'allowAll' : 'promptUnmatched',
                   config: { mcpServers },
@@ -407,9 +702,14 @@ export function createMuseAdapter(): AgentAdapter {
             if (run.taskId) idle.delete(run.taskId)
           })
           .catch((error) => console.error('Could not drain exited Muse host:', error))
-        void host.exited.then((exit) =>
-          reject(new Error(`Muse host exited (${exit.code ?? exit.signal})`)),
-        )
+        void host.exited.then((exit) => {
+          const tail = host.child.stderrTail.slice(-8).join('').trim()
+          reject(
+            new Error(
+              `Muse host exited (${exit.code ?? exit.signal})${tail ? `: ${tail.slice(-500)}` : ''}`,
+            ),
+          )
+        })
         run.onSession(identity)
 
         session.onApproval(async (request) => {
@@ -423,21 +723,32 @@ export function createMuseAdapter(): AgentAdapter {
             )
           const approve = native
             ? interactions &&
-              ((title: string, detail: string) =>
-                interactions.approve(title, detail, lifetime.signal))
+              ((
+                title: string,
+                detail: string,
+                kind?: 'web',
+                options?: { session?: boolean; always?: boolean },
+              ) => interactions.approve(title, detail, lifetime.signal, kind, options))
             : active
               ? run.approve
               : undefined
-          const allowed =
-            !lifetime.signal.aborted &&
-            approve !== undefined &&
-            (automatic || (await nativeWait(approve('Muse tool request', request.rawArgs), signal)))
-          const choice = request.availableChoices.find((choice) =>
-            allowed
-              ? choice.decision === 'approved' && choice.scope === 'once'
-              : choice.decision === 'denied' || choice.decision === 'abort',
-          )
-          if (!choice) throw new Error('Muse did not offer a safe one-time approval or denial')
+          const scopes = museApprovalScopes(request)
+          const decision =
+            lifetime.signal.aborted || approve === undefined
+              ? ('deny' as const)
+              : automatic
+                ? ('approve' as const)
+                : await nativeWait(
+                    approve(museApprovalTitle(request), request.rawArgs, undefined, scopes),
+                    signal,
+                  )
+          const choice = museApprovalChoice(request, decision)
+          if (!choice)
+            throw new Error(
+              decision === 'deny'
+                ? 'Muse did not offer a denial choice'
+                : `Muse did not offer a ${decision} approval choice`,
+            )
           return { choiceId: choice.choiceId }
         })
         session.onApprovalError((failure) =>
@@ -463,25 +774,50 @@ export function createMuseAdapter(): AgentAdapter {
             signal,
             30000,
           )
-          if (run.agent.model)
+          if (model)
             await nativeWait(
               connection.connection.command('session/setModel', {
                 sessionId: identity,
-                ...museSelection(run.agent.model),
+                model,
               }),
               signal,
               30000,
             )
         }
-        if (run.agent.reasoning)
-          await nativeWait(
-            connection.connection.command('session/setReasoningEffort', {
-              sessionId: identity,
-              reasoningEffort: run.agent.reasoning,
-            }),
-            signal,
-            30000,
-          )
+        if (!readOnly) {
+          // Validate a saved effort against the live catalog so a stale pick
+          // falls back to the model's default instead of failing the turn.
+          let effort = run.agent.reasoning
+          if (effort) {
+            try {
+              const catalog = decode(
+                rows,
+                await nativeWait(
+                  connection.connection.request('model/list'),
+                  signal,
+                  30000,
+                ),
+              )
+              const row = model
+                ? catalog.models.find(
+                    (entry) => entry.providerId === model.providerId && entry.modelId === model.modelId,
+                  )
+                : catalog.models.find((entry) => entry.isDefault)
+              if (row) effort = resolveMuseReasoningEffort(row, effort)
+            } catch {
+              // Catalog unavailable: keep the saved effort rather than fail.
+            }
+          }
+          if (effort)
+            await nativeWait(
+              connection.connection.command('session/setReasoningEffort', {
+                sessionId: identity,
+                reasoningEffort: effort,
+              }),
+              signal,
+              30000,
+            )
+        }
         const stopNative = async (id?: string) => {
           if (!connection) throw new Error('Muse connection is unavailable')
           for (const agent of nativeAgents.filter(

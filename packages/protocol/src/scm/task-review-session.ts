@@ -48,7 +48,10 @@ export function createTaskReviewSession(
       clearTimeout(timer)
       if (value) void refresh()
     },
-    async run(action: 'start' | 'finding' | 'fix' | 'stop', input: Record<string, unknown>) {
+    async run(
+      action: 'start' | 'finding' | 'fix' | 'stop' | 'approve',
+      input: Record<string, unknown>,
+    ) {
       if (stopped || state.busy) return false
       generation++
       clearTimeout(timer)

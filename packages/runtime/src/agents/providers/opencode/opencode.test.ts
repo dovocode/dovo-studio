@@ -37,7 +37,7 @@ it('uses the OpenCode summarize endpoint for manual compaction', async () => {
       onText: () => {},
       onActivity: () => {},
       onEvent: (name) => events.push(name),
-      approve: async () => false,
+      approve: async () => 'deny' as const,
       ask: async () => null,
     })
     expect(paths).toContain('/session/session/summarize')
@@ -216,7 +216,7 @@ it.each([false, true])('streams assistant text with text-only tool policy %s', a
       onText: (text) => chunks.push(text),
       onActivity: () => {},
       onEvent: (_name, payload) => journal.push(payload),
-      approve: async () => false,
+      approve: async () => 'deny' as const,
       ask: async () => null,
     })
     const session = JSON.parse(requests.find((request) => request.path === '/session')!.body)

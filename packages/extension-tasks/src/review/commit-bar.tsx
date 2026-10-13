@@ -12,8 +12,8 @@ const commitSchema = mutableStruct({
 })
 
 /** Commit everything in the task's checkout from Changes, with a message the title model can
- * write from the conversation and the diff. */
-export function CommitBar({ task }: { task: Task }) {
+ * write from the conversation and the diff. Push additionally requires a current review approval. */
+export function CommitBar({ task, approved }: { task: Task; approved?: boolean }) {
   const { request, connected } = useWorkspace()
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState<'' | 'write' | 'commit'>('')
@@ -94,11 +94,17 @@ export function CommitBar({ task }: { task: Task }) {
         <Button
           size="sm"
           className="h-7 text-xs"
-          disabled={!idle || !message.trim() || !task.files.length}
+          disabled={!idle || !message.trim() || !task.files.length || !approved}
+          title={approved ? undefined : 'Approve the current reviewed changes before pushing'}
           onClick={() => commit(true)}
         >
           Commit &amp; push
         </Button>
+        {!approved && (
+          <span className="text-[0.6875rem] text-muted-foreground">
+            Push needs approval of the current review.
+          </span>
+        )}
         {status && (
           <span
             role="status"

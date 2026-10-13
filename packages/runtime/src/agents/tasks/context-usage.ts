@@ -135,6 +135,7 @@ export function turnTokenCounter(
   const opencode = new Map<string, number>()
   let opencodeV2: number | undefined
   let opencodeV2Unavailable = false
+  let museUsage: TurnTokenUsage | undefined
   return {
     accept(name: string, payload: unknown) {
       const event = record(payload)
@@ -151,6 +152,20 @@ export function turnTokenCounter(
           })
       }
       if (provider === 'opencode' && name === 'dovo/usage/unavailable') opencodeV2Unavailable = true
+      if (provider === 'muse' && name === 'session/tokenUsage') {
+        // Muse reports per-request usage; accumulate it into the turn total.
+        const usage = record(event.usage)
+        const input = count(event.promptTokens) ?? count(usage.inputTokens) ?? 0
+        const output = count(usage.outputTokens) ?? 0
+        const cacheRead = count(usage.cacheReadTokens) ?? count(usage.cachedTokens) ?? 0
+        const cacheWrite = count(usage.cacheWriteTokens) ?? 0
+        museUsage = {
+          input: (museUsage?.input ?? 0) + input,
+          output: (museUsage?.output ?? 0) + output,
+          cacheRead: (museUsage?.cacheRead ?? 0) + cacheRead,
+          cacheWrite: (museUsage?.cacheWrite ?? 0) + cacheWrite,
+        }
+      }
       if (provider === 'codex' && name === 'model/rerouted' && typeof event.toModel === 'string')
         reportedModel = event.toModel
       if (provider === 'claude' && event.type === 'assistant') {
@@ -317,6 +332,8 @@ export function turnTokenCounter(
           ? codexLatest - codexStart
           : undefined
       if (provider === 'claude') return claude
+      if (provider === 'muse')
+        return museUsage ? Object.values(museUsage).reduce((a, b) => a + b, 0) : undefined
       if (provider === 'opencode' && opencode.size)
         return [...opencode.values()].reduce((total, value) => total + value, 0)
       if (provider === 'opencode') return opencodeV2Unavailable ? undefined : opencodeV2
@@ -325,6 +342,7 @@ export function turnTokenCounter(
     usage(): TurnTokenUsage | undefined {
       if (provider === 'cursor') return cursorTotal()
       if (provider === 'claude') return claudeUsage
+      if (provider === 'muse') return museUsage
       if (provider === 'opencode' && opencodeV2Unavailable) return undefined
       if (provider === 'opencode')
         return opencodeUsage.size

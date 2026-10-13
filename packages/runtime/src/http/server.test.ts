@@ -46,7 +46,7 @@ describe('authenticated runtime', () => {
         body: JSON.stringify(changes),
       })
     expect((await save({ allowWebRequests: true })).status).toBe(200)
-    await expect(pending).resolves.toBe(true)
+    await expect(pending).resolves.toBe('approve')
     expect(runtime.services.approvals.list().map((item) => item.title)).toEqual(['Run command'])
     expect((await save({ autoArchiveDays: 7 })).status).toBe(200)
     expect(runtime.services.preferences.get().allowWebRequests).toBe(true)
@@ -58,8 +58,8 @@ describe('authenticated runtime', () => {
     const next = runtime.services.approvals.request('projectless', 'WebFetch', '{}', signal, 'web')
     expect(runtime.services.approvals.list()).toHaveLength(2)
     runtime.services.approvals.dispose()
-    await expect(shell).resolves.toBe(false)
-    await expect(next).resolves.toBe(false)
+    await expect(shell).resolves.toBe('deny')
+    await expect(next).resolves.toBe('deny')
   })
   it('saves and revokes project web approvals through the authenticated mobile request paths', async () => {
     const token = randomBytes(32).toString('base64url')
@@ -107,7 +107,7 @@ describe('authenticated runtime', () => {
       (await send('/api/approvals', { id: snapshot.approvals[0].id, allow: true, remember: true }))
         .status,
     ).toBe(200)
-    await expect(first).resolves.toBe(true)
+    await expect(first).resolves.toBe('approve')
     await expect(
       runtime.services.approvals.request(
         'task',
@@ -116,7 +116,7 @@ describe('authenticated runtime', () => {
         controller.signal,
         'web',
       ),
-    ).resolves.toBe(true)
+    ).resolves.toBe('approve')
     const revoked = await send(
       '/api/workspace',
       {
@@ -150,7 +150,7 @@ describe('authenticated runtime', () => {
         )
       ).status,
     ).toBe(200)
-    await expect(next).resolves.toBe(true)
+    await expect(next).resolves.toBe('approve')
     controller.abort()
   })
   it('rejects a malformed request target without crashing the runtime', async () => {

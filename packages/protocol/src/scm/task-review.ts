@@ -73,8 +73,22 @@ export const codeReviewSchema = mutableStruct({
   summary: Schema.String,
   notVerified: mutableArray(Schema.String),
   error: Schema.optional(Schema.String),
+  approval: Schema.optional(
+    mutableStruct({ approvedAt: Schema.String, baseline: Schema.String, head: Schema.String }),
+  ),
 })
 export type CodeReview = typeof codeReviewSchema.Type
+/** Approval holds only for the exact review snapshot; any later file or HEAD change invalidates it. */
+export function approvalIsCurrent(
+  review: Pick<CodeReview, 'approval' | 'baseline' | 'head' | 'status'>,
+): boolean {
+  return (
+    review.status === 'completed' &&
+    !!review.approval &&
+    review.approval.baseline === review.baseline &&
+    review.approval.head === review.head
+  )
+}
 export const verificationCommandSchema = mutableStruct({
   id: Schema.String,
   command: Schema.String,
@@ -91,6 +105,7 @@ export const taskReviewReportSchema = mutableStruct({
   commands: mutableArray(verificationCommandSchema),
   current: Schema.Boolean,
   evidenceLimited: Schema.Boolean,
+  approved: Schema.Boolean,
 })
 export type TaskReviewReport = typeof taskReviewReportSchema.Type
 export const taskReviewReadSchema = strictStruct({ taskId: id })
@@ -114,6 +129,11 @@ export const taskReviewFixSchema = strictStruct({
   messageId: id,
 })
 export const taskReviewChangesSchema = strictStruct({ taskId: id, reviewId: id })
+export const taskReviewApprovalSchema = strictStruct({
+  taskId: id,
+  reviewId: id,
+  approved: Schema.Boolean,
+})
 
 export function parseCodeReviewOutput(reply: string) {
   const source = reply

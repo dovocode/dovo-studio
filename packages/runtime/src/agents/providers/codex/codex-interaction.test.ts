@@ -82,7 +82,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     onActivity: vi.fn<AgentRun['onActivity']>(),
     onText: vi.fn<AgentRun['onText']>(),
     onTextBoundary: vi.fn<NonNullable<AgentRun['onTextBoundary']>>(),
-    approve: async () => false,
+    approve: async () => 'deny' as const,
     ask: async () => null,
   }
   const messages = async () =>

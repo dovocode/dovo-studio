@@ -19,6 +19,7 @@ for (const [path, name] of [
   ['../chat/thread/preparation-progress', 'PreparationProgress'],
   ['../chat/thread/review-comments-tray', 'ReviewCommentsTray'],
   ['../chat/thread/plan-approval', 'PlanApproval'],
+  ['../chat/thread/native-todos', 'NativeTodos'],
   ['../chat/thread/review-findings', 'ReviewFindings'],
   ['../review/code-review-card', 'CodeReviewCard'],
   ['../dialogs/task-pull-link-dialog', 'TaskPullLinkDialog'],
