@@ -77,7 +77,7 @@ it('starts an active-thread fork at committed HEAD with conversation, settings a
       name: 'context.txt',
       data: Buffer.from('attachment context').toString('base64'),
     })
-    s.store.updateTask(source.id, (task) => ({
+    s.store.updateTaskHistory(source.id, (task) => ({
       ...task,
       messages: task.messages.map((message, index) =>
         index === 0 ? { ...message, attachments: [file.attachment] } : message,
@@ -539,7 +539,7 @@ it('starts empty threads in an existing worktree or forks its current files inde
     forkedFrom: { head, taskId: source.id },
   })
   await writeFile(join(cwd, 'hello.txt'), 'later source edit\n')
-  s.store.updateTask(fork.id, (task) => ({
+  s.store.updateTaskHistory(fork.id, (task) => ({
     ...task,
     messages: [{ id: 'first-fork-prompt', role: 'user', text: 'Continue' }],
   }))
@@ -564,7 +564,7 @@ it('places agent terminal commands in the current assistant message without crea
     objective: '',
   })
   const time = new Date().toISOString()
-  s.store.updateTask(task.id, (current) => ({
+  s.store.updateTaskHistory(task.id, (current) => ({
     ...current,
     status: 'running',
     queuePaused: true,

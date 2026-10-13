@@ -8,9 +8,17 @@ import {
 } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { useCommittedCallback } from '../../detail/use-committed-callback'
+import {
+  conversationHistoryBudget,
+  conversationPagesSize,
+  holdConversationPages,
+  recentMessageCount,
+  rememberConversationPages,
+  restoreConversationPages,
+  trimConversationPages,
+} from './history-retention'
 
 const emptyPages: ConversationPage[] = []
-const recentMessageCount = 500
 export function useConversationHistory<
   T extends Pick<Task, 'id' | 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,
 >(live: T, prefetchRecent = true) {
@@ -21,11 +29,11 @@ export function useConversationHistory<
     scope: string
     revision: number
     pages: ConversationPage[]
-  }>({
+  }>(() => ({
     scope,
     revision,
-    pages: [],
-  })
+    pages: restoreConversationPages(scope, revision, live),
+  }))
   const [delivery, setDelivery] = useState<{ scope: string; busy: boolean; error: string }>({
     scope,
     busy: false,
@@ -38,15 +46,31 @@ export function useConversationHistory<
   const latest = useRef(live)
   latest.current = live
   const refill = useRef(recentMessageCount)
+  const shown = useRef({ live, loaded })
 
   useEffect(() => {
     generation.current++
     pending.current = null
     setDelivery({ scope, busy: false, error: '' })
+    // Returning to a conversation reuses its remembered pages instead of refetching them.
+    if (loaded.scope !== scope) {
+      const current = latest.current
+      const currentRevision = current.historyRevision ?? 0
+      const pages = restoreConversationPages(scope, currentRevision, current)
+      setLoaded((value) =>
+        value.scope === scope ? value : { scope, revision: currentRevision, pages },
+      )
+    }
+    const release = holdConversationPages(scope)
     return () => {
       generation.current++
+      release(shown.current.live)
     }
   }, [scope])
+  useEffect(() => {
+    shown.current = { live, loaded }
+    if (loaded.scope === scope) rememberConversationPages(scope, loaded.revision, loaded.pages)
+  }, [scope, live, loaded])
 
   useEffect(() => {
     active.current = scope
@@ -154,6 +178,7 @@ export function useConversationHistory<
   useEffect(() => {
     if (
       prefetchRecent &&
+      loaded.scope === scope &&
       refill.current > task.messages.length &&
       cursor &&
       connected &&
@@ -162,7 +187,33 @@ export function useConversationHistory<
     )
       void load()
     // Each successful page advances the cursor while the loader retains its identity.
-  }, [task.messages.length, cursor, connected, delivery, revision, prefetchRecent, load])
+  }, [
+    task.messages.length,
+    cursor,
+    connected,
+    delivery,
+    revision,
+    prefetchRecent,
+    load,
+    loaded,
+    scope,
+  ])
+  /** Release loaded pages older than the reader's position once they exceed the budget. */
+  const trim = useCallback(
+    (protectFrom: string | undefined) => {
+      const value = shown.current.loaded
+      if (value.scope !== scope || pending.current?.scope === scope) return
+      if (conversationPagesSize(value.pages) <= conversationHistoryBudget) return
+      const pages = trimConversationPages(value.pages, {
+        budget: conversationHistoryBudget,
+        protectFrom,
+      })
+      if (pages === value.pages) return
+      refill.current = recentMessageCount
+      setLoaded((current) => (current === value ? { ...value, pages } : current))
+    },
+    [scope],
+  )
   const setBookmark = useCallback(
     (messageId: string, bookmarked: boolean) =>
       setLoaded((value) =>
@@ -184,6 +235,7 @@ export function useConversationHistory<
     setBookmark,
     task,
     load,
+    trim,
     hasMore: !!cursor,
     busy: delivery.scope === scope && delivery.busy,
     error: delivery.scope === scope ? delivery.error : '',

@@ -1,11 +1,11 @@
 import { pullStacks, stackSummary, taskFamilyIds } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
-import { checkOutcome, pullReferencesInText, verifyPullUrl, type Task } from '@dovo/protocol'
+import { checkOutcome, verifyPullUrl, type TaskSummary } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { archiveTask, taskIsBusy } from '../../agents/tasks/housekeeping.js'
 
-type PullStatus = NonNullable<Task['pullStatus']>
+type PullStatus = NonNullable<TaskSummary['pullStatus']>
 type WatcherServices = Pick<
   Services,
   | 'store'
@@ -55,8 +55,8 @@ const summaryChecks = (state: string | null | undefined) => {
 export class TaskPullWatcher {
   private poller?: ReturnType<typeof startPolling>
   private attach(
-    task: Task,
-    pull: Omit<NonNullable<Task['linkedPullRequests']>[number], 'repositoryUrl'> & {
+    task: TaskSummary,
+    pull: Omit<NonNullable<TaskSummary['linkedPullRequests']>[number], 'repositoryUrl'> & {
       repositoryUrl?: string
     },
   ) {
@@ -100,15 +100,10 @@ export class TaskPullWatcher {
       ),
     }))
   }
-  private async linkMentions(task: Task, path: string) {
+  private async linkMentions(task: TaskSummary, path: string) {
     const matches: Array<Awaited<ReturnType<Services['pullCache']['status']>>['pull']> = []
     if (!this.s.preferences.get().autoLinkPullRequests) return matches
-    const references = new Map(
-      task.messages
-        .flatMap((message) => pullReferencesInText(message.text))
-        .map((reference) => [reference.url, reference]),
-    )
-    for (const reference of [...references.values()].slice(-20)) {
+    for (const reference of task.history.pullReferences ?? []) {
       if (
         task.ignoredPullRequestUrls?.includes(reference.url) ||
         (task.linkedPullRequests?.some((pull) => pull.url === reference.url) &&
@@ -130,7 +125,7 @@ export class TaskPullWatcher {
     return matches
   }
   constructor(private s: WatcherServices) {}
-  private shouldSettle(task: Task, state?: string) {
+  private shouldSettle(task: TaskSummary, state?: string) {
     const policy = this.s.store.projectSettings(task.repositoryId).taskBehavior
     const fallback = this.s.preferences.get().settleOnPullClose
     return state === 'merged'
@@ -166,13 +161,7 @@ export class TaskPullWatcher {
           !this.s.preferences.get().archiveOnPullMerge)
       )
         continue
-      if (
-        !task.pullRequest &&
-        !task.checkoutBranch &&
-        !task.messages.some((message) =>
-          /\/(?:pull|pulls|pull-requests|pullrequest|merge_requests)\//i.test(message.text),
-        )
-      )
+      if (!task.pullRequest && !task.checkoutBranch && !task.history.pullReferences?.length)
         continue
       const repo = workspace.repositories.find((item) => item.id === task.repositoryId)
       if (!repo || repo.kind) continue

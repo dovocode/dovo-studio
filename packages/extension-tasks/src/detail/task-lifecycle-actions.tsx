@@ -1,12 +1,18 @@
 import { AlarmClock, Check, Undo2 } from 'lucide-react'
-import { updateTask, useWorkspace, type Task } from '@dovo/studio-core'
+import { updateTask, type Task } from '@dovo/studio-core'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
 import { useRef, useState } from 'react'
-import { taskActionClient, type TaskRowChanges } from '../list/task-row-actions'
+import { taskActionClient, useTaskActionStore, type TaskRowChanges } from '../list/task-row-actions'
 import type { TaskSource } from '../list/task-collection'
 import { isSnoozed } from '../list/task-priority'
-export function TaskLifecycleActions({ task, source }: { task: Task; source?: TaskSource }) {
-  const store = useWorkspace()
+export function TaskLifecycleActions({
+  task,
+  owner,
+}: {
+  task: Task
+  owner?: Pick<TaskSource, 'runtimeId' | 'name' | 'online'>
+}) {
+  const store = useTaskActionStore()
   const pendingRef = useRef(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
@@ -16,7 +22,7 @@ export function TaskLifecycleActions({ task, source }: { task: Task; source?: Ta
     setPending(true)
     setError('')
     try {
-      if (source) await taskActionClient(store, source).patch(task, updates)
+      if (owner) await taskActionClient(store, owner).patch(task, updates)
       else store.setWorkspace((w) => updateTask(w, task.id, (t) => ({ ...t, ...updates })))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))

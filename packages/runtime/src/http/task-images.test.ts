@@ -77,12 +77,12 @@ it('reads checkout images and assistant-shared temp images while denying unrelat
   const path = join(outside, 'a b.png')
   await writeFile(path, png)
   expect((await read({ taskId: 'task', path })).status).toBe(403)
-  runtime.services.store.updateTask('task', (task) => ({
+  runtime.services.store.updateTaskHistory('task', (task) => ({
     ...task,
     messages: [{ id: 'user', role: 'user', text: `![Shot](<${path}>)` }],
   }))
   expect((await read({ taskId: 'task', path })).status).toBe(403)
-  runtime.services.store.updateTask('task', (task) => ({
+  runtime.services.store.updateTaskHistory('task', (task) => ({
     ...task,
     messages: [{ id: 'assistant', role: 'assistant', text: `![Shot](<${path}>)` }],
   }))

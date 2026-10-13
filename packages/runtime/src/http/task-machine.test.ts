@@ -89,7 +89,7 @@ it('receives drafts idempotently, verifies Git identity, and never starts a chec
       .status,
   ).toBe(200)
   expect(s.store.task(task.id).archivedAt).toBeUndefined()
-  s.store.updateTask(task.id, (current) => ({
+  s.store.updateTaskHistory(task.id, (current) => ({
     ...current,
     messages: [{ id: 'sent', role: 'user', text: 'Start' }],
   }))

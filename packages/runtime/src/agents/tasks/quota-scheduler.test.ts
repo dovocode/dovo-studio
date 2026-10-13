@@ -31,7 +31,7 @@ async function setup() {
     objective: 'Work',
   })
   const at = new Date(Date.now() - 1000).toISOString()
-  s.store.updateTask(task.id, (task) => ({
+  s.store.updateTaskHistory(task.id, (task) => ({
     ...task,
     status: 'failed',
     snoozedUntil: at,

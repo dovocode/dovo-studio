@@ -972,6 +972,105 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
     )
     if ((await page.evaluate(() => window.desktopFillRequests)) !== 10)
       throw new Error('Desktop did not fill a bounded recent window')
+    if (file.startsWith('packages/extension-tasks')) {
+      // Returning to a conversation reuses its remembered pages instead of refetching them.
+      const large = {
+        id: 'desktop-large',
+        messages: [998, 999].map((i) => ({ id: `m${i}`, role: 'assistant', text: 'Recent' })),
+        turns: [],
+        historyBefore: 'm998',
+      }
+      await page.evaluate(() =>
+        window.setLive({
+          id: 'desktop-elsewhere',
+          messages: [{ id: 'elsewhere', role: 'user', text: 'Elsewhere' }],
+          turns: [],
+        }),
+      )
+      await page.waitForFunction(() => window.historyState.task.id === 'desktop-elsewhere')
+      await page.evaluate((live) => window.setLive(live), large)
+      await page.waitForFunction(() => window.historyState.task.messages.length >= 500)
+      await page.waitForTimeout(50)
+      if ((await page.evaluate(() => window.desktopFillRequests)) !== 10)
+        throw new Error('Returning to a conversation refetched remembered history')
+      // A live window that no longer reaches the remembered pages must not hide the gap.
+      await page.evaluate(() =>
+        window.setLive({
+          id: 'desktop-elsewhere',
+          messages: [{ id: 'elsewhere', role: 'user', text: 'Elsewhere' }],
+          turns: [],
+        }),
+      )
+      await page.waitForFunction(() => window.historyState.task.id === 'desktop-elsewhere')
+      await page.evaluate(
+        (live) =>
+          window.setLive({
+            ...live,
+            messages: [{ id: 'm1500', role: 'assistant', text: 'After a gap' }],
+            historyBefore: 'm1500',
+          }),
+        large,
+      )
+      await page.waitForFunction(
+        () =>
+          !window.historyState.busy &&
+          window.historyState.task.messages.length >= 500 &&
+          window.historyState.task.messages[0].id !== 'm0',
+      )
+      if (await page.evaluate(() => window.historyState.task.messages.some((m) => m.id === 'm999')))
+        throw new Error('A remembered page bridged a gap in the live window')
+      // Pages beyond the recent window are trimmed once a reader's history exceeds its budget.
+      await page.evaluate(() => {
+        window.desktopFillRequests = 0
+        window.connection.request = async (_path, { before }) => {
+          window.desktopFillRequests++
+          const end = Number(before.slice(1)),
+            start = Math.max(0, end - 50)
+          return {
+            messages: Array.from({ length: end - start }, (_, i) => ({
+              id: `m${start + i}`,
+              role: (start + i) % 2 ? 'assistant' : 'user',
+              text: 'x'.repeat(16000),
+            })),
+            turns: [],
+            ...(start ? { before: `m${start}` } : {}),
+          }
+        }
+        window.setLive({
+          id: 'desktop-trim',
+          messages: [{ id: 'm2000', role: 'user', text: 'Recent' }],
+          turns: [],
+          historyBefore: 'm2000',
+        })
+      })
+      await page.waitForFunction(
+        () => !window.historyState.busy && window.historyState.task.messages.length >= 500,
+      )
+      for (let load = 0; load < 4; load++) {
+        const count = await page.evaluate(() => window.historyState.task.messages.length)
+        await page.evaluate(() => window.historyState.load())
+        await page.waitForFunction(
+          (count) => !window.historyState.busy && window.historyState.task.messages.length > count,
+          count,
+        )
+      }
+      await page.evaluate(() => window.historyState.trim('m1340'))
+      await page.waitForFunction(() => window.historyState.task.messages[0].id === 'm1340')
+      await page.evaluate(() => window.historyState.trim(undefined))
+      await page.waitForFunction(() => window.historyState.task.messages.length <= 501)
+      const trimmed = await page.evaluate(() => ({
+        first: window.historyState.task.messages[0].id,
+        last: window.historyState.task.messages.at(-1).id,
+        hasMore: window.historyState.hasMore,
+        count: window.historyState.task.messages.length,
+        requests: window.desktopFillRequests,
+      }))
+      if (trimmed.last !== 'm2000' || !trimmed.hasMore || trimmed.count < 500)
+        throw new Error(`Trimming lost recent history: ${JSON.stringify(trimmed)}`)
+      await page.waitForTimeout(50)
+      if ((await page.evaluate(() => window.desktopFillRequests)) !== trimmed.requests)
+        throw new Error('Trimmed history refilled itself')
+    }
     await checkFirstLayout(page)
     await page.close()
   }

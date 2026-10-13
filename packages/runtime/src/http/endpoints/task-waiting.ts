@@ -5,7 +5,7 @@ export async function taskWaiting(
   s: Services,
   input: typeof taskWaitingRequestSchema.Type,
 ): Promise<TaskWaiting> {
-  s.store.task(input.taskId)
+  s.store.taskSummary(input.taskId)
   const { unlink } = input
   if (unlink) {
     if (unlink.kind === 'pull')

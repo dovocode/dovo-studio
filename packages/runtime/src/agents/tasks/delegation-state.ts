@@ -1,7 +1,7 @@
 import {
   resolveTaskAgent,
   indexTaskFamilyWorking,
-  type Task,
+  type TaskSummary,
   type Agent,
   type Subagent,
 } from '@dovo/protocol'
@@ -14,9 +14,9 @@ function ownedBy(record: Subagent) {
 /** Derived metadata only; the child's conversation remains the authoritative result.
  * Records for children that no longer exist are dropped so parents never link to a
  * missing task. */
-export function projectDelegatedAgents(tasks: Task[], agents: Agent[]) {
+export function projectDelegatedAgents(tasks: TaskSummary[], agents: Agent[]) {
   const familyWorking = indexTaskFamilyWorking(tasks)
-  const children = new Map<string, Task[]>()
+  const children = new Map<string, TaskSummary[]>()
   for (const task of tasks)
     if (task.delegation) {
       const group = children.get(task.delegation.parentTaskId) ?? []
@@ -49,7 +49,7 @@ export function projectDelegatedAgents(tasks: Task[], agents: Agent[]) {
       const finishedAt =
         status === 'working'
           ? undefined
-          : (child.turns?.at(-1)?.finishedAt ?? child.updatedAt ?? child.createdAt)
+          : (child.history.latestTurn?.finishedAt ?? child.updatedAt ?? child.createdAt)
       const next: Subagent = {
         id: child.id,
         source: 'dovo',
@@ -57,7 +57,7 @@ export function projectDelegatedAgents(tasks: Task[], agents: Agent[]) {
         provider: agent?.provider ?? 'unknown',
         name: child.title,
         status,
-        prompt: child.messages.find((message) => message.role === 'user')?.text,
+        prompt: child.history.firstUserText,
         model: agent?.model,
         reasoning: agent?.reasoning,
         activity:

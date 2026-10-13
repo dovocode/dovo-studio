@@ -10,14 +10,13 @@ import {
   resolveTaskAgent,
   type ArtifactCreate,
   type ArtifactUpdate,
-  type Workspace,
   type Task,
   type ArtifactLibraryEntry,
   runtimePreferencesSchema,
   artifactDeletionAt,
   externalArtifactLinks,
 } from '@dovo/protocol'
-import type { WorkspaceStore } from '../storage/workspace.js'
+import type { WorkspaceChange, WorkspaceStore } from '../storage/workspace.js'
 import type { Activity } from '../storage/activity.js'
 import { HttpError } from '../errors.js'
 
@@ -27,7 +26,7 @@ const lifecycle = mutableStruct({
   state: Schema.Literals(['settled', 'archived']),
   since: Schema.String,
 })
-const stateOf = (task: Task) =>
+const stateOf = (task: Pick<Task, 'archived' | 'archivedAt'>) =>
   task.archivedAt
     ? ('archived' as const)
     : task.archived
@@ -75,7 +74,7 @@ export class Artifacts {
       if (key.startsWith(`${taskId}:`)) this.snapshots.delete(key)
     return changes
   }
-  private recordState(task: Task, now = Date.now()) {
+  private recordState(task: Pick<Task, 'id' | 'archived' | 'archivedAt'>, now = Date.now()) {
     const state = stateOf(task)
     if (state === 'active') {
       this.db.prepare('DELETE FROM artifact_states WHERE task_id=?').run(task.id)
@@ -97,7 +96,7 @@ export class Artifacts {
       )
       .run(task.id, state, since)
   }
-  workspace(before: Workspace, after: Workspace) {
+  workspace({ before, after }: Pick<WorkspaceChange, 'before' | 'after'>) {
     if (
       before.tasks === after.tasks ||
       (before.tasks.length === after.tasks.length &&
@@ -190,7 +189,7 @@ export class Artifacts {
       })
   }
   list(taskId: string) {
-    this.store.task(taskId)
+    this.store.taskSummary(taskId)
     return this.db
       .prepare(
         'SELECT metadata AS value FROM artifacts WHERE task_id=? AND revision=(SELECT MAX(a.revision) FROM artifacts a WHERE a.id=artifacts.id) ORDER BY rowid DESC',
@@ -214,7 +213,7 @@ export class Artifacts {
     )
   }
   read(taskId: string, id: string, revision?: number) {
-    this.store.task(taskId)
+    this.store.taskSummary(taskId)
     const row =
       revision === undefined
         ? this.db
@@ -229,7 +228,7 @@ export class Artifacts {
     return decode(artifactSchema, JSON.parse(decode(stored, row).value))
   }
   versions(taskId: string, id: string) {
-    this.store.task(taskId)
+    this.store.taskSummary(taskId)
     return this.db
       .prepare(
         'SELECT metadata AS value FROM artifacts WHERE task_id=? AND id=? ORDER BY revision DESC',
@@ -251,7 +250,7 @@ export class Artifacts {
   }
   attach(taskId: string, id: string, targetTaskId: string, revision?: number) {
     if (taskId === targetTaskId) throw new HttpError(409, 'Artifact is already in this thread')
-    const target = this.store.task(targetTaskId)
+    const target = this.store.taskSummary(targetTaskId)
     if (target.archived || target.archivedAt)
       throw new HttpError(409, 'Reopen the destination thread before adding artifacts')
     const { title, format, content, language } = this.read(taskId, id, revision)

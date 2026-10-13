@@ -9,7 +9,12 @@ import {
   responses,
   type Task,
 } from '@dovo/protocol'
-import { useRuntime } from '../../runtime/connection/provider'
+import { useMemo } from 'react'
+import {
+  sameRuntimeFields,
+  useRuntimeSelector,
+  type Runtime,
+} from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 export const snoozeOptions = [
   {
@@ -37,8 +42,10 @@ type LifecycleChanges = Partial<{
     after: Task[Key] | null
   }
 }>
-export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () => void) {
-  const {
+// Select owner facts instead of its overview, so a streaming snapshot leaves each row alone.
+const lifecycleRuntime =
+  (runtimeId: string | undefined) =>
+  ({
     previewTaskEffect,
     connected,
     activeId,
@@ -46,10 +53,34 @@ export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () 
     readRuntimeEffect,
     refreshRuntimeEffect,
     callEffect,
-  } = useRuntime()
+  }: Runtime) => {
+    const owner = overviews.find((entry) => entry.profile.id === (runtimeId ?? activeId))
+    return {
+      previewTaskEffect,
+      connected,
+      activeId,
+      ownerProfile: owner?.profile,
+      ownerConnected: !!owner?.connected,
+      readRuntimeEffect,
+      refreshRuntimeEffect,
+      callEffect,
+    }
+  }
+export function useTaskLifecycle(task: Task, runtimeId?: string, onDeleted?: () => void) {
+  const select = useMemo(() => lifecycleRuntime(runtimeId), [runtimeId])
+  const {
+    previewTaskEffect,
+    connected,
+    activeId,
+    ownerProfile,
+    ownerConnected,
+    readRuntimeEffect,
+    refreshRuntimeEffect,
+    callEffect,
+  } = useRuntimeSelector(select, sameRuntimeFields)
   const { act, busy, error } = useAction()
   const onCurrentRuntime = runtimeId === undefined || runtimeId === activeId
-  const owner = overviews.find((entry) => entry.profile.id === (runtimeId ?? activeId))
+  const owner = ownerProfile ? { profile: ownerProfile, connected: ownerConnected } : undefined
   const enabled = onCurrentRuntime ? connected && !!owner : !!owner?.connected
   const ownerCall = <T extends Schema.Codec<unknown, unknown>>(
     path: string,

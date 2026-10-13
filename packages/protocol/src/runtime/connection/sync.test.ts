@@ -214,6 +214,72 @@ it('patches task fields without repeating unchanged file history and removes opt
   ).toThrow('baseline')
 })
 
+it.each([false, true])(
+  'does not serialize shared file contents for compact=%s updates',
+  (compact) => {
+    const previous = snapshot()
+    const task = previous.workspace.tasks[0]!
+    let reads = 0
+    task.files = [{ path: 'large.txt', before: '', after: 'After', viewed: false }]
+    Object.defineProperty(task.files[0], 'before', {
+      enumerable: true,
+      get() {
+        reads++
+        return 'Before '.repeat(10000)
+      },
+    })
+    const next = {
+      ...previous,
+      revision: 2,
+      workspace: {
+        ...previous.workspace,
+        tasks: previous.workspace.tasks.map((task, index) =>
+          index === 0
+            ? {
+                ...task,
+                draft: 'New draft',
+                messages: task.messages.map((message) => ({
+                  ...message,
+                  text: message.text + 'Next',
+                })),
+              }
+            : task,
+        ),
+      },
+    }
+    const delta = snapshotDelta(previous, next, compact, true)
+    expect(reads).toBe(0)
+    expect(delta.workspace.tasks?.changes[0]?.fieldDelta?.values).toEqual({ draft: 'New draft' })
+    expect(delta.workspace.tasks?.changes[0]?.messages?.changes[0]?.text).toEqual({
+      length: task.messages[0]!.text.length,
+      append: 'Next',
+    })
+  },
+)
+
+it('compares replacement nested fields and treats missing optional values as undefined', () => {
+  const previous = snapshot()
+  const task = previous.workspace.tasks[0]!
+  task.error = undefined
+  task.files = [{ path: 'file.txt', before: 'Before', after: 'After', viewed: false }]
+  const { error: _error, ...withoutError } = task
+  const next = {
+    ...previous,
+    workspace: {
+      ...previous.workspace,
+      tasks: [
+        { ...withoutError, files: task.files.map((file) => ({ ...file })) },
+        previous.workspace.tasks[1]!,
+      ],
+    },
+  }
+  expect(snapshotDelta(previous, next, true, true).workspace.tasks).toBeUndefined()
+  next.workspace.tasks[0]!.files[0]!.after = 'Changed'
+  const delta = snapshotDelta(previous, next, true, true)
+  expect(delta.workspace.tasks?.changes[0]?.fieldDelta?.values.files?.[0]?.after).toBe('Changed')
+  expect(applySnapshotDelta(previous, delta)).toEqual(next)
+})
+
 it('sends a small splice for streamed tool or reasoning JSON instead of repeating its payload', () => {
   const before = [
     {

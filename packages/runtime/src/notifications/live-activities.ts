@@ -170,7 +170,7 @@ export class LiveActivities {
         if (!this.apns || now < this.nextAttempt) continue
         const workspace = this.store.get()
         const task = workspace.tasks.find((t) => t.id === row.taskId)
-        const sameTurn = task?.turns?.at(-1)?.id === row.turnId
+        const sameTurn = task?.history.latestTurn?.id === row.turnId
         const ended = !task || task.status !== 'running' || !sameTurn || !!task.archived
         const props = task
           ? liveTaskProps(

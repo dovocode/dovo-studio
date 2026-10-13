@@ -65,9 +65,12 @@ async function read(s: Services, force: boolean): Promise<Result> {
       const agent = agents[0]
       try {
         const result = await readUsageLimits(agent)
+        const accountId = result.account?.id
+        const used = accountId ? s.store.usage.taskIds(accountId) : new Set<string>()
         const sourceTask = workspace.tasks.find(
           (task) =>
-            task.turns?.some((turn) => turn.usageAccount?.id === result.account?.id) &&
+            (task.history.latestTurn?.usageAccount?.id === accountId || used.has(task.id)) &&
+            !!accountId &&
             JSON.stringify(
               modelDiscoveryInput(resolveTaskAgent(task, workspace.agents) ?? agent),
             ) === JSON.stringify(modelDiscoveryInput(agent)),

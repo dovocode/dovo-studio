@@ -32,7 +32,7 @@ async function seed(enabled: boolean, changes: Partial<Task> = {}, uncertain = f
     agentId: 'agent',
     objective: 'Original request',
   })
-  runtime.services.store.updateTask(task.id, (task) => ({
+  runtime.services.store.updateTaskHistory(task.id, (task) => ({
     ...task,
     status: 'running',
     queuePaused: false,
@@ -557,7 +557,7 @@ it('recovers a durable child completion exactly once and holds it for manual con
     agentId: 'agent',
     objective: 'Inspect',
   })
-  first.services.store.updateTask(child.id, (task) => ({
+  first.services.store.updateTaskHistory(child.id, (task) => ({
     ...task,
     status: 'review',
     messages: [

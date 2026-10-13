@@ -9,6 +9,22 @@ import { getFiletypeFromFileName, parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { PullDetail } from '@dovo/studio-core'
 import { forgeLabels, pullFilePatch, type ForgeProvider, useDiffOptions } from '@dovo/studio-core'
+
+/** A selected line range, kept with the PR revision and patch it was written against. */
+export type PullLineSelection = {
+  start: number
+  end: number
+  side: 'additions' | 'deletions'
+  file: PullDetail['files'][number]
+  headSha: string
+}
+/** Comment state owned by the file list, so it outlives a file leaving the render window. */
+export type PullLineDraft = {
+  selection: PullLineSelection | null
+  destination: 'github' | 'agent'
+}
+export const emptyPullLineDraft: PullLineDraft = { selection: null, destination: 'agent' }
+
 export function PullPatch({
   file,
   split,
@@ -18,6 +34,8 @@ export function PullPatch({
   allowInlineComment = true,
   allowInlineRange = true,
   headSha = '',
+  draft = emptyPullLineDraft,
+  onDraft,
 }: {
   file: PullDetail['files'][number]
   split: boolean
@@ -36,15 +54,14 @@ export function PullPatch({
   allowInlineComment?: boolean
   allowInlineRange?: boolean
   headSha?: string
+  draft?: PullLineDraft
+  onDraft?: (update: (draft: PullLineDraft) => PullLineDraft) => void
 }) {
-  const [selection, setSelection] = useApplicationState<{
-    start: number
-    end: number
-    side: 'additions' | 'deletions'
-    file: PullDetail['files'][number]
-    headSha: string
-  } | null>(null)
-  const [destination, setDestination] = useApplicationState<'github' | 'agent'>('agent')
+  const { selection, destination } = draft
+  const setSelection = (next: PullLineSelection | null) =>
+    onDraft?.((current) => ({ ...current, selection: next }))
+  const setDestination = (next: PullLineDraft['destination']) =>
+    onDraft?.((current) => ({ ...current, destination: next }))
   const diffs = useDiffOptions()
   const [ready, setReady] = useApplicationState(false),
     [error, setError] = useApplicationState('')

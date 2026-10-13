@@ -10,6 +10,7 @@ import { resourceSettingsSchema } from './shared/resources.js'
 import { attachmentSchema, MAX_ATTACHMENTS } from './shared/attachments.js'
 import { Schema, Struct } from 'effect'
 import { forgeBindingSchema, forgeProviderSchema } from './scm/forges/forges.js'
+import type { TaskSummary, TaskTurnSummary } from './tasks/task-summary.js'
 export const executionSchema = Schema.Literals(['main', 'worktree'])
 export const providerSchema = Schema.Literals([
   'codex',
@@ -816,32 +817,58 @@ export type AutomationNode = Schema.Schema.Type<typeof flowNodeSchema>
 export type Workspace = Schema.Schema.Type<typeof workspaceSchema>
 export type TaskTurn = Schema.Schema.Type<typeof turnSchema>
 
+/** Message and turn counts, from either representation. */
+export function taskHistoryCounts(task: Task | TaskSummary) {
+  return 'history' in task
+    ? { messages: task.history.messages, turns: task.history.turns ?? 0 }
+    : { messages: task.messages.length, turns: task.turns?.length ?? 0 }
+}
+/** The newest turn, from either representation. A summary's turn has no checkpoint. */
+export function latestTaskTurn(task: Task): TaskTurn | undefined
+export function latestTaskTurn(task: Task | TaskSummary): TaskTurnSummary | undefined
+export function latestTaskTurn(task: Task | TaskSummary) {
+  return 'history' in task ? task.history.latestTurn : task.turns?.at(-1)
+}
+/** Whether any user message exists, from either representation. */
+export function taskHasUserMessage(task: Task | TaskSummary) {
+  return 'history' in task
+    ? task.history.firstUserText !== undefined
+    : task.messages.some((message) => message.role === 'user')
+}
+/** Provider of the first turn, from either representation. */
+export function firstTaskTurnProvider(task: Task | TaskSummary) {
+  return 'history' in task ? task.history.firstProvider : task.turns?.[0]?.provider
+}
+
 /** Only the newest successful, idle turn can be presented as a completed task. */
-export function latestCompletedTaskTurn(task: Task): TaskTurn | undefined {
+export function latestCompletedTaskTurn(task: Task): TaskTurn | undefined
+export function latestCompletedTaskTurn(task: Task | TaskSummary): TaskTurnSummary | undefined
+export function latestCompletedTaskTurn(task: Task | TaskSummary) {
   if (task.status !== 'review' && task.status !== 'done') return undefined
-  const turn = task.turns?.at(-1)
+  const turn = latestTaskTurn(task)
   return turn?.status === 'completed' ? turn : undefined
 }
-export function hasUnviewedTaskCompletion(task: Task): boolean {
+export function hasUnviewedTaskCompletion(task: Task | TaskSummary): boolean {
   if (task.archived || task.archivedAt || task.waitingForFeedback) return false
   const turn = latestCompletedTaskTurn(task)
   return !!turn && turn.id !== task.lastViewedTurnId
 }
 
 /** Keep active work unread until its completed response has been viewed. */
-export function hasUnreadTaskActivity(task: Task): boolean {
+export function hasUnreadTaskActivity(task: Task | TaskSummary): boolean {
   if (task.archived || task.archivedAt) return false
   return task.status === 'running' || hasUnviewedTaskCompletion(task)
 }
 
 /** A submitted message binds a task to its project and checkout, including queued input. */
-export function canChangeTaskCheckout(task: Task): boolean {
+export function canChangeTaskCheckout(task: Task | TaskSummary): boolean {
+  const counts = taskHistoryCounts(task)
   return (
     task.status === 'draft' &&
     !task.checkoutLocked &&
-    task.messages.length === 0 &&
+    counts.messages === 0 &&
     !task.queue?.length &&
-    !task.turns?.length &&
+    !counts.turns &&
     !task.consumedMessageIds?.length &&
     !task.sessionId &&
     !task.checkoutBranch &&
@@ -850,13 +877,13 @@ export function canChangeTaskCheckout(task: Task): boolean {
 }
 
 /** Provider selection ends with the first submitted input, independently of checkout selection. */
-export function canChangeTaskProvider(task: Task): boolean {
+export function canChangeTaskProvider(task: Task | TaskSummary): boolean {
   return (
     !task.providerLock &&
     !task.checkoutLocked &&
-    !task.messages.some((message) => message.role === 'user') &&
+    !taskHasUserMessage(task) &&
     !task.queue?.length &&
-    !task.turns?.length &&
+    !taskHistoryCounts(task).turns &&
     !task.consumedMessageIds?.length &&
     !task.sessionId &&
     task.status === 'draft'
@@ -865,17 +892,20 @@ export function canChangeTaskProvider(task: Task): boolean {
 
 /** Historical execution is authoritative for tasks created before provider locks existed. */
 export function lockedTaskProvider(
-  task: Task,
+  task: Task | TaskSummary,
   agents: readonly Agent[],
 ): Agent['provider'] | undefined {
   return (
-    task.turns?.[0]?.provider ??
+    firstTaskTurnProvider(task) ??
     task.providerLock ??
     (canChangeTaskProvider(task) ? undefined : resolveTaskAgent(task, agents)?.provider)
   )
 }
 /** ACP sessions belong to one installation, even though all use the ACP adapter. */
-export function lockedAcpInstallationId(task: Task, agents: readonly Agent[]): string | undefined {
+export function lockedAcpInstallationId(
+  task: Task | TaskSummary,
+  agents: readonly Agent[],
+): string | undefined {
   return lockedTaskProvider(task, agents) === 'acp'
     ? (resolveTaskAgent(task, agents)?.acpInstallationId ?? '')
     : undefined

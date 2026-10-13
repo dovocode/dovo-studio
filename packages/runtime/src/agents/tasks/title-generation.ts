@@ -191,7 +191,7 @@ export class TitleGeneration {
       }),
       value,
     )
-    const task = this.store.task(input.id)
+    const task = this.store.taskSummary(input.id)
     if (task.archived || task.archivedAt)
       throw new HttpError(409, 'Restore this thread before changing its side chats')
     const chats = task.sideChats ?? []
@@ -247,7 +247,7 @@ export class TitleGeneration {
         const key = `${input.id}:${input.chatId}`
         const update = (answer?: string, error?: string) => {
           if (!this.store.get().tasks.some((item) => item.id === input.id)) return
-          this.store.updateTask(input.id, (current) => ({
+          this.store.updateTaskHistory(input.id, (current) => ({
             ...current,
             sideChats: current.sideChats?.map((item) =>
               item.id === input.chatId
@@ -268,7 +268,7 @@ export class TitleGeneration {
             ),
           }))
         }
-        this.store.updateTask(input.id, (current) => ({
+        this.store.updateTaskHistory(input.id, (current) => ({
           ...current,
           sideChats: current.sideChats?.map((item) =>
             item.id === input.chatId
@@ -343,8 +343,7 @@ export class TitleGeneration {
           }),
           value,
         )
-        const task = this.store.get().tasks.find((item) => item.id === id)
-        if (!task) throw new HttpError(404, 'Task not found')
+        const task = this.store.task(id)
         // The newest part of long conversations matters most; keep the prompt bounded.
         const transcript = taskTranscript(task).slice(-60_000)
         const output = yield* this.trackEffect((controller) =>
@@ -360,8 +359,7 @@ export class TitleGeneration {
   commitMessageEffect(value: { id: string; diff: string }) {
     return runtimeProgram(
       Effect.gen({ self: this }, function* () {
-        const task = this.store.get().tasks.find((item) => item.id === value.id)
-        if (!task) throw new HttpError(404, 'Task not found')
+        const task = this.store.task(value.id)
         const output = yield* this.trackEffect((controller) =>
           this.runEffect(
             JSON.stringify({ request: taskRequests(task), changes: value.diff }),
@@ -379,9 +377,11 @@ export class TitleGeneration {
   pullDescriptionEffect(value: { taskId?: string; diff: string; commits: string }) {
     return runtimeProgram(
       Effect.gen({ self: this }, function* () {
-        const task = value.taskId
-          ? this.store.get().tasks.find((item) => item.id === value.taskId)
-          : undefined
+        const taskId = value.taskId
+        const task =
+          taskId && this.store.get().tasks.some((item) => item.id === taskId)
+            ? this.store.task(taskId)
+            : undefined
         const output = yield* this.trackEffect((controller) =>
           this.runEffect(
             JSON.stringify({

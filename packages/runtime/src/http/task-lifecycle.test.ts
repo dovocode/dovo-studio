@@ -153,7 +153,7 @@ it('deleting a child removes its descendants and preserves the parent and siblin
 })
 it('archives separately from settle, persists and restores without losing the conversation', async () => {
   const { store, db, action } = await setup()
-  store.updateTask(task.id, (t) => ({
+  store.updateTaskHistory(task.id, (t) => ({
     ...t,
     archived: true,
     messages: [{ id: 'message', role: 'user', text: 'Keep me' }],
@@ -232,7 +232,7 @@ it('keeps a visible thread when its terminal is still running', async () => {
 
 it('pages all authenticated history with stable cursors while preserving legacy snapshots', async () => {
   const { store, address } = await setup()
-  store.updateTask(task.id, (t) => ({
+  store.updateTaskHistory(task.id, (t) => ({
     ...t,
     messages: Array.from({ length: 80 }, (_, index) => ({
       id: `m${index}`,

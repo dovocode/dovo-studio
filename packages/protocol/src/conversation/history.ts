@@ -76,6 +76,16 @@ const encodedSize = (value: object) => {
   }
   return size
 }
+/** A page never holds more messages than this; a source window holds one more to detect older history. */
+export const conversationPageMessages = 75
+/** The newest stored messages before a cursor, oldest first, with candidate turns in history order.
+ * Hosts that keep history outside memory read `conversationPageMessages + 1` messages and only the
+ * turns whose ID or assistant message is referenced by that window. */
+export interface ConversationWindow {
+  messages: readonly Task['messages'][number][]
+  turns: readonly NonNullable<Task['turns']>[number][]
+  historyRevision?: number
+}
 /** Whole messages, bounded by requests, item count and approximate encoded bytes. */
 export function conversationPage(
   task: Pick<Task, 'messages' | 'turns' | 'historyRevision'>,
@@ -86,14 +96,23 @@ export function conversationPage(
       ? task.messages.length
       : task.messages.findIndex((message) => message.id === before)
   if (end < 0) throw new Error('This history cursor no longer exists. Reload the conversation.')
-  const turnsById = new Map(task.turns?.map((turn) => [turn.id, turn]))
-  const turnsByMessage = new Map(task.turns?.map((turn) => [turn.assistantId, turn]))
+  return conversationWindowPage({
+    messages: task.messages.slice(Math.max(0, end - conversationPageMessages - 1), end),
+    turns: task.turns ?? [],
+    historyRevision: task.historyRevision,
+  })
+}
+/** Pages a window exactly as `conversationPage` pages the complete history it was read from. */
+export function conversationWindowPage(window: ConversationWindow): ConversationPage {
+  const end = window.messages.length
+  const turnsById = new Map(window.turns.map((turn) => [turn.id, turn]))
+  const turnsByMessage = new Map(window.turns.map((turn) => [turn.assistantId, turn]))
   const includedTurns = new Set<string>()
   let start = end,
     requests = 0,
     bytes = 0
-  while (start > 0 && end - start < 75 && requests < 10) {
-    const message = task.messages[start - 1]!
+  while (start > 0 && end - start < conversationPageMessages && requests < 10) {
+    const message = window.messages[start - 1]!
     const turn =
       (message.turnId ? turnsById.get(message.turnId) : undefined) ?? turnsByMessage.get(message.id)
     const size =
@@ -105,15 +124,15 @@ export function conversationPage(
     start--
     if (message.role === 'user') requests++
   }
-  const messages = task.messages.slice(start, end)
+  const messages = window.messages.slice(start, end)
   const ids = new Set(messages.map((message) => message.id))
   const ownedTurns = new Set(
     messages.flatMap((message) => (message.turnId ? [message.turnId] : [])),
   )
   return {
     messages,
-    turns: task.turns?.filter((turn) => ids.has(turn.assistantId) || ownedTurns.has(turn.id)) ?? [],
-    ...(task.historyRevision !== undefined ? { historyRevision: task.historyRevision } : {}),
+    turns: window.turns.filter((turn) => ids.has(turn.assistantId) || ownedTurns.has(turn.id)),
+    ...(window.historyRevision !== undefined ? { historyRevision: window.historyRevision } : {}),
     ...(start > 0 ? { before: messages[0]!.id } : {}),
   }
 }

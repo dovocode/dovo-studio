@@ -167,3 +167,5 @@ try {
 } finally {
   await browser.close()
 }
+// The checks above isolate rendering cost; this one runs the real bounded turn window.
+await import('./browser/thread-window.mjs')

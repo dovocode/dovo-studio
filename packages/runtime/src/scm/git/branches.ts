@@ -70,7 +70,7 @@ export function switchBranchEffect(
             if (before.revision !== input.revision)
               throw new HttpError(409, 'Checkout changed. Refresh branches before switching.')
             if (
-              (taskId && s.store.task(taskId).existingWorktreePath) ||
+              (taskId && s.store.taskSummary(taskId).existingWorktreePath) ||
               s.store
                 .get()
                 .tasks.some(
@@ -88,7 +88,7 @@ export function switchBranchEffect(
               )).trim()
             )
               throw new HttpError(409, 'Commit or stash your changes before switching branches.')
-            const ownWorktree = taskId && s.store.task(taskId).execution === 'worktree'
+            const ownWorktree = taskId && s.store.taskSummary(taskId).execution === 'worktree'
             const repos = yield* Effect.forEach(
               s.store.get().repositories,
               (repository) =>

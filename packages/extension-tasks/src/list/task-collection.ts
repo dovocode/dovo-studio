@@ -9,6 +9,17 @@ export type TaskSource = {
   snapshot: RuntimeSnapshot | null
   online: boolean
 }
+/**
+ * The computer facts a sidebar row renders. Unlike a source it keeps its identity while only
+ * task content streams, so memoized rows neither re-render nor retain old workspace snapshots.
+ */
+export type TaskOwner = Pick<TaskSource, 'runtimeId' | 'address' | 'name' | 'online'> & {
+  agents: Workspace['agents']
+  repositories: Workspace['repositories']
+  runtimeIcon: RuntimeSnapshot['runtimeIcon']
+  acpInstallations: RuntimeSnapshot['acpInstallations']
+  worktreeDeletionOverrideSupported: boolean
+}
 export type TaskEntry = {
   key: string
   task: Task
@@ -92,4 +103,27 @@ export function collectTasks(sources: readonly TaskSource[]): TaskEntry[] {
 /** Delegated threads remain navigable, but belong to their parent in list views. */
 export function mainTaskEntries(entries: readonly TaskEntry[]): TaskEntry[] {
   return entries.filter(({ task }) => !task.delegation)
+}
+
+/** Reuse the previous owner while every row-facing fact is unchanged. */
+export function retainTaskOwner(previous: TaskOwner | undefined, source: TaskSource): TaskOwner {
+  const acpInstallations = source.snapshot?.acpInstallations ?? []
+  const next: TaskOwner = {
+    runtimeId: source.runtimeId,
+    address: source.address,
+    name: source.name,
+    online: source.online,
+    agents: source.workspace.agents,
+    repositories: source.workspace.repositories,
+    runtimeIcon: source.snapshot?.runtimeIcon,
+    acpInstallations:
+      previous && JSON.stringify(previous.acpInstallations) === JSON.stringify(acpInstallations)
+        ? previous.acpInstallations
+        : acpInstallations,
+    worktreeDeletionOverrideSupported: source.snapshot?.worktreeDeletionOverrideSupported === true,
+  }
+  return previous &&
+    (Object.keys(next) as (keyof TaskOwner)[]).every((key) => Object.is(previous[key], next[key]))
+    ? previous
+    : next
 }

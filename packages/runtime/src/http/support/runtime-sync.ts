@@ -15,7 +15,6 @@ import type { Schema } from 'effect'
 import type { Services } from '../../services.js'
 import type { Activity } from '../../storage/activity.js'
 import { runtimeSnapshot } from './runtime-snapshot.js'
-import { scopedWorkspace } from './snapshot-overview.js'
 import { snapshotTag } from './body.js'
 
 type ActivityEvent = Schema.Schema.Type<typeof activitySchema>['events'][number]
@@ -105,7 +104,15 @@ class RuntimeSync {
       this.activityScopes.delete(scope)
     }
   }
-  private projection?: { signature: string; checked: number; pending: Promise<RuntimeSnapshot> }
+  // Share a projection only between identical history scopes. Modern connections must never
+  // construct a full-workspace baseline merely to discard most of its histories afterward.
+  private projections = new Map<
+    string,
+    { signature: string; checked: number; pending: Promise<RuntimeSnapshot> }
+  >()
+  private projectionKey(view: View) {
+    return JSON.stringify([view.taskIds && [...new Set(view.taskIds)].sort(), view.pagedHistory])
+  }
   constructor(private services: Services) {}
   async dispose() {
     this.controller.abort()
@@ -123,8 +130,9 @@ class RuntimeSync {
     this.views.clear()
     for (const entry of this.activityScopes.values()) entry.watch.stop()
     this.activityScopes.clear()
-    if (this.projection) pending.push(this.projection.pending.then(() => {}))
-    this.projection = undefined
+    for (const projection of this.projections.values())
+      pending.push(projection.pending.then(() => {}))
+    this.projections.clear()
     await Promise.allSettled(pending)
   }
   private view(
@@ -166,6 +174,13 @@ class RuntimeSync {
   private leave(view: View, client: Client) {
     view.clients.delete(client)
     if (!view.clients.size && !this.controller.signal.aborted) {
+      const key = this.projectionKey(view)
+      if (
+        ![...this.views.values()].some(
+          (other) => other.clients.size && this.projectionKey(other) === key,
+        )
+      )
+        this.projections.delete(key)
       view.expiry = setTimeout(
         () => {
           if (!view.clients.size && this.views.get(view.id) === view) this.views.delete(view.id)
@@ -350,7 +365,7 @@ class RuntimeSync {
         this.timer = undefined
         clearTimeout(this.wakeup)
         this.wakeup = undefined
-        this.projection = undefined
+        this.projections.clear()
       }
     })
     if (!this.timer) {
@@ -396,31 +411,30 @@ class RuntimeSync {
     if (signature === view.signature && Date.now() - view.checked < 15000) return
     // Share the expensive workspace projection/hash across desktop and phone, but filter
     // trust metadata before serializing each authenticated device's own view.
+    const key = this.projectionKey(view)
+    let projection = this.projections.get(key)
     if (
-      !this.projection ||
-      this.projection.signature !== signature ||
-      Date.now() - this.projection.checked >= 15000
+      !projection ||
+      projection.signature !== signature ||
+      Date.now() - projection.checked >= 15000
     ) {
-      const projection = {
+      projection = {
         signature,
         checked: Date.now(),
-        pending: Effect.runPromise(runtimeSnapshot(s, { id: 'owner', owner: true }), {
-          signal: this.controller.signal,
-        }),
+        pending: Effect.runPromise(
+          runtimeSnapshot(s, { id: 'owner', owner: true }, false, view.taskIds, view.pagedHistory),
+          {
+            signal: this.controller.signal,
+          },
+        ),
       }
-      this.projection = projection
+      this.projections.set(key, projection)
+      const active = projection
       projection.pending.catch(() => {
-        if (this.projection === projection) this.projection = undefined
+        if (this.projections.get(key) === active) this.projections.delete(key)
       })
     }
-    const prepared = await this.projection.pending
-    const common = view.taskIds
-      ? {
-          ...prepared,
-          detailTaskIds: [...view.taskIds],
-          workspace: scopedWorkspace(prepared.workspace, view.taskIds, view.pagedHistory),
-        }
-      : prepared
+    const common = await projection.pending
     const next = view.device.owner
       ? common
       : {

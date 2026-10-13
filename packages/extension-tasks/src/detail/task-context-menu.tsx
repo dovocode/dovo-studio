@@ -1,7 +1,7 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { randomUUID, templateFromTask, runtimePreferencesSchema } from '@dovo/protocol'
 import { conversationPageSchema, taskTranscript, type ConversationPage } from '@dovo/protocol'
-import { useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import {
   generatedTitleSchema,
@@ -9,8 +9,8 @@ import {
   isSnoozed,
   latestCompletedTaskTurn,
   responses,
-  useWorkspace,
   readAppPreferences,
+  type Task,
 } from '@dovo/studio-core'
 import {
   Button,
@@ -43,15 +43,21 @@ import {
   Sparkles,
   Undo2,
 } from 'lucide-react'
-import type { TaskEntry } from '../list/task-collection'
-import { taskActionClient, taskRowValues, type TaskRowChanges } from '../list/task-row-actions'
+import type { TaskOwner } from '../list/task-collection'
+import {
+  taskActionClient,
+  taskRowValues,
+  useTaskActionStore,
+  type TaskRowChanges,
+} from '../list/task-row-actions'
 const menuClass =
   'z-50 max-h-[var(--radix-context-menu-content-available-height)] min-w-56 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground shadow-xl'
 const itemClass =
   'flex cursor-default items-center gap-2 rounded-lg px-2.5 py-2 text-xs outline-none transition-colors data-[highlighted]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-muted-foreground'
 const separatorClass = 'my-1 h-px bg-border/70'
 export function TaskContextMenu({
-  entry,
+  task,
+  owner: source,
   selected,
   busy,
   children,
@@ -62,10 +68,12 @@ export function TaskContextMenu({
   onTemplate,
   onDeselect,
   onError,
+  onActiveChange,
   selectionMenu,
 }: {
   selectionMenu?: ReactNode
-  entry: TaskEntry
+  task: Task
+  owner: TaskOwner
   selected: boolean
   busy: boolean
   children: ReactNode
@@ -78,22 +86,28 @@ export function TaskContextMenu({
   onTemplate?: (templateId: string) => void
   onDeselect: () => void
   onError: (message: string) => void
+  /** Reports an open menu, dialog or action, so a windowed list keeps this row mounted. */
+  onActiveChange?: (active: boolean) => void
 }) {
-  const store = useWorkspace()
-  const { task, source } = entry
+  const store = useTaskActionStore()
   const client = taskActionClient(store, source)
-  const { repository, branch } = taskRowValues(task, source)
+  const { repository, branch } = taskRowValues(task, source.repositories)
   const [pending, setPending] = useApplicationState(false)
   const pendingRef = useRef(false)
   const [error, setError] = useApplicationState('')
   const [dialog, setDialog] = useApplicationState<'rename' | 'delete' | 'template' | null>(null)
-  const supportsWorktreeOverride = source.snapshot?.worktreeDeletionOverrideSupported === true
+  const supportsWorktreeOverride = source.worktreeDeletionOverrideSupported
   const [removeWorktrees, setRemoveWorktrees] = useApplicationState(false)
   const [templateName, setTemplateName] = useApplicationState(task.title)
   const templates = repository?.templates ?? []
   const local = source.runtimeId === store.activeRuntimeId
   const [title, setTitle] = useApplicationState(task.title)
   const blocked = busy || pending
+  const [menuOpen, setMenuOpen] = useState(false)
+  const active = menuOpen || dialog !== null || pending
+  useEffect(() => {
+    onActiveChange?.(active)
+  }, [active, onActiveChange])
   const canEdit = source.online && !blocked
   const turn = latestCompletedTaskTurn(task)
   const unread = hasUnviewedTaskCompletion(task)
@@ -160,7 +174,7 @@ export function TaskContextMenu({
   )
   if (selectionMenu)
     return (
-      <ContextMenu.Root>
+      <ContextMenu.Root onOpenChange={setMenuOpen}>
         {trigger}
         <ContextMenu.Portal>
           <ContextMenu.Content className={menuClass} collisionPadding={8}>
@@ -171,7 +185,7 @@ export function TaskContextMenu({
     )
   return (
     <>
-      <ContextMenu.Root>
+      <ContextMenu.Root onOpenChange={setMenuOpen}>
         {trigger}
         <ContextMenu.Portal>
           <ContextMenu.Content

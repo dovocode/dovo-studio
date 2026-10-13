@@ -12,7 +12,7 @@ import {
   pipelineSignal,
   resolveTaskAgent,
   type ForgePipelineDetail,
-  type Task,
+  type TaskMetadata,
 } from '@dovo/protocol'
 import { z } from 'zod'
 import type { Services } from '../../services.js'
@@ -129,7 +129,7 @@ export class PipelineWatch {
       .prepare('INSERT OR REPLACE INTO task_pipeline_watches VALUES (?,?,?,?)')
       .run(state.taskId, state.repositoryId, state.runId, JSON.stringify(state))
   }
-  reconcile(tasks: readonly Task[]) {
+  reconcile(tasks: readonly TaskMetadata[]) {
     const available = new Map(tasks.map((task) => [task.id, task]))
     for (const [token, registration] of this.registrations) {
       const task = available.get(registration.taskId)
@@ -168,7 +168,7 @@ export class PipelineWatch {
         'Enable the experimental pipeline watcher in this computer’s settings first',
       )
   }
-  private eligible(task: Task) {
+  private eligible(task: TaskMetadata) {
     return (
       !task.example &&
       !task.delegation &&
@@ -178,7 +178,7 @@ export class PipelineWatch {
     )
   }
   private writable(taskId: string) {
-    const task = this.s.store.task(taskId)
+    const task = this.s.store.taskSummary(taskId)
     if (resolveTaskAgent(task, this.s.store.get().agents)?.permission === 'read-only')
       throw new HttpError(403, 'Pipeline watching is disabled for read-only threads')
     return task
@@ -206,7 +206,7 @@ export class PipelineWatch {
     this.s.tasks.assertToolScope(input.taskId, input.parentRunId)
     const task =
       manageExisting && input.action !== 'watch'
-        ? this.s.store.task(input.taskId)
+        ? this.s.store.taskSummary(input.taskId)
         : this.writable(input.taskId)
     const selected = (state: State) =>
       (!input.repositoryId || input.repositoryId === state.repositoryId) &&
@@ -361,7 +361,7 @@ export class PipelineWatch {
           }
           const detail = await reading
           if (!this.current(state)) continue
-          const latest = this.s.store.task(state.taskId)
+          const latest = this.s.store.taskSummary(state.taskId)
           if (
             watchRepositoryError(latest, state.repositoryId, state.primaryRepositoryId) ||
             !this.eligible(latest)

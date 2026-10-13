@@ -219,7 +219,7 @@ it('streams, resumes a task and starts a fresh session when its configuration ch
   expect(s.activity.list('tool.completed', 'agent-event', 0).events[0].payload).toContain(
     'git status',
   )
-  s.store.updateTask(task.id, (t) => ({
+  s.store.updateTaskHistory(task.id, (t) => ({
     ...t,
     messages: [
       ...t.messages,
@@ -289,7 +289,7 @@ it('records a provider-confirmed manual compaction on the resumed session', asyn
   await (
     await s.tasks.start(task.id)
   ).done
-  s.store.updateTask(task.id, (current) => ({
+  s.store.updateTaskHistory(task.id, (current) => ({
     ...current,
     messages: [...current.messages, { id: 'compact-request', role: 'user', text: '/compact' }],
   }))
@@ -587,7 +587,7 @@ it('persists separate checkpoint diffs for completed and failed turns', async ()
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
     run: async (run) => {
-      expect(s.store.get().tasks[0].turns?.at(-1)?.checkpoint?.before).toBeTruthy()
+      expect(s.store.task(s.store.get().tasks[0].id).turns?.at(-1)?.checkpoint?.before).toBeTruthy()
       await writeFile(
         join(run.cwd, 'hello.txt'),
         ++attempt === 1 ? 'first turn\n' : 'partial failure\n',
@@ -1093,9 +1093,9 @@ it('does not strand input received between the final queue check and run cleanup
     agentId: 'agent',
     objective: 'Original',
   })
-  const originalTask = s.store.task.bind(s.store)
+  const originalTask = s.store.taskSummary.bind(s.store)
   let injected = false
-  vi.spyOn(s.store, 'task').mockImplementation((id) => {
+  vi.spyOn(s.store, 'taskSummary').mockImplementation((id) => {
     const value = originalTask(id)
     if (id === task.id && value.status === 'review' && !injected) {
       injected = true
@@ -1108,6 +1108,7 @@ it('does not strand input received between the final queue check and run cleanup
   await (
     await s.tasks.start(task.id)
   ).done
+  expect(injected).toBe(true)
   expect(prompts).toEqual(['user: Original', 'user: Arrived at handoff'])
   expect(s.store.task(task.id).queue).toEqual([])
 })
@@ -1723,9 +1724,9 @@ it('keeps provider success when finalization storage fails and retries capture w
     agentId: 'agent',
     objective: 'Do work',
   })
-  const update = s.store.updateTask.bind(s.store)
+  const update = s.store.updateTaskHistory.bind(s.store)
   let fail = true
-  vi.spyOn(s.store, 'updateTask').mockImplementation((id, fn, receipt, action) => {
+  vi.spyOn(s.store, 'updateTaskHistory').mockImplementation((id, fn, receipt, action) => {
     const next = fn(s.store.task(id))
     if (fail && next.status === 'review') {
       fail = false

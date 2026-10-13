@@ -174,6 +174,16 @@ export type SyncFrame = Schema.Schema.Type<typeof syncFrameSchema>
 export type SnapshotDelta = Schema.Schema.Type<typeof snapshotDeltaSchema>
 const taskMetadata = ({ messages: _messages, updatedAt: _updatedAt, ...metadata }: Task) => metadata
 const equal = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b)
+// Streaming replaces a task, but usually shares its files, turns and other large fields.
+// Compare those references before serializing any changed field. Undefined and missing
+// properties are equivalent on the wire, just as they are with JSON.stringify.
+function equalFields(a: object, b: object) {
+  const entries: [string, unknown][] = Object.entries(a).filter(([, value]) => value !== undefined)
+  return (
+    entries.length === Object.values(b).filter((value) => value !== undefined).length &&
+    entries.every(([key, value]) => Object.hasOwn(b, key) && equal(value, Reflect.get(b, key)))
+  )
+}
 const stateMetadata = ({ revision: _revision, ...metadata }: Omit<RuntimeSnapshot, 'workspace'>) =>
   metadata
 export function snapshotDelta(
@@ -193,29 +203,34 @@ export function snapshotDelta(
     const { messages: oldMessages, ...oldFields } = before ?? { messages: [] }
     const fieldsChanged =
       !before ||
-      (compact ? !equal(taskMetadata(task), taskMetadata(before)) : !equal(fields, oldFields))
+      (compact
+        ? !equalFields(taskMetadata(task), taskMetadata(before))
+        : !equalFields(fields, oldFields))
     const updatedAtChanged =
       compact && before && !fieldsChanged && task.updatedAt !== before.updatedAt
     const messageChanges: Schema.Schema.Type<typeof messagesSchema>['changes'] = []
-    const oldById = new Map(oldMessages.map((message) => [message.id, message]))
-    for (const message of messages) {
-      const last = oldById.get(message.id)
-      if (last === message) continue
-      const { text, ...messageFields } = message
-      const { text: oldText, ...oldMessageFields } = last ?? { text: undefined }
-      if (last && text === oldText && equal(messageFields, oldMessageFields)) continue
-      messageChanges.push({
-        fields: messageFields,
-        text:
-          last && text.startsWith(last.text)
-            ? { length: last.text.length, append: text.slice(last.text.length) }
-            : text,
-      })
+    let messageOrderChanged = false
+    if (messages !== oldMessages) {
+      const oldById = new Map(oldMessages.map((message) => [message.id, message]))
+      for (const message of messages) {
+        const last = oldById.get(message.id)
+        if (last === message) continue
+        const { text, ...messageFields } = message
+        const { text: oldText, ...oldMessageFields } = last ?? { text: undefined }
+        if (last && text === oldText && equalFields(messageFields, oldMessageFields)) continue
+        messageChanges.push({
+          fields: messageFields,
+          text:
+            last && text.startsWith(last.text)
+              ? { length: last.text.length, append: text.slice(last.text.length) }
+              : text,
+        })
+      }
+      messageOrderChanged = !equal(
+        oldMessages.map((message) => message.id),
+        messages.map((message) => message.id),
+      )
     }
-    const messageOrderChanged = !equal(
-      oldMessages.map((message) => message.id),
-      messages.map((message) => message.id),
-    )
     const messagesChanged = messageChanges.length > 0 || messageOrderChanged
     if (fieldsChanged || messagesChanged || updatedAtChanged)
       changes.push({
@@ -268,10 +283,10 @@ export function snapshotDelta(
     tasks.map((task) => task.id),
   )
   return {
-    ...(!compact || !equal(stateMetadata(state), stateMetadata(oldState)) ? { state } : {}),
+    ...(!compact || !equalFields(stateMetadata(state), stateMetadata(oldState)) ? { state } : {}),
     ...(compact && state.revision !== oldState.revision ? { revision: state.revision } : {}),
     workspace: {
-      ...(!compact || !equal(metadata, oldMetadata) ? { metadata } : {}),
+      ...(!compact || !equalFields(metadata, oldMetadata) ? { metadata } : {}),
       ...(!equal(previous.workspace.agents, agents) ? { agents } : {}),
       ...(!equal(previous.workspace.repositories, repositories) ? { repositories } : {}),
       ...(!equal(previous.workspace.automations, automations) ? { automations } : {}),

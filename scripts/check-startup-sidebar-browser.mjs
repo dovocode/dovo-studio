@@ -11,6 +11,7 @@ const mocks = {
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
     export {WorkspaceContext,useWorkspace} from '../studio-core/src/workspace/context';
+    export {WorkspaceValueProvider,useWorkspaceSelector,sameWorkspaceFields} from '../studio-core/src/workspace/selector';
     const host={}; export const useStudioHost=()=>host;
     export const readAppPreferences=()=>window.preferences;
     export const useAppPreferences=readAppPreferences;
@@ -37,7 +38,7 @@ const built = await build({
     contents: `
       import {useState,useCallback} from 'react';
       import {createRoot} from 'react-dom/client';
-      import {WorkspaceContext,useStudioHost} from '@dovo/studio-core';
+      import {WorkspaceValueProvider,useStudioHost} from '@dovo/studio-core';
       import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
       import {TaskList} from '../extension-tasks/src/list/task-list';
       import {collectTasks,taskCollectionKey} from '../extension-tasks/src/list/task-collection';
@@ -54,12 +55,12 @@ const built = await build({
         window.saved=workspace.tasks;window.temporary=draft;
         const store={workspace,setWorkspace,activeRuntimeId:'mac',connected:true,snapshot:null,runtimes:[],runtimeRegistry:{profiles:[]},flush:async()=>{},request:async(path)=>{window.requests.push(path);return {taskIds:[],hits:[]}},refreshRuntimes:async()=>{}};
         const start=()=>{setOpen(true);setVersion(value=>value+1);setSelected('')};
-        return <WorkspaceContext.Provider value={store}>
+        return <WorkspaceValueProvider value={store}>
           <button id="leave" onClick={()=>setOpen(false)}>Leave</button>
           <button id="new" onClick={start}>Start new</button>
           <TaskList projectId="different-project" onProjectChange={()=>{}} selectedId={selected||temporaryEntry?.key||''} onSelect={()=>{}} onCreate={()=>{}} onNewThread={start} onDeselect={()=>{}} sources={[source]} temporaryEntry={temporaryEntry} activeRuntimeId="mac" busy={false} error=""/>
           {open&&<StartupDraft key={version} onProject={()=>{}} onDraftChange={report} onCommit={task=>{window.commits++;setSelected(taskCollectionKey('mac',task.id));setOpen(false)}}/>}
-        </WorkspaceContext.Provider>
+        </WorkspaceValueProvider>
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,

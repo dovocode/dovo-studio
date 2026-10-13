@@ -11,7 +11,7 @@ import { body } from '../support/body.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 function terminalCheckout(store: WorkspaceStore, taskId: string, checkoutId?: string) {
   const seen = new Set<string>()
-  let task = store.task(taskId)
+  let task = store.taskSummary(taskId)
   let selected = checkoutId
   while (true) {
     if (task.archived || task.archivedAt)
@@ -20,7 +20,7 @@ function terminalCheckout(store: WorkspaceStore, taskId: string, checkoutId?: st
     seen.add(task.id)
     if (!task.delegation) break
     selected ??= task.delegation.checkoutId
-    task = store.task(task.delegation.parentTaskId)
+    task = store.taskSummary(task.delegation.parentTaskId)
   }
   const link = selected ? task.linkedCheckouts?.find((entry) => entry.id === selected) : undefined
   if (selected && !link) throw new HttpError(404, 'Linked checkout not found')
@@ -55,7 +55,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           }),
           yield* serviceResult(body(request)),
         )
-        const task = yield* runtimeOperation(() => s.store.task(taskId))
+        const task = yield* runtimeOperation(() => s.store.taskSummary(taskId))
         const repo = yield* runtimeOperation(() =>
           s.store.get().repositories.find((r) => r.id === task.repositoryId),
         )
@@ -93,7 +93,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           }),
           yield* serviceResult(body(request)),
         )
-        const task = yield* runtimeOperation(() => s.store.task(taskId))
+        const task = yield* runtimeOperation(() => s.store.taskSummary(taskId))
         const repo = yield* runtimeOperation(() =>
           s.store.get().repositories.find((r) => r.id === task.repositoryId),
         )

@@ -3,6 +3,7 @@ import { stopOwnedChild } from '../../agents/execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createFilePreview } from './file-preview.js'
+import { GitBlobReader } from './cat-file-batch.js'
 import { detectInstalledOpeners, type InstalledOpener } from './installed-openers.js'
 import { folderOpenCommand, launchDesktop } from './open-folder.js'
 import type { RepositoryOpenTarget } from '@dovo/protocol'
@@ -414,12 +415,38 @@ export class GitService {
       throw error
     }
   }
-  private identities = new Map<string, { expires: number; result: Promise<string | undefined> }>()
+  private identities = new Map<
+    string,
+    { expires: number; pending: boolean; result: Promise<string | undefined> }
+  >()
   repositoryIdentity(path: string, refresh = false) {
+    const now = Date.now()
     const cached = this.identities.get(path)
-    if (!refresh && cached && cached.expires > Date.now()) return cached.result
+    for (const [key, entry] of this.identities)
+      if (key !== path && !entry.pending && entry.expires <= now) this.identities.delete(key)
+    if (cached && (cached.pending || (!refresh && cached.expires > now))) {
+      this.identities.delete(path)
+      this.identities.set(path, cached)
+      return cached.result
+    }
     const result = this.readRepositoryIdentity(path)
-    this.identities.set(path, { expires: Date.now() + 60000, result })
+    const entry = { expires: now + 60000, pending: true, result }
+    if (this.identities.size >= 256 && !this.identities.has(path))
+      for (const [key, old] of this.identities) {
+        if (old.pending) continue
+        this.identities.delete(key)
+        break
+      }
+    if (this.identities.size < 256 || this.identities.has(path)) this.identities.set(path, entry)
+    result.then(
+      () => {
+        entry.pending = false
+        entry.expires = Date.now() + 60000
+      },
+      () => {
+        if (this.identities.get(path) === entry) this.identities.delete(path)
+      },
+    )
     return result
   }
   // Non-blocking read for hot paths (e.g. the snapshot route): never spawns git inline.
@@ -871,67 +898,50 @@ export class GitService {
     // These limits bound embedded previews, never the list of saved files.
     let remaining = 1024 * 1024
     let previews = 0
-    // A blob is immutable. Identical files and unchanged sides need only one Git read.
-    const blobs = new Map<string, string>()
-    let cachedBytes = 0
-    const contentOf = async (hash: string) => {
-      const saved = blobs.get(hash)
-      if (saved !== undefined) return saved
-      const content = await this.command(cwd, ['cat-file', 'blob', hash])
-      if (content.includes('\0') || content.includes('\ufffd')) {
-        // Keep only the classification marker, never hundreds of binary bodies.
-        blobs.set(hash, '\0')
-      } else {
-        const bytes = Buffer.byteLength(content)
-        if (cachedBytes + bytes <= 1024 * 1024) {
-          cachedBytes += bytes
-          blobs.set(hash, content)
-        }
-      }
-      return content
-    }
-    for (const name of names) {
-      const sides = { before: trees[0].get(name), after: trees[1].get(name) }
-      const entries = [sides.before, sides.after].filter((side) => side !== undefined)
-      let kind: FilePreviewMetadata['kind'] | undefined = entries.some(
-        (side) => side.mode === '160000',
-      )
-        ? 'submodule'
-        : entries.some((side) => side.mode === '120000')
-          ? 'symlink'
-          : entries.some((side) => side.size > 256 * 1024)
-            ? 'large'
-            : previews >= 200 || entries.reduce((sum, side) => sum + side.size, 0) > remaining
-              ? 'deferred'
-              : undefined
-      const contents: string[] = []
-      if (!kind) {
-        for (const side of [sides.before, sides.after]) {
-          const content = side ? await contentOf(side.hash) : ''
-          if (content.includes('\0') || content.includes('\ufffd')) {
-            kind = /\.(png|jpe?g|webp|gif|avif|tiff?|heic|ico)$/i.test(name) ? 'image' : 'binary'
-            break
+    return this.withBlobs(cwd, async (blobs) => {
+      for (const name of names) {
+        const sides = { before: trees[0].get(name), after: trees[1].get(name) }
+        const entries = [sides.before, sides.after].filter((side) => side !== undefined)
+        let kind: FilePreviewMetadata['kind'] | undefined = entries.some(
+          (side) => side.mode === '160000',
+        )
+          ? 'submodule'
+          : entries.some((side) => side.mode === '120000')
+            ? 'symlink'
+            : entries.some((side) => side.size > 256 * 1024)
+              ? 'large'
+              : previews >= 200 || entries.reduce((sum, side) => sum + side.size, 0) > remaining
+                ? 'deferred'
+                : undefined
+        const contents: string[] = []
+        if (!kind) {
+          for (const side of [sides.before, sides.after]) {
+            const content = side ? await blobs.text(side.hash, side.size) : ''
+            if (content.includes('\0') || content.includes('\ufffd')) {
+              kind = /\.(png|jpe?g|webp|gif|avif|tiff?|heic|ico)$/i.test(name) ? 'image' : 'binary'
+              break
+            }
+            contents.push(content)
           }
-          contents.push(content)
+        }
+        if (kind) {
+          if (kind === 'large' && /\.(png|jpe?g|webp|gif|avif|tiff?|heic|ico)$/i.test(name))
+            kind = 'image'
+          files.push({
+            path: name,
+            before: '',
+            after: '',
+            viewed: false,
+            preview: { kind, ...sides },
+          })
+        } else {
+          remaining -= entries.reduce((sum, side) => sum + side.size, 0)
+          previews++
+          files.push({ path: name, before: contents[0], after: contents[1], viewed: false })
         }
       }
-      if (kind) {
-        if (kind === 'large' && /\.(png|jpe?g|webp|gif|avif|tiff?|heic|ico)$/i.test(name))
-          kind = 'image'
-        files.push({
-          path: name,
-          before: '',
-          after: '',
-          viewed: false,
-          preview: { kind, ...sides },
-        })
-      } else {
-        remaining -= entries.reduce((sum, side) => sum + side.size, 0)
-        previews++
-        files.push({ path: name, before: contents[0], after: contents[1], viewed: false })
-      }
-    }
-    return { files, omitted: [] }
+      return { files, omitted: [] }
+    })
   }
   /** Bounded, read-only sources for AST review ordering. Missing local PR commits need no fetch. */
   async reviewGoModules(
@@ -973,16 +983,18 @@ export class GitService {
         } catch {
           return contents
         }
-        for (const [path, entry] of tree) {
-          if (
-            entry.size > 32 * 1024 ||
-            entry.size > remaining ||
-            !['100644', '100755'].includes(entry.mode)
-          )
-            continue
-          contents.set(path, await this.command(cwd, ['cat-file', 'blob', entry.hash]))
-          remaining -= entry.size
-        }
+        await this.withBlobs(cwd, async (blobs) => {
+          for (const [path, entry] of tree) {
+            if (
+              entry.size > 32 * 1024 ||
+              entry.size > remaining ||
+              !['100644', '100755'].includes(entry.mode)
+            )
+              continue
+            contents.set(path, await blobs.text(entry.hash, entry.size))
+            remaining -= entry.size
+          }
+        })
       } else {
         for (const path of names) {
           const filename = join(cwd, path)
@@ -1055,30 +1067,45 @@ export class GitService {
       return true
     })
     const sources: { path: string; previousPath?: string; before: string; after: string }[] = []
-    // At most two Git blob processes at once, even for a large PR.
-    for (let index = 0; index < selected.length; index += 2) {
-      const batch = await Promise.all(
-        selected.slice(index, index + 2).map(async (file) => {
-          const contents: string[] = []
-          for (const side of [
-            trees[0].get(file.previousPath ?? file.path),
-            trees[1].get(file.path),
-          ]) {
-            const text = side ? await this.command(cwd, ['cat-file', 'blob', side.hash]) : ''
-            if (text.includes('\0') || text.includes('\ufffd')) return undefined
-            contents.push(text)
-          }
-          return {
+    return this.withBlobs(cwd, async (blobs) => {
+      for (const file of selected) {
+        const contents: string[] = []
+        for (const side of [
+          trees[0].get(file.previousPath ?? file.path),
+          trees[1].get(file.path),
+        ]) {
+          const text = side ? await blobs.text(side.hash, side.size) : ''
+          if (text.includes('\0') || text.includes('\ufffd')) break
+          contents.push(text)
+        }
+        if (contents.length === 2)
+          sources.push({
             path: file.path,
             previousPath: file.previousPath,
             before: contents[0],
             after: contents[1],
-          }
-        }),
-      )
-      for (const source of batch) if (source) sources.push(source)
+          })
+      }
+      return sources
+    })
+  }
+  private async withBlobs<T>(cwd: string, read: (blobs: GitBlobReader) => Promise<T>): Promise<T> {
+    const args = [this.settings().git, 'cat-file', '--batch']
+    let started = false
+    const blobs = new GitBlobReader(args[0], cwd, undefined, () => {
+      started = true
+      this.audit?.(cwd, args)
+    })
+    try {
+      const result = await read(blobs)
+      if (started) this.audit?.(cwd, args, {})
+      return result
+    } catch (error) {
+      if (started) this.audit?.(cwd, args, { error: errorMessage(error) })
+      throw error
+    } finally {
+      await blobs.close()
     }
-    return sources
   }
   private async treeFiles(cwd: string, tree: string, names: string[]) {
     const files = new Map<string, NonNullable<FilePreviewMetadata['before']>>()

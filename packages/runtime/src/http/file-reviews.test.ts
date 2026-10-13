@@ -317,7 +317,7 @@ it('isolates identical working sources whose Go module identities differ between
     ...workspace,
     tasks: [
       { ...workspace.tasks[0], files },
-      { ...workspace.tasks[0], id: 'second', files },
+      { ...runtime.services.store.task(workspace.tasks[0].id), id: 'second', files },
     ],
   }))
   vi.spyOn(runtime.services.checkouts, 'reviewDirectory').mockImplementation(

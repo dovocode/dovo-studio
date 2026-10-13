@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { readFile, writeFile, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
@@ -114,5 +114,43 @@ it('retains every live path and bounds previews without changing Git refs or the
     expect(await git.command(f.directory, ['show-ref'])).toBe(refs)
   } finally {
     await f.cleanup()
+  }
+})
+
+it('bounds identity retention, expires unused paths and coalesces pending reads', async () => {
+  const git = new GitService()
+  const command = vi
+    .spyOn(git, 'command')
+    .mockImplementation(async (_cwd, args) =>
+      args.length === 1 ? 'origin\n' : 'https://github.com/owner/repository\n',
+    )
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+  try {
+    await git.repositoryIdentity('first')
+    for (let index = 0; index < 256; index++) await git.repositoryIdentity(`repository-${index}`)
+    command.mockClear()
+    await git.repositoryIdentity('repository-255')
+    expect(command).not.toHaveBeenCalled()
+    await git.repositoryIdentity('first')
+    expect(command).toHaveBeenCalledTimes(2)
+    clock.mockReturnValue(62000)
+    command.mockClear()
+    await git.repositoryIdentity('repository-255')
+    expect(command).toHaveBeenCalledTimes(2)
+    let resolve!: (value: string) => void
+    command.mockImplementationOnce(
+      () =>
+        new Promise<string>((done) => {
+          resolve = done
+        }),
+    )
+    const pending = git.repositoryIdentity('pending')
+    clock.mockReturnValue(130000)
+    expect(git.repositoryIdentity('pending')).toBe(pending)
+    resolve('origin\n')
+    expect(await pending).toBe('github.com/owner/repository')
+  } finally {
+    command.mockRestore()
+    clock.mockRestore()
   }
 })

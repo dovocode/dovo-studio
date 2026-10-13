@@ -41,12 +41,12 @@ export class TaskCheckout {
   }
   /** Delegated runs keep primary-project defaults but may execute in a linked project. */
   executionRepository(id: string) {
-    let task = this.store.task(id)
+    let task = this.store.taskSummary(id)
     const visited = new Set<string>()
     while (task.delegation) {
       if (visited.has(task.id)) throw new HttpError(400, 'Invalid child agent ancestry')
       visited.add(task.id)
-      const parent = this.store.task(task.delegation.parentTaskId)
+      const parent = this.store.taskSummary(task.delegation.parentTaskId)
       if (task.delegation.checkoutId) {
         const link = parent.linkedCheckouts?.find((item) => item.id === task.delegation?.checkoutId)
         if (!link) throw new HttpError(404, 'Linked checkout not found')
@@ -77,7 +77,7 @@ export class TaskCheckout {
   ): Promise<string | undefined> {
     if (visited.has(id)) return undefined
     visited.add(id)
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     if (task.delegation && !checkoutId)
       return this.reviewDirectory(task.delegation.parentTaskId, task.delegation.checkoutId, visited)
     const link = checkoutId
@@ -126,7 +126,7 @@ export class TaskCheckout {
   ): Promise<string> {
     if (visited.has(id)) throw new HttpError(400, 'Invalid child agent ancestry')
     visited.add(id)
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     if (task.delegation && !checkoutId)
       return this.fileDirectory(task.delegation.parentTaskId, task.delegation.checkoutId, visited)
     const link = checkoutId
@@ -148,7 +148,7 @@ export class TaskCheckout {
     return this.pending.run(id, (sharedSignal) => this.preparedDirectory(id, sharedSignal), signal)
   }
   private async preparedDirectory(id: string, signal?: AbortSignal) {
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     if (task.delegation)
       return this.selectedDirectory(
         task.delegation.parentTaskId,
@@ -188,7 +188,7 @@ export class TaskCheckout {
   }
   private async resolve(id: string, signal?: AbortSignal) {
     signal?.throwIfAborted()
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     const repo = this.store.get().repositories.find((r) => r.id === task.repositoryId)
     if (!repo) throw new HttpError(404, 'Repository not found')
     if (repo.kind) {
@@ -404,7 +404,7 @@ export class TaskCheckout {
   ) {
     signal?.throwIfAborted()
     const cwd = (await this.git.inspect(directory)).path
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     if (task.submodules && task.submodules !== 'none' && !task.worktreeSubmodulesComplete) {
       this.progress(id, steps, 'submodules', branch)
       signal?.throwIfAborted()

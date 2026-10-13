@@ -268,7 +268,7 @@ it('prunes materialized orphan files but keeps attachments referenced by convers
     orphan = await upload('orphan.txt')
   const retainedDisk = await s.attachments.materialize(task.id, retained),
     orphanDisk = await s.attachments.materialize(task.id, orphan)
-  s.store.updateTask(task.id, (current) => ({
+  s.store.updateTaskHistory(task.id, (current) => ({
     ...current,
     draftAttachments: [],
     messages: [{ id: 'history', role: 'user', text: 'Keep file', attachments: [retained] }],

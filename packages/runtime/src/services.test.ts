@@ -27,7 +27,7 @@ it('restarts over the same database without replaying conversations into activit
     agentId: 'agent',
     objective: 'Original request',
   })
-  r.services.store.updateTask(task.id, (t) => ({
+  r.services.store.updateTaskHistory(task.id, (t) => ({
     ...t,
     messages: [...t.messages, { id: 'reply', role: 'assistant', text: 'Answer' }],
   }))
@@ -83,12 +83,12 @@ it.each([false, true])(
       agentId: 'agent',
       objective: 'Original request',
     })
-    services.store.updateTask(task.id, (current) => ({
+    services.store.updateTaskHistory(task.id, (current) => ({
       ...current,
       messages: [...current.messages, { id: 'old', role: 'assistant', text: 'Pruned old answer' }],
     }))
     services.activity.pruneBefore(new Date(Date.now() + 60_000).toISOString())
-    services.store.updateTask(task.id, (current) => ({
+    services.store.updateTaskHistory(task.id, (current) => ({
       ...current,
       status: 'running',
       runPhase: 'provider',
@@ -105,12 +105,12 @@ it.each([false, true])(
         },
       ],
     }))
-    services.store.updateTask(task.id, (current) => ({
+    services.store.updateTaskHistory(task.id, (current) => ({
       ...current,
       messages: [...current.messages, { id: 'inflight', role: 'assistant', text: '' }],
     }))
     if (boundary)
-      services.store.updateTask(task.id, (current) => ({
+      services.store.updateTaskHistory(task.id, (current) => ({
         ...current,
         messages: current.messages.map((message) =>
           message.id === 'inflight'
@@ -118,7 +118,7 @@ it.each([false, true])(
             : message,
         ),
       }))
-    services.store.updateTask(task.id, (current) => ({
+    services.store.updateTaskHistory(task.id, (current) => ({
       ...current,
       messages: current.messages.map((message) =>
         message.id === 'inflight'

@@ -1,7 +1,7 @@
-import { changedFileFingerprint, type Task } from '@dovo/protocol'
+import { changedFileFingerprint, type TaskMetadata } from '@dovo/protocol'
 
 /** Version metadata lives beside files, preserving existing workspace PATCH preconditions. */
-export function versionReviewedFiles(task: Task, previous?: Task): Task {
+export function versionReviewedFiles<T extends TaskMetadata>(task: T, previous?: TaskMetadata): T {
   if (previous && task.files === previous.files)
     return task.fileReviewVersion === previous.fileReviewVersion &&
       task.fileReviewVersions === previous.fileReviewVersions

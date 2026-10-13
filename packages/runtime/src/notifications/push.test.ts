@@ -78,7 +78,7 @@ it('sends task titles, previews and the phone’s runtime identity for input and
     data: { runtimeId: 'phone-runtime-id', taskId: 'task', kind: 'input' },
   })
   f.input(undefined)
-  f.store.updateTask('task', (task) => ({
+  f.store.updateTaskHistory('task', (task) => ({
     ...task,
     status: 'review',
     messages: [{ id: 'reply', role: 'assistant', text: 'Changes verified.', createdAt: '' }],
@@ -280,13 +280,13 @@ it('discards an old-turn input even if its question has not been cleared yet', a
     status: 'running' as const,
     startedAt: '',
   }
-  f.store.updateTask('task', (task) => ({ ...task, turns: [turn] }))
+  f.store.updateTaskHistory('task', (task) => ({ ...task, turns: [turn] }))
   await f.service.flush()
   f.send.mockRejectedValueOnce(new Error('Relay offline'))
   f.input({ id: 'old-question', preview: 'Old run' })
   await f.service.flush()
   expect(f.send.mock.calls[0][0].data.turnId).toBe('old')
-  f.store.updateTask('task', (task) => ({ ...task, turns: [turn, { ...turn, id: 'new' }] }))
+  f.store.updateTaskHistory('task', (task) => ({ ...task, turns: [turn, { ...turn, id: 'new' }] }))
   const reopened = new PushNotifications(
     f.db,
     f.store,

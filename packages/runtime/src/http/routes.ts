@@ -12,9 +12,7 @@ import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
 import { pullRequestWatchRequestSchema } from '../scm/tasks/pull-request-watch.js'
 import { checkCua, cuaAction } from '../computer-use/cua.js'
 import { subagentSpawnSchema, subagentScopeSchema, subagentReadSchema } from '@dovo/protocol'
-import { conversationPage } from '@dovo/protocol'
 import { compactActivityEvents } from '@dovo/protocol'
-import { searchTaskMessages } from '@dovo/protocol'
 import { recoverableMutation } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
 import { mcpAppRpcSchema } from '@dovo/protocol'
@@ -55,7 +53,7 @@ import { jobsRoute } from './endpoints/jobs-routes.js'
 import { scmRoute } from './endpoints/scm-routes.js'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
-import { patchSchema, workspaceSchema, taskSchema } from '@dovo/protocol'
+import { patchSchema, workspaceSchema, taskMetadataSchema } from '@dovo/protocol'
 import { RuntimeServices } from '../services.js'
 import { HttpError, type RuntimeFailure } from '../errors.js'
 import { body } from './support/body.js'
@@ -213,7 +211,7 @@ export function route(
           return yield* serviceResult(s.tasks.subagentSpawn(decode(subagentSpawnSchema, raw)))
         if (path === '/api/subagents/list') {
           const { taskId, parentRunId } = decode(subagentScopeSchema, raw)
-          const parent = s.store.task(taskId)
+          const parent = s.store.taskSummary(taskId)
           return yield* serviceResult({
             agents: s.tasks.subagentList(taskId, parentRunId),
             configurations: s.store
@@ -439,7 +437,7 @@ export function route(
           }),
           yield* serviceResult(body(request)),
         )
-        s.store.task(taskId)
+        s.store.taskSummary(taskId)
         return yield* serviceResult(s.deviceHosts.list(taskId, hostId, agentDeviceAccess))
       }
       if (method === 'POST' && path === '/api/previews/simulator/open') {
@@ -451,7 +449,7 @@ export function route(
           }),
           yield* serviceResult(body(request)),
         )
-        s.store.task(taskId)
+        s.store.taskSummary(taskId)
         if (agentDeviceAccess) s.deviceHosts.assertAgentDevice(id, hostId)
         const result = yield* serviceResult(
           s.simulators.open(taskId, s.deviceHosts.deviceId(id, hostId)),
@@ -473,7 +471,7 @@ export function route(
           }),
           yield* serviceResult(body(request)),
         )
-        s.store.task(taskId)
+        s.store.taskSummary(taskId)
         if (agentDeviceAccess) s.deviceHosts.assertAgentDevice(id, hostId)
         yield* serviceResult(s.simulators.closeDevice(taskId, s.deviceHosts.deviceId(id, hostId)))
         return yield* serviceResult({
@@ -485,7 +483,7 @@ export function route(
           mutableStruct({ taskId: idSchema, id: idSchema, input: remoteBrowserInputSchema }),
           yield* serviceResult(body(request)),
         )
-        s.store.task(taskId)
+        s.store.taskSummary(taskId)
         if (agentDeviceAccess)
           yield* serviceResult(
             s.simulators.authorizeDevice(id, (deviceId) =>
@@ -497,7 +495,7 @@ export function route(
         yield* serviceResult(
           s.simulators.input(id, input, () => {
             s.devices.authenticate(token)
-            s.store.task(taskId)
+            s.store.taskSummary(taskId)
             if (s.simulators.taskId(id) !== taskId)
               throw new HttpError(403, 'Simulator preview belongs to another task')
           }),
@@ -522,7 +520,7 @@ export function route(
           profileId = 'default',
           url,
         } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
-        s.store.task(taskId)
+        s.store.taskSummary(taskId)
         if (!s.preferences.get().browserProfiles.some((profile) => profile.id === profileId))
           throw new HttpError(404, 'Browser profile is unavailable. Choose another profile.')
         const resourceId = JSON.stringify(
@@ -542,7 +540,7 @@ export function route(
           tabId,
           profileId = 'default',
         } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
-        s.store.task(taskId)
+        s.store.taskSummary(taskId)
         yield* serviceResult(
           s.browsers.close(
             JSON.stringify(
@@ -558,7 +556,7 @@ export function route(
       }
       if (method === 'POST' && path === '/api/previews/action') {
         const input = decode(previewActionSchema, yield* serviceResult(body(request)))
-        s.store.task(input.taskId)
+        s.store.taskSummary(input.taskId)
         return yield* serviceResult(s.deviceHosts.action(input, agentDeviceAccess))
       }
       if (method === 'POST' && path === '/api/attachments/upload')
@@ -686,17 +684,17 @@ export function route(
           mutableStruct({ id: idSchema, before: Schema.optional(idSchema) }),
           yield* serviceResult(body(request, 4096)),
         )
-        const task = s.store.task(input.id)
-        if (input.before && !task.messages.some((message) => message.id === input.before))
+        const page = s.store.historyPage(input.id, input.before)
+        if (!page)
           throw new HttpError(409, 'Reload this conversation before loading older messages')
-        return conversationPage(task, input.before)
+        return page
       }
       if (method === 'POST' && path === '/api/tasks/search') {
         const { query, id } = decode(
           mutableStruct({ query: maxValue(Schema.String, 500), id: Schema.optional(idSchema) }),
           yield* serviceResult(body(request, 4096)),
         )
-        return searchTaskMessages(id ? [s.store.task(id)] : s.store.publicWorkspace().tasks, query)
+        return s.store.searchHistory(query, id)
       }
       if (method === 'GET' && path === '/api/snapshot') {
         return yield* runtimeSnapshot(
@@ -932,7 +930,7 @@ export function route(
         }
         if (patch.collection === 'tasks') {
           const current = s.store.get().tasks.find((task) => task.id === patch.id)
-          const next = decode(taskSchema, {
+          const next = decode(taskMetadataSchema, {
             ...(patch.create ?? current),
             ...Object.fromEntries(
               Object.entries(patch.changes).map(([key, value]) => [key, value.after ?? undefined]),

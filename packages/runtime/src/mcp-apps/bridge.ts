@@ -153,7 +153,7 @@ export class McpApps {
     })
   }
   private current(taskId: string, name: string): Scope {
-    const task = this.store.task(taskId)
+    const task = this.store.taskSummary(taskId)
     const agent = resolveTaskAgent(task, this.store.get().agents)
     if (!agent) throw new HttpError(409, 'The thread no longer has an agent')
     const project = this.store.get().repositories.find((item) => item.id === task.repositoryId)
@@ -409,7 +409,7 @@ export class McpApps {
       )
       if (!tool) throw new HttpError(403, 'Tool is not available in this MCP scope')
       if (ui) {
-        const task = this.store.task(scope.taskId)
+        const task = this.store.taskSummary(scope.taskId)
         if (task.status === 'done' || task.archivedAt)
           throw new HttpError(409, 'Reopen this thread before using its MCP Apps')
         if (scope.permission === 'read-only')
@@ -621,7 +621,7 @@ export class McpApps {
   }
 
   private saved(taskId: string, id: string): StoredApp {
-    this.store.task(taskId)
+    this.store.taskSummary(taskId)
     const row = object(
       this.db.prepare('SELECT value FROM mcp_apps WHERE id=? AND task_id=?').get(id, taskId),
     )

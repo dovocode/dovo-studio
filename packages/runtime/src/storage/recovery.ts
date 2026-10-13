@@ -12,6 +12,33 @@ import { mkdir, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import { backupRuntimeDatabase } from './backup.js'
 
+const countsSchema = mutableStruct({ messages: Schema.Number, turns: Schema.Number })
+/** Version 2 embeds history counts in the workspace document; version 3 keeps them on task rows. */
+function historyManifest(db: Database.Database, document: unknown, issues: string[]) {
+  const tasks = decodeResult(
+    mutableStruct({ storageVersion: Schema.Literal(3), taskIds: mutableArray(Schema.String) }),
+    document,
+  )
+  if (tasks.success) {
+    const counts: Record<string, Schema.Schema.Type<typeof countsSchema>> = {}
+    const read = db.prepare('SELECT messages, turns FROM workspace_tasks WHERE task_id=?')
+    for (const taskId of tasks.data.taskIds) {
+      const row = decodeResult(countsSchema, read.get(taskId))
+      if (row.success) counts[taskId] = row.data
+      else issues.push(`${taskId}: task metadata record is missing or invalid`)
+    }
+    return counts
+  }
+  const manifest = decodeResult(
+    mutableStruct({
+      storageVersion: Schema.Literal(2),
+      historyCounts: Schema.Record(Schema.String, countsSchema),
+    }),
+    document,
+  )
+  return manifest.success ? manifest.data.historyCounts : undefined
+}
+
 /** No WorkspaceStore or providers: damaged conversation records are exported verbatim, never rewritten. */
 export async function exportRuntimeRecovery(databasePath: string, output: string) {
   await mkdir(output, { mode: 0o700 }) // Refuse an existing destination, preserving earlier exports.
@@ -20,7 +47,7 @@ export async function exportRuntimeRecovery(databasePath: string, output: string
   const db = new Database(snapshot, { readonly: true, fileMustExist: true })
   const report: { table: string; records: number; invalidJson: number }[] = []
   try {
-    for (const table of ['documents', 'conversation_items', 'job_runs']) {
+    for (const table of ['documents', 'workspace_tasks', 'conversation_items', 'job_runs']) {
       if (
         !db
           .prepare('SELECT name FROM sqlite_master WHERE type = ? AND name = ?')
@@ -53,18 +80,9 @@ export async function exportRuntimeRecovery(databasePath: string, output: string
     if (workspace) {
       try {
         const value = decode(mutableStruct({ value: Schema.String }), workspace).value
-        const manifest = decodeResult(
-          mutableStruct({
-            storageVersion: Schema.Number,
-            historyCounts: Schema.Record(
-              Schema.String,
-              mutableStruct({ messages: Schema.Number, turns: Schema.Number }),
-            ),
-          }),
-          JSON.parse(value),
-        )
-        if (manifest.success) {
-          for (const [taskId, expected] of Object.entries(manifest.data.historyCounts)) {
+        const manifest = historyManifest(db, JSON.parse(value), issues)
+        if (manifest) {
+          for (const [taskId, expected] of Object.entries(manifest)) {
             const rows = decode(
               mutableArray(mutableStruct({ kind: Schema.String, value: Schema.String })),
               db.prepare('SELECT kind, value FROM conversation_items WHERE task_id=?').all(taskId),

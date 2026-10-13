@@ -1,4 +1,4 @@
-import type { Task } from '@dovo/protocol'
+import type { TaskMetadata } from '@dovo/protocol'
 
 /** Streaming writes do not change watch ownership. Revision checks invalidate rolled-back reads. */
 export class WatchLifecycleCache {
@@ -6,7 +6,12 @@ export class WatchLifecycleCache {
   invalidate() {
     this.cached = undefined
   }
-  reconcile(tasks: readonly Task[], revision: number, updating: boolean, read: () => Set<string>) {
+  reconcile(
+    tasks: readonly TaskMetadata[],
+    revision: number,
+    updating: boolean,
+    read: () => Set<string>,
+  ) {
     const key = JSON.stringify(
       tasks.map((task) => [
         task.id,
@@ -25,7 +30,7 @@ export class WatchLifecycleCache {
 
 /** Watches may wake an agent to act, so reference-only linked projects are excluded. */
 export function watchRepositoryError(
-  task: Task,
+  task: TaskMetadata,
   repositoryId: string,
   primaryRepositoryId = repositoryId,
 ) {

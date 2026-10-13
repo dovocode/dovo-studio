@@ -16,14 +16,45 @@ import { compareTasks, isSnoozed } from '@dovo/studio-core'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
 import { Plus, Search, ChevronDown, Layers2 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useCallback, useDeferredValue, useMemo, useRef } from 'react'
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react'
 import { Button, Input, ContextMenu } from '@dovo/studio-ui'
-import { responses, useWorkspace } from '@dovo/studio-core'
-import { TaskRow } from './task-row'
-import { TaskContextMenu } from '../detail/task-context-menu'
-import { collectTasks, mainTaskEntries, type TaskEntry, type TaskSource } from './task-collection'
-import { taskActionClient } from './task-row-actions'
-import { indexTaskSubagents } from '@dovo/protocol'
+import { responses } from '@dovo/studio-core'
+import { TaskListRow, type TaskListRowActions, type TaskListWindow } from './task-list-row'
+import {
+  collectTasks,
+  mainTaskEntries,
+  retainTaskOwner,
+  type TaskEntry,
+  type TaskOwner,
+  type TaskSource,
+} from './task-collection'
+import { taskActionClient, useTaskActionStore } from './task-row-actions'
+import { useCommittedCallback } from '../detail/use-committed-callback'
+import { indexTaskSubagents, type Subagent } from '@dovo/protocol'
+const noSubagents: readonly Subagent[] = []
+// Below this, every open row renders; above it, rows mount near the viewport.
+const windowedRowCount = 80
+const selectionActions = [
+  { id: 'archive', label: 'Archive' },
+  { id: 'reopen', label: 'Reopen' },
+  { id: 'snooze', label: 'Snooze' },
+  { id: 'read', label: 'Mark as read' },
+  { id: 'unread', label: 'Mark as unread' },
+  { id: 'delete', label: 'Delete' },
+] as const
+const sameSubagents = (previous: readonly Subagent[], next: readonly Subagent[]) =>
+  previous.length === next.length &&
+  (previous.every((agent, index) => agent === next[index]) ||
+    JSON.stringify(previous) === JSON.stringify(next))
 export function TaskList({
   titleHeader = false,
   projectId,
@@ -65,7 +96,7 @@ export function TaskList({
 }) {
   const host = useStudioHost()
   const { appInfo } = host
-  const store = useWorkspace()
+  const store = useTaskActionStore()
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
   const selecting = selected.size > 0
   const selectionAnchor = useRef<string | null>(null)
@@ -85,15 +116,68 @@ export function TaskList({
       ),
     [sources],
   )
+  // Snapshots rebuild every list; rows keep the previous value while their content is equal.
+  const retainSubagents = useMemo(() => {
+    let previous = new Map<string, readonly Subagent[]>()
+    return (next: Map<string, readonly Subagent[]>) => {
+      for (const [key, agents] of next) {
+        const old = previous.get(key)
+        next.set(
+          key,
+          !agents.length ? noSubagents : old && sameSubagents(old, agents) ? old : agents,
+        )
+      }
+      previous = next
+      return next
+    }
+  }, [])
   const subagentsByKey = useMemo(
     () =>
-      new Map(
-        entries.map((entry) => [
-          entry.key,
-          subagentsByRuntime.get(entry.source.runtimeId)?.(entry.task, true) ?? [],
-        ]),
+      retainSubagents(
+        new Map(
+          entries.map((entry) => [
+            entry.key,
+            subagentsByRuntime.get(entry.source.runtimeId)?.(entry.task, true) ?? noSubagents,
+          ]),
+        ),
       ),
-    [entries, subagentsByRuntime],
+    [entries, subagentsByRuntime, retainSubagents],
+  )
+  const retainOwners = useMemo(() => {
+    let previous = new Map<string | null, TaskOwner>()
+    return (next: readonly TaskSource[]) => {
+      previous = new Map(
+        next.map((source) => [
+          source.runtimeId,
+          retainTaskOwner(previous.get(source.runtimeId), source),
+        ]),
+      )
+      return previous
+    }
+  }, [])
+  const owners = useMemo(() => retainOwners(sources), [sources, retainOwners])
+  const rowFacts = useMemo(
+    () =>
+      new Map(
+        sources.map((source) => {
+          const terminals = new Map<string, number>()
+          for (const terminal of source.snapshot?.terminals ?? [])
+            if (!terminal.exited)
+              terminals.set(terminal.taskId, (terminals.get(terminal.taskId) ?? 0) + 1)
+          return [
+            source.runtimeId,
+            {
+              input: new Set(
+                [...(source.snapshot?.questions ?? []), ...(source.snapshot?.approvals ?? [])].map(
+                  (request) => request.taskId,
+                ),
+              ),
+              terminals,
+            },
+          ]
+        }),
+      ),
+    [sources],
   )
   const selectedEntry = allEntries.find((entry) => entry.key === selectedId)
   const selectedMainKey = useMemo(() => {
@@ -115,20 +199,12 @@ export function TaskList({
       )?.key ?? ''
     )
   }, [entries, selectedEntry, temporaryEntry])
+  // Rows keep their own labels current; the list only regroups when a snooze ends.
   const [now, setNow] = useApplicationState(Date.now())
-  const showSeconds = entries.some(({ task }) => {
-    const started = Date.parse(task.turns?.at(-1)?.startedAt ?? '')
-    return (
-      task.status === 'running' &&
-      task.runPhase !== 'finalizing' &&
-      Number.isFinite(started) &&
-      now - started < 60000
-    )
-  })
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), showSeconds ? 1000 : 60000)
+    const timer = setInterval(() => setNow(Date.now()), 60000)
     return () => clearInterval(timer)
-  }, [showSeconds])
+  }, [])
   const needsInput = useMemo(
     () => new Set(entries.filter((entry) => entry.needsInput).map((entry) => entry.key)),
     [entries],
@@ -147,7 +223,14 @@ export function TaskList({
     () => readTaskListViewState(host).expanded ?? {},
   )
   const scroll = useRef<HTMLDivElement>(null)
+  // Rows measure against the container after it commits; a ref is attached after their effects.
+  const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null)
+  const attachScroll = useCallback((element: HTMLDivElement | null) => {
+    scroll.current = element
+    setScrollRoot(element)
+  }, [])
   const scrollTop = useRef(readTaskListViewState(host).scrollTop ?? 0)
+  const rowHeights = useRef(new Map<string, number>(readTaskListViewState(host).rowHeights))
   useLayoutEffect(() => {
     if (scroll.current) scroll.current.scrollTop = scrollTop.current
   }, [])
@@ -158,6 +241,7 @@ export function TaskList({
         environment: environmentRef.current,
         expanded: expandedRef.current,
         scrollTop: scrollTop.current,
+        rowHeights: [...rowHeights.current],
       }),
     [host, queryRef, expandedRef, environmentRef],
   )
@@ -170,51 +254,43 @@ export function TaskList({
   const searchIdentity = JSON.stringify([...search.keys].sort())
   const tasks = useMemo(() => {
     const needle = deferredQuery.toLowerCase()
-    return entries
-      .filter(
-        ({ task: t, source, key, projectKey, projectName }) =>
-          key === temporaryEntry?.key ||
-          (key === selectedId && t.status === 'draft' && !t.archivedAt) ||
-          ((!projectId ||
-            projectKey === projectId ||
-            source.workspace.repositories.some(
-              (repo) =>
-                repo.id === t.repositoryId &&
-                repo.gitIdentity &&
-                `git:${repo.gitIdentity}` === projectId,
-            )) &&
-            (!environment || JSON.stringify(source.runtimeId) === environment) &&
-            !t.archivedAt &&
-            (!needle ||
-              [
-                t.title,
-                t.checkoutBranch ??
-                  source.workspace.repositories.find((r) => r.id === t.repositoryId)?.branch ??
-                  '',
-                resolveTaskAgent(t, source.workspace.agents)?.name ?? '',
-                source.name,
-                projectName,
-              ].some((text) => text.toLowerCase().includes(needle)) ||
-              search.keys.has(key) ||
-              t.messages.some((message) => message.text.toLowerCase().includes(needle)))),
-      )
-      .sort((a, b) =>
-        compareTasks(
-          {
-            ...a.task,
-            id: a.key,
-            repositoryId: a.projectKey,
-          },
-          {
-            ...b.task,
-            id: b.key,
-            repositoryId: b.projectKey,
-          },
-          sort,
-          needsInput,
-          projects,
-        ),
-      )
+    return (
+      entries
+        .filter(
+          ({ task: t, source, key, projectKey, projectName }) =>
+            key === temporaryEntry?.key ||
+            (key === selectedId && t.status === 'draft' && !t.archivedAt) ||
+            ((!projectId ||
+              projectKey === projectId ||
+              source.workspace.repositories.some(
+                (repo) =>
+                  repo.id === t.repositoryId &&
+                  repo.gitIdentity &&
+                  `git:${repo.gitIdentity}` === projectId,
+              )) &&
+              (!environment || JSON.stringify(source.runtimeId) === environment) &&
+              !t.archivedAt &&
+              (!needle ||
+                [
+                  t.title,
+                  t.checkoutBranch ??
+                    source.workspace.repositories.find((r) => r.id === t.repositoryId)?.branch ??
+                    '',
+                  resolveTaskAgent(t, source.workspace.agents)?.name ?? '',
+                  source.name,
+                  projectName,
+                ].some((text) => text.toLowerCase().includes(needle)) ||
+                search.keys.has(key) ||
+                t.messages.some((message) => message.text.toLowerCase().includes(needle)))),
+        )
+        // Build each sort key once, rather than twice per comparison.
+        .map((entry) => ({
+          entry,
+          task: { ...entry.task, id: entry.key, repositoryId: entry.projectKey },
+        }))
+        .sort((a, b) => compareTasks(a.task, b.task, sort, needsInput, projects))
+        .map(({ entry }) => entry)
+    )
   }, [
     entries,
     temporaryEntry,
@@ -225,7 +301,6 @@ export function TaskList({
     sort,
     needsInput,
     projects,
-    now,
     searchIdentity,
   ])
   const searchError = search.error
@@ -458,75 +533,121 @@ export function TaskList({
         .flatMap((group) => group.tasks.filter((entry) => entry.key !== temporaryEntry?.key)),
     )
   }, [groups, onOrderChange, temporaryEntry])
-  // Stable per-entry handlers so memoized rows only re-render when their own data changes.
-  const handlers = useRef(
-    new Map<
-      string,
-      {
-        open: () => void
-        split: () => void
-        template: (templateId: string) => void
-        create: () => void
-        filter: () => void
-        subagent: (id: string) => void
-      }
-    >(),
+  // Rows address commands by key. Each command resolves the latest committed entry, so a row
+  // never dispatches an older task or keeps a removed entry alive.
+  const entryByKey = useMemo(
+    () => new Map(allEntries.map((entry) => [entry.key, entry])),
+    [allEntries],
   )
-  const latest = useRef({
-    onSelect,
-    onCreate,
-    onDeselect,
-    onProjectChange,
-    setQuery,
-    onSplit,
-    onTemplate,
-    allEntries,
-  })
-  latest.current = {
-    onSelect,
-    onCreate,
-    onDeselect,
-    onProjectChange,
-    setQuery,
-    onSplit,
-    onTemplate,
-    allEntries,
-  }
-  const entryHandlers = useCallback((entry: TaskEntry) => {
-    const existing = handlers.current.get(entry.key)
-    if (existing) return existing
-    const created = {
-      open: () => latest.current.onSelect(entry),
-      split: () => latest.current.onSplit?.(entry),
-      template: (templateId: string) => latest.current.onTemplate?.(entry, templateId),
-      create: () => latest.current.onCreate(entry.projectKey),
-      filter: () => {
-        latest.current.onProjectChange(
-          entry.source.workspace.repositories.find((repo) => repo.id === entry.task.repositoryId)
-            ?.gitIdentity
-            ? `git:${entry.source.workspace.repositories.find((repo) => repo.id === entry.task.repositoryId)?.gitIdentity}`
-            : entry.projectKey,
-        )
-        latest.current.setQuery('')
-      },
-      subagent: (id: string) => {
-        const child = latest.current.allEntries.find(
-          (item) => item.source.runtimeId === entry.source.runtimeId && item.task.id === id,
-        )
-        if (child) latest.current.onSelect(child)
-      },
+  const withEntry =
+    <Args extends unknown[]>(action: (entry: TaskEntry, ...args: Args) => void) =>
+    (key: string, ...args: Args) => {
+      const entry = entryByKey.get(key)
+      if (entry) action(entry, ...args)
     }
-    handlers.current.set(entry.key, created)
-    return created
-  }, [])
-  const selectionActions = [
-    { id: 'archive', label: 'Archive' },
-    { id: 'reopen', label: 'Reopen' },
-    { id: 'snooze', label: 'Snooze' },
-    { id: 'read', label: 'Mark as read' },
-    { id: 'unread', label: 'Mark as unread' },
-    { id: 'delete', label: 'Delete' },
-  ] as const
+  const visibleOrder = () =>
+    groups
+      .filter((group) => group.open)
+      .flatMap((group) =>
+        group.tasks.filter((item) => item.key !== temporaryEntry?.key).map((item) => item.key),
+      )
+  const openRow = useCommittedCallback(withEntry(onSelect))
+  const splitRow = useCommittedCallback(withEntry((entry) => onSplit?.(entry)))
+  const templateRow = useCommittedCallback(
+    withEntry((entry, templateId: string) => onTemplate?.(entry, templateId)),
+  )
+  const createRow = useCommittedCallback(withEntry((entry) => onCreate(entry.projectKey)))
+  const filterRow = useCommittedCallback(
+    withEntry((entry) => {
+      const gitIdentity = entry.source.workspace.repositories.find(
+        (repo) => repo.id === entry.task.repositoryId,
+      )?.gitIdentity
+      onProjectChange(gitIdentity ? `git:${gitIdentity}` : entry.projectKey)
+      setQuery('')
+    }),
+  )
+  const openSubagent = useCommittedCallback(
+    withEntry((entry, id: string) => {
+      const child = allEntries.find(
+        (item) => item.source.runtimeId === entry.source.runtimeId && item.task.id === id,
+      )
+      if (child) onSelect(child)
+    }),
+  )
+  const deselectRow = useCommittedCallback(() => onDeselect())
+  const rowClickCapture = useCommittedCallback((key: string, event: MouseEvent<HTMLDivElement>) => {
+    if (bulkBusy || busy || key === temporaryEntry?.key) return
+    if (
+      !(event.target instanceof Element) ||
+      event.target.closest('button') !== event.currentTarget.querySelector('button')
+    )
+      return
+    if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
+      setSelected((current) => (current.size ? new Set() : current))
+      selectionAnchor.current = key
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    const order = visibleOrder()
+    setSelected((current) =>
+      selectTaskKeys(
+        current.size || !selectedMainKey ? current : new Set([selectedMainKey]),
+        key,
+        order,
+        selectionAnchor.current,
+        event.shiftKey,
+        !event.shiftKey || event.metaKey || event.ctrlKey,
+      ),
+    )
+    if (!event.shiftKey) selectionAnchor.current = key
+  })
+  const rowContextMenuCapture = useCommittedCallback((key: string) => {
+    if (key !== temporaryEntry?.key && selecting && !selected.has(key) && !bulkBusy)
+      setSelected(new Set([key]))
+  })
+  const rowActions = useMemo<TaskListRowActions>(
+    () => ({
+      open: openRow,
+      split: splitRow,
+      template: templateRow,
+      create: createRow,
+      filter: filterRow,
+      subagent: openSubagent,
+      deselect: deselectRow,
+      error: setActionError,
+      clickCapture: rowClickCapture,
+      contextMenuCapture: rowContextMenuCapture,
+    }),
+    [
+      openRow,
+      splitRow,
+      templateRow,
+      createRow,
+      filterRow,
+      openSubagent,
+      deselectRow,
+      setActionError,
+      rowClickCapture,
+      rowContextMenuCapture,
+    ],
+  )
+  const rowCount = groups.reduce((count, group) => count + (group.open ? group.tasks.length : 0), 0)
+  const rowWindow = useMemo<TaskListWindow>(
+    () => ({
+      root: scrollRoot,
+      scrollTop,
+      height: (key, estimate) => rowHeights.current.get(key) ?? estimate,
+      measure: (key, height) => {
+        if (height) rowHeights.current.set(key, height)
+      },
+    }),
+    [scrollRoot],
+  )
+  useEffect(() => {
+    for (const key of rowHeights.current.keys())
+      if (!entryByKey.has(key)) rowHeights.current.delete(key)
+  }, [entryByKey])
   const blockedAction = (action: (typeof selectionActions)[number]['id']) =>
     busy ||
     bulkBusy ||
@@ -540,51 +661,58 @@ export function TaskList({
           (!latestCompletedTaskTurn(task) || task.archived || !!task.archivedAt)) ||
         (action === 'snooze' && (task.archived || !!task.archivedAt)),
     )
-  const selectionMenu = (
-    <>
-      <ContextMenu.Label className="px-2.5 py-1.5 text-xs text-muted-foreground">
-        {selectedEntries.length} threads selected
-      </ContextMenu.Label>
-      {selectionActions.map(({ id, label }) =>
-        id === 'snooze' ? (
-          <ContextMenu.Sub key={id}>
-            <ContextMenu.SubTrigger
-              disabled={blockedAction(id)}
-              className="rounded-lg px-2.5 py-2 text-xs"
+  const runBulk = useCommittedCallback(bulk)
+  // Rows share one menu element; rebuild it only when its count or disabled actions change.
+  const blockedKey = selectionActions.map(({ id }) => (blockedAction(id) ? 1 : 0)).join('')
+  const selectedCount = selectedEntries.length
+  const selectionMenu = useMemo(() => {
+    const blocked = (index: number) => blockedKey[index] === '1'
+    return (
+      <>
+        <ContextMenu.Label className="px-2.5 py-1.5 text-xs text-muted-foreground">
+          {selectedCount} threads selected
+        </ContextMenu.Label>
+        {selectionActions.map(({ id, label }, index) =>
+          id === 'snooze' ? (
+            <ContextMenu.Sub key={id}>
+              <ContextMenu.SubTrigger
+                disabled={blocked(index)}
+                className="rounded-lg px-2.5 py-2 text-xs"
+              >
+                Snooze
+              </ContextMenu.SubTrigger>
+              <ContextMenu.Portal>
+                <ContextMenu.SubContent className="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+                  {[
+                    { hours: 1, label: 'For 1 hour' },
+                    { hours: 4, label: 'For 4 hours' },
+                    { hours: 24, label: 'For 24 hours' },
+                  ].map((option) => (
+                    <ContextMenu.Item
+                      key={option.hours}
+                      className="rounded-sm px-2 py-1.5 text-xs data-[highlighted]:bg-accent/55"
+                      onSelect={() => void runBulk(id, option.hours)}
+                    >
+                      {option.label}
+                    </ContextMenu.Item>
+                  ))}
+                </ContextMenu.SubContent>
+              </ContextMenu.Portal>
+            </ContextMenu.Sub>
+          ) : (
+            <ContextMenu.Item
+              key={id}
+              className={`flex cursor-default rounded-lg px-2.5 py-2 text-xs outline-none data-[highlighted]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 ${id === 'delete' ? 'text-destructive' : ''}`}
+              disabled={blocked(index)}
+              onSelect={() => void runBulk(id)}
             >
-              Snooze
-            </ContextMenu.SubTrigger>
-            <ContextMenu.Portal>
-              <ContextMenu.SubContent className="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                {[
-                  { hours: 1, label: 'For 1 hour' },
-                  { hours: 4, label: 'For 4 hours' },
-                  { hours: 24, label: 'For 24 hours' },
-                ].map((option) => (
-                  <ContextMenu.Item
-                    key={option.hours}
-                    className="rounded-sm px-2 py-1.5 text-xs data-[highlighted]:bg-accent/55"
-                    onSelect={() => void bulk(id, option.hours)}
-                  >
-                    {option.label}
-                  </ContextMenu.Item>
-                ))}
-              </ContextMenu.SubContent>
-            </ContextMenu.Portal>
-          </ContextMenu.Sub>
-        ) : (
-          <ContextMenu.Item
-            key={id}
-            className={`flex cursor-default rounded-lg px-2.5 py-2 text-xs outline-none data-[highlighted]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 ${id === 'delete' ? 'text-destructive' : ''}`}
-            disabled={blockedAction(id)}
-            onSelect={() => void bulk(id)}
-          >
-            {label}
-          </ContextMenu.Item>
-        ),
-      )}
-    </>
-  )
+              {label}
+            </ContextMenu.Item>
+          ),
+        )}
+      </>
+    )
+  }, [selectedCount, blockedKey, runBulk])
   return (
     <aside
       className="flex h-full w-full min-w-0 flex-col border-r bg-sidebar"
@@ -672,7 +800,7 @@ export function TaskList({
         </p>
       )}
       <div
-        ref={scroll}
+        ref={attachScroll}
         onScroll={(event) => {
           scrollTop.current = event.currentTarget.scrollTop
         }}
@@ -680,97 +808,48 @@ export function TaskList({
         aria-busy={busy}
       >
         {groups.map((group, index) => {
-          const rows = group.tasks.map((entry) => {
-            const handlers = entryHandlers(entry)
-            return (
-              <div
-                key={entry.key}
-                className="flex items-center"
-                onClickCapture={(event) => {
-                  if (bulkBusy || busy || entry.key === temporaryEntry?.key) return
-                  if (
-                    !(event.target instanceof Element) ||
-                    event.target.closest('button') !== event.currentTarget.querySelector('button')
-                  )
-                    return
-                  if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
-                    setSelected(new Set())
-                    selectionAnchor.current = entry.key
-                    return
+          // Collapsed sections do not build rows; opening one renders its rows on demand.
+          const rows =
+            group.open &&
+            group.tasks.map((entry) => {
+              const facts = rowFacts.get(entry.source.runtimeId)
+              const temporary = entry.key === temporaryEntry?.key
+              return (
+                <TaskListRow
+                  key={entry.key}
+                  entryKey={entry.key}
+                  task={entry.task}
+                  owner={
+                    owners.get(entry.source.runtimeId) ?? retainTaskOwner(undefined, entry.source)
                   }
-                  event.preventDefault()
-                  event.stopPropagation()
-                  const order = groups
-                    .filter((group) => group.open)
-                    .flatMap((group) =>
-                      group.tasks
-                        .filter((item) => item.key !== temporaryEntry?.key)
-                        .map((item) => item.key),
-                    )
-                  setSelected((current) =>
-                    selectTaskKeys(
-                      current.size || !selectedMainKey ? current : new Set([selectedMainKey]),
-                      entry.key,
-                      order,
-                      selectionAnchor.current,
-                      event.shiftKey,
-                      !event.shiftKey || event.metaKey || event.ctrlKey,
-                    ),
-                  )
-                  if (!event.shiftKey) selectionAnchor.current = entry.key
-                }}
-                onContextMenuCapture={() => {
-                  if (
-                    entry.key !== temporaryEntry?.key &&
-                    selecting &&
-                    !selected.has(entry.key) &&
-                    !bulkBusy
-                  )
-                    setSelected(new Set([entry.key]))
-                }}
-              >
-                <TaskContextMenu
-                  entry={entry}
-                  selectionMenu={
-                    selecting && entry.key !== temporaryEntry?.key ? selectionMenu : undefined
+                  subagents={subagentsByKey.get(entry.key) ?? noSubagents}
+                  needsInput={!!facts?.input.has(entry.task.id)}
+                  terminals={facts?.terminals.get(entry.task.id) ?? 0}
+                  selected={entry.key === selectedId}
+                  selectedMain={entry.key === selectedMainKey}
+                  selectedChildId={
+                    entry.key === selectedMainKey &&
+                    selectedEntry &&
+                    selectedEntry.task.id !== entry.task.id
+                      ? selectedEntry.task.id
+                      : undefined
                   }
-                  selected={entry.key === selectedMainKey}
-                  busy={busy || entry.key === temporaryEntry?.key}
-                  onOpen={handlers.open}
-                  onCreate={handlers.create}
-                  onFilter={handlers.filter}
-                  onSplit={onSplit ? handlers.split : undefined}
-                  onTemplate={onTemplate ? handlers.template : undefined}
-                  onDeselect={onDeselect}
-                  onError={setActionError}
-                >
-                  <TaskRow
-                    task={entry.task}
-                    subagents={subagentsByKey.get(entry.key) ?? []}
-                    now={now}
-                    selected={entry.key === selectedId}
-                    selectedChildId={
-                      entry.key === selectedMainKey &&
-                      selectedEntry &&
-                      selectedEntry.task.id !== entry.task.id
-                        ? selectedEntry.task.id
-                        : undefined
-                    }
-                    multiSelected={selected.has(entry.key)}
-                    source={entry.source}
-                    editable={entry.key !== temporaryEntry?.key && entry.source.online && !busy}
-                    disabled={
-                      busy ||
-                      bulkBusy ||
-                      (!entry.source.online && entry.source.runtimeId !== activeRuntimeId)
-                    }
-                    onSelect={handlers.open}
-                    onOpenSubagent={handlers.subagent}
-                  />
-                </TaskContextMenu>
-              </div>
-            )
-          })
+                  multiSelected={selected.has(entry.key)}
+                  editable={!temporary && entry.source.online && !busy}
+                  disabled={
+                    busy ||
+                    bulkBusy ||
+                    (!entry.source.online && entry.source.runtimeId !== activeRuntimeId)
+                  }
+                  menuBusy={busy || temporary}
+                  selectionMenu={selecting && !temporary ? selectionMenu : undefined}
+                  canSplit={!!onSplit}
+                  canTemplate={!!onTemplate}
+                  actions={rowActions}
+                  rowWindow={rowCount > windowedRowCount ? rowWindow : null}
+                />
+              )
+            })
           if (index === 0 && group.id === 'active') return <div key={group.id}>{rows}</div>
           return (
             <details

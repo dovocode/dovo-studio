@@ -3,7 +3,8 @@ import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
-import type { Workspace } from '@dovo/protocol'
+import type { ChatMessage, TaskSummary } from '@dovo/protocol'
+import type { WorkspaceChange } from './workspace.js'
 export function redact(value: unknown): unknown {
   if (Array.isArray(value))
     return value.map((v, i) =>
@@ -81,10 +82,7 @@ export class Activity {
         for (const notify of watched.listeners) notify()
       }
   }
-  private pendingMessages = new Map<
-    string,
-    Map<string, Workspace['tasks'][number]['messages'][number]>
-  >()
+  private pendingMessages = new Map<string, Map<string, ChatMessage>>()
   revision = 0
   constructor(private db: Database.Database) {
     db.exec(
@@ -139,7 +137,8 @@ export class Activity {
       this.db.prepare('SELECT * FROM activity WHERE scope=? AND id=?').get(scope, id),
     )?.payload
   }
-  workspace(before: Workspace, after: Workspace) {
+  /** Audits status changes, and messages wherever the update wrote history. */
+  workspace({ before, after, histories }: WorkspaceChange) {
     if (before.tasks === after.tasks) return
     const previousTasks = new Map(before.tasks.map((task) => [task.id, task]))
     const currentIds = new Set(after.tasks.map((task) => task.id))
@@ -162,23 +161,25 @@ export class Activity {
         task.status !== 'running' ||
         task.runPhase === 'finalizing' ||
         previous?.activeRunId !== task.activeRunId
-      if (previous?.messages === task.messages) {
+      const history = histories.get(task.id)
+      if (!history || history.before?.messages === history.after.messages) {
         if (finished) {
           // A fresh Activity instance has no pending stream after a crash. The store's
           // startup transition still has the saved running turn; audit only its reply,
           // never historical messages or a completed turn interrupted in finalization.
           if (
+            history?.before &&
             !this.pendingMessages.has(task.id) &&
-            previous.status === 'running' &&
+            previous?.status === 'running' &&
             task.status === 'failed' &&
             task.restartRecovery?.kind === 'turn' &&
             previous.runPhase !== 'preparing' &&
             previous.runPhase !== 'finalizing'
           ) {
-            const turn = previous.turns?.at(-1)
+            const turn = history.before.turns?.at(-1)
             const message =
               turn?.status === 'running'
-                ? task.messages.find((item) => item.id === turn.assistantId)
+                ? history.after.messages.find((item) => item.id === turn.assistantId)
                 : undefined
             if (message?.role === 'assistant')
               this.add(
@@ -189,12 +190,14 @@ export class Activity {
                 `message:${task.id}:${message.id}`,
               )
           }
-          this.flushMessages(task)
+          this.flushMessages(task, history?.after.messages)
         }
         continue
       }
-      const previousMessages = new Map(previous?.messages.map((message) => [message.id, message]))
-      for (const message of task.messages) {
+      const previousMessages = new Map(
+        history.before?.messages.map((message) => [message.id, message]),
+      )
+      for (const message of history.after.messages) {
         const old = previousMessages.get(message.id)
         if (old === message) continue
         if (
@@ -217,13 +220,14 @@ export class Activity {
             `message:${task.id}:${message.id}`,
           )
       }
-      if (finished) this.flushMessages(task)
+      if (finished) this.flushMessages(task, history.after.messages)
     }
   }
-  private flushMessages(task: Workspace['tasks'][number]) {
+  /** Pending messages hold their latest streamed versions, unless a newer history is given. */
+  private flushMessages(task: Pick<TaskSummary, 'id' | 'title'>, messages?: ChatMessage[]) {
     const pending = this.pendingMessages.get(task.id)
     if (!pending) return
-    const current = new Map(task.messages.map((message) => [message.id, message]))
+    const current = new Map(messages?.map((message) => [message.id, message]))
     for (const message of pending.values())
       this.add(
         'message',

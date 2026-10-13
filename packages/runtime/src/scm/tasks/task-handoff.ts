@@ -43,7 +43,7 @@ async function applyStash(s: HandoffServices, cwd: string, stash: string) {
 /** Moves a started task between the project folder and its own worktree, carrying its
  * uncommitted changes. The agent continues in a new session with the conversation replayed. */
 export async function handoffTask(s: HandoffServices, id: string, target: 'worktree' | 'main') {
-  const task = s.store.task(id)
+  const task = s.store.taskSummary(id)
   if ((task.execution ?? 'main') === target) return { ok: true }
   if (task.existingWorktreePath)
     throw new HttpError(
@@ -75,7 +75,7 @@ export async function handoffTask(s: HandoffServices, id: string, target: 'workt
       )
     return s.tasks.withCheckoutMutation(root, async () => {
       const stash = await stashAll(s, root, label)
-      const previous = s.store.task(id)
+      const previous = s.store.taskSummary(id)
       try {
         // The worktree starts from the project folder's current branch, so the stash applies cleanly.
         s.store.updateTask(id, (value) => ({
@@ -94,7 +94,7 @@ export async function handoffTask(s: HandoffServices, id: string, target: 'workt
         )
         return { ok: true, cwd }
       } catch (error) {
-        const current = s.store.task(id)
+        const current = s.store.taskSummary(id)
         // Nothing was created: put the task and the changes back where they were.
         if (!current.checkoutBranch || current.checkoutBranch === previous.checkoutBranch) {
           s.store.updateTask(id, (value) => ({
@@ -162,7 +162,7 @@ export async function handoffTask(s: HandoffServices, id: string, target: 'workt
 }
 
 function finish(s: HandoffServices, id: string, note: string) {
-  s.store.updateTask(id, (value) => ({
+  s.store.updateTaskHistory(id, (value) => ({
     ...value,
     messages: [
       ...value.messages,

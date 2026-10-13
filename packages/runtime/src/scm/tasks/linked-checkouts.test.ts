@@ -87,7 +87,7 @@ it('keeps long linked identities protected and restores saved history after clea
   }
   await s.git.stage(link.directory, ['hello.txt', '.gitignore'])
   await s.git.commit(link.directory, 'Save linked work')
-  s.store.updateTask(task.id, (current) => ({
+  s.store.updateTaskHistory(task.id, (current) => ({
     ...current,
     archivedAt: new Date().toISOString(),
     turns: [

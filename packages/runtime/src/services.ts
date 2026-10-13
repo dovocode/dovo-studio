@@ -87,9 +87,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       : join(dirname(resolve(db.name)), 'acp'),
   )
   let artifacts: Artifacts | undefined
-  const store = new WorkspaceStore(db, (before, after) => {
-    activity.workspace(before, after)
-    artifacts?.workspace(before, after)
+  const store = new WorkspaceStore(db, (change) => {
+    activity.workspace(change)
+    artifacts?.workspace(change)
   })
   artifacts = new Artifacts(db, store, activity, () => preferences.get())
   const forgeCli = new ForgeCliAccounts(() => commands.get())

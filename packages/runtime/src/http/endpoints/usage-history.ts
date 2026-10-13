@@ -58,7 +58,7 @@ export const usageHistory = (request: IncomingMessage, path: string) =>
     )
     for (const task of s.store.get().tasks)
       if (task.sessionId) {
-        const provider = task.turns?.at(-1)?.provider
+        const provider = task.history.latestTurn?.provider
         if (provider) sessions.add(`${provider}:${task.sessionId}`)
       }
     const external = yield* serviceResult(

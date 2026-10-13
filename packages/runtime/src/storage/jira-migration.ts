@@ -1,9 +1,16 @@
 import { decodeResult } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
-import { jiraBindingSchema, type JiraBinding, type Workspace } from '@dovo/protocol'
+import {
+  jiraBindingSchema,
+  type JiraBinding,
+  type TaskMetadata,
+  type Workspace,
+} from '@dovo/protocol'
 
 /** Convert old repository-scoped Jira connections without losing existing task sources. */
-export function migrateJiraSources(workspace: Workspace): Workspace {
+export function migrateJiraSources<T extends TaskMetadata>(
+  workspace: Omit<Workspace, 'tasks'> & { tasks: T[] },
+): Omit<Workspace, 'tasks'> & { tasks: T[] } {
   if (!workspace.repositories.some((repository) => repository.jira)) return workspace
   const sources = [...(workspace.jiraSources ?? [])]
   const links = [...(workspace.jiraIssueLinks ?? [])]

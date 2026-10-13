@@ -2,6 +2,7 @@ import { useConversationHistory } from './use-conversation-history'
 import { ChatMessage } from './chat-message'
 import { TaskEmptyState } from '../../task-creation/task-empty-state'
 import { DeferredTurn } from './deferred-turn'
+import { TurnWindow, TurnWindowContext } from './turn-window'
 import {
   threadPullLink,
   unassignedConversationTools,
@@ -81,6 +82,7 @@ export function ChatThread({
   const onRecentReady = useCallback(() => setRecentScope(linkScope), [linkScope])
   const history = useConversationHistory(liveTask, recentScope === linkScope)
   const task = history.task
+  const turnWindow = useMemo(() => new TurnWindow(), [linkScope])
   const { chooseLink, openPullLink } = useStudioHost()
   const [linkError, setLinkError] = useState('')
   const [selectedPull, setSelectedPull] = useState<{ scope: string; url: string } | null>(null)
@@ -256,6 +258,27 @@ export function ChatThread({
     return byTurn
   }, [task.compactions, task.turns])
   const groups = useMemo(() => conversationTurns(task), [task.messages, task.turns])
+  const retention = useRef({ groups, seeking: false, trim: history.trim })
+  useEffect(() => {
+    retention.current = { groups, seeking: !!target && !targetVisible, trim: history.trim }
+  })
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const unsubscribe = turnWindow.subscribe(() => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        const root = turnWindow.scrollRoot
+        const { groups, seeking, trim } = retention.current
+        // Only at the live end can distant earlier pages leave without moving the reader.
+        if (seeking || !root || root.scrollHeight - root.clientHeight - root.scrollTop > 16) return
+        trim(groups.find((group) => turnWindow.mounted.has(group.id))?.messages[0]?.id)
+      }, 1000)
+    })
+    return () => {
+      clearTimeout(timer)
+      unsubscribe()
+    }
+  }, [turnWindow])
   const emptyDraft =
     task.status === 'draft' &&
     !task.messages.length &&
@@ -289,7 +312,7 @@ export function ChatThread({
     [task.id, groups],
   )
   return (
-    <>
+    <TurnWindowContext value={turnWindow}>
       {searchOpen && (
         <div className="flex shrink-0 items-center justify-end gap-1 border-b px-3 py-1">
           <input
@@ -513,7 +536,8 @@ export function ChatThread({
                     }
                   >
                     <DeferredTurn
-                      immediate={
+                      id={group.id}
+                      pinned={
                         groupIndex >= groups.length - 2 ||
                         group.status === 'running' ||
                         group.messages.some(
@@ -623,6 +647,6 @@ export function ChatThread({
           onClose={() => setSelectedPull(null)}
         />
       )}
-    </>
+    </TurnWindowContext>
   )
 }

@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { TaskTurn } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { TurnLabel } from './turn-label'
+import { useTurnDisclosure } from './turn-window'
 
 /** Keep the answer outside the work disclosure, including older unsplit replies. */
 export function TurnWork({
@@ -14,7 +15,7 @@ export function TurnWork({
   reveal?: boolean
   children: (open: boolean, header: ReactNode) => ReactNode
 }) {
-  const [expanded, setExpanded] = useState<boolean | null>(null)
+  const [expanded, setExpanded] = useTurnDisclosure(`work:${turn.id}`)
   const open = reveal || (expanded ?? turn.status !== 'completed')
   const label =
     turn.status === 'running' || turn.status === 'completed' ? (

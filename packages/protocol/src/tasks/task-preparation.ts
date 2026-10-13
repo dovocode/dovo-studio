@@ -1,4 +1,4 @@
-import type { Task } from '../workspace.js'
+import type { TaskMetadata as Task } from './task-summary.js'
 
 export type PreparationStepState = 'done' | 'active' | 'pending' | 'failed'
 export type PreparationStep = {

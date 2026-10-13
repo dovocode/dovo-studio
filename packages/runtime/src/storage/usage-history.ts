@@ -4,6 +4,7 @@ import type Database from 'better-sqlite3'
 import { Schema } from 'effect'
 import {
   decode,
+  mutableArray,
   mutableStruct,
   usageRecordSchema,
   type Task,
@@ -62,6 +63,19 @@ export class UsageHistory {
         write.run(JSON.stringify([task.id, turn.id]), turn.startedAt, JSON.stringify(record))
       }
     }
+  }
+  /** Tasks with a recorded turn on this provider account, without reading their histories. */
+  taskIds(accountId: string) {
+    return new Set(
+      decode(
+        mutableArray(rowSchema),
+        this.db
+          .prepare(
+            "SELECT DISTINCT json_extract(value, '$.taskId') AS value FROM usage_records WHERE id NOT LIKE 'external:%' AND json_extract(value, '$.turn.usageAccount.id') = ?",
+          )
+          .all(accountId),
+      ).map((row) => row.value),
+    )
   }
   recordExternal(records: readonly UsageRecord[]) {
     const write = this.db.prepare(

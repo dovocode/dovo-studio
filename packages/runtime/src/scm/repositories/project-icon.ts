@@ -22,8 +22,14 @@ const cache = new Map<string, { icon?: string; expires: number }>()
 
 /** Read only common app assets inside the checkout, then send a bounded thumbnail to clients. */
 export async function discoverProjectIcon(path: string): Promise<string | undefined> {
+  const now = Date.now()
+  for (const [key, entry] of cache) if (entry.expires <= now) cache.delete(key)
   const cached = cache.get(path)
-  if (cached && cached.expires > Date.now()) return cached.icon
+  if (cached) {
+    cache.delete(path)
+    cache.set(path, cached)
+    return cached.icon
+  }
   let icon: string | undefined
   try {
     const root = await realpath(path)
@@ -54,6 +60,10 @@ export async function discoverProjectIcon(path: string): Promise<string | undefi
     }
   } catch {
     // A temporarily unavailable checkout still appears without an icon.
+  }
+  if (cache.size >= 256 && !cache.has(path)) {
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
   }
   cache.set(path, { icon, expires: Date.now() + 30000 })
   return icon

@@ -4,6 +4,7 @@ import { Approvals } from '../agents/execution/approvals'
 import { Activity, redact } from './activity'
 import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
+import type { Task } from '@dovo/protocol'
 it('notifies only affected activity owners and detaches stopped listeners', () => {
   const db = openDatabase(':memory:')
   try {
@@ -34,7 +35,7 @@ it.each(['preparing', 'finalizing', 'provider'] as const)(
     const db = openDatabase(':memory:')
     try {
       const activity = new Activity(db)
-      const store = new WorkspaceStore(db, (before, after) => activity.workspace(before, after))
+      const store = new WorkspaceStore(db, (change) => activity.workspace(change))
       store.update((workspace) => ({
         ...workspace,
         tasks: [
@@ -65,7 +66,7 @@ it.each(['preparing', 'finalizing', 'provider'] as const)(
         ],
       }))
       activity.pruneBefore(new Date(Date.now() + 60_000).toISOString())
-      store.updateTask('task', (task) => ({
+      store.updateTaskHistory('task', (task) => ({
         ...task,
         status: 'running',
         runPhase,
@@ -74,7 +75,7 @@ it.each(['preparing', 'finalizing', 'provider'] as const)(
         turns: runPhase === 'provider' ? undefined : task.turns,
       }))
       const reopenedActivity = new Activity(db)
-      new WorkspaceStore(db, (before, after) => reopenedActivity.workspace(before, after))
+      new WorkspaceStore(db, (change) => reopenedActivity.workspace(change))
       expect(reopenedActivity.list('', 'message', 0).events).toEqual([])
     } finally {
       db.close()
@@ -85,7 +86,7 @@ it('retains message history after tasks are removed and keeps the streamed messa
   const db = openDatabase(':memory:')
   try {
     const log = new Activity(db),
-      store = new WorkspaceStore(db, (a, b) => log.workspace(a, b))
+      store = new WorkspaceStore(db, (change) => log.workspace(change))
     store.update((w) => ({
       ...w,
       tasks: [
@@ -103,7 +104,7 @@ it('retains message history after tasks are removed and keeps the streamed messa
         },
       ],
     }))
-    store.updateTask('task', (t) => ({
+    store.updateTaskHistory('task', (t) => ({
       ...t,
       messages: [{ id: 'm', role: 'assistant', text: 'Hi there' }],
     }))
@@ -314,20 +315,22 @@ it('never serializes unchanged historical messages during metadata and streaming
       ],
     }))
     const before = store.get(),
-      task = before.tasks[0]!
+      summary = before.tasks[0]!,
+      task = store.task('task')
     const serialize = vi.fn<() => never>(() => {
       throw new Error('Unchanged history was serialized')
     })
     Object.defineProperty(task.messages[0], 'toJSON', { value: serialize })
-    log.workspace(before, {
-      ...before,
-      tasks: [{ ...task, activity: 'Working', messages: [...task.messages] }],
-    })
-    log.workspace(before, {
-      ...before,
-      tasks: [
-        { ...task, messages: [task.messages[0]!, { ...task.messages[1]!, text: 'Streamed' }] },
-      ],
+    const audit = (after: Task) =>
+      log.workspace({
+        before,
+        after: { ...before, tasks: [{ ...summary, activity: after.activity }] },
+        histories: new Map([['task', { before: task, after }]]),
+      })
+    audit({ ...task, activity: 'Working', messages: [...task.messages] })
+    audit({
+      ...task,
+      messages: [task.messages[0]!, { ...task.messages[1]!, text: 'Streamed' }],
     })
     expect(serialize).not.toHaveBeenCalled()
     expect(log.list('', 'message', 0).events).toHaveLength(1)
@@ -340,7 +343,7 @@ it('audits streaming content only at boundaries, completion and removal while hi
   const db = openDatabase(':memory:')
   try {
     const log = new Activity(db)
-    const store = new WorkspaceStore(db, (a, b) => log.workspace(a, b))
+    const store = new WorkspaceStore(db, (change) => log.workspace(change))
     store.update((workspace) => ({
       ...workspace,
       tasks: [
@@ -361,14 +364,14 @@ it('audits streaming content only at boundaries, completion and removal while hi
     const add = vi.spyOn(log, 'add')
     const begin = performance.now()
     for (let index = 1; index <= 100; index++) {
-      store.updateTask('stream', (task) => ({
+      store.updateTaskHistory('stream', (task) => ({
         ...task,
         messages: [{ id: 'answer', role: 'assistant', text: 'x'.repeat(index * 1000) }],
       }))
       expect(store.task('stream').messages[0].text.length).toBe(index * 1000)
     }
     expect(add.mock.calls.filter(([kind]) => kind === 'message')).toHaveLength(0)
-    store.updateTask('stream', (task) => ({
+    store.updateTaskHistory('stream', (task) => ({
       ...task,
       messages: task.messages.map((message) => ({ ...message, textBreaks: [message.text.length] })),
     }))

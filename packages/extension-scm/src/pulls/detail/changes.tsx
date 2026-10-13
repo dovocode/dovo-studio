@@ -1,7 +1,7 @@
 import { pullFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
 import { OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useAppPreferences, whitespaceOnlyPatch } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -11,7 +11,7 @@ import {
   readAppPreferences,
 } from '@dovo/studio-core'
 import { Button, Checkbox } from '@dovo/studio-ui'
-import { PullPatch } from './patch'
+import { PullPatch, emptyPullLineDraft, type PullLineDraft } from './patch'
 import { DeferredPullFile } from './deferred-file'
 import { PullComments } from './comments'
 export function PullChanges({
@@ -78,6 +78,13 @@ export function PullChanges({
     ),
     [treeOpen, setTreeOpen] = useApplicationState(true)
   const cards = useRef(new Map<string, HTMLElement>())
+  const [heights] = useState(() => new Map<string, number>())
+  // Comment ranges and destinations live here, before any file leaves the render window.
+  const [drafts, setDrafts] = useApplicationState<ReadonlyMap<string, PullLineDraft>>(new Map())
+  const updateDraft = (path: string, update: (draft: PullLineDraft) => PullLineDraft) =>
+    setDrafts((current) =>
+      new Map(current).set(path, update(current.get(path) ?? emptyPullLineDraft)),
+    )
   const selectFile = (path: string) => {
     setSelected(path)
     cards.current.get(path)?.scrollIntoView({ block: 'start', behavior: 'instant' })
@@ -187,10 +194,16 @@ export function PullChanges({
                       Viewed
                     </label>
                   </div>
-                  <DeferredPullFile file={file} selected={selected === file.path}>
+                  <DeferredPullFile
+                    file={file}
+                    heights={heights}
+                    pinned={selected === file.path || !!drafts.get(file.path)?.selection}
+                  >
                     <PullPatch
                       key={file.path}
                       file={file}
+                      draft={drafts.get(file.path)}
+                      onDraft={(update) => updateDraft(file.path, update)}
                       headSha={detail.pull.headSha}
                       split={split}
                       provider={detail.pull.provider}

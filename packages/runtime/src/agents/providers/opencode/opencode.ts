@@ -10,20 +10,21 @@ import { createOpencodeClient, type PermissionRuleset } from '@opencode-ai/sdk/v
 import type { AgentAdapter } from '../../execution/types.js'
 import { OpenCodeServers, opencodeHeaders } from './opencode-server.js'
 import { opencodeV2Adapter, isOpencodeV2 } from './opencode-v2.js'
-const clients = new Map<string, ReturnType<typeof createOpencodeClient>>()
-function client(address: string, cwd?: string, env?: Record<string, string>) {
+import { OpenCodeClientCache } from './client-cache.js'
+const clients = new OpenCodeClientCache<ReturnType<typeof createOpencodeClient>>()
+function client(address: string, cwd?: string, env?: Record<string, string>, active = false) {
   const authorization = opencodeHeaders(env).Authorization
   const key = JSON.stringify([address, cwd, authorization])
-  const existing = clients.get(key)
-  if (existing) return existing
-  const created = createOpencodeClient({
-    baseUrl: address || 'http://127.0.0.1:4096',
-    directory: cwd,
-    throwOnError: true,
-    headers: authorization ? { Authorization: authorization } : {},
-  })
-  clients.set(key, created)
-  return created
+  const create = () =>
+    createOpencodeClient({
+      baseUrl: address || 'http://127.0.0.1:4096',
+      directory: cwd,
+      throwOnError: true,
+      headers: authorization ? { Authorization: authorization } : {},
+    })
+  return active
+    ? clients.acquire(key, create)
+    : { value: clients.get(key, create), release: () => {} }
 }
 /** Resolves false once the event stream is torn down, so a pending approval card cannot keep
  * the adapter's cleanup waiting after the turn itself already failed. */
@@ -40,7 +41,7 @@ function untilAborted(approval: Promise<boolean>, signal: AbortSignal) {
 const remoteAdapter: AgentAdapter = {
   models: async (agent) => {
     if (await isOpencodeV2(agent.endpoint, agent.env)) return opencodeV2Adapter.models!(agent)
-    const { data } = await client(agent.endpoint, undefined, agent.env).provider.list(
+    const { data } = await client(agent.endpoint, undefined, agent.env).value.provider.list(
       {},
       {
         throwOnError: true,
@@ -67,7 +68,7 @@ const remoteAdapter: AgentAdapter = {
   probe: async (agent) => {
     try {
       if (await isOpencodeV2(agent.endpoint, agent.env)) return opencodeV2Adapter.probe(agent)
-      await client(agent.endpoint, undefined, agent.env).global.health({
+      await client(agent.endpoint, undefined, agent.env).value.global.health({
         signal: AbortSignal.timeout(5000),
       })
       return {
@@ -86,7 +87,8 @@ const remoteAdapter: AgentAdapter = {
   async run(run) {
     run.signal.throwIfAborted()
     if (await isOpencodeV2(run.agent.endpoint, run.agent.env)) return opencodeV2Adapter.run(run)
-    const api = client(run.agent.endpoint, run.cwd, run.agent.env)
+    const lease = client(run.agent.endpoint, run.cwd, run.agent.env, true)
+    const api = lease.value
     const registered: string[] = []
     let ephemeralSessionId: string | undefined
     try {
@@ -529,29 +531,33 @@ const remoteAdapter: AgentAdapter = {
         })
       }
     } finally {
-      const results = await Promise.allSettled(
-        registered.map((name) =>
-          api.mcp.disconnect(
-            {
-              name,
-              directory: run.cwd,
-            },
-            {
-              throwOnError: true,
-              signal: AbortSignal.timeout(5000),
-            },
+      try {
+        const results = await Promise.allSettled(
+          registered.map((name) =>
+            api.mcp.disconnect(
+              {
+                name,
+                directory: run.cwd,
+              },
+              {
+                throwOnError: true,
+                signal: AbortSignal.timeout(5000),
+              },
+            ),
           ),
-        ),
-      )
-      results.forEach((result, index) => {
-        if (result.status === 'rejected')
-          run.onActivity(`Could not disconnect managed MCP server ${registered[index]}`)
-      })
-      if (ephemeralSessionId)
-        await api.session.delete(
-          { sessionID: ephemeralSessionId, directory: run.cwd },
-          { signal: AbortSignal.timeout(5000), throwOnError: true },
         )
+        results.forEach((result, index) => {
+          if (result.status === 'rejected')
+            run.onActivity(`Could not disconnect managed MCP server ${registered[index]}`)
+        })
+        if (ephemeralSessionId)
+          await api.session.delete(
+            { sessionID: ephemeralSessionId, directory: run.cwd },
+            { signal: AbortSignal.timeout(5000), throwOnError: true },
+          )
+      } finally {
+        lease.release()
+      }
     }
   },
 }

@@ -87,7 +87,7 @@ export class LinkedCheckouts {
   }
 
   save(id: string, before: unknown, value: unknown) {
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     if (task.delegation)
       throw new HttpError(400, 'Child agents inherit their parent’s linked projects')
     if (
@@ -131,13 +131,13 @@ export class LinkedCheckouts {
 
   resolve(id: string, signal?: AbortSignal): Promise<ResolvedCheckout[]> {
     signal?.throwIfAborted()
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     if (task.delegation) return this.resolve(task.delegation.parentTaskId, signal)
     return this.pending.run(id, (sharedSignal) => this.resolveAll(id, sharedSignal), signal)
   }
 
   private async resolveAll(id: string, signal?: AbortSignal) {
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     const links = this.validate(task.linkedCheckouts ?? [])
     const resolved: ResolvedCheckout[] = []
     for (const link of links) {

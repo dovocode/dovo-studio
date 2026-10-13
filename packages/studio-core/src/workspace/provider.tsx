@@ -20,11 +20,11 @@ import { recentSnapshot } from '../runtime/recent-snapshot'
 import { useAppPreferences, updateAppPreferences, readAppPreferences } from '../preferences'
 import { pendingAgentPresets } from '@dovo/protocol'
 import {
-  WorkspaceContext,
   type WorkspaceRequest,
   type WorkspaceRequestEffect,
   type WorkspaceContextValue,
 } from './context'
+import { WorkspaceValueProvider } from './selector'
 import {
   previewWorkspace,
   withTaskPreview,
@@ -1963,6 +1963,13 @@ export function WorkspaceProvider({
         : null,
     [connection, runtimeRegistry.profiles, cacheFor],
   )
+  const pendingMessages = useCallback<WorkspaceContextValue['pendingMessages']>(
+    (task, owner) => {
+      const target = owner ?? connection
+      return target ? mutations.pendingMessages(target, task) : []
+    },
+    [connection, mutations],
+  )
   const contextValue = useMemo(
     () => ({
       previewTask,
@@ -1995,10 +2002,7 @@ export function WorkspaceProvider({
       discardAndReload,
       syncConflicts: snapshot ? synchronization.conflicts(snapshot.workspace) : [],
       resolveSyncConflict,
-      pendingMessages: (
-        task: Parameters<WorkspaceContextValue['pendingMessages']>[0],
-        owner = connection,
-      ) => (owner ? mutations.pendingMessages(owner, task) : []),
+      pendingMessages,
       mutationStatus,
       discardMutations,
       pendingSync:
@@ -2038,6 +2042,7 @@ export function WorkspaceProvider({
       retrySync,
       discardAndReload,
       resolveSyncConflict,
+      pendingMessages,
       mutationStatus,
       discardMutations,
       synchronization,
@@ -2047,8 +2052,9 @@ export function WorkspaceProvider({
       runtimeReadCache,
     ],
   )
-  return <WorkspaceContext.Provider value={contextValue}>{children}</WorkspaceContext.Provider>
+  return <WorkspaceValueProvider value={contextValue}>{children}</WorkspaceValueProvider>
 }
 
-export { useWorkspace } from './context'
+export { useWorkspace, type WorkspaceContextValue } from './context'
+export { WorkspaceValueProvider, useWorkspaceSelector, sameWorkspaceFields } from './selector'
 export { WorkspaceScope } from './scope'

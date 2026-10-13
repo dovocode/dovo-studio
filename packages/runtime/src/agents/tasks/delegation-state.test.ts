@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import type { Agent, Subagent, Task } from '@dovo/protocol'
+import { summarizeTask, type Agent, type Subagent, type TaskSummary } from '@dovo/protocol'
 import { projectDelegatedAgents } from './delegation-state'
 const agents: Agent[] = [
   {
@@ -12,8 +12,8 @@ const agents: Agent[] = [
     endpoint: '',
   },
 ]
-function task(id: string, parentTaskId?: string): Task {
-  return {
+function task(id: string, parentTaskId?: string): TaskSummary {
+  return summarizeTask({
     id,
     title: id,
     repositoryId: 'repo',
@@ -25,7 +25,7 @@ function task(id: string, parentTaskId?: string): Task {
     draft: '',
     example: false,
     ...(parentTaskId ? { delegation: { parentTaskId, parentRunId: 'run', key: id } } : {}),
-  }
+  })
 }
 const native: Subagent = {
   id: 'provider-native',

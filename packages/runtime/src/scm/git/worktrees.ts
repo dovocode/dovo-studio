@@ -5,12 +5,12 @@ import type { Services } from '../../services.js'
 import { HttpError, runtimeOperation, runtimeProgram } from '../../errors.js'
 import { isTaskWorktree, taskWorktreeKeys } from '../tasks/task-checkout.js'
 import { withinWorktrees } from '../tasks/task-worktree-keys.js'
-import { worktreeListSchema, type Task } from '@dovo/protocol'
+import { worktreeListSchema, type TaskSummary } from '@dovo/protocol'
 
 type Worktree = (typeof worktreeListSchema.Type.worktrees)[number]
 
 function ownsWorktree(
-  task: Task,
+  task: TaskSummary,
   repositoryId: string,
   common: string,
   root: string,
@@ -27,8 +27,7 @@ function ownsWorktree(
           !link.existingWorktreePath,
       )
       .map((link) => taskWorktreeKeys(common, `${task.id}:linked:${link.id}`, root)),
-    ...(task.turns ?? [])
-      .flatMap((turn) => turn.checkpoint?.linked ?? [])
+    ...(task.history.linkedCheckpoints ?? [])
       .filter((link) => link.repositoryId === repositoryId)
       .map((link) => taskWorktreeKeys(common, `${task.id}:linked:${link.checkoutId}`, root)),
   ]
@@ -41,7 +40,7 @@ function ownsWorktree(
   )
 }
 function referencesWorktree(
-  task: Task,
+  task: TaskSummary,
   repositoryId: string,
   common: string,
   root: string,
@@ -52,10 +51,8 @@ function referencesWorktree(
     ownsWorktree(task, repositoryId, common, root, path, branch) ||
     task.existingWorktreePath === path ||
     !!task.linkedCheckouts?.some((link) => link.existingWorktreePath === path) ||
-    !!task.turns?.some((turn) =>
-      turn.checkpoint?.linked?.some(
-        (link) => link.repositoryId === repositoryId && link.directory === path,
-      ),
+    !!task.history.linkedCheckpoints?.some(
+      (link) => link.repositoryId === repositoryId && link.directory === path,
     )
   )
 }

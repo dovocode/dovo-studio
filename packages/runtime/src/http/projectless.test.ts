@@ -127,7 +127,7 @@ it.each(['scratch', 'folder'] as const)(
     })
     const inspect = vi.spyOn(s.git, 'inspect')
     const checkpoint = vi.spyOn(s.git, 'snapshot')
-    s.store.updateTask('task', (task) => ({
+    s.store.updateTaskHistory('task', (task) => ({
       ...task,
       messages: [{ id: 'first', role: 'user', text: 'Hello', createdAt: new Date().toISOString() }],
     }))
@@ -213,7 +213,7 @@ it('withholds scratch threads inside a Git checkout and keeps plain-folder defau
 it('recovers a scratch turn interrupted after the provider completed without requiring Git change capture', async () => {
   const f = await setup()
   await f.create(f.draft('task'))
-  f.runtime.services.store.updateTask('task', (task) => ({
+  f.runtime.services.store.updateTaskHistory('task', (task) => ({
     ...task,
     status: 'review',
     runPhase: 'finalizing',

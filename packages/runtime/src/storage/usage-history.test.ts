@@ -57,7 +57,7 @@ it('preserves unrelated validated entities during streamed updates and still rej
     expect(store.get().tasks[1]).toBe(old)
     expect(store.publicWorkspace().tasks[1]).toBe(publicOld)
     expect(() =>
-      store.updateTask('t', (t) => ({
+      store.updateTaskHistory('t', (t) => ({
         ...t,
         turns: t.turns?.map((turn) => ({ ...turn, tokens: -1 })),
       })),

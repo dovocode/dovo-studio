@@ -104,7 +104,7 @@ export function attachBrowserSocket(
     if (client.readyState !== WebSocket.OPEN) throw new Error('Browser controller disconnected')
     services.devices.authenticate(token)
     if (foreignAuthorize) foreignAuthorize()
-    else services.store.task(taskId)
+    else services.store.taskSummary(taskId)
   }
   let count = 0,
     windowStart = Date.now()

@@ -2,7 +2,8 @@ import { mutableStruct } from '../../shared/schema.js'
 import { minValue, maxValue } from '../../shared/schema.js'
 import { Schema } from 'effect'
 import { taskPreparation } from '../../tasks/task-preparation.js'
-import type { Task } from '../../workspace.js'
+import { latestTaskTurn, type Task } from '../../workspace.js'
+import type { TaskSummary } from '../../tasks/task-summary.js'
 export const liveActivityRegistrationSchema = mutableStruct({
   activityId: maxValue(minValue(Schema.String, 1), 200),
   taskId: maxValue(minValue(Schema.String, 1), 200),
@@ -54,13 +55,13 @@ const activityLabels: Record<string, string> = {
   todowrite: 'Planning next steps',
 }
 export function liveTaskProps(
-  task: Task,
+  task: Task | TaskSummary,
   device: string,
   project: string,
   needsInput: boolean,
   activeThreads = 1,
 ): LiveTaskProps {
-  const turn = task.turns?.at(-1)
+  const turn = latestTaskTurn(task)
   const reported = task.activity?.trim()
   const current = reported
     ? (activityLabels[reported.toLowerCase().replace(/[_ -]/g, '')] ?? reported)

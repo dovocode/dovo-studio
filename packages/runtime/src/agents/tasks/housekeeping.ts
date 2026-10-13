@@ -3,15 +3,15 @@ import { dirname, resolve } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { startPolling } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { taskFamilyIds, type Task } from '@dovo/protocol'
+import { taskFamilyIds, type TaskSummary } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
 
 const day = 86_400_000
 
 /** When a task last saw activity: its latest turn, update or creation. */
-function lastTaskActivity(task: Task) {
-  const turn = task.turns?.at(-1)
+function lastTaskActivity(task: TaskSummary) {
+  const turn = task.history.latestTurn
   return Math.max(
     ...[task.updatedAt, task.createdAt, turn?.finishedAt, turn?.startedAt]
       .map((value) => (value ? Date.parse(value) : NaN))
@@ -23,10 +23,10 @@ function lastTaskActivity(task: Task) {
 /** Tasks to archive under "Auto-archive inactive tasks". Anything that could still need the
  * user (running, waiting for input, pinned, busy elsewhere) is never selected. */
 export function inactiveTaskIds(
-  tasks: readonly Task[],
+  tasks: readonly TaskSummary[],
   days: number,
   now: number,
-  busy: (task: Task) => boolean,
+  busy: (task: TaskSummary) => boolean,
 ) {
   if (!days) return []
   return tasks
@@ -84,7 +84,7 @@ export async function archiveTask(
   id: string,
   reason: string,
   now = Date.now(),
-  eligible: (task: Task) => boolean = () => true,
+  eligible: (task: TaskSummary) => boolean = () => true,
 ) {
   try {
     const current = s.store.get().tasks.find((task) => task.id === id)

@@ -9,15 +9,21 @@ const built = await bundleBrowser(
     stdin: {
       contents: `
 import {createRoot} from 'react-dom/client';
+import {memo} from 'react';
 import {runtimeProfile} from '@dovo/protocol';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
-import {RuntimeProvider,useRuntime} from './apps/mobile/src/runtime/connection/provider.tsx';
+import {RuntimeProvider,useRuntime,useRuntimeSelector} from './apps/mobile/src/runtime/connection/provider.tsx';
 window.readFails=true;window.writes=[];window.requests=[];
 const profiles=['one','two'].map(name=>runtimeProfile({address:'http://'+name+'.lan:8787',token:'test-private-token-at-least-32-characters-'+name},name));
 window.saved=JSON.stringify({version:1,activeId:profiles[0].id,profiles});
 window.fetch=async(url)=>{window.requests.push(String(url));return Response.json({revision:1,owner:false,workspace:{version:1,runtimeAddress:'',agents:[],tasks:[],repositories:[],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]})};
 function Probe(){window.runtime=useRuntime();return <div>{window.runtime.ready?'Ready':'Loading'}</div>}
-createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/></RuntimeProvider></ApplicationStateProvider>);
+// Every published runtime value reaches broad readers; a stable action selector stays quiet.
+window.renders={broad:0,selected:0};
+const Broad=memo(function Broad(){useRuntime();window.renders.broad++;return null});
+const selectCancelPairing=runtime=>runtime.cancelPairing;
+const Selected=memo(function Selected(){useRuntimeSelector(selectCancelPairing);window.renders.selected++;return null});
+createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/><Broad/><Selected/></RuntimeProvider></ApplicationStateProvider>);
 window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',token:'test-third-private-token-at-least-32-characters'});
 `,
       loader: 'tsx',
@@ -111,9 +117,12 @@ try {
   )
   await page.evaluate(() => window.connectThird())
   assert.equal(await page.evaluate(() => JSON.parse(window.saved).profiles.length), 3)
+  const renders = await page.evaluate(() => window.renders)
+  assert.ok(renders.broad > 3, `broad runtime reader rendered ${renders.broad} times`)
+  assert.equal(renders.selected, 1, 'an action selector re-rendered for runtime state changes')
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile registry recovery: failed credential reads preserve pairings, block writes, and recover on explicit retry.',
+    `Mobile registry recovery: failed credential reads preserve pairings, block writes, and recover on explicit retry; ${renders.broad} broad renders, ${renders.selected} selector render.`,
   )
 } finally {
   await browser.close()

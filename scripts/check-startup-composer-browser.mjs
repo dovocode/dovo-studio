@@ -11,6 +11,7 @@ const mocks = {
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
     export {WorkspaceContext,useWorkspace} from '../studio-core/src/workspace/context';
+    export {WorkspaceValueProvider,useWorkspaceSelector,sameWorkspaceFields} from '../studio-core/src/workspace/selector';
     export {useCachedTask} from '../studio-core/src/workspace/use-cached-task';
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const useStudioHost=()=>window.host;
@@ -97,7 +98,7 @@ const built = await build({
   stdin: {
     contents: `
       import {useState} from 'react';import {createRoot} from 'react-dom/client';
-      import {WorkspaceContext,createTask} from '@dovo/studio-core';
+      import {WorkspaceValueProvider,createTask} from '@dovo/studio-core';
       import TasksView from '../extension-tasks/src/view';
       window.requests=[];window.navigations=[];window.commands=new Map();
       window.host={navigate:target=>{window.navigations.push(target);window.setEntity(target.entityId)},registerCommand:command=>{window.commands.set(command.id,command.run);return ()=>window.commands.delete(command.id)}};
@@ -115,7 +116,7 @@ const built = await build({
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:'message',role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
         };
-        return <WorkspaceContext.Provider value={{workspace,setWorkspace,snapshot,activeRuntimeId:active,switchRuntime:async id=>{setWorkspace(current=>({...current,tasks:id==='mac'?[other]:[],repositories:repositories(id)}));setActive(id)},runtimes:[],runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView entityId={entity}/></WorkspaceContext.Provider>
+        return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:active,switchRuntime:async id=>{setWorkspace(current=>({...current,tasks:id==='mac'?[other]:[],repositories:repositories(id)}));setActive(id)},runtimes:[],runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView entityId={entity}/></WorkspaceValueProvider>
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,

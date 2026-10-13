@@ -170,13 +170,13 @@ export class Memory {
     return { ok: true }
   }
   private projectForTask(taskId: string) {
-    let task = this.store.task(taskId)
+    let task = this.store.taskSummary(taskId)
     const visited = new Set<string>()
     while (task.delegation) {
       if (visited.has(task.id)) throw new HttpError(400, 'Invalid child agent ancestry')
       visited.add(task.id)
       if (task.delegation.checkoutId) break
-      task = this.store.task(task.delegation.parentTaskId)
+      task = this.store.taskSummary(task.delegation.parentTaskId)
     }
     if (!task.repositoryId && !task.delegation) return undefined
     const repository = this.checkouts.executionRepository(taskId)
@@ -201,7 +201,7 @@ export class Memory {
   }
   /** Agents can access enabled scopes of their execution project only; management UI can inspect disabled notes. */
   agentScope(taskId: string, scope: MemoryScope, write = false): MemoryScopeRequest {
-    const task = this.store.task(taskId)
+    const task = this.store.taskSummary(taskId)
     if (!this.availableScopes(taskId).includes(scope))
       throw new HttpError(403, 'This memory scope is disabled or unavailable for this thread')
     if (write && resolveTaskAgent(task, this.store.get().agents)?.permission === 'read-only')

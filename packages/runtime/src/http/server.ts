@@ -284,7 +284,7 @@ export function createRuntimeServer(services: Services, internal = false) {
         const ticket = services.simulatorTickets.consume(url.searchParams.get('ticket') ?? '')
         services.devices.authenticate(ticket.token)
         const taskId = services.simulators.taskId(ticket.resourceId)
-        services.store.task(taskId)
+        services.store.taskSummary(taskId)
         sockets.handleUpgrade(request, socket, head, (client) => {
           track(client, ticket.token)
           attachBrowserSocket(client, taskId, ticket.token, services, true, ticket.resourceId)
@@ -294,7 +294,7 @@ export function createRuntimeServer(services: Services, internal = false) {
       if (url.pathname === '/ws/browser') {
         const ticket = services.browserTickets.consume(url.searchParams.get('ticket') ?? '')
         services.devices.authenticate(ticket.token)
-        services.store.task(ticket.taskId ?? ticket.resourceId)
+        services.store.taskSummary(ticket.taskId ?? ticket.resourceId)
         sockets.handleUpgrade(request, socket, head, (client) => {
           track(client, ticket.token)
           attachBrowserSocket(

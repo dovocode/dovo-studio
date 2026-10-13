@@ -374,7 +374,7 @@ it('does not archive a closed PR family when new child work arrives during resou
 })
 it('smart-links branch PRs and verified message URLs, ignores foreign projects and keeps unlinked PRs dismissed', async () => {
   const f = await smartFixture()
-  f.s.store.updateTask(f.task.id, (task) => ({
+  f.s.store.updateTaskHistory(f.task.id, (task) => ({
     ...task,
     messages: [
       {
@@ -463,7 +463,7 @@ it.each(['closed', 'merged'] as const)(
 )
 it('can disable smart links and never settles a thread just because an auxiliary PR is closed', async () => {
   const f = await smartFixture()
-  f.s.store.updateTask(f.task.id, (task) => ({
+  f.s.store.updateTaskHistory(f.task.id, (task) => ({
     ...task,
     checkoutBranch: undefined,
     messages: [{ id: 'm', role: 'user', text: 'See https://github.com/o/r/pull/7' }],
@@ -496,7 +496,7 @@ it('rechecks a cached closed PR online and does not settle it if it has reopened
 it('discovers an already closed main PR from its verified message URL before branch polling has seen it', async () => {
   const f = await smartFixture()
   f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
-  f.s.store.updateTask(f.task.id, (task) => ({
+  f.s.store.updateTaskHistory(f.task.id, (task) => ({
     ...task,
     messages: [{ id: 'm', role: 'assistant', text: 'Created https://github.com/o/r/pull/7' }],
   }))

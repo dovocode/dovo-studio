@@ -11,7 +11,7 @@ import {
   resolveTaskAgent,
   verifyPullUrl,
   type PullDetail,
-  type Task,
+  type TaskMetadata,
 } from '@dovo/protocol'
 import { z } from 'zod'
 import type { Services } from '../../services.js'
@@ -130,7 +130,7 @@ export class PullRequestWatch {
       .parse(this.db.prepare('SELECT value FROM task_pull_watches').all())
       .map((row) => stateSchema.parse(JSON.parse(row.value)))
   }
-  reconcile(tasks: readonly Task[]) {
+  reconcile(tasks: readonly TaskMetadata[]) {
     const available = new Map(tasks.map((task) => [task.id, task]))
     for (const [key, registration] of this.registrations) {
       const task = available.get(registration.taskId)
@@ -170,7 +170,7 @@ export class PullRequestWatch {
       )
   }
   private writable(taskId: string) {
-    const task = this.s.store.task(taskId)
+    const task = this.s.store.taskSummary(taskId)
     if (resolveTaskAgent(task, this.s.store.get().agents)?.permission === 'read-only')
       throw new HttpError(403, 'PR watching is disabled for read-only threads')
     return task
@@ -192,7 +192,7 @@ export class PullRequestWatch {
     this.s.tasks.assertToolScope(input.taskId, input.parentRunId)
     const task =
       manageExisting && input.action !== 'watch'
-        ? this.s.store.task(input.taskId)
+        ? this.s.store.taskSummary(input.taskId)
         : this.writable(input.taskId)
     const selected = (state: { repositoryId: string; url: string }) =>
       (!input.repositoryId || state.repositoryId === input.repositoryId) &&
@@ -347,7 +347,7 @@ export class PullRequestWatch {
           }
           const detail = await reading
           if (!this.current(state)) continue
-          const latest = this.s.store.task(state.taskId)
+          const latest = this.s.store.taskSummary(state.taskId)
           if (
             watchRepositoryError(latest, state.repositoryId, state.primaryRepositoryId) ||
             latest.archived ||

@@ -3,8 +3,8 @@ import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import type { RuntimeProfile } from '@dovo/protocol'
 import { createWorkspace } from './seed'
+import { WorkspaceValueProvider } from './selector'
 import {
-  WorkspaceContext,
   useWorkspace,
   type WorkspaceRequest,
   type WorkspaceRequestEffect,
@@ -103,5 +103,5 @@ export function WorkspaceScope({
     [root, id, active, entry, owner, runtimeReadCache, request, requestEffect, scopedSetWorkspace],
   )
   if (!entry) return null
-  return <WorkspaceContext.Provider value={contextValue}>{children}</WorkspaceContext.Provider>
+  return <WorkspaceValueProvider value={contextValue}>{children}</WorkspaceValueProvider>
 }

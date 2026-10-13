@@ -25,7 +25,7 @@ it('keeps turn artifact tiles after the recent tool window and activity retentio
   const f = await fixture()
   const turnId = randomUUID(),
     messageId = randomUUID()
-  f.runtime.services.store.updateTask(f.taskId, (task) => ({
+  f.runtime.services.store.updateTaskHistory(f.taskId, (task) => ({
     ...task,
     status: 'running',
     messages: [{ id: messageId, turnId, role: 'assistant', text: 'Creating the preview' }],
@@ -64,7 +64,7 @@ it('keeps turn artifact tiles after the recent tool window and activity retentio
       .events.flatMap((event) => artifactReferences(event.payload)),
   ).toHaveLength(1)
   const nextMessageId = randomUUID()
-  f.runtime.services.store.updateTask(f.taskId, (task) => ({
+  f.runtime.services.store.updateTaskHistory(f.taskId, (task) => ({
     ...task,
     messages: [
       ...task.messages,
@@ -184,7 +184,7 @@ it('creates, lists and versions artifacts without embedding bodies in activity; 
 })
 it('collects hosted links from full thread history and all tool results, preserving thread scope', async () => {
   const f = await fixture()
-  f.runtime.services.store.updateTask(f.taskId, (task) => ({
+  f.runtime.services.store.updateTaskHistory(f.taskId, (task) => ({
     ...task,
     messages: Array.from({ length: 350 }, (_, index) => ({
       id: `message-${index}`,

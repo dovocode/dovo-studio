@@ -36,7 +36,7 @@ export class TaskReviews {
     )
   }
   private list(taskId: string) {
-    this.s.store.task(taskId)
+    this.s.store.taskSummary(taskId)
     return decode(
       mutableArray(rowSchema),
       this.db
@@ -62,8 +62,9 @@ export class TaskReviews {
     } else {
       try {
         const output = parseCodeReviewOutput(
-          reviewer.messages
-            .filter((message) => message.role === 'assistant')
+          this.s.store
+            .task(reviewer.id)
+            .messages.filter((message) => message.role === 'assistant')
             .map((message) => message.text)
             .join('\n'),
         )
@@ -130,7 +131,7 @@ export class TaskReviews {
     const reviews = []
     for (const review of this.list(taskId)) reviews.push(await this.settle(review))
     const latest = reviews[0]
-    const task = this.s.store.task(taskId)
+    const task = this.s.store.taskSummary(taskId)
     const cwd = latest ? await this.s.checkouts.reviewDirectory(taskId) : undefined
     const files =
       cwd && cwd === latest?.directory
@@ -212,7 +213,7 @@ export class TaskReviews {
     }
     if (this.starting.has(taskId))
       throw new HttpError(409, 'A review is already running. Wait for it to finish or stop it.')
-    const parent = this.s.store.task(taskId)
+    const parent = this.s.store.taskSummary(taskId)
     if (parent.status === 'running' || this.s.tasks.hasWorkingFamily(taskId))
       throw new HttpError(409, 'Finish running work before reviewing')
     this.starting.add(taskId)
@@ -298,7 +299,7 @@ export class TaskReviews {
         .then((run) => run.done)
         .catch((error) => {
           if (!this.db.open) return
-          const task = this.s.store.task(reviewer.id)
+          const task = this.s.store.taskSummary(reviewer.id)
           if (task.status === 'draft')
             this.s.store.updateTask(task.id, (task) => ({
               ...task,
@@ -379,7 +380,10 @@ export class TaskReviews {
     const findings = review.findings.filter((finding) => findingIds.includes(finding.id))
     if (findings.length !== new Set(findingIds).size || !findings.length)
       throw new HttpError(404, 'Finding not found')
-    if (this.s.store.task(taskId).status === 'running' || this.s.tasks.hasWorkingFamily(taskId))
+    if (
+      this.s.store.taskSummary(taskId).status === 'running' ||
+      this.s.tasks.hasWorkingFamily(taskId)
+    )
       throw new HttpError(409, 'Finish running work before fixing findings')
     await this.s.tasks.send(taskId, messageId, codeFindingPrompt(findings))
     this.save({

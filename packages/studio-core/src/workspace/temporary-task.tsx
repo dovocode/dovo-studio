@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react'
 import type { Task } from '@dovo/protocol'
-import { WorkspaceContext, useWorkspace, type WorkspaceContextValue } from './context'
+import { useWorkspace, type WorkspaceContextValue } from './context'
+import { WorkspaceValueProvider } from './selector'
 
 /** Keep an untouched startup composer out of workspace persistence. */
 export function TemporaryTaskWorkspace({
@@ -56,5 +57,5 @@ export function TemporaryTaskWorkspace({
       return root.request(path, input, schema, method)
     },
   }
-  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
+  return <WorkspaceValueProvider value={value}>{children}</WorkspaceValueProvider>
 }

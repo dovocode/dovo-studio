@@ -328,7 +328,7 @@ export class Jobs {
     const taskId = runSteps(run).find((step) => step.nodeId === run.currentNodeId)?.taskId
     if (!taskId || !this.tasks.hasWorkingFamily(taskId)) return
     try {
-      const task = this.store.task(taskId)
+      const task = this.store.taskSummary(taskId)
       if (task.activeRunId) this.tasks.cancel(taskId, task.activeRunId)
       else {
         this.tasks.stopAgents(taskId, taskFamilyRunToken(this.store.get().tasks, taskId))
@@ -459,7 +459,7 @@ export class Jobs {
           const existingTask =
             step.taskId && this.store.get().tasks.find((item) => item.id === step.taskId)
           const task = existingTask || this.createTask(run, node)
-          if (!existingTask && this.generateTitle) {
+          if (!existingTask && 'messages' in task && this.generateTitle) {
             // Match ordinary threads: title generation is independent of execution.
             // A slow or unavailable utility model must never hold up the automation.
             void this.generateTitle(
@@ -512,7 +512,7 @@ export class Jobs {
             if (this.stopping || this.runs.get(id)?.status !== 'running') return
             yield* Effect.sleep('250 millis')
           }
-          const completed = this.store.task(task.id)
+          const completed = this.store.taskSummary(task.id)
           if (!['review', 'done'].includes(completed.status))
             return yield* Effect.fail(
               new HttpError(409, completed.error ?? 'Delegated task did not complete'),

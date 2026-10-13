@@ -11,16 +11,14 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import {
-  aggregateRuntimeTasks,
   projectMachineGroups,
   compareTasks,
   isSnoozed,
   resolveTaskAgent,
-  indexTaskSubagents,
   type RuntimeTask,
 } from '@dovo/protocol'
 import { useNavigation } from '../shell/navigation'
-import { useDeferredValue, useEffect, useMemo } from 'react'
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { Alert, FlatList, Pressable, ScrollView, View } from 'react-native'
 import { Schema } from 'effect'
 import { mutableStruct, responses } from '@dovo/protocol'
@@ -28,7 +26,8 @@ import { Text } from '../ui/content/text'
 import { useRuntime } from '../runtime/connection/provider'
 import { FleetOverview } from '../runtime/connection/fleet-overview'
 import { ProjectThreadFilter } from '../tasks/list/project-thread-filter'
-import { TaskListRow } from '../tasks/list/task-list-row'
+import { TaskListRow, type TaskListRowActions } from '../tasks/list/task-list-row'
+import { taskListProjection, type TaskListRowData } from '../tasks/list/task-list-projection'
 import { taskRowStatus } from '../tasks/list/task-row-status'
 import { useTaskListView } from '../tasks/list/task-list-view'
 import { useListScroll } from '../ui/layout/use-list-scroll'
@@ -97,16 +96,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     () => (source === 'all' ? overviews : overviews.filter((entry) => entry.profile.id === source)),
     [overviews, source],
   )
-  const subagentsByRuntime = useMemo(
-    () =>
-      new Map(
-        overviews.map((entry) => [
-          entry.profile.id,
-          indexTaskSubagents(entry.snapshot?.workspace.tasks ?? []),
-        ]),
-      ),
-    [overviews],
-  )
   const projectGroups = useMemo(
     () =>
       projectMachineGroups(
@@ -130,7 +119,15 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       ),
     [projectGroups, project],
   )
-  const allTasks = useMemo(() => aggregateRuntimeTasks(entries, now, true), [entries, now])
+  const previousRows = useRef<ReadonlyMap<string, TaskListRowData>>(new Map())
+  const rowData = useMemo(
+    () => taskListProjection(entries, now, previousRows.current),
+    [entries, now],
+  )
+  useLayoutEffect(() => {
+    previousRows.current = rowData
+  }, [rowData])
+  const allTasks = useMemo(() => [...rowData.values()].map((entry) => entry.row), [rowData])
   const detail = allTasks.find((item) => item.key === details)
   const detailRuntime = overviews.find((entry) => entry.profile.id === detail?.runtimeId)
   const detailAgent =
@@ -392,6 +389,36 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         }),
       )
   }
+  const commands: TaskListRowActions = {
+    open: (key) => {
+      if (selecting) return toggleSelected(key)
+      const item = rowData.get(key)?.row
+      if (item) openTask(item)
+    },
+    details: (key) => setDetails(key),
+    select: toggleSelected,
+    subagent: (key, id) => {
+      if (selecting) return toggleSelected(key)
+      const parent = rowData.get(key)?.row
+      const child =
+        parent &&
+        allTasks.find((entry) => entry.runtimeId === parent.runtimeId && entry.task.id === id)
+      if (child) openTask(child)
+    },
+  }
+  const latestCommands = useRef(commands)
+  useLayoutEffect(() => {
+    latestCommands.current = commands
+  })
+  const rowCommands = useMemo<TaskListRowActions>(
+    () => ({
+      open: (key) => latestCommands.current.open(key),
+      details: (key) => latestCommands.current.details(key),
+      select: (key) => latestCommands.current.select(key),
+      subagent: (key, id) => latestCommands.current.subagent(key, id),
+    }),
+    [],
+  )
   if (ready && !profiles.length && !archived) return <Welcome />
   return (
     <View style={styles.screen}>
@@ -666,10 +693,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             >
               <TaskListRow
                 row={item.entry}
-                subagents={
-                  subagentsByRuntime.get(item.entry.runtimeId)?.(item.entry.task, true) ?? []
-                }
-                runtime={overviews.find((entry) => entry.profile.id === item.entry.runtimeId)}
+                subagents={rowData.get(item.entry.key)!.subagents}
+                owner={rowData.get(item.entry.key)!.owner}
+                commands={rowCommands}
                 now={now}
                 testID={
                   profiles.length === 1 ? `Task ${item.entry.task.id}` : `Task ${item.entry.key}`
@@ -678,16 +704,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 showDevice={profiles.length > 1}
                 selectionActive={selecting}
                 selected={selected.has(item.entry.key)}
-                onSelect={() => toggleSelected(item.entry.key)}
-                onOpen={() => (selecting ? toggleSelected(item.entry.key) : openTask(item.entry))}
-                onOpenSubagent={(id) => {
-                  if (selecting) return toggleSelected(item.entry.key)
-                  const child = allTasks.find(
-                    (entry) => entry.runtimeId === item.entry.runtimeId && entry.task.id === id,
-                  )
-                  if (child) openTask(child)
-                }}
-                onDetails={() => setDetails(item.entry.key)}
               />
             </View>
           )

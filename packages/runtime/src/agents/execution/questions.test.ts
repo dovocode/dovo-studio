@@ -134,7 +134,7 @@ it('keeps failed form admission retryable and retains durable answer receipts ac
   )
   const id = s.questions.list()[0].id
   s.db.exec(
-    "CREATE TRIGGER fail_form_acceptance BEFORE UPDATE ON documents WHEN NEW.id = 'workspace' BEGIN SELECT RAISE(ABORT, 'SQLite unavailable'); END",
+    "CREATE TRIGGER fail_form_acceptance BEFORE UPDATE ON workspace_tasks WHEN NEW.task_id = 'form-task' BEGIN SELECT RAISE(ABORT, 'SQLite unavailable'); END",
   )
   expect(() => s.questions.respond(id, answers)).toThrow('SQLite unavailable')
   expect(s.questions.list()).toHaveLength(1)

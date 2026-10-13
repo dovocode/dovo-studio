@@ -69,7 +69,7 @@ export async function deviceHostRoute(
   if (path === '/api/device-hosts/install') {
     const input = decode(deviceHostInstallSchema, await body(request, 8192))
     s.deviceHosts.assertEnabled()
-    s.store.task(input.taskId)
+    s.store.taskSummary(input.taskId)
     const controller = new AbortController()
     const abort = () => controller.abort()
     request.socket.once('close', abort)
@@ -86,7 +86,7 @@ export async function deviceHostRoute(
   }
   if (path === '/api/device-hosts/forward') {
     const input = decode(deviceHostForwardSchema, await body(request, 8192))
-    s.store.task(input.taskId)
+    s.store.taskSummary(input.taskId)
     const controller = new AbortController()
     const abort = () => controller.abort()
     request.socket.once('close', abort)
@@ -98,12 +98,12 @@ export async function deviceHostRoute(
   }
   if (path === '/api/device-hosts/forwards') {
     const input = decode(scopeSchema, await body(request, 4096))
-    s.store.task(input.taskId)
+    s.store.taskSummary(input.taskId)
     return s.deviceHosts.listForwards(input.taskId, agent)
   }
   if (path === '/api/device-hosts/forward/stop') {
     const input = decode(sessionSchema, await body(request, 8192))
-    s.store.task(input.taskId)
+    s.store.taskSummary(input.taskId)
     return s.deviceHosts.stopForward(input.id, input.taskId, agent)
   }
   if (path === '/api/device-host/forward/check') {

@@ -73,7 +73,7 @@ export class Attachments {
   }
   async upload(value: unknown) {
     const input = decode(attachmentUploadSchema, value)
-    const task = this.store.task(input.taskId)
+    const task = this.store.taskSummary(input.taskId)
     if (task.archived || task.archivedAt)
       throw new HttpError(409, 'Restore the task before attaching files')
     const data = Buffer.from(input.data, 'base64')
@@ -102,7 +102,7 @@ export class Attachments {
       size: data.length,
     })
     this.store.transaction(() => {
-      const current = this.store.task(input.taskId)
+      const current = this.store.taskSummary(input.taskId)
       if (current.archived || current.archivedAt)
         throw new HttpError(409, 'Restore the task before attaching files')
       if (this.db.prepare('SELECT id FROM attachments WHERE id=?').get(input.id)) {
@@ -155,16 +155,16 @@ export class Attachments {
   }
   /** Reference-aware collection also repairs disk leftovers from interrupted task deletion. */
   async prune() {
-    const retained = new Set(
-      this.store
+    const retained = new Set([
+      ...this.store
         .get()
         .tasks.flatMap((task) => [
           ...(task.draftAttachments ?? []),
-          ...task.messages.flatMap((message) => message.attachments ?? []),
           ...(task.queue ?? []).flatMap((message) => message.attachments ?? []),
         ])
         .map((file) => file.id),
-    )
+      ...this.store.messageAttachmentIds(),
+    ])
     const rows = this.db
       .prepare('SELECT id FROM attachments')
       .all()

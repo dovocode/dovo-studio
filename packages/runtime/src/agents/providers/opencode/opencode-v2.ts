@@ -7,18 +7,18 @@ import { opencodeHeaders } from './opencode-server.js'
 import { decode, isImageAttachment, questionPromptSchema } from '@dovo/protocol'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
+import { OpenCodeClientCache } from './client-cache.js'
 
 const addressOf = (address: string) => (address || 'http://127.0.0.1:4096').replace(/\/$/, '')
-const clients = new Map<string, ReturnType<typeof OpenCode.make>>()
-const client = (address: string, env?: Record<string, string>) => {
+const clients = new OpenCodeClientCache<ReturnType<typeof OpenCode.make>>()
+const client = (address: string, env?: Record<string, string>, active = false) => {
   const baseUrl = addressOf(address)
   const authorization = opencodeHeaders(env)
   const key = JSON.stringify([baseUrl, authorization])
-  const existing = clients.get(key)
-  if (existing) return existing
-  const created = OpenCode.make({ baseUrl, headers: authorization })
-  clients.set(key, created)
-  return created
+  const create = () => OpenCode.make({ baseUrl, headers: authorization })
+  return active
+    ? clients.acquire(key, create)
+    : { value: clients.get(key, create), release: () => {} }
 }
 
 /** A V1 server has no /api/info route. Authentication errors must not silently select V1. */
@@ -68,7 +68,7 @@ function modelOf(run: AgentRun) {
 
 export const opencodeV2Adapter: AgentAdapter = {
   models: async (agent) => {
-    const { data } = await client(agent.endpoint, agent.env).model.list(undefined, {
+    const { data } = await client(agent.endpoint, agent.env).value.model.list(undefined, {
       signal: AbortSignal.timeout(15000),
     })
     return {
@@ -85,7 +85,9 @@ export const opencodeV2Adapter: AgentAdapter = {
   },
   probe: async (agent) => {
     try {
-      await client(agent.endpoint, agent.env).server.info({ signal: AbortSignal.timeout(5000) })
+      await client(agent.endpoint, agent.env).value.server.info({
+        signal: AbortSignal.timeout(5000),
+      })
       return { provider: 'opencode', available: true, detail: 'OpenCode v2 Serve is reachable.' }
     } catch {
       return {
@@ -97,7 +99,8 @@ export const opencodeV2Adapter: AgentAdapter = {
   },
   async run(run) {
     run.signal.throwIfAborted()
-    const api = client(run.agent.endpoint, run.agent.env)
+    const lease = client(run.agent.endpoint, run.agent.env, true)
+    const api = lease.value
     const registered: string[] = []
     let ephemeralSessionId: string | undefined
     const location = { directory: run.cwd }
@@ -509,20 +512,24 @@ export const opencodeV2Adapter: AgentAdapter = {
         await drained
       }
     } finally {
-      const results = await Promise.allSettled(
-        registered.map((server) =>
-          api.mcp.remove({ server, location }, { signal: AbortSignal.timeout(5000) }),
-        ),
-      )
-      results.forEach((result, index) => {
-        if (result.status === 'rejected')
-          run.onActivity(`Could not remove managed MCP server ${registered[index]}`)
-      })
-      if (ephemeralSessionId)
-        await api.session.remove(
-          { sessionID: ephemeralSessionId },
-          { signal: AbortSignal.timeout(5000) },
+      try {
+        const results = await Promise.allSettled(
+          registered.map((server) =>
+            api.mcp.remove({ server, location }, { signal: AbortSignal.timeout(5000) }),
+          ),
         )
+        results.forEach((result, index) => {
+          if (result.status === 'rejected')
+            run.onActivity(`Could not remove managed MCP server ${registered[index]}`)
+        })
+        if (ephemeralSessionId)
+          await api.session.remove(
+            { sessionID: ephemeralSessionId },
+            { signal: AbortSignal.timeout(5000) },
+          )
+      } finally {
+        lease.release()
+      }
     }
   },
 }

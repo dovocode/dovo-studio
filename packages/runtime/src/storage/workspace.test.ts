@@ -3,6 +3,8 @@ import { expect, it, vi } from 'vite-plus/test'
 import { taskHarnessSchema, type Task, type Workspace, type WorkspacePatch } from '@dovo/protocol'
 import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
+const completeTasks = (store: WorkspaceStore) =>
+  store.get().tasks.map((task) => store.task(task.id))
 it('persists file review versions through restarts, content ABA and removal while isolating unchanged files', () => {
   const db = openDatabase(':memory:')
   try {
@@ -205,10 +207,10 @@ it('removes legacy examples from storage while preserving real conversations and
     }
     db.prepare('INSERT INTO documents VALUES (?, ?)').run('workspace', JSON.stringify(workspace))
     const store = new WorkspaceStore(db)
-    expect(store.get().tasks).toEqual([task])
-    expect(new WorkspaceStore(db).get().tasks).toEqual([task])
+    expect(completeTasks(store)).toEqual([task])
+    expect(completeTasks(new WorkspaceStore(db))).toEqual([task])
     store.update(() => workspace)
-    expect(new WorkspaceStore(db).get().tasks).toEqual([task])
+    expect(completeTasks(new WorkspaceStore(db))).toEqual([task])
   } finally {
     db.close()
   }
@@ -527,7 +529,7 @@ it('recognizes an identical creation retry while rejecting changed entities and 
     const version = store.version()
     store.patch(create)
     expect(store.version()).toBe(version)
-    expect(store.get().tasks).toEqual([draft])
+    expect(completeTasks(store)).toEqual([draft])
     expect(() =>
       store.patch({
         ...create,
@@ -924,7 +926,7 @@ it('allows draft worktree selection and keeps setup state runtime-owned', () => 
     })
     expect(store.task(draft.id).worktreeSetupComplete).toBeUndefined()
     expect(store.task(draft.id).existingWorktreePath).toBeUndefined()
-    store.updateTask(draft.id, (task) => ({
+    store.updateTaskHistory(draft.id, (task) => ({
       ...task,
       messages: [{ id: 'message', role: 'user', text: 'Start' }],
     }))
@@ -963,20 +965,23 @@ it('persists a history revision for removals while appends and streaming keep it
         },
       ],
     }))
-    store.updateTask('history', (task) => ({ ...task, messages: [...task.messages, message('c')] }))
+    store.updateTaskHistory('history', (task) => ({
+      ...task,
+      messages: [...task.messages, message('c')],
+    }))
     expect(store.task('history').historyRevision).toBeUndefined()
-    store.updateTask('history', (task) => ({
+    store.updateTaskHistory('history', (task) => ({
       ...task,
       messages: task.messages.map((entry) => ({ ...entry, text: 'Streaming' })),
     }))
     expect(store.task('history').historyRevision).toBeUndefined()
-    store.updateTask('history', (task) => ({
+    store.updateTaskHistory('history', (task) => ({
       ...task,
       messages: task.messages.filter((entry) => entry.id !== 'b'),
     }))
     expect(store.task('history').historyRevision).toBe(1)
     expect(new WorkspaceStore(db).task('history').historyRevision).toBe(1)
-    store.updateTask('history', (task) => ({ ...task, messages: task.messages.slice(0, 1) }))
+    store.updateTaskHistory('history', (task) => ({ ...task, messages: task.messages.slice(0, 1) }))
     expect(store.task('history').historyRevision).toBe(2)
   } finally {
     db.close()
@@ -1076,8 +1081,8 @@ it('removes duplicate legacy example IDs before validating real task identities'
     }
     db.prepare('INSERT INTO documents VALUES (?, ?)').run('workspace', JSON.stringify(workspace))
     const store = new WorkspaceStore(db)
-    expect(store.get().tasks).toEqual([task])
-    expect(new WorkspaceStore(db).get().tasks).toEqual([task])
+    expect(completeTasks(store)).toEqual([task])
+    expect(completeTasks(new WorkspaceStore(db))).toEqual([task])
   } finally {
     db.close()
   }
@@ -1107,7 +1112,7 @@ it('restores workspace caches and receipts after a failed enclosing transaction 
     const document = db.prepare('SELECT value FROM documents WHERE id=?').get('workspace')
     expect(() =>
       store.transaction(() => {
-        store.updateTask(
+        store.updateTaskHistory(
           task.id,
           (current) => ({
             ...current,

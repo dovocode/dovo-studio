@@ -148,7 +148,7 @@ it('keeps worktrees referenced only by saved linked checkpoints until that threa
   const owner = create('Owner')
   const path = await s.checkouts.directory(owner.id)
   const history = create('History')
-  s.store.updateTask(history.id, (task) => ({
+  s.store.updateTaskHistory(history.id, (task) => ({
     ...task,
     archivedAt: new Date().toISOString(),
     turns: [

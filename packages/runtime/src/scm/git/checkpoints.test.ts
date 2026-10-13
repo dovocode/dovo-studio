@@ -68,7 +68,7 @@ it('lists every changed file while keeping inline text and on-demand previews bo
   cleanups.push(f.cleanup)
   let blobReads = 0
   const git = new GitService(undefined, (_cwd, args, result) => {
-      if (!result && args[1] === 'cat-file' && args[2] === 'blob') blobReads++
+      if (!result && args[1] === 'cat-file' && args[2] === '--batch') blobReads++
     }),
     cwd = f.directory
   const before = await git.snapshot(cwd, 'refs/dovo/checkpoints/bounded/before')
@@ -88,8 +88,8 @@ it('lists every changed file while keeping inline text and on-demand previews bo
   await git.command(cwd, ['worktree', 'add', '--detach', 'module', 'HEAD'])
   const after = await git.snapshot(cwd, 'refs/dovo/checkpoints/bounded/after')
   const result = await git.checkpointChanges(cwd, before, after)
-  // The 205 identical text files share one read; the binary needs one, and later previews defer.
-  expect(blobReads).toBe(2)
+  // All inline blobs share one process; duplicate hashes reuse bounded immutable content.
+  expect(blobReads).toBe(1)
   expect(result.omitted).toEqual([])
   expect(result.files).toHaveLength(209)
   expect(result.files.filter((file) => !file.preview)).toHaveLength(200)
@@ -193,4 +193,36 @@ it('captures whole-branch review scope without changing HEAD or the user index',
   ])
   expect(await git.command(f.directory, ['rev-parse', 'HEAD'])).toBe(head)
   expect(await git.command(f.directory, ['ls-files', '--stage'])).toBe(index)
+})
+
+it('reads distinct UTF-8 blobs in path order using one batch process', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  let processes = 0
+  const git = new GitService(undefined, (_cwd, args, result) => {
+    if (!result && args[1] === 'cat-file') processes++
+  })
+  const before = await git.snapshot(f.directory, 'refs/dovo/checkpoints/batch/before')
+  const names = Array.from(
+    { length: 100 },
+    (_, index) => `utf8-${String(index).padStart(3, '0')}.txt`,
+  )
+  await Promise.all(
+    names.map((name, index) => writeFile(join(f.directory, name), `${index}: café 🙂\n`)),
+  )
+  await writeFile(join(f.directory, 'invalid-utf8.dat'), Buffer.from([0xc3, 0x28]))
+  const after = await git.snapshot(f.directory, 'refs/dovo/checkpoints/batch/after')
+  const result = await git.checkpointChanges(f.directory, before, after)
+  expect(processes).toBe(1)
+  expect(result.files.filter((file) => !file.preview)).toEqual(
+    names.map((path, index) => ({
+      path,
+      before: '',
+      after: `${index}: café 🙂\n`,
+      viewed: false,
+    })),
+  )
+  expect(result.files.find((file) => file.path === 'invalid-utf8.dat')?.preview?.kind).toBe(
+    'binary',
+  )
 })

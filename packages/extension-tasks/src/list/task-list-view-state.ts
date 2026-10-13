@@ -6,6 +6,8 @@ type TaskListViewState = {
   query: string
   expanded: Record<string, boolean>
   scrollTop: number
+  /** Measured row heights keep windowed placeholders, and so scroll restoration, exact. */
+  rowHeights: [string, number][]
 }
 // Keep presentation state across extension navigation without retaining a running
 // thread's renderer or subscriptions. Each workbench owns its own state.

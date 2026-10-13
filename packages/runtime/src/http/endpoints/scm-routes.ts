@@ -78,7 +78,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
         } catch (error) {
           throw new HttpError(400, error instanceof Error ? error.message : String(error))
         }
-        const task = s.store.task(input.id)
+        const task = s.store.taskSummary(input.id)
         if (task.archivedAt)
           throw new HttpError(409, 'Reopen this archived thread before linking PRs.')
         try {
@@ -372,7 +372,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
         )
         const repo = s.store.get().repositories.find((r) => r.id === input.repositoryId)
         if (!repo) throw new HttpError(404, 'Repository not found')
-        if (input.taskId && s.store.task(input.taskId).repositoryId !== repo.id)
+        if (input.taskId && s.store.taskSummary(input.taskId).repositoryId !== repo.id)
           throw new HttpError(400, 'Task repository does not match')
         const cwd = input.taskId
           ? yield* serviceResult(s.checkouts.directory(input.taskId))
@@ -388,7 +388,10 @@ export function scmRoute(request: IncomingMessage, path: string) {
         }
         if (path === '/api/scm/push') {
           yield* serviceResult(
-            s.git.push(cwd, input.taskId ? s.store.task(input.taskId).pullRequest : undefined),
+            s.git.push(
+              cwd,
+              input.taskId ? s.store.taskSummary(input.taskId).pullRequest : undefined,
+            ),
           )
           return { ok: true }
         }
@@ -577,7 +580,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
         if (path === '/api/scm/changes') {
           let files = yield* serviceResult(s.git.changes(cwd))
           if (typeof input.taskId === 'string') {
-            const previous = s.store.task(input.taskId).files
+            const previous = s.store.taskSummary(input.taskId).files
             files = retainChangedFiles(previous, files)
             if (files !== previous) s.store.updateTask(input.taskId, (t) => ({ ...t, files }))
           }

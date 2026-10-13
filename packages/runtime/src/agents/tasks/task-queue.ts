@@ -44,7 +44,7 @@ export class TaskQueue {
     subagentResultId?: string,
   ) {
     if (this.accepted(id, messageId, text, attachments)) return false
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     if (task.archived && !task.autoSettled)
       throw new HttpError(409, 'Restore this task before sending a message')
     if ((task.queue?.length ?? 0) >= 50)
@@ -88,7 +88,7 @@ export class TaskQueue {
     return true
   }
   edit(id: string, messageId: string, text: string, expectedText: string) {
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     const message = task.queue?.find((item) => item.id === messageId)
     if (!message) throw new HttpError(409, 'This message already started or was removed')
     if (message.text !== expectedText)
@@ -102,7 +102,7 @@ export class TaskQueue {
     this.activity?.add('queue', id, 'Queued message edited', { messageId })
   }
   take(id: string, runId: string = randomUUID(), attemptId?: string) {
-    this.store.updateTask(
+    this.store.updateTaskHistory(
       id,
       (t) => {
         const [message, ...queue] = t.queue ?? []
@@ -126,7 +126,7 @@ export class TaskQueue {
     )
   }
   change(id: string, action: 'remove' | 'restore' | 'up' | 'down' | 'pause', messageId?: string) {
-    const task = this.store.task(id)
+    const task = this.store.taskSummary(id)
     if (action === 'pause') {
       this.store.updateTask(id, (t) => ({
         ...t,

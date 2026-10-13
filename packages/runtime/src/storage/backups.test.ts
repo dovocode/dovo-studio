@@ -8,6 +8,8 @@ import { RuntimeBackups, restoreRuntimeBackup, verifyRuntimeBackup } from './bac
 import { acquireProcessLock } from './process-lock'
 import { exportRuntimeRecovery } from './recovery'
 import { rotateRuntimeLogs } from './log-rotation'
+import { WorkspaceStore } from './workspace'
+import type { Task } from '@dovo/protocol'
 import * as backup from './backup'
 const paths: string[] = []
 afterEach(async () => {
@@ -112,6 +114,43 @@ it('exports invalid history verbatim without hydrating or changing the original'
     ).toEqual({ task_id: 'damaged', kind: 'message', value: '{broken' })
     expect(f.db.prepare('SELECT value FROM conversation_items').get()).toEqual({ value: '{broken' })
     await expect(exportRuntimeRecovery(f.path, output)).rejects.toThrow('EEXIST')
+  } finally {
+    f.db.close()
+  }
+})
+it('inspects version 3 task rows and their history counts when exporting', async () => {
+  const f = await setup()
+  try {
+    const task = (id: string): Task => ({
+      id,
+      title: id,
+      repositoryId: '',
+      agentId: '',
+      status: 'review',
+      createdAt: '',
+      draft: '',
+      files: [],
+      example: false,
+      messages: [
+        { id: `${id}-a`, role: 'user', text: 'First' },
+        { id: `${id}-b`, role: 'assistant', text: 'Second' },
+      ],
+    })
+    new WorkspaceStore(f.db).update((workspace) => ({
+      ...workspace,
+      tasks: [task('kept'), task('gone')],
+    }))
+    f.db.prepare("DELETE FROM conversation_items WHERE item_id = 'kept-b'").run()
+    f.db.prepare("DELETE FROM workspace_tasks WHERE task_id = 'gone'").run()
+    const report = await exportRuntimeRecovery(f.path, join(f.dir, 'recovery'))
+    expect(report.conversationIssues).toEqual([
+      'gone: task metadata record is missing or invalid',
+      'kept: expected 2 message records, found 1',
+    ])
+    expect(report.tables.find((table) => table.table === 'workspace_tasks')).toMatchObject({
+      records: 1,
+      invalidJson: 0,
+    })
   } finally {
     f.db.close()
   }

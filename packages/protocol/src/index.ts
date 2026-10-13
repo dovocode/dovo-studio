@@ -1,5 +1,6 @@
 export * from './workspace.js'
 export * from './tasks/task-budget.js'
+export * from './tasks/task-summary.js'
 export * from './conversation/workflow/turn-summary.js'
 export * from './conversation/timeline.js'
 export * from './conversation/workflow/plan-limits.js'

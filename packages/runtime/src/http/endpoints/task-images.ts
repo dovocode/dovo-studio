@@ -9,7 +9,7 @@ import { sharedTaskFile } from './task-files.js'
 const MAX_BYTES = 16 * 1024 * 1024
 async function readImage(s: Services, value: unknown) {
   const input = decode(taskImageRequestSchema, value),
-    task = s.store.task(input.taskId)
+    task = s.store.taskSummary(input.taskId)
   if (input.attachmentId !== undefined) {
     if (input.path !== undefined || input.eventId !== undefined || input.index !== undefined)
       throw new HttpError(400, 'Choose one image source')

@@ -3,6 +3,8 @@ import { expect, it, vi } from 'vite-plus/test'
 import {
   compactConversationPages,
   conversationPage,
+  conversationPageMessages,
+  conversationWindowPage,
   mergeConversationHistory,
   readConversationHistory,
 } from './history'
@@ -265,4 +267,17 @@ it('rejects offline pages older than a known summary revision', () => {
   )
   expect(restored.messages).toEqual(saved.messages)
   expect(restored.historyRevision).toBe(1)
+})
+it('pages a bounded stored window like the complete history it was read from', () => {
+  const all = { ...history(60), historyRevision: 1 }
+  for (const before of [undefined, 'm119', 'm76', 'm75', 'm20', 'm1']) {
+    const end = before === undefined ? all.messages.length : Number(before.slice(1))
+    expect(
+      conversationWindowPage({
+        messages: all.messages.slice(Math.max(0, end - conversationPageMessages - 1), end),
+        turns: [],
+        historyRevision: 1,
+      }),
+    ).toEqual(conversationPage(all, before))
+  }
 })

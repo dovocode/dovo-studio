@@ -32,7 +32,6 @@ import {
   projectIconInitials,
   acpHarnessName,
   resolveTaskAgent,
-  type RuntimeOverview,
   type RuntimeTask,
 } from '@dovo/protocol'
 import { DeviceLabel } from './device-label'
@@ -42,6 +41,8 @@ import { isSnoozed } from '@dovo/protocol'
 import { chooseSnoozeDuration, useTaskLifecycle } from '../detail/use-task-lifecycle'
 import { useTheme } from '../../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
+import { memo, useCallback } from 'react'
+import type { TaskListOwner } from './task-list-projection'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
 
 const statusIcons: Record<string, LucideIcon> = {
@@ -59,17 +60,20 @@ const statusIcons: Record<string, LucideIcon> = {
   'Needs input': MessageCircleQuestion,
   'Saving changes': Save,
 }
-export function TaskListRow({
+export type TaskListRowActions = {
+  open: (key: string) => void
+  details: (key: string) => void
+  select: (key: string) => void
+  subagent: (key: string, id: string) => void
+}
+function TaskListRowView({
   row,
   subagents,
-  runtime,
+  owner,
   now,
   testID,
   disabled,
-  onOpen,
-  onDetails,
-  onSelect,
-  onOpenSubagent,
+  commands,
   selectionActive = false,
   selected = false,
   showDevice = true,
@@ -78,30 +82,30 @@ export function TaskListRow({
   showDevice?: boolean
   row: RuntimeTask
   subagents: readonly Subagent[]
-  runtime?: RuntimeOverview
+  owner: TaskListOwner
   now: number
   testID: string
   disabled: boolean
-  onOpen: () => void
-  onDetails: () => void
-  onSelect: () => void
-  onOpenSubagent: (id: string) => void
+  commands: TaskListRowActions
   selectionActive?: boolean
   selected?: boolean
 }) {
   const { colors, styles } = useTheme()
+  const onOpen = useCallback(() => commands.open(row.key), [commands, row.key])
+  const onDetails = useCallback(() => commands.details(row.key), [commands, row.key])
+  const onSelect = useCallback(() => commands.select(row.key), [commands, row.key])
+  const onOpenSubagent = useCallback(
+    (id: string) => commands.subagent(row.key, id),
+    [commands, row.key],
+  )
 
   const task = row.task,
-    repository = runtime?.snapshot?.workspace.repositories.find(
-      (repo) => repo.id === task.repositoryId,
-    ),
-    agent = resolveTaskAgent(task, runtime?.snapshot?.workspace.agents ?? [])
+    repository = owner.repository,
+    agent = resolveTaskAgent(task, owner.agents)
   const executionDevice = row.runtimeName
-  const { modelName, catalog } = useCachedModelCatalog(agent, runtime?.profile)
+  const { modelName, catalog } = useCachedModelCatalog(agent, owner.profile)
   const providerName = agent
-    ? ((task.harness
-        ? acpHarnessName(agent, runtime?.snapshot?.acpInstallations ?? [])
-        : undefined) ??
+    ? ((task.harness ? acpHarnessName(agent, owner.acpInstallations) : undefined) ??
       catalog?.harness?.name ??
       harnessNames[agent.provider])
     : ''
@@ -248,7 +252,7 @@ export function TaskListRow({
               </Text>
               {showDevice && !car && (
                 <DeviceLabel
-                  runtimeIcon={runtime?.snapshot?.runtimeIcon}
+                  runtimeIcon={owner.runtimeIcon}
                   task={task}
                   runtimeHost={row.runtimeName}
                   compact
@@ -382,3 +386,6 @@ export function TaskListRow({
     </TaskSwipeActions>
   )
 }
+
+/** Streaming another task leaves this row and its owner subscriptions unchanged. */
+export const TaskListRow = memo(TaskListRowView)

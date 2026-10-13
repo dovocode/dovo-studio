@@ -22,10 +22,10 @@ import {
   useWorkspace,
   type TaskTurn,
   formatDateTime,
-  readAppPreferences,
   useAppPreferences,
 } from '@dovo/studio-core'
 import { MessageResponse } from '@dovo/studio-ui'
+import { useTurnDisclosure } from './turn-window'
 import {
   BrainCircuit,
   ChevronRight,
@@ -192,12 +192,11 @@ export function TaskActivity({
   // Settings → General → Conversation → Tool activity; Ctrl+O switches it from the task.
   const detailsId = useId()
   const { toolActivity, showToolDetails } = useAppPreferences()
-  const [expanded, setExpanded] = useApplicationState(
-    () => readAppPreferences().toolActivity === 'expanded',
+  // Changing the preference resets every group, including ones outside the render window.
+  const [choice, setChoice] = useTurnDisclosure(
+    tools[0] ? `activity:${toolActivity}:${tools[0].id}` : undefined,
   )
-  useEffect(() => {
-    setExpanded(toolActivity === 'expanded')
-  }, [toolActivity])
+  const expanded = choice ?? toolActivity === 'expanded'
   const entries = useMemo(
     () =>
       tools
@@ -255,7 +254,7 @@ export function TaskActivity({
             type="button"
             aria-expanded={expanded}
             aria-controls={expanded ? detailsId : undefined}
-            onClick={() => setExpanded((value) => !value)}
+            onClick={() => setChoice(!expanded)}
             className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
           >
             <Icon

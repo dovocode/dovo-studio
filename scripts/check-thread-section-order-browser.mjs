@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
-  '@dovo/studio-core': `export * from '${root}packages/studio-core/src/index.ts';export const useWorkspace=()=>window.store;export const useStudioHost=()=>window.host;`,
+  '@dovo/studio-core': `export * from '${root}packages/studio-core/src/index.ts';export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const useStudioHost=()=>window.host;`,
   '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',
   './use-task-search': 'export const useTaskSearch=()=>({keys:new Set(),error:""});',
   '../detail/task-context-menu': 'export const TaskContextMenu=({children})=>children;',

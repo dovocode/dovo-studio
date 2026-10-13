@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { decode, mutableStruct, resolveTaskAgent, type Workspace } from '@dovo/protocol'
+import { decode, mutableStruct, resolveTaskAgent } from '@dovo/protocol'
 import { Schema, Effect } from 'effect'
 import type { IncomingMessage } from 'node:http'
 import { readResetCredits, consumeResetCredit } from '../../agents/tasks/reset-credits.js'
@@ -79,7 +79,7 @@ export const usageResets = (request: IncomingMessage, path: string) =>
     if (path === '/api/usage/resets/read') {
       const read = yield* serviceResult(readResetCredits(agent, account))
       if (read.limits.length)
-        s.store.update((workspace: Workspace) => ({
+        s.store.update((workspace) => ({
           ...workspace,
           planLimits: [
             ...(workspace.planLimits ?? []).filter(

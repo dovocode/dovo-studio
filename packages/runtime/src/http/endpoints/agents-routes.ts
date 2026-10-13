@@ -341,7 +341,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               )
             return yield* serviceResult(existing)
           }
-          s.store.updateTask(existing.id, () => input.task)
+          s.store.updateTaskHistory(existing.id, () => input.task)
         } else
           s.store.patch({ collection: 'tasks', id: input.task.id, create: input.task, changes: {} })
         return yield* serviceResult(s.store.task(input.task.id))
@@ -372,7 +372,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           .repositories.find((entry) => entry.id === input.repositoryId)
         if (currentRepo?.path !== repo.path || currentRepo.kind !== repo.kind)
           throw new HttpError(409, 'The source project changed. Both drafts have been preserved.')
-        const task = s.store.task(input.id)
+        const task = s.store.taskSummary(input.id)
         if (
           task.draft !== input.draft ||
           task.repositoryId !== input.repositoryId ||
@@ -709,11 +709,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           if (!input.messageId) throw new HttpError(400, 'Choose a queued message to steer')
           yield* s.tasks.steerQueuedEffect(input.id, input.messageId, input.runId)
         } else if (input.action === 'resume') {
-          if (!s.store.task(input.id).queue?.length)
+          if (!s.store.taskSummary(input.id).queue?.length)
             return yield* serviceResult({
               ok: true,
             })
-          if (s.store.task(input.id).status === 'running')
+          if (s.store.taskSummary(input.id).status === 'running')
             s.store.updateTask(input.id, (t) => ({
               ...t,
               queuePaused: false,
@@ -738,7 +738,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
-        const task = s.store.task(input.id)
+        const task = s.store.taskSummary(input.id)
         if (task.archived || task.archivedAt)
           throw new HttpError(409, 'Restore this task before scheduling a follow-up')
         if (input.removeId) {
@@ -780,27 +780,28 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         }
         if (input.sourceId === input.id)
           throw new HttpError(400, 'A task cannot start after itself')
-        const source = s.store.task(input.sourceId)
+        const source = s.store.taskSummary(input.sourceId)
         let cursor = source
         const seen = new Set([input.id])
         while (cursor.startAfter) {
           if (seen.has(cursor.id)) throw new HttpError(400, 'Task chain would form a cycle')
           seen.add(cursor.id)
-          cursor = s.store.task(cursor.startAfter.taskId)
+          cursor = s.store.taskSummary(cursor.startAfter.taskId)
         }
         if (
           !target.messages.some((message) => message.role === 'user' && message.text.trim()) &&
           !target.draft.trim()
         )
           throw new HttpError(400, 'Write the next task’s request before chaining it')
+        const requested = s.store
+          .task(input.id)
+          .messages.some((message) => message.role === 'user' && message.text.trim())
         s.store.updateTask(input.id, (current) => ({
           ...current,
           startAfter: {
             taskId: source.id,
             messageId: crypto.randomUUID(),
-            text: current.messages.some((message) => message.role === 'user' && message.text.trim())
-              ? ''
-              : current.draft.trim(),
+            text: requested ? '' : current.draft.trim(),
           },
         }))
         return { ok: true }
@@ -817,7 +818,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           )
         )
           throw new HttpError(404, 'Reply not found')
-        s.store.updateTask(input.id, (current) => ({
+        s.store.updateTaskHistory(input.id, (current) => ({
           ...current,
           messages: current.messages.map((message) =>
             message.id === input.messageId ? { ...message, bookmarked: input.bookmarked } : message,
@@ -829,7 +830,9 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
         const cwd = yield* serviceResult(s.checkouts.directory(id))
         if (
-          s.store.get().repositories.find((repo) => repo.id === s.store.task(id).repositoryId)?.kind
+          s.store
+            .get()
+            .repositories.find((repo) => repo.id === s.store.taskSummary(id).repositoryId)?.kind
         )
           throw new HttpError(400, 'This project does not use Git')
         const diff = yield* serviceResult(uncommittedChanges(s.git, cwd))
@@ -848,11 +851,13 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         if (
-          s.store.get().repositories.find((repo) => repo.id === s.store.task(input.id).repositoryId)
+          s.store
+            .get()
+            .repositories.find((repo) => repo.id === s.store.taskSummary(input.id).repositoryId)
             ?.kind
         )
           throw new HttpError(400, 'This project does not use Git')
-        if (s.store.task(input.id).status === 'running')
+        if (s.store.taskSummary(input.id).status === 'running')
           throw new HttpError(409, 'Wait for the agent to finish before committing.')
         const cwd = yield* serviceResult(s.checkouts.directory(input.id))
         let message = input.message
@@ -865,7 +870,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         // Everything in the checkout, like "Commit all" in other Git tools.
         const commit = yield* serviceResult(
           s.tasks.withCheckoutMutation(cwd, async () => {
-            if (s.store.task(input.id).status === 'running')
+            if (s.store.taskSummary(input.id).status === 'running')
               throw new HttpError(409, 'Wait for the agent to finish before committing.')
             await s.git.command(cwd, ['add', '-A', '--', '.'])
             return s.git.commit(cwd, commitMessage)
@@ -1003,7 +1008,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
-        const task = s.store.task(input.id)
+        const task = s.store.taskSummary(input.id)
         const repo = s.store.get().repositories.find((item) => item.id === task.repositoryId)
         if (!repo) throw new HttpError(404, 'Repository not found')
         // A draft has no worktree yet; its files match the project it will start from.
@@ -1030,7 +1035,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
-        const task = s.store.task(input.id)
+        const task = s.store.taskSummary(input.id)
         const repo = s.store.get().repositories.find((item) => item.id === task.repositoryId)
         if (!repo) throw new HttpError(404, 'Repository not found')
         const cwd =
@@ -1115,7 +1120,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
-        if (s.store.task(id).status === 'running')
+        if (s.store.taskSummary(id).status === 'running')
           throw new HttpError(409, 'Cancel the active turn first')
         s.store.updateTask(id, (t) => ({
           ...t,
@@ -1130,7 +1135,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       }
       if (method === 'POST' && path === '/api/tasks/compact') {
         const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
-        const task = s.store.task(id)
+        const task = s.store.taskSummary(id)
         if (!task.sessionId) throw new HttpError(409, 'Run the agent before compacting its session')
         s.tasks.requireIdle(id)
         if (task.queue?.length) throw new HttpError(409, 'Finish queued messages before compacting')

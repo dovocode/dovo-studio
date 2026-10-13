@@ -10,7 +10,7 @@ import {
   relayNotificationSchema,
   type PushRegistration,
   type RelayNotification,
-  type Task,
+  type TaskSummary,
 } from '@dovo/protocol'
 import type { WorkspaceStore } from '../storage/workspace.js'
 import type { Devices } from '../auth/devices.js'
@@ -122,8 +122,8 @@ export class PushNotifications {
     const value = this.input(taskId)
     return value ? (Array.isArray(value) ? value : [value]) : []
   }
-  private state(task: Task): State {
-    const turn = task.turns?.at(-1)
+  private state(task: TaskSummary): State {
+    const turn = task.history.latestTurn
     return {
       running: task.status === 'running',
       failed: task.status === 'failed',
@@ -204,7 +204,9 @@ export class PushNotifications {
             const detail =
               kind === 'input'
                 ? input?.preview
-                : [...task.messages].reverse().find((message) => message.role === 'assistant')?.text
+                : [...this.store.task(task.id).messages]
+                    .reverse()
+                    .find((message) => message.role === 'assistant')?.text
             const label = {
               input: 'Needs your input',
               done: 'Finished',
@@ -280,10 +282,11 @@ export class PushNotifications {
       }
       const value = decode(relayNotificationSchema, JSON.parse(entry.value))
       const task = this.store.get().tasks.find((task) => task.id === value.data.taskId)
-      const staleTurn = value.data.turnId && task?.turns?.at(-1)?.id !== value.data.turnId
+      const latest = task?.history.latestTurn
+      const staleTurn = value.data.turnId && latest?.id !== value.data.turnId
       const staleCompletion =
         (value.data.kind === 'done' || value.data.kind === 'failed') &&
-        (task?.status === 'running' || task?.turns?.at(-1)?.status === 'cancelled')
+        (task?.status === 'running' || latest?.status === 'cancelled')
       if (!task || task.archived || task.example || staleTurn || staleCompletion) {
         this.db.prepare('DELETE FROM push_outbox WHERE id=?').run(entry.id)
         continue

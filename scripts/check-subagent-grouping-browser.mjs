@@ -54,7 +54,7 @@ window.updatePreferences=changes=>{window.preferences={...window.preferences,...
 async function bundle(contents) {
   const mocks = {
     './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
-    '@dovo/studio-core': `import {useSyncExternalStore} from 'react';export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateAppPreferences=changes=>window.updatePreferences(changes);export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
+    '@dovo/studio-core': `import {useSyncExternalStore} from 'react';export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const sameWorkspaceFields=()=>false;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateAppPreferences=changes=>window.updatePreferences(changes);export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
     '@dovo/studio-core/state': state,
     '@dovo/studio-ui': controls,
     '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',

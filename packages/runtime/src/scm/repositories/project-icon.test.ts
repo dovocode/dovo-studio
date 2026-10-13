@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { encodeIco } from 'icojs'
 import sharp from 'sharp'
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { discoverProjectIcon } from './project-icon'
 
 it('discovers a local app icon and returns a bounded PNG thumbnail', async () => {
@@ -43,6 +43,33 @@ it('discovers a favicon.ico when the project has no PNG icon', async () => {
     )
     expect(await discoverProjectIcon(root)).toMatch(/^data:image\/png;base64,/)
   } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('bounds retained project icons and refreshes expired thumbnails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dovo-project-icon-cache-'))
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+  const image = (background: string) =>
+    sharp({
+      create: { width: 32, height: 32, channels: 4, background },
+    })
+      .png()
+      .toBuffer()
+  try {
+    await writeFile(join(root, 'logo.png'), await image('#ff8800'))
+    const first = await discoverProjectIcon(root)
+    await writeFile(join(root, 'logo.png'), await image('#1188cc'))
+    expect(await discoverProjectIcon(root)).toBe(first)
+    for (let index = 0; index < 256; index++)
+      await discoverProjectIcon(join(root, `missing-${index}`))
+    const replaced = await discoverProjectIcon(root)
+    expect(replaced).not.toBe(first)
+    await writeFile(join(root, 'logo.png'), await image('#ff8800'))
+    clock.mockReturnValue(31001)
+    expect(await discoverProjectIcon(root)).toBe(first)
+  } finally {
+    clock.mockRestore()
     await rm(root, { recursive: true, force: true })
   }
 })

@@ -23,7 +23,7 @@ it('requires authentication, isolates read from consume, and reuses a failed att
       agentId: 'agent',
       objective: 'Check',
     })
-    runtime.services.store.updateTask(task.id, (current) => ({
+    runtime.services.store.updateTaskHistory(task.id, (current) => ({
       ...current,
       turns: [
         {

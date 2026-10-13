@@ -3,6 +3,7 @@ import { build } from 'esbuild'
 import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { checkPinRemoval } from './browser/pin-removal.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const uiDir = root + '/packages/studio-ui/src'
 const controls =
@@ -97,6 +98,7 @@ window.showProbe();`,
 
 const browser = await chromium.launch({ headless: true })
 try {
+  await checkPinRemoval(browser, 'file')
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   page.setDefaultTimeout(10000)
   const errors = []
@@ -363,6 +365,58 @@ try {
     (await page.evaluate(() => window.parseCount)) < 40,
     'file navigation mounted the entire PR',
   )
+  await bounded(content)
+  // Reading the whole PR keeps a bounded diff window; an inline draft keeps its file mounted.
+  const scrollContent = async (top) => {
+    await content.evaluate((element, top) => {
+      element.scrollTop = top
+    }, top)
+    await page.waitForTimeout(60)
+  }
+  const fileCard = (path) =>
+    detail.locator('article').filter({ has: page.getByText(path, { exact: true }) })
+  const mountedDiffs = () =>
+    page.evaluate(() => document.querySelectorAll('diffs-container').length)
+  let peakDiffs = 0
+  const extent = await content.evaluate((element) => element.scrollHeight)
+  for (let top = 0; top <= extent; top += 600) {
+    await scrollContent(top)
+    peakDiffs = Math.max(peakDiffs, await mountedDiffs())
+  }
+  assert.ok(peakDiffs < 45, `reading the PR mounted ${peakDiffs} diffs at once`)
+  assert.equal(await fileCard('src/lazy-5.txt').locator('diffs-container').count(), 0)
+  const draftFile = fileCard('src/lazy-10.txt')
+  await draftFile.scrollIntoViewIfNeeded()
+  await draftFile.locator('diffs-container').waitFor()
+  await page.evaluate(() =>
+    window.inlineSelections['src/lazy-10.txt']({ start: 2, end: 2, side: 'additions' }),
+  )
+  const draftInput = draftFile.getByRole('textbox', { name: 'Line comment', exact: true })
+  await draftInput.fill('Draft that must survive distant scrolling')
+  await page.evaluate(() => document.activeElement.blur())
+  await scrollContent(await content.evaluate((element) => element.scrollHeight))
+  await page.waitForTimeout(200)
+  assert.equal(await draftFile.locator('diffs-container').count(), 1, 'draft file was released')
+  assert.equal(await draftInput.inputValue(), 'Draft that must survive distant scrolling')
+  await draftFile.scrollIntoViewIfNeeded()
+  await draftFile.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await scrollContent(await content.evaluate((element) => element.scrollHeight))
+  await page.waitForFunction(
+    () =>
+      ![...document.querySelectorAll('article')].some(
+        (article) =>
+          article.textContent.includes('src/lazy-10.txt') &&
+          article.querySelector('diffs-container'),
+      ),
+  )
+  const releasedHeight = await content.evaluate((element) => element.scrollHeight)
+  await scrollContent(0)
+  await scrollContent(releasedHeight)
+  assert.ok(
+    Math.abs((await content.evaluate((element) => element.scrollHeight)) - releasedHeight) <= 2,
+    'released diffs changed the scroll extent',
+  )
+  console.log(JSON.stringify({ prFiles: 120, peakMountedDiffs: peakDiffs }))
   await bounded(content)
   if (process.env.DOVO_SCREENSHOT_DIR) {
     const directory = process.env.DOVO_SCREENSHOT_DIR

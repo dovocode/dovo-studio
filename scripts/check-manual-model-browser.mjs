@@ -13,6 +13,7 @@ const mocks = {
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
     export {WorkspaceContext,useWorkspace} from '../studio-core/src/workspace/context';
+    export {WorkspaceValueProvider,useWorkspaceSelector,sameWorkspaceFields} from '../studio-core/src/workspace/selector';
     export {useCachedTask} from '../studio-core/src/workspace/use-cached-task';
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const WorkspaceScope=({children})=>children;
@@ -98,7 +99,7 @@ const built = await build({
   stdin: {
     contents: `
       import {useState} from 'react';import {useApplicationState,ApplicationStateProvider} from '@dovo/studio-core/state';import {createRoot} from 'react-dom/client';
-      import {WorkspaceContext,createTask} from '@dovo/studio-core';
+      import {WorkspaceValueProvider,createTask} from '@dovo/studio-core';
       import TasksView from '../extension-tasks/src/view';
       import {TaskLauncherForm} from '../studio-shell/src/task-launcher';
       window.requests=[];window.navigations=[];window.commands=new Map();
@@ -120,7 +121,7 @@ const built = await build({
           return {ok:true};
         };
         const readRuntime=async(_profile,path,input)=>path==='/api/snapshot'?snapshot:request(path,input);
-        return <WorkspaceContext.Provider value={{workspace,setWorkspace,snapshot,activeRuntimeId:window.invalidRuntime?'removed':'mac',runtimes:[],runtimeRegistry:{profiles:[{id:'mac',name:'This computer',connection:{address:'http://runtime',token:'token'}}]},readRuntime,connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}>{window.launcher?<TaskLauncherForm bridge={{subscribe:()=>()=>{},dismiss:async()=>{}}}/>:<TasksView entityId={entity}/>}</WorkspaceContext.Provider>
+        return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:window.invalidRuntime?'removed':'mac',runtimes:[],runtimeRegistry:{profiles:[{id:'mac',name:'This computer',connection:{address:'http://runtime',token:'token'}}]},readRuntime,connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}>{window.launcher?<TaskLauncherForm bridge={{subscribe:()=>()=>{},dismiss:async()=>{}}}/>:<TasksView entityId={entity}/>}</WorkspaceValueProvider>
       }
       createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
     `,

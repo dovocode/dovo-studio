@@ -126,11 +126,29 @@ prevents automatic resubmission; it requires reviewing the provider session. Thi
 exactly-once execution across an external process. Local checkpoint capture can retry separately
 after a successful provider outcome.
 
-History is stored incrementally in `conversation_items`, with task metadata and a count manifest in
-the version 2 workspace storage envelope. Migration preserves the original full document as
-`workspace-before-history-v2` in the same transaction. Missing history rows fail closed instead of
-rewriting an incomplete conversation. Older binaries cannot read the new envelope; use a full
-database backup when downgrading. Runtime exports still contain complete conversations.
+History is stored incrementally in `conversation_items`. Version 3 workspace storage keeps one
+`workspace_tasks` row per task, holding its metadata and history counts, and a small workspace
+document listing task order; a task update rewrites only its own row. Migration keeps the original
+document as `workspace-before-history-v2` (embedded histories) or `workspace-before-tasks-v3`
+(version 2 envelope) in the same transaction. Missing task or history rows fail closed instead of
+rewriting an incomplete workspace. Older binaries report the newer format and do not write it; use a
+full database backup when downgrading. Runtime exports still contain complete conversations.
+`conversation_index` is derived in the same transactions and rebuilt when missing or inconsistent;
+history pages and message search read SQLite through it rather than scanning loaded histories.
+
+The runtime keeps task summaries in memory, not conversations. A `TaskSummary` is task metadata plus
+bounded facts derived from its history: counts, the newest turn without its checkpoint, the first
+and newest user text, totals for earlier turns, mentioned pull requests and linked checkpoint
+checkouts. `workspace_task_histories` stores these facts in the same transactions, so startup reads
+no conversation and verifies history counts with one aggregate query; a missing or outdated summary
+is derived again from that task's history. `WorkspaceStore.get()`, `taskSummary(id)` and
+`updateTask` work with summaries only. `task(id)` and `updateTaskHistory` read and write one
+complete task through a cache of at most 32 histories and about 64 MB, least recently used first
+out. Cached histories are keyed by the summary they were read for, so a rolled-back write is read
+again from SQLite. `update` accepts a summary, which keeps its stored history, or a complete task,
+which replaces it; editing summary facts directly is rejected. Restart recovery reads only tasks
+with an interrupted turn. Legacy full snapshots read complete tasks one at a time without retaining
+them.
 
 Clients negotiate `history=paged` for selected-task snapshots and sync tickets. Recent history is
 bounded by ten user requests, 75 messages and an approximate byte budget. Whole oversized messages

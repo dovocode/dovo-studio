@@ -30,7 +30,8 @@ import {
 import { memo } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
-import type { TaskSource } from './task-collection'
+import type { TaskOwner } from './task-collection'
+import { useTaskNow } from './task-clock'
 import { subagentMetadata, type Subagent } from '@dovo/protocol'
 const statusIcons: Record<string, LucideIcon> = {
   Working: CircleDashed,
@@ -52,8 +53,9 @@ function TaskRowView({
   selected,
   multiSelected = false,
   onSelect,
-  now,
-  source,
+  owner,
+  needsInput,
+  terminals,
   editable,
   disabled,
   selectedChildId,
@@ -64,17 +66,20 @@ function TaskRowView({
   selected: boolean
   multiSelected?: boolean
   onSelect: () => void
-  now: number
-  source: TaskSource
+  owner: TaskOwner
+  /** A question or approval is waiting on this task itself. */
+  needsInput: boolean
+  /** Running terminal sessions owned by this task. */
+  terminals: number
   editable: boolean
   disabled: boolean
   selectedChildId?: string
   onOpenSubagent: (id: string) => void
 }) {
-  const { workspace, snapshot } = source
-  const agent = resolveTaskAgent(task, workspace.agents)
+  const now = useTaskNow(task, needsInput)
+  const agent = resolveTaskAgent(task, owner.agents)
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
-  const repository = workspace.repositories.find((r) => r.id === task.repositoryId)
+  const repository = owner.repositories.find((r) => r.id === task.repositoryId)
   const latest = task.turns?.at(-1)
   const provider =
     task.status === 'running'
@@ -83,7 +88,7 @@ function TaskRowView({
   const model = latest?.model || task.agentOverrides?.model || agent?.model
   const modelProvider = latest?.model ? (latest.provider ?? agent?.provider) : agent?.provider
   const modelName = useModelLabel(
-    source.address,
+    owner.address,
     model && modelProvider
       ? {
           provider: modelProvider,
@@ -95,20 +100,17 @@ function TaskRowView({
   )
   const branch =
     task.checkoutBranch ?? (task.execution === 'worktree' ? latest?.branch : repository?.branch)
-  const host = source.name
+  const host = owner.name
   const linkedPulls = taskPullLinks(task).sort(
     (a, b) => Number(b.url === task.pullStatus?.url) - Number(a.url === task.pullStatus?.url),
   )
   const stack = linkedPulls[0]?.url === task.pullStatus?.url ? task.pullStatus?.stack : undefined
-  const needsInput =
-    snapshot?.questions.some((q) => q.taskId === task.id) ||
-    snapshot?.approvals.some((a) => a.taskId === task.id)
   const queue = task.queue?.length ?? 0
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
-  const presentation = taskPresentation(task, !!needsInput, now)
+  const presentation = taskPresentation(task, needsInput, now)
   const unread = hasUnreadTaskActivity(task)
-  const status = !source.online && source.runtimeId ? 'Offline · Cached' : presentation.label
-  const offline = !source.online && !!source.runtimeId
+  const status = !owner.online && owner.runtimeId ? 'Offline · Cached' : presentation.label
+  const offline = !owner.online && !!owner.runtimeId
   const compactStatus = offline ? 'Offline' : presentation.compactLabel
   const StatusIcon = offline
     ? CloudOff
@@ -124,11 +126,10 @@ function TaskRowView({
     .filter(Boolean)
     .join(' · ')
   const agentName =
-    (task.harness && agent ? acpHarnessName(agent, snapshot?.acpInstallations ?? []) : undefined) ??
+    (task.harness && agent ? acpHarnessName(agent, owner.acpInstallations) : undefined) ??
     agent?.name ??
     (provider ? providers[provider].short : 'Unassigned agent')
   const agentDetail = `${agentName}${provider ? ` · ${providers[provider].name}` : ''}`
-  const terminals = snapshot?.terminals.filter((t) => t.taskId === task.id && !t.exited).length ?? 0
   return (
     <div className="group/task relative w-full min-w-0">
       <Tooltip delayDuration={450}>
@@ -208,7 +209,7 @@ function TaskRowView({
                 </span>
               )}
               <RuntimeIcon
-                icon={source.snapshot?.runtimeIcon}
+                icon={owner.runtimeIcon}
                 className="size-3 shrink-0"
                 aria-label={host ?? 'Unknown host'}
               />
@@ -231,7 +232,7 @@ function TaskRowView({
               {repository?.name ?? 'No project'}
             </p>
             <p className="flex items-center gap-2 break-all">
-              <RuntimeIcon icon={source.snapshot?.runtimeIcon} className="size-3 shrink-0" />
+              <RuntimeIcon icon={owner.runtimeIcon} className="size-3 shrink-0" />
               {host ?? 'Unknown host'}
             </p>
             <p className="flex items-center gap-2 break-all">
@@ -275,7 +276,7 @@ function TaskRowView({
             const label = `${agent.name} · ${agent.provider}`
             const detail = [
               label,
-              source.online ? 'Working' : 'Last seen working',
+              owner.online ? 'Working' : 'Last seen working',
               subagentMetadata(agent),
               agent.activity,
             ]
@@ -319,12 +320,12 @@ function TaskRowView({
         )}
       {editable && (
         <div className="pointer-events-none absolute right-2 top-1.5 flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none">
-          <TaskLifecycleActions key={source.runtimeId ?? 'local'} task={task} source={source} />
+          <TaskLifecycleActions key={owner.runtimeId ?? 'local'} task={task} owner={owner} />
         </div>
       )}
     </div>
   )
 }
-// Rows are rendered for every task in the sidebar and re-render on every list tick. Memoizing
-// keeps untouched rows out of work when the list itself re-renders.
+// Rows receive stable owner facts and keep their own clock, so streaming another task or a
+// list re-render leaves untouched rows out of work.
 export const TaskRow = memo(TaskRowView)

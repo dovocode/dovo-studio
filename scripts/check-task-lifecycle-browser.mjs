@@ -17,7 +17,7 @@ const built = await build({
       window.writes=[];window.fail=false;window.localWrites=0;
       function App(){
         const [task,setTask]=useState(initial);
-        const source={runtimeId:'remote',name:'Remote',online:true,workspace:{tasks:[task],repositories:[],agents:[]}};
+        const owner={runtimeId:'remote',name:'Remote',online:true};
         window.store={activeRuntimeId:'local',runtimeRegistry:{profiles:[profile]},
           request:async()=>{window.localWrites++;throw new Error('Wrong server')},
           previewTask:async(connection,id,updates,apply)=>{await apply()},
@@ -28,7 +28,7 @@ const built = await build({
             setTask(current=>({...current,...updates}));return {revision:1};
           },refreshRuntime:async()=>{},refreshRuntimes:async()=>{}};
         window.task=task;
-        return <TaskLifecycleActions task={task} source={source}/>;
+        return <TaskLifecycleActions task={task} owner={owner}/>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -38,7 +38,7 @@ const built = await build({
       name: 'lifecycle-environment',
       setup(builder) {
         const mocks = {
-          '@dovo/studio-core': `export * from '@dovo/protocol';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;`,
+          '@dovo/studio-core': `export * from '@dovo/protocol';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const sameWorkspaceFields=()=>false;`,
           '@dovo/studio-ui': `export {Button} from '../studio-ui/src/components/ui/button';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
         }
         builder.onResolve({ filter: /.*/ }, ({ path }) =>

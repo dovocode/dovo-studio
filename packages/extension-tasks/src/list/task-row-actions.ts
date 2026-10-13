@@ -1,6 +1,12 @@
 import { decode, workspacePatchResultSchema } from '@dovo/protocol'
 import { Schema } from 'effect'
-import type { Task, useWorkspace } from '@dovo/studio-core'
+import {
+  sameWorkspaceFields,
+  useWorkspaceSelector,
+  type Repository,
+  type Task,
+  type WorkspaceContextValue,
+} from '@dovo/studio-core'
 import type { TaskSource } from './task-collection'
 export type TaskRowChanges = Partial<
   Pick<
@@ -33,7 +39,7 @@ export function taskRowPatch(task: Task, updates: TaskRowChanges) {
   }
 }
 type Store = Pick<
-  ReturnType<typeof useWorkspace>,
+  WorkspaceContextValue,
   | 'activeRuntimeId'
   | 'connection'
   | 'previewTask'
@@ -43,9 +49,36 @@ type Store = Pick<
   | 'refreshRuntime'
   | 'refreshRuntimes'
 >
+type TaskActionStore = Store & Pick<WorkspaceContextValue, 'setWorkspace'>
+const taskActionStore = ({
+  activeRuntimeId,
+  connection,
+  previewTask,
+  runtimeRegistry,
+  request,
+  readRuntime,
+  refreshRuntime,
+  refreshRuntimes,
+  setWorkspace,
+}: WorkspaceContextValue): TaskActionStore => ({
+  activeRuntimeId,
+  connection,
+  previewTask,
+  runtimeRegistry,
+  request,
+  readRuntime,
+  refreshRuntime,
+  refreshRuntimes,
+  setWorkspace,
+})
+/** Row actions do not change while a snapshot streams, so rows need not re-render with it. */
+export function useTaskActionStore() {
+  return useWorkspaceSelector(taskActionStore, sameWorkspaceFields)
+}
+type TaskActionOwner = Pick<TaskSource, 'runtimeId' | 'name' | 'online'>
 
 /** Capture the row's owner before starting an action, even if the active device changes. */
-export function taskActionClient(store: Store, source: TaskSource) {
+export function taskActionClient(store: Store, source: TaskActionOwner) {
   const profile = store.runtimeRegistry.profiles.find((entry) => entry.id === source.runtimeId)
   const active = source.runtimeId === store.activeRuntimeId
   const request: Store['request'] = (path, input, schema, method) => {
@@ -78,8 +111,8 @@ export function taskActionClient(store: Store, source: TaskSource) {
     },
   }
 }
-export function taskRowValues(task: Task, source: TaskSource) {
-  const repository = source.workspace.repositories.find((entry) => entry.id === task.repositoryId)
+export function taskRowValues(task: Task, repositories: readonly Repository[]) {
+  const repository = repositories.find((entry) => entry.id === task.repositoryId)
   return {
     repository,
     branch:

@@ -19,7 +19,9 @@ export const taskSortOptions = [];
 export const taskGroupOptions = [];
 export const latestCompletedTaskTurn = task => task.turns?.at(-1);
 const store = { activeRuntimeId:null, connection:null, runtimeRegistry:{profiles:[]}, request:async(path,input)=>{window.requests.push({path,input});return {ok:true}}, refreshRuntimes:async()=>{} };
-export const useWorkspace = () => store;`,
+export const useWorkspace = () => store;
+export const useWorkspaceSelector = select => select(store);
+export const sameWorkspaceFields = () => false;`,
   '@dovo/studio-ui': `
 import React from 'react';
 export * as ContextMenu from '@radix-ui/react-context-menu';

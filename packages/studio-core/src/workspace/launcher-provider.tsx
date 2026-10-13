@@ -11,7 +11,8 @@ import {
   type RuntimeProfile,
   type RuntimeReadCache,
 } from '@dovo/protocol'
-import { WorkspaceContext, type WorkspaceContextValue } from './context'
+import { type WorkspaceContextValue } from './context'
+import { WorkspaceValueProvider } from './selector'
 import { createWorkspace } from './seed'
 import { browserReadCache } from './read-cache'
 
@@ -199,5 +200,5 @@ export function LauncherWorkspaceProvider({
     refreshRuntime,
     cacheFor,
   ])
-  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
+  return <WorkspaceValueProvider value={value}>{children}</WorkspaceValueProvider>
 }

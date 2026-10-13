@@ -159,7 +159,7 @@ export class TaskTurnRunner {
         linkedAfter(this.git, turn.id, turn.checkpoint?.linked ?? []),
       )
       const files = before ? yield* runtimeOperation(() => this.git.changes(cwd)) : []
-      this.store.updateTask(
+      this.store.updateTaskHistory(
         id,
         (task) => ({
           ...task,
@@ -196,7 +196,7 @@ export class TaskTurnRunner {
   ) {
     return Effect.scoped(
       Effect.gen({ self: this }, function* () {
-        const task = this.store.task(id)
+        const task = this.store.taskSummary(id)
         const memoryScopes = this.memoryScopes(id)
         const artifactsEnabled = this.artifactsEnabled()
         const pullRequestWatchingEnabled = this.pullRequestWatchingEnabled()
@@ -397,7 +397,7 @@ ${
             )
           : ''
         controller.signal.throwIfAborted()
-        this.store.updateTask(
+        this.store.updateTaskHistory(
           id,
           (t) => ({
             ...t,
@@ -598,7 +598,7 @@ ${
             resolveTaskAgent(current, this.store.get().agents)?.permission === configured.permission
           )
         }
-        const tokens = turnTokenCounter(agent.provider, () => this.store.task(id).sessionId)
+        const tokens = turnTokenCounter(agent.provider, () => this.store.taskSummary(id).sessionId)
         const tokenField = () => {
           const total = tokens.total()
           const reportedModel = tokens.model()
@@ -627,9 +627,14 @@ ${
         }
         // Context meter: store only meaningful changes (a 1% step or a new limit).
         const recordUsage = (name: string, payload: unknown) => {
-          const usage = contextUsage(agent.provider, name, payload, this.store.task(id).sessionId)
+          const usage = contextUsage(
+            agent.provider,
+            name,
+            payload,
+            this.store.taskSummary(id).sessionId,
+          )
           if (!usage) return
-          const previous = this.store.task(id).contextUsage
+          const previous = this.store.taskSummary(id).contextUsage
           const used = usage.used ?? previous?.used
           const limit = usage.limit ?? previous?.limit
           const step = Math.max(1, Math.round((limit ?? 200_000) / 100))
@@ -655,7 +660,7 @@ ${
           timer = undefined
           if (!buffer) return
           const text = buffer
-          this.store.updateTask(id, (t) => ({
+          this.store.updateTaskHistory(id, (t) => ({
             ...t,
             messages: t.messages.map((m) =>
               m.id === assistantId ? { ...m, text: m.text + text } : m,
@@ -795,7 +800,9 @@ ${
                     return
                   }
                   const apply = async (messageId: string, send: AgentSteer) => {
-                    const message = this.store.task(id).queue?.find((m) => m.id === messageId)
+                    const message = this.store
+                      .taskSummary(id)
+                      .queue?.find((m) => m.id === messageId)
                     if (!message)
                       throw new HttpError(409, 'This message already started or was removed')
                     const files = await Promise.all(
@@ -822,7 +829,7 @@ ${
                     acceptedIds.add(assistantId)
                     const nextAssistantId = randomUUID()
                     acceptedIds.add(nextAssistantId)
-                    this.store.updateTask(
+                    this.store.updateTaskHistory(
                       id,
                       (t) => ({
                         ...t,
@@ -929,8 +936,8 @@ ${
                   if (!acceptsProviderEvents()) return
                   nativeSessionId = sessionId
                   if (
-                    this.store.task(id).sessionId !== sessionId ||
-                    this.store.task(id).sessionAgentId !== fingerprint
+                    this.store.taskSummary(id).sessionId !== sessionId ||
+                    this.store.taskSummary(id).sessionAgentId !== fingerprint
                   )
                     this.store.updateTask(id, (t) => ({
                       ...t,
@@ -981,7 +988,7 @@ ${
                     remaining -= length
                     if (!owner.length) textOwners.pop()
                   }
-                  this.store.updateTask(id, (task) => ({
+                  this.store.updateTaskHistory(id, (task) => ({
                     ...task,
                     messages: task.messages.map((message) => {
                       const length = removed.get(message.id) ?? 0
@@ -1001,7 +1008,7 @@ ${
                 onTextBoundary: () => {
                   if (!acceptsProviderEvents()) return
                   flush()
-                  this.store.updateTask(id, (task) => ({
+                  this.store.updateTaskHistory(id, (task) => ({
                     ...task,
                     messages: task.messages.map((message) => {
                       if (
@@ -1026,7 +1033,7 @@ ${
                       saveLimits(
                         turnLimits.map((limit) => ({ ...limit, account, agentId: agent.id })),
                       )
-                    this.store.updateTask(id, (task) => ({
+                    this.store.updateTaskHistory(id, (task) => ({
                       ...task,
                       turns: task.turns?.map((turn) =>
                         turn.id === turnId ? { ...turn, usageAccount: account } : turn,
@@ -1035,7 +1042,7 @@ ${
                   }
 
                   const compaction = completedCompaction(agent.provider, name, payload)
-                  const currentSession = this.store.task(id).sessionId ?? sessionId
+                  const currentSession = this.store.taskSummary(id).sessionId ?? sessionId
                   if (compaction && currentSession) {
                     const at = new Date().toISOString()
                     this.store.updateTask(id, (task) => ({
@@ -1072,7 +1079,7 @@ ${
                   tokens.accept(name, payload)
                   const todos = nativeTodos(name, payload)
                   if (todos && agent.provider === 'muse') {
-                    const current = this.store.task(id).nativeTodos
+                    const current = this.store.taskSummary(id).nativeTodos
                     const changed =
                       current?.length !== todos.length ||
                       todos.some(
@@ -1086,7 +1093,7 @@ ${
                         nativeTodos: todos.length ? todos : undefined,
                       }))
                   }
-                  const current = this.store.task(id).subagents ?? []
+                  const current = this.store.taskSummary(id).subagents ?? []
                   const subagents = updateSubagents(
                     current,
                     agent.provider,
@@ -1129,7 +1136,7 @@ ${
                 },
                 onActivity: (text) => {
                   if (!acceptsProviderEvents()) return
-                  if (this.store.task(id).activity === text) return
+                  if (this.store.taskSummary(id).activity === text) return
                   this.activity?.add('agent', id, `${agent.provider} activity`, { text })
                   this.store.updateTask(id, (t) => ({ ...t, activity: text }))
                 },
@@ -1204,7 +1211,7 @@ ${
                 const nextAssistantId = randomUUID()
                 acceptedIds.add(assistantId)
                 acceptedIds.add(nextAssistantId)
-                this.store.updateTask(id, (task) => ({
+                this.store.updateTaskHistory(id, (task) => ({
                   ...task,
                   activity: 'Fixing failed hooks',
                   messages: [
@@ -1245,7 +1252,7 @@ ${
           const finishedAt = new Date().toISOString()
           providerFinishedAt = finishedAt
           flush()
-          this.store.updateTask(
+          this.store.updateTaskHistory(
             id,
             (t) => ({
               ...t,
@@ -1274,7 +1281,7 @@ ${
           const review = yield* (
             captureGit
               ? runtimeOperation(() => this.git.changes(cwd))
-              : Effect.succeed(captureChanges ? [] : this.store.task(id).files)
+              : Effect.succeed(captureChanges ? [] : this.store.taskSummary(id).files)
           ).pipe(
             Effect.map((files) => ({ files, error: undefined })),
             Effect.catch((error) =>
@@ -1284,7 +1291,7 @@ ${
               }),
             ),
           )
-          this.store.updateTask(id, (t) => ({
+          this.store.updateTaskHistory(id, (t) => ({
             ...t,
             status: 'review',
             runPhase: captured.error || review.error ? 'finalizing' : undefined,
@@ -1317,7 +1324,7 @@ ${
               if (providerFinishedAt) {
                 // Finalization failure cannot revise the provider's successful outcome.
                 yield* runtimeOperation(() =>
-                  this.store.updateTask(id, (t) => ({
+                  this.store.updateTaskHistory(id, (t) => ({
                     ...t,
                     status: 'review',
                     runPhase: 'finalizing',
@@ -1351,7 +1358,7 @@ ${
               const finishedAt = new Date().toISOString()
               const cancelled = controller.signal.aborted && !flushError
               const status = cancelled ? ('cancelled' as const) : ('failed' as const)
-              this.store.updateTask(id, (t) => ({
+              this.store.updateTaskHistory(id, (t) => ({
                 ...t,
                 runPhase: 'finalizing',
                 activity: 'Saving changes',
@@ -1368,7 +1375,7 @@ ${
                 ),
               }))
               const policy = this.store.projectSettings(
-                this.store.task(id).repositoryId,
+                this.store.taskSummary(id).repositoryId,
               ).taskBehavior
               const continuation = cancelled
                 ? undefined
@@ -1384,7 +1391,7 @@ ${
                     error: 'Change capture skipped because provider shutdown was not confirmed.',
                   }
                 : yield* checkpoint()
-              this.store.updateTask(id, (t) => ({
+              this.store.updateTaskHistory(id, (t) => ({
                 ...t,
                 status,
                 quotaContinuation: continuation,

@@ -32,10 +32,14 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from 'react'
+import { RegistryContext, useAtomValue } from '@effect/atom-react'
+import { Atom } from 'effect/reactivity'
 import { AppState } from 'react-native'
 import * as Network from 'expo-network'
 import * as SecureStore from 'expo-secure-store'
@@ -110,7 +114,7 @@ type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   schema: T,
   method?: string,
 ) => Effect.Effect<T['Type'], Error>
-type Runtime = {
+export type Runtime = {
   previewTaskEffect: <A extends WorkspacePatchResult, E>(
     profile: RuntimeProfile,
     taskId: string,
@@ -173,6 +177,29 @@ type Runtime = {
 }
 export const RuntimeContext = createContext<Runtime | null>(null)
 const Context = RuntimeContext
+const RuntimeStateContext = createContext<Atom.Writable<Runtime> | null>(null)
+/** Broad readers keep the context value; selectors subscribe only to the slice they render. */
+function RuntimeValueProvider({ value, children }: { value: Runtime; children: ReactNode }) {
+  // A rebuilt atom node reads the latest committed value, never a retained first snapshot.
+  const committed = useRef(value)
+  const [atom] = useState(() =>
+    Atom.writable(
+      () => committed.current,
+      (context, next: Runtime) => context.setSelf(next),
+    ),
+  )
+  const registry = useContext(RegistryContext)
+  // Publish after commit, as the conversation selectors do, so render stays free of updates.
+  useLayoutEffect(() => {
+    committed.current = value
+    registry.set(atom, value)
+  }, [registry, atom, value])
+  return (
+    <RuntimeStateContext.Provider value={atom}>
+      <Context.Provider value={value}>{children}</Context.Provider>
+    </RuntimeStateContext.Provider>
+  )
+}
 const initialOverview = (profile: RuntimeProfile): RuntimeOverview => ({
   profile,
   snapshot: null,
@@ -1250,75 +1277,166 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         .finally(() => settingsRequests.current.delete(entry.profile.id))
     }
   }, [sharedScopedSettings, overviews, readRuntime, refreshProfile])
-  return (
-    <Context.Provider
-      value={{
-        previewTaskEffect,
-        connection,
-        profile,
-        profiles: registry.profiles,
-        activeId: registry.activeId,
-        overviews,
-        snapshot: overviews.find((entry) => entry.profile.id === profile?.id)?.snapshot ?? null,
-        connected: active?.connected ?? false,
-        ready,
-        registryLoaded,
-        recovering,
-        error:
-          storageError ||
-          settingsSyncError ||
-          presetSyncError ||
-          active?.error ||
-          (registry.pendingPairings?.length
-            ? 'A connection is waiting to finish pairing. Keep the computer online; recovery retries when you return to the app.'
-            : ''),
-        legacyDraftRuntimeId,
-        connect,
-        cancelPairing,
-        selectRuntime,
-        forgetRuntime,
-        renameRuntime,
-        disconnect,
-        refresh,
-        refreshAll: async () => {
-          if (!registryWritable.current) {
-            setRestoreAttempt((attempt) => attempt + 1)
-            return
-          }
-          await refreshAll()
-        },
-        refreshRuntime: refreshProfile,
-        call,
-        callEffect,
-        read,
-        readEffect,
-        readRuntime,
-        readRuntimeEffect,
-        refreshRuntimeEffect: refreshProfileEffect,
-        pendingMessages: (task) => (connection ? mutations.pendingMessages(connection, task) : []),
-        pendingMessagesFor: (profile, task) => mutations.pendingMessages(profile.connection, task),
-        mutationStatus: (profile) => mutations.status(profile.connection),
-        retryMutations: (profile) =>
-          runClientEffect(mutations.recoverEffect(profile.connection, true)),
-        discardMutations: (profile) => runClientEffect(mutations.discardEffect(profile.connection)),
-        cacheForRuntime: cacheFor,
-        readCache: profile ? cacheFor(profile) : null,
-        refreshEffect,
-        connectEffect,
-        selectRuntimeEffect,
-        forgetRuntimeEffect,
-        renameRuntimeEffect,
-        disconnectEffect,
-      }}
-    >
-      {children}
-    </Context.Provider>
+  const pendingMessages = useCallback(
+    (task: Task) => (connection ? mutations.pendingMessages(connection, task) : []),
+    [connection, mutations],
   )
+  const pendingMessagesFor = useCallback(
+    (owner: RuntimeProfile, task: Task) => mutations.pendingMessages(owner.connection, task),
+    [mutations],
+  )
+  const mutationStatus = useCallback(
+    (owner: RuntimeProfile) => mutations.status(owner.connection),
+    [mutations],
+  )
+  const retryMutations = useCallback(
+    (owner: RuntimeProfile) => runClientEffect(mutations.recoverEffect(owner.connection, true)),
+    [mutations],
+  )
+  const discardMutations = useCallback(
+    (owner: RuntimeProfile) => runClientEffect(mutations.discardEffect(owner.connection)),
+    [mutations],
+  )
+  const refreshAllOrRestore = useCallback(async () => {
+    if (!registryWritable.current) {
+      setRestoreAttempt((attempt) => attempt + 1)
+      return
+    }
+    await refreshAll()
+  }, [refreshAll])
+  const readCache = useMemo(() => (profile ? cacheFor(profile) : null), [profile, cacheFor])
+  const snapshot = overviews.find((entry) => entry.profile.id === profile?.id)?.snapshot ?? null
+  const error =
+    storageError ||
+    settingsSyncError ||
+    presetSyncError ||
+    active?.error ||
+    (registry.pendingPairings?.length
+      ? 'A connection is waiting to finish pairing. Keep the computer online; recovery retries when you return to the app.'
+      : '')
+  const connected = active?.connected ?? false
+  // Mutation status is read through stable functions; its version still publishes a new value.
+  const value = useMemo<Runtime>(
+    () => ({
+      previewTaskEffect,
+      connection,
+      profile,
+      profiles: registry.profiles,
+      activeId: registry.activeId,
+      overviews,
+      snapshot,
+      connected,
+      ready,
+      registryLoaded,
+      recovering,
+      error,
+      legacyDraftRuntimeId,
+      connect,
+      cancelPairing,
+      selectRuntime,
+      forgetRuntime,
+      renameRuntime,
+      disconnect,
+      refresh,
+      refreshAll: refreshAllOrRestore,
+      refreshRuntime: refreshProfile,
+      call,
+      callEffect,
+      read,
+      readEffect,
+      readRuntime,
+      readRuntimeEffect,
+      refreshRuntimeEffect: refreshProfileEffect,
+      pendingMessages,
+      pendingMessagesFor,
+      mutationStatus,
+      retryMutations,
+      discardMutations,
+      cacheForRuntime: cacheFor,
+      readCache,
+      refreshEffect,
+      connectEffect,
+      selectRuntimeEffect,
+      forgetRuntimeEffect,
+      renameRuntimeEffect,
+      disconnectEffect,
+    }),
+    [
+      mutationVersion,
+      previewTaskEffect,
+      connection,
+      profile,
+      registry.profiles,
+      registry.activeId,
+      overviews,
+      snapshot,
+      connected,
+      ready,
+      registryLoaded,
+      recovering,
+      error,
+      legacyDraftRuntimeId,
+      connect,
+      cancelPairing,
+      selectRuntime,
+      forgetRuntime,
+      renameRuntime,
+      disconnect,
+      refresh,
+      refreshAllOrRestore,
+      refreshProfile,
+      call,
+      callEffect,
+      read,
+      readEffect,
+      readRuntime,
+      readRuntimeEffect,
+      refreshProfileEffect,
+      pendingMessages,
+      pendingMessagesFor,
+      mutationStatus,
+      retryMutations,
+      discardMutations,
+      cacheFor,
+      readCache,
+      refreshEffect,
+      connectEffect,
+      selectRuntimeEffect,
+      forgetRuntimeEffect,
+      renameRuntimeEffect,
+      disconnectEffect,
+    ],
+  )
+  return <RuntimeValueProvider value={value}>{children}</RuntimeValueProvider>
 }
 export function useRuntime() {
   const runtime = useContext(Context)
   if (!runtime) throw new Error('RuntimeProvider required')
   return runtime
+}
+/**
+ * Re-render only when the selected value changes. Keep `select` and `equals` stable, for
+ * example at module scope or with useCallback, so the derived subscription is reused.
+ */
+export function useRuntimeSelector<A>(
+  select: (runtime: Runtime) => A,
+  equals: (previous: A, next: A) => boolean = Object.is,
+): A {
+  const atom = useContext(RuntimeStateContext)
+  if (!atom) throw new Error('RuntimeProvider required')
+  const selected = useMemo(
+    () => Atom.withEquality(Atom.map(atom, select), equals),
+    [atom, select, equals],
+  )
+  return useAtomValue(selected)
+}
+/** Compare selected records field by field, for action and identity slices. */
+export function sameRuntimeFields<A extends object>(previous: A, next: A) {
+  const keys = Object.keys(next) as (keyof A)[]
+  return (
+    Object.keys(previous).length === keys.length &&
+    keys.every((key) => Object.is(previous[key], next[key]))
+  )
 }
 
 /** Host-scoped controls never borrow the globally active computer's workspace or credentials. */
@@ -1361,29 +1479,54 @@ export function RuntimeScope({ runtimeId, children }: { runtimeId: string; child
     [readEffect, profile, refreshRuntimeEffect],
   )
   const call = useCallback<Call>((...args) => runClientEffect(callEffect(...args)), [callEffect])
-  if (!entry) return null
+  const { pendingMessagesFor, cacheForRuntime } = runtime
+  const pendingMessages = useCallback(
+    (task: Task) => (profile ? pendingMessagesFor(profile, task) : []),
+    [profile, pendingMessagesFor],
+  )
+  const readCache = useMemo(
+    () => (profile ? cacheForRuntime(profile) : null),
+    [profile, cacheForRuntime],
+  )
+  const value = useMemo<Runtime | null>(
+    () =>
+      entry
+        ? {
+            ...runtime,
+            activeId: runtimeId,
+            profile: entry.profile,
+            connection: entry.profile.connection,
+            snapshot: entry.snapshot,
+            connected: entry.connected,
+            error: entry.error ?? '',
+            read,
+            readEffect,
+            call,
+            callEffect,
+            refresh,
+            refreshEffect,
+            pendingMessages,
+            readCache,
+          }
+        : null,
+    [
+      runtime,
+      runtimeId,
+      entry,
+      read,
+      readEffect,
+      call,
+      callEffect,
+      refresh,
+      refreshEffect,
+      pendingMessages,
+      readCache,
+    ],
+  )
+  if (!entry || !value) return null
   return (
-    <Context.Provider
-      key={clientScopeKey(entry.profile.connection)}
-      value={{
-        ...runtime,
-        activeId: runtimeId,
-        profile: entry.profile,
-        connection: entry.profile.connection,
-        snapshot: entry.snapshot,
-        connected: entry.connected,
-        error: entry.error ?? '',
-        read,
-        readEffect,
-        call,
-        callEffect,
-        refresh,
-        refreshEffect,
-        pendingMessages: (task) => runtime.pendingMessagesFor(entry.profile, task),
-        readCache: runtime.cacheForRuntime(entry.profile),
-      }}
-    >
+    <RuntimeValueProvider key={clientScopeKey(entry.profile.connection)} value={value}>
       {children}
-    </Context.Provider>
+    </RuntimeValueProvider>
   )
 }

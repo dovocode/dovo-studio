@@ -27,10 +27,49 @@ function notify(listeners: Set<(data: string) => void>, data: string) {
     }
   }
 }
+/** UTF-16 character cap, matching String.slice even at a surrogate boundary. */
+class RetainedOutput {
+  private chunks: (string | undefined)[] = []
+  private head = 0
+  private length = 0
+  append(data: string) {
+    const cap = 1024 * 1024
+    if (!data.length) return
+    if (data.length >= cap) {
+      this.chunks = [data.slice(-cap)]
+      this.head = 0
+      this.length = cap
+      return
+    }
+    this.length += data.length
+    // Coalesce tiny PTY writes without repeatedly copying the entire replay window.
+    const tail = this.chunks.at(-1)
+    if (tail !== undefined && tail.length < 4096) {
+      const take = Math.min(4096 - tail.length, data.length)
+      this.chunks[this.chunks.length - 1] = tail + data.slice(0, take)
+      data = data.slice(take)
+    }
+    if (data.length) this.chunks.push(data)
+    while (this.length > cap) {
+      const first = this.chunks[this.head]!
+      const remove = Math.min(this.length - cap, first.length)
+      this.length -= remove
+      if (remove === first.length) this.chunks[this.head++] = undefined
+      else this.chunks[this.head] = first.slice(remove)
+    }
+    if (this.head >= 128 && this.head * 2 >= this.chunks.length) {
+      this.chunks = this.chunks.slice(this.head)
+      this.head = 0
+    }
+  }
+  read() {
+    return this.chunks.slice(this.head).join('')
+  }
+}
 type Session = {
   info: TerminalInfo
   process: pty.IPty
-  buffer: string
+  readonly buffer: string
   listeners: Set<(data: string) => void>
 }
 export class Terminals {
@@ -126,6 +165,7 @@ export class Terminals {
         // The bundled ConPTY owns teardown without that delayed process sweep.
         ...(process.platform === 'win32' ? { useConptyDll: true } : {}),
       })
+    const output = new RetainedOutput()
     const session: Session = {
       info: {
         id,
@@ -135,7 +175,9 @@ export class Terminals {
         exited: false,
       },
       process: terminal,
-      buffer: '',
+      get buffer() {
+        return output.read()
+      },
       listeners: new Set(),
     }
     this.sessions.set(id, session)
@@ -150,7 +192,7 @@ export class Terminals {
       command: launch.command,
     })
     terminal.onData((data) => {
-      session.buffer = (session.buffer + data).slice(-1024 * 1024)
+      output.append(data)
       notify(session.listeners, data)
     })
     terminal.onExit(({ exitCode }) => {

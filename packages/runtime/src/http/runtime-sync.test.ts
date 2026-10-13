@@ -35,8 +35,14 @@ async function setup() {
     ],
   }))
   const address = `http://127.0.0.1:${runtime.port}`
-  const open = async (credential = token, format = 1, taskIds: string[] = []) => {
+  const open = async (
+    credential = token,
+    format = 1,
+    taskIds: string[] = [],
+    pagedHistory = false,
+  ) => {
     const query = new URLSearchParams({ format: String(format) })
+    if (pagedHistory) query.set('history', 'paged')
     for (const id of taskIds) query.append('task', id)
     const response = await fetch(`${address}/api/sync/ticket?${query}`, {
       method: 'POST',
@@ -60,6 +66,28 @@ async function setup() {
   }
   return { runtime, open, address }
 }
+it.each([{ taskIds: [] }, { taskIds: ['task'] }])(
+  'keeps scoped paged sync history lazy for selection $taskIds',
+  async ({ taskIds }) => {
+    const { runtime, open } = await setup()
+    const fullWorkspace = vi.spyOn(runtime.services.store, 'publicCompleteTasks')
+    const fullTask = vi.spyOn(runtime.services.store, 'publicTask')
+    const client = await open(token, 5, taskIds, true)
+    client.socket.send(JSON.stringify({ type: 'resume' }))
+    const baseline = await client.wait('snapshot')
+    expect(baseline.snapshot.detailTaskIds).toEqual(taskIds)
+    expect(baseline.snapshot.workspace.tasks[0]?.messages.length).toBe(taskIds.length ? 1 : 0)
+    runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Updated' }))
+    const delta = await client.wait('delta')
+    expect(applySnapshotDelta(baseline.snapshot, delta.delta).workspace.tasks[0]?.title).toBe(
+      'Updated',
+    )
+    expect(fullWorkspace).not.toHaveBeenCalled()
+    expect(fullTask).not.toHaveBeenCalled()
+    fullWorkspace.mockRestore()
+    fullTask.mockRestore()
+  },
+)
 it('changes thread details on one connection without changing another client or losing later deltas', async () => {
   const { runtime, open } = await setup()
   runtime.services.store.update((workspace) => ({
@@ -67,7 +95,7 @@ it('changes thread details on one connection without changing another client or 
     tasks: [
       ...workspace.tasks,
       {
-        ...workspace.tasks[0]!,
+        ...runtime.services.store.task(workspace.tasks[0]!.id),
         id: 'second',
         title: 'Second',
         messages: [{ id: 'other', role: 'assistant', text: 'Second history' }],
@@ -90,7 +118,7 @@ it('changes thread details on one connection without changing another client or 
   ).toBe('Second history')
   expect(shared.frames.some((frame) => frame.type === 'snapshot')).toBe(false)
   first.frames.length = 0
-  runtime.services.store.updateTask('second', (task) => ({
+  runtime.services.store.updateTaskHistory('second', (task) => ({
     ...task,
     messages: task.messages.map((message) => ({ ...message, text: message.text + ' updated' })),
   }))
@@ -113,7 +141,7 @@ it('pushes small deltas and replays updates after reconnect without a second bas
   const first = await open()
   first.socket.send(JSON.stringify({ type: 'resume' }))
   const baseline = await first.wait('snapshot')
-  runtime.services.store.updateTask('task', (task) => ({
+  runtime.services.store.updateTaskHistory('task', (task) => ({
     ...task,
     messages: task.messages.map((m) => ({ ...m, text: m.text + 'Next' })),
   }))
@@ -285,7 +313,7 @@ it('sends lightweight shells and only subscribed history, with safe replay per s
     tasks: [
       workspace.tasks[0]!,
       {
-        ...workspace.tasks[0]!,
+        ...runtime.services.store.task(workspace.tasks[0]!.id),
         id: 'other',
         draft: 'Unsent draft',
         messages: [
@@ -308,7 +336,7 @@ it('sends lightweight shells and only subscribed history, with safe replay per s
   expect(baseline.epoch).not.toBe(lightweight.epoch)
   expect(baseline.snapshot.workspace.tasks[0]?.messages).toHaveLength(1)
   expect(baseline.snapshot.workspace.tasks[1]?.messages).toEqual([])
-  runtime.services.store.updateTask('task', (task) => ({
+  runtime.services.store.updateTaskHistory('task', (task) => ({
     ...task,
     messages: task.messages.map((message) => ({ ...message, text: message.text + 'New output' })),
   }))

@@ -196,7 +196,7 @@ export class FileReviews {
           await s.checkouts.selectedDirectory(task.id, context.checkoutId),
         )
       } else {
-        const current = s.store.task(task.id)
+        const current = s.store.taskSummary(task.id)
         working = current.files
         workingVersions = current.fileReviewVersions
         changes = working
@@ -242,7 +242,7 @@ export class FileReviews {
             file.path === mark.path ? { ...file, viewed: mark.viewed } : file,
           ),
         }))
-        const updated = s.store.task(context.taskId).fileReviewVersions?.[mark.path] ?? 0
+        const updated = s.store.taskSummary(context.taskId).fileReviewVersions?.[mark.path] ?? 0
         states = states.map((file) =>
           file.path === mark.path ? { ...file, viewed: mark.viewed, version: updated } : file,
         )

@@ -248,7 +248,7 @@ it('persists separate side chats, includes their history, and follows archive an
       ),
     ).rejects.toThrow('Restore this thread')
     s.store.updateTask(task.id, (current) => ({ ...current, archived: false }))
-    s.store.updateTask(task.id, (current) => ({
+    s.store.updateTaskHistory(task.id, (current) => ({
       ...current,
       sideChats: current.sideChats?.map((chat) =>
         chat.id === first.id

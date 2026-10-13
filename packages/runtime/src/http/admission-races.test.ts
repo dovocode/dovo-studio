@@ -101,7 +101,7 @@ it.each(['draft', 'attachments', 'started', 'repository'] as const)(
         })),
       }))
     else
-      s.store.updateTask(task.id, (current) => ({
+      s.store.updateTaskHistory(task.id, (current) => ({
         ...current,
         ...(change === 'draft' ? { draft: 'New unsent work' } : {}),
         ...(change === 'attachments'

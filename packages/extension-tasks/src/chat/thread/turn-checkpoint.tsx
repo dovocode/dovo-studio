@@ -9,6 +9,7 @@ import { getFiletypeFromFileName, parseDiffFromFile } from '@pierre/diffs'
 import { preloadStudioHighlighter } from '@dovo/studio-ui/code-themes'
 import { FileDiff } from '@pierre/diffs/react'
 import { BookmarkCheck, ChevronRight, Undo2 } from 'lucide-react'
+import { useTurnDisclosure } from './turn-window'
 import type { ChangedFile, TaskTurn } from '@dovo/studio-core'
 import {
   Button,
@@ -94,7 +95,7 @@ export function TurnCheckpoint({
   projectName?: string
 }) {
   const { collapseChangedFiles, hideWhitespaceChanges } = useAppPreferences()
-  const [expanded, setExpanded] = useApplicationState<boolean | null>(null)
+  const [expanded, setExpanded] = useTurnDisclosure(`checkpoint:${checkoutId ?? ''}:${turn.id}`)
   const showFiles = expanded ?? !collapseChangedFiles
   const [open, setOpen] = useApplicationState(false)
   const [selected, setSelected] = useApplicationState('')

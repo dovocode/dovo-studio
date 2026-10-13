@@ -1,7 +1,7 @@
 import { createServices } from '../../services'
 import { openDatabase } from '../../storage/database'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import type { Task } from '@dovo/protocol'
+import { summarizeTask, type Task, type TaskSummary } from '@dovo/protocol'
 import { Housekeeping, inactiveTaskIds } from './housekeeping'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
@@ -43,10 +43,10 @@ it('archives only idle, unpinned tasks without recent activity', () => {
       turns: [{ id: 't', startedAt: daysAgo(3), finishedAt: daysAgo(3) } as never],
     }),
   ]
-  const busy = (item: Task) => item.id === 'waiting'
-  expect(inactiveTaskIds(tasks, 14, now, busy)).toEqual(['stale'])
-  expect(inactiveTaskIds(tasks, 30, now, busy)).toEqual([])
-  expect(inactiveTaskIds(tasks, 0, now, busy)).toEqual([])
+  const busy = (item: TaskSummary) => item.id === 'waiting'
+  expect(inactiveTaskIds(tasks.map(summarizeTask), 14, now, busy)).toEqual(['stale'])
+  expect(inactiveTaskIds(tasks.map(summarizeTask), 30, now, busy)).toEqual([])
+  expect(inactiveTaskIds(tasks.map(summarizeTask), 0, now, busy)).toEqual([])
 })
 
 const family = () => [
@@ -56,7 +56,7 @@ const family = () => [
 ]
 
 it('considers descendant activity, pins and busy state and selects only the main thread', () => {
-  expect(inactiveTaskIds(family(), 14, now, () => false)).toEqual(['parent'])
+  expect(inactiveTaskIds(family().map(summarizeTask), 14, now, () => false)).toEqual(['parent'])
   const protections: Partial<Task>[] = [
     { status: 'running' },
     { updatedAt: daysAgo(2) },
@@ -64,9 +64,11 @@ it('considers descendant activity, pins and busy state and selects only the main
   ]
   for (const protection of protections) {
     const tasks = family().map((item) => (item.id === 'nested' ? { ...item, ...protection } : item))
-    expect(inactiveTaskIds(tasks, 14, now, () => false)).toEqual([])
+    expect(inactiveTaskIds(tasks.map(summarizeTask), 14, now, () => false)).toEqual([])
   }
-  expect(inactiveTaskIds(family(), 14, now, (item) => item.id === 'nested')).toEqual([])
+  expect(
+    inactiveTaskIds(family().map(summarizeTask), 14, now, (item) => item.id === 'nested'),
+  ).toEqual([])
 })
 
 async function archiveFixture() {
@@ -292,5 +294,5 @@ it('waits for an already-started backup step when polling is cancelled during sh
 
 it('keeps threads waiting for feedback out of inactive settlement and archiving', () => {
   const waiting = { ...task('waiting'), waitingForFeedback: true }
-  expect(inactiveTaskIds([waiting], 14, now, () => false)).toEqual([])
+  expect(inactiveTaskIds([waiting].map(summarizeTask), 14, now, () => false)).toEqual([])
 })

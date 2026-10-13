@@ -74,7 +74,7 @@ it('acknowledges a completion without changing lifecycle, activity ordering or r
 it('does not let an older tab acknowledge a newer completion', async () => {
   const { s, viewed } = await setup()
   await viewed(turn.id)
-  s.store.updateTask(task.id, (task) => ({
+  s.store.updateTaskHistory(task.id, (task) => ({
     ...task,
     turns: [...task.turns!, { ...turn, id: 'next' }],
   }))
@@ -149,7 +149,7 @@ it('marks the current completion unread without changing activity order, and per
 it('does not let a stale unread action clear a newer completion acknowledgement', async () => {
   const { s, viewed } = await setup()
   await viewed(turn.id)
-  s.store.updateTask(task.id, (task) => ({
+  s.store.updateTaskHistory(task.id, (task) => ({
     ...task,
     turns: [...task.turns!, { ...turn, id: 'next' }],
   }))

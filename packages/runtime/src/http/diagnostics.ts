@@ -105,7 +105,10 @@ export async function runtimeDiagnostics(
       .map((task) => ({
         taskId: task.id,
         title: task.title,
-        durationMs: Math.max(0, now - (Date.parse(task.turns?.at(-1)?.startedAt ?? '') || now)),
+        durationMs: Math.max(
+          0,
+          now - (Date.parse(task.history.latestTurn?.startedAt ?? '') || now),
+        ),
         state: questions.some((item) => item.taskId === task.id)
           ? 'Waiting for answer'
           : approvals.some((item) => item.taskId === task.id)

@@ -1,6 +1,7 @@
 import { Schema } from 'effect'
 import { mutableStruct, maxValue, minValue } from '../shared/schema.js'
 import { agentSchema, providerSchema, type Task } from '../workspace.js'
+import type { TaskMetadata } from './task-summary.js'
 import { nativeAgentWorking, type Subagent } from '../conversation/workflow/subagents.js'
 const id = maxValue(minValue(Schema.String, 1), 200)
 export const subagentScopeSchema = mutableStruct({ taskId: id, parentRunId: Schema.optional(id) })
@@ -48,15 +49,15 @@ export function taskFamilyIds(tasks: readonly Pick<Task, 'id' | 'delegation'>[],
 }
 
 /** Includes descendants whose saved results still need a parent turn. */
-export function taskFamilyWorking(tasks: readonly Task[], id: string) {
+export function taskFamilyWorking(tasks: readonly TaskMetadata[], id: string) {
   return indexTaskFamilyWorking(tasks)(id)
 }
 
 /** Project once per workspace update; progress events must not rescan every family. */
-export function indexTaskFamilyWorking(tasks: readonly Task[]) {
+export function indexTaskFamilyWorking(tasks: readonly TaskMetadata[]) {
   const owners = new Map(tasks.map((task) => [task.id, task]))
   const working = new Set<string>()
-  const mark = (task: Task | undefined) => {
+  const mark = (task: TaskMetadata | undefined) => {
     while (task && !working.has(task.id)) {
       working.add(task.id)
       task = task.delegation ? owners.get(task.delegation.parentTaskId) : undefined
@@ -79,7 +80,7 @@ export function indexTaskFamilyWorking(tasks: readonly Task[]) {
 }
 
 /** Compare the whole family before stopping: a stale panel must not stop a newer run. */
-export function taskFamilyRunToken(tasks: readonly Task[], id: string) {
+export function taskFamilyRunToken(tasks: readonly TaskMetadata[], id: string) {
   const ids = taskFamilyIds(tasks, id)
   return JSON.stringify(
     tasks
@@ -129,15 +130,19 @@ function familyIds(children: ReadonlyMap<string, readonly string[]>, id: string)
 }
 
 /** Include nested agents in the main thread's overview without hiding their saved results. */
-export function taskSubagents(task: Task, tasks: readonly Task[], workingOnly = false): Subagent[] {
+export function taskSubagents(
+  task: TaskMetadata,
+  tasks: readonly TaskMetadata[],
+  workingOnly = false,
+): Subagent[] {
   return indexTaskSubagents(tasks)(task, workingOnly)
 }
 
 /** Build once for a workspace snapshot when rendering many main-thread rows. */
-export function indexTaskSubagents(tasks: readonly Task[]) {
+export function indexTaskSubagents(tasks: readonly TaskMetadata[]) {
   const children = childIds(tasks)
   const owners = new Map(tasks.map((task) => [task.id, task]))
-  return (task: Task, workingOnly = false): Subagent[] => {
+  return (task: TaskMetadata, workingOnly = false): Subagent[] => {
     const ids = familyIds(children, task.id)
     const records = new Map<string, Subagent>()
     for (const id of ids) {
@@ -163,7 +168,7 @@ export function indexTaskSubagents(tasks: readonly Task[]) {
 }
 
 /** Hidden children surface approvals and questions on each visible ancestor. */
-export function taskFamilyInputIds(tasks: readonly Task[], inputIds: Iterable<string>) {
+export function taskFamilyInputIds(tasks: readonly TaskMetadata[], inputIds: Iterable<string>) {
   const owners = new Map(tasks.map((task) => [task.id, task]))
   const input = new Set<string>()
   for (const id of inputIds) {

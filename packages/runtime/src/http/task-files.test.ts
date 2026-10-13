@@ -79,12 +79,12 @@ it('allows assistant-shared outside files but denies other threads, user links a
   await symlink(path, join(directory, 'escape.txt'))
   expect((await share('escape.txt')).status).toBe(400)
   expect((await share(path)).status).toBe(403)
-  runtime.services.store.updateTask('task', (task) => ({
+  runtime.services.store.updateTaskHistory('task', (task) => ({
     ...task,
     messages: [{ id: 'user', role: 'user', text: `[Result](<${path}>)` }],
   }))
   expect((await share(path)).status).toBe(403)
-  runtime.services.store.updateTask('task', (task) => ({
+  runtime.services.store.updateTaskHistory('task', (task) => ({
     ...task,
     messages: [
       { id: 'assistant', role: 'assistant', text: `[Result][output]\n\n[output]: <${path}:4>` },
@@ -94,7 +94,7 @@ it('allows assistant-shared outside files but denies other threads, user links a
   const { url } = decode(taskFileShareSchema, await (await share(path)).json())
   expect(await (await fetch(origin + url + '?content=1')).text()).toBe('shared output')
   // Grants revalidate current thread sharing rather than retaining access after a link is removed.
-  runtime.services.store.updateTask('task', (task) => ({ ...task, messages: [] }))
+  runtime.services.store.updateTaskHistory('task', (task) => ({ ...task, messages: [] }))
   expect((await fetch(origin + url)).status).toBe(403)
 })
 it('offers download when a binary file cannot be previewed', async () => {
@@ -175,7 +175,7 @@ it('allows outside files explicitly shared through Codex file citations', async 
   cleanup.push(() => rm(outside, { recursive: true, force: true }))
   const path = join(outside, 'result.ts')
   await writeFile(path, 'export const result = 1')
-  runtime.services.store.updateTask('task', (task) => ({
+  runtime.services.store.updateTaskHistory('task', (task) => ({
     ...task,
     messages: [
       {
@@ -211,7 +211,7 @@ it('loads HTML visualizations from their runtime with task-scoped authorization 
   cleanup.push(() => rm(external, { recursive: true, force: true }))
   const path = join(external, 'demo.html')
   await writeFile(path, '<button onclick="this.textContent=123">Interactive</button>')
-  runtime.services.store.updateTask('task', (task) => ({
+  runtime.services.store.updateTaskHistory('task', (task) => ({
     ...task,
     messages: [
       {

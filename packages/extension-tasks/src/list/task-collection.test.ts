@@ -1,7 +1,13 @@
 import { decode } from '@dovo/protocol'
 import { expect, it } from 'vite-plus/test'
 import { createTask, runtimeProfile, snapshotSchema, type RuntimeOverview } from '@dovo/studio-core'
-import { collectTasks, mainTaskEntries, taskCollectionKey, taskSources } from './task-collection'
+import {
+  collectTasks,
+  mainTaskEntries,
+  retainTaskOwner,
+  taskCollectionKey,
+  taskSources,
+} from './task-collection'
 const task = {
   ...createTask({
     title: 'Cached title',
@@ -216,4 +222,29 @@ it('groups every delegated generation under its parent without removing child na
     ['Mac', task.id],
     ['Linux', 'child'],
   ])
+})
+it('keeps a row owner while only task content streams, and replaces it when owner facts change', () => {
+  const [source] = taskSources({
+    workspace: snapshot.workspace,
+    snapshot,
+    activeRuntimeId: mac.profile.id,
+    connected: true,
+    runtimes: [mac],
+  })
+  const owner = retainTaskOwner(undefined, source)
+  const streamed = {
+    ...source,
+    workspace: { ...source.workspace, tasks: [{ ...task, title: 'Streaming title' }] },
+    snapshot: { ...snapshot, revision: 2, acpInstallations: [], terminals: [] },
+  }
+  expect(retainTaskOwner(owner, streamed)).toBe(owner)
+  expect(retainTaskOwner(owner, { ...streamed, online: false })).toMatchObject({ online: false })
+  expect(
+    retainTaskOwner(owner, {
+      ...streamed,
+      workspace: { ...streamed.workspace, repositories: [] },
+    }).repositories,
+  ).toEqual([])
+  expect(owner).not.toHaveProperty('workspace')
+  expect(owner).not.toHaveProperty('snapshot')
 })

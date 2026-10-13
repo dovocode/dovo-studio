@@ -104,7 +104,9 @@ export function threadPullLink(
   }
 }
 
-export function addTaskPullLinks(task: Task, pulls: NonNullable<Task['linkedPullRequests']>): Task {
+export function addTaskPullLinks<
+  T extends Pick<Task, 'linkedPullRequests' | 'pullRequest' | 'ignoredPullRequestUrls'>,
+>(task: T, pulls: NonNullable<Task['linkedPullRequests']>): T {
   const links = new Map((task.linkedPullRequests ?? []).map((pull) => [pull.url, pull]))
   for (const pull of pulls) if (task.pullRequest?.url !== pull.url) links.set(pull.url, pull)
   if (links.size > 20) throw new Error('A thread can link at most 20 pull requests.')

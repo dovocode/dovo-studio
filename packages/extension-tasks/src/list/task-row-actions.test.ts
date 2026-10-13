@@ -173,7 +173,7 @@ it('uses the task checkout branch and first user text, not a different project c
         ...task,
         messages,
       },
-      source,
+      source.workspace.repositories,
     ),
   ).toMatchObject({
     branch: 'main',
@@ -185,7 +185,7 @@ it('uses the task checkout branch and first user text, not a different project c
         ...task,
         execution: 'worktree',
       },
-      source,
+      source.workspace.repositories,
     ).branch,
   ).toBe('')
   expect(
@@ -195,10 +195,10 @@ it('uses the task checkout branch and first user text, not a different project c
         execution: 'worktree',
         checkoutBranch: 'task/editor',
       },
-      source,
+      source.workspace.repositories,
     ).branch,
   ).toBe('task/editor')
-  expect(taskRowValues(task, source).repository?.path).toBe('/project')
+  expect(taskRowValues(task, source.workspace.repositories).repository?.path).toBe('/project')
 })
 it('sends remote task mutations to their captured owner without switching the active device', async () => {
   const { store, requests } = setup()
