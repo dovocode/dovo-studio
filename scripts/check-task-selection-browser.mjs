@@ -7,10 +7,13 @@ const mocks = {
   '@dovo/studio-core/state': `import {useState,useRef} from 'react'; export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref];}`,
   '@dovo/studio-core': `
 export {responses} from '@dovo/protocol';
-const preferences = {taskSort:'created',taskGrouping:'none',confirmArchive:false};
+import {useSyncExternalStore} from 'react';
+let preferences = {taskSort:'created',taskGrouping:'none',confirmArchive:false,collapsedThreadSections:['working','waiting','snoozed','settled']};
+const preferenceListeners = new Set();
+const subscribePreferences = listener => {preferenceListeners.add(listener);return () => preferenceListeners.delete(listener)};
 export const readAppPreferences = () => preferences;
-export const useAppPreferences = readAppPreferences;
-export const updateAppPreferences = () => {};
+export const useAppPreferences = () => useSyncExternalStore(subscribePreferences,readAppPreferences);
+export const updateAppPreferences = changes => {preferences={...preferences,...changes};preferenceListeners.forEach(listener=>listener())};
 export const useStudioHost = () => ({});
 export const resolveTaskAgent = () => null;
 export const compareTasks = (a,b) => a.title.localeCompare(b.title);

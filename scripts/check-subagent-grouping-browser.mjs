@@ -47,7 +47,7 @@ window.request=async(path,input)=>{window.requests.push({path,input});if(path===
 window.host={navigate:target=>window.routes.push(target)};
 window.store={request:window.request,call:window.request,callEffect:(path,input)=>Effect.promise(()=>window.request(path,input)),workspace:window.workspace,snapshot,connected:true,activeRuntimeId:'mac',activeId:'mac',runtimeRegistry:{profiles:[profile]},profiles:[profile],overviews:[window.overview],runtimes:[window.overview],profile,ready:true,refreshAll:async()=>{},refreshRuntimes:async()=>{},selectRuntimeEffect:id=>Effect.sync(()=>window.switches.push(id))};
 window.publishTasks=tasks=>{window.workspace={...window.workspace,tasks};const next={...window.store.snapshot,workspace:window.workspace};window.source={...window.source,workspace:window.workspace,snapshot:next};window.overview={...window.overview,snapshot:next};window.store={...window.store,workspace:window.workspace,snapshot:next,overviews:[window.overview],runtimes:[window.overview]};};
-window.preferences={taskSort:'newest',taskGrouping:'none',hideFinishedSubagents:true};
+window.preferences={taskSort:'newest',taskGrouping:'none',hideFinishedSubagents:true,collapsedThreadSections:[]};
 window.preferenceListeners=new Set();window.subscribePreferences=listener=>{window.preferenceListeners.add(listener);return ()=>window.preferenceListeners.delete(listener)};
 window.updatePreferences=changes=>{window.preferences={...window.preferences,...changes};window.preferenceListeners.forEach(listener=>listener())};
 `
