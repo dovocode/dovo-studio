@@ -60,7 +60,7 @@ impl Servers {
     }
 }
 
-fn address_label(address: &str) -> String {
+pub(super) fn address_label(address: &str) -> String {
     url::Url::parse(address)
         .ok()
         .and_then(|url| {
@@ -190,12 +190,25 @@ impl Workbench {
                 choices.push((address_label(address), address.clone()));
             }
         }
+        let mut icons: HashMap<String, IconName> = self
+            .fleet_entries
+            .iter()
+            .filter_map(|entry| {
+                entry.result.as_ref().ok().map(|summary| {
+                    (
+                        entry.address.clone(),
+                        shell::server_icon(&summary.runtime_icon),
+                    )
+                })
+            })
+            .collect();
+        icons.insert(self.address.clone(), self.runtime_icon());
         let current = self.address.clone();
         let entity = cx.entity();
         Button::new("server-picker")
             .ghost()
             .small()
-            .icon(IconName::Monitor)
+            .icon(self.runtime_icon())
             .label(self.server_label())
             .dropdown_caret(true)
             .max_w(px(180.))
@@ -209,6 +222,7 @@ impl Workbench {
                     .scrollable(true)
                     .label("Servers");
                 for (name, address) in &choices {
+                    let icon = icons.get(address).copied().unwrap_or(IconName::Monitor);
                     let address = address.clone();
                     let selected = current == address;
                     let entity = entity.clone();
@@ -218,6 +232,7 @@ impl Workbench {
                         } else {
                             format!("{name} · {address}")
                         })
+                        .icon(icon)
                         .checked(selected)
                         .on_click(move |_, _, cx| {
                             entity.update(cx, |this, cx| this.switch_server(&address, None, cx));

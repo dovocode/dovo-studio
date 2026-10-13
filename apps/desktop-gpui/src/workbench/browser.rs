@@ -213,8 +213,21 @@ impl Workbench {
             window,
             cx,
         );
-        let mut root = div().id("native-browser-page").flex().flex_col().flex_1().min_h_0().overflow_y_scroll().p_4().gap_3()
-            .child(Self::header("Browser preview", "Each session retains its chosen profile on the runtime host. Open several sessions to keep websites separate."))
+        let mut root = div()
+            .id("native-browser-page")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .p_3()
+            .gap_3()
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(cx.theme().muted_foreground)
+                    .child("Preview URL · opens on the runtime host"),
+            )
             .child(Input::new(&address));
         if let Some(catalog) = self.browser.catalog.clone() {
             let selected = self

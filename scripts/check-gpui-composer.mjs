@@ -118,7 +118,7 @@ try {
       `native draft equals ${JSON.stringify(expected)}`,
     )
   }
-  await click(280, 330)
+  await click(280, 350)
   await delay(350)
   await click(650, 750)
   await type('Inspect @hel')
@@ -208,6 +208,71 @@ try {
     return layout?.taskSidebarVisible === true && layout.taskSidebarWidth >= 335
   }, 'sidebar returns at the saved width')
   await draft('Persistent layout draft in focus mode')
+  // The right pane remains mounted while Ctrl+L focuses the central composer.
+  await click(1270, 222)
+  await delay(300)
+  await key('ctrl+l')
+  await type(' beside files')
+  await draft('Persistent layout draft in focus mode beside files')
+  const nativeWindow = (await x('search', '--name', '^Dovo Studio GPUI$')).stdout.trim()
+  const geometry = Object.fromEntries(
+    (await x('getwindowgeometry', '--shell', nativeWindow)).stdout
+      .trim()
+      .split('\n')
+      .map((line) => line.split('=')),
+  )
+  const toolsRight = Number(geometry.X) + Number(geometry.WIDTH) - 40
+  const initialToolsWidth = (await json(layoutPath)).toolsSidebarWidth
+  const toolDivider = Math.round(toolsRight - initialToolsWidth)
+  await x('mousemove', String(toolDivider), '450', 'mousedown', '1')
+  await x('mousemove', String(toolDivider + 8), '450')
+  await delay(100)
+  await x('mousemove', String(toolDivider + 50), '450')
+  await delay(100)
+  await x('mouseup', '1')
+  await until(async () => {
+    const layout = await json(layoutPath)
+    return Math.abs(layout?.toolsSidebarWidth - (initialToolsWidth - 50)) < 10
+  }, 'right tools stay open beside the composer and their width persists')
+  // Open the bottom dock, execute a real PTY command, then hide it without losing the draft.
+  await key('ctrl+grave')
+  await until(async () => {
+    const response = await fetch(connection.address + '/api/snapshot', {
+      headers: { Authorization: 'Bearer ' + connection.token },
+    })
+    const snapshot = await response.json()
+    return snapshot.terminals.some((terminal) => terminal.taskId === fixture.taskId)
+  }, 'bottom terminal is attached to the current task')
+  const initialTerminalHeight = (await json(layoutPath)).terminalHeight
+  const terminalDivider = Math.round(856 - initialTerminalHeight)
+  await x('mousemove', '600', String(terminalDivider), 'mousedown', '1')
+  await x('mousemove', '600', String(terminalDivider + 8))
+  await delay(100)
+  await x('mousemove', '600', String(terminalDivider + 30))
+  await delay(100)
+  await x('mouseup', '1')
+  await until(
+    async () =>
+      Math.abs((await json(layoutPath))?.terminalHeight - (initialTerminalHeight - 30)) < 10,
+    'terminal dock resize is persisted',
+  )
+  await click(600, 841)
+  await type('printf dock-verified > dock-result.txt')
+  await click(Math.round(toolsRight - (await json(layoutPath)).toolsSidebarWidth - 25), 841)
+  await until(async () => {
+    try {
+      return (
+        (await readFile(join(directory, 'project/dock-result.txt'), 'utf8')) === 'dock-verified'
+      )
+    } catch (error) {
+      if (error.code === 'ENOENT') return false
+      throw error
+    }
+  }, 'bottom dock command reaches a real PTY')
+  await key('ctrl+grave')
+  await key('ctrl+shift+b')
+  await key('ctrl+l')
+  await draft('Persistent layout draft in focus mode beside files')
   await key('ctrl+b')
   await until(
     async () => (await json(layoutPath))?.taskSidebarVisible === false,
@@ -237,7 +302,7 @@ try {
   await click(650, 750)
   await key('End')
   await type(' restored')
-  await draft('Persistent layout draft in focus mode restored')
+  await draft('Persistent layout draft in focus mode beside files restored')
   // Hit the saved divider position, proving the preference affects actual layout.
   await x('mousemove', '498', '450', 'mousedown', '1')
   await x('mousemove', '506', '450')
@@ -250,7 +315,7 @@ try {
     return layout?.taskSidebarWidth >= 375 && layout.taskSidebarWidth <= 385
   }, 'restart restores the real divider position')
   console.log(
-    'Native composer verified: suggestions, Unicode, review/send, context navigation, focus mode, draft and sidebar restoration across restart.',
+    'Native composer verified: suggestions, Unicode, review/send, simultaneous tools, PTY dock, context navigation, focus mode and persistent layout/drafts.',
   )
 } catch (error) {
   console.error(diagnostics.join('').slice(-4000))

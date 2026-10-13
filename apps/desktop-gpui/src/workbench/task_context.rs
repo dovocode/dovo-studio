@@ -91,7 +91,7 @@ impl Workbench {
                     .ghost()
                     .compact()
                     .small()
-                    .icon(UiIcon::Bot)
+                    .child(shell::harness_icon(&context.provider, cx))
                     .child(
                         div()
                             .min_w_0()

@@ -37,6 +37,7 @@ apps/desktop-gpui/target/
 apps/desktop-gpui/assets/browser-viewer.html
 apps/desktop-gpui/assets/mcp-host.html
 apps/desktop-gpui/assets/automation-choices.json
+apps/desktop-gpui/assets/harness-icons.json
 
 # Local reference downloads, QA captures and release worktrees
 /work/

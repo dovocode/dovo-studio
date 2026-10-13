@@ -90,7 +90,7 @@ impl Workbench {
                 })
                 .then_with(|| b.created_at.cmp(&a.created_at))
         });
-        let count = tasks.len();
+        let mut count = tasks.len();
         let mut rows = Vec::new();
         let entity = cx.entity();
         let selected_filter = self.task_filter;
@@ -161,6 +161,7 @@ impl Workbench {
             let date = chrono::DateTime::parse_from_rfc3339(&task.created_at)
                 .map(|date| date.format("%b %e").to_string())
                 .unwrap_or_default();
+            let agent_icon = self.task_agent_icon(&task, cx);
             let preview = task
                 .messages
                 .iter()
@@ -196,6 +197,7 @@ impl Workbench {
                             .items_center()
                             .gap_2()
                             .min_w_0()
+                            .child(agent_icon)
                             .child(
                                 div()
                                     .flex_1()
@@ -245,11 +247,151 @@ impl Workbench {
                             )
                             .child(date),
                     )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .text_size(px(10.))
+                            .text_color(cx.theme().muted_foreground)
+                            .child(Icon::new(self.runtime_icon()).size(px(11.)))
+                            .child(self.server_label()),
+                    )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.select_task(id.clone(), window, cx)
                     }))
                     .into_any_element(),
             );
+        }
+        if !archived {
+            for entry in self
+                .fleet_entries
+                .clone()
+                .into_iter()
+                .filter(|entry| entry.address != self.address)
+            {
+                let server_name = if entry.name == entry.address {
+                    servers::address_label(&entry.address)
+                } else {
+                    entry.name.clone()
+                };
+                let icon = entry
+                    .result
+                    .as_ref()
+                    .map(|summary| shell::server_icon(&summary.runtime_icon))
+                    .unwrap_or(UiIcon::Server);
+                let address = entry.address.clone();
+                rows.push(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .pt_4()
+                        .pb_2()
+                        .text_size(px(11.))
+                        .text_color(cx.theme().muted_foreground)
+                        .child(Icon::new(icon).size(px(12.)))
+                        .child(server_name.clone())
+                        .children(
+                            entry
+                                .result
+                                .as_ref()
+                                .err()
+                                .map(|_| div().text_color(cx.theme().warning).child("Offline")),
+                        )
+                        .into_any_element(),
+                );
+                if let Ok(summary) = entry.result {
+                    for task in summary
+                        .task_entries
+                        .into_iter()
+                        .filter(|task| {
+                            task.title.to_lowercase().contains(&query)
+                                || task.project.to_lowercase().contains(&query)
+                        })
+                        .filter(|task| match self.task_filter {
+                            TaskFilter::All => true,
+                            TaskFilter::Active => task.status == TaskStatus::Running,
+                            TaskFilter::Attention => {
+                                task.needs_input
+                                    || matches!(
+                                        task.status,
+                                        TaskStatus::Review | TaskStatus::Failed
+                                    )
+                            }
+                        })
+                    {
+                        count += 1;
+                        let target = address.clone();
+                        let id = task.id.clone();
+                        rows.push(
+                            div()
+                                .id(SharedString::from(format!("server-thread:{target}:{id}")))
+                                .mx_1()
+                                .px_2()
+                                .py_2()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .cursor_pointer()
+                                .hover(|s| s.bg(cx.theme().list_hover))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .min_w_0()
+                                        .child(shell::harness_icon(&task.provider, cx))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .truncate()
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .child(task.title),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .text_size(px(11.))
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(
+                                            div().flex_1().min_w_0().truncate().child(task.project),
+                                        )
+                                        .child(
+                                            div()
+                                                .size(px(4.))
+                                                .rounded_full()
+                                                .bg(appearance::status_color(task.status, cx)),
+                                        )
+                                        .child(if task.needs_input {
+                                            "Needs input"
+                                        } else {
+                                            task.status.label()
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .text_size(px(10.))
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(Icon::new(icon).size(px(11.)))
+                                        .child(server_name.clone()),
+                                )
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.switch_server(&target, Some(id.clone()), cx)
+                                }))
+                                .into_any_element(),
+                        );
+                    }
+                }
+            }
         }
         let list = div()
             .flex()
@@ -280,20 +422,38 @@ impl Workbench {
                             ),
                     )
                     .child(
-                        div().flex().gap_1().child(filter).child(
-                            Button::new("sidebar-new-task")
-                                .ghost()
-                                .small()
-                                .icon(UiIcon::Plus)
-                                .accessibility_label("New task")
-                                .tooltip("New task")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.page = Page::Tasks;
-                                    this.new_task = true;
-                                    this.read_task_agents();
-                                    cx.notify();
-                                })),
-                        ),
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child(filter)
+                            .child(
+                                shell::icon_button(
+                                    "refresh-thread-servers",
+                                    UiIcon::RefreshCw,
+                                    "Refresh server threads",
+                                )
+                                .disabled(self.pending.contains("fleet"))
+                                .on_click(cx.listener(
+                                    |this, _, _, cx| {
+                                        this.refresh_fleet();
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                            .child(
+                                Button::new("sidebar-new-task")
+                                    .ghost()
+                                    .small()
+                                    .icon(UiIcon::Plus)
+                                    .accessibility_label("New task")
+                                    .tooltip("New task")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.page = Page::Tasks;
+                                        this.new_task = true;
+                                        this.read_task_agents();
+                                        cx.notify();
+                                    })),
+                            ),
                     ),
             )
             .child(
@@ -339,7 +499,7 @@ impl Workbench {
             .min_w_0()
             .min_h_0()
             .child(detail);
-        if !self.layout.task_sidebar_visible {
+        if !self.layout.task_sidebar_visible || self.tools_expanded {
             return detail.into_any_element();
         }
         use gpui_kit::component::resizable::{h_resizable, resizable_panel};
@@ -368,7 +528,7 @@ impl Workbench {
             .into_any_element()
     }
 
-    fn save_layout(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn save_layout(&mut self, cx: &mut Context<Self>) {
         if let Err(error) = self.storage.save_layout(&self.layout) {
             self.error = Some(error.to_string());
         }
@@ -377,7 +537,12 @@ impl Workbench {
 
     pub(super) fn toggle_task_sidebar(&mut self, cx: &mut Context<Self>) {
         if matches!(self.page, Page::Tasks | Page::Archived) && !self.search_open {
-            self.layout.task_sidebar_visible = !self.layout.task_sidebar_visible;
+            if self.tools_expanded {
+                self.tools_expanded = false;
+                self.layout.task_sidebar_visible = true;
+            } else {
+                self.layout.task_sidebar_visible = !self.layout.task_sidebar_visible;
+            }
             self.save_layout(cx);
         }
     }
@@ -660,86 +825,7 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let title = task.title.clone();
-        let tabs = [
-            (TaskTab::Chat, "Chat"),
-            (TaskTab::Changes, "Changes"),
-            (TaskTab::Terminal, "Terminal"),
-            (TaskTab::Files, "Files"),
-            (TaskTab::Browser, "Browser"),
-            (TaskTab::Details, "Details"),
-            (TaskTab::SideChats, "Side chats"),
-            (TaskTab::Agents, "Agents"),
-            (TaskTab::Review, "Review"),
-            (TaskTab::Devices, "Devices"),
-        ];
-        let header = div().flex().items_center().justify_between().h(px(46.)).flex_shrink_0().px_4().gap_3()
-            .border_b_1().border_color(cx.theme().border)
-            .child(div().flex().items_center().gap_3().min_w_0().flex_1()
-                .child(div().truncate().font_weight(FontWeight::SEMIBOLD).child(title))
-                .child(div().flex().items_center().gap_1().text_size(px(11.)).text_color(cx.theme().muted_foreground)
-                    .child(div().size(px(5.)).rounded_full().bg(super::appearance::status_color(task.status,cx)))
-                    .child(task.status.label())))
-            .child(div().flex().gap_1()
-                .when(self.tab==TaskTab::Chat && !self.messages.is_empty(), |actions| actions.child(Button::new("latest-message").ghost().small().icon(UiIcon::ArrowDown)
-                    .accessibility_label("Jump to latest message").tooltip("Jump to latest message")
-                    .on_click(cx.listener(|this,_,_,cx| {this.list.scroll_to_end();cx.notify();}))))
-                .child(Button::new("pin-task").ghost().small().icon(if task.pinned.unwrap_or(false) {UiIcon::PinOff} else {UiIcon::Pin})
-                    .accessibility_label(if task.pinned.unwrap_or(false) {"Unpin task"} else {"Pin task"})
-                    .tooltip(if task.pinned.unwrap_or(false) {"Unpin task"} else {"Pin task"})
-                    .on_click(cx.listener({let task=task.clone();move |this,_,_,cx|{this.patch(format!("pin:{}",task.id),WorkspacePatch::update("tasks",task.id.clone(),"pinned",json!(task.pinned),json!(!task.pinned.unwrap_or(false))));cx.notify();}})))
-                .child(Button::new("archive-task").ghost().small().icon(if task.is_archived() {UiIcon::ArchiveRestore} else {UiIcon::Archive})
-                    .accessibility_label(if task.is_archived() {"Restore task"} else {"Archive task"})
-                    .tooltip(if task.is_archived() {"Restore task"} else {"Archive task"})
-                    .disabled(task.status==TaskStatus::Running)
-                    .on_click(cx.listener({let task=task.clone();move |this,_,_,cx|{this.request(format!("lifecycle:{}",task.id),"/api/tasks/lifecycle",json!({"id":task.id,"action":if task.is_archived(){"restore"}else{"archive"}}));cx.notify();}}))));
-        let toolbar = div()
-            .id("task-tabs")
-            .flex()
-            .flex_wrap()
-            .flex_shrink_0()
-            .bg(cx.theme().tab_bar)
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .children(tabs.into_iter().map(|(tab, label)| {
-                Button::new(label)
-                    .ghost()
-                    .small()
-                    .rounded(px(0.))
-                    .h(px(32.))
-                    .px_3()
-                    .label(label)
-                    .selected(self.tab == tab)
-                    .border_t_2()
-                    .border_color(if self.tab == tab {
-                        cx.theme().primary
-                    } else {
-                        cx.theme().transparent
-                    })
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.open_task_tab(tab, window, cx);
-                    }))
-            }));
-        let content = match self.tab {
-            TaskTab::Chat => self.conversation(&task, window, cx),
-            TaskTab::Changes => self.changes_page(&task, window, cx),
-            TaskTab::Terminal => self.terminal_page(&task, window, cx),
-            TaskTab::Files => self.files_page(&task, window, cx),
-            TaskTab::Browser => self.browser_page(&task, window, cx),
-            TaskTab::Details => self.task_controls(&task, window, cx),
-            TaskTab::SideChats => self.side_chats(&task, window, cx),
-            TaskTab::Review => self.task_review_page(&task, window, cx),
-            TaskTab::Agents => self.child_agents_page(&task, window, cx),
-            TaskTab::Devices => self.devices_page(&task, window, cx),
-        };
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .child(header)
-            .child(toolbar)
-            .child(content)
-            .into_any_element()
+        self.task_workspace(&task, window, cx)
     }
 
     pub(super) fn open_task_tab(
@@ -751,15 +837,17 @@ impl Workbench {
         let Some(task_id) = self.selected_task.clone() else {
             return;
         };
-        if self.tab == TaskTab::Terminal && tab != TaskTab::Terminal {
-            self.command(Command::DetachTerminals);
-            self.selected_terminal = None;
+        if tab != TaskTab::Chat {
+            self.last_tool = tab;
         }
         if self.tab == TaskTab::Devices && tab != TaskTab::Devices {
             self.command(Command::DeviceClose);
             self.device_preview = None;
         }
         self.tab = tab;
+        if tab == TaskTab::Chat {
+            self.tools_expanded = false;
+        }
         // A tab change removes the focused editor or terminal from the dispatch tree.
         // Keep workspace shortcuts reachable until the next editor claims focus.
         window.focus(&self.focus, cx);
@@ -781,6 +869,9 @@ impl Workbench {
                     );
                 }
             }
+            TaskTab::Artifacts => {
+                self.request("artifact-library", "/api/artifacts/library", json!({}))
+            }
             TaskTab::Review => self.refresh_task_review(&task_id),
             TaskTab::Devices => {
                 self.request(
@@ -800,17 +891,12 @@ impl Workbench {
                 "/api/tasks/files/list",
                 json!({"id":task_id}),
             ),
-            TaskTab::Terminal => self.request(
-                format!("terminal:{task_id}"),
-                "/api/terminals/ensure",
-                json!({"taskId":task_id}),
-            ),
             _ => {}
         }
         cx.notify();
     }
 
-    fn conversation(
+    pub(super) fn conversation(
         &mut self,
         task: &Task,
         window: &mut Window,
@@ -899,7 +985,7 @@ impl Workbench {
                 .child(div().flex().items_center().justify_center().size(px(24.)).flex_shrink_0().rounded(px(5.))
                     .bg(if user {cx.theme().muted} else {cx.theme().primary.opacity(0.12)})
                     .text_color(if user {cx.theme().muted_foreground} else {cx.theme().primary})
-                    .child(Icon::new(if user {UiIcon::UserRound} else {UiIcon::Bot}).size(px(14.))))
+                    .child(if user { Icon::new(UiIcon::UserRound).size(px(14.)).into_any_element() } else { shell::harness_icon(turn.map(|turn|turn.provider.name()).unwrap_or(""),cx) }))
                 .child(div().text_size(px(12.)).font_weight(FontWeight::SEMIBOLD).child(if user { "You" } else { "Agent" }))
                 .children(turn.map(|turn| div().min_w_0().truncate().text_size(px(11.)).text_color(cx.theme().muted_foreground).child(format!("{} · {}",turn.provider.name(),if turn.model.is_empty() {"Provider default"} else {&turn.model}))));
             let actions = div().flex().items_center().gap_1()
@@ -1389,7 +1475,7 @@ impl Workbench {
         root.into_any_element()
     }
 
-    fn changes_page(
+    pub(super) fn changes_page(
         &mut self,
         task: &Task,
         window: &mut Window,
@@ -1418,24 +1504,38 @@ impl Workbench {
             .iter()
             .find(|file| Some(&file.path) == selected.as_ref())
             .cloned();
-        let file_list =
-            div()
-                .flex()
-                .flex_col()
-                .w(px(220.))
-                .p_2()
-                .gap_1()
-                .children(files.iter().map(|file| {
-                    let path = file.path.clone();
-                    Button::new(SharedString::from(path.clone()))
-                        .ghost()
-                        .label(path.clone())
-                        .selected(selected.as_ref() == Some(&path))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.selected_file = Some(path.clone());
-                            cx.notify();
-                        }))
-                }));
+        let file_list = div()
+            .flex()
+            .flex_col()
+            .id("changed-files-list")
+            .max_h(px(150.))
+            .flex_shrink_0()
+            .overflow_y_scroll()
+            .p_2()
+            .gap_1()
+            .children(files.iter().map(|file| {
+                let path = file.path.clone();
+                Button::new(SharedString::from(path.clone()))
+                    .ghost()
+                    .compact()
+                    .small()
+                    .w_full()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .w_full()
+                            .min_w_0()
+                            .child(Icon::new(UiIcon::File).size(px(13.)))
+                            .child(div().truncate().child(path.clone())),
+                    )
+                    .selected(selected.as_ref() == Some(&path))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.selected_file = Some(path.clone());
+                        cx.notify();
+                    }))
+            }));
         let Some(file) = file else {
             return Self::empty("Select a file", "Choose a changed file to review it.");
         };
@@ -1447,8 +1547,8 @@ impl Workbench {
         let task_id = task.id.clone();
         let staged_paths: Vec<_> = files.iter().map(|file| file.path.clone()).collect();
         let commit = self.input("commit-message", "", "Commit message", window, cx);
-        div().flex().flex_1().min_h_0().child(file_list)
-            .child(div().id("diff-view").flex().flex_col().flex_1().min_w_0().overflow_y_scroll().p_4().gap_3()
+        div().flex().flex_col().flex_1().min_w_0().min_h_0().child(file_list)
+            .child(div().id("diff-view").flex().flex_col().flex_1().min_w_0().min_h_0().overflow_y_scroll().p_3().gap_2()
                 .child(div().font_weight(FontWeight::SEMIBOLD).child(file.path.clone()))
                 .child(diff)
                 .child("After · editable draft")
@@ -1456,12 +1556,12 @@ impl Workbench {
                 .child(Button::new("apply-file").label("Apply draft to disk").on_click(cx.listener(move |this, _, _, cx| {
                     this.request(format!("apply:{task_id}:{path}"), "/api/scm/apply", json!({"repositoryId":repository_id,"taskId":task_id,"path":path,"expected":file.disk_contents.as_ref().unwrap_or(&file.after),"contents":this.code_value(&key,cx)})); cx.notify();
                 })))
-                .child(div().flex().gap_2().child(Button::new("stage-files").label("Stage all changes").on_click(cx.listener({ let task = task.clone(); move |this, _, _, cx| { this.request(format!("stage:{}", task.id), "/api/scm/stage", json!({"repositoryId":task.repository_id,"taskId":task.id,"paths":staged_paths})); cx.notify(); } }))).child(Input::new(&commit))
+                .child(div().flex().flex_wrap().gap_2().child(Button::new("stage-files").label("Stage all changes").on_click(cx.listener({ let task = task.clone(); move |this, _, _, cx| { this.request(format!("stage:{}", task.id), "/api/scm/stage", json!({"repositoryId":task.repository_id,"taskId":task.id,"paths":staged_paths})); cx.notify(); } }))).child(Input::new(&commit))
                     .child(Button::new("commit-files").primary().label("Commit").on_click(cx.listener({ let task = task.clone(); move |this, _, _, cx| { this.request(format!("commit:{}", task.id), "/api/scm/commit", json!({"repositoryId":task.repository_id,"taskId":task.id,"message":this.value("commit-message",cx)})); cx.notify(); } })))))
             .into_any_element()
     }
 
-    fn files_page(
+    pub(super) fn files_page(
         &mut self,
         task: &Task,
         window: &mut Window,
@@ -1479,17 +1579,30 @@ impl Workbench {
             None => vec![],
         };
         let selected = self.selected_file.clone();
-        let mut root = div().flex().flex_1().min_h_0().child(
+        let mut root = div().flex().flex_col().flex_1().min_w_0().min_h_0().child(
             div()
                 .id("files-list")
-                .w(px(230.))
+                .max_h(px(160.))
+                .flex_shrink_0()
                 .overflow_y_scroll()
                 .p_2()
                 .children(files.into_iter().map(|path| {
                     let id = task.id.clone();
                     Button::new(SharedString::from(path.clone()))
                         .ghost()
-                        .label(path.clone())
+                        .compact()
+                        .small()
+                        .w_full()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .w_full()
+                                .min_w_0()
+                                .child(Icon::new(UiIcon::File).size(px(13.)))
+                                .child(div().truncate().child(path.clone())),
+                        )
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.selected_file = Some(path.clone());
                             this.request(
@@ -1513,7 +1626,7 @@ impl Workbench {
                 let key = format!("file-editor:{}:{path}", task.id);
                 let editor = self.code_editor(&key, &path, &contents, window, cx);
                 let id = task.id.clone();
-                root = root.child(div().flex().flex_col().flex_1().p_4().gap_3().child(path.clone()).child(Editor::new(&editor).h(px(350.)).flex_shrink_0()).child(Button::new("save-file").primary().label("Save to disk").on_click(cx.listener(move |this, _, _, cx| { this.request(format!("save:{id}:{path}"), "/api/tasks/files/write", json!({"id":id,"path":path,"contents":this.code_value(&key,cx),"expectedContents":contents})); cx.notify(); }))));
+                root = root.child(div().flex().flex_col().flex_1().min_h_0().min_w_0().p_2().gap_2().child(Editor::new(&editor).flex_1().min_h_0()).child(div().flex().items_center().justify_between().gap_2().child(div().truncate().text_size(px(11.)).child(path.clone())).child(Button::new("save-file").ghost().small().icon(UiIcon::Save).label("Save").on_click(cx.listener(move |this, _, _, cx| { this.request(format!("save:{id}:{path}"), "/api/tasks/files/write", json!({"id":id,"path":path,"contents":this.code_value(&key,cx),"expectedContents":contents})); cx.notify(); })))));
             } else {
                 root = root.child(Self::empty(
                     "Loading file…",
@@ -1529,7 +1642,7 @@ impl Workbench {
         root.into_any_element()
     }
 
-    fn terminal_page(
+    pub(super) fn terminal_page(
         &mut self,
         task: &Task,
         window: &mut Window,
@@ -1556,58 +1669,24 @@ impl Workbench {
             })
             .unwrap_or_default();
         let screen = self.native_terminal(window, cx);
-        div()
-            .id("terminal-pane")
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .p_4()
-            .gap_3()
-            .child(Self::header(
-                "Terminal",
-                "Commands run in the task checkout on the connected computer.",
-            ))
-            .children(terminals.into_iter().map(|terminal| {
-                let id = terminal.id.clone();
-                div()
-                    .flex()
-                    .justify_between()
-                    .child(format!(
-                        "{} · {}",
-                        terminal.title,
-                        if terminal.exited { "Exited" } else { "Running" }
-                    ))
-                    .child(
-                        Button::new(SharedString::from(format!("close-{id}")))
-                            .label("Close")
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.request(
-                                    format!("close-terminal:{id}"),
-                                    "/api/terminals/close",
-                                    json!({"id":id}),
-                                );
-                                cx.notify();
-                            })),
-                    )
-            }))
-            .child(self.project_terminal_actions(task, cx))
+        div().id("terminal-pane").flex().flex_col().size_full().min_h_0().min_w_0()
+            .child(div().h(px(32.)).flex_shrink_0().flex().items_center().gap_1().px_2().bg(cx.theme().sidebar).border_b_1().border_color(cx.theme().border)
+                .child(Icon::new(UiIcon::SquareTerminal).size(px(14.)).text_color(cx.theme().muted_foreground))
+                .child(div().id("terminal-tabs").flex().flex_1().min_w_0().overflow_x_scroll().gap_1().children(terminals.into_iter().map(|terminal| {
+                    let id=terminal.id.clone();let close=id.clone();
+                    div().flex().items_center().gap_1()
+                        .child(Button::new(SharedString::from(format!("terminal-tab:{id}"))).ghost().compact().small().label(terminal.title).selected(self.selected_terminal.as_ref()==Some(&id))
+                            .on_click(cx.listener(move|this,_,_,cx|{this.selected_terminal=Some(id.clone());this.terminal_screens.entry(id.clone()).or_insert_with(||vt100::Parser::new(30,100,10_000));this.command(Command::OpenTerminal(id.clone()));cx.notify();})))
+                        .child(shell::icon_button(SharedString::from(format!("close-terminal:{close}")),UiIcon::X,"Close terminal session").w(px(20.)).h(px(20.))
+                            .on_click(cx.listener(move|this,_,_,cx|{this.request(format!("close-terminal:{close}"),"/api/terminals/close",json!({"id":close}));cx.notify();})))
+                })))
+                .child(shell::icon_button("hide-terminal",UiIcon::PanelBottom,"Hide terminal").on_click(cx.listener(|this,_,window,cx|this.set_bottom_terminal(false,window,cx)))))
             .child(screen)
-            .child(Input::new(&command))
-            .child(
-                Button::new("run-terminal-command")
-                    .primary()
-                    .label("Run command")
-                    .disabled(!self.online)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.request(
-                            format!("terminal-run:{task_id}"),
-                            "/api/terminals/run",
-                            json!({"taskId":task_id,"command":this.value("terminal-command",cx)}),
-                        );
-                        cx.notify();
-                    })),
-            )
+            .child(div().flex_shrink_0().px_2().child(self.project_terminal_actions(task,cx)))
+            .child(div().flex_shrink_0().flex().items_center().gap_2().p_1().border_t_1().border_color(cx.theme().border)
+                .child(div().flex_1().min_w_0().child(Input::new(&command).small()))
+                .child(Button::new("run-terminal-command").ghost().compact().small().icon(UiIcon::Play).label("Run").disabled(!self.online)
+                    .on_click(cx.listener(move|this,_,_,cx|{this.request(format!("terminal-run:{task_id}"),"/api/terminals/run",json!({"taskId":task_id,"command":this.value("terminal-command",cx)}));cx.notify();}))))
             .into_any_element()
     }
 }

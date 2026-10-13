@@ -17,17 +17,28 @@ for (const name of ['first', 'second']) {
     port: 0,
   })
   runtimes.push(runtime)
+  runtime.services.preferences.save({ runtimeIcon: name === 'first' ? 'desktop' : 'server' })
   runtime.services.store.update((workspace) => ({
     ...workspace,
     repositories: [],
-    agents: [],
+    agents: [
+      {
+        id: 'agent',
+        name: 'Private agent',
+        provider: name === 'first' ? 'claude' : 'codex',
+        model: '',
+        permission: 'ask',
+        instructions: '',
+        endpoint: '',
+      },
+    ],
     automations: [],
     tasks: [
       {
         id: 'shared-task',
         title: `${name} server task`,
         repositoryId: '',
-        agentId: '',
+        agentId: 'agent',
         status: 'draft',
         createdAt: '2026-10-13T12:00:00Z',
         draft: '',

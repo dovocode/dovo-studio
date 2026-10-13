@@ -18,12 +18,16 @@ pub enum Appearance {
 pub struct WorkbenchLayout {
     pub task_sidebar_width: f32,
     pub task_sidebar_visible: bool,
+    pub tools_sidebar_width: f32,
+    pub terminal_height: f32,
 }
 impl Default for WorkbenchLayout {
     fn default() -> Self {
         Self {
             task_sidebar_width: 280.,
             task_sidebar_visible: true,
+            tools_sidebar_width: 400.,
+            terminal_height: 220.,
         }
     }
 }
@@ -33,6 +37,15 @@ impl WorkbenchLayout {
             self.task_sidebar_width.is_finite()
                 && (220. ..=440.).contains(&self.task_sidebar_width),
             "Task sidebar width must be between 220 and 440 pixels"
+        );
+        anyhow::ensure!(
+            self.tools_sidebar_width.is_finite()
+                && (300. ..=680.).contains(&self.tools_sidebar_width),
+            "Tool sidebar width must be between 300 and 680 pixels"
+        );
+        anyhow::ensure!(
+            self.terminal_height.is_finite() && (140. ..=420.).contains(&self.terminal_height),
+            "Terminal height must be between 140 and 420 pixels"
         );
         Ok(())
     }
@@ -184,6 +197,7 @@ mod tests {
         let layout = WorkbenchLayout {
             task_sidebar_width: 360.,
             task_sidebar_visible: false,
+            ..WorkbenchLayout::default()
         };
         storage.save_layout(&layout).unwrap();
         assert_eq!(storage.layout().unwrap().task_sidebar_width, 360.);
@@ -200,6 +214,34 @@ mod tests {
             assert_eq!(storage.layout().unwrap().task_sidebar_width, 360.);
         }
         let path = directory.path().join("layout.json");
+        fs::write(
+            &path,
+            br#"{"taskSidebarWidth":360,"taskSidebarVisible":false}"#,
+        )
+        .unwrap();
+        let migrated = storage.layout().unwrap();
+        assert_eq!(migrated.tools_sidebar_width, 400.);
+        assert_eq!(migrated.terminal_height, 220.);
+        for dimension in [0., f32::NAN, f32::INFINITY, 681.] {
+            assert!(
+                storage
+                    .save_layout(&WorkbenchLayout {
+                        tools_sidebar_width: dimension,
+                        ..migrated.clone()
+                    })
+                    .is_err()
+            );
+        }
+        for dimension in [0., f32::NAN, f32::INFINITY, 421.] {
+            assert!(
+                storage
+                    .save_layout(&WorkbenchLayout {
+                        terminal_height: dimension,
+                        ..migrated.clone()
+                    })
+                    .is_err()
+            );
+        }
         fs::write(&path, br#"{"taskSidebarWidth":-1}"#).unwrap();
         assert!(storage.layout().is_err());
         assert_eq!(fs::read(&path).unwrap(), br#"{"taskSidebarWidth":-1}"#);

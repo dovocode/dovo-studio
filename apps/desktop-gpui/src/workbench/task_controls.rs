@@ -8,24 +8,50 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let mutable = self.online && !task.is_archived();
+        let project = self
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| {
+                snapshot
+                    .workspace
+                    .repositories
+                    .iter()
+                    .find(|repo| repo.id == task.repository_id)
+            })
+            .map(|repo| repo.name.as_str())
+            .unwrap_or("No project");
+        let agent = self
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| {
+                snapshot
+                    .workspace
+                    .agents
+                    .iter()
+                    .find(|agent| agent.id == task.agent_id)
+            })
+            .map(|agent| agent.name.as_str())
+            .unwrap_or("Unassigned");
         let mut root = div()
             .id("task-details")
             .flex()
             .flex_col()
             .flex_1()
+            .min_h_0()
             .overflow_y_scroll()
-            .p_5()
-            .gap_4()
-            .child(Self::header(
-                "Task details",
-                "Execution history and scheduled follow-ups.",
-            ));
-        root = root.child(format!(
-            "Project: {} · Agent: {}",
-            task.repository_id, task.agent_id
-        ));
+            .p_3()
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .text_size(px(12.))
+                    .text_color(cx.theme().muted_foreground)
+                    .child(project.to_owned())
+                    .child(agent.to_owned()),
+            );
         root = root.child(self.task_session_controls(task, cx));
-        root = root.child(self.task_linked_checkouts(task, window, cx));
         if task.status == TaskStatus::Draft && task.turns.is_empty() {
             root = root.child(Self::header("Start after task", "Starts this draft after another task completes, using the request in your composer."));
             if let Some(source) = task

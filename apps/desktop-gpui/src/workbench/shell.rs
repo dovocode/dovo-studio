@@ -4,6 +4,79 @@ use gpui_kit::{
     component::{Icon, Sizable, TitleBar},
 };
 
+pub(super) fn icon_button(id: impl Into<ElementId>, icon: UiIcon, label: &'static str) -> Button {
+    Button::new(id)
+        .ghost()
+        .compact()
+        .small()
+        .icon(Icon::new(icon).size(px(16.)))
+        .w(px(28.))
+        .h(px(28.))
+        .rounded(px(4.))
+        .accessibility_label(label)
+        .tooltip(label)
+}
+
+pub(super) fn harness_icon(provider: &str, cx: &App) -> AnyElement {
+    if matches!(
+        provider,
+        "codex" | "claude" | "opencode" | "hermes" | "copilot" | "grok" | "muse" | "cursor" | "acp"
+    ) {
+        svg()
+            .path(SharedString::from(format!("harness/{provider}.svg")))
+            .size(px(14.))
+            .flex_shrink_0()
+            .text_color(cx.theme().muted_foreground)
+            .into_any_element()
+    } else {
+        Icon::new(UiIcon::Bot)
+            .size(px(14.))
+            .text_color(cx.theme().muted_foreground)
+            .into_any_element()
+    }
+}
+
+pub(super) fn server_icon(name: &str) -> UiIcon {
+    match name {
+        "laptop" => UiIcon::Laptop,
+        "server" => UiIcon::Server,
+        "cloud" => UiIcon::Cloud,
+        "cpu" => UiIcon::Cpu,
+        "terminal" => UiIcon::SquareTerminal,
+        _ => UiIcon::Monitor,
+    }
+}
+
+impl Workbench {
+    pub(super) fn task_agent_icon(&self, task: &Task, cx: &App) -> AnyElement {
+        let provider = task
+            .extra
+            .get("harness")
+            .and_then(|h| h.get("provider"))
+            .and_then(Value::as_str)
+            .or_else(|| {
+                self.snapshot
+                    .as_ref()?
+                    .workspace
+                    .agents
+                    .iter()
+                    .find(|a| a.id == task.agent_id)
+                    .map(|a| a.provider.name())
+            })
+            .unwrap_or("");
+        harness_icon(provider, cx)
+    }
+    pub(super) fn runtime_icon(&self) -> UiIcon {
+        server_icon(
+            self.snapshot
+                .as_ref()
+                .and_then(|s| s.extra.get("runtimeIcon"))
+                .and_then(Value::as_str)
+                .unwrap_or("desktop"),
+        )
+    }
+}
+
 impl Page {
     fn icon(self) -> UiIcon {
         match self {
@@ -65,18 +138,36 @@ impl Workbench {
             Page::Archived,
         ];
         let item = |page: Page, selected: bool, cx: &mut Context<Self>| {
-            Button::new(SharedString::from(format!("nav-{}", page.label())))
-                .ghost()
-                .icon(Icon::new(page.icon()).size(px(18.)))
-                .accessibility_label(page.label())
-                .tooltip(page.label())
-                .selected(selected)
-                .w(px(34.))
-                .h(px(34.))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.search_open = false;
-                    this.navigate(page, cx);
+            div()
+                .relative()
+                .w(px(40.))
+                .h(px(36.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .children(selected.then(|| {
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top(px(8.))
+                        .bottom(px(8.))
+                        .w(px(2.))
+                        .bg(cx.theme().primary)
                 }))
+                .child(
+                    Button::new(SharedString::from(format!("nav-{}", page.label())))
+                        .ghost()
+                        .icon(Icon::new(page.icon()).size(px(18.)))
+                        .accessibility_label(page.label())
+                        .tooltip(page.label())
+                        .selected(selected)
+                        .w(px(34.))
+                        .h(px(34.))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.search_open = false;
+                            this.navigate(page, cx);
+                        })),
+                )
         };
         div()
             .id("workspace-sidebar")
@@ -341,7 +432,7 @@ impl Workbench {
                     .ghost()
                     .compact()
                     .h(px(22.))
-                    .icon(Icon::new(UiIcon::Monitor).size(px(12.)))
+                    .icon(Icon::new(self.runtime_icon()).size(px(12.)))
                     .label(self.server_label())
                     .tooltip(if self.address.is_empty() {
                         "Manage connected computers".into()

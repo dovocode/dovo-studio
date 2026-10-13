@@ -105,10 +105,8 @@ try {
     async () => (await draftValues()).includes('First server private draft'),
     'first scoped draft',
   )
-  // The title-bar menu lists both origins. Pick the second row.
-  await click(240, 137)
-  await delay(200)
-  await click(310, 209)
+  // The other server's thread is in the same sidebar, with its own origin.
+  await click(280, 390)
   await delay(1000)
   await click(280, 273)
   await click(650, 750)
@@ -151,7 +149,7 @@ try {
     )
   }, 'overview task navigation retains its server origin')
   console.log(
-    'Native multi-server picker, task restoration, scoped drafts and overview navigation pass.',
+    'Native cross-server thread sidebar, server picker, scoped drafts and overview navigation pass.',
   )
 } catch (error) {
   console.error(diagnostics.join('').slice(-4000))

@@ -57,6 +57,10 @@ try {
     join(root, 'apps/desktop-gpui/assets/fonts/LICENSE.txt'),
     join(base, 'licenses/Inter.txt'),
   )
+  await cp(
+    join(root, 'packages/studio-ui/src/brand-icons.LICENSE.md'),
+    join(base, 'licenses/brand-icons.md'),
+  )
   await writeFile(join(base, 'VERSION'), `${version}\n`)
   if (process.platform === 'linux') {
     for (const file of [

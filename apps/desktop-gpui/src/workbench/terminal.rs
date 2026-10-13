@@ -281,8 +281,8 @@ impl Workbench {
                                 } else {
                                     " "
                                 });
-                                let mut fg = terminal_color(cell.fgcolor(), 0xe4e7ec);
-                                let mut bg = terminal_color(cell.bgcolor(), 0x0e1014);
+                                let mut fg = terminal_color(cell.fgcolor(), cx.theme().foreground);
+                                let mut bg = terminal_color(cell.bgcolor(), cx.theme().background);
                                 if cell.inverse() {
                                     std::mem::swap(&mut fg, &mut bg);
                                 }
@@ -290,7 +290,7 @@ impl Workbench {
                                     .terminal_selection
                                     .is_some_and(|selection| selection.contains(row, col))
                                 {
-                                    bg = rgb(0x344a72).into();
+                                    bg = cx.theme().selection;
                                 }
                                 highlights.push((
                                     start..text.len(),
@@ -330,8 +330,8 @@ impl Workbench {
             .flex_1()
             .min_h_0()
             .overflow_hidden()
-            .bg(rgb(0x0e1014))
-            .text_color(rgb(0xe4e7ec))
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
             .p_2()
             .font_family("monospace")
             .text_size(px(13.))
@@ -534,7 +534,7 @@ impl Workbench {
                                         .left(px(cursor.1 as f32 * cell_width))
                                         .w(px(cell_width))
                                         .h(px(18.))
-                                        .bg(rgba(0xe4e7ec60))
+                                        .bg(cx.theme().foreground.opacity(0.35))
                                 }),
                             )
                     }),
@@ -544,7 +544,7 @@ impl Workbench {
                     .absolute()
                     .top_0()
                     .left_0()
-                    .bg(rgb(0x313c51))
+                    .bg(cx.theme().muted)
                     .p_2()
                     .child(status.clone())
             }))
@@ -552,7 +552,7 @@ impl Workbench {
                 div()
                     .absolute()
                     .bottom_0()
-                    .bg(rgb(0x313c51))
+                    .bg(cx.theme().muted)
                     .child(self.terminal_marked.clone())
             }))
             .child(
@@ -688,9 +688,9 @@ impl EntityInputHandler for Workbench {
     }
 }
 
-fn terminal_color(color: vt100::Color, default: u32) -> Hsla {
+fn terminal_color(color: vt100::Color, default: Hsla) -> Hsla {
     let value = match color {
-        vt100::Color::Default => default,
+        vt100::Color::Default => return default,
         vt100::Color::Rgb(r, g, b) => (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b),
         vt100::Color::Idx(index) => {
             const PALETTE: [u32; 16] = [

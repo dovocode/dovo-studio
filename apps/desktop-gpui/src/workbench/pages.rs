@@ -752,6 +752,17 @@ impl Workbench {
     }
 
     pub(super) fn artifacts_page(&mut self, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        self.artifact_gallery(None, cx)
+    }
+
+    pub(super) fn artifact_gallery(
+        &mut self,
+        task_id: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let read_key = task_id
+            .map(|id| format!("artifact-read:{id}"))
+            .unwrap_or_else(|| "artifact-read".into());
         let entries = self
             .responses
             .get("artifact-library")
@@ -765,8 +776,8 @@ impl Workbench {
             .flex_col()
             .flex_1()
             .overflow_y_scroll()
-            .p_6()
-            .gap_4()
+            .p_3()
+            .gap_3()
             .child(Self::header(
                 "Artifacts",
                 "Documents and interactive previews created by your agents.",
@@ -779,7 +790,10 @@ impl Workbench {
                         cx.notify();
                     })),
             );
-        for entry in entries {
+        for entry in entries.into_iter().filter(|entry| {
+            task_id.is_none_or(|task| entry.get("taskId").and_then(Value::as_str) == Some(task))
+        }) {
+            let key = read_key.clone();
             let id = entry
                 .get("id")
                 .and_then(Value::as_str)
@@ -801,7 +815,7 @@ impl Workbench {
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.request(
-                            "artifact-read",
+                            key.clone(),
                             "/api/artifacts/read",
                             json!({"taskId":task_id,"id":id}),
                         );
@@ -811,7 +825,7 @@ impl Workbench {
         }
         if let Some(artifact) = self
             .responses
-            .get("artifact-read")
+            .get(&read_key)
             .and_then(|value| value.get("artifact"))
         {
             let content = artifact

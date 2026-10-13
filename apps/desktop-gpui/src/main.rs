@@ -1,3 +1,4 @@
+mod assets;
 mod connection;
 mod device_preview;
 mod drafts;
@@ -20,7 +21,10 @@ mod workbench;
 use anyhow::{Context, Result};
 use gpui_kit::*;
 use storage::Storage;
-use workbench::{FocusComposer, NewTask, Quit, Search, SendMessage, ToggleTaskSidebar, Workbench};
+use workbench::{
+    FocusComposer, NewTask, Quit, Search, SendMessage, ToggleTaskSidebar, ToggleTerminal,
+    ToggleTools, Workbench,
+};
 
 const APP_ID: &str = "dev.dovo.studio.gpui";
 
@@ -70,7 +74,7 @@ fn run() -> Result<()> {
     #[cfg(not(target_os = "linux"))]
     let application = gpui_kit::application();
     application
-        .with_assets(gpui_kit::assets::AllAssets)
+        .with_assets(assets::AppAssets::new()?)
         .run(move |cx| {
             cx.set_app_identity(APP_ID, "Dovo Studio GPUI");
             if let Err(error) = workbench::appearance::load_fonts(cx) {
@@ -110,6 +114,8 @@ fn run() -> Result<()> {
                     Some("DovoComposer > Input"),
                 ),
                 KeyBinding::new("secondary-l", FocusComposer, Some("DovoWorkbench")),
+                KeyBinding::new("ctrl-`", ToggleTerminal, Some("DovoWorkbench")),
+                KeyBinding::new("secondary-shift-b", ToggleTools, Some("DovoWorkbench")),
             ]);
             if let Some(html) = preview
                 && let Err(error) = web_content::open_html(

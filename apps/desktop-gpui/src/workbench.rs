@@ -49,6 +49,7 @@ mod shell;
 mod task_context;
 mod task_controls;
 pub(crate) mod task_defaults;
+mod task_dock;
 mod task_review;
 mod task_revisions;
 mod tasks;
@@ -63,7 +64,9 @@ actions!(
         NewTask,
         Search,
         ToggleTaskSidebar,
-        FocusComposer
+        FocusComposer,
+        ToggleTerminal,
+        ToggleTools
     ]
 );
 
@@ -139,9 +142,10 @@ pub enum TaskTab {
     Review,
     Devices,
     Changes,
-    Terminal,
     Browser,
     Files,
+    LinkedProjects,
+    Artifacts,
 }
 
 pub struct Workbench {
@@ -150,6 +154,11 @@ pub struct Workbench {
     appearance: crate::storage::Appearance,
     layout: crate::storage::WorkbenchLayout,
     task_panels: Entity<gpui_kit::component::resizable::ResizableState>,
+    tool_panels: Entity<gpui_kit::component::resizable::ResizableState>,
+    terminal_panels: Entity<gpui_kit::component::resizable::ResizableState>,
+    tools_expanded: bool,
+    bottom_terminal_open: bool,
+    last_tool: TaskTab,
     registry: Registry,
     servers: servers::Servers,
     fleet_serial: u64,
@@ -263,6 +272,8 @@ impl Workbench {
         let appearance = storage.appearance()?;
         let layout = storage.layout()?;
         let task_panels = cx.new(|_| gpui_kit::component::resizable::ResizableState::default());
+        let tool_panels = cx.new(|_| gpui_kit::component::resizable::ResizableState::default());
+        let terminal_panels = cx.new(|_| gpui_kit::component::resizable::ResizableState::default());
         use gpui_kit::component::{Theme, ThemeMode};
         match appearance {
             crate::storage::Appearance::System => Theme::sync_system_appearance(Some(window), cx),
@@ -320,6 +331,11 @@ impl Workbench {
             appearance,
             layout,
             task_panels,
+            tool_panels,
+            terminal_panels,
+            tools_expanded: false,
+            bottom_terminal_open: false,
+            last_tool: TaskTab::Files,
             registry,
             servers: servers::Servers::new(&initial)?,
             fleet_serial: 0,
@@ -448,7 +464,15 @@ impl Workbench {
                     .await;
                 if this
                     .update(cx, |this, _| {
-                        if this.page == Page::Computers
+                        if (this.page == Page::Computers
+                            || (this.page == Page::Tasks
+                                && this.layout.task_sidebar_visible
+                                && !this.tools_expanded
+                                && !this.search_open
+                                && this.registry.profiles.len()
+                                    + this.servers.session_connections(&this.registry).len()
+                                    > 1))
+                            && !this.servers.switching
                             && this.fleet_updated.is_none_or(|time| {
                                 time.elapsed() >= std::time::Duration::from_secs(15)
                             })
@@ -676,6 +700,9 @@ impl Workbench {
                 self.terminal_status.clear();
                 self.terminal_selection = None;
                 self.selected_terminal = None;
+                self.bottom_terminal_open = false;
+                self.tools_expanded = false;
+                self.tab = TaskTab::Chat;
                 self.status = "Connecting…".into();
             }
             Event::Status {
@@ -714,6 +741,9 @@ impl Workbench {
                     self.terminal_status.clear();
                     self.terminal_selection = None;
                     self.selected_terminal = None;
+                    self.bottom_terminal_open = false;
+                    self.tools_expanded = false;
+                    self.tab = TaskTab::Chat;
                 }
                 self.generation = generation;
                 self.online = online;
@@ -792,6 +822,13 @@ impl Workbench {
                     }
                 }
                 self.refresh_messages();
+                if (self.registry.profiles.len()
+                    + self.servers.session_connections(&self.registry).len()
+                    > 1)
+                    && self.fleet_updated.is_none()
+                {
+                    self.refresh_fleet();
+                }
             }
             Event::Response {
                 generation,
@@ -1125,15 +1162,13 @@ impl Workbench {
                         if key == "preferences-save" {
                             self.responses.insert("preferences".into(), value.clone());
                         }
-                        if self.page == Page::Tasks
+                        if matches!(self.page, Page::Tasks | Page::Archived)
+                            && self.bottom_terminal_open
                             && (key.strip_prefix("terminal:") == self.selected_task.as_deref()
                                 || key.strip_prefix("terminal-run:")
                                     == self.selected_task.as_deref())
                             && let Some(id) = value.get("id").and_then(Value::as_str)
                         {
-                            if key.starts_with("terminal-run:") {
-                                self.tab = TaskTab::Terminal;
-                            }
                             self.selected_terminal = Some(id.to_owned());
                             self.terminal_screens
                                 .entry(id.to_owned())
@@ -1312,6 +1347,8 @@ impl Workbench {
         self.page = Page::Tasks;
         self.new_task = false;
         self.tab = TaskTab::Chat;
+        self.bottom_terminal_open = false;
+        self.tools_expanded = false;
         self.selected_file = None;
         self.selected_terminal = None;
         self.terminal_screens.clear();
@@ -1505,7 +1542,7 @@ impl Workbench {
             self.messages.clear();
             self.list.reset(0);
             self.command(Command::Select(None));
-        } else if self.tab == TaskTab::Terminal
+        } else if self.bottom_terminal_open
             && let Some(id) = self.selected_task.clone()
         {
             self.request(
@@ -1639,6 +1676,32 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &ToggleTaskSidebar, _, cx| {
                 this.toggle_task_sidebar(cx);
             }))
+            .on_action(cx.listener(|this, _: &ToggleTerminal, window, cx| {
+                if matches!(this.page, Page::Tasks | Page::Archived)
+                    && !this.new_task
+                    && !this.search_open
+                    && !this.servers.switching
+                {
+                    this.set_bottom_terminal(!this.bottom_terminal_open, window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &ToggleTools, window, cx| {
+                if matches!(this.page, Page::Tasks | Page::Archived)
+                    && !this.new_task
+                    && !this.search_open
+                    && !this.servers.switching
+                {
+                    this.open_task_tab(
+                        if this.tab == TaskTab::Chat {
+                            this.last_tool
+                        } else {
+                            TaskTab::Chat
+                        },
+                        window,
+                        cx,
+                    );
+                }
+            }))
             .on_action(cx.listener(|this, _: &FocusComposer, window, cx| {
                 if matches!(this.page, Page::Tasks | Page::Archived)
                     && !this.search_open
@@ -1646,7 +1709,10 @@ impl Render for Workbench {
                     && !this.new_task
                     && this.task().is_some_and(|task| !task.is_archived())
                 {
-                    this.open_task_tab(TaskTab::Chat, window, cx);
+                    if this.tools_expanded || !this.tools_fit(window) {
+                        this.tools_expanded = false;
+                        this.open_task_tab(TaskTab::Chat, window, cx);
+                    }
                     this.composer
                         .update(cx, |input, cx| input.focus(window, cx));
                 }

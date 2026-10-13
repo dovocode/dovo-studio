@@ -5,14 +5,19 @@ artifacts, remote browser viewing and MCP app resources use isolated Wry child w
 remains available while parity is completed.
 
 The native workbench follows Electron's navigation with a compact editor-style shell: an icon
-activity rail, grouped task sidebar, task tabs, centered conversations and a framed composer. Agent,
-integration and resource configuration live in the Settings navigation panel. System, Light and Dark
+activity rail, grouped task sidebar, a persistent right tools rail and a resizable bottom terminal.
+Conversations stay visible beside tools on wider windows; panes can expand into the editor area.
+Agent, integration and resource configuration live in the Settings navigation panel. System, Light and Dark
 appearance preferences remain available. Inter 4.1 is embedded for consistent typography; its SIL
 Open Font License is included in `assets/fonts/LICENSE.txt` and packaged under `licenses/Inter.txt`.
+Provider icon notices are packaged under `licenses/brand-icons.md`.
 
 Drag the task sidebar divider to resize it; its width and visibility persist across restarts.
 Use **Ctrl/Cmd+B** or the title-bar sidebar button for a wider conversation, and **Ctrl/Cmd+L** to
-return to Chat and focus the composer. The task-list filter selects all tasks, running tasks, or
+focus the composer while keeping the right pane open. **Ctrl+backtick** toggles the bottom terminal and
+**Ctrl/Cmd+Shift+B** toggles the right tools pane. Tool width and terminal height also persist.
+The right rail opens files, linked projects, task artifacts, changes, agents, side conversations,
+code review, browser sessions and devices. The task-list filter selects all tasks, running tasks, or
 tasks needing attention; approvals and questions from child tasks also flag their parent.
 Composer context shows the frozen provider/model plus next-turn overrides and the checkout mode,
 with links to task settings. Conversation headers show each recorded turn's provider/model and
@@ -46,7 +51,11 @@ never retried automatically.
 Use the server picker in the title bar to switch between paired computers. **Computers** lets you
 pair more servers, give them recognizable names, and search tasks across their separate workspaces.
 Switching back restores that server's last selected task and its private composer draft. The
-selected server owns the workbench, while the overview fetches all servers independently.
+selected server owns the workbench, while the overview fetches all servers independently. The task
+sidebar also shows threads from other servers; clicking one switches to its source and restores
+its draft. Server names and configured machine icons appear in each thread, alongside the same
+provider logos used by Electron. Other servers refresh every 15 seconds while the sidebar is visible;
+its refresh button updates them immediately.
 
 For development or an existing connection-file deployment, repeat `--connection-file PATH` to load
 multiple servers for the current app session. The first file is selected; tokens stay in memory and

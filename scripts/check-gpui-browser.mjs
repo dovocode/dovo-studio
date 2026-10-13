@@ -128,14 +128,14 @@ try {
     assert(children.at(-1).exitCode === null, 'Native workbench exited while closing a browser')
   }
   await click(280, 273)
-  await click(716, 214)
+  await click(1270, 495)
   await delay(300)
-  await click(834, 332)
+  await click(1000, 285)
   await key('ctrl+a')
   await type(fixture.url + '/?set=work')
-  await click(576, 370)
+  await click(980, 322)
   for (let index = 0; index < 3; index++) {
-    await click(922, 408)
+    await click(1030, 360)
     await until(
       async () =>
         (await events()).browserCalls.filter((c) => c.method === 'open').length === index + 1,
@@ -152,8 +152,13 @@ try {
       'profile cookie persisted',
     )
     await click(228, 288)
-    await click(1231, 120)
-    await click(1078, 254)
+    if (index === 1) {
+      await x('windowraise', registeredWindow.trim().split('\n')[0])
+      await click(1055, 436)
+    } else {
+      await click(1231, 120)
+      await click(1078, 254)
+    }
     await until(
       async () =>
         (await events()).browserCalls.filter((c) => c.method === 'close').length === index + 1,

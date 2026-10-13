@@ -19,6 +19,8 @@ pub struct TaskEntry {
     pub title: String,
     pub project: String,
     pub status: TaskStatus,
+    pub provider: String,
+    pub needs_input: bool,
 }
 #[derive(Clone)]
 pub struct Summary {
@@ -30,6 +32,7 @@ pub struct Summary {
     pub approvals: usize,
     pub questions: usize,
     pub task_entries: Vec<TaskEntry>,
+    pub runtime_icon: String,
 }
 pub async fn summary(client: &RuntimeClient) -> Result<Summary> {
     let value = tokio::time::timeout(Duration::from_secs(10), client.snapshot(None))
@@ -50,20 +53,52 @@ pub async fn summary(client: &RuntimeClient) -> Result<Summary> {
     });
     let task_entries = tasks
         .iter()
-        .map(|task| TaskEntry {
-            id: task.id.clone(),
-            title: task.title.clone(),
-            status: task.status,
-            project: snapshot
-                .workspace
-                .repositories
-                .iter()
-                .find(|repo| repo.id == task.repository_id)
-                .map(|repo| repo.name.clone())
-                .unwrap_or_else(|| "General".into()),
+        .map(|task| {
+            let family = crate::task_family::ids(&snapshot.workspace.tasks, &task.id);
+            TaskEntry {
+                id: task.id.clone(),
+                title: task.title.clone(),
+                status: task.status,
+                provider: task
+                    .extra
+                    .get("harness")
+                    .and_then(|h| h.get("provider"))
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| {
+                        snapshot
+                            .workspace
+                            .agents
+                            .iter()
+                            .find(|a| a.id == task.agent_id)
+                            .map(|a| a.provider.name())
+                    })
+                    .unwrap_or("")
+                    .into(),
+                needs_input: snapshot
+                    .approvals
+                    .iter()
+                    .any(|a| family.contains(&a.task_id))
+                    || snapshot
+                        .questions
+                        .iter()
+                        .any(|q| family.contains(&q.task_id)),
+                project: snapshot
+                    .workspace
+                    .repositories
+                    .iter()
+                    .find(|repo| repo.id == task.repository_id)
+                    .map(|repo| repo.name.clone())
+                    .unwrap_or_else(|| "General".into()),
+            }
         })
         .collect();
     Ok(Summary {
+        runtime_icon: snapshot
+            .extra
+            .get("runtimeIcon")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("desktop")
+            .into(),
         task_entries,
         projects: snapshot
             .workspace
