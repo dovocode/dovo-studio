@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client';
 import { Conversation, ConversationContent, ConversationHistory } from './src/components/ai-elements/conversation.tsx';
 import { DeferredTurn } from '../extension-tasks/src/chat/thread/deferred-turn.tsx';
 window.rendered = [];
-createRoot(document.getElementById('app')).render(<Conversation id="conversation" style={{height:500,width:600}}><ConversationHistory><ConversationContent style={{display:'flex',flexDirection:'column',gap:8}}>{Array.from({length:500},(_,index)=><DeferredTurn key={index} immediate={index>=498}>{()=>{window.rendered.push(index);return <div id={'message-'+index} style={{height:240}}>Message {index}</div>}}</DeferredTurn>)}</ConversationContent></ConversationHistory></Conversation>);
+createRoot(document.getElementById('app')).render(<Conversation id="conversation" style={{height:500,width:600}}><ConversationHistory><ConversationContent style={{display:'flex',flexDirection:'column',gap:8}}>{Array.from({length:500},(_,index)=><DeferredTurn key={index} id={'turn-'+index} pinned={index>=498}>{()=>{window.rendered.push(index);return <div id={'message-'+index} style={{height:240}}>Message {index}</div>}}</DeferredTurn>)}</ConversationContent></ConversationHistory></Conversation>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/studio-ui/', import.meta.url)),
     loader: 'tsx',
