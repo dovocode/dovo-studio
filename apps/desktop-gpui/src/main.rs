@@ -70,9 +70,14 @@ fn run() -> Result<()> {
     #[cfg(not(target_os = "linux"))]
     let application = gpui_kit::application();
     application
-        .with_assets(gpui_kit::assets::Assets)
+        .with_assets(gpui_kit::assets::AllAssets)
         .run(move |cx| {
             cx.set_app_identity(APP_ID, "Dovo Studio GPUI");
+            if let Err(error) = workbench::appearance::load_fonts(cx) {
+                eprintln!("Could not load the bundled UI fonts: {error:#}");
+                cx.quit();
+                return;
+            }
             gpui_kit::init(cx);
             workbench::init(cx);
             cx.set_prompt_builder(prompts::render_prompt);
@@ -95,6 +100,7 @@ fn run() -> Result<()> {
             cx.bind_keys([
                 KeyBinding::new("secondary-q", Quit, None),
                 KeyBinding::new("secondary-enter", SendMessage, Some("DovoWorkbench")),
+                KeyBinding::new("secondary-enter", SendMessage, Some("DovoComposer > Input")),
                 KeyBinding::new("secondary-n", NewTask, Some("DovoWorkbench")),
                 KeyBinding::new("secondary-k", Search, Some("DovoWorkbench")),
             ]);
@@ -117,9 +123,9 @@ fn run() -> Result<()> {
                 window_min_size: Some(size(px(840.), px(560.))),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Dovo Studio GPUI".into()),
-                    ..Default::default()
+                    ..gpui_kit::component::TitleBar::title_bar_options()
                 }),
-                ..Default::default()
+                ..gpui_kit::component::TitleBar::window_options()
             };
             match gpui_kit::open_window(options, cx, move |window, cx| {
                 cx.new(|cx| {

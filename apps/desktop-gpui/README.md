@@ -4,6 +4,12 @@ A parallel Rust desktop client for the existing Dovo runtime. The workbench uses
 artifacts, remote browser viewing and MCP app resources use isolated Wry child windows. Electron
 remains available while parity is completed.
 
+The native workbench follows Electron's navigation with a compact editor-style shell: an icon
+activity rail, grouped task sidebar, task tabs, centered conversations and a framed composer. Agent,
+integration and resource configuration live in the Settings navigation panel. System, Light and Dark
+appearance preferences remain available. Inter 4.1 is embedded for consistent typography; its SIL
+Open Font License is included in `assets/fonts/LICENSE.txt` and packaged under `licenses/Inter.txt`.
+
 ## Run
 
 Install the repository's locked pnpm dependencies and a current stable Rust toolchain, then:

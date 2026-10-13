@@ -52,6 +52,11 @@ try {
   )
   await chmod(join(binaryDirectory, executable), 0o755)
   await cp(join(root, 'apps/desktop-gpui/README.md'), join(base, 'README.md'))
+  await mkdir(join(base, 'licenses'), { recursive: true })
+  await cp(
+    join(root, 'apps/desktop-gpui/assets/fonts/LICENSE.txt'),
+    join(base, 'licenses/Inter.txt'),
+  )
   await writeFile(join(base, 'VERSION'), `${version}\n`)
   if (process.platform === 'linux') {
     for (const file of [

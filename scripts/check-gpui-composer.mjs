@@ -118,9 +118,9 @@ try {
       `native draft equals ${JSON.stringify(expected)}`,
     )
   }
-  await click(430, 270)
+  await click(280, 330)
   await delay(350)
-  await click(735, 735)
+  await click(650, 750)
   await type('Inspect @hel')
   await delay(600)
   await key('Tab')
@@ -160,8 +160,24 @@ try {
         message.text === 'Review the changes so far.',
     )
   }, 'review command reaches runtime with review mode')
+  await click(650, 750)
+  await type('Explain the repository structure.')
+  await key('ctrl+Return')
+  await until(async () => {
+    const response = await fetch(connection.address + '/api/snapshot', {
+      headers: { Authorization: 'Bearer ' + connection.token },
+    })
+    assert(response.ok)
+    const snapshot = await response.json()
+    return snapshot.workspace.tasks
+      .find((task) => task.id === fixture.taskId)
+      .messages.some(
+        (message) =>
+          message.role === 'user' && message.text === 'Explain the repository structure.',
+      )
+  }, 'Ctrl+Enter sends from the native composer')
   console.log(
-    'Native composer verified: file/skill/MCP/prompt completion, Unicode, surrounding text and review command.',
+    'Native composer verified: file/skill/MCP/prompt completion, Unicode, surrounding text, review command and Ctrl+Enter sending.',
   )
 } catch (error) {
   console.error(diagnostics.join('').slice(-4000))

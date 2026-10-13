@@ -446,7 +446,7 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         self.update_mentions(cx);
-        let mut root = div().flex().flex_col().gap_2();
+        let mut root = div().key_context("DovoComposer").flex().flex_col().gap_2();
         if let Some((id, current)) = self.mentions.current.clone()
             && id == task.id
             && self.mentions.dismissed.as_ref() != Some(&(id, current.clone()))
@@ -485,7 +485,7 @@ impl Workbench {
                     }
                     if !items.is_empty() {
                         root = root
-                            .key_context("DovoComposerMentions")
+                            .key_context("DovoComposer DovoComposerMentions")
                             .on_action(cx.listener(|this, _: &NextMention, window, cx| {
                                 this.mention_action("down", window, cx)
                             }))
@@ -503,7 +503,12 @@ impl Workbench {
                 Err(error) => root = root.child(error.to_string()),
             }
         }
-        root.child(Textarea::new(&self.composer)).into_any_element()
+        root.child(
+            Textarea::new(&self.composer)
+                .appearance(false)
+                .bordered(false),
+        )
+        .into_any_element()
     }
 }
 #[cfg(test)]

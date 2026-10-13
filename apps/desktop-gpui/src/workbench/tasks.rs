@@ -1,5 +1,9 @@
 use super::*;
 use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::{
+    assets::IconName as UiIcon,
+    component::{Icon, Sizable},
+};
 
 impl Workbench {
     pub(super) fn tasks_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -28,61 +32,201 @@ impl Workbench {
         let mut tasks = tasks;
         tasks.sort_by(|a, b| {
             b.pinned
-                .cmp(&a.pinned)
+                .unwrap_or(false)
+                .cmp(&a.pinned.unwrap_or(false))
+                .then_with(|| {
+                    let active = |task: &Task| {
+                        matches!(task.status, TaskStatus::Running | TaskStatus::Review)
+                    };
+                    active(b).cmp(&active(a))
+                })
                 .then_with(|| b.created_at.cmp(&a.created_at))
         });
+        let count = tasks.len();
+        let mut rows = Vec::new();
+        let mut last_section = "";
+        for task in tasks {
+            let section = if task.pinned.unwrap_or(false) {
+                "Pinned"
+            } else if matches!(task.status, TaskStatus::Running | TaskStatus::Review) {
+                "Active"
+            } else {
+                "Recent"
+            };
+            if section != last_section {
+                rows.push(
+                    div()
+                        .px_3()
+                        .pt_3()
+                        .pb_1()
+                        .text_size(px(11.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(cx.theme().muted_foreground)
+                        .child(section)
+                        .into_any_element(),
+                );
+                last_section = section;
+            }
+            let id = task.id.clone();
+            let selected = self.selected_task.as_ref() == Some(&id) && !self.new_task;
+            let project = self
+                .snapshot
+                .as_ref()
+                .and_then(|snapshot| {
+                    snapshot
+                        .workspace
+                        .repositories
+                        .iter()
+                        .find(|repo| repo.id == task.repository_id)
+                })
+                .map(|repo| repo.name.clone())
+                .unwrap_or_else(|| "No project".into());
+            let date = chrono::DateTime::parse_from_rfc3339(&task.created_at)
+                .map(|date| date.format("%b %e").to_string())
+                .unwrap_or_default();
+            let preview = task
+                .messages
+                .iter()
+                .find(|message| message.role == Role::User)
+                .and_then(|message| message.text.lines().find(|line| !line.trim().is_empty()))
+                .map(str::to_owned);
+            rows.push(
+                div()
+                    .id(SharedString::from(task.id))
+                    .mx_1()
+                    .my(px(1.))
+                    .px_2()
+                    .py_2()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .border_l_2()
+                    .border_color(if selected {
+                        cx.theme().primary
+                    } else {
+                        cx.theme().transparent
+                    })
+                    .bg(if selected {
+                        cx.theme().list_active
+                    } else {
+                        cx.theme().sidebar
+                    })
+                    .cursor_pointer()
+                    .hover(|style| style.bg(cx.theme().list_hover))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(task.title),
+                            )
+                            .children(task.pinned.unwrap_or(false).then(|| {
+                                Icon::new(UiIcon::Pin)
+                                    .size(px(12.))
+                                    .text_color(cx.theme().muted_foreground)
+                            })),
+                    )
+                    .children(preview.map(|text| {
+                        div()
+                            .truncate()
+                            .text_size(px(11.))
+                            .text_color(cx.theme().muted_foreground)
+                            .child(text)
+                    }))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .text_size(px(11.))
+                            .text_color(cx.theme().muted_foreground)
+                            .child(div().truncate().flex_1().min_w_0().child(project))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .size(px(4.))
+                                            .rounded_full()
+                                            .bg(super::appearance::status_color(task.status, cx)),
+                                    )
+                                    .child(task.status.label()),
+                            )
+                            .child(date),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.select_task(id.clone(), window, cx)
+                    }))
+                    .into_any_element(),
+            );
+        }
         let list = div()
             .flex()
             .flex_col()
-            .w(px(265.))
+            .w(px(280.))
             .flex_shrink_0()
             .border_r_1()
             .border_color(cx.theme().border)
-            .child(div().p_3().child(Input::new(&search)))
+            .bg(cx.theme().sidebar)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .h(px(42.))
+                    .px_3()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(if archived { "Archive" } else { "Tasks" })
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(count.to_string()),
+                            ),
+                    )
+                    .child(
+                        Button::new("sidebar-new-task")
+                            .ghost()
+                            .small()
+                            .icon(UiIcon::Plus)
+                            .accessibility_label("New task")
+                            .tooltip("New task")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.page = Page::Tasks;
+                                this.new_task = true;
+                                this.read_task_agents();
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
+                div().px_3().pb_2().child(
+                    Input::new(&search)
+                        .small()
+                        .prefix(Icon::new(UiIcon::Search).size(px(13.))),
+                ),
+            )
             .child(
                 div()
                     .id("task-list")
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .children(tasks.into_iter().map(|task| {
-                        let id = task.id.clone();
-                        div()
-                            .id(SharedString::from(task.id))
-                            .p_3()
-                            .border_b_1()
-                            .border_color(cx.theme().border)
-                            .cursor_pointer()
-                            .bg(if self.selected_task.as_ref() == Some(&id) {
-                                cx.theme().secondary
-                            } else {
-                                cx.theme().background
-                            })
-                            .hover(|style| style.bg(cx.theme().muted))
-                            .child(div().font_weight(FontWeight::MEDIUM).child(format!(
-                                "{}{}",
-                                if task.pinned.unwrap_or(false) {
-                                    "● "
-                                } else {
-                                    ""
-                                },
-                                task.title
-                            )))
-                            .child(
-                                div()
-                                    .mt_1()
-                                    .text_xs()
-                                    .text_color(if task.status == TaskStatus::Running {
-                                        cx.theme().success
-                                    } else {
-                                        cx.theme().muted_foreground
-                                    })
-                                    .child(task.status.label()),
-                            )
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.select_task(id.clone(), window, cx)
-                            }))
-                    })),
+                    .children(rows),
             );
         let detail = if self.new_task {
             self.new_task_page(window, cx)
@@ -102,7 +246,15 @@ impl Workbench {
             .flex()
             .size_full()
             .child(list)
-            .child(div().flex().flex_col().flex_1().min_w_0().child(detail))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .child(detail),
+            )
             .into_any_element()
     }
 
@@ -137,7 +289,7 @@ impl Workbench {
             .max_w(px(700.))
             .child(Self::header(
                 "New task",
-                "The selected runtime owns execution, files and credentials.",
+                "Choose a project and agent, then describe what you want to build.",
             ))
             .child(title)
             .child("Project")
@@ -274,26 +426,47 @@ impl Workbench {
             (TaskTab::Review, "Review"),
             (TaskTab::Devices, "Devices"),
         ];
-        let header = div().flex().items_center().justify_between().p_3().border_b_1().border_color(cx.theme().border)
-            .child(div().flex().flex_col().gap_1().child(div().font_weight(FontWeight::SEMIBOLD).child(title)).child(div().text_xs().text_color(cx.theme().muted_foreground).child(task.status.label())))
-            .child(div().flex().gap_2()
-                .child(Button::new("pin-task").ghost().label(if task.pinned.unwrap_or(false) { "Unpin" } else { "Pin" }).on_click(cx.listener({ let task = task.clone(); move |this, _, _, cx| { this.patch(format!("pin:{}", task.id), WorkspacePatch::update("tasks", task.id.clone(), "pinned", json!(task.pinned), json!(!task.pinned.unwrap_or(false)))); cx.notify(); } })))
-                .child(Button::new("archive-task").ghost().label(if task.is_archived() { "Restore" } else { "Archive" }).disabled(task.status == TaskStatus::Running).on_click(cx.listener({ let task = task.clone(); move |this, _, _, cx| { this.request(format!("lifecycle:{}", task.id), "/api/tasks/lifecycle", json!({"id":task.id,"action":if task.is_archived() {"restore"} else {"archive"}})); cx.notify(); } }))));
+        let header = div().flex().items_center().justify_between().h(px(46.)).flex_shrink_0().px_4().gap_3()
+            .border_b_1().border_color(cx.theme().border)
+            .child(div().flex().items_center().gap_3().min_w_0().flex_1()
+                .child(div().truncate().font_weight(FontWeight::SEMIBOLD).child(title))
+                .child(div().flex().items_center().gap_1().text_size(px(11.)).text_color(cx.theme().muted_foreground)
+                    .child(div().size(px(5.)).rounded_full().bg(super::appearance::status_color(task.status,cx)))
+                    .child(task.status.label())))
+            .child(div().flex().gap_1()
+                .child(Button::new("pin-task").ghost().small().icon(if task.pinned.unwrap_or(false) {UiIcon::PinOff} else {UiIcon::Pin})
+                    .accessibility_label(if task.pinned.unwrap_or(false) {"Unpin task"} else {"Pin task"})
+                    .tooltip(if task.pinned.unwrap_or(false) {"Unpin task"} else {"Pin task"})
+                    .on_click(cx.listener({let task=task.clone();move |this,_,_,cx|{this.patch(format!("pin:{}",task.id),WorkspacePatch::update("tasks",task.id.clone(),"pinned",json!(task.pinned),json!(!task.pinned.unwrap_or(false))));cx.notify();}})))
+                .child(Button::new("archive-task").ghost().small().icon(if task.is_archived() {UiIcon::ArchiveRestore} else {UiIcon::Archive})
+                    .accessibility_label(if task.is_archived() {"Restore task"} else {"Archive task"})
+                    .tooltip(if task.is_archived() {"Restore task"} else {"Archive task"})
+                    .disabled(task.status==TaskStatus::Running)
+                    .on_click(cx.listener({let task=task.clone();move |this,_,_,cx|{this.request(format!("lifecycle:{}",task.id),"/api/tasks/lifecycle",json!({"id":task.id,"action":if task.is_archived(){"restore"}else{"archive"}}));cx.notify();}}))));
         let toolbar = div()
             .id("task-tabs")
             .flex()
             .flex_wrap()
-            .gap_1()
-            .px_3()
-            .py_2()
+            .flex_shrink_0()
+            .bg(cx.theme().tab_bar)
             .border_b_1()
             .border_color(cx.theme().border)
             .children(tabs.into_iter().map(|(tab, label)| {
                 let task_id = task_id.clone();
                 Button::new(label)
                     .ghost()
+                    .small()
+                    .rounded(px(0.))
+                    .h(px(32.))
+                    .px_3()
                     .label(label)
                     .selected(self.tab == tab)
+                    .border_t_2()
+                    .border_color(if self.tab == tab {
+                        cx.theme().primary
+                    } else {
+                        cx.theme().transparent
+                    })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if this.tab == TaskTab::Terminal && tab != TaskTab::Terminal {
                             this.command(Command::DetachTerminals);
@@ -448,10 +621,10 @@ impl Workbench {
         let conversation = list(self.list.clone(), move |index, _, cx| {
             let Some(message) = messages.get(index) else { return div().into_any_element(); };
             let id = message.id.clone(); let task_id = task_id.clone(); let bookmark_service = service.clone(); let bookmarked = message.bookmarked; let attachment_task=task_id.clone();
-            div().px_5().py_3().w_full()
+            div().w_full().flex().justify_center().child(div().px_6().py_4().w_full().max_w(px(820.))
                 .child(div().flex().items_center().justify_between().mb_2()
-                    .child(div().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(if message.role == Role::User { cx.theme().primary } else { cx.theme().success }).child(if message.role == Role::User { "You" } else { "Agent" }))
-                    .when(message.role != Role::User, |header| header.child(Button::new(SharedString::from(format!("bookmark-{id}"))).ghost().label(if bookmarked { "★" } else { "☆" }).on_click(move |_, _, _| {
+                    .child(div().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(cx.theme().foreground).child(if message.role == Role::User { "You" } else { "Agent" }))
+                    .when(message.role != Role::User, |header| header.child(Button::new(SharedString::from(format!("bookmark-{id}"))).ghost().small().icon(if bookmarked {UiIcon::BookmarkCheck} else {UiIcon::Bookmark}).accessibility_label(if bookmarked {"Remove bookmark"} else {"Bookmark message"}).tooltip(if bookmarked {"Remove bookmark"} else {"Bookmark message"}).on_click(move |_, _, _| {
                         if let Err(error) = bookmark_service.send(Command::Request { generation, key: format!("bookmark:{id}"), method: Method::POST, path: "/api/tasks/message/bookmark".into(), input: json!({"id":task_id,"messageId":id,"bookmarked":!bookmarked}) }) { eprintln!("Could not bookmark message: {error}"); }
                     }))))
                 .child(TextView::markdown(SharedString::from(format!("message-{}", message.id)), message.text.clone()).selectable(true).on_link_click(|url, _, _, cx| {
@@ -462,9 +635,89 @@ impl Workbench {
                     Button::new(SharedString::from(format!("attachment-{attachment_id}"))).ghost().label(format!("Download {}",attachment.name))
                         .on_click(move|_,_,cx|{entity.update(cx,|this,cx| {this.request(format!("attachment-read:{task}:{attachment_id}"),"/api/attachments/read",json!({"taskId":task,"id":attachment_id}));cx.notify();});})
                 }))
-                .border_b_1().border_color(cx.theme().border).into_any_element()
+                ).into_any_element()
         }).flex_1().min_h_0();
-        root = root.child(conversation);
+        root =
+            if self.messages.is_empty() {
+                root.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_h_0()
+                        .items_center()
+                        .justify_center()
+                        .p_6()
+                        .gap_3()
+                        .child(
+                            div()
+                                .size(px(44.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(10.))
+                                .bg(cx.theme().muted)
+                                .child(
+                                    Icon::new(UiIcon::Bot)
+                                        .size(px(24.))
+                                        .text_color(cx.theme().primary),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_size(px(17.))
+                                .child("What would you like to build?"),
+                        )
+                        .child(div().text_color(cx.theme().muted_foreground).child(
+                            "Describe a change, ask a question, or start with a suggestion.",
+                        ))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .justify_center()
+                                .gap_2()
+                                .mt_2()
+                                .children(
+                                [
+                                    (
+                                        UiIcon::FolderSearch,
+                                        "Explore project",
+                                        "Explore this project and explain its structure.",
+                                    ),
+                                    (
+                                        UiIcon::ScanEye,
+                                        "Review changes",
+                                        "Review the current changes and point out any problems.",
+                                    ),
+                                    (
+                                        UiIcon::Bug,
+                                        "Find an issue",
+                                        "Inspect this project for a bug worth fixing.",
+                                    ),
+                                ]
+                                .into_iter()
+                                .map(|(icon, label, prompt)| {
+                                    Button::new(label)
+                                        .ghost()
+                                        .small()
+                                        .icon(icon)
+                                        .label(label)
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.composer.update(cx, |input, cx| {
+                                                input.set_value(prompt, window, cx);
+                                                input.focus(window, cx);
+                                            });
+                                            cx.notify();
+                                        }))
+                                }),
+                            ),
+                        ),
+                )
+            } else {
+                root.child(conversation)
+            };
         if !self.activity.is_empty() {
             root = root.child(
                 Button::new("tool-activity-toggle")
@@ -685,12 +938,19 @@ impl Workbench {
             }
             let running = task.status == TaskStatus::Running;
             let sending = self.pending_sends.values().any(|(id, _)| id == &task.id);
-            let mut controls = div().flex().items_center().justify_between().mt_2().child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child("⌘/Ctrl+Enter to send"),
-            );
+            let mut controls = div()
+                .flex()
+                .flex_wrap()
+                .gap_2()
+                .items_center()
+                .justify_between()
+                .mt_2()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!("{} to send", super::shell::shortcut("Enter"))),
+                );
             let mut buttons = div().flex().gap_2();
             if running {
                 let id = task.id.clone();
@@ -698,6 +958,8 @@ impl Workbench {
                 buttons = buttons
                     .child(
                         Button::new("stop-task")
+                            .small()
+                            .icon(UiIcon::Square)
                             .label("Stop")
                             .disabled(run_id.is_none())
                             .on_click(cx.listener(move |this, _, _, cx| {
@@ -711,6 +973,7 @@ impl Workbench {
                     )
                     .child(
                         Button::new("steer-task")
+                            .small()
                             .label("Steer")
                             .disabled(sending || !self.online || task.active_run_id.is_none())
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -721,6 +984,8 @@ impl Workbench {
             buttons = buttons.child(
                 Button::new("send-message")
                     .primary()
+                    .small()
+                    .icon(UiIcon::ArrowUp)
                     .label(if sending {
                         "Sending…"
                     } else if running {
@@ -742,6 +1007,8 @@ impl Workbench {
             buttons = buttons.child(
                 Button::new("attach-file")
                     .ghost()
+                    .small()
+                    .icon(UiIcon::Paperclip)
                     .label(if uploading {
                         "Uploading…"
                     } else {
@@ -777,12 +1044,26 @@ impl Workbench {
             }
             root = root.child(
                 div()
-                    .p_4()
-                    .border_t_1()
-                    .border_color(cx.theme().border)
-                    .child(self.saved_prompt_choices(task, cx))
-                    .child(self.composer_editor(task, window, cx))
-                    .child(controls),
+                    .flex()
+                    .justify_center()
+                    .flex_shrink_0()
+                    .px_5()
+                    .pt_3()
+                    .pb_4()
+                    .child(
+                        div()
+                            .id("task-composer")
+                            .w_full()
+                            .max_w(px(820.))
+                            .p_3()
+                            .rounded(px(6.))
+                            .bg(cx.theme().muted)
+                            .border_1()
+                            .border_color(cx.theme().border)
+                            .child(self.saved_prompt_choices(task, cx))
+                            .child(self.composer_editor(task, window, cx))
+                            .child(controls),
+                    ),
             );
         }
         root.into_any_element()

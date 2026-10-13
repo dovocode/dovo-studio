@@ -80,7 +80,9 @@ try {
   start(binary, ['--connection-file', join(directory, 'runtime-connection.json')], gui)
   await until(async () => {
     try {
-      const { stdout } = await exec('xdotool', ['search', '--name', 'Dovo'], { env: gui })
+      const { stdout } = await exec('xdotool', ['search', '--name', '^Dovo Studio GPUI$'], {
+        env: gui,
+      })
       return stdout.trim()
     } catch {
       return false
@@ -125,15 +127,15 @@ try {
   function alive() {
     assert(children.at(-1).exitCode === null, 'Native workbench exited while closing a browser')
   }
-  await click(440, 202)
-  await click(899, 214)
+  await click(280, 273)
+  await click(716, 214)
   await delay(300)
-  await click(834, 423)
+  await click(834, 332)
   await key('ctrl+a')
   await type(fixture.url + '/?set=work')
-  await click(718, 466)
+  await click(576, 370)
   for (let index = 0; index < 3; index++) {
-    await click(922, 510)
+    await click(922, 408)
     await until(
       async () =>
         (await events()).browserCalls.filter((c) => c.method === 'open').length === index + 1,
@@ -171,41 +173,40 @@ try {
     )
   }
   // Xvfb has no window manager to restore focus after closing a child window.
-  const { stdout: mainWindow } = await x('search', '--name', '^Dovo Studio GPUI$')
-  await x('windowfocus', '--sync', mainWindow.trim().split('\n')[0])
-  await click(205, 580)
+  await x('windowfocus', '--sync', registeredWindow.trim().split('\n')[0])
+  await click(135, 832)
   await delay(350)
-  await click(650, 621)
+  await click(650, 566)
   await type('Native Personal')
-  await click(1219, 621)
+  await click(1225, 566)
   const added = await until(
     async () => (await profiles()).find((p) => p.name === 'Native Personal'),
     'native profile creation',
   )
   await delay(350)
-  await click(650, 621)
+  await click(650, 566)
   await key('ctrl+a')
   await type('Renamed Personal')
-  await click(1122, 621)
+  await click(1153, 566)
   await until(
     async () => (await profiles()).some((p) => p.id === added.id && p.name === 'Renamed Personal'),
     'native profile rename',
   )
   await delay(350)
-  await click(1223, 621)
+  await click(1234, 566)
   await delay(250)
   // Confirmation is below the three profile rows.
-  await click(392, 708)
+  await click(451, 645)
   await until(
     async () => !(await profiles()).some((p) => p.id === added.id),
     'native profile removal',
   )
   alive()
-  await click(205, 688)
+  await click(135, 795)
   await delay(700)
-  await click(800, 679)
+  await click(800, 630)
   await delay(300)
-  await click(735, 735)
+  await click(650, 750)
   await type('Fleet task draft')
   await until(async () => {
     for (const path of await readdir(gui.XDG_DATA_HOME, { recursive: true })) {

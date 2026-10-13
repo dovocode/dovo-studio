@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod acp;
+pub(crate) mod appearance;
 mod attachments;
 mod automation_editor;
 mod automation_runs;
@@ -43,6 +44,7 @@ mod scm_settings;
 mod scm_work;
 pub(crate) mod scoped_agents;
 mod scoped_defaults;
+mod shell;
 mod task_controls;
 pub(crate) mod task_defaults;
 mod task_review;
@@ -249,12 +251,14 @@ impl Workbench {
             crate::storage::Appearance::Light => Theme::change(ThemeMode::Light, Some(window), cx),
             crate::storage::Appearance::Dark => Theme::change(ThemeMode::Dark, Some(window), cx),
         }
+        appearance::apply(cx);
         let weak = cx.weak_entity();
         window
             .observe_window_appearance(move |window, cx| {
                 let _ = weak.update(cx, |this, cx| {
                     if this.appearance == crate::storage::Appearance::System {
                         Theme::sync_system_appearance(Some(window), cx);
+                        appearance::apply(cx);
                     }
                 });
             })
@@ -1396,6 +1400,7 @@ impl Workbench {
             .into_any_element()
     }
     fn start_new_task(&mut self, _: &NewTask, _: &mut Window, cx: &mut Context<Self>) {
+        self.search_open = false;
         self.page = Page::Tasks;
         self.new_task = true;
         self.read_task_agents();
@@ -1465,6 +1470,7 @@ impl Workbench {
         cx.notify();
     }
     fn navigate(&mut self, page: Page, cx: &mut Context<Self>) {
+        self.search_open = false;
         if !matches!(page, Page::Tasks | Page::Archived) {
             self.command(Command::DetachTerminals);
             self.command(Command::DeviceClose);
@@ -1536,15 +1542,20 @@ impl Workbench {
         div()
             .flex()
             .flex_col()
-            .gap_2()
-            .pb_4()
+            .gap_1()
+            .pb_3()
             .child(
                 div()
-                    .text_xl()
+                    .text_size(px(18.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(title.to_owned()),
             )
-            .child(div().text_sm().opacity(0.65).child(subtitle.to_owned()))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .opacity(0.7)
+                    .child(subtitle.to_owned()),
+            )
             .into_any_element()
     }
     fn empty(title: &str, description: &str) -> AnyElement {
@@ -1589,66 +1600,11 @@ impl Render for Workbench {
             }
         };
         let mcp_confirmation = self.mcp_confirmation(cx);
-        let sidebar = div()
-            .id("workspace-sidebar")
-            .overflow_y_scroll()
-            .flex_shrink_0()
-            .flex()
-            .flex_col()
-            .w(px(190.))
-            .flex_shrink_0()
-            .border_r_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().sidebar)
-            .text_color(cx.theme().sidebar_foreground)
-            .p_3()
-            .gap_1()
-            .child(
-                div()
-                    .h(px(48.))
-                    .flex()
-                    .items_center()
-                    .px_2()
-                    .font_weight(FontWeight::BOLD)
-                    .text_lg()
-                    .child("dovo"),
-            )
-            .child(
-                Button::new("new-task")
-                    .primary()
-                    .label("+ New task")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.page = Page::Tasks;
-                        this.new_task = true;
-                        this.read_task_agents();
-                        cx.notify();
-                    })),
-            )
-            .child(div().h_3())
-            .children(Page::ALL.into_iter().map(|page| {
-                Button::new(page.label())
-                    .ghost()
-                    .label(page.label())
-                    .selected(self.page == page)
-                    .on_click(cx.listener(move |this, _, _, cx| this.navigate(page, cx)))
-            }))
-            .child(div().flex_1())
-            .child(
-                Button::new("search")
-                    .ghost()
-                    .label("Search  ⌘K")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.search_open = true;
-                        cx.notify();
-                    })),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .p_2()
-                    .child("Rust · GPUI"),
-            );
+        let sidebar = self.activity_rail(cx);
+        let settings =
+            (self.page.is_settings() && !self.search_open).then(|| self.settings_sidebar(cx));
+        let titlebar = self.workspace_titlebar(cx);
+        let statusbar = self.workspace_statusbar(cx);
         div()
             .key_context("DovoWorkbench")
             .track_focus(&self.focus)
@@ -1663,18 +1619,26 @@ impl Render for Workbench {
             .flex_col()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .text_sm()
+            .font_family(cx.theme().font_family.clone())
+            .text_size(px(13.))
+            .child(titlebar)
             .child(
-                div().flex().flex_1().min_h_0().child(sidebar).child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w_0()
-                        .min_h_0()
-                        .overflow_hidden()
-                        .child(content),
-                ),
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .child(sidebar)
+                    .children(settings)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .min_h_0()
+                            .overflow_hidden()
+                            .child(content),
+                    ),
             )
             .children(mcp_confirmation)
             .children(self.error.clone().map(|error| {
@@ -1717,37 +1681,6 @@ impl Render for Workbench {
                             })),
                     )
             }))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .h(px(30.))
-                    .px_4()
-                    .border_t_1()
-                    .border_color(cx.theme().border)
-                    .text_xs()
-                    .child(
-                        div()
-                            .text_color(if self.online {
-                                cx.theme().success
-                            } else {
-                                cx.theme().warning
-                            })
-                            .child(format!("● {}", self.status)),
-                    )
-                    .child(
-                        Button::new("connection-status")
-                            .ghost()
-                            .label(if self.address.is_empty() {
-                                "Connect a computer".into()
-                            } else {
-                                self.address.clone()
-                            })
-                            .on_click(
-                                cx.listener(|this, _, _, cx| this.navigate(Page::Computers, cx)),
-                            ),
-                    ),
-            )
+            .child(statusbar)
     }
 }

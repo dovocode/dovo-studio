@@ -612,6 +612,7 @@ impl Workbench {
                                                 Theme::change(ThemeMode::Dark, Some(window), cx)
                                             }
                                         }
+                                        super::appearance::apply(cx);
                                     }
                                     Err(error) => this.error = Some(error.to_string()),
                                 }
