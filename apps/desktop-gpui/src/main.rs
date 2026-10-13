@@ -20,7 +20,7 @@ mod workbench;
 use anyhow::{Context, Result};
 use gpui_kit::*;
 use storage::Storage;
-use workbench::{NewTask, Quit, Search, SendMessage, Workbench};
+use workbench::{FocusComposer, NewTask, Quit, Search, SendMessage, ToggleTaskSidebar, Workbench};
 
 const APP_ID: &str = "dev.dovo.studio.gpui";
 
@@ -103,6 +103,13 @@ fn run() -> Result<()> {
                 KeyBinding::new("secondary-enter", SendMessage, Some("DovoComposer > Input")),
                 KeyBinding::new("secondary-n", NewTask, Some("DovoWorkbench")),
                 KeyBinding::new("secondary-k", Search, Some("DovoWorkbench")),
+                KeyBinding::new("secondary-b", ToggleTaskSidebar, Some("DovoWorkbench")),
+                KeyBinding::new(
+                    "secondary-b",
+                    ToggleTaskSidebar,
+                    Some("DovoComposer > Input"),
+                ),
+                KeyBinding::new("secondary-l", FocusComposer, Some("DovoWorkbench")),
             ]);
             if let Some(html) = preview
                 && let Err(error) = web_content::open_html(

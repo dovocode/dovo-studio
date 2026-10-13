@@ -2,8 +2,55 @@ use super::*;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     assets::IconName as UiIcon,
+    component::menu::{DropdownMenu, PopupMenuItem},
     component::{Icon, Sizable},
 };
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum TaskFilter {
+    #[default]
+    All,
+    Active,
+    Attention,
+}
+impl TaskFilter {
+    fn label(self) -> &'static str {
+        match self {
+            Self::All => "All tasks",
+            Self::Active => "Running",
+            Self::Attention => "Needs attention",
+        }
+    }
+    fn includes(self, task: &Task, snapshot: &Snapshot) -> bool {
+        match self {
+            Self::All => true,
+            Self::Active => task.status == TaskStatus::Running,
+            Self::Attention => {
+                matches!(task.status, TaskStatus::Review | TaskStatus::Failed)
+                    || needs_input(task, snapshot).is_some()
+            }
+        }
+    }
+}
+
+fn needs_input(task: &Task, snapshot: &Snapshot) -> Option<&'static str> {
+    let family = crate::task_family::ids(&snapshot.workspace.tasks, &task.id);
+    if snapshot
+        .approvals
+        .iter()
+        .any(|approval| family.contains(&approval.task_id))
+    {
+        Some("Approval")
+    } else if snapshot
+        .questions
+        .iter()
+        .any(|question| family.contains(&question.task_id))
+    {
+        Some("Question")
+    } else {
+        None
+    }
+}
 
 impl Workbench {
     pub(super) fn tasks_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -20,6 +67,7 @@ impl Workbench {
                         .iter()
                         .filter(|task| {
                             task.is_archived() == archived
+                                && self.task_filter.includes(task, snapshot)
                                 && (task.title.to_lowercase().contains(&query)
                                     || task.messages.iter().any(|message| {
                                         message.text.to_lowercase().contains(&query)
@@ -44,6 +92,31 @@ impl Workbench {
         });
         let count = tasks.len();
         let mut rows = Vec::new();
+        let entity = cx.entity();
+        let selected_filter = self.task_filter;
+        let filter = Button::new("task-list-filter")
+            .ghost()
+            .small()
+            .icon(UiIcon::ListFilter)
+            .selected(selected_filter != TaskFilter::All)
+            .accessibility_label("Filter tasks")
+            .tooltip(selected_filter.label())
+            .dropdown_menu(move |mut menu, _, _| {
+                for filter in [TaskFilter::All, TaskFilter::Active, TaskFilter::Attention] {
+                    let entity = entity.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(filter.label())
+                            .checked(filter == selected_filter)
+                            .on_click(move |_, _, cx| {
+                                entity.update(cx, |this, cx| {
+                                    this.task_filter = filter;
+                                    cx.notify();
+                                });
+                            }),
+                    );
+                }
+                menu
+            });
         let mut last_section = "";
         for task in tasks {
             let section = if task.pinned.unwrap_or(false) {
@@ -69,6 +142,10 @@ impl Workbench {
             }
             let id = task.id.clone();
             let selected = self.selected_task.as_ref() == Some(&id) && !self.new_task;
+            let attention = self
+                .snapshot
+                .as_ref()
+                .and_then(|snapshot| needs_input(&task, snapshot));
             let project = self
                 .snapshot
                 .as_ref()
@@ -159,7 +236,12 @@ impl Workbench {
                                             .rounded_full()
                                             .bg(super::appearance::status_color(task.status, cx)),
                                     )
-                                    .child(task.status.label()),
+                                    .text_color(if attention.is_some() {
+                                        cx.theme().warning
+                                    } else {
+                                        cx.theme().muted_foreground
+                                    })
+                                    .child(attention.unwrap_or(task.status.label())),
                             )
                             .child(date),
                     )
@@ -172,10 +254,9 @@ impl Workbench {
         let list = div()
             .flex()
             .flex_col()
-            .w(px(280.))
-            .flex_shrink_0()
-            .border_r_1()
-            .border_color(cx.theme().border)
+            .size_full()
+            .min_w_0()
+            .min_h_0()
             .bg(cx.theme().sidebar)
             .child(
                 div()
@@ -199,18 +280,20 @@ impl Workbench {
                             ),
                     )
                     .child(
-                        Button::new("sidebar-new-task")
-                            .ghost()
-                            .small()
-                            .icon(UiIcon::Plus)
-                            .accessibility_label("New task")
-                            .tooltip("New task")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.page = Page::Tasks;
-                                this.new_task = true;
-                                this.read_task_agents();
-                                cx.notify();
-                            })),
+                        div().flex().gap_1().child(filter).child(
+                            Button::new("sidebar-new-task")
+                                .ghost()
+                                .small()
+                                .icon(UiIcon::Plus)
+                                .accessibility_label("New task")
+                                .tooltip("New task")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.page = Page::Tasks;
+                                    this.new_task = true;
+                                    this.read_task_agents();
+                                    cx.notify();
+                                })),
+                        ),
                     ),
             )
             .child(
@@ -226,34 +309,199 @@ impl Workbench {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .children(rows),
+                    .children(rows)
+                    .when(count == 0, |list| {
+                        list.child(
+                            div()
+                                .px_3()
+                                .py_4()
+                                .text_size(px(12.))
+                                .text_color(cx.theme().muted_foreground)
+                                .child(if query.is_empty() {
+                                    "No tasks in this view."
+                                } else {
+                                    "No tasks match your search."
+                                }),
+                        )
+                    }),
             );
         let detail = if self.new_task {
             self.new_task_page(window, cx)
         } else if let Some(task) = self.task().cloned() {
             self.task_detail(task, window, cx)
         } else {
-            Self::empty(
-                if archived {
-                    "Archived tasks"
-                } else {
-                    "Your agent workspace"
-                },
-                "Choose a task, or create one to start working with an agent.",
-            )
+            self.task_welcome(archived, cx)
         };
+        let detail = div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .min_w_0()
+            .min_h_0()
+            .child(detail);
+        if !self.layout.task_sidebar_visible {
+            return detail.into_any_element();
+        }
+        use gpui_kit::component::resizable::{h_resizable, resizable_panel};
+        let entity = cx.entity();
+        h_resizable("task-workspace-panels")
+            .with_state(&self.task_panels)
+            .child(
+                resizable_panel()
+                    .size(px(self.layout.task_sidebar_width))
+                    .size_range(px(220.)..px(440.))
+                    .child(list),
+            )
+            .child(
+                resizable_panel()
+                    .size_range(px(400.)..Pixels::MAX)
+                    .child(detail),
+            )
+            .on_resize(move |state, _, cx| {
+                if let Some(width) = state.read(cx).sizes().first().copied() {
+                    entity.update(cx, |this, cx| {
+                        this.layout.task_sidebar_width = f32::from(width).round().clamp(220., 440.);
+                        this.save_layout(cx);
+                    });
+                }
+            })
+            .into_any_element()
+    }
+
+    fn save_layout(&mut self, cx: &mut Context<Self>) {
+        if let Err(error) = self.storage.save_layout(&self.layout) {
+            self.error = Some(error.to_string());
+        }
+        cx.notify();
+    }
+
+    pub(super) fn toggle_task_sidebar(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.page, Page::Tasks | Page::Archived) && !self.search_open {
+            self.layout.task_sidebar_visible = !self.layout.task_sidebar_visible;
+            self.save_layout(cx);
+        }
+    }
+
+    fn task_welcome(&self, archived: bool, cx: &mut Context<Self>) -> AnyElement {
         div()
             .flex()
-            .size_full()
-            .child(list)
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .items_center()
+            .justify_center()
+            .p_6()
+            .gap_3()
+            .child(
+                div()
+                    .size(px(48.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(12.))
+                    .bg(cx.theme().muted)
+                    .child(
+                        Icon::new(if archived {
+                            UiIcon::Archive
+                        } else {
+                            UiIcon::Bot
+                        })
+                        .size(px(26.))
+                        .text_color(cx.theme().primary),
+                    ),
+            )
+            .child(
+                div()
+                    .text_size(px(20.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(if archived {
+                        "Archived tasks"
+                    } else {
+                        "Your agent workspace"
+                    }),
+            )
+            .child(
+                div()
+                    .max_w(px(360.))
+                    .text_center()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(if self.snapshot.is_none() {
+                        "Connect a computer to work with its projects and agents."
+                    } else {
+                        "Open a task to pick up your work, or start a new conversation."
+                    }),
+            )
             .child(
                 div()
                     .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .min_h_0()
-                    .child(detail),
+                    .flex_wrap()
+                    .justify_center()
+                    .gap_2()
+                    .mt_2()
+                    .when(self.snapshot.is_some(), |actions| {
+                        actions
+                            .child(
+                                Button::new("welcome-new-task")
+                                    .primary()
+                                    .small()
+                                    .icon(UiIcon::Plus)
+                                    .label("New task")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.page = Page::Tasks;
+                                        this.new_task = true;
+                                        this.read_task_agents();
+                                        cx.notify();
+                                    })),
+                            )
+                            .when(!self.layout.task_sidebar_visible, |actions| {
+                                actions.child(
+                                    Button::new("welcome-browse-tasks")
+                                        .ghost()
+                                        .small()
+                                        .icon(UiIcon::PanelLeft)
+                                        .label("Browse tasks")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.layout.task_sidebar_visible = true;
+                                            this.save_layout(cx);
+                                        })),
+                                )
+                            })
+                            .child(
+                                Button::new("welcome-projects")
+                                    .ghost()
+                                    .small()
+                                    .icon(UiIcon::FolderGit2)
+                                    .label("Projects")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.navigate(Page::Projects, cx)
+                                    })),
+                            )
+                    })
+                    .when(self.snapshot.is_none(), |actions| {
+                        actions.child(
+                            Button::new("welcome-connect")
+                                .primary()
+                                .small()
+                                .icon(UiIcon::Monitor)
+                                .label("Connect computer")
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| {
+                                        this.navigate(Page::Computers, cx)
+                                    }),
+                                ),
+                        )
+                    }),
+            )
+            .child(
+                div()
+                    .mt_3()
+                    .text_size(px(11.))
+                    .text_color(cx.theme().muted_foreground)
+                    .child(format!(
+                        "{} new task   ·   {} search",
+                        super::shell::shortcut("N"),
+                        super::shell::shortcut("K")
+                    )),
             )
             .into_any_element()
     }
@@ -413,7 +661,6 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let title = task.title.clone();
-        let task_id = task.id.clone();
         let tabs = [
             (TaskTab::Chat, "Chat"),
             (TaskTab::Changes, "Changes"),
@@ -434,6 +681,9 @@ impl Workbench {
                     .child(div().size(px(5.)).rounded_full().bg(super::appearance::status_color(task.status,cx)))
                     .child(task.status.label())))
             .child(div().flex().gap_1()
+                .when(self.tab==TaskTab::Chat && !self.messages.is_empty(), |actions| actions.child(Button::new("latest-message").ghost().small().icon(UiIcon::ArrowDown)
+                    .accessibility_label("Jump to latest message").tooltip("Jump to latest message")
+                    .on_click(cx.listener(|this,_,_,cx| {this.list.scroll_to_end();cx.notify();}))))
                 .child(Button::new("pin-task").ghost().small().icon(if task.pinned.unwrap_or(false) {UiIcon::PinOff} else {UiIcon::Pin})
                     .accessibility_label(if task.pinned.unwrap_or(false) {"Unpin task"} else {"Pin task"})
                     .tooltip(if task.pinned.unwrap_or(false) {"Unpin task"} else {"Pin task"})
@@ -452,7 +702,6 @@ impl Workbench {
             .border_b_1()
             .border_color(cx.theme().border)
             .children(tabs.into_iter().map(|(tab, label)| {
-                let task_id = task_id.clone();
                 Button::new(label)
                     .ghost()
                     .small()
@@ -467,59 +716,8 @@ impl Workbench {
                     } else {
                         cx.theme().transparent
                     })
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.tab == TaskTab::Terminal && tab != TaskTab::Terminal {
-                            this.command(Command::DetachTerminals);
-                            this.selected_terminal = None;
-                        }
-                        if this.tab == TaskTab::Devices && tab != TaskTab::Devices {
-                            this.command(Command::DeviceClose);
-                            this.device_preview = None;
-                        }
-                        this.tab = tab;
-                        match tab {
-                            TaskTab::Changes => {
-                                if let Some(task) = this.task().cloned()
-                                    && !this.snapshot.as_ref().is_some_and(|snapshot| {
-                                        snapshot.workspace.repositories.iter().any(|repo| {
-                                            repo.id == task.repository_id && repo.kind.is_some()
-                                        })
-                                    })
-                                {
-                                    this.request(
-                                        format!("changes:{task_id}"),
-                                        "/api/scm/changes",
-                                        json!({"repositoryId":task.repository_id,"taskId":task_id}),
-                                    );
-                                }
-                            }
-                            TaskTab::Review => this.refresh_task_review(&task_id),
-                            TaskTab::Devices => {
-                                this.request(
-                                    format!("preview-devices:{task_id}"),
-                                    "/api/previews/devices",
-                                    json!({"taskId":task_id}),
-                                );
-                                this.request_method(
-                                    "device-host-settings",
-                                    Method::GET,
-                                    "/api/device-hosts",
-                                    json!({}),
-                                );
-                            }
-                            TaskTab::Files => this.request(
-                                format!("files:{task_id}"),
-                                "/api/tasks/files/list",
-                                json!({"id":task_id}),
-                            ),
-                            TaskTab::Terminal => this.request(
-                                format!("terminal:{task_id}"),
-                                "/api/terminals/ensure",
-                                json!({"taskId":task_id}),
-                            ),
-                            _ => {}
-                        }
-                        cx.notify();
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.open_task_tab(tab, window, cx);
                     }))
             }));
         let content = match self.tab {
@@ -542,6 +740,74 @@ impl Workbench {
             .child(toolbar)
             .child(content)
             .into_any_element()
+    }
+
+    pub(super) fn open_task_tab(
+        &mut self,
+        tab: TaskTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(task_id) = self.selected_task.clone() else {
+            return;
+        };
+        if self.tab == TaskTab::Terminal && tab != TaskTab::Terminal {
+            self.command(Command::DetachTerminals);
+            self.selected_terminal = None;
+        }
+        if self.tab == TaskTab::Devices && tab != TaskTab::Devices {
+            self.command(Command::DeviceClose);
+            self.device_preview = None;
+        }
+        self.tab = tab;
+        // A tab change removes the focused editor or terminal from the dispatch tree.
+        // Keep workspace shortcuts reachable until the next editor claims focus.
+        window.focus(&self.focus, cx);
+        match tab {
+            TaskTab::Changes => {
+                if let Some(task) = self.task().cloned()
+                    && !self.snapshot.as_ref().is_some_and(|snapshot| {
+                        snapshot
+                            .workspace
+                            .repositories
+                            .iter()
+                            .any(|repo| repo.id == task.repository_id && repo.kind.is_some())
+                    })
+                {
+                    self.request(
+                        format!("changes:{task_id}"),
+                        "/api/scm/changes",
+                        json!({"repositoryId":task.repository_id,"taskId":task_id}),
+                    );
+                }
+            }
+            TaskTab::Review => self.refresh_task_review(&task_id),
+            TaskTab::Devices => {
+                self.request(
+                    format!("preview-devices:{task_id}"),
+                    "/api/previews/devices",
+                    json!({"taskId":task_id}),
+                );
+                self.request_method(
+                    "device-host-settings",
+                    Method::GET,
+                    "/api/device-hosts",
+                    json!({}),
+                );
+            }
+            TaskTab::Files => self.request(
+                format!("files:{task_id}"),
+                "/api/tasks/files/list",
+                json!({"id":task_id}),
+            ),
+            TaskTab::Terminal => self.request(
+                format!("terminal:{task_id}"),
+                "/api/terminals/ensure",
+                json!({"taskId":task_id}),
+            ),
+            _ => {}
+        }
+        cx.notify();
     }
 
     fn conversation(
@@ -618,18 +884,41 @@ impl Workbench {
         let service = self.service.clone();
         let conversation_entity = cx.entity();
         let generation = self.generation;
+        let turns = self.task_with_history(task).turns;
         let conversation = list(self.list.clone(), move |index, _, cx| {
             let Some(message) = messages.get(index) else { return div().into_any_element(); };
-            let id = message.id.clone(); let task_id = task_id.clone(); let bookmark_service = service.clone(); let bookmarked = message.bookmarked; let attachment_task=task_id.clone();
-            div().w_full().flex().justify_center().child(div().px_6().py_4().w_full().max_w(px(820.))
-                .child(div().flex().items_center().justify_between().mb_2()
-                    .child(div().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(cx.theme().foreground).child(if message.role == Role::User { "You" } else { "Agent" }))
-                    .when(message.role != Role::User, |header| header.child(Button::new(SharedString::from(format!("bookmark-{id}"))).ghost().small().icon(if bookmarked {UiIcon::BookmarkCheck} else {UiIcon::Bookmark}).accessibility_label(if bookmarked {"Remove bookmark"} else {"Bookmark message"}).tooltip(if bookmarked {"Remove bookmark"} else {"Bookmark message"}).on_click(move |_, _, _| {
+            let id = message.id.clone();
+            let task_id = task_id.clone();
+            let bookmark_service = service.clone();
+            let bookmarked = message.bookmarked;
+            let attachment_task = task_id.clone();
+            let text = message.text.clone();
+            let user = message.role == Role::User;
+            let turn = turns.iter().find(|turn| turn.assistant_id == message.id);
+            let header = div().flex().items_center().gap_2().min_w_0()
+                .child(div().flex().items_center().justify_center().size(px(24.)).flex_shrink_0().rounded(px(5.))
+                    .bg(if user {cx.theme().muted} else {cx.theme().primary.opacity(0.12)})
+                    .text_color(if user {cx.theme().muted_foreground} else {cx.theme().primary})
+                    .child(Icon::new(if user {UiIcon::UserRound} else {UiIcon::Bot}).size(px(14.))))
+                .child(div().text_size(px(12.)).font_weight(FontWeight::SEMIBOLD).child(if user { "You" } else { "Agent" }))
+                .children(turn.map(|turn| div().min_w_0().truncate().text_size(px(11.)).text_color(cx.theme().muted_foreground).child(format!("{} · {}",turn.provider.name(),if turn.model.is_empty() {"Provider default"} else {&turn.model}))));
+            let actions = div().flex().items_center().gap_1()
+                .child(Button::new(SharedString::from(format!("copy-{id}"))).ghost().small().icon(UiIcon::Copy)
+                    .accessibility_label("Copy message").tooltip("Copy message as Markdown")
+                    .on_click(move |_,_,cx| cx.write_to_clipboard(ClipboardItem::new_string(text.clone()))))
+                .when(!user, |actions| actions.child(Button::new(SharedString::from(format!("bookmark-{id}"))).ghost().small()
+                    .icon(if bookmarked {UiIcon::BookmarkCheck} else {UiIcon::Bookmark})
+                    .accessibility_label(if bookmarked {"Remove bookmark"} else {"Bookmark message"})
+                    .tooltip(if bookmarked {"Remove bookmark"} else {"Bookmark message"})
+                    .on_click(move |_, _, _| {
                         if let Err(error) = bookmark_service.send(Command::Request { generation, key: format!("bookmark:{id}"), method: Method::POST, path: "/api/tasks/message/bookmark".into(), input: json!({"id":task_id,"messageId":id,"bookmarked":!bookmarked}) }) { eprintln!("Could not bookmark message: {error}"); }
-                    }))))
-                .child(TextView::markdown(SharedString::from(format!("message-{}", message.id)), message.text.clone()).selectable(true).on_link_click(|url, _, _, cx| {
-                    if url::Url::parse(url).is_ok_and(|url| matches!(url.scheme(), "http" | "https" | "mailto")) { cx.open_url(url); }
-                }))
+                    })));
+            div().w_full().flex().justify_center().child(div().px_6().py_4().w_full().max_w(px(820.))
+                .child(div().flex().items_center().justify_between().gap_2().mb_2().child(header).child(actions))
+                .child(div().when(user, |body| body.p_3().rounded(px(6.)).bg(cx.theme().muted.opacity(0.5)).border_1().border_color(cx.theme().border.opacity(0.5)))
+                    .child(TextView::markdown(SharedString::from(format!("message-{}", message.id)), message.text.clone()).selectable(true).on_link_click(|url, _, _, cx| {
+                        if url::Url::parse(url).is_ok_and(|url| matches!(url.scheme(), "http" | "https" | "mailto")) { cx.open_url(url); }
+                    })))
                 .children(message.attachments.iter().map(|attachment| {
                     let attachment_id=attachment.id.clone();let task=attachment_task.clone();let entity=conversation_entity.clone();
                     Button::new(SharedString::from(format!("attachment-{attachment_id}"))).ghost().label(format!("Download {}",attachment.name))
@@ -938,6 +1227,14 @@ impl Workbench {
             }
             let running = task.status == TaskStatus::Running;
             let sending = self.pending_sends.values().any(|(id, _)| id == &task.id);
+            let empty = self.composer.read(cx).value().trim().is_empty()
+                && task.draft_attachments.is_empty();
+            let composer_focused = self.composer.read(cx).focus_handle(cx).is_focused(window);
+            let attachment_pending = self.pending.iter().any(|key| {
+                key == &format!("attachment-pick:{}", task.id)
+                    || key == &format!("attachment-upload:{}", task.id)
+                    || key.starts_with(&format!("attachment-remove:{}:", task.id))
+            });
             let mut controls = div()
                 .flex()
                 .flex_wrap()
@@ -949,7 +1246,19 @@ impl Workbench {
                     div()
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
-                        .child(format!("{} to send", super::shell::shortcut("Enter"))),
+                        .child(if !self.online {
+                            "Offline · drafts saved locally".into()
+                        } else if running {
+                            format!(
+                                "{} to queue · Steer changes this run",
+                                super::shell::shortcut("Enter")
+                            )
+                        } else {
+                            format!(
+                                "{} to send · @ files · / commands",
+                                super::shell::shortcut("Enter")
+                            )
+                        }),
                 );
             let mut buttons = div().flex().gap_2();
             if running {
@@ -975,7 +1284,13 @@ impl Workbench {
                         Button::new("steer-task")
                             .small()
                             .label("Steer")
-                            .disabled(sending || !self.online || task.active_run_id.is_none())
+                            .disabled(
+                                sending
+                                    || !self.online
+                                    || task.active_run_id.is_none()
+                                    || empty
+                                    || attachment_pending,
+                            )
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.submit_message(true, window, cx)
                             })),
@@ -993,7 +1308,7 @@ impl Workbench {
                     } else {
                         "Send"
                     })
-                    .disabled(!self.online || sending)
+                    .disabled(!self.online || sending || empty || attachment_pending)
                     .on_click(
                         cx.listener(|this, _, window, cx| this.submit_message(false, window, cx)),
                     ),
@@ -1059,7 +1374,12 @@ impl Workbench {
                             .rounded(px(6.))
                             .bg(cx.theme().muted)
                             .border_1()
-                            .border_color(cx.theme().border)
+                            .border_color(if composer_focused {
+                                cx.theme().primary.opacity(0.65)
+                            } else {
+                                cx.theme().border
+                            })
+                            .child(self.composer_context(task, cx))
                             .child(self.saved_prompt_choices(task, cx))
                             .child(self.composer_editor(task, window, cx))
                             .child(controls),
@@ -1317,5 +1637,38 @@ fn collect_mcp_references(value: &Value, output: &mut Vec<Value>) {
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::prelude::v1::test;
+    #[test]
+    fn attention_filters_include_child_approvals_without_crossing_task_families() {
+        let task = |id: &str, parent: Option<&str>| {
+            let mut value = json!({"id":id,"title":"Task","repositoryId":"repo","agentId":"agent","status":"running","createdAt":"now","messages":[],"files":[],"draft":"","example":false});
+            if let Some(parent) = parent {
+                value["delegation"] = json!({"parentTaskId":parent});
+            }
+            serde_json::from_value::<Task>(value).unwrap()
+        };
+        let tasks = vec![
+            task("parent", None),
+            task("child", Some("parent")),
+            task("other", None),
+        ];
+        let mut snapshot: Snapshot = serde_json::from_value(json!({"revision":1,"workspace":{"version":1,"agents":[],"repositories":[],"tasks":tasks,"automations":[],"runtimeAddress":""},"approvals":[{"id":"approval","taskId":"child","title":"Approve","detail":"Private","kind":"tool","createdAt":"now"}],"questions":[],"terminals":[],"runs":[],"devices":[],"pendingDevices":[],"owner":true})).unwrap();
+        let tasks = snapshot.workspace.tasks.clone();
+        assert_eq!(needs_input(&tasks[0], &snapshot), Some("Approval"));
+        assert!(TaskFilter::Attention.includes(&tasks[0], &snapshot));
+        assert!(!TaskFilter::Attention.includes(&tasks[2], &snapshot));
+        assert!(TaskFilter::Active.includes(&tasks[2], &snapshot));
+        snapshot.approvals.clear();
+        assert!(!TaskFilter::Attention.includes(&tasks[0], &snapshot));
+        let mut failed = tasks[0].clone();
+        failed.status = TaskStatus::Failed;
+        assert!(TaskFilter::Attention.includes(&failed, &snapshot));
+        assert!(!TaskFilter::Active.includes(&failed, &snapshot));
     }
 }

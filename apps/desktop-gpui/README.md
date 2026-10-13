@@ -10,6 +10,15 @@ integration and resource configuration live in the Settings navigation panel. Sy
 appearance preferences remain available. Inter 4.1 is embedded for consistent typography; its SIL
 Open Font License is included in `assets/fonts/LICENSE.txt` and packaged under `licenses/Inter.txt`.
 
+Drag the task sidebar divider to resize it; its width and visibility persist across restarts.
+Use **Ctrl/Cmd+B** or the title-bar sidebar button for a wider conversation, and **Ctrl/Cmd+L** to
+return to Chat and focus the composer. The task-list filter selects all tasks, running tasks, or
+tasks needing attention; approvals and questions from child tasks also flag their parent.
+Composer context shows the frozen provider/model plus next-turn overrides and the checkout mode,
+with links to task settings. Conversation headers show each recorded turn's provider/model and
+provide Markdown copy and bookmark actions. The down-arrow in the task header jumps to the latest
+message. Offline composer drafts remain saved locally.
+
 ## Run
 
 Install the repository's locked pnpm dependencies and a current stable Rust toolchain, then:

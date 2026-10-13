@@ -235,6 +235,25 @@ impl Workbench {
                             .flex()
                             .items_center()
                             .gap_2()
+                            .children(
+                                (matches!(self.page, Page::Tasks | Page::Archived)
+                                    && !self.search_open)
+                                    .then(|| {
+                                        Button::new("toggle-task-sidebar")
+                                            .ghost()
+                                            .small()
+                                            .icon(UiIcon::PanelLeft)
+                                            .selected(self.layout.task_sidebar_visible)
+                                            .accessibility_label("Toggle task sidebar")
+                                            .tooltip(format!(
+                                                "Toggle task sidebar · {}",
+                                                shortcut("B")
+                                            ))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.toggle_task_sidebar(cx)
+                                            }))
+                                    }),
+                            )
                             .child(
                                 Button::new("title-search")
                                     .ghost()

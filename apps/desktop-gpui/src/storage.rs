@@ -14,6 +14,31 @@ pub enum Appearance {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WorkbenchLayout {
+    pub task_sidebar_width: f32,
+    pub task_sidebar_visible: bool,
+}
+impl Default for WorkbenchLayout {
+    fn default() -> Self {
+        Self {
+            task_sidebar_width: 280.,
+            task_sidebar_visible: true,
+        }
+    }
+}
+impl WorkbenchLayout {
+    fn validate(&self) -> Result<()> {
+        anyhow::ensure!(
+            self.task_sidebar_width.is_finite()
+                && (220. ..=440.).contains(&self.task_sidebar_width),
+            "Task sidebar width must be between 220 and 440 pixels"
+        );
+        Ok(())
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub id: String,
     pub name: String,
@@ -60,6 +85,28 @@ pub struct Storage {
     pub directory: PathBuf,
 }
 impl Storage {
+    pub fn layout(&self) -> Result<WorkbenchLayout> {
+        match fs::read(self.directory.join("layout.json")) {
+            Ok(bytes) => {
+                let layout: WorkbenchLayout = serde_json::from_slice(&bytes)
+                    .context("Saved layout is invalid; the original file has been preserved")?;
+                layout.validate()?;
+                Ok(layout)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(WorkbenchLayout::default())
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+    pub fn save_layout(&self, layout: &WorkbenchLayout) -> Result<()> {
+        layout.validate()?;
+        fs::create_dir_all(&self.directory)?;
+        let temporary = self.directory.join("layout.json.tmp");
+        fs::write(&temporary, serde_json::to_vec(layout)?)?;
+        fs::rename(temporary, self.directory.join("layout.json"))
+            .context("Could not save workbench layout")
+    }
     pub fn appearance(&self) -> Result<Appearance> {
         match fs::read(self.directory.join("appearance.json")) {
             Ok(bytes) => serde_json::from_slice(&bytes)
@@ -127,6 +174,36 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn layout_round_trip_and_invalid_sizes_preserve_the_saved_preference() {
+        let directory = tempfile::tempdir().unwrap();
+        let storage = Storage {
+            directory: directory.path().into(),
+        };
+        assert_eq!(storage.layout().unwrap().task_sidebar_width, 280.);
+        let layout = WorkbenchLayout {
+            task_sidebar_width: 360.,
+            task_sidebar_visible: false,
+        };
+        storage.save_layout(&layout).unwrap();
+        assert_eq!(storage.layout().unwrap().task_sidebar_width, 360.);
+        assert!(!storage.layout().unwrap().task_sidebar_visible);
+        for width in [0., 219., 441., f32::NAN, f32::INFINITY] {
+            assert!(
+                storage
+                    .save_layout(&WorkbenchLayout {
+                        task_sidebar_width: width,
+                        ..layout.clone()
+                    })
+                    .is_err()
+            );
+            assert_eq!(storage.layout().unwrap().task_sidebar_width, 360.);
+        }
+        let path = directory.path().join("layout.json");
+        fs::write(&path, br#"{"taskSidebarWidth":-1}"#).unwrap();
+        assert!(storage.layout().is_err());
+        assert_eq!(fs::read(&path).unwrap(), br#"{"taskSidebarWidth":-1}"#);
+    }
     #[test]
     fn server_rename_preserves_credential_identity_and_other_servers() {
         let mut registry = Registry {

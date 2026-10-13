@@ -46,6 +46,7 @@ pub(crate) mod scoped_agents;
 mod scoped_defaults;
 mod servers;
 mod shell;
+mod task_context;
 mod task_controls;
 pub(crate) mod task_defaults;
 mod task_review;
@@ -54,7 +55,17 @@ mod tasks;
 mod terminal;
 mod usage;
 
-actions!(dovo, [Quit, SendMessage, NewTask, Search]);
+actions!(
+    dovo,
+    [
+        Quit,
+        SendMessage,
+        NewTask,
+        Search,
+        ToggleTaskSidebar,
+        FocusComposer
+    ]
+);
 
 pub fn init(cx: &mut App) {
     mentions::init(cx);
@@ -137,6 +148,8 @@ pub struct Workbench {
     service: Service,
     storage: Storage,
     appearance: crate::storage::Appearance,
+    layout: crate::storage::WorkbenchLayout,
+    task_panels: Entity<gpui_kit::component::resizable::ResizableState>,
     registry: Registry,
     servers: servers::Servers,
     fleet_serial: u64,
@@ -152,6 +165,7 @@ pub struct Workbench {
     error: Option<String>,
     notice: Option<String>,
     page: Page,
+    task_filter: tasks::TaskFilter,
     resource_scope: &'static str,
     resource_agent: Option<String>,
     selected_task: Option<String>,
@@ -247,6 +261,8 @@ impl Workbench {
         let (service, receiver) = Service::new(storage.clone())?;
         let registry = storage.read()?;
         let appearance = storage.appearance()?;
+        let layout = storage.layout()?;
+        let task_panels = cx.new(|_| gpui_kit::component::resizable::ResizableState::default());
         use gpui_kit::component::{Theme, ThemeMode};
         match appearance {
             crate::storage::Appearance::System => Theme::sync_system_appearance(Some(window), cx),
@@ -302,6 +318,8 @@ impl Workbench {
             service,
             storage,
             appearance,
+            layout,
+            task_panels,
             registry,
             servers: servers::Servers::new(&initial)?,
             fleet_serial: 0,
@@ -317,6 +335,7 @@ impl Workbench {
             error: None,
             notice: None,
             page: Page::Tasks,
+            task_filter: tasks::TaskFilter::default(),
             resource_scope: "environment",
             resource_agent: None,
             selected_task: None,
@@ -1617,6 +1636,21 @@ impl Render for Workbench {
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::start_new_task))
             .on_action(cx.listener(Self::send_message))
+            .on_action(cx.listener(|this, _: &ToggleTaskSidebar, _, cx| {
+                this.toggle_task_sidebar(cx);
+            }))
+            .on_action(cx.listener(|this, _: &FocusComposer, window, cx| {
+                if matches!(this.page, Page::Tasks | Page::Archived)
+                    && !this.search_open
+                    && !this.servers.switching
+                    && !this.new_task
+                    && this.task().is_some_and(|task| !task.is_archived())
+                {
+                    this.open_task_tab(TaskTab::Chat, window, cx);
+                    this.composer
+                        .update(cx, |input, cx| input.focus(window, cx));
+                }
+            }))
             .on_action(cx.listener(|this, _: &Search, _, cx| {
                 this.search_open = !this.search_open;
                 cx.notify();

@@ -77,7 +77,7 @@ try {
     }
   }, 'X display')
   const binary = process.env.GPUI_EXECUTABLE || 'apps/desktop-gpui/target/debug/dovo-desktop-gpui'
-  start(binary, ['--connection-file', join(directory, 'runtime-connection.json')], gui)
+  const app = start(binary, ['--connection-file', join(directory, 'runtime-connection.json')], gui)
   await until(async () => {
     try {
       const { stdout } = await exec('xdotool', ['search', '--name', 'Dovo'], { env: gui })
@@ -176,8 +176,81 @@ try {
           message.role === 'user' && message.text === 'Explain the repository structure.',
       )
   }, 'Ctrl+Enter sends from the native composer')
+  // Native split dragging persists only a bounded sidebar width.
+  await x('mousemove', '438', '450', 'mousedown', '1')
+  await x('mousemove', '446', '450')
+  await delay(100)
+  await x('mousemove', '500', '450')
+  await delay(100)
+  await x('mouseup', '1')
+  const layoutPath = join(gui.XDG_DATA_HOME, 'dovostudiogpui/layout.json')
+  await until(async () => {
+    const layout = await json(layoutPath)
+    return layout?.taskSidebarWidth >= 335 && layout.taskSidebarWidth <= 345
+  }, 'native sidebar resize is persisted')
+  // Model context opens task settings; Ctrl+L returns to and focuses the composer.
+  await click(600, 715)
+  await delay(250)
+  await key('ctrl+l')
+  await delay(250)
+  await type('Persistent layout draft')
+  await draft('Persistent layout draft')
+  await key('ctrl+b')
+  await until(
+    async () => (await json(layoutPath))?.taskSidebarVisible === false,
+    'focus mode from composer',
+  )
+  await type(' in focus mode')
+  await draft('Persistent layout draft in focus mode')
+  await key('ctrl+b')
+  await until(async () => {
+    const layout = await json(layoutPath)
+    return layout?.taskSidebarVisible === true && layout.taskSidebarWidth >= 335
+  }, 'sidebar returns at the saved width')
+  await draft('Persistent layout draft in focus mode')
+  await key('ctrl+b')
+  await until(
+    async () => (await json(layoutPath))?.taskSidebarVisible === false,
+    'save hidden sidebar before restart',
+  )
+  const closed = new Promise((resolve) => app.once('close', resolve))
+  app.kill('SIGTERM')
+  const shutdown = setTimeout(() => app.kill('SIGKILL'), 5000)
+  await closed
+  clearTimeout(shutdown)
+  start(binary, ['--connection-file', join(directory, 'runtime-connection.json')], gui)
+  await until(async () => {
+    try {
+      return (await x('search', '--name', '^Dovo Studio GPUI$')).stdout.trim()
+    } catch {
+      return false
+    }
+  }, 'restarted native window')
+  await delay(1200)
+  // The hidden-sidebar welcome view offers an explicit way back to the task list.
+  await click(725, 565)
+  await until(
+    async () => (await json(layoutPath))?.taskSidebarVisible === true,
+    'Browse tasks restores the sidebar after restart',
+  )
+  await click(280, 273)
+  await click(650, 750)
+  await key('End')
+  await type(' restored')
+  await draft('Persistent layout draft in focus mode restored')
+  // Hit the saved divider position, proving the preference affects actual layout.
+  await x('mousemove', '498', '450', 'mousedown', '1')
+  await x('mousemove', '506', '450')
+  await delay(100)
+  await x('mousemove', '538', '450')
+  await delay(100)
+  await x('mouseup', '1')
+  await until(async () => {
+    const layout = await json(layoutPath)
+    return layout?.taskSidebarWidth >= 375 && layout.taskSidebarWidth <= 385
+  }, 'restart restores the real divider position')
   console.log(
-    'Native composer verified: file/skill/MCP/prompt completion, Unicode, surrounding text, review command and Ctrl+Enter sending.',
+    'Native composer verified: suggestions, Unicode, review/send, context navigation, focus mode, draft and sidebar restoration across restart.',
   )
 } catch (error) {
   console.error(diagnostics.join('').slice(-4000))
