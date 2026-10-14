@@ -1,5 +1,9 @@
 import { desktopRuntimeSyncBridge } from './desktop-sync.js'
-import { invalidateRuntimeRoute, runtimeTransportAddress } from './routes.js'
+import {
+  failRuntimeStreamingRoute,
+  invalidateRuntimeRoute,
+  runtimeTransportAddress,
+} from './routes.js'
 import { decode } from '../../shared/schema.js'
 import { runtimeRequest, setRuntimeSnapshotTag } from '../../shared/client.js'
 import {
@@ -239,6 +243,8 @@ export function startRuntimeSync(
   }
   clearTimeout(value.expiry)
   let socket: WebSocket | undefined
+  let socketRoute: string | undefined
+  let socketEstablished = false
   let stopped = false
   let online = false
   let unsupported = false
@@ -319,6 +325,7 @@ export function startRuntimeSync(
   const recover = () => {
     if (stopped) return
     invalidateRuntimeRoute(connection)
+    invalidateRuntimeRoute(connection, 'stream')
     unsupported = false
     failures = 0
     request?.abort()
@@ -340,11 +347,16 @@ export function startRuntimeSync(
   const closeSocket = () => {
     const previous = socket
     socket = undefined
+    socketRoute = undefined
+    socketEstablished = false
     online = false
     if (healthySince !== undefined && Date.now() - healthySince >= 30000) failures = 0
     healthySince = undefined
     resumeStarted = undefined
     previous?.close()
+  }
+  const failHandshake = () => {
+    if (socketRoute && !socketEstablished) failRuntimeStreamingRoute(connection, socketRoute)
   }
   const reconnect = () => {
     if (healthySince !== undefined && Date.now() - healthySince >= 30000) failures = 0
@@ -383,6 +395,7 @@ export function startRuntimeSync(
         'POST',
         5000,
         request.signal,
+        { route: 'stream' },
       )
       if (
         stopped ||
@@ -392,11 +405,20 @@ export function startRuntimeSync(
       )
         return
       taskUpdates = ticket.format === 5
-      const address = new URL('/ws/sync', runtimeTransportAddress(connection))
+      const route = runtimeTransportAddress(connection, 'stream')
+      const address = new URL('/ws/sync', route)
       address.protocol = address.protocol === 'https:' ? 'wss:' : 'ws:'
       address.searchParams.set('ticket', ticket.ticket)
-      const current = new WebSocket(address.href)
+      let current: WebSocket
+      try {
+        current = new WebSocket(address.href)
+      } catch (error) {
+        failRuntimeStreamingRoute(connection, route)
+        throw error
+      }
       socket = current
+      socketRoute = route
+      socketEstablished = false
       resumeStarted = undefined
       socketStarted = lastSeen = Date.now()
       current.onopen = () => {
@@ -471,6 +493,7 @@ export function startRuntimeSync(
           if (resumeStarted !== undefined) resumeRoundTrip = Math.max(1, Date.now() - resumeStarted)
           resumeStarted = undefined
           online = true
+          socketEstablished = true
           healthySince ??= Date.now()
           if (Date.now() - healthySince >= 30000) failures = 0
           setStatus('live')
@@ -496,12 +519,14 @@ export function startRuntimeSync(
       }
       current.onerror = () => {
         if (current !== socket || stopped) return
+        failHandshake()
         closeSocket()
         reconnect()
       }
       current.onclose = () => {
         if (current === socket) {
-          socket = undefined
+          failHandshake()
+          closeSocket()
           reconnect()
         }
       }
@@ -549,6 +574,7 @@ export function startRuntimeSync(
                 (resumeStarted !== undefined && resumeWaited >= resumeDeadline()) ||
                 Date.now() - lastSeen >= 30000)
             ) {
+              failHandshake()
               closeSocket()
               reconnect()
               return

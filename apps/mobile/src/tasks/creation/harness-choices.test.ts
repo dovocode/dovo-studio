@@ -393,3 +393,47 @@ it('selects Cursor with read-only access when the previous harness required appr
     permission: 'read-only',
   })
 })
+
+it('native provider switching clears advanced overrides with conservative access', () => {
+  const restricted = {
+    ...draft,
+    harness: {
+      ...defaultTaskHarness('codex'),
+      permission: 'full-access' as const,
+      approvalPolicy: 'untrusted' as const,
+      sandboxMode: 'workspace-write' as const,
+    },
+  }
+  const selected = selectedTaskHarness(restricted, agents, 'harness:claude')
+  expect(selected).toMatchObject({ provider: 'claude', permission: 'read-only' })
+  expect(selected?.approvalPolicy).toBeUndefined()
+  expect(selected?.sandboxMode).toBeUndefined()
+  expect(selectedTaskHarness(restricted, agents, 'harness:codex')?.sandboxMode).toBe(
+    'workspace-write',
+  )
+})
+
+it('native custom task edits carry and clear both advanced permission fields', () => {
+  const preset: Agent = {
+    ...agents[0]!,
+    approvalPolicy: 'on-request',
+    sandboxMode: 'read-only',
+  }
+  const task = { ...draft, agentId: preset.id, harness: preset }
+  const edits = taskHarnessChanges(task, `agent:${preset.id}`, { ...preset, model: 'chosen' })
+  expect(edits.agentOverrides.after).toMatchObject({
+    approvalPolicy: 'on-request',
+    sandboxMode: 'read-only',
+  })
+  const clear = taskHarnessChanges(task, `agent:${preset.id}`, {
+    ...preset,
+    approvalPolicy: undefined,
+    sandboxMode: undefined,
+  })
+  expect(clear.agentOverrides.after).toMatchObject({ approvalPolicy: null, sandboxMode: null })
+  expect(
+    resolveTaskAgent({ ...task, agentOverrides: clear.agentOverrides.after }, [preset])
+      ?.sandboxMode,
+  ).toBeUndefined()
+  expect(preset.sandboxMode).toBe('read-only')
+})

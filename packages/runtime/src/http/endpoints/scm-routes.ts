@@ -1,6 +1,12 @@
+import {
+  forgeSourceIdentityQuerySchema,
+  forgeSourceIdentitySchema,
+  forgeReadGuardFields,
+  forgeDestinationGuardFields,
+} from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import {
-  githubPullTarget,
+  forgePullTarget,
   pullLineCommentSchema,
   initializeScopedSettings,
   mergeSharedSettings,
@@ -210,6 +216,28 @@ export function scmRoute(request: IncomingMessage, path: string) {
           removeWorktreeEffect(s, worktree, orphanOnly),
         )
       }
+      if (method === 'POST' && path === '/api/scm/source/identity') {
+        const input = decode(forgeSourceIdentityQuerySchema, yield* serviceResult(body(request)))
+        const repo = input.repositoryId
+          ? s.store.get().repositories.find((repo) => repo.id === input.repositoryId)
+          : undefined
+        if (input.repositoryId && !repo && forgePullTarget(input.repositoryId))
+          return decode(
+            forgeSourceIdentitySchema,
+            yield* serviceResult(
+              s.pulls.urlTarget(input.repositoryId, input.connectionId).sourceIdentity(),
+            ),
+          )
+        if (input.repositoryId && !repo) throw new HttpError(404, 'Repository not found')
+        return decode(
+          forgeSourceIdentitySchema,
+          yield* serviceResult(
+            input.jiraSourceId
+              ? s.forgeWork.sourceIdentityJira(input.jiraSourceId)
+              : s.pulls.sourceIdentity(repo!.path),
+          ),
+        )
+      }
       if (method === 'POST' && path === '/api/scm/jira/projects/read')
         return yield* serviceResult(listJiraProjects(s.commands.get().acli, homedir()))
       if (method === 'POST' && path === '/api/scm/jira/sources/save')
@@ -364,7 +392,10 @@ export function scmRoute(request: IncomingMessage, path: string) {
           Schema.StructWithRest(
             Schema.Struct(
               mutableStruct({
-                repositoryId: idSchema,
+                repositoryId: maxValue(minValue(Schema.String, 1), 4096),
+                ...forgeReadGuardFields,
+                ...forgeDestinationGuardFields,
+                connectionId: Schema.optional(idSchema),
                 taskId: Schema.optional(idSchema),
               }).fields,
             ),
@@ -373,12 +404,23 @@ export function scmRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         const repo = s.store.get().repositories.find((r) => r.id === input.repositoryId)
-        if (!repo && githubPullTarget(input.repositoryId)) {
-          const target = githubPullTarget(input.repositoryId)
+        if (!repo && forgePullTarget(input.repositoryId)) {
+          const target = forgePullTarget(input.repositoryId)
           if (!target) throw new HttpError(400, 'Invalid PR target')
-          const pulls = s.pulls.urlTarget(target.url)
+          const pulls = s.pulls.urlTarget(target.url, input.connectionId)
+          const urlScope =
+            input.expectedReaderIdentity !== undefined
+              ? yield* serviceResult(pulls.sourceIdentity())
+              : undefined
+          if (urlScope && input.expectedReaderIdentity !== urlScope.readerIdentity)
+            throw new HttpError(
+              409,
+              'This integration reader account changed. Refresh before continuing.',
+            )
           if (input.taskId || input.number !== target.number)
             throw new HttpError(400, 'PR target does not match its URL')
+          if (path === '/api/scm/pulls/detail' && input.connectionId)
+            return yield* serviceResult(pulls.detail(target.number, urlScope?.destination))
           if (path === '/api/scm/pulls/detail')
             return yield* s.pullCache.detailEffect(
               target.url,
@@ -387,6 +429,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
                 withDefault(Schema.Boolean, () => false),
                 input.refresh,
               ),
+              urlScope?.destination,
             )
           if (path === '/api/scm/pulls/action') {
             const result = yield* serviceResult(pulls.act(decode(pullActionSchema, input)))
@@ -406,6 +449,10 @@ export function scmRoute(request: IncomingMessage, path: string) {
         const cwd = input.taskId
           ? yield* serviceResult(s.checkouts.directory(input.taskId))
           : repo.path
+        const readScope =
+          input.expectedReaderIdentity !== undefined
+            ? yield* serviceResult(s.pulls.guard(cwd, input))
+            : undefined
         if (path === '/api/scm/action-state') {
           const [status, remotes] = yield* serviceResult(
             Promise.all([
@@ -567,6 +614,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
               withDefault(Schema.Boolean, () => false),
               input.refresh,
             ),
+            readScope?.destination,
           )
         if (path === '/api/scm/pulls/detail')
           return yield* s.pullCache.detailWithStackEffect(
@@ -589,6 +637,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
               withDefault(Schema.Boolean, () => false),
               input.refresh,
             ),
+            readScope?.destination,
           )
         if (path === '/api/scm/inspect') {
           const result = yield* serviceResult(s.git.inspect(cwd))

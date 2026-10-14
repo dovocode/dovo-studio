@@ -365,6 +365,7 @@ it('retains migrated Jira as the authoritative source for existing issue tasks',
     provider: 'jira',
   })
   vi.spyOn(JiraWork.prototype, 'identity').mockResolvedValue('jira-fixture-account')
+  vi.spyOn(JiraWork.prototype, 'assertAccount').mockResolvedValue()
   const load = vi.spyOn(JiraWork.prototype, 'issue').mockResolvedValue({
     issue: detail.issue,
     comments: [],

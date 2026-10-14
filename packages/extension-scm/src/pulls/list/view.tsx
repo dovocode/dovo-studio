@@ -1,4 +1,9 @@
-import { uniquePulls, githubPullTarget, type PullSummary } from '@dovo/protocol'
+import {
+  uniquePulls,
+  forgePullTarget,
+  pullRepositoryIdentity,
+  type PullSummary,
+} from '@dovo/protocol'
 import { AddPullsToThread } from './add-to-thread'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
@@ -12,6 +17,8 @@ import {
   WorkspaceRuntimeScope,
   repositorySourceKey,
   type RepositorySource,
+  type StudioViewProps,
+  type StudioPullTarget,
 } from '@dovo/studio-core'
 import {
   Button,
@@ -30,7 +37,7 @@ import { usePulls } from './use-pulls'
 import { PullRow } from './row'
 import { PullDetail } from '../detail/detail'
 import { CreatePull } from './create'
-import { ForgeConnections } from '../../connections/forge-connections'
+import { ForgeConnections, useForgeConnections } from '../../connections/forge-connections'
 import { SourcePicker } from '../../connections/source-picker'
 import { createPullStateCache, useRetainedPullState } from '../retained-state'
 type SavedSelection = { source: Pick<RepositorySource, 'key' | 'scope'>; number: number } | null
@@ -41,23 +48,16 @@ const urlCache = createPullStateCache<string | null>(60)
 const personalCache = createPullStateCache<'all' | 'authored' | 'assigned' | 'involved' | 'review'>(
   20,
 )
-export default function PullRequestsView({
-  entityId,
-  navigationKey,
-}: {
-  entityId?: string
-  navigationKey?: number
-}) {
+export default function PullRequestsView({ entityId, pullTarget, navigationKey }: StudioViewProps) {
   const [sidebarVisible] = useLeftSidebar()
   const host = useStudioHost()
-  const { activeRuntimeId, runtimes, connection } = useWorkspace()
-  const listKey = JSON.stringify([activeRuntimeId, connection?.address])
+  const { activeRuntimeId, runtimes } = useWorkspace()
+  // This is a merged collection, independent of the computer selected for task execution.
+  const listKey = 'merged-pulls'
   const [repositoryId, setRepository] = useRetainedPullState(
       filterCache,
       listKey + ':repository',
-      entityId && !githubPullTarget(entityId)
-        ? repositorySourceKey(activeRuntimeId ?? '', entityId)
-        : '',
+      '',
     ),
     [state, setState] = useRetainedPullState(filterCache, listKey + ':state', 'open'),
     [search, setSearch] = useRetainedPullState(filterCache, listKey + ':search', ''),
@@ -74,7 +74,6 @@ export default function PullRequestsView({
     [connections, setConnections] = useApplicationState<RepositorySource | null>(null),
     [creating, setCreating] = useApplicationState<RepositorySource | null>(null),
     [openError, setOpenError] = useApplicationState(''),
-    [opening, setOpening] = useApplicationState(false),
     [selected, setSelected] = useRetainedPullState(selectionCache, listKey, null)
   const [urlSelection, setUrlSelection] = useRetainedPullState(urlCache, listKey + ':url', null)
   const [urlOwnerId, setUrlOwnerId] = useRetainedPullState(urlCache, listKey + ':owner', null)
@@ -83,52 +82,59 @@ export default function PullRequestsView({
     listKey + ':navigation',
     null,
   )
-  const detailTarget = githubPullTarget(selectedNavigation ?? urlSelection ?? '')
+  const [linkChoices, setLinkChoices] = useApplicationState<RepositorySource[] | null>(null)
+  const [chooseRuntime, setChooseRuntime] = useApplicationState(false)
   const [marked, setMarked] = useApplicationState<string[]>([])
   const [adding, setAdding] = useApplicationState<PullSummary[] | null>(null)
   const selectionAnchor = useRef<string | null>(null)
-  const lastTarget = useRef(entityId)
-  useEffect(() => {
-    if (lastTarget.current === entityId) return
-    lastTarget.current = entityId
-    if (entityId && !githubPullTarget(entityId)) {
-      setRepository(repositorySourceKey(activeRuntimeId ?? '', entityId))
-      setSelected(null)
-      setUrlSelection(null)
-      setSelectedNavigation(null)
-      setUrlOwnerId(null)
-    }
-  }, [entityId, activeRuntimeId])
-  const { sources, pages: allPages, busy, connected, more, refresh } = usePulls(state, repositoryId)
-  const pages = allPages.filter((page) => !repositoryId || page.source.key === repositoryId)
-  const openingRef = useRef(false)
-  const localNavigation = useRef<string | null>(null)
-  const open = async (source: RepositorySource, number: number) => {
-    if (openingRef.current) return
-    openingRef.current = true
-    setOpening(true)
+  const {
+    sources,
+    pages: allPages,
+    busy,
+    connected,
+    more,
+    refresh,
+    chooseReader,
+  } = usePulls(state, repositoryId)
+  const repositoryFilter = sources.find((source) => source.key === repositoryId)
+  const filterIdentity = repositoryFilter && pullRepositoryIdentity(repositoryFilter.repository)
+  const pages = allPages.filter(
+    (page) =>
+      !repositoryId ||
+      page.source.key === repositoryId ||
+      (filterIdentity && filterIdentity === pullRepositoryIdentity(page.source.repository)),
+  )
+  const bindings = sources.map((source) => ({
+    identity: pullRepositoryIdentity(source.repository),
+  }))
+  const parseTarget = (url: string) => forgePullTarget(url, bindings)
+  const detailTarget = parseTarget(selectedNavigation ?? urlSelection ?? '')
+  const open = (source: RepositorySource, number: number, url?: string, replace = false) => {
+    const pull = pages
+      .find((page) => page.source.key === source.key)
+      ?.pulls.find((pull) => pull.number === number)
+    const target = parseTarget(url ?? pull?.url ?? '')
+    const navigationUrl = target?.navigationUrl ?? url ?? pull?.url
+    setUrlSelection(null)
+    setSelectedNavigation(navigationUrl ?? null)
+    setSelected({ source: { key: source.key, scope: source.scope }, number })
+    setLinkChoices(null)
     setOpenError('')
-    try {
-      setUrlSelection(null)
-      setSelectedNavigation(null)
-      setSelected({ source: { key: source.key, scope: source.scope }, number })
-      const pull = pages
-        .find((page) => page.source.key === source.key)
-        ?.pulls.find((pull) => pull.number === number)
-      const identity = source.repository.pullIdentity || source.repository.gitIdentity
-      const target =
-        pull?.url ??
-        (identity?.startsWith('github.com/') ? `https://${identity}/pull/${number}` : '')
-      const entity = githubPullTarget(target)?.url
-      localNavigation.current = entity ?? ''
-      handledLink.current = JSON.stringify([entity, navigationKey])
-      host.navigate({ viewId: 'pulls', ...(entity ? { entityId: entity } : {}) })
-    } catch (error) {
-      setOpenError(String(error))
-    } finally {
-      openingRef.current = false
-      setOpening(false)
-    }
+    host.navigate(
+      {
+        viewId: 'pulls',
+        entityId: navigationUrl,
+        pullTarget: {
+          runtimeId: source.runtimeId,
+          repositoryId: source.repository.id,
+          number,
+          url: navigationUrl,
+          tab: target && (target.tab !== 'overview' || target.fragment) ? target.tab : undefined,
+          fragment: target?.fragment,
+        },
+      },
+      { replace },
+    )
   }
   const selectedSource = sources.find(
     (source) => source.key === selected?.source.key && source.scope === selected.source.scope,
@@ -174,72 +180,94 @@ export default function PullRequestsView({
       : pages.flatMap((page) => page.pulls).filter((pull) => pull[personalField] === undefined)
           .length
   const handledLink = useRef('')
-  const previousEntity = useRef(entityId)
+  const previousTarget = useRef({ entityId, pullTarget })
   useEffect(() => {
-    const previous = previousEntity.current
-    previousEntity.current = entityId
-    if (!entityId) {
-      // Shell history can return to the list without using the detail's Back callback.
-      if (previous && localNavigation.current !== '') {
+    const previous = previousTarget.current
+    previousTarget.current = { entityId, pullTarget }
+    const navigation = JSON.stringify([entityId, pullTarget, navigationKey])
+    if (handledLink.current === navigation) return
+    if (pullTarget?.repositoryId) {
+      const source = sources.find(
+        (source) =>
+          source.runtimeId === pullTarget.runtimeId &&
+          source.repository.id === pullTarget.repositoryId,
+      )
+      setUrlSelection(null)
+      setSelectedNavigation(pullTarget.url ?? entityId ?? null)
+      const identity = source && pullRepositoryIdentity(source.repository)
+      const url = pullTarget.url ?? entityId
+      if (source && identity && url && forgePullTarget(url, bindings)?.identity !== identity) {
+        setSelected(null)
+        setOpenError('This project now targets another PR repository. Open the original PR source.')
+      } else if (source) {
+        handledLink.current = navigation
+        setOpenError('')
+        setSelected({ source: { key: source.key, scope: source.scope }, number: pullTarget.number })
+      } else {
+        setSelected(null)
+        setOpenError('The original computer or project is no longer saved.')
+      }
+      return
+    }
+    if (!entityId && !pullTarget) {
+      handledLink.current = navigation
+      if (previous.entityId || previous.pullTarget) {
         setSelected(null)
         setUrlSelection(null)
         setSelectedNavigation(null)
         setUrlOwnerId(null)
       }
-      localNavigation.current = null
-      handledLink.current = ''
+      setLinkChoices(null)
+      setChooseRuntime(false)
       return
     }
-    const navigation = JSON.stringify([entityId, navigationKey])
-    if (localNavigation.current === entityId) {
-      localNavigation.current = null
-      handledLink.current = navigation
+    const target = parseTarget(pullTarget?.url ?? entityId ?? '')
+    if (!target) {
+      if (entityId && !entityId.startsWith('http')) {
+        handledLink.current = navigation
+        setRepository(repositorySourceKey(activeRuntimeId ?? '', entityId))
+        setSelected(null)
+        setUrlSelection(null)
+      }
       return
     }
-    if (handledLink.current === navigation) return
-    const target = githubPullTarget(entityId)
-    if (!target) return
-    const source = [...sources]
-      .sort(
-        (a, b) =>
-          Number(b.connected) - Number(a.connected) ||
-          Number(b.runtimeId === activeRuntimeId) - Number(a.runtimeId === activeRuntimeId),
-      )
-      .find(
-        (source) =>
-          (!source.repository.gitIdentityError &&
-            source.repository.gitIdentity === target.identity) ||
-          source.repository.pullIdentity === target.identity,
-      )
-    if (!source) {
-      handledLink.current = navigation
-      setSelected(null)
-      setSelectedNavigation(null)
-      setUrlSelection(target.navigationUrl)
-      setUrlOwnerId(activeRuntimeId ?? runtimes[0]?.profile.id ?? null)
-      return
-    }
-    setUrlSelection(null)
+    const matches = sources.filter(
+      (source) => pullRepositoryIdentity(source.repository) === target.identity,
+    )
     handledLink.current = navigation
-    setOpenError('')
+    setSelected(null)
     setSelectedNavigation(target.navigationUrl)
-    setSelected({ source: { key: source.key, scope: source.scope }, number: target.number })
-  }, [entityId, navigationKey, sources, activeRuntimeId])
+    setOpenError('')
+    if (!pullTarget && matches.length > 1) {
+      setUrlSelection(null)
+      setLinkChoices(matches)
+      return
+    }
+    const source = matches.length === 1 && !pullTarget ? matches[0] : undefined
+    if (source) {
+      // Qualify legacy URL entry points immediately so history cannot resolve them again
+      // against another computer/account when the user returns.
+      open(source, target.number, target.navigationUrl, true)
+      return
+    }
+    setUrlSelection(target.navigationUrl)
+    const owner =
+      pullTarget?.runtimeId ?? (runtimes.length === 1 ? runtimes[0]?.profile.id : undefined)
+    setUrlOwnerId(owner ?? null)
+    setChooseRuntime(!owner)
+  }, [entityId, pullTarget, navigationKey, sources])
   const back = () => {
-    handledLink.current = ''
-    localNavigation.current = null
     setSelected(null)
     setUrlSelection(null)
     setSelectedNavigation(null)
     setUrlOwnerId(null)
-    if (entityId && host.goBack?.()) return
+    setLinkChoices(null)
+    setChooseRuntime(false)
+    if ((entityId || pullTarget) && host.goBack?.()) return
     host.navigate({ viewId: 'pulls' })
   }
   const hasDetail = !!selected || !!urlSelection
-  const urlRuntimeId = urlOwnerId ?? activeRuntimeId ?? runtimes[0]?.profile.id
-  useEffect(() => {
-    if (urlSelection && !urlOwnerId && urlRuntimeId) setUrlOwnerId(urlRuntimeId)
-  }, [urlSelection, urlOwnerId, urlRuntimeId])
+  const urlRuntimeId = urlOwnerId
   const rowKey = (pull: (typeof pulls)[number]) => JSON.stringify([pull.source.key, pull.number])
   const selectRow = (pull: (typeof pulls)[number], event: React.MouseEvent<HTMLButtonElement>) => {
     const key = rowKey(pull)
@@ -256,7 +284,7 @@ export default function PullRequestsView({
     } else {
       setMarked([])
       selectionAnchor.current = key
-      void open(pull.source, pull.number)
+      open(pull.source, pull.number)
     }
   }
   const addSelection = (pull: (typeof pulls)[number]) => {
@@ -270,11 +298,6 @@ export default function PullRequestsView({
   const activeFilters = Number(draft !== 'all') + Number(attention)
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      {opening && (
-        <p role="status" className="px-5 py-2 text-xs text-muted-foreground">
-          Opening on its computer…
-        </p>
-      )}
       {openError && (
         <p role="alert" className="px-5 py-2 text-xs text-destructive">
           {openError}
@@ -398,8 +421,14 @@ export default function PullRequestsView({
                 value={repositoryId}
                 onValueChange={(selection) => {
                   setMarked([])
-                  setRepository(selection)
-                  setSelected(null)
+                  void (chooseReader?.(selection) ?? Promise.resolve())
+                    .then(() => {
+                      setRepository(selection)
+                      setSelected(null)
+                    })
+                    .catch((cause: unknown) =>
+                      setOpenError(cause instanceof Error ? cause.message : String(cause)),
+                    )
                 }}
               >
                 <option value="">All repositories</option>
@@ -604,7 +633,7 @@ export default function PullRequestsView({
                   onAddToThread={() => addSelection(p)}
                   selectionCount={marked.includes(rowKey(p)) ? marked.length : 1}
                   onClick={(event) => selectRow(p, event)}
-                  onSelect={() => void open(p.source, p.number)}
+                  onSelect={() => open(p.source, p.number)}
                 />
               ))}
             </div>
@@ -636,16 +665,19 @@ export default function PullRequestsView({
             ))}
           </div>
         </nav>
-        {urlSelection && githubPullTarget(urlSelection) && urlRuntimeId ? (
+        {urlSelection && detailTarget && urlRuntimeId ? (
           <WorkspaceRuntimeScope runtimeId={urlRuntimeId}>
-            <PullDetail
-              key={JSON.stringify([urlRuntimeId, urlSelection, navigationKey])}
-              repositoryId={githubPullTarget(urlSelection)?.url ?? urlSelection}
-              number={githubPullTarget(urlSelection)?.number ?? 0}
-              initialTab={detailTarget?.tab}
-              initialFragment={detailTarget?.fragment}
+            <UrlPullDetail
+              key={JSON.stringify([urlRuntimeId, detailTarget.url, pullTarget?.connectionId])}
+              target={{
+                runtimeId: urlRuntimeId,
+                number: detailTarget.number,
+                url: detailTarget.url,
+                tab: pullTarget?.tab ?? detailTarget.tab,
+                fragment: pullTarget?.fragment ?? detailTarget.fragment,
+                connectionId: pullTarget?.connectionId,
+              }}
               onBack={back}
-              onChanged={() => {}}
             />
           </WorkspaceRuntimeScope>
         ) : selected && selectedSource ? (
@@ -655,15 +687,36 @@ export default function PullRequestsView({
                 selectedSource.scope,
                 selectedSource.repository.id,
                 selected.number,
-                navigationKey,
               ])}
               repositoryId={selectedSource.repository.id}
               number={selected.number}
-              initialTab={detailTarget?.tab}
-              initialFragment={detailTarget?.fragment}
+              initialTab={
+                pullTarget?.tab ??
+                (detailTarget && (detailTarget.tab !== 'overview' || detailTarget.fragment)
+                  ? detailTarget.tab
+                  : undefined)
+              }
+              initialFragment={pullTarget?.fragment ?? detailTarget?.fragment}
               onBack={back}
               onChanged={refresh}
-              onSelect={(next) => void open(selectedSource, next)}
+              onTabChange={(tab) =>
+                host.navigate(
+                  {
+                    viewId: 'pulls',
+                    entityId: selectedNavigation ?? undefined,
+                    pullTarget: {
+                      runtimeId: selectedSource.runtimeId,
+                      repositoryId: selectedSource.repository.id,
+                      number: selected.number,
+                      url: selectedNavigation ?? undefined,
+                      tab,
+                      fragment: detailTarget?.fragment,
+                    },
+                  },
+                  { replace: true },
+                )
+              }
+              onSelect={(next) => open(selectedSource, next)}
             />
           </WorkspaceRuntimeScope>
         ) : selected ? (
@@ -675,6 +728,46 @@ export default function PullRequestsView({
           </div>
         ) : null}
       </div>
+      {linkChoices && (
+        <SourcePicker
+          title="Choose the PR account and computer"
+          sources={linkChoices}
+          onClose={back}
+          onSelect={(source) => {
+            const target = parseTarget(entityId ?? '')
+            if (target) open(source, target.number, target.navigationUrl, true)
+          }}
+        />
+      )}
+      {chooseRuntime && (
+        <SourcePicker
+          title="Choose the PR computer"
+          sources={runtimes.map((entry) => ({
+            key: entry.profile.id,
+            runtimeId: entry.profile.id,
+            runtimeName: entry.profile.name,
+            name: 'Pull request',
+            connected: entry.connected,
+          }))}
+          onClose={back}
+          onSelect={(source) => {
+            const target = parseTarget(urlSelection ?? '')
+            if (!target) return
+            setChooseRuntime(false)
+            host.navigate({
+              viewId: 'pulls',
+              entityId: target.navigationUrl,
+              pullTarget: {
+                runtimeId: source.runtimeId,
+                number: target.number,
+                url: target.navigationUrl,
+                tab: target.tab,
+                fragment: target.fragment,
+              },
+            })
+          }}
+        />
+      )}
       {adding && <AddPullsToThread pulls={adding} onClose={() => setAdding(null)} />}
       {picking && (
         <SourcePicker
@@ -723,7 +816,7 @@ export default function PullRequestsView({
                   source.runtimeId === creatingSource.runtimeId &&
                   source.repository.id === repositoryId,
               )
-              if (source) void open(source, number)
+              if (source) open(source, number)
               setState('open')
               refresh()
             }}
@@ -731,5 +824,59 @@ export default function PullRequestsView({
         </WorkspaceRuntimeScope>
       )}
     </section>
+  )
+}
+
+function UrlPullDetail({ target, onBack }: { target: StudioPullTarget; onBack: () => void }) {
+  const { connections } = useForgeConnections()
+  const host = useStudioHost()
+  const url = target.url ?? ''
+  const matching = connections.filter((connection) => {
+    try {
+      return new URL(connection.baseUrl).host === new URL(url).host
+    } catch {
+      return false
+    }
+  })
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {matching.length > 1 && (
+        <div className="border-b p-3">
+          <ChoicePicker
+            aria-label="PR account"
+            value={target.connectionId ?? ''}
+            onValueChange={(connectionId) =>
+              host.navigate({
+                viewId: 'pulls',
+                entityId: url,
+                pullTarget: { ...target, connectionId: connectionId || undefined },
+              })
+            }
+          >
+            <option value="">Choose an account…</option>
+            {matching.map((connection) => (
+              <option key={connection.id} value={connection.id}>
+                {connection.name}
+              </option>
+            ))}
+          </ChoicePicker>
+        </div>
+      )}
+      <PullDetail
+        repositoryId={url}
+        number={target.number}
+        connectionId={target.connectionId}
+        initialTab={target.tab}
+        initialFragment={target.fragment}
+        onBack={onBack}
+        onChanged={() => {}}
+        onTabChange={(tab) =>
+          host.navigate(
+            { viewId: 'pulls', entityId: url, pullTarget: { ...target, tab } },
+            { replace: true },
+          )
+        }
+      />
+    </div>
   )
 }

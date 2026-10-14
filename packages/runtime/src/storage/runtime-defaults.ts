@@ -5,6 +5,7 @@ import {
   mutableStruct,
   runtimeDefaultsSchema,
   supportsAccess,
+  permissionPolicyIssue,
   type TaskHarness,
 } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
@@ -89,6 +90,8 @@ export class RuntimeDefaults {
 }
 
 export function validateDefaultHarness(harness: TaskHarness) {
+  const issue = permissionPolicyIssue(harness)
+  if (issue) throw new HttpError(400, issue)
   if (!supportsAccess(harness.provider, harness.permission))
     throw new HttpError(400, 'The selected provider does not support this access mode')
   if (

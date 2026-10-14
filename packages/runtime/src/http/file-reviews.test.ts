@@ -1,7 +1,17 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { decode, reviewProgressSchema, pullDetailSchema, type ReviewContext } from '@dovo/protocol'
+import {
+  decode,
+  reviewProgressSchema,
+  pullDetailSchema,
+  type ReviewContext,
+  type PullDetail,
+} from '@dovo/protocol'
 import { startRuntime } from '../index'
 import { retainChangedFiles } from '../scm/git/retain-changes'
+function taggedDetail(detail: PullDetail) {
+  const destination = 'account/repo'
+  return { ...detail, destination, pull: { ...detail.pull, destination } }
+}
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close()
@@ -139,49 +149,51 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
   const { runtime, request, read, mobile } = await setup()
   vi.spyOn(runtime.services.pulls, 'identity').mockResolvedValue('account/repo')
   vi.spyOn(runtime.services.git, 'reviewSources').mockResolvedValue([])
-  let detail = decode(pullDetailSchema, {
-    pull: {
-      number: 1,
-      title: 'PR',
-      url: 'https://github.com/a/repo/pull/1',
-      repositoryUrl: 'https://github.com/a/repo',
-      state: 'open',
-      draft: false,
-      author: 'dev',
-      updatedAt: '2026-10-10',
-      head: 'fix',
-      base: 'main',
-      labels: [],
-      headSha: 'a'.repeat(40),
-      baseSha: 'b'.repeat(40),
-      body: '',
-      additions: 2,
-      deletions: 2,
-      changedFiles: 2,
-      mergeable: true,
-      reviewers: [],
-      assignees: [],
-    },
-    files: [
-      {
-        path: 'a.ts',
-        status: 'modified',
-        additions: 1,
-        deletions: 1,
-        patch: '@@ -1 +1 @@\n-old\n+new',
+  let detail = taggedDetail(
+    decode(pullDetailSchema, {
+      pull: {
+        number: 1,
+        title: 'PR',
+        url: 'https://github.com/a/repo/pull/1',
+        repositoryUrl: 'https://github.com/a/repo',
+        state: 'open',
+        draft: false,
+        author: 'dev',
+        updatedAt: '2026-10-10',
+        head: 'fix',
+        base: 'main',
+        labels: [],
+        headSha: 'a'.repeat(40),
+        baseSha: 'b'.repeat(40),
+        body: '',
+        additions: 2,
+        deletions: 2,
+        changedFiles: 2,
+        mergeable: true,
+        reviewers: [],
+        assignees: [],
       },
-      {
-        path: 'b.ts',
-        status: 'modified',
-        additions: 1,
-        deletions: 1,
-        patch: '@@ -1 +1 @@\n-old\n+new',
-      },
-    ],
-    comments: [],
-    checks: [],
-    warnings: [],
-  })
+      files: [
+        {
+          path: 'a.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 1,
+          patch: '@@ -1 +1 @@\n-old\n+new',
+        },
+        {
+          path: 'b.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 1,
+          patch: '@@ -1 +1 @@\n-old\n+new',
+        },
+      ],
+      comments: [],
+      checks: [],
+      warnings: [],
+    }),
+  )
   vi.spyOn(runtime.services.pulls, 'detail').mockImplementation(async () => detail)
   const context: ReviewContext = { kind: 'pull', repositoryId: 'repo', number: 1 }
   const initial = await read(context)
@@ -233,40 +245,42 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
 it('retries unavailable PR sources after the cache interval and isolates local checkout identity', async () => {
   const { runtime, read } = await setup()
   vi.spyOn(runtime.services.pulls, 'identity').mockResolvedValue('account/repo')
-  const detail = decode(pullDetailSchema, {
-    pull: {
-      number: 1,
-      title: 'PR',
-      url: 'https://github.com/a/repo/pull/1',
-      repositoryUrl: 'https://github.com/a/repo',
-      state: 'open',
-      draft: false,
-      author: 'dev',
-      updatedAt: '',
-      head: 'fix',
-      base: 'main',
-      labels: [],
-      headSha: 'a'.repeat(40),
-      baseSha: 'b'.repeat(40),
-      body: '',
-      additions: 2,
-      deletions: 2,
-      changedFiles: 2,
-      mergeable: true,
-      reviewers: [],
-      assignees: [],
-    },
-    files: ['caller.ts', 'model.ts'].map((path) => ({
-      path,
-      status: 'modified',
-      additions: 1,
-      deletions: 1,
-      patch: '@@ -1 +1 @@\n-old\n+new',
-    })),
-    comments: [],
-    checks: [],
-    warnings: [],
-  })
+  const detail = taggedDetail(
+    decode(pullDetailSchema, {
+      pull: {
+        number: 1,
+        title: 'PR',
+        url: 'https://github.com/a/repo/pull/1',
+        repositoryUrl: 'https://github.com/a/repo',
+        state: 'open',
+        draft: false,
+        author: 'dev',
+        updatedAt: '',
+        head: 'fix',
+        base: 'main',
+        labels: [],
+        headSha: 'a'.repeat(40),
+        baseSha: 'b'.repeat(40),
+        body: '',
+        additions: 2,
+        deletions: 2,
+        changedFiles: 2,
+        mergeable: true,
+        reviewers: [],
+        assignees: [],
+      },
+      files: ['caller.ts', 'model.ts'].map((path) => ({
+        path,
+        status: 'modified',
+        additions: 1,
+        deletions: 1,
+        patch: '@@ -1 +1 @@\n-old\n+new',
+      })),
+      comments: [],
+      checks: [],
+      warnings: [],
+    }),
+  )
   vi.spyOn(runtime.services.pulls, 'detail').mockResolvedValue(detail)
   const sources = vi.spyOn(runtime.services.git, 'reviewSources').mockResolvedValue([])
   let now = Date.now()

@@ -1,3 +1,10 @@
+import {
+  useDetailReader,
+  verifySourceReader,
+  sourceIdentityInput,
+} from '../connections/source-readers'
+import { useIssueSources, workRemoteKey } from './work-sources'
+import { integrationMutationError } from '../connections/mutation-error'
 import { readWorkDetailCache, workDetailCacheKeys } from './work-detail-cache'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { WorkForm } from './work-form'
@@ -88,10 +95,17 @@ export function WorkContent({
   const [form, setForm] = useApplicationState<
     'create' | 'edit' | 'comment' | 'run' | 'transition' | null
   >(null)
-  const [confirm, setConfirm] = useApplicationState<
+  const [confirm, updateConfirm] = useApplicationState<
     'rerun' | 'cancel' | 'enable' | 'disable' | null
   >(null)
   const loadedDetailPages = useRef(1)
+  const confirmationDestination = useRef<string | undefined>(undefined)
+  const setConfirm = (action: typeof confirm) => {
+    confirmationDestination.current = action
+      ? (pipeline?.destination ?? pipeline?.run.destination ?? options?.destination)
+      : undefined
+    updateConfirm(action)
+  }
   const pending = useRef(false)
   const requests = useRef(new RequestScope())
   const target = useMemo(
@@ -105,7 +119,20 @@ export function WorkContent({
           },
     [jiraSourceId, repositoryId],
   )
-  const { workspace, readCache } = useWorkspace()
+  const { workspace, readCache, activeRuntimeId } = useWorkspace()
+  const sources = useIssueSources(true, false)
+  const origin = sources.find(
+    (source) =>
+      source.runtimeId === activeRuntimeId &&
+      (jiraSourceId ? source.jira?.id === jiraSourceId : source.repository?.id === repositoryId),
+  )
+  const { reader, destination } = useDetailReader(
+    origin,
+    sources,
+    JSON.stringify([mode, selected]),
+    workRemoteKey,
+  )
+  const readConnected = reader?.connected ?? (!origin && connected)
   const keys = workDetailCacheKeys(
     {
       repository: workspace.repositories.find((repo) => repo.id === repositoryId),
@@ -167,18 +194,29 @@ export function WorkContent({
               setError(error instanceof Error ? error.message : 'Saved details could not be read.')
           }
         }
-        if (!current() || !connected || document.visibilityState !== 'visible') return
+        if (!current() || !readConnected || document.visibilityState !== 'visible') return
+        const expectedReaderIdentity = reader
+          ? await Effect.runPromise(verifySourceReader(reader))
+          : undefined
+        if (!current()) return
+        const readRequest = reader?.request ?? request
+        const readTarget = {
+          ...(reader ? sourceIdentityInput(reader) : target),
+          expectedReaderIdentity,
+        }
         const refresh = force
         force = false
-        const opts = await request(
+        const loadedOptions = await readRequest(
           base + 'options',
           {
-            ...target,
+            ...readTarget,
             area: mode,
           },
           forgeWorkOptionsSchema,
         )
         if (!current()) return
+        const opts =
+          reader && reader.key !== origin?.key ? { ...loadedOptions, destination } : loadedOptions
         setOptions(opts)
         if (!(mode === 'issues' ? opts.issues : opts.pipelines)) {
           setRows([])
@@ -186,10 +224,10 @@ export function WorkContent({
         }
         if (selected) {
           if (mode === 'issues') {
-            let data = await request(
+            let data = await readRequest(
               base + 'issues/detail',
               {
-                ...target,
+                ...readTarget,
                 id: selected,
                 refresh,
               },
@@ -207,10 +245,10 @@ export function WorkContent({
               let pages = 1
               const wanted = refresh ? 1 : loadedDetailPages.current
               while (data.next && pages < wanted) {
-                const next = await request(
+                const next = await readRequest(
                   base + 'issues/detail',
                   {
-                    ...target,
+                    ...readTarget,
                     id: selected,
                     cursor: data.next,
                     refresh,
@@ -228,16 +266,18 @@ export function WorkContent({
                 pages++
               }
               loadedDetailPages.current = pages
+              if (reader && reader.key !== origin?.key)
+                data = { ...data, destination, issue: { ...data.issue, destination } }
               setIssue(data)
               setStale(!!data.stale || !!data.refreshError)
               setError(data.refreshError ?? '')
               await save(detailKey, { ...data, loadedPages: loadedDetailPages.current })
             }
           } else {
-            let data = await request(
+            let data = await readRequest(
               base + 'pipelines/detail',
               {
-                ...target,
+                ...readTarget,
                 id: selected,
                 refresh,
               },
@@ -257,10 +297,10 @@ export function WorkContent({
               let pages = 1
               const wanted = refresh ? 1 : loadedDetailPages.current
               while (data.next && pages < wanted) {
-                const next = await request(
+                const next = await readRequest(
                   base + 'pipelines/detail',
                   {
-                    ...target,
+                    ...readTarget,
                     id: selected,
                     cursor: data.next,
                     refresh,
@@ -278,6 +318,8 @@ export function WorkContent({
                 pages++
               }
               loadedDetailPages.current = pages
+              if (reader && reader.key !== origin?.key)
+                data = { ...data, destination, run: { ...data.run, destination } }
               setPipeline(data)
               setStale(!!data.stale || !!data.refreshError)
               setError(data.refreshError ?? '')
@@ -287,20 +329,20 @@ export function WorkContent({
         } else {
           const data =
             mode === 'issues'
-              ? await request(
+              ? await readRequest(
                   base + 'issues/list',
                   {
-                    ...target,
+                    ...readTarget,
                     state,
                     cursor,
                     refresh,
                   },
                   forgeIssuePageSchema,
                 )
-              : await request(
+              : await readRequest(
                   base + 'pipelines/list',
                   {
-                    ...target,
+                    ...readTarget,
                     cursor,
                     refresh,
                   },
@@ -344,6 +386,9 @@ export function WorkContent({
     }
   }, [
     connected,
+    readConnected,
+    reader,
+    destination,
     request,
     target,
     mode,
@@ -373,17 +418,26 @@ export function WorkContent({
     onChanged?.()
   }
   const moreDetail = async () => {
-    if (pending.current || busy || !connected) return
+    if (pending.current || busy || !readConnected) return
     const current = requests.current.begin()
     setError('')
     pending.current = true
     setBusy(true)
     try {
+      const expectedReaderIdentity = reader
+        ? await Effect.runPromise(verifySourceReader(reader))
+        : undefined
+      if (!current()) return
+      const readRequest = reader?.request ?? request
+      const readTarget = {
+        ...(reader ? sourceIdentityInput(reader) : target),
+        expectedReaderIdentity,
+      }
       if (issue?.next) {
-        const data = await request(
+        const data = await readRequest(
           base + 'issues/detail',
           {
-            ...target,
+            ...readTarget,
             id: selected,
             cursor: issue.next,
           },
@@ -391,7 +445,13 @@ export function WorkContent({
         )
         if (!current()) return
         if (data.issue.url !== issue.issue.url) throw new Error('This issue source changed.')
-        const merged = { ...data, comments: appendUniqueRows(issue.comments, data.comments) }
+        const merged = {
+          ...data,
+          ...(reader && reader.key !== origin?.key
+            ? { destination, issue: { ...data.issue, destination } }
+            : {}),
+          comments: appendUniqueRows(issue.comments, data.comments),
+        }
         setIssue(merged)
         loadedDetailPages.current++
         setStale(stale || !!data.stale)
@@ -399,10 +459,10 @@ export function WorkContent({
         if (readCache)
           await readCache.write(detailKey, { ...merged, loadedPages: loadedDetailPages.current })
       } else if (pipeline?.next) {
-        const data = await request(
+        const data = await readRequest(
           base + 'pipelines/detail',
           {
-            ...target,
+            ...readTarget,
             id: selected,
             cursor: pipeline.next,
           },
@@ -410,7 +470,13 @@ export function WorkContent({
         )
         if (!current()) return
         if (data.run.url !== pipeline.run.url) throw new Error('This pipeline source changed.')
-        const merged = { ...data, jobs: appendUniqueRows(pipeline.jobs, data.jobs) }
+        const merged = {
+          ...data,
+          ...(reader && reader.key !== origin?.key
+            ? { destination, run: { ...data.run, destination } }
+            : {}),
+          jobs: appendUniqueRows(pipeline.jobs, data.jobs),
+        }
         setPipeline(merged)
         loadedDetailPages.current++
         setStale(stale || !!data.stale)
@@ -419,7 +485,7 @@ export function WorkContent({
           await readCache.write(detailKey, { ...merged, loadedPages: loadedDetailPages.current })
       }
     } catch (e) {
-      if (current()) setError(e instanceof Error ? e.message : String(e))
+      if (current()) setError(integrationMutationError(e))
     } finally {
       if (current()) {
         pending.current = false
@@ -455,7 +521,7 @@ export function WorkContent({
           <Button
             size="sm"
             variant="ghost"
-            disabled={!connected || busy}
+            disabled={!readConnected || busy}
             onClick={() => reload((v) => v + 1)}
           >
             <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} /> Refresh
@@ -503,7 +569,7 @@ export function WorkContent({
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={!connected || busy}
+                disabled={!readConnected || busy}
                 onClick={() => reload((v) => v + 1)}
               >
                 <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} /> Refresh
@@ -619,7 +685,9 @@ export function WorkContent({
           )}
           {!connected && (
             <p role="status" className="mb-3 text-sm text-muted-foreground">
-              Offline · showing loaded {mode}. Connect to refresh or make changes.
+              {readConnected
+                ? 'Original computer offline · reading through an available source. Changes remain unavailable.'
+                : `Offline · showing loaded ${mode}. Connect to refresh or make changes.`}
             </p>
           )}
           {busy && (
@@ -738,7 +806,7 @@ export function WorkContent({
             <div className="mt-4 flex gap-2">
               {cursor && (
                 <Button
-                  disabled={busy || !connected}
+                  disabled={busy || !readConnected}
                   variant="outline"
                   onClick={() => setCursor(undefined)}
                 >
@@ -747,7 +815,7 @@ export function WorkContent({
               )}
               {next && (
                 <Button
-                  disabled={busy || !connected}
+                  disabled={busy || !readConnected}
                   variant="outline"
                   onClick={() => setCursor(next)}
                 >
@@ -764,6 +832,7 @@ export function WorkContent({
               repositoryId={repositoryId}
               jiraSourceId={jiraSourceId}
               connected={connected}
+              readConnected={readConnected}
               busy={busy}
               stale={stale}
               notice={options?.issueNotice}
@@ -780,7 +849,7 @@ export function WorkContent({
               notice={options?.pipelineNotice}
               repositoryId={repositoryId}
               disabled={busy || stale}
-              loading={busy || !connected}
+              loading={busy || !readConnected}
               onMore={() => void moreDetail()}
             />
           )}
@@ -826,6 +895,7 @@ export function WorkContent({
                     {
                       repositoryId,
                       action: confirm,
+                      expectedDestination: confirmationDestination.current,
                       id:
                         confirm === 'enable' || confirm === 'disable'
                           ? pipeline.run.definition
@@ -834,7 +904,7 @@ export function WorkContent({
                     forgeWorkResultSchema,
                   )
                     .then((r) => changed(r.message))
-                    .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+                    .catch((e) => setError(integrationMutationError(e)))
                     .finally(() => {
                       pending.current = false
                       setBusy(false)

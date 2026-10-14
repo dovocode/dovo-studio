@@ -1,9 +1,20 @@
-import { gitRemoteIdentity, pullReference, type Repository, type Task } from '@dovo/protocol'
+import {
+  gitRemoteIdentity,
+  forgePullTarget,
+  pullRepositoryIdentity,
+  pullReference,
+  type Repository,
+  type Task,
+} from '@dovo/protocol'
 
 export function threadPullPreview(url: string, task: Task, repositories: readonly Repository[]) {
   let reference: ReturnType<typeof pullReference>
   try {
-    reference = pullReference(url)
+    const target = forgePullTarget(
+      url,
+      repositories.map((repository) => ({ identity: pullRepositoryIdentity(repository) })),
+    )
+    reference = pullReference(target?.url ?? url)
   } catch {
     return null
   }
@@ -16,7 +27,13 @@ export function threadPullPreview(url: string, task: Task, repositories: readonl
   const repository =
     repositories.find(
       (repo) =>
-        !repo.kind && repo.id === task.repositoryId && !!identity && repo.gitIdentity === identity,
-    ) ?? repositories.find((repo) => !repo.kind && !!identity && repo.gitIdentity === identity)
+        !repo.kind &&
+        repo.id === task.repositoryId &&
+        !!identity &&
+        pullRepositoryIdentity(repo) === identity,
+    ) ??
+    repositories.find(
+      (repo) => !repo.kind && !!identity && pullRepositoryIdentity(repo) === identity,
+    )
   return repository ? { repositoryId: repository.id, number: reference.number } : null
 }

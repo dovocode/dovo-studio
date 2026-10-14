@@ -11,8 +11,12 @@ import {
   resolveTaskAgent,
   taskHarnessSchema,
   delegatedAccess,
+  permissionPolicyWithinCeiling,
+  permissionPolicyIssue,
   resolveProviderAccess,
   supportsAccess,
+  permissionPolicyTightened,
+  samePermissionPolicy,
   taskFamilyIds,
   taskFamilyWorking,
   taskFamilyRunToken,
@@ -70,6 +74,7 @@ export class Tasks {
   private nativeStopping = new Map<string, Promise<void>>()
   readonly queue: TaskQueue
   private runner: TaskTurnRunner
+  private readonly unsubscribePolicy: () => void
   constructor(
     private store: WorkspaceStore,
     private git: GitService,
@@ -111,6 +116,28 @@ export class Tasks {
         this.nativeSessions.delete(taskId)
     })
     this.queue = new TaskQueue(store, activity)
+    this.unsubscribePolicy = store.onCommitted((before, after) => {
+      const previous = new Map(before.tasks.map((task) => [task.id, task]))
+      for (const task of after.tasks) {
+        const old = previous.get(task.id)
+        if (old === task && before.agents === after.agents) continue
+        const oldAgent = old && resolveTaskAgent(old, before.agents)
+        const agent = resolveTaskAgent(task, after.agents)
+        if (!oldAgent || !agent || samePermissionPolicy(oldAgent, agent)) continue
+        approvals.cancelTask(task.id)
+        if (!permissionPolicyTightened(oldAgent, agent)) continue
+        this.running
+          .get(task.id)
+          ?.controller.abort(new Error('Access was tightened. Resume to use the updated policy.'))
+        // Native children can outlive the parent turn. They also lose authority on narrowing.
+        if (task.subagents?.some(nativeAgentWorking))
+          queueMicrotask(() => {
+            void this.stopNativeFamily(task.id).catch((error: unknown) =>
+              console.error('Could not stop agents after access changed', error),
+            )
+          })
+      }
+    })
   }
   private mcpApps?: McpApps
   setMcpApps(apps: McpApps) {
@@ -1020,6 +1047,28 @@ export class Tasks {
                 return Effect.fail(new HttpError(409, 'Invalid child family'))
               visited.add(family.id)
               const ancestor = this.store.taskSummary(family.delegation.parentTaskId)
+              const ancestorAgent = resolveTaskAgent(ancestor, this.store.get().agents)
+              const familyAgent = resolveTaskAgent(family, this.store.get().agents)
+              const familyCheckout = ancestor.linkedCheckouts?.find(
+                (link) => link.id === family.delegation?.checkoutId,
+              )
+              if (family.delegation.checkoutId && !familyCheckout)
+                return Effect.fail(new HttpError(403, 'Child linked checkout no longer exists'))
+              if (
+                !ancestorAgent ||
+                !familyAgent ||
+                !permissionPolicyWithinCeiling(
+                  ancestorAgent,
+                  familyAgent,
+                  familyCheckout?.access === 'read-only',
+                )
+              )
+                return Effect.fail(
+                  new HttpError(
+                    403,
+                    'Child permissions cannot exceed their parent or checkout access',
+                  ),
+                )
               if (ancestor.archived || ancestor.archivedAt)
                 return Effect.fail(
                   new HttpError(409, 'Restore the parent thread before running its children'),
@@ -1043,28 +1092,6 @@ export class Tasks {
                 )
               family = ancestor
             }
-            const parent = this.store.taskSummary(task.delegation.parentTaskId)
-            const parentAgent = resolveTaskAgent(parent, this.store.get().agents)
-            const childAgent = resolveTaskAgent(task, this.store.get().agents)
-            const checkout = parent.linkedCheckouts?.find(
-              (link) => link.id === task.delegation?.checkoutId,
-            )
-            if (task.delegation.checkoutId && !checkout)
-              return Effect.fail(new HttpError(403, 'Child linked checkout no longer exists'))
-            if (
-              !parentAgent ||
-              !childAgent ||
-              delegatedAccess(
-                checkout?.access === 'read-only' ? 'read-only' : parentAgent.permission,
-                childAgent.permission,
-              ) !== childAgent.permission
-            )
-              return Effect.fail(
-                new HttpError(
-                  403,
-                  'Child permissions cannot exceed their parent or checkout access',
-                ),
-              )
           }
           if (task.example || task.archived || task.archivedAt)
             return Effect.fail(new HttpError(400, 'Restore this task before running it'))
@@ -2009,6 +2036,8 @@ export class Tasks {
           input.model,
           input.reasoning,
           input.permission,
+          input.approvalPolicy,
+          input.sandboxMode,
           input.checkoutId,
         ]),
       )
@@ -2090,7 +2119,15 @@ export class Tasks {
       model: input.model ?? base.model,
       reasoning: input.reasoning ?? base.reasoning,
       permission,
+      approvalPolicy: input.approvalPolicy ?? parentAgent.approvalPolicy,
+      sandboxMode: input.sandboxMode ?? parentAgent.sandboxMode,
     })
+    const policyIssue = permissionPolicyIssue(harness)
+    if (policyIssue) throw new HttpError(400, policyIssue)
+    if (
+      !permissionPolicyWithinCeiling(parentAgent, harness, selectedCheckout?.access === 'read-only')
+    )
+      throw new HttpError(403, 'Child permissions cannot exceed their parent or checkout access')
     const child = this.store.transaction(() => {
       const child = this.create({
         title: input.name,
@@ -2112,6 +2149,11 @@ export class Tasks {
           checkoutId: input.checkoutId,
           key: input.key,
           fingerprint,
+          permissionLimits: {
+            permission: input.permission,
+            approvalPolicy: input.approvalPolicy,
+            sandboxMode: input.sandboxMode,
+          },
           completion: 'pending',
         },
       }))
@@ -2262,6 +2304,7 @@ export class Tasks {
   }
   disposeEffect() {
     return Effect.gen({ self: this }, function* () {
+      this.unsubscribePolicy()
       this.stopping = true
       if (this.scheduleTimer) clearInterval(this.scheduleTimer)
       this.scheduleTimer = undefined

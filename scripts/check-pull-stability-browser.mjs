@@ -13,15 +13,15 @@ const controls =
   `export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export const OrganizeReview=()=>null;export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
 const mocks = {
   '@dovo/studio-ui': controls,
-  '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo'});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
+  '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo',importedCodeThemes:[]});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[]});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
   '../workspace/context':
-    'export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});',
+    'export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});',
   '@dovo/studio-core/state': `export * from '${root}/packages/studio-core/src/runtime/application-state.ts';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
   './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
   '../list/start-task': `export const StartPullTask=()=> <button>New task</button>;`,
   './create': `export const CreatePull=()=>null;`,
-  '../../connections/forge-connections': `export const ForgeConnections=()=>null;`,
+  '../../connections/forge-connections': `export const ForgeConnections=()=>null;export const useForgeConnections=()=>({connections:[]});`,
   '../../connections/source-picker': `export const SourcePicker=()=>null;`,
 }
 const built = await build({
@@ -356,6 +356,61 @@ try {
     ),
   )
   await bounded(content)
+  // Real syntax rendering must color deletions too, including a rename across languages.
+  await page.evaluate(() => {
+    window.detail.files = [
+      {
+        path: 'new.tsx',
+        previousPath: 'old.py',
+        status: 'renamed',
+        additions: 1,
+        deletions: 1,
+        patch:
+          '@@ -1 +1 @@\n-def example(): return "old"\n+export const example = <div title="new" />;',
+      },
+    ]
+  })
+  await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
+  await page.waitForFunction(() => {
+    const pre = [...document.querySelectorAll('diffs-container')]
+      .map((element) => element.shadowRoot?.querySelector('pre'))
+      .find((element) => element?.textContent.includes('def example'))
+    if (!pre) return false
+    const tokens = [...pre.querySelectorAll('span')].filter((element) => !element.children.length)
+    return ['def', 'export'].every((text) =>
+      tokens.some(
+        (element) =>
+          element.textContent === text && getComputedStyle(element).color === 'rgb(124, 201, 255)',
+      ),
+    )
+  })
+  await page.evaluate(() => {
+    window.detail.files = [
+      {
+        path: 'Card.tsx',
+        status: 'modified',
+        additions: 1,
+        deletions: 1,
+        patch:
+          '@@ -1 +1 @@\n-export const before = <span title="old" />;\n+export const after = <span title="new" />;',
+      },
+    ]
+  })
+  await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
+  await page.waitForFunction(() => {
+    const pre = [...document.querySelectorAll('diffs-container')]
+      .map((element) => element.shadowRoot?.querySelector('pre'))
+      .find((element) => element?.textContent.includes('const before'))
+    return (
+      pre &&
+      [...pre.querySelectorAll('span')].filter(
+        (element) =>
+          !element.children.length &&
+          element.textContent === 'export' &&
+          getComputedStyle(element).color === 'rgb(124, 201, 255)',
+      ).length === 2
+    )
+  })
   // Start the independent large-PR fixture from the list; section remount now retains selection.
   await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
   // Large PRs defer parsing; attribute-collapsed files and binary files never parse eagerly.

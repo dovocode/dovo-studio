@@ -18,6 +18,8 @@ import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 const lineDrafts = createDetailDrafts<{
+  connectionId: string | undefined
+  expectedDestination: string | undefined
   headSha: string
   line: string
   end: string
@@ -26,7 +28,7 @@ const lineDrafts = createDetailDrafts<{
 }>()
 export function LineComment({
   repositoryId,
-  detail,
+  detail: initialDetail,
   path,
   onClose,
   onDone,
@@ -37,24 +39,36 @@ export function LineComment({
   onClose: () => void
   onDone: () => void
 }) {
+  const detail = useRef(initialDetail).current
   const { styles } = useTheme()
 
   const { connected, callEffect, connection, snapshot } = useRuntime()
   const { draft, setField, clear } = useDetailDraft(
     lineDrafts,
-    integrationDraftKey(
-      connection,
-      snapshot,
-      repositoryId,
-      undefined,
-      'pull-line',
-      detail.pull.repositoryUrl,
-      detail.pull.number,
-      path,
-    ),
-    () => ({ headSha: detail.pull.headSha, line: '', end: '', side: 'additions', body: '' }),
+    useRef(
+      integrationDraftKey(
+        connection,
+        snapshot,
+        repositoryId,
+        undefined,
+        'pull-line',
+        detail.destination ?? detail.pull.destination,
+        detail.pull.repositoryUrl,
+        detail.pull.number,
+        path,
+      ),
+    ).current,
+    () => ({
+      connectionId: detail.pull.connectionId,
+      expectedDestination: detail.destination ?? detail.pull.destination,
+      headSha: detail.pull.headSha,
+      line: '',
+      end: '',
+      side: 'additions',
+      body: '',
+    }),
   )
-  const { headSha, line, end, side, body } = draft
+  const { connectionId, expectedDestination, headSha, line, end, side, body } = draft
   const setLine = (value: string) => setField('line', value)
   const setEnd = (value: string) => setField('end', value)
   const setSide = (value: string) => setField('side', value)
@@ -85,6 +99,8 @@ export function LineComment({
             {
               repositoryId,
               ...input,
+              expectedDestination,
+              connectionId,
             },
             pullLineCommentResponse,
           )

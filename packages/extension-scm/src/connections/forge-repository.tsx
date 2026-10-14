@@ -242,7 +242,11 @@ export function ForgeRepositoryFields({
                 })
               }
               placeholder={
-                selected?.provider === 'azure-devops' ? 'Project/Repository' : 'owner/repository'
+                selected?.provider === 'azure-devops'
+                  ? 'Project/Repository'
+                  : selected?.provider === 'gitlab'
+                    ? 'group/subgroup/project'
+                    : 'owner/repository'
               }
               autoCapitalize="off"
               spellCheck={false}

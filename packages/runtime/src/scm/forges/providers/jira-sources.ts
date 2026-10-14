@@ -41,9 +41,14 @@ export function saveJiraSourceEffect(s: Services, value: unknown) {
         site,
         id: existing?.id ?? randomUUID(),
       }
-      yield* runtimeOperation(() =>
-        new JiraWork(s.commands.get().acli, source, undefined, homedir()).verify(),
-      )
+      yield* runtimeOperation(async () => {
+        const provider = new JiraWork(s.commands.get().acli, source, undefined, homedir())
+        try {
+          return await provider.verify()
+        } finally {
+          await provider.close()
+        }
+      })
       if (
         existing &&
         !isDeepStrictEqual(

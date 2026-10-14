@@ -1,3 +1,4 @@
+import { integrationMutationError } from '../connections/mutation-error'
 import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
@@ -66,6 +67,7 @@ export function WorkTaskLinks({
   const linkPending = useRef(false)
   const mounted = useRef(true)
   const failedNavigation = useRef('')
+  const handoff = useRef<(() => boolean) | null>(null)
   const [busy, setBusy] = useApplicationState(false)
   const [linking, setLinking] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
@@ -79,20 +81,22 @@ export function WorkTaskLinks({
       mounted.current = false
     }
   }, [])
-  const openTask = async (id: string) => {
+  const openTask = async (id: string, current = host.taskNavigationGuard?.() ?? (() => true)) => {
+    if (!mounted.current || !current()) return
     if (activeRuntimeId && activeRuntimeId !== runtimeRegistry.activeId)
       await switchRuntime(activeRuntimeId)
-    host.navigate({ viewId: 'tasks', entityId: id })
+    if (mounted.current && current()) host.navigate({ viewId: 'tasks', entityId: id })
   }
   useEffect(() => {
     if (
       !created ||
+      !handoff.current?.() ||
       failedNavigation.current === created ||
       !workspace.tasks.some((task) => task.id === created)
     )
       return
     setCreated('')
-    void openTask(created).catch((cause) => {
+    void openTask(created, handoff.current).catch((cause) => {
       if (mounted.current) {
         failedNavigation.current = created
         setCreated(created)
@@ -111,6 +115,7 @@ export function WorkTaskLinks({
         {
           sourceId: jiraSourceId,
           issueId: source.id,
+          expectedDestination: source.destination,
           repositoryId: selected || null,
         },
         responses.ok,
@@ -131,6 +136,7 @@ export function WorkTaskLinks({
       return
     }
     pending.current = true
+    handoff.current = host.taskNavigationGuard?.() ?? (() => mounted.current)
     setBusy(true)
     setError('')
     try {
@@ -157,6 +163,7 @@ export function WorkTaskLinks({
           requestId: requestId.current,
           id: source.id,
           url: source.url,
+          expectedDestination: source.destination,
           ...('revision' in source
             ? {
                 kind: 'issue',
@@ -174,7 +181,7 @@ export function WorkTaskLinks({
       setPicking(false)
       await refreshRuntimes()
     } catch (error) {
-      if (mounted.current) setError(error instanceof Error ? error.message : String(error))
+      if (mounted.current) setError(integrationMutationError(error))
     } finally {
       pending.current = false
       if (mounted.current) setBusy(false)

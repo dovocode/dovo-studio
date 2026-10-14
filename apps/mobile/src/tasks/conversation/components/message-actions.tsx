@@ -82,8 +82,12 @@ export function MessageActions({
         { text: 'Try again', onPress: () => retry() },
       ])
     setRetrying(true)
-    void loadMobileModelCatalog(profile, agent, (input) =>
-      readRuntime(profile, '/api/agents/models', input, modelCatalogSchema),
+    void loadMobileModelCatalog(
+      profile,
+      agent,
+      (input) => readRuntime(profile, '/api/agents/models', input, modelCatalogSchema),
+      false,
+      snapshot,
     )
       .then((catalog) =>
         catalog.models.filter((model) => !model.hidden && model.id !== agent.model),

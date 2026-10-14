@@ -289,3 +289,22 @@ it('keeps ACP child traffic and controls connected after the parent returns and 
     pressure.mockRestore()
   }
 })
+
+it.each(['on-request', 'never'] as const)(
+  'honors explicit %s in ACP native permission requests',
+  async (approvalPolicy) => {
+    const { cwd, record, launch } = await fixture(false, false, false, ['edit', 'execute'])
+    const approve = vi.fn<AgentRun['approve']>(async () => 'deny')
+    const input = run(cwd, launch, { approve })
+    input.run.agent.permission = 'workspace-write'
+    input.run.agent.approvalPolicy = approvalPolicy
+    await acpAdapter.run(input.run)
+    const messages: Array<{ id?: string; result?: { outcome?: { optionId?: string } } }> =
+      JSON.parse(await readFile(record, 'utf8'))
+    for (const id of ['permission-0', 'permission-1'])
+      expect(messages.find((message) => message.id === id)?.result?.outcome?.optionId).toBe(
+        approvalPolicy === 'never' ? 'allow' : 'reject',
+      )
+    expect(approve).toHaveBeenCalledTimes(approvalPolicy === 'never' ? 0 : 2)
+  },
+)

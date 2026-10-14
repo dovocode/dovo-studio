@@ -1,5 +1,5 @@
 import { View } from 'react-native'
-import { openAppLink } from '../ui/content/open-link'
+import { useOpenAppLink } from '../ui/content/open-link'
 import { CredentialEditor } from './credential-editor'
 import { credentialFields, credentialValues } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
@@ -50,6 +50,7 @@ export function ResourceEditor({
   onClose: () => void
   onSave: (selection: ResourceSelection) => Promise<void>
 }) {
+  const openLink = useOpenAppLink(undefined)
   const { styles } = useTheme()
 
   const { connected, callEffect } = useRuntime(),
@@ -109,7 +110,7 @@ export function ResourceEditor({
         <Action
           secondary
           label={`Source · ${value.sourceRevision?.slice(0, 12) ?? 'Catalog'}`}
-          onPress={() => act(() => openAppLink(value.sourceUrl!))}
+          onPress={() => act(() => openLink(value.sourceUrl!))}
         />
       )}
       {editing.kind === 'mcp' ? (

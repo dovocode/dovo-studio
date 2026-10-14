@@ -8,7 +8,7 @@ const mocks = {
   '@dovo/studio-core': `export * from '@dovo/protocol';export const useStudioHost=()=>({navigate:()=>{}});export const useWorkspace=()=>({activeRuntimeId:'a',runtimes:[],request:async()=>({})});export const WorkspaceRuntimeScope=({runtimeId,children})=><section data-owner={runtimeId}>{children}</section>;export const repositorySourceKey=(a,b)=>JSON.stringify([a,b]);export const formatDateTime=v=>v;`,
   '@dovo/studio-ui': `import {useState} from 'react';export const PageHeader=({title,children})=><header><h1>{title}</h1>{children}</header>;export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true,()=>{}];export const useCompactLayout=()=>false;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const Input=props=><input {...props}/>;export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;`,
   './work-sources': `export {workRemoteKey,matchesWorkSource} from '${root}packages/extension-scm/src/work/work-source-identity';export const jiraSourceKey=(a,b)=>JSON.stringify([a,'jira',b]);export const useIssueSources=()=>window.sources;`,
-  './use-work-sources': `export const useWorkSources=()=>({sources:[window.reader],pages:[{source:window.reader,items:[window.issue],options:{provider:'github',issues:true,pipelineActions:[]}}],busy:false,refresh:()=>{},more:async()=>{}});`,
+  './use-work-sources': `export const useWorkSources=()=>({sources:window.sources,pages:[{source:window.reader,items:[window.issue],options:{provider:'github',issues:true,pipelineActions:[]}}],busy:false,refresh:()=>{},more:async()=>{}});`,
   './jira-toolbar': `export const JiraToolbar=()=>null;`,
   './jira-issue-list': `export const jiraIssueRowKey=(source,id)=>JSON.stringify([source.key,id]);export const JiraIssueList=()=>null;`,
   './pipeline-detail': `export const PipelineState=()=>null;`,
@@ -78,7 +78,7 @@ try {
   await page.getByRole('button', { name: 'Close form', exact: true }).click()
   await page
     .getByRole('combobox', { name: 'Issue source', exact: true })
-    .selectOption('github.com/team/project')
+    .selectOption(JSON.stringify(['a', 'a-repo']))
   await page.evaluate(() => {
     window.target = JSON.stringify({
       runtimeId: 'a',
@@ -102,7 +102,7 @@ try {
   })
   assert.equal(
     await page.getByRole('combobox', { name: 'Issue source', exact: true }).inputValue(),
-    'github.com/team/project',
+    JSON.stringify(['a', 'a-repo']),
     'Filter survives remount',
   )
   await page.getByRole('button', { name: /Fix issue/ }).waitFor()

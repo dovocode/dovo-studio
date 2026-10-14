@@ -6,6 +6,14 @@ import { runtimeSnapshot } from './runtime-snapshot.js'
 import { snapshotTag } from './body.js'
 import * as projectIcons from '../../scm/repositories/project-icon.js'
 
+function deferredPromise<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((accept) => {
+    resolve = accept
+  })
+  return { promise, resolve }
+}
+
 const cleanup: Array<() => Promise<void> | void> = []
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close()
@@ -46,6 +54,8 @@ it.each(['full', 'overview', 'paged'] as const)(
     const first = await read(true)
     const next = await read(true)
     const phone = await read(false)
+    expect(first.permissionPolicySupported).toBe(true)
+    expect(phone.permissionPolicySupported).toBe(true)
     expect(next.workspace).toBe(first.workspace)
     expect(phone.workspace).toBe(first.workspace)
     expect(snapshotTag(next)).toBe(snapshotTag(first))
@@ -137,8 +147,8 @@ it('captures task history at its revision before asynchronous repository enrichm
   const { runtime, available } = await setup()
   runtime.services.store.update((workspace) => ({ ...workspace, tasks: [conversation()] }))
   const revision = runtime.services.store.version()
-  const entered = Promise.withResolvers<void>()
-  const released = Promise.withResolvers<undefined>()
+  const entered = deferredPromise<void>()
+  const released = deferredPromise<undefined>()
   available.mockImplementation(() => {
     entered.resolve()
     return released.promise
@@ -153,4 +163,25 @@ it('captures task history at its revision before asynchronous repository enrichm
   expect(snapshot.revision).toBe(revision)
   expect(snapshot.workspace.tasks[0]?.title).toBe('Original')
   expect(runtime.services.store.taskSummary('thread').title).toBe('Changed')
+})
+
+it('publishes opaque provider generations without invalidating unrelated catalogs', async () => {
+  const { runtime } = await setup()
+  const read = () =>
+    Effect.runPromise(runtimeSnapshot(runtime.services, { id: 'owner', owner: true }))
+  const first = await read()
+  expect(
+    Object.values(first.catalogGenerations).every((value) => /^[a-f0-9]{64}$/.test(value)),
+  ).toBe(true)
+  runtime.services.commands.save({
+    ...runtime.services.commands.get(),
+    codex: '/private/new-codex',
+    shell: '/unrelated/shell',
+  })
+  const next = await read()
+  expect(next.catalogGenerations.codex).not.toBe(first.catalogGenerations.codex)
+  expect(next.catalogGenerations.claude).toBe(first.catalogGenerations.claude)
+  expect(JSON.stringify(next.catalogGenerations)).not.toContain('/private')
+  expect(snapshotTag(next)).not.toBe(snapshotTag(first))
+  expect((await read()).catalogGenerations).toEqual(next.catalogGenerations)
 })

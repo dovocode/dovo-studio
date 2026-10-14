@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
 import { searchRegistry } from '../../agents/catalogs/registry.js'
-import { ModelCatalogCache } from '../../agents/catalogs/model-cache.js'
+import { ModelCatalogCache, configuredModelCatalogKey } from '../../agents/catalogs/model-cache.js'
 import { HarnessAvailabilityCache } from '../../agents/catalogs/harness-availability.js'
 import { harnessAvailabilityCandidates } from '@dovo/protocol'
 import { searchSkills, installCatalogSkill } from '../../agents/catalogs/skills.js'
@@ -570,7 +570,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           ok: true,
         })
       }
-      if (method === 'POST' && path === '/api/agents/models') {
+      if (
+        method === 'POST' &&
+        (path === '/api/agents/models' || path === '/api/agents/models/cached')
+      ) {
         const input = decode(
           mutableStruct({
             ...agentDiscoverySchema.fields,
@@ -579,19 +582,29 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         const agent = modelDiscoveryInput(s.agents.configure(input))
+        const key = configuredModelCatalogKey(input, s.agents, s.acpInstallations.list())
+        let cache = modelCaches.get(s.db)
+        if (!cache) {
+          cache = new ModelCatalogCache(s.db)
+          modelCaches.set(s.db, cache)
+        }
+        if (path === '/api/agents/models/cached') return cache.peek(key)
         const adapter = yield* serviceResult(s.agents.get(agent.provider))
         const models = adapter.models
         if (!models) throw new HttpError(400, 'This integration does not advertise models')
-        let cache = modelCaches.get(s.db)
-        if (!cache) {
-          cache = new ModelCatalogCache()
-          modelCaches.set(s.db, cache)
+        const validate = () => {
+          if (key !== configuredModelCatalogKey(input, s.agents, s.acpInstallations.list()))
+            throw new HttpError(409, 'Model discovery configuration changed. Refresh the catalog.')
         }
         return yield* serviceResult(
           cache.get(
-            JSON.stringify([agent, s.agents.launch(agent)]),
-            async () => decode(modelCatalogSchema, await models(agent)),
+            key,
+            async () => {
+              validate()
+              return decode(modelCatalogSchema, await models(agent))
+            },
             input.refresh,
+            validate,
           ),
         )
       }

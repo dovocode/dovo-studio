@@ -16,6 +16,8 @@ export const subagentSpawnSchema = mutableStruct({
   model: Schema.optional(maxValue(Schema.String, 500)),
   reasoning: Schema.optional(maxValue(Schema.String, 100)),
   permission: Schema.optional(agentSchema.fields.permission),
+  approvalPolicy: agentSchema.fields.approvalPolicy,
+  sandboxMode: agentSchema.fields.sandboxMode,
 })
 export type SubagentSpawn = Schema.Schema.Type<typeof subagentSpawnSchema>
 export const subagentReadSchema = mutableStruct({

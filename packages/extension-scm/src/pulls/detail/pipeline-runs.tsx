@@ -1,3 +1,4 @@
+import { useVerifiedRead } from '../../connections/verified-read'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCallback, useEffect, useRef } from 'react'
 import { ChevronRight, ExternalLink, RefreshCw } from 'lucide-react'
@@ -23,6 +24,7 @@ export function PullPipelineRuns({
   active?: boolean
 }) {
   const { connected, request, workspace, readCache } = useWorkspace()
+  const readRequest = useVerifiedRead({ repositoryId })
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
   const ownerKey = usePullStateKey(repositoryId, 0)
   const cacheKey = JSON.stringify([
@@ -58,7 +60,7 @@ export function PullPipelineRuns({
       setBusy(true)
       setError('')
       try {
-        const options = await request(
+        const options = await readRequest(
           '/api/scm/work/options',
           {
             repositoryId,
@@ -78,7 +80,7 @@ export function PullPipelineRuns({
           )
           return
         }
-        const page = await request(
+        const page = await readRequest(
           '/api/scm/work/pipelines/list',
           {
             repositoryId,
@@ -120,7 +122,7 @@ export function PullPipelineRuns({
         }
       }
     },
-    [active, connected, request, repositoryId, sha, readCache, cacheKey],
+    [active, connected, readRequest, repositoryId, sha, readCache, cacheKey],
   )
   const loadRef = useRef(load)
   loadRef.current = load

@@ -39,6 +39,8 @@ export function environmentSettings(runtime: RuntimeDefaults | undefined): Scope
     taskDefaults: {
       harness: runtime.harness,
       permission: runtime.permission,
+      approvalPolicy: runtime.approvalPolicy,
+      sandboxMode: runtime.sandboxMode,
       execution: runtime.execution,
       setupCommand: runtime.setupCommand,
       worktreeFromOrigin: runtime.worktreeFromOrigin,
@@ -344,6 +346,8 @@ const taskDefaultFields = [
   { key: 'defaultServerId', label: 'Default server' },
   { key: 'harness', label: 'Agent, model & instructions' },
   { key: 'permission', label: 'Permissions' },
+  { key: 'approvalPolicy', label: 'Approval policy' },
+  { key: 'sandboxMode', label: 'Sandbox' },
   { key: 'execution', label: 'Working directory' },
   { key: 'submodules', label: 'Submodules' },
   { key: 'worktreeFromOrigin', label: 'Start from origin' },

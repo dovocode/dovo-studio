@@ -1,3 +1,4 @@
+import { installThemeCatalogRoutes, exerciseThemeBrowser } from './browser/theme-catalog.mjs'
 import { fileURLToPath } from 'node:url'
 import { readFile, readdir } from 'node:fs/promises'
 import assert from 'node:assert/strict'
@@ -9,12 +10,12 @@ const built = await build({
   stdin: {
     contents: `import {useEffect,useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {studioThemeIds,studioThemes,useDiffOptions} from '@dovo/studio-core';
+import {studioThemeIds,studioThemes} from '@dovo/studio-core';
 import {useAppearance} from '${root}/packages/studio-shell/src/appearance.ts';
 import Appearance from '${root}/packages/studio-shell/src/app-settings/appearance.tsx';
 import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';
 import {Button,Message,MessageContent,MessageResponse,TooltipProvider} from '@dovo/studio-ui';
-import {preloadStudioHighlighter} from '@dovo/studio-ui/code-themes';
+import {preloadStudioHighlighter,useDiffOptions} from '@dovo/studio-ui/code-themes';
 import {FileDiff} from '@pierre/diffs/react';
 import {parseDiffFromFile} from '@pierre/diffs';
 import {TerminalSession} from '${root}/packages/extension-tasks/src/terminal/terminal-session.tsx';
@@ -107,6 +108,20 @@ const browser = await chromium.launch()
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } })
   page.setDefaultTimeout(15000)
+  const catalog = await installThemeCatalogRoutes(page)
+  await page.addInitScript(() => {
+    window.catalogRequests = []
+    const original = window.fetch
+    window.fetch = (...args) => {
+      const url = new URL(
+        args[0] instanceof Request ? args[0].url : args[0].toString(),
+        location.href,
+      )
+      if (url.origin === 'https://open-vsx.org' && url.pathname === '/api/-/search')
+        window.catalogRequests.push(url.searchParams.get('query'))
+      return original(...args)
+    }
+  })
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('http://appearance.local/**', async (route) => {
@@ -339,6 +354,74 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   if (process.env.DOVO_APPEARANCE_SCREENSHOT)
     await page.screenshot({ path: process.env.DOVO_APPEARANCE_SCREENSHOT })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  const chooseCode = async (name) => {
+    await page.getByRole('combobox', { name: 'Code theme', exact: true }).click()
+    await page.getByRole('option', { name, exact: true }).click()
+  }
+  await chooseCode('Dracula')
+  const selectedPalette = await page.locator('html').getAttribute('data-theme-palette')
+  const theme = JSON.stringify({
+    name: 'Imported Proof',
+    type: 'light',
+    colors: { 'editor.background': '#fefdfa', 'editor.foreground': '#123456' },
+    tokenColors: [{ scope: 'keyword', settings: { foreground: '#c02d69' } }],
+  })
+  await page.getByLabel('VS Code theme file', { exact: true }).setInputFiles({
+    name: 'proof.jsonc',
+    mimeType: 'application/json',
+    buffer: Buffer.from('// VS Code theme\n' + theme),
+  })
+  await page.waitForFunction(() =>
+    JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).codeTheme.startsWith(
+      'dovo-import-',
+    ),
+  )
+  await page.waitForFunction(() => {
+    const shadow = document.querySelector('[data-testid=diff] diffs-container')?.shadowRoot
+    const token = [...(shadow?.querySelectorAll('span') ?? [])].find(
+      (span) => span.childElementCount === 0 && span.textContent === 'export',
+    )
+    return token && getComputedStyle(token).color === 'rgb(192, 45, 105)'
+  })
+  assert.equal(await page.locator('html').getAttribute('data-theme-palette'), selectedPalette)
+  if (process.env.DOVO_CODE_THEME_SCREENSHOT) {
+    await page.getByRole('combobox', { name: 'Code theme', exact: true }).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: process.env.DOVO_CODE_THEME_SCREENSHOT })
+  }
+  await page.reload()
+  await ready()
+  await page
+    .getByRole('combobox', { name: 'Code theme', exact: true })
+    .getByText('Imported Proof (light)', { exact: true })
+    .waitFor()
+  await page.getByLabel('VS Code theme file', { exact: true }).setInputFiles({
+    name: 'invalid.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{"include":"base.json"}'),
+  })
+  await page
+    .getByRole('alert')
+    .getByText(/Generate Color Theme/)
+    .waitFor()
+  assert.ok(
+    await page
+      .getByRole('combobox', { name: 'Code theme', exact: true })
+      .textContent()
+      .then((text) => text.includes('Imported Proof')),
+  )
+  await page.getByRole('button', { name: 'Remove theme', exact: true }).click()
+  await page
+    .getByRole('combobox', { name: 'Code theme', exact: true })
+    .getByText('Follow app', { exact: true })
+    .waitFor()
+  await exerciseThemeBrowser(page, catalog, { mobile: false })
+  await page.reload()
+  await ready()
+  await page
+    .getByRole('combobox', { name: 'Code theme', exact: true })
+    .getByText('Aurora Dark (dark)', { exact: true })
+    .waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Appearance: all 28 palette/mode combinations, markdown/diff syntax, font persistence, bundled Nerd glyphs, terminal continuity, system mode, persistence, keyboard selection, text-only titlebar and narrow layout passed.',

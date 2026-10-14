@@ -160,3 +160,28 @@ it('decodes only a bounded message and turn window from a long conversation', ()
     db.close()
   }
 })
+
+it('scopes common-term searches before reading hits, preserving ordering, zero limits and unrelated histories', () => {
+  const selected = task('selected', ['common first', 'common last', 'quote "common" 🐱'])
+  const others = Array.from({ length: 55 }, (_, i) =>
+    task(`other-${i}`, Array(25).fill('common unrelated')),
+  )
+  const { db, conversations } = setup([selected, ...others])
+  try {
+    for (const query of ['common', 'co', '"common"', '🐱', 'absent']) {
+      expect(conversations.search([selected.id], query)).toEqual(
+        searchTaskMessages([selected], query),
+      )
+      expect(conversations.search([selected.id], query, 0)).toEqual(
+        searchTaskMessages([selected], query, 0),
+      )
+      expect(conversations.search([others[3].id, selected.id], query, 1)).toEqual(
+        searchTaskMessages([others[3], selected], query, 1),
+      )
+    }
+    expect(conversations.search([], 'common')).toEqual({ taskIds: [], hits: [] })
+    expect(conversations.search(['missing'], 'common')).toEqual({ taskIds: [], hits: [] })
+  } finally {
+    db.close()
+  }
+})

@@ -1,3 +1,5 @@
+import { effectivePermissionPolicy } from '@dovo/protocol'
+import { checkedPolicyRun } from '../shared/permission-policy.js'
 import { mutableStruct, nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { updateSubagents } from '../../execution/subagents.js'
 import { decodeResult, decode } from '@dovo/protocol'
@@ -93,6 +95,8 @@ export function createCodexAdapter(): AgentAdapter {
       detail: 'Requires an authenticated Codex login or API-key login on this runtime host.',
     }),
     async run(run) {
+      run = checkedPolicyRun(run, 'codex')
+      const policy = effectivePermissionPolicy(run.agent, { textOnly: run.tools === 'none' })
       run.signal.throwIfAborted()
       const endpoint = run.agent.endpoint || 'codex'
       const mcpServers =
@@ -101,7 +105,7 @@ export function createCodexAdapter(): AgentAdapter {
           : undefined
       // A loaded Codex thread retains its MCP connections. Dovo supplies a session
       // binding; an external configuration change still requires a fresh process.
-      const launchConfig = JSON.stringify([run.agent.args, run.agent.env, mcpServers])
+      const launchConfig = JSON.stringify([run.agent.args, run.agent.env, mcpServers, policy])
       const previous = run.taskId ? idle.get(run.taskId) : undefined
       if (run.taskId) idle.delete(run.taskId)
       const reusable =
@@ -283,7 +287,14 @@ export function createCodexAdapter(): AgentAdapter {
             'protocol' in context &&
             ['http', 'https'].includes(String(context.protocol))
           const allowed =
+            requestRun.tools !== 'none' &&
             requestRun.agent.permission !== 'read-only' &&
+            requestRun.agent.approvalPolicy !== 'never' &&
+            !(
+              requestRun.agent.sandboxMode &&
+              requestRun.agent.sandboxMode !== 'danger-full-access' &&
+              (scope?.additionalPermissions || scope?.grantRoot)
+            ) &&
             (await requestRun.approve(
               web
                 ? 'Web request'
@@ -476,11 +487,12 @@ export function createCodexAdapter(): AgentAdapter {
           ...(supportsCodexInstantInterrupt(initialized)
             ? { 'features.instant_interrupt': true }
             : {}),
-          ...(run.linkedDirectories?.some((item) => item.access === 'edit')
+          ...(run.agent.sandboxMode === 'workspace-write' ||
+          run.linkedDirectories?.some((item) => item.access === 'edit')
             ? {
                 'sandbox_workspace_write.writable_roots': [
                   run.cwd,
-                  ...run.linkedDirectories
+                  ...(run.linkedDirectories ?? [])
                     .filter((item) => item.access === 'edit')
                     .map((item) => item.path),
                 ],
@@ -526,19 +538,12 @@ export function createCodexAdapter(): AgentAdapter {
               }
             : {}),
           developerInstructions: run.agent.instructions,
-          approvalPolicy: ['read-only', 'full-access'].includes(run.agent.permission)
-            ? 'never'
-            : 'on-request',
-          approvalsReviewer: run.agent.permission === 'auto' ? 'auto_review' : 'user',
-          sandbox:
-            run.agent.permission === 'full-access'
-              ? 'danger-full-access'
-              : ['workspace-write', 'auto'].includes(run.agent.permission)
-                ? 'workspace-write'
-                : 'read-only',
+          approvalPolicy: policy.approvalPolicy,
+          approvalsReviewer: policy.automaticReview ? 'auto_review' : 'user',
+          sandbox: policy.sandboxMode,
         })
         if (
-          run.agent.permission === 'auto' &&
+          policy.automaticReview &&
           !decodeResult(
             mutableStruct({
               approvalsReviewer: Schema.Literals(['auto_review', 'guardian_subagent']),
@@ -550,7 +555,8 @@ export function createCodexAdapter(): AgentAdapter {
             'This Codex harness did not enable automatic approval review. Update the harness or choose another access mode.',
           )
         if (
-          run.agent.permission === 'full-access' &&
+          policy.approvalPolicy === 'never' &&
+          policy.sandboxMode === 'danger-full-access' &&
           !decodeResult(
             mutableStruct({
               approvalPolicy: Schema.Literal('never'),
@@ -564,6 +570,39 @@ export function createCodexAdapter(): AgentAdapter {
           throw new Error(
             'This Codex harness did not grant full access. Check its policy or choose another access mode.',
           )
+        if (run.agent.approvalPolicy || run.agent.sandboxMode) {
+          const settings = decodeResult(
+            mutableStruct({
+              approvalPolicy: Schema.Literals(['untrusted', 'on-failure', 'on-request', 'never']),
+              sandbox: mutableStruct({
+                type: Schema.Literals(['readOnly', 'workspaceWrite', 'dangerFullAccess']),
+                writableRoots: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+              }),
+            }),
+            response,
+          ).data
+          const nativeSandbox = {
+            'read-only': 'readOnly',
+            'workspace-write': 'workspaceWrite',
+            'danger-full-access': 'dangerFullAccess',
+          }[policy.sandboxMode]
+          const allowedRoots = [
+            run.cwd,
+            ...(run.linkedDirectories ?? [])
+              .filter((link) => link.access === 'edit')
+              .map((link) => link.path),
+          ]
+          if (
+            !settings ||
+            settings.approvalPolicy !== policy.approvalPolicy ||
+            settings.sandbox.type !== nativeSandbox ||
+            (run.agent.sandboxMode === 'workspace-write' &&
+              settings.sandbox.writableRoots?.some((root) => !allowedRoots.includes(root)))
+          )
+            throw new Error(
+              'This Codex harness did not apply the requested approval policy and sandbox. No prompt was submitted.',
+            )
+        }
         const thread = decode(
           mutableStruct({
             thread: mutableStruct({
@@ -653,6 +692,29 @@ export function createCodexAdapter(): AgentAdapter {
         awaitingTurn = true
         const started = await request('turn/start', {
           threadId: thread.id,
+          ...(run.agent.approvalPolicy || run.agent.sandboxMode
+            ? {
+                approvalPolicy: policy.approvalPolicy,
+                approvalsReviewer: policy.automaticReview ? 'auto_review' : 'user',
+                sandboxPolicy:
+                  policy.sandboxMode === 'workspace-write'
+                    ? {
+                        type: 'workspaceWrite',
+                        writableRoots: [
+                          run.cwd,
+                          ...(run.linkedDirectories ?? [])
+                            .filter((link) => link.access === 'edit')
+                            .map((link) => link.path),
+                        ],
+                        networkAccess: false,
+                        excludeTmpdirEnvVar: false,
+                        excludeSlashTmp: false,
+                      }
+                    : {
+                        type: policy.sandboxMode === 'read-only' ? 'readOnly' : 'dangerFullAccess',
+                      },
+              }
+            : {}),
           ...(run.agent.reasoning
             ? {
                 effort: run.agent.reasoning,

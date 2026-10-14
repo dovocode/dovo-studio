@@ -22,7 +22,7 @@ import {
 } from '@dovo/studio-core'
 import {
   Button,
-  IconButton,
+  ProjectIcon,
   Dialog,
   DialogContent,
   DialogTitle,
@@ -34,15 +34,12 @@ import {
   FolderOpen,
   ChevronDown,
   Download,
-  GitBranch,
   GitCommitHorizontal,
   Plus,
   ChevronUp,
   GitPullRequest,
   FileDiff,
-  X,
 } from 'lucide-react'
-import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { RepositoryActions } from '@dovo/extension-scm/repository-actions'
 import { gitPrimaryAction } from './git-primary-action'
 import { useLiveRefresh } from './live-refresh'
@@ -59,13 +56,11 @@ export function TaskProjectPanel({
   onPullLink,
   onTerminal,
   onSurface,
-  onClose,
 }: {
   task: Task
   onPullLink?: (url: string) => boolean
   onTerminal?: (terminalId: string) => void
   onSurface: (surface: TaskSurface) => void
-  onClose: () => void
 }) {
   const { workspace, snapshot, connected, connection, request, runtimes, activeRuntimeId } =
     useWorkspace()
@@ -448,35 +443,56 @@ export function TaskProjectPanel({
     </div>
   )
   return (
-    <section
-      aria-label="Thread project"
-      className="studio-project-panel flex h-full min-h-0 flex-col overflow-y-auto p-3"
-    >
-      <div className="flex justify-end">
-        <IconButton label="Close project panel" className="size-7" onClick={onClose}>
-          <X size={14} />
-        </IconButton>
-      </div>
+    <section aria-label="Thread project" className="studio-project-panel flex min-h-0 flex-col">
       <div className="studio-project-card">
         <div className="studio-project-section">
-          <div className="studio-project-row studio-project-computer" title={repo?.path}>
-            <span className="flex shrink-0 items-center gap-1.5">
-              <RuntimeIcon icon={snapshot?.runtimeIcon} size={16} />
-              {task.execution === 'worktree' && <GitBranch size={18} />}
-            </span>
-            <span className="min-w-0 flex-1 truncate">{executionHost ?? 'Selected computer'}</span>
-            {!connected && <span className="text-xs">Offline</span>}
+          <div
+            className="mb-4 flex min-w-0 items-center gap-3"
+            title={[
+              executionHost ?? 'Selected computer',
+              snapshot?.releaseVersion,
+              !connected && 'Offline',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          >
+            <ProjectIcon repository={repo} className="size-9 shrink-0 rounded-lg" />
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-medium text-foreground">
+                {repo?.name ?? 'Project'}
+              </h2>
+              <p
+                className="studio-project-path mt-0.5 truncate text-xs text-muted-foreground"
+                title={task.existingWorktreePath || repo?.path || 'No local checkout'}
+              >
+                {task.existingWorktreePath || repo?.path || 'No local checkout'}
+              </p>
+            </div>
           </div>
+          {repo && !repo.kind && (
+            <div className="studio-project-checkout mb-3">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {task.execution === 'worktree' ? 'Active worktree' : 'Local checkout'}
+              </p>
+              <TaskBranchMenu
+                panel
+                task={task}
+                label={gitState?.branch || task.checkoutBranch || repo.branch || 'Local checkout'}
+              />
+              <p className="mt-1.5 text-[11px] text-muted-foreground" role="status">
+                {gitError
+                  ? `Git status unavailable: ${gitError}`
+                  : !connected
+                    ? 'Connect to refresh Git status'
+                    : !gitState
+                      ? 'Checking Git status…'
+                      : `${gitState.dirty ? 'Uncommitted changes' : 'Clean'} · ${!gitState.tracking ? 'No upstream' : gitState.ahead || gitState.behind ? `${gitState.ahead} ahead · ${gitState.behind} behind` : 'Synced'}`}
+              </p>
+            </div>
+          )}
           {actions}
         </div>
         <div className="studio-project-section border-t border-border/60">
-          {repo && !repo.kind && (
-            <TaskBranchMenu
-              panel
-              task={task}
-              label={task.checkoutBranch || repo.branch || 'Local checkout'}
-            />
-          )}
           {(showAllPulls ? displayedPulls : displayedPulls.slice(0, 1)).map((pull) =>
             task.pullStatus?.url === pull.url ? (
               <TaskPullStatus
@@ -525,11 +541,13 @@ export function TaskProjectPanel({
           {gitActions}
           <Button
             variant="ghost"
-            className="studio-project-row w-full justify-between"
+            className="studio-project-row studio-project-changes w-full justify-between"
             onClick={() => onSurface('changes')}
           >
             <span className="flex items-center gap-3">
               <FileDiff size={18} /> Changes
+              {task.files.length > 0 &&
+                ` · ${task.files.length} ${task.files.length === 1 ? 'file' : 'files'}`}
             </span>
             <span className="studio-project-diff">
               <DiffAmounts stats={stats} />

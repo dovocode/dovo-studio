@@ -431,3 +431,55 @@ it('marks stack data partial when a later page fails instead of claiming a compl
   expect(stack?.complete).toBe(false)
   expect(warning).toContain('Forge unavailable')
 })
+it('rejects a detail fetched from a new destination after resolving the old cache scope', async () => {
+  const { pulls, db, store } = setup()
+  const cache = new PullCache(db, pulls, store, async () => 'old-destination')
+  cleanup.push(() => cache.dispose())
+  const detail: PullDetail = {
+    destination: 'new-destination',
+    pull: {
+      number: 7,
+      title: 'Private',
+      url: 'https://github.com/owner/project/pull/7',
+      repositoryUrl: 'https://github.com/owner/project',
+      state: 'open',
+      draft: false,
+      author: 'dev',
+      updatedAt: '',
+      head: 'feature',
+      base: 'main',
+      labels: [],
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      body: 'Private data from new account',
+      additions: 0,
+      deletions: 0,
+      changedFiles: 0,
+      mergeable: true,
+      reviewers: [],
+      assignees: [],
+    },
+    comments: [],
+    checks: [],
+    files: [],
+    warnings: [],
+  }
+  vi.spyOn(pulls, 'detail').mockResolvedValue(detail)
+  await expect(cache.detail('/repo', 7)).rejects.toThrow('destination changed during the read')
+  expect(db.prepare('SELECT count(*) AS count FROM pull_cache').get()).toEqual({ count: 0 })
+})
+it.each([401, 403, 409])(
+  'does not return private cached PR lists after HTTP %s',
+  async (status) => {
+    const { pulls, db, store } = setup()
+    const cache = new PullCache(db, pulls, store, async () => 'destination')
+    cleanup.push(() => cache.dispose())
+    const load = vi
+      .spyOn(pulls, 'list')
+      .mockResolvedValue({ destination: 'destination', pulls: [], page: 1, hasMore: false })
+    await cache.list('/repo', 'open', 1)
+    const { HttpError } = await import('../../errors.js')
+    load.mockRejectedValue(new HttpError(status, 'Account or destination rejected'))
+    await expect(cache.list('/repo', 'open', 1, true)).rejects.toMatchObject({ status })
+  },
+)

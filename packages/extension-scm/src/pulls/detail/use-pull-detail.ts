@@ -1,11 +1,33 @@
 import { useEffect, useRef } from 'react'
 import { Effect } from 'effect'
-import { startPolling, useWorkspace } from '@dovo/studio-core'
+import { startPolling, useWorkspace, useRepositorySources } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { pullDetailSchema, type PullDetail as Detail } from '@dovo/protocol'
+import { useDetailReader, verifySourceReader } from '../../connections/source-readers'
+import {
+  pullDetailSchema,
+  forgeSourceIdentitySchema,
+  RuntimeRequestError,
+  type PullDetail as Detail,
+} from '@dovo/protocol'
 
-export function usePullDetail(repositoryId: string, number: number) {
-  const { requestEffect: request, connected, workspace, readCache } = useWorkspace()
+export function usePullDetail(repositoryId: string, number: number, connectionId?: string) {
+  const {
+    requestEffect: request,
+    connected,
+    workspace,
+    readCache,
+    activeRuntimeId,
+  } = useWorkspace()
+  const sources = useRepositorySources()
+  const origin = sources.find(
+    (source) => source.runtimeId === activeRuntimeId && source.repository.id === repositoryId,
+  )
+  const { reader, destination } = useDetailReader(
+    origin,
+    sources,
+    JSON.stringify([repositoryId, number, connectionId]),
+  )
+  const readConnected = reader?.connected ?? (!origin && connected)
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
   const cacheKey = JSON.stringify([
     'pulls',
@@ -14,6 +36,7 @@ export function usePullDetail(repositoryId: string, number: number) {
     repository?.path ?? '',
     number,
     repository?.forge,
+    ...(connectionId ? ['connection', connectionId] : []),
   ])
   const [state, setState] = useApplicationState({
     detail: null as Detail | null,
@@ -23,8 +46,10 @@ export function usePullDetail(repositoryId: string, number: number) {
     revision: 0,
   })
   const forceNext = useRef(false)
+  const urlIdentity = useRef<string | undefined>(undefined)
   const setError = (error: string) => setState((current) => ({ ...current, error }))
   useEffect(() => {
+    urlIdentity.current = undefined
     setState((current) => ({ ...current, detail: null, error: '' }))
   }, [cacheKey, readCache])
   useEffect(() => {
@@ -57,17 +82,56 @@ export function usePullDetail(repositoryId: string, number: number) {
     setState((current) => ({ ...current, busy: false, refreshing: false }))
     const load = Effect.gen(function* () {
       yield* hydrated
-      if (!connected || document.visibilityState !== 'visible') return
+      if (!readConnected || document.visibilityState !== 'visible') return
       const refresh = force
       force = false
       setState((current) => ({ ...current, busy: true, refreshing: refresh }))
-      yield* request(
+      const identity =
+        !origin && repositoryId.startsWith('http')
+          ? yield* request(
+              '/api/scm/source/identity',
+              { repositoryId, connectionId },
+              forgeSourceIdentitySchema,
+            ).pipe(
+              Effect.catch((error) =>
+                error instanceof RuntimeRequestError && [404, 405].includes(error.status ?? 0)
+                  ? Effect.succeed(undefined)
+                  : Effect.fail(error),
+              ),
+            )
+          : undefined
+      if (urlIdentity.current && identity?.readerIdentity !== urlIdentity.current)
+        return yield* Effect.fail(
+          new RuntimeRequestError({
+            kind: 'request',
+            status: 409,
+            message: 'The PR account changed. Choose its account explicitly before refreshing.',
+          }),
+        )
+      if (identity && !stopped) urlIdentity.current = identity.readerIdentity
+      const expectedReaderIdentity = reader
+        ? yield* verifySourceReader(reader)
+        : identity?.readerIdentity
+      yield* (reader?.requestEffect ?? request)(
         '/api/scm/pulls/detail',
-        { repositoryId, number, refresh },
+        {
+          repositoryId: reader?.repository.id ?? repositoryId,
+          number,
+          connectionId,
+          refresh,
+          expectedReaderIdentity,
+        },
         pullDetailSchema,
       ).pipe(
+        Effect.map((value) =>
+          reader && reader.key !== origin?.key
+            ? { ...value, destination, pull: { ...value.pull, destination } }
+            : value,
+        ),
         Effect.tap((value) =>
-          Effect.sync(() => setState((current) => ({ ...current, detail: value, error: '' }))),
+          Effect.sync(() => {
+            if (!stopped) setState((current) => ({ ...current, detail: value, error: '' }))
+          }),
         ),
         Effect.flatMap((value) =>
           (readCache ? readCache.writeEffect(cacheKey, value) : Effect.void).pipe(
@@ -78,13 +142,14 @@ export function usePullDetail(repositoryId: string, number: number) {
             ),
           ),
         ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            if (!stopped) setState((current) => ({ ...current, busy: false, refreshing: false }))
-          }),
-        ),
       )
-    })
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (!stopped) setState((current) => ({ ...current, busy: false, refreshing: false }))
+        }),
+      ),
+    )
     const polling = startPolling(load, {
       interval: 10000,
       onError: (error) => {
@@ -97,9 +162,20 @@ export function usePullDetail(repositoryId: string, number: number) {
       document.removeEventListener('visibilitychange', polling.refresh)
       void polling.stop()
     }
-  }, [repositoryId, number, cacheKey, connected, request, readCache, state.revision])
+  }, [
+    repositoryId,
+    number,
+    connectionId,
+    cacheKey,
+    readConnected,
+    reader,
+    destination,
+    request,
+    readCache,
+    state.revision,
+  ])
   const refresh = () => {
-    if (!connected) return
+    if (!readConnected) return
     forceNext.current = true
     setState((current) => ({ ...current, refreshing: true, revision: current.revision + 1 }))
   }
@@ -112,6 +188,7 @@ export function usePullDetail(repositoryId: string, number: number) {
     refresh()
   }
   return {
+    readConnected,
     detail: state.detail,
     error: state.error,
     setError,

@@ -327,7 +327,7 @@ it('preserves provider checkout metadata through task creation and an isolated w
       headRef: 'refs/heads/feature',
     }),
   )
-  expect(await services.pulls.identity(directory)).toContain(connection.id)
+  expect(await services.pulls.identity(directory)).toMatch(/^[a-f0-9]{64}$/)
 })
 it('rejects an adapter captured before connection rotation without sending the new credential to the old host', async () => {
   const { services, connection } = await setup()
@@ -381,17 +381,22 @@ it('opens unlinked GitHub PRs using URL targets without adding a project, with c
   const url = 'https://github.com/foreign/project/pull/7'
   const detail = {
     ...first,
+    destination: 'account',
     pull: {
       ...first.pull,
+      destination: 'account',
       url,
       repositoryUrl: 'https://github.com/foreign/project',
       provider: 'github' as const,
     },
   }
-  const read = vi.fn().mockResolvedValue(detail)
-  const act = vi.fn().mockResolvedValue({ ok: true })
+  type UrlTarget = ReturnType<typeof services.pulls.urlTarget>
+  const read = vi.fn<UrlTarget['detail']>().mockResolvedValue(detail)
+  const act = vi.fn<UrlTarget['act']>().mockResolvedValue({ number: 7, url, status: 'submitted' })
   vi.spyOn(services.pulls, 'urlTarget').mockReturnValue({
     identity: async () => 'account',
+    sourceIdentity: async () => ({ readerIdentity: 'reader', destination: 'account' }),
+    guard: async () => {},
     detail: read,
     act,
     comment: async () => ({ url }),

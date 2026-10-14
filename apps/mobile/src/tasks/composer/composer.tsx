@@ -1,3 +1,4 @@
+import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FileDropTarget } from './file-drop-target'
 import { resolveTaskDefaults } from '@dovo/protocol'
 import { checkpointCanUndo } from '@dovo/protocol'
@@ -107,7 +108,14 @@ export function Composer({
   const startFork = () => {
     const text = draft.text.trim()
     const attachmentIds = (actions.draftAttachments ?? []).map((file) => file.id)
-    if (!connected || busy || attaching || (!text && !attachmentIds.length)) return
+    if (
+      !connected ||
+      busy ||
+      attaching ||
+      (!text && !attachmentIds.length) ||
+      (agent && permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true))
+    )
+      return
     const scope = actions.threadScope
     if (
       forkAttempt.current?.scope !== scope ||

@@ -21,6 +21,7 @@ import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import { Switch } from '../../../ui/controls/switch'
 import { pullCreateSchema, pullActionResultSchema, pullCreateOptionsSchema } from '@dovo/protocol'
+import { useSourceReader } from '../../source-reader'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { readMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { Sheet, type SheetHandle } from '../../../ui/layout/sheet'
@@ -32,6 +33,7 @@ import { useTheme } from '../../../ui/theme'
 type ParentDraft = Pick<PullDetail['pull'], 'number' | 'title' | 'head' | 'url' | 'headSha'>
 const createDrafts = createDetailDrafts<{
   repositoryId: string
+  expectedDestination: string | undefined
   title: string
   body: string
   head: string
@@ -60,7 +62,7 @@ export function CreatePull({
 }) {
   const { styles } = useTheme()
 
-  const { read: call, connected, snapshot, callEffect, connection } = useRuntime()
+  const { connected, snapshot, callEffect, connection } = useRuntime()
   const repos = snapshot?.workspace.repositories ?? []
   const {
     draft: fields,
@@ -68,17 +70,21 @@ export function CreatePull({
     clear,
   } = useDetailDraft(
     createDrafts,
-    integrationDraftKey(
-      connection,
-      snapshot,
-      initial || repos[0]?.id,
-      undefined,
-      'create-pull',
-      initialParent?.number,
-      repos.map((repo) => [repo.id, repo.forge] as const).sort(([a], [b]) => a.localeCompare(b)),
-    ),
+    useRef(
+      integrationDraftKey(
+        connection,
+        snapshot,
+        initial || repos[0]?.id,
+        undefined,
+        'create-pull',
+        initialParent?.destination,
+        initialParent?.number,
+        repos.map((repo) => [repo.id, repo.forge] as const).sort(([a], [b]) => a.localeCompare(b)),
+      ),
+    ).current,
     () => ({
       repositoryId: initial || repos[0]?.id || '',
+      expectedDestination: initialParent?.destination,
       title: '',
       body: '',
       head: '',
@@ -88,7 +94,14 @@ export function CreatePull({
       sourceTask: '',
     }),
   )
-  const { repositoryId, title, body, head, base, draft, parent, sourceTask } = fields
+  const { repositoryId, expectedDestination, title, body, head, base, draft, parent, sourceTask } =
+    fields
+  const source = useSourceReader(repositoryId)
+  const read = source.read
+  useEffect(() => {
+    if (expectedDestination === undefined && source.identity)
+      setField('expectedDestination', source.identity.destination)
+  }, [expectedDestination, source.identity?.destination])
   const setRepository = (value: string) => setField('repositoryId', value)
   const setTitle = (value: string) => setField('title', value)
   const setBody = (value: string) => setField('body', value)
@@ -114,13 +127,14 @@ export function CreatePull({
     setSupportsDraft(false)
     if (repositoryId && connected)
       void runClientEffect(
-        callEffect(
-          '/api/scm/pulls/options/read',
-          {
-            repositoryId,
-          },
-          pullCreateOptionsSchema,
-        )
+        source
+          .readEffect(
+            '/api/scm/pulls/options/read',
+            {
+              repositoryId,
+            },
+            pullCreateOptionsSchema,
+          )
           .pipe(
             Effect.flatMap((value) =>
               nativeEffect(() => {
@@ -139,7 +153,7 @@ export function CreatePull({
     return () => {
       active = false
     }
-  }, [call, repositoryId, connected])
+  }, [source.readEffect, repositoryId, connected])
   useEffect(() => {
     if (!connected || !repositoryId) return
     let stopped = false
@@ -147,7 +161,7 @@ export function CreatePull({
     void (async () => {
       const loaded: PullSummary[] = []
       for (let page = 1; page <= 10 && !stopped; page++) {
-        const result = await call(
+        const result = await read(
           '/api/scm/pulls/overview',
           { repositoryId, state: 'open', page },
           pullPageSchema,
@@ -167,7 +181,7 @@ export function CreatePull({
     return () => {
       stopped = true
     }
-  }, [repositoryId, connected, call])
+  }, [repositoryId, connected, read])
   const chooseParent = async (value: string) => {
     setError('')
     if (!value) {
@@ -177,7 +191,7 @@ export function CreatePull({
     }
     setParentBusy(true)
     try {
-      const detail = await call(
+      const detail = await read(
         '/api/scm/pulls/detail',
         { repositoryId, number: Number(value), refresh: true },
         pullDetailSchema,
@@ -196,7 +210,7 @@ export function CreatePull({
   const submit = () => {
     return runClientEffect(
       mobileWorkflow(function* () {
-        if (pending.current || parentBusy || !connected) return
+        if (pending.current || parentBusy || !connected || !source.ready) return
         pending.current = true
         setBusy(true)
         setError('')
@@ -214,6 +228,7 @@ export function CreatePull({
             {
               repositoryId,
               ...input,
+              expectedDestination,
             },
             pullActionResultSchema,
           )
@@ -242,6 +257,7 @@ export function CreatePull({
         value={repositoryId}
         onChange={(id) => {
           setRepository(id)
+          setField('expectedDestination', undefined)
           setSourceTask('')
           setParent(undefined)
           setBase('')
@@ -261,20 +277,22 @@ export function CreatePull({
           setDescribing(true)
           setError('')
           void runClientEffect(
-            callEffect(
-              '/api/scm/pulls/describe',
-              { repositoryId, head, base, ...(sourceTask ? { taskId: sourceTask } : {}) },
-              describedSchema,
-            ).pipe(
-              Effect.tap((result) =>
-                Effect.sync(() => {
-                  setTitle(result.title)
-                  setBody(result.body)
-                }),
+            source
+              .readEffect(
+                '/api/scm/pulls/describe',
+                { repositoryId, head, base, ...(sourceTask ? { taskId: sourceTask } : {}) },
+                describedSchema,
+              )
+              .pipe(
+                Effect.tap((result) =>
+                  Effect.sync(() => {
+                    setTitle(result.title)
+                    setBody(result.body)
+                  }),
+                ),
+                Effect.catch((cause) => Effect.sync(() => setError(String(cause)))),
+                Effect.ensuring(Effect.sync(() => setDescribing(false))),
               ),
-              Effect.catch((cause) => Effect.sync(() => setError(String(cause)))),
-              Effect.ensuring(Effect.sync(() => setDescribing(false))),
-            ),
           )
         }}
       />
@@ -380,7 +398,7 @@ export function CreatePull({
       )}
       <Action
         label={busy ? 'Creating…' : 'Create pull request'}
-        disabled={busy || parentBusy || !connected || !repositoryId}
+        disabled={busy || parentBusy || !source.ready || !connected || !repositoryId}
         onPress={() => void submit()}
       />
     </Sheet>

@@ -39,6 +39,12 @@ export async function importSkill(input: unknown) {
   } finally {
     await file.close()
   }
+  return { ...parseSkillDocument(text), sourcePath }
+}
+
+/** Catalog IDs come from frontmatter, and need not match the containing directory. */
+export function parseSkillDocument(text: string) {
+  text = text.replace(/^\uFEFF/, '')
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)
   if (!match) throw new Error('SKILL.md needs YAML frontmatter with name and description')
   const document = parseDocument(match[1], {
@@ -58,7 +64,6 @@ export async function importSkill(input: unknown) {
     ...metadata,
     enabled: true,
     content: text.slice(match[0].length),
-    sourcePath,
   })
 }
 export async function testMcpServer(input: unknown) {

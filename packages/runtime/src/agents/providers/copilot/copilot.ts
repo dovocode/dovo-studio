@@ -1,3 +1,4 @@
+import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { homedir } from 'node:os'
 import { relative, isAbsolute, delimiter, join, resolve, dirname } from 'node:path'
 import { access, realpath } from 'node:fs/promises'
@@ -97,14 +98,20 @@ export const copilotPermission =
   (run: AgentRun, signal: AbortSignal): PermissionHandler =>
   async (request) => {
     if (signal.aborted || run.tools === 'none') return { kind: 'reject' }
+    const disposition = toolPolicyDisposition(run, request.kind === 'read' ? 'read' : 'other')
+    if (disposition === 'deny') return { kind: 'reject' }
+    if (
+      request.managedApprovalRequired &&
+      (run.agent.approvalPolicy === 'never' || run.agent.permission === 'read-only')
+    )
+      return { kind: 'reject' }
     const automatic =
       !request.managedApprovalRequired &&
-      (run.agent.permission === 'full-access' ||
-        request.kind === 'read' ||
-        (run.agent.permission === 'workspace-write' &&
+      (disposition === 'allow' ||
+        (!run.agent.approvalPolicy &&
+          run.agent.permission === 'workspace-write' &&
           request.kind === 'write' &&
           (await workspaceWrite(run, request.fileName))))
-    if (run.agent.permission === 'read-only' && !automatic) return { kind: 'reject' }
     const decision =
       automatic ||
       (await nativeWait(
@@ -232,6 +239,7 @@ export function createCopilotAdapter(): AgentAdapter {
       }
     },
     async run(run) {
+      run = checkedPolicyRun(run, 'copilot')
       run.signal.throwIfAborted()
       const lifetime = new AbortController(),
         signal = AbortSignal.any([run.signal, lifetime.signal])

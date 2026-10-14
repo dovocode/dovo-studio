@@ -21,6 +21,7 @@ import {
   type ForgeWorkOptions,
   type ForgeWorkResult,
 } from '@dovo/protocol'
+import { useSourceReader } from '../source-reader'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useNavigation } from '../../shell/navigation'
 import { Text } from '../../ui/content/text'
@@ -30,6 +31,7 @@ import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
 import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 const workDrafts = createDetailDrafts<{
+  expectedDestination: string | undefined
   issue: ForgeIssueDetail['issue'] | undefined
   title: string
   body: string
@@ -66,21 +68,26 @@ export function WorkForm({
 }) {
   const { styles } = useTheme()
 
-  const { read, connected, readEffect, connection, snapshot } = useRuntime()
+  const { read, connected, readEffect: mutationEffect, connection, snapshot } = useRuntime()
+  const { readEffect } = useSourceReader(repositoryId, jiraSourceId)
   const { focused } = useNavigation()
   const { draft, setField, clear } = useDetailDraft(
     workDrafts,
-    integrationDraftKey(
-      connection,
-      snapshot,
-      repositoryId,
-      jiraSourceId,
-      'work-form',
-      kind,
-      initialIssue?.id,
-      initialDefinition,
-    ),
+    useRef(
+      integrationDraftKey(
+        connection,
+        snapshot,
+        repositoryId,
+        jiraSourceId,
+        'work-form',
+        initialIssue?.destination ?? options.destination,
+        kind,
+        initialIssue?.id,
+        initialDefinition,
+      ),
+    ).current,
     () => ({
+      expectedDestination: initialIssue?.destination ?? options.destination,
       issue: initialIssue,
       title: kind === 'edit' ? (initialIssue?.title ?? '') : '',
       body: kind === 'edit' ? (initialIssue?.body ?? '') : '',
@@ -93,7 +100,19 @@ export function WorkForm({
       inputs: '{}',
     }),
   )
-  const { issue, title, body, type, state, assignees, labels, definition, ref, inputs } = draft
+  const {
+    expectedDestination,
+    issue,
+    title,
+    body,
+    type,
+    state,
+    assignees,
+    labels,
+    definition,
+    ref,
+    inputs,
+  } = draft
   const setTitle = (value: string) => setField('title', value)
   const setBody = (value: string) => setField('body', value)
   const setType = (value: string) => setField('type', value)
@@ -309,7 +328,7 @@ export function WorkForm({
                         assignees: split(assignees),
                         labels: split(labels),
                       }
-          const result = yield* readEffect(
+          const result = yield* mutationEffect(
             '/api/scm/work/' +
               (kind === 'run'
                 ? 'pipelines/action'
@@ -324,6 +343,7 @@ export function WorkForm({
                 : {
                     repositoryId,
                   }),
+              expectedDestination,
               ...(kind === 'run'
                 ? decode(forgePipelineActionSchema, data)
                 : kind === 'create'

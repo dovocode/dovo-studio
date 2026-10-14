@@ -1,9 +1,17 @@
+import { effectivePermissionPolicy } from '../auth/permission-policy.js'
 import { resolveProviderAccess } from '../auth/access.js'
 import type { Agent, TaskHarness } from '../workspace.js'
 
 /** Launch settings belong to the provider that supplied them. */
 export function changeAgentProvider(agent: Agent, provider: TaskHarness['provider']): Agent {
   if (agent.provider === provider) return agent
+  const policy = effectivePermissionPolicy(agent)
+  const permission =
+    agent.sandboxMode && policy.sandboxMode !== 'danger-full-access'
+      ? 'read-only'
+      : agent.permission !== 'read-only' && agent.approvalPolicy && agent.approvalPolicy !== 'never'
+        ? 'ask'
+        : agent.permission
   return {
     ...agent,
     provider,
@@ -18,7 +26,12 @@ export function changeAgentProvider(agent: Agent, provider: TaskHarness['provide
     executablePath: undefined,
     configDirectory: undefined,
     args: [],
-    permission: resolveProviderAccess(provider, agent.permission),
+    approvalPolicy: undefined,
+    sandboxMode: undefined,
+    permission:
+      agent.sandboxMode && permission === 'read-only'
+        ? 'read-only'
+        : resolveProviderAccess(provider, permission),
   }
 }
 

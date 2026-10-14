@@ -217,3 +217,28 @@ it('evicts large conditional bodies by total bytes and discards validators when 
   await transport.send(parseGithubApiArgs(['api', 'three']), 'token')
   expect(new Headers(fetcher.mock.calls[5]?.[1]?.headers).has('if-none-match')).toBe(false)
 })
+it('invalidates credentials on 401 before reading an interrupted body and does not disclose private error payloads', async () => {
+  const unauthorized = vi.fn<() => void>()
+  const fetcher = vi.fn<typeof fetch>().mockImplementationOnce(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error('private interrupted payload'))
+          },
+        }),
+        { status: 401 },
+      ),
+  )
+  const transport = new GithubTransport(fetcher)
+  await expect(
+    transport.send(parseGithubApiArgs(['api', 'user']), 'private-token', {
+      onUnauthorized: unauthorized,
+    }),
+  ).rejects.toMatchObject({ status: 401, message: 'GitHub API HTTP 401' })
+  expect(unauthorized).toHaveBeenCalledTimes(1)
+  fetcher.mockResolvedValueOnce(reply({ message: 'private email token account' }, { status: 403 }))
+  await expect(
+    transport.send(parseGithubApiArgs(['api', 'private/repository']), 'private-token'),
+  ).rejects.toThrow('GitHub API HTTP 403')
+})

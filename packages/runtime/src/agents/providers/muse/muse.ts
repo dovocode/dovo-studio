@@ -1,3 +1,4 @@
+import { checkedPolicyRun } from '../shared/permission-policy.js'
 import { existsSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -435,7 +436,7 @@ export function createMuseAdapter(): AgentAdapter {
       }
     },
     async run(inputRun) {
-      let run = inputRun
+      let run = checkedPolicyRun(inputRun, 'muse')
       const config = JSON.stringify([run.agent, run.cwd, run.tools], (key, value: unknown) =>
         key === 'DOVO_TASK_RUN_ID' ? undefined : value,
       )

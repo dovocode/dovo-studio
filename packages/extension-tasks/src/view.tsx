@@ -2,18 +2,19 @@ import type { CodeFinding } from '@dovo/protocol'
 import { TaskWaitingPanel } from './detail/task-waiting-panel'
 import { fileStats } from './files/presentation'
 import { randomUUID, checkpointFileCount } from '@dovo/protocol'
-import { githubPullTarget } from '@dovo/protocol'
+import { forgePullTarget, pullRepositoryIdentity } from '@dovo/protocol'
 import { FloatingPreview, type PreviewPlacement } from './detail/floating-preview'
 import { ResizableSidebar } from './detail/resizable-sidebar'
 import { readTaskListViewState, saveTaskListViewState } from './list/task-list-view-state'
 import { useCachedTask } from '@dovo/studio-core'
 import { watchRuntimeTask } from '@dovo/protocol'
-import type { ArtifactReference, Task } from '@dovo/protocol'
+import type { ArtifactReference, Subagent, Task } from '@dovo/protocol'
 import { PullDetail } from '@dovo/extension-scm/pull-detail'
 import { threadPullPreview } from './detail/thread-pull-preview'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskTools } from './detail/task-tools'
 import { TaskAgents } from './detail/task-agents'
+import { NativeAgentThread } from './detail/native-agent-thread'
 import { LinkedProjects } from './detail/linked-projects'
 import { ThreadArtifacts } from './chat/artifacts'
 import { BrowserPane, DevicesPane } from './browser/browser-pane'
@@ -59,6 +60,7 @@ import {
 } from '@dovo/studio-ui'
 import { TaskList } from './list/task-list'
 import { TaskProjectPanel } from './detail/task-project-panel'
+import { TaskProjectPanelRoot, TaskProjectPopover } from './detail/task-project-popover'
 import { TaskLinkedPullPanel } from './detail/task-linked-pull-panel'
 import { taskPullLinks } from './detail/task-pull-links'
 import { TaskHeader, type TaskSurface } from './detail/task-header'
@@ -185,6 +187,11 @@ export default function TasksView({ entityId }: StudioViewProps) {
     id: string
     openId: string
   }>()
+  const [nativeThread, setNativeThread] = useState<{
+    parentKey: string
+    taskId: string
+    agent: Subagent
+  }>()
   const surface = threadSurfaces[threadKey] ?? 'chat'
   const [browserPlacements, setBrowserPlacements] = useState<Record<string, PreviewPlacement>>({})
   const browserPlacement = browserPlacements[threadKey] ?? 'inline'
@@ -292,7 +299,16 @@ export default function TasksView({ entityId }: StudioViewProps) {
     }
   })
   const [pullPreviews, setPullPreviews] = useApplicationState<
-    Record<string, { repositoryId: string; number: number; returnTo?: 'chat' | 'linked-pulls' }>
+    Record<
+      string,
+      {
+        repositoryId: string
+        number: number
+        returnTo?: 'chat' | 'linked-pulls'
+        tab?: 'overview' | 'changes' | 'checks'
+        fragment?: string
+      }
+    >
   >({})
   const openArtifact = (reference: ArtifactReference) => {
     const key = taskCollectionKey(activeRuntimeId, reference.taskId)
@@ -308,14 +324,25 @@ export default function TasksView({ entityId }: StudioViewProps) {
     url: string,
     returnTo: 'chat' | 'linked-pulls' = 'chat',
   ) => {
-    const preview = threadPullPreview(
-      githubPullTarget(url)?.url ?? url,
-      target,
-      workspace.repositories,
+    const link = forgePullTarget(
+      url,
+      workspace.repositories.map((repository) => ({
+        identity: pullRepositoryIdentity(repository),
+      })),
     )
-    if (!preview) return host.openPullLink?.(url) ?? false
+    const preview = threadPullPreview(url, target, workspace.repositories)
+    if (!preview)
+      return (
+        host.openPullLink?.(url, {
+          runtimeId: activeRuntimeId ?? undefined,
+          repositoryId: target.repositoryId,
+        }) ?? false
+      )
     const key = taskCollectionKey(activeRuntimeId, target.id)
-    setPullPreviews((current) => ({ ...current, [key]: { ...preview, returnTo } }))
+    setPullPreviews((current) => ({
+      ...current,
+      [key]: { ...preview, returnTo, tab: link?.tab, fragment: link?.fragment },
+    }))
     if (target.id !== task?.id) {
       setSelectedId(target.id)
       setSplitId(task?.id ?? '')
@@ -760,13 +787,47 @@ export default function TasksView({ entityId }: StudioViewProps) {
     : (temporaryEntry?.key ?? '')
   const renderThread = (currentTask: Task, workspaceControls?: ReactNode, temporary = false) => {
     const task = storedTask?.id === currentTask.id ? storedTask : currentTask
+    const native =
+      nativeThread?.parentKey === taskCollectionKey(activeRuntimeId, task.id)
+        ? nativeThread
+        : undefined
+    const nativeAgent =
+      native &&
+      (workspace.tasks
+        .find((item) => item.id === native.taskId)
+        ?.subagents?.find(
+          (agent) =>
+            agent.id === native.agent.id &&
+            agent.provider === native.agent.provider &&
+            agent.sessionId === native.agent.sessionId,
+        ) ??
+        native.agent)
     const projectPanelOpen = projectPanelKey === taskCollectionKey(activeRuntimeId, task.id)
+    const setProjectPanelOpen = (open: boolean) => {
+      if (open && (compact || (fileViewer && viewerExpanded))) {
+        setViewerExpanded(false)
+        selectSurface('chat')
+      }
+      setProjectPanelKey(open ? taskCollectionKey(activeRuntimeId, task.id) : '')
+    }
     return (
-      <div
+      <TaskProjectPanelRoot
         key={taskCollectionKey(activeRuntimeId, task.id)}
-        className="flex h-full min-h-0 flex-col"
+        open={!temporary && projectPanelOpen && !native}
+        onOpenChange={setProjectPanelOpen}
       >
-        {temporary ? (
+        {native && nativeAgent && (
+          <NativeAgentThread
+            key={`${native.parentKey}:${native.taskId}:${nativeAgent.provider}:${nativeAgent.sessionId}:${nativeAgent.id}`}
+            taskId={native.taskId}
+            agent={nativeAgent}
+            parentTitle={task.title}
+            projectName={workspace.repositories.find((repo) => repo.id === task.repositoryId)?.name}
+            windowRightEdge={!splitTask}
+            onClose={() => setNativeThread(undefined)}
+          />
+        )}
+        {native ? null : temporary ? (
           <HeaderContent>
             <header
               className="studio-task-thread-header"
@@ -782,12 +843,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
             onPullLink={(url) => openPullPreview(task, url)}
             task={task}
             projectPanelOpen={projectPanelOpen}
-            onProjectPanel={() => {
-              if (!projectPanelOpen) selectSurface('chat', true)
-              setProjectPanelKey(
-                projectPanelOpen ? '' : taskCollectionKey(activeRuntimeId, task.id),
-              )
-            }}
+            onProjectPanel={() => setProjectPanelOpen(!projectPanelOpen)}
             onCreate={() =>
               void startTask(taskCollectionKey(activeRuntimeId, task.repositoryId), true)
             }
@@ -815,14 +871,17 @@ export default function TasksView({ entityId }: StudioViewProps) {
             onBottomTerminal={toggleBottomTerminal}
           />
         )}
-        {!temporary && !projectPanelOpen && (
+        {!temporary && !projectPanelOpen && !native && (
           <TaskWaitingPanel
             onPullLink={(url) => openPullPreview(task, url)}
             key={`${activeRuntimeId}:${task.id}`}
             taskId={task.id}
           />
         )}
-        <div ref={workspacePane} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div
+          ref={workspacePane}
+          className={cn('relative flex min-h-0 min-w-0 flex-1 overflow-hidden', native && 'hidden')}
+        >
           <div
             ref={(element) => {
               panes.current.chat = element
@@ -861,33 +920,49 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 defaultSize={bottomTerminalOpen ? '65%' : '100%'}
                 minSize="30%"
               >
-                <TaskConversation
-                  historyLoaded={usingStartupDraft || historyLoaded}
-                  historyError={historyError}
-                  key={taskCollectionKey(activeRuntimeId, task.id)}
-                  task={task}
-                  temporary={temporary}
-                  workspaceControls={workspaceControls}
-                  revealMessage={revealMessage}
-                  onRevealHandled={revealHandled}
-                  codeReference={codeReference?.taskId === task.id ? codeReference : null}
-                  visible={!listOpen && (!compact || surface === 'chat')}
-                  onReview={() => selectSurface(hasDiff ? 'changes' : 'files')}
-                  onCodeReview={(finding) => {
-                    setReviewTarget({ threadKey, finding })
-                    selectSurface('changes')
-                  }}
-                  onTerminal={showTerminal}
-                  onPullLink={(url) => openPullPreview(task, url)}
-                  onArtifact={openArtifact}
-                  onBrowser={(url) => {
-                    setBrowserLink({ taskId: task.id, id: randomUUID(), url })
-                    selectSurface('browser')
-                  }}
-                  onAside={() => setAsking(true)}
-                  composerInsert={composerInsert?.taskId === task.id ? composerInsert : null}
-                  onComposerInsertApplied={() => setComposerInsert(null)}
-                />
+                <div className="relative h-full min-h-0" data-project-panel-frame>
+                  {!temporary && (
+                    <TaskProjectPopover>
+                      <TaskProjectPanel
+                        key={taskCollectionKey(activeRuntimeId, task.id)}
+                        task={task}
+                        onPullLink={(url) => openPullPreview(task, url)}
+                        onTerminal={showTerminal}
+                        onSurface={(next) => {
+                          setProjectPanelKey('')
+                          selectSurface(next)
+                        }}
+                      />
+                    </TaskProjectPopover>
+                  )}
+                  <TaskConversation
+                    historyLoaded={usingStartupDraft || historyLoaded}
+                    historyError={historyError}
+                    key={taskCollectionKey(activeRuntimeId, task.id)}
+                    task={task}
+                    temporary={temporary}
+                    workspaceControls={workspaceControls}
+                    revealMessage={revealMessage}
+                    onRevealHandled={revealHandled}
+                    codeReference={codeReference?.taskId === task.id ? codeReference : null}
+                    visible={!native && !listOpen && (!compact || surface === 'chat')}
+                    onReview={() => selectSurface(hasDiff ? 'changes' : 'files')}
+                    onCodeReview={(finding) => {
+                      setReviewTarget({ threadKey, finding })
+                      selectSurface('changes')
+                    }}
+                    onTerminal={showTerminal}
+                    onPullLink={(url) => openPullPreview(task, url)}
+                    onArtifact={openArtifact}
+                    onBrowser={(url) => {
+                      setBrowserLink({ taskId: task.id, id: randomUUID(), url })
+                      selectSurface('browser')
+                    }}
+                    onAside={() => setAsking(true)}
+                    composerInsert={composerInsert?.taskId === task.id ? composerInsert : null}
+                    onComposerInsertApplied={() => setComposerInsert(null)}
+                  />
+                </div>
               </ResizablePanel>
               {bottomTerminalOpen && surface === 'chat' && (
                 <>
@@ -912,32 +987,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
               )}
             </ResizablePanelGroup>
           </div>
-          {!temporary && projectPanelOpen && (
-            <ResizableSidebar
-              preference="toolsSidebarWidth"
-              side="right"
-              label="project panel"
-              maxFraction={0.45}
-              maxWidth={520}
-              resizable={!compact}
-              className={cn(
-                'min-h-0 shrink-0 bg-background',
-                compact && 'absolute inset-y-0 right-0 z-30 w-[min(360px,100%)] shadow-xl',
-              )}
-            >
-              <TaskProjectPanel
-                key={taskCollectionKey(activeRuntimeId, task.id)}
-                task={task}
-                onPullLink={(url) => openPullPreview(task, url)}
-                onTerminal={showTerminal}
-                onClose={() => setProjectPanelKey('')}
-                onSurface={(next) => {
-                  setProjectPanelKey('')
-                  selectSurface(next)
-                }}
-              />
-            </ResizableSidebar>
-          )}
           <ResizableSidebar
             key={fileViewer || surface === 'artifacts' ? 'viewer' : 'tools'}
             preference={
@@ -1051,6 +1100,8 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   key={JSON.stringify([threadKey, pullPreviews[threadKey]])}
                   repositoryId={pullPreviews[threadKey]!.repositoryId}
                   number={pullPreviews[threadKey]!.number}
+                  initialTab={pullPreviews[threadKey]?.tab}
+                  initialFragment={pullPreviews[threadKey]?.fragment}
                   embedded
                   onBack={() =>
                     selectSurface(
@@ -1128,7 +1179,17 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 tabIndex={-1}
                 className="min-h-0 flex-1 overflow-y-auto"
               >
-                <TaskAgents key={task.id} task={task} />
+                <TaskAgents
+                  key={task.id}
+                  task={task}
+                  onOpenThread={(thread) => {
+                    setProjectPanelKey('')
+                    setNativeThread({
+                      ...thread,
+                      parentKey: taskCollectionKey(activeRuntimeId, task.id),
+                    })
+                  }}
+                />
               </div>
             )}
             {(surface === 'browser' || surface === 'devices') && (
@@ -1236,7 +1297,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
             />
           )}
         </div>
-      </div>
+      </TaskProjectPanelRoot>
     )
   }
   return (

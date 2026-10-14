@@ -37,6 +37,13 @@ import type { Task } from '@dovo/protocol'
 import { exec, processEnvironment } from '../../process.js'
 import { HttpError, errorMessage } from '../../errors.js'
 import { repositoryPath, safeFile } from '../repositories/paths.js'
+export type GithubAccount = {
+  host: string
+  token: string
+  env?: Record<string, string>
+  onUnauthorized?: () => void
+  beforeDispatch?: () => void
+}
 export class GitService {
   private githubBudget = new GithubBudget()
   private githubCredentials = new GithubCredentials(() => this.settings().gh)
@@ -50,6 +57,8 @@ export class GitService {
     background: boolean,
     input?: string,
     maxBytes?: number,
+    onUnauthorized?: () => void,
+    beforeDispatch?: () => void,
   ) {
     const request = parseGithubApiArgs(args, input)
     const audited = [this.settings().gh, ...args]
@@ -62,9 +71,13 @@ export class GitService {
       const result = await this.githubBudget.run(
         key,
         async () => {
+          beforeDispatch?.()
           const text = await this.githubTransport.send(request, token, {
             maxBytes,
-            onUnauthorized: () => this.githubCredentials.invalidate(request.host, cwd, env),
+            onUnauthorized: () => {
+              this.githubCredentials.invalidate(request.host, cwd, env)
+              onUnauthorized?.()
+            },
           })
           if (request.graphql) this.githubBudget.observeGraphql(key, text)
           return text
@@ -91,9 +104,20 @@ export class GitService {
     env: NodeJS.ProcessEnv,
     background = false,
     input?: string,
+    onUnauthorized?: () => void,
+    beforeDispatch?: () => void,
   ) {
     if (args[0] === 'api')
-      return this.githubApiRequest(cwd, args, env, background, input, maxBuffer)
+      return this.githubApiRequest(
+        cwd,
+        args,
+        env,
+        background,
+        input,
+        maxBuffer,
+        onUnauthorized,
+        beforeDispatch,
+      )
     if (input !== undefined) throw new HttpError(400, 'Only gh api requests accept a body')
     const hostIndex = args.indexOf('--hostname')
     const repoIndex = args.indexOf('--repo')
@@ -118,6 +142,7 @@ export class GitService {
     return this.githubBudget.run(
       key,
       async () => {
+        beforeDispatch?.()
         const result = await this.run(cwd, this.settings().gh, args, timeout, maxBuffer, env)
         if (args.includes('graphql')) this.githubBudget.observeGraphql(key, result)
         return result
@@ -1337,6 +1362,22 @@ export class GitService {
       background,
     )
   }
+  /** Capture the actual credential once so identity verification and dispatch use the same login. */
+  async githubCredential(
+    cwd: string,
+    host: string,
+    env?: Record<string, string>,
+    refresh = false,
+  ): Promise<GithubAccount> {
+    const context = { ...processEnvironment(), ...(env ?? (await this.githubEnvironment(cwd))) }
+    if (refresh) this.githubCredentials.invalidate(host, cwd, context)
+    return {
+      host,
+      token: await this.githubCredentials.token(host, cwd, context),
+      ...(env ? { env } : {}),
+      onUnauthorized: () => this.githubCredentials.invalidate(host, cwd, context),
+    }
+  }
   async githubAccount(
     args: string[],
     limits?: {
@@ -1344,11 +1385,7 @@ export class GitService {
       maxBuffer: number
     },
     cwd?: string,
-    account?: {
-      host: string
-      token: string
-      env?: Record<string, string>
-    },
+    account?: GithubAccount,
     background = false,
     input?: string,
   ) {
@@ -1374,6 +1411,8 @@ export class GitService {
       },
       background,
       input,
+      account?.onUnauthorized,
+      account?.beforeDispatch,
     )
   }
   async pullRequests(path: string) {

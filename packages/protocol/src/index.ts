@@ -18,6 +18,8 @@ export {
 } from './shared/client.js'
 
 export * from './tasks/models.js'
+export * from './tasks/model-catalog-cache.js'
+export * from './auth/permission-policy.js'
 export * from './tasks/acp-harness.js'
 export * from './tasks/harness-availability.js'
 
@@ -235,3 +237,5 @@ export { projectIconChoices } from './generated/project-icon-choices.js'
 export { taskPullLinks } from './tasks/task-pull-links.js'
 
 export { pipelineGraphColumns } from './scm/work/pipeline-graph.js'
+
+export * from './scm/forges/source-identity.js'

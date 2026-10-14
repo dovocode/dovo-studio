@@ -72,6 +72,8 @@ export class PullRequests {
       profile?: string
       env?: Record<string, string>
       token?: (cwd: string) => Promise<string | undefined>
+      onUnauthorized?: () => void
+      validate?: () => void
     },
   ) {}
   private async resolveLocation(cwd: string) {
@@ -103,6 +105,7 @@ export class PullRequests {
   }
   private async run(cwd: string, args: string[], background = false) {
     if (!this.target) return this.git.github(cwd, args, background)
+    this.target.validate?.()
     const token = await this.target.token?.(cwd)
     if (this.target.profile && !token)
       throw new HttpError(401, 'The selected GitHub profile is not signed in on this runtime.')
@@ -117,6 +120,8 @@ export class PullRequests {
         ? {
             host: this.target.host,
             token,
+            onUnauthorized: this.target.onUnauthorized,
+            beforeDispatch: this.target.validate,
             ...(this.target.env ? { env: this.target.env } : {}),
           }
         : undefined,

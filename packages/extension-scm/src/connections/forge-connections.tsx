@@ -85,6 +85,7 @@ export function useForgeConnections() {
 }
 const defaults: Record<ForgeProvider, string> = {
   github: 'https://github.com',
+  gitlab: 'https://gitlab.com',
   bitbucket: 'https://api.bitbucket.org/2.0',
   forgejo: '',
   gitea: '',
@@ -92,6 +93,7 @@ const defaults: Record<ForgeProvider, string> = {
 }
 const placeholders: Record<ForgeProvider, string> = {
   github: 'https://github.com',
+  gitlab: 'https://gitlab.com',
   bitbucket: 'https://api.bitbucket.org/2.0',
   forgejo: 'https://git.example.com',
   gitea: 'https://git.example.com',
@@ -227,7 +229,7 @@ function ConnectionForm({
               setToken('')
               setUsername('')
               setCliProfile('')
-              setCredential(chosen === 'github' ? 'gh' : 'cli')
+              setCredential(chosen === 'github' ? 'gh' : chosen === 'gitlab' ? 'token' : 'cli')
               setError('')
             }}
           >
@@ -336,7 +338,9 @@ function ConnectionForm({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cli">Signed-in CLI account</SelectItem>
+                    {provider !== 'gitlab' && (
+                      <SelectItem value="cli">Signed-in CLI account</SelectItem>
+                    )}
                     <SelectItem value="token">API token</SelectItem>
                     <SelectItem value="environment">Runtime environment variable</SelectItem>
                   </SelectContent>

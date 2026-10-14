@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { jiraDestination } from '../../scm/source-key'
 import { clientScopeKey } from '@dovo/client-runtime'
 import type { RuntimeConnection, RuntimeSnapshot } from '@dovo/protocol'
 
@@ -71,7 +72,7 @@ export function integrationDraftKey(
     repository?.forge,
     repository?.gitIdentity,
     jiraSourceId,
-    source,
+    jiraDestination(source),
     ...entity,
   )
 }

@@ -61,6 +61,7 @@ export function WorkTaskAction({
   const projects = snapshot?.workspace.repositories ?? []
   const pending = useRef(false)
   const attempt = useRef<WorkTaskInput | undefined>(undefined)
+  const pickerSource = useRef<typeof source | undefined>(undefined)
   const current = useRef(true)
   useEffect(() => {
     current.current = true
@@ -94,7 +95,9 @@ export function WorkTaskAction({
     return runClientEffect(
       mobileWorkflow(function* () {
         if (pending.current || disabled || !focused || !activeId) return
+        const actionSource = pickerSource.current ?? source
         if (!targetId && !attempt.current && !created) {
+          pickerSource.current = actionSource
           setDestination(projects.length === 1 ? projects[0]!.id : '')
           setChoosing(true)
           return
@@ -117,20 +120,22 @@ export function WorkTaskAction({
                   }
                 : {}),
               requestId: randomUUID(),
-              kind: source.kind,
-              id: source.item.id,
-              url: source.item.url,
-              ...(source.kind === 'issue'
+              expectedDestination: actionSource.item.destination,
+              kind: actionSource.kind,
+              id: actionSource.item.id,
+              url: actionSource.item.url,
+              ...(actionSource.kind === 'issue'
                 ? {
-                    revision: source.item.revision,
+                    revision: actionSource.item.revision,
                   }
                 : {
-                    sha: source.item.sha,
+                    sha: actionSource.item.sha,
                   }),
             })
           attempt.current = input
           const result = yield* callEffect('/api/scm/work/task', input, workTaskResponseSchema)
           attempt.current = undefined
+          pickerSource.current = undefined
           if (!current.current) return
           setCreated(result.id)
           yield* refreshEffect()
@@ -214,7 +219,10 @@ export function WorkTaskAction({
           ref={projectPicker}
           title="Start task in a project"
           busy={busy}
-          onClose={() => setChoosing(false)}
+          onClose={() => {
+            setChoosing(false)
+            if (!attempt.current) pickerSource.current = undefined
+          }}
         >
           <Text style={styles.muted}>
             Choose the codebase for this task. The issue stays in Jira.

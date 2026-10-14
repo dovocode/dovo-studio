@@ -1,9 +1,10 @@
+import { integrationMutationError } from '../../connections/mutation-error'
 import { PullMarkdownEditor } from '../detail/markdown-editor'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const commentDraftCache = createPullStateCache<string>(50)
 import { MoreHorizontal } from 'lucide-react'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import {
   forgeLabels,
   pullActionResultSchema,
@@ -234,6 +235,8 @@ function PullActionDialog({
   const [scope] = useApplicationState({
     number: detail.pull.number,
     headSha: detail.pull.headSha,
+    expectedDestination: detail.destination ?? detail.pull.destination,
+    connectionId: detail.pull.connectionId,
   })
   const provider = forgeLabels[detail.pull.provider ?? 'github']
   const list = (value: string) => [...new Set(value.split(/[\s,]+/).filter(Boolean))]
@@ -328,6 +331,8 @@ function PullActionDialog({
         {
           repositoryId,
           ...payload(),
+          expectedDestination: scope.expectedDestination,
+          connectionId: scope.connectionId,
         },
         pullActionResultSchema,
       )
@@ -341,7 +346,7 @@ function PullActionDialog({
       )
       onClose()
     } catch (error) {
-      setError(error instanceof Error ? error.message : String(error))
+      setError(integrationMutationError(error))
     } finally {
       pending.current = false
       setBusy(false)
@@ -583,6 +588,26 @@ export function PullCommentComposer({ repositoryId, detail, onDone }: PullAction
   const [error, setError] = useApplicationState('')
   const [notice, setNotice] = useApplicationState('')
   const pending = useRef(false)
+  const [baseline, setBaseline] = useApplicationState({
+    expectedDestination: detail.destination ?? detail.pull.destination,
+    headSha: detail.pull.headSha,
+    connectionId: detail.pull.connectionId,
+  })
+  useEffect(() => {
+    if (!body && !busy)
+      setBaseline({
+        expectedDestination: detail.destination ?? detail.pull.destination,
+        headSha: detail.pull.headSha,
+        connectionId: detail.pull.connectionId,
+      })
+  }, [
+    body,
+    busy,
+    detail.destination,
+    detail.pull.destination,
+    detail.pull.headSha,
+    detail.pull.connectionId,
+  ])
   if (!detail.capabilities?.actions.includes('comment')) return null
   const submit = async () => {
     if (pending.current || !connected || !body.trim()) return
@@ -596,7 +621,9 @@ export function PullCommentComposer({ repositoryId, detail, onDone }: PullAction
         {
           repositoryId,
           number: detail.pull.number,
-          headSha: detail.pull.headSha,
+          headSha: baseline.headSha,
+          expectedDestination: baseline.expectedDestination,
+          connectionId: baseline.connectionId,
           action: 'comment',
           body,
         },
@@ -607,7 +634,7 @@ export function PullCommentComposer({ repositoryId, detail, onDone }: PullAction
       onDone()
     } catch (error) {
       setError(
-        `${error instanceof Error ? error.message : String(error)} Refresh the PR before retrying if the response was lost.`,
+        `${integrationMutationError(error)} Refresh the PR before retrying if the response was lost.`,
       )
     } finally {
       pending.current = false

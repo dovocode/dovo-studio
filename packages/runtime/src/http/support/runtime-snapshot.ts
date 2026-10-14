@@ -18,6 +18,7 @@ import { discoverProjectIcon } from '../../scm/repositories/project-icon.js'
 import { desktopAppUpdateInfo, canUpdateDesktop } from '../desktop-updates.js'
 import { canUpdateServer } from '../server-updates.js'
 import { readLastCrash } from '../../storage/last-crash.js'
+import { modelCatalogGenerations } from '../../agents/catalogs/model-cache.js'
 const projections = new WeakMap<
   Services,
   { source: WeakRef<Workspace>; workspace: WeakRef<Workspace> }
@@ -76,6 +77,8 @@ export function runtimeSnapshot(
     if (migrated) s.defaults.save(migrated, false)
     const revision = s.store.version()
     const preferences = s.preferences.get()
+    const acpInstallations = s.acpInstallations.list()
+    const catalogGenerations = modelCatalogGenerations(s.agents, acpInstallations)
     // Capture the wire view before asynchronous repository enrichment, at this revision.
     const storedWorkspace = snapshotWorkspace(
       s.store.publicWorkspace(),
@@ -180,6 +183,7 @@ export function runtimeSnapshot(
       protocolVersion: RUNTIME_PROTOCOL_VERSION,
       runtimeInstanceId: s.instanceId,
       runtimeId: s.runtimeId,
+      catalogGenerations,
       runtimeAddresses: s.runtimeAddresses(),
       lastCrash: readLastCrash(s.db.name),
       runtimeHost: hostname(),
@@ -198,6 +202,7 @@ export function runtimeSnapshot(
           : canUpdateServer(),
       defaults: decode(runtimeDefaultsSchema, s.store.publicValue(s.defaults.get())),
       scopedAgentsSupported: true,
+      permissionPolicySupported: true,
       workspaceReconciliationSupported: true,
       settingsScopesSupported: true,
       taskBehaviorSupported: true,
@@ -206,7 +211,7 @@ export function runtimeSnapshot(
       artifactsEnabled: preferences.enableArtifacts,
       codeReviewsEnabled: preferences.enableCodeReviews,
       allowWebRequests: preferences.allowWebRequests,
-      acpInstallations: s.acpInstallations.list(),
+      acpInstallations,
       revision,
       workspace: selectedWorkspace,
       approvals: s.approvals.list(),

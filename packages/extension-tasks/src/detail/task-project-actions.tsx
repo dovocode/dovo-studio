@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Hash, LayoutTemplate, Play, Plus, Settings2, Trash2 } from 'lucide-react'
+import { ChevronRight, Hash, LayoutTemplate, Play, Plus, Settings2, Trash2 } from 'lucide-react'
 import { TaskTemplatesDialog } from '../dialogs/task-templates-dialog'
 import { SavedPromptsDialog } from '../dialogs/saved-prompts-dialog'
 import { ProjectInstructionsDialog } from '../dialogs/project-instructions-dialog'
@@ -65,9 +65,10 @@ export function TaskProjectActions({
             aria-label="Project actions"
           >
             <Plus className="size-3.5" />
-            <span className={panel ? '' : 'hidden lg:inline'}>
+            <span className={panel ? 'min-w-0 flex-1 text-left' : 'hidden lg:inline'}>
               {actions.length ? 'Project scripts' : 'Add project script'}
             </span>
+            {panel && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>

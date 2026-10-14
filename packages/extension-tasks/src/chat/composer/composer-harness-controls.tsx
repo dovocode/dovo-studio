@@ -12,7 +12,7 @@ import {
   type Task,
   type TaskHarness,
 } from '@dovo/studio-core'
-import { ComposerSettingsControls } from '@dovo/studio-ui'
+import { ComposerSettingsControls, permissionPolicyUIIssue } from '@dovo/studio-ui'
 import { HarnessDialog } from '../../dialogs/harness-dialog'
 import { changeTaskHarness, chooseTaskAgent } from './task-harness-selection'
 export const ComposerHarnessControls = memo(function ComposerHarnessControls({
@@ -50,6 +50,11 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
     setSaving(true)
     setError('')
     try {
+      if (snapshot?.permissionPolicySupported !== true) {
+        const nextAgent = resolveTaskAgent(change(task, agents), agents)
+        const issue = nextAgent && permissionPolicyUIIssue(nextAgent, false)
+        if (issue) throw new Error(issue)
+      }
       setWorkspace((w) =>
         updateTask(w, task.id, (t) =>
           change(
@@ -91,9 +96,7 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
           save((current, agents) => chooseTaskAgent(current, agents, agentId))
         }
         onUseHarness={(harness) =>
-          save((current, agents) =>
-            changeTaskHarness(current, agents, { ...harness, permission: value.permission }, true),
-          )
+          save((current, agents) => changeTaskHarness(current, agents, harness, true))
         }
         onConfigure={() => setConnection(true)}
       />

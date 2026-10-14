@@ -198,7 +198,16 @@ export class GithubTransport {
           `Could not reach ${request.host}: ${error instanceof Error ? error.message : String(error)}`,
         )
       }
-      const text = await responseText(response, Math.min(RESPONSE_BYTES, limit - total))
+      if (response.status === 401) options.onUnauthorized?.()
+      let text: string
+      try {
+        text = await responseText(response, Math.min(RESPONSE_BYTES, limit - total))
+      } catch (error) {
+        // Authentication/permission rejection remains authoritative even when its
+        // body is interrupted. A 502 here would incorrectly permit private cache fallback.
+        if (!response.ok) throw githubError(response, '')
+        throw error
+      }
       const linkHeader: string | null =
         response.status === 304 && cached
           ? (response.headers.get('link') ?? cached.link)
@@ -231,7 +240,6 @@ export class GithubTransport {
         }
         pages.push(text)
       } else {
-        if (response.status === 401) options.onUnauthorized?.()
         throw githubError(response, text)
       }
       const link = request.paginate ? nextLink(linkHeader) : undefined
@@ -274,14 +282,11 @@ function githubError(response: Response, text: string) {
     const secondary = /secondary|abuse/i.test(detail)
     return new GithubApiError(
       response.status,
-      `GitHub ${secondary ? 'secondary rate limit' : 'rate limit'} (HTTP ${response.status}): ${detail}${seconds ? ` retry-after: ${seconds}` : ''}`,
+      `GitHub ${secondary ? 'secondary rate limit' : 'rate limit'} (HTTP ${response.status})${seconds ? ` retry-after: ${seconds}` : ''}`,
       seconds,
     )
   }
-  return new GithubApiError(
-    response.status,
-    `GitHub API HTTP ${response.status}${detail ? `: ${detail}` : ''}`,
-  )
+  return new GithubApiError(response.status, `GitHub API HTTP ${response.status}`)
 }
 
 const TOKEN_TTL = 300_000
@@ -340,7 +345,7 @@ export class GithubCredentials {
       if (error instanceof ProcessError)
         throw new GithubApiError(
           401,
-          `No GitHub login for ${host}. Run gh auth login --hostname ${host} on the runtime host. ${String(error.stderr).trim()}`.trim(),
+          `No GitHub login for ${host}. Run gh auth login --hostname ${host} on the runtime host.`,
         )
       throw error
     })

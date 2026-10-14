@@ -224,3 +224,16 @@ it('passes a native always decision through without inventing a Dovo rule', asyn
   approvals.decide(approvals.list()[0].id, 'session')
   await expect(second).resolves.toBe('session')
 })
+
+it('expires a pending approval after the saved policy changes before a remembered rule can be written', async () => {
+  const { store, approvals, request } = fixture()
+  const { defaultTaskHarness } = await import('@dovo/protocol')
+  store.updateTask('one', (task) => ({ ...task, harness: defaultTaskHarness('codex') }))
+  const pending = request('Run command', '{"command":"rm fixture"}')
+  const id = approvals.list()[0].id
+  store.updateTask('one', (task) => ({ ...task, harness: { ...task.harness!, permission: 'ask' } }))
+  expect(() => approvals.decide(id, 'always')).toThrow('Access changed')
+  await expect(pending).resolves.toBe('deny')
+  expect(store.get().repositories[0].approvedCommands).toBeUndefined()
+  expect(approvals.list()).toEqual([])
+})

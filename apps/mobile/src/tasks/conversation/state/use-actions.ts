@@ -1,3 +1,4 @@
+import { permissionPolicyUIIssue } from '../../../agents/permission-policy'
 import { sendingDraft, sendDestination, type MobilePendingSend } from '../../composer/pending-send'
 import { mobileWorkflow } from '../../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -194,10 +195,14 @@ export function useConversationActions(task: Task) {
     })
   }, [task.id, task.messages, task.queue, pendingScope])
   const agent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
+  const policyIssue = agent
+    ? permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true)
+    : undefined
   const firstMessage = !task.messages.length && !task.queue?.length && !task.turns?.length
   const checkoutEditable = canChangeTaskCheckout(task)
   const hasInput = !!draft.text.trim() || !!task.draftAttachments?.length
   const canSend =
+    !policyIssue &&
     connected &&
     !busy &&
     !cancellation.busy &&
@@ -236,6 +241,7 @@ export function useConversationActions(task: Task) {
   const submit = (mode: 'queue' | 'steer' = 'queue', input = draft.text) => {
     let submittedId: string | undefined
     return mobileWorkflow(function* () {
+      if (policyIssue) return yield* Effect.fail(new Error(policyIssue))
       Keyboard.dismiss()
       dictation.reset()
       const text = input.trim(),
@@ -376,13 +382,14 @@ export function useConversationActions(task: Task) {
     busy,
     // A later snapshot may also acknowledge a request after its HTTP error was displayed.
     error:
-      failedSend.current &&
+      policyIssue ||
+      (failedSend.current &&
       (sendAttempts.isConfirmed(failedSend.current) ||
         [...task.messages, ...(task.queue ?? [])].some(
           (message) => message.id === failedSend.current?.id,
         ))
         ? cancellation.error
-        : cancellation.error || action.error,
+        : cancellation.error || action.error),
     act,
     run,
     attaching,

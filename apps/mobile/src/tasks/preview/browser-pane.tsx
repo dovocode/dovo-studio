@@ -1,5 +1,5 @@
 import { router } from 'expo-router'
-import { openAppLink } from '../../ui/content/open-link'
+import { useOpenAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -151,6 +151,7 @@ function BrowserContent({
 }) {
   const { colors, styles } = useTheme()
 
+  const openLink = useOpenAppLink(taskId)
   const { profile, profiles, connected, read, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
   const active = usePreviewActive()
@@ -416,7 +417,7 @@ function BrowserContent({
               label="Open externally"
               icon="web"
               disabled={!url}
-              onPress={() => act(() => openAppLink(history.url || url))}
+              onPress={() => act(() => openLink(history.url || url))}
             />
             <Action label="Go" disabled={mode !== 'web'} onPress={navigate} />
           </View>

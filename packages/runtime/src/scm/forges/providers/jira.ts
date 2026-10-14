@@ -1,16 +1,16 @@
-import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
-import { urlSchema, decodeResult, decode, minValue, maxValue } from '@dovo/protocol'
-import { Schema } from 'effect'
-import { createHash } from 'node:crypto'
+import { captureJiraContext, type JiraCliContext } from './jira-context.js'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { markdownToAdf } from 'marklassian'
+import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
+import { urlSchema, decodeResult, decode, minValue, maxValue } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { createRequire } from 'node:module'
 import Ajv from 'ajv-draft-04'
 import { fromADF } from 'mdast-util-from-adf'
 import { toMarkdown } from 'mdast-util-to-markdown'
 import { gfmToMarkdown } from 'mdast-util-gfm'
-import { markdownToAdf } from 'marklassian'
 import type {
   JiraBinding,
   JiraIssueFilters,
@@ -83,28 +83,42 @@ export async function listJiraProjects(
   cwd?: string,
   run: typeof runForgeCli = runForgeCli,
 ) {
-  const site = jiraAccountSite(await run(executable, ['jira', 'auth', 'status'], undefined, cwd))
-  const projects = decode(
-    mutableArray(
-      mutableStruct({
-        key: Schema.String,
-        name: Schema.String,
-      }),
-    ),
-    JSON.parse(
-      await run(
-        executable,
-        ['jira', 'project', 'list', '--limit', '201', '--json'],
-        undefined,
-        cwd,
+  const context = await captureJiraContext(executable, run, cwd)
+  try {
+    const status = await run(executable, ['jira', 'auth', 'status'], undefined, cwd, context.env)
+    const site = jiraAccountSite(status)
+    const email = /^\s*Email:\s*(\S+)\s*$/m.exec(status)?.[1]
+    if (!email)
+      throw new HttpError(
+        409,
+        'Could not verify the signed-in Jira account. Refresh the runtime login before browsing projects.',
+      )
+    await context.accountId(site, email)
+    const projects = decode(
+      mutableArray(
+        mutableStruct({
+          key: Schema.String,
+          name: Schema.String,
+        }),
       ),
-    ),
-  )
-  return decode(jiraProjectsSchema, {
-    site,
-    projects: projects.slice(0, 200),
-    truncated: projects.length > 200,
-  })
+      JSON.parse(
+        await run(
+          executable,
+          ['jira', 'project', 'list', '--limit', '201', '--json'],
+          undefined,
+          cwd,
+          context.env,
+        ),
+      ),
+    )
+    return decode(jiraProjectsSchema, {
+      site,
+      projects: projects.slice(0, 200),
+      truncated: projects.length > 200,
+    })
+  } finally {
+    await context.close()
+  }
 }
 
 // ADF extensions are common (status pills, media, app blocks). Retain readable text
@@ -217,11 +231,10 @@ export function jiraIssuePage<T>(rows: readonly T[], offset: number) {
     next: rows.length > offset + 30 && offset + 30 <= 9990 ? String(offset + 30) : undefined,
   }
 }
-export type JiraVerification = {
-  account: Promise<string>
-  verified: Promise<Schema.Schema.Type<typeof projectSchema>>
-}
 export class JiraWork implements ForgeWorkProvider {
+  private context?: Promise<JiraCliContext>
+  private closeRequested = false
+  private leases = 1
   private account?: Promise<string>
   private verified?: Promise<Schema.Schema.Type<typeof projectSchema>>
   constructor(
@@ -233,25 +246,49 @@ export class JiraWork implements ForgeWorkProvider {
   ) {
     this.binding = decode(jiraBindingSchema, binding)
   }
-  private execute(args: string[]) {
+  private async execute(args: string[]) {
+    if (this.leases === 0)
+      throw new HttpError(409, 'The Jira operation ended. Refresh before continuing.')
     this.validateSource?.()
-    return this.run(this.executable, args, undefined, this.cwd)
+    const context = await (this.context ??= captureJiraContext(this.executable, this.run, this.cwd))
+    this.validateSource?.()
+    const dataCommand = args[0] === 'jira' && args[1] === 'workitem'
+    if (dataCommand) await this.assertAccount()
+    const result = await this.run(this.executable, args, undefined, this.cwd, context.env)
+    if (dataCommand) await this.assertAccount()
+    this.validateSource?.()
+    return result
+  }
+  /** Background cache refreshes retain their captured configuration until the load settles. */
+  retain() {
+    if (this.leases === 0)
+      throw new HttpError(409, 'The Jira operation ended. Refresh before continuing.')
+    this.leases++
+    let released = false
+    return async () => {
+      if (released) return
+      released = true
+      await this.release()
+    }
+  }
+  private async release() {
+    this.leases--
+    if (this.leases === 0 && this.context) {
+      // A failed capture cleans itself up. Do not mask the original verification error.
+      const context = await this.context.catch(() => undefined)
+      await context?.close()
+    }
+  }
+  async close() {
+    if (this.closeRequested) return
+    this.closeRequested = true
+    await this.release()
   }
   private async json(args: string[]) {
     return JSON.parse(await this.execute(['jira', ...args, '--json'])) as unknown
   }
   async verify() {
     return (this.verified ??= this.verifyProject())
-  }
-  /** The account and project checks, so one verification serves many requests. */
-  verification(): JiraVerification {
-    const verified = this.verify()
-    void verified.catch(() => undefined)
-    return { account: this.account ?? verified.then(() => this.account ?? ''), verified }
-  }
-  adopt(state: JiraVerification) {
-    this.account = state.account
-    this.verified = state.verified
   }
   private async verifyProject() {
     this.account ??= this.execute(['jira', 'auth', 'status'])
@@ -260,6 +297,9 @@ export class JiraWork implements ForgeWorkProvider {
         409,
         'The active acli account points to another Jira site. Switch the CLI account on the runtime, then refresh.',
       )
+    // The context already loaded renewal state before this first authenticated status.
+    // Verify the returned site/email against the exact captured account before API reads.
+    await this.accountIdentity(await this.account)
     const project = decode(
       projectSchema,
       await this.json(['project', 'view', '--key', this.binding.project]),
@@ -272,10 +312,52 @@ export class JiraWork implements ForgeWorkProvider {
   }
   async identity() {
     await this.verify()
-    // Account status is hashed privately, never copied into client data or activity.
-    return createHash('sha256')
-      .update(await this.account!)
-      .digest('hex')
+    return this.accountIdentity(await this.account!)
+  }
+  private async accountIdentity(status: string) {
+    const email = /^\s*Email:\s*(\S+)\s*$/m.exec(status)?.[1]?.toLowerCase()
+    if (!email)
+      throw new HttpError(
+        409,
+        'Could not verify the signed-in Jira account. Check acli jira auth status on the runtime and refresh.',
+      )
+    const context = await this.context
+    if (!context)
+      throw new HttpError(
+        409,
+        'The Jira account configuration is unavailable. Refresh before continuing.',
+      )
+    return JSON.stringify([
+      jiraAccountSite(status),
+      await context.accountId(jiraAccountSite(status), email),
+    ])
+  }
+  async assertAccount() {
+    await this.verify()
+    const current = await this.execute(['jira', 'auth', 'status'])
+    if (
+      (await this.accountIdentity(current)) !== (await this.accountIdentity(await this.account!))
+    ) {
+      this.account = undefined
+      this.verified = undefined
+      throw new HttpError(
+        409,
+        'The active Jira site or account changed. Refresh before continuing.',
+      )
+    }
+  }
+  private async requirePinnedWrite() {
+    // A previous detail verification never authorizes a write. Recheck the same captured
+    // context freshly, then leave all mutation commands pinned to it.
+    this.account = undefined
+    this.verified = undefined
+    await this.verify()
+    await this.identity()
+  }
+  async revision() {
+    await this.identity()
+    const context = await this.context
+    return context?.revision?.() ?? ''
   }
   async options(): Promise<ForgeWorkOptions> {
     const project = await this.verify()
@@ -285,7 +367,7 @@ export class JiraWork implements ForgeWorkProvider {
       issueNotice:
         'Jira Cloud · ' +
         this.binding.project +
-        '. Uses the active acli account on this runtime. Rich text is preserved unless you edit the description.',
+        '. Uses the configured Jira account on this runtime. Rich text is preserved unless you edit the description.',
       issueTypes: (project.issueTypes ?? []).filter((v) => !v.subtask).map((v) => v.name),
       issueStates: [],
       issueSearch: true,
@@ -445,6 +527,7 @@ export class JiraWork implements ForgeWorkProvider {
     }
   }
   async createIssue(input: ForgeIssueCreate) {
+    await this.requirePinnedWrite()
     const project = await this.verify()
     if (input.assignees.length > 1) throw new HttpError(400, 'Jira supports one assignee')
     if (
@@ -486,6 +569,7 @@ export class JiraWork implements ForgeWorkProvider {
     }
   }
   async actOnIssue(input: ForgeIssueAction) {
+    await this.requirePinnedWrite()
     const raw = await this.raw(input.id),
       current = this.normalize(raw)
     if (current.revision !== input.revision)

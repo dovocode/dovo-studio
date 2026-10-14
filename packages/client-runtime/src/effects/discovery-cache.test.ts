@@ -48,3 +48,45 @@ it('forces fresh entries to refresh and bounds retained scopes', async () => {
   expect(cache.peek('scope')).toBeNull()
   expect(cache.peek('63')).toBe(63)
 })
+
+it('can avoid freshness for unavailable probes and clear stale readiness on refresh failure', async () => {
+  const cache = new DiscoveryCache<boolean>(30_000, {
+    cacheable: (available) => available,
+    retainOnError: false,
+  })
+  const unavailable = vi.fn<() => Promise<boolean>>(async () => false)
+  await cache.load('scope', unavailable)
+  await cache.load('scope', unavailable)
+  expect(unavailable).toHaveBeenCalledTimes(2)
+  expect(cache.isFresh('scope')).toBe(false)
+  await cache.load('scope', async () => true)
+  expect(cache.isFresh('scope')).toBe(true)
+  await expect(
+    cache.load(
+      'scope',
+      async () => {
+        throw new Error('sign in')
+      },
+      true,
+    ),
+  ).rejects.toThrow('sign in')
+  expect(cache.peek('scope')).toBeNull()
+  expect(cache.isFresh('scope')).toBe(false)
+})
+
+it('optionally bounds concurrent probes while preserving single-flight and releasing capacity', async () => {
+  const cache = new DiscoveryCache<number>(30_000, { maxPending: 1 })
+  let complete!: (value: number) => void
+  const pending = cache.load(
+    'one',
+    () =>
+      new Promise((resolve) => {
+        complete = resolve
+      }),
+  )
+  expect(cache.load('one', async () => 0)).toBe(pending)
+  await expect(cache.load('two', async () => 2)).rejects.toThrow('Too many discoveries')
+  complete(1)
+  await pending
+  expect(await cache.load('two', async () => 2)).toBe(2)
+})

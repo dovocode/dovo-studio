@@ -1,6 +1,12 @@
 import type { Activity } from '../../storage/activity.js'
 import { randomUUID } from 'node:crypto'
-import type { Approval, ApprovalDecision } from '@dovo/protocol'
+import {
+  resolveTaskAgent,
+  samePermissionPolicy,
+  type PermissionPolicy,
+  type Approval,
+  type ApprovalDecision,
+} from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { RuntimePreferences } from '../../storage/runtime-preferences.js'
@@ -27,7 +33,12 @@ export class Approvals {
   ) {}
   private requests = new Map<
     string,
-    { info: Approval; web: boolean; resolve: (decision: ApprovalDecision) => void }
+    {
+      info: Approval
+      web: boolean
+      policy?: PermissionPolicy
+      resolve: (decision: ApprovalDecision) => void
+    }
   >()
   list() {
     return [...this.requests.values()].map((r) => r.info)
@@ -83,6 +94,7 @@ export class Approvals {
       const timer = setTimeout(abort, 10 * 60 * 1000)
       this.requests.set(id, {
         web,
+        policy: task && this.store ? resolveTaskAgent(task, this.store.get().agents) : undefined,
         info: {
           id,
           taskId,
@@ -103,6 +115,13 @@ export class Approvals {
   decide(id: string, decision: ApprovalDecision) {
     const request = this.requests.get(id)
     if (!request) throw new HttpError(404, 'Approval expired')
+    const current = this.store?.get().tasks.find((task) => task.id === request.info.taskId)
+    const policy =
+      current && this.store ? resolveTaskAgent(current, this.store.get().agents) : undefined
+    if (decision !== 'deny' && !samePermissionPolicy(request.policy, policy)) {
+      request.resolve('deny')
+      throw new HttpError(409, 'Access changed. This approval has expired.')
+    }
     if (decision === 'always') {
       const command = commandForApproval(request.info.title, request.info.detail)
       const web = request.info.rememberRule === 'web'
@@ -156,11 +175,20 @@ export class Approvals {
     for (const pending of this.requests.values()) {
       if (!pending.web) continue
       const task = workspace?.tasks.find((item) => item.id === pending.info.taskId)
+      const policy = task && workspace ? resolveTaskAgent(task, workspace.agents) : undefined
+      if (!samePermissionPolicy(pending.policy, policy)) {
+        pending.resolve('deny')
+        continue
+      }
       const project = workspace?.repositories.find((item) => item.id === task?.repositoryId)
       if (globalWeb || project?.approvedWebRequests) pending.resolve('approve')
     }
   }
   dispose() {
     for (const request of this.requests.values()) request.resolve('deny')
+  }
+  cancelTask(taskId: string) {
+    for (const request of this.requests.values())
+      if (request.info.taskId === taskId) request.resolve('deny')
   }
 }

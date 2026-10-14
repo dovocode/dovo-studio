@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentProps } from 'react'
+import { useMemo, useRef, useState, type ComponentProps } from 'react'
 import { Alert, View } from 'react-native'
 import { responses, threadPullLink } from '@dovo/protocol'
 import { Effect } from 'effect'
@@ -6,9 +6,10 @@ import { useRuntime } from '../../../runtime/connection/provider'
 import { useAction } from '../../../ui/controls/use-action'
 import { Action } from '../../../ui/controls/action'
 import { Markdown } from '../../../ui/content/markdown'
+import { useLinkOrigin } from '../../../ui/content/link-origin'
 import { openAppLink } from '../../../ui/content/open-link'
 import { Text } from '../../../ui/content/text'
-import { Sheet } from '../../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../../ui/layout/sheet'
 import { useTheme } from '../../../ui/theme'
 import { useConversationSelector } from '../state/provider'
 
@@ -38,6 +39,7 @@ export function ThreadMarkdown({
 
   const draft = useConversationSelector((value) => value.actions.draft)
   const taskId = useConversationSelector((value) => value.task.id)
+  const origin = useLinkOrigin(taskId)
   const scope = useConversationSelector((value) => value.actions.threadScope)
   const hasPullLink = useMemo(
     () =>
@@ -58,7 +60,7 @@ export function ThreadMarkdown({
     return true
   }
   const open = (url: string) => {
-    void openAppLink(url).catch((cause: unknown) => {
+    void openAppLink(url, false, origin).catch((cause: unknown) => {
       Alert.alert('Could not open link', String(cause))
     })
   }
@@ -107,6 +109,8 @@ function ThreadPullActions({
   const { styles } = useTheme()
 
   const task = useConversationSelector((value) => value.task)
+  const origin = useLinkOrigin(task.id)
+  const sheet = useRef<SheetHandle>(null)
   const { connected, callEffect } = useRuntime()
   const action = useAction()
   const linked =
@@ -119,6 +123,7 @@ function ThreadPullActions({
     (task.linkedPullRequests?.length ?? 0) >= 20
   return (
     <Sheet
+      ref={sheet}
       title={`Pull request #${pull.number}`}
       busy={action.busy}
       onClose={() => {
@@ -153,8 +158,11 @@ function ThreadPullActions({
           disabled={action.busy}
           onPress={() =>
             action.act(async () => {
-              await openAppLink(pull.url)
-              onClose()
+              sheet.current?.dismiss(() => {
+                void openAppLink(pull.url, false, origin).catch((error: unknown) =>
+                  Alert.alert('Could not open link', String(error)),
+                )
+              })
             })
           }
         />

@@ -1,3 +1,4 @@
+import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { opencodeNative } from './opencode-native.js'
 import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
@@ -98,6 +99,7 @@ export const opencodeV2Adapter: AgentAdapter = {
     }
   },
   async run(run) {
+    run = checkedPolicyRun(run, 'opencode')
     run.signal.throwIfAborted()
     const lease = client(run.agent.endpoint, run.agent.env, true)
     const api = lease.value
@@ -152,7 +154,7 @@ export const opencodeV2Adapter: AgentAdapter = {
           effect:
             run.tools === 'none' || run.agent.permission === 'read-only'
               ? 'deny'
-              : run.agent.permission === 'full-access'
+              : toolPolicyDisposition(run, 'other') === 'allow'
                 ? 'allow'
                 : 'ask',
         },
@@ -160,7 +162,7 @@ export const opencodeV2Adapter: AgentAdapter = {
       if (run.tools !== 'none') {
         for (const action of ['read', 'glob', 'grep', 'list', 'question'])
           permissions.push({ action, resource: '*', effect: 'allow' })
-        if (run.agent.permission === 'workspace-write')
+        if (!run.agent.approvalPolicy && run.agent.permission === 'workspace-write')
           permissions.push({ action: 'edit', resource: '*', effect: 'allow' })
       }
       for (const link of run.linkedDirectories ?? []) {
@@ -180,7 +182,7 @@ export const opencodeV2Adapter: AgentAdapter = {
           effect:
             run.agent.permission === 'read-only'
               ? 'deny'
-              : run.agent.permission === 'full-access'
+              : toolPolicyDisposition(run, 'other') === 'allow'
                 ? 'allow'
                 : 'ask',
         })
@@ -396,14 +398,16 @@ export const opencodeV2Adapter: AgentAdapter = {
               break
             case 'permission.asked': {
               const allow =
+                run.tools !== 'none' &&
                 run.agent.permission !== 'read-only' &&
-                (await run.approve(
-                  event.data.message || event.data.action,
-                  event.data.resources.join('\n'),
-                  ['webfetch', 'websearch', 'web_fetch', 'web_search'].includes(event.data.action)
-                    ? 'web'
-                    : undefined,
-                )) !== 'deny'
+                (run.agent.approvalPolicy === 'never' ||
+                  (await run.approve(
+                    event.data.message || event.data.action,
+                    event.data.resources.join('\n'),
+                    ['webfetch', 'websearch', 'web_fetch', 'web_search'].includes(event.data.action)
+                      ? 'web'
+                      : undefined,
+                  )) !== 'deny')
               if (!streamController.signal.aborted)
                 await api.permission.reply(
                   { sessionID, requestID: event.data.id, decision: allow ? 'once' : 'reject' },

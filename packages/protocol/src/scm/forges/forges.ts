@@ -1,8 +1,10 @@
+import { forgeDestinationGuardFields, forgeIdentityTokenSchema } from './source-identity.js'
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { urlSchema, refine, minValue, maxValue, superRefine } from '../../shared/schema.js'
 import { Schema, Effect, Struct } from 'effect'
 export const forgeProviderSchema = Schema.Literals([
   'github',
+  'gitlab',
   'bitbucket',
   'forgejo',
   'gitea',
@@ -11,6 +13,7 @@ export const forgeProviderSchema = Schema.Literals([
 export type ForgeProvider = Schema.Schema.Type<typeof forgeProviderSchema>
 export const forgeLabels: Record<ForgeProvider, string> = {
   github: 'GitHub',
+  gitlab: 'GitLab',
   bitbucket: 'Bitbucket',
   forgejo: 'Forgejo',
   gitea: 'Gitea',
@@ -153,6 +156,12 @@ export const forgeConnectionInputSchema = superRefine(
         message: 'Enter the runtime environment variable containing the token',
         path: ['tokenEnv'],
       })
+    if (value.provider === 'gitlab' && !['token', 'environment'].includes(value.credential))
+      ctx.addIssue({
+        code: 'custom',
+        message: 'GitLab supports API token or runtime environment authentication',
+        path: ['credential'],
+      })
     if (value.credential === 'cli' && value.provider === 'github')
       ctx.addIssue({
         code: 'custom',
@@ -185,13 +194,13 @@ export const forgeBindingSchema = mutableStruct({
     (value) => {
       const parts = value.split('/')
       return (
-        parts.length === 2 &&
+        parts.length >= 2 &&
         parts.every(
           (part) => part.trim() && !['.', '..'].includes(part) && !/[\p{Cc}?#\\]/u.test(part),
         )
       )
     },
-    'Use owner/repository, or project/repository for Azure DevOps',
+    'Use owner/repository, group/subgroup/project for GitLab, or project/repository for Azure DevOps',
   ),
   revision: Schema.optional(Schema.String),
 })
@@ -250,6 +259,8 @@ const number = Schema.Number.pipe(Schema.check(Schema.isFinite()))
   .pipe(Schema.check(Schema.isGreaterThan(0)))
 const revision = Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/)))
 const action = mutableStruct({
+  ...forgeDestinationGuardFields,
+  connectionId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   number,
   headSha: revision,
 })
@@ -337,6 +348,7 @@ export const pullActionSchema = Schema.Union([
 ])
 export type PullAction = Schema.Schema.Type<typeof pullActionSchema>
 export const pullCreateSchema = mutableStruct({
+  ...forgeDestinationGuardFields,
   parentNumber: Schema.optional(
     Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
   ),
@@ -351,6 +363,7 @@ export const pullCreateSchema = mutableStruct({
 })
 export type PullCreate = Schema.Schema.Type<typeof pullCreateSchema>
 export const pullCreateOptionsSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   provider: forgeProviderSchema,
   draft: Schema.Boolean,
 })

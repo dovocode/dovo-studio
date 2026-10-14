@@ -1,3 +1,4 @@
+import { permissionPolicyUIIssue } from '@dovo/studio-ui'
 import { randomUUID, checkpointCanUndo, taskForkResultSchema } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
@@ -193,6 +194,9 @@ export function Composer({
   }, [task.messages, task.queue, acceptDraft, onPending])
   const firstMessage = task.messages.length === 0 && !task.queue?.length && !task.turns?.length
   const agent = resolveTaskAgent(task, workspace.agents)
+  const policyIssue = agent
+    ? permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true)
+    : undefined
   // Settings → General → Follow-ups while a task runs: what Enter does mid-turn.
   const steerFirst = useAppPreferences().followUp === 'steer' && task.status === 'running'
   const other = steerFirst ? 'queue' : 'steer'
@@ -224,6 +228,10 @@ export function Composer({
     }
   }
   const send = async (mode: 'queue' | 'steer' = 'queue') => {
+    if (policyIssue) {
+      setError(policyIssue)
+      return
+    }
     const text = composerDraft.controller.text.trim()
     const attachmentIds = attachments.files.map((f) => f.id)
     if (
@@ -326,6 +334,10 @@ export function Composer({
     }
   }
   const startFork = async () => {
+    if (policyIssue) {
+      setError(policyIssue)
+      return
+    }
     const text = composerDraft.controller.text.trim()
     const attachmentIds = attachments.files.map((file) => file.id)
     if (
@@ -458,6 +470,7 @@ export function Composer({
                   }
                   aria-label={other === 'steer' ? 'Steer agent' : 'Queue follow-up'}
                   disabled={
+                    !!policyIssue ||
                     !connected ||
                     sending ||
                     stopping ||
@@ -504,6 +517,7 @@ export function Composer({
                         : 'Save message to task'
                 }
                 disabled={
+                  !!policyIssue ||
                   (!composerDraft.hasText && !attachments.files.length) ||
                   sending ||
                   stopping ||
@@ -545,7 +559,7 @@ export function Composer({
             )}
           </>
         }
-        error={error || composerDraft.error || attachments.error}
+        error={error || policyIssue || composerDraft.error || attachments.error}
         onDragOver={(event) => {
           if (!event.dataTransfer.types.includes('Files')) return
           event.preventDefault()

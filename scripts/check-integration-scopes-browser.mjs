@@ -88,9 +88,11 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       name: 'mobile-route-boundaries',
       setup(builder) {
-        builder.onResolve({ filter: /.*/ }, ({ path }) =>
-          Object.hasOwn(mobileMocks, path) ? { path, namespace: 'fixture' } : undefined,
-        )
+        builder.onResolve({ filter: /.*/ }, ({ path }) => {
+          const key =
+            path === '../../runtime/connection/provider' ? '../runtime/connection/provider' : path
+          return Object.hasOwn(mobileMocks, key) ? { path: key, namespace: 'fixture' } : undefined
+        })
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
           contents: mobileMocks[path],
           loader: 'tsx',

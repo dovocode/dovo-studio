@@ -115,7 +115,7 @@ it('keeps native approvals and questions usable after a reply while retiring par
   expect(await interactions.ask(prompt, signal)).toBeNull()
 })
 
-it.each(['permission', 'session'] as const)(
+it.each(['permission', 'session', 'approvalPolicy', 'sandboxMode'] as const)(
   'refuses a native interaction after its owning %s changes',
   async (changed) => {
     const { s, task, interactions } = await setup()
@@ -123,7 +123,11 @@ it.each(['permission', 'session'] as const)(
       ...current,
       ...(changed === 'permission'
         ? { harness: { ...defaultTaskHarness('claude'), permission: 'read-only' as const } }
-        : { sessionId: 'replacement-session' }),
+        : changed === 'approvalPolicy'
+          ? { agentOverrides: { approvalPolicy: 'never' as const } }
+          : changed === 'sandboxMode'
+            ? { agentOverrides: { sandboxMode: 'read-only' as const } }
+            : { sessionId: 'replacement-session' }),
     }))
     expect(await interactions.approve('Stale', '', new AbortController().signal)).toBe('deny')
     expect(s.approvals.list()).toEqual([])
@@ -235,4 +239,35 @@ it('serializes simultaneous native stops without leaving the second child runnin
   ])
   expect(stopped).toEqual(['child', 'second'])
   expect(taskFamilyWorking(s.store.get().tasks, task.id)).toBe(false)
+})
+
+it('stops a native child that outlives its parent turn and expires its approval when access tightens', async () => {
+  const { s, task, interactions, stop } = await setup()
+  const pending = interactions.approve('Native child command', 'pwd', new AbortController().signal)
+  expect(s.approvals.list()).toHaveLength(1)
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    harness: { ...current.harness!, permission: 'read-only' },
+  }))
+  await expect(pending).resolves.toBe('deny')
+  await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce())
+  expect(s.store.taskSummary(task.id).subagents?.[0].status).toBe('stopped')
+  expect(await interactions.approve('Stale callback', 'pwd', new AbortController().signal)).toBe(
+    'deny',
+  )
+})
+
+it('expires obsolete approvals on widening without stopping a native child or granting its old callback new authority', async () => {
+  const { s, task, interactions, stop } = await setup()
+  const signal = new AbortController().signal
+  const pending = interactions.approve('Old policy command', 'pwd', signal)
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    harness: { ...current.harness!, permission: 'full-access' },
+  }))
+  await expect(pending).resolves.toBe('deny')
+  expect(s.approvals.list()).toEqual([])
+  expect(stop).not.toHaveBeenCalled()
+  expect(s.store.taskSummary(task.id).subagents?.[0].status).toBe('working')
+  expect(await interactions.approve('Stale callback', 'pwd', signal)).toBe('deny')
 })

@@ -6,7 +6,7 @@ import { basename, dirname, join, posix } from 'node:path'
 import { Schema, Effect } from 'effect'
 import { catalogSearchSchema, skillCatalogSchema, skillCatalogImportSchema } from '@dovo/protocol'
 import { catalogBytes, catalogJson } from './fetch.js'
-import { importSkill } from '../configuration/resources.js'
+import { importSkill, parseSkillDocument } from '../configuration/resources.js'
 export async function searchSkills(input: unknown) {
   const { query } = decode(catalogSearchSchema, input)
   if (query.length < 2)
@@ -74,17 +74,58 @@ export async function installCatalogSkill(input: unknown, root: string) {
     throw new Error(
       'This repository is too large to import automatically. Import a local SKILL.md instead.',
     )
-  const candidates = tree.tree.filter(
-    (file) =>
-      file.type === 'blob' &&
-      basename(file.path) === 'SKILL.md' &&
-      (basename(dirname(file.path)) === skill || file.path === 'SKILL.md'),
+  const manifests = tree.tree.filter(
+    (file) => file.type === 'blob' && basename(file.path) === 'SKILL.md',
   )
-  if (candidates.length !== 1)
-    throw new Error(
-      'Could not locate one matching skill directory. Import the skill from a local SKILL.md instead.',
+  const documents = new Map<string, Buffer>()
+  const matching: Schema.Schema.Type<typeof fileSchema>[] = []
+  const direct = manifests.filter(
+    (file) => basename(dirname(file.path)) === skill || file.path === 'SKILL.md',
+  )
+  const discover = async (candidates: typeof manifests) => {
+    if (
+      candidates.length > 200 ||
+      candidates.reduce((total, file) => total + (file.size ?? 0), 0) > 8_000_000
     )
-  const selected = candidates[0]
+      throw new Error(
+        'Too many skill definitions to search automatically. Import a local SKILL.md instead.',
+      )
+    for (let i = 0; i < candidates.length; i += 4) {
+      const results = await Promise.allSettled(
+        candidates.slice(i, i + 4).map(async (file) => {
+          if (
+            !['100644', '100755'].includes(file.mode) ||
+            file.path.includes('\\') ||
+            file.path.split('/').some((part) => !part || part === '.' || part === '..')
+          )
+            throw new Error(
+              'Skill definitions must be regular files without symlinks or parent paths',
+            )
+          const contents = await catalogBytes(
+            `https://raw.githubusercontent.com/${source}/${commit.sha}/${file.path.split('/').map(encodeURIComponent).join('/')}`,
+            64_000,
+          )
+          documents.set(file.path, contents)
+          // Unrelated malformed definitions must not prevent importing a valid selected skill.
+          let name: string
+          try {
+            name = parseSkillDocument(contents.toString('utf8')).name
+          } catch {
+            return
+          }
+          if (name === skill) matching.push(file)
+        }),
+      )
+      for (const result of results) if (result.status === 'rejected') throw result.reason
+    }
+  }
+  await discover(direct)
+  if (!matching.length) await discover(manifests.filter((file) => !direct.includes(file)))
+  if (matching.length !== 1)
+    throw new Error(
+      `Could not locate one SKILL.md declaring "${skill}". Import the skill from a local SKILL.md instead.`,
+    )
+  const selected = matching[0]
   const directory = posix.dirname(selected.path)
   const prefix = directory === '.' ? '' : `${directory}/`
   const files = tree.tree.filter((file) => file.path.startsWith(prefix) && file.type !== 'tree')
@@ -113,10 +154,12 @@ export async function installCatalogSkill(input: unknown, root: string) {
     for (let i = 0; i < files.length; i += 4) {
       const results = await Promise.allSettled(
         files.slice(i, i + 4).map(async (file) => {
-          const contents = await catalogBytes(
-            `https://raw.githubusercontent.com/${source}/${commit.sha}/${file.path.split('/').map(encodeURIComponent).join('/')}`,
-            8_000_000,
-          )
+          const contents =
+            documents.get(file.path) ??
+            (await catalogBytes(
+              `https://raw.githubusercontent.com/${source}/${commit.sha}/${file.path.split('/').map(encodeURIComponent).join('/')}`,
+              8_000_000,
+            ))
           bytes += contents.length
           if (bytes > 8_000_000) throw new Error('Skill bundle exceeds 8 MB')
           const path = join(staging, file.path.slice(prefix.length))

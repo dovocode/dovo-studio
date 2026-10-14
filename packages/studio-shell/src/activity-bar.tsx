@@ -117,6 +117,9 @@ export function ActivityBar({
                     : `Update ${update?.version ?? ''}: ${update?.status === 'downloading' ? `downloading ${Math.round(update?.progress ?? 0)}%` : update?.status === 'downloaded' ? 'ready to install' : update?.status === 'restarting' ? 'restarting' : 'available'}`
                 }
                 className="studio-navigation-item studio-update-item"
+                data-update-available={
+                  (update && !['idle', 'error'].includes(update.status)) || undefined
+                }
               >
                 {update && !['idle', 'error'].includes(update.status) ? (
                   <Download size={18} strokeWidth={1.7} aria-hidden="true" />

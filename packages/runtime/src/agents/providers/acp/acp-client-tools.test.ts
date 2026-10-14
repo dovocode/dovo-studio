@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import fsPromises from 'node:fs/promises'
 import { syncBuiltinESMExports } from 'node:module'
-import { link, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentRun } from '../../execution/types.js'
@@ -321,5 +321,106 @@ it('keeps child terminals isolated and drains only the stopped child session', a
     })
   } finally {
     await tools.close()
+  }
+})
+
+it.each(['on-request', 'never'] as const)(
+  'uses explicit %s for both ACP writes and client terminals',
+  async (approvalPolicy) => {
+    const { run, cwd, tools: initial } = await setup('workspace-write', false)
+    await initial.close()
+    run.agent.approvalPolicy = approvalPolicy
+    run.approve = vi.fn<AgentRun['approve']>(async () => 'deny')
+    const tools = await acpClientTools(run, () => 'session')
+    try {
+      const write = tools.client.writeTextFile!({
+        sessionId: 'session',
+        path: join(cwd, 'policy.txt'),
+        content: 'fixture',
+      })
+      const written = await Promise.allSettled([write])
+      expect(written[0].status).toBe(approvalPolicy === 'never' ? 'fulfilled' : 'rejected')
+      const terminal = tools.client.createTerminal!({
+        sessionId: 'session',
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write("fixture")'],
+      })
+      const executed = await Promise.allSettled([
+        Promise.resolve(terminal).then(async ({ terminalId }) =>
+          tools.client.waitForTerminalExit!({ sessionId: 'session', terminalId }),
+        ),
+      ])
+      expect(executed[0].status).toBe(approvalPolicy === 'never' ? 'fulfilled' : 'rejected')
+      expect(run.approve).toHaveBeenCalledTimes(approvalPolicy === 'never' ? 0 : 2)
+    } finally {
+      await tools.close()
+    }
+  },
+)
+
+it('does not advertise explicit unsupported ACP sandbox guarantees even for full access', async () => {
+  const { run, tools } = await setup('full-access')
+  await tools.close()
+  run.agent.sandboxMode = 'workspace-write'
+  await expect(acpClientTools(run, () => 'session')).rejects.toThrow('does not support sandbox')
+})
+
+it('keeps read-only and text-only ACP tools restricted under explicit never', async () => {
+  const { run, tools: initial } = await setup('read-only')
+  await initial.close()
+  run.agent.approvalPolicy = 'never'
+  for (const textOnly of [false, true]) {
+    if (textOnly) run.tools = 'none'
+    const tools = await acpClientTools(run, () => 'session')
+    try {
+      expect(tools.client.writeTextFile).toBeUndefined()
+      expect(tools.client.createTerminal).toBeUndefined()
+      expect(tools.capabilities.fs?.readTextFile).toBe(!textOnly)
+    } finally {
+      await tools.close()
+    }
+  }
+})
+
+it('canonicalizes symlink/.. before read, write and terminal authorization', async () => {
+  const { cwd, run, tools } = await setup('workspace-write')
+  const outside = await mkdtemp(join(tmpdir(), 'dovo-acp-outside-'))
+  dirs.push(outside)
+  await mkdir(join(outside, 'child'))
+  await writeFile(join(outside, 'secret.txt'), 'outside')
+  await writeFile(join(cwd, 'secret.txt'), 'inside')
+  await symlink(
+    join(outside, 'child'),
+    join(cwd, 'link'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  )
+  const escaped = cwd + '/link/../secret.txt'
+  try {
+    await expect(
+      tools.client.readTextFile!({ sessionId: 'session', path: escaped }),
+    ).rejects.toThrow('outside the workspace')
+    await expect(
+      tools.client.writeTextFile!({ sessionId: 'session', path: escaped, content: 'changed' }),
+    ).rejects.toThrow('outside the workspace')
+    await expect(
+      tools.client.createTerminal!({
+        sessionId: 'session',
+        cwd: cwd + '/link/..',
+        command: process.execPath,
+      }),
+    ).rejects.toThrow('outside the workspace')
+    expect(await readFile(join(cwd, 'secret.txt'), 'utf8')).toBe('inside')
+    expect(await readFile(join(outside, 'secret.txt'), 'utf8')).toBe('outside')
+  } finally {
+    await tools.close()
+  }
+  run.agent.permission = 'full-access'
+  const unrestricted = await acpClientTools(run, () => 'session')
+  try {
+    expect(
+      await unrestricted.client.readTextFile!({ sessionId: 'session', path: escaped }),
+    ).toEqual({ content: 'outside' })
+  } finally {
+    await unrestricted.close()
   }
 })

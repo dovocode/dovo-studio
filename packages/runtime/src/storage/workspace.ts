@@ -1,3 +1,4 @@
+import { propagateDelegatedPermissions } from '../agents/tasks/delegation-permissions.js'
 import { projectDelegatedAgents } from '../agents/tasks/delegation-state.js'
 import { versionReviewedFiles } from './file-review-versions.js'
 import { Conversations } from './conversations.js'
@@ -30,7 +31,7 @@ import {
   latestCompletedTaskTurn,
   lockedTaskProvider,
   resolveTaskAgent,
-  delegatedAccess,
+  permissionPolicyWithinCeiling,
   taskFamilyIds,
   taskFamilyWorking,
   nativeAgentWorking,
@@ -208,6 +209,25 @@ export class WorkspaceStore {
   readonly usagePricing: UsagePricing
   readonly usageTranscripts = new UsageTranscripts()
   private revision = 0
+  private transactionDepth = 0
+  private readonly commitListeners = new Set<
+    (before: WorkspaceSummary, after: WorkspaceSummary) => void
+  >()
+  /** Execution side effects run only after the outermost transaction commits. */
+  onCommitted(listener: (before: WorkspaceSummary, after: WorkspaceSummary) => void) {
+    this.commitListeners.add(listener)
+    return () => this.commitListeners.delete(listener)
+  }
+  private committed(before: WorkspaceSummary) {
+    if (this.transactionDepth || before === this.workspace) return
+    for (const listener of this.commitListeners) {
+      try {
+        listener(before, this.workspace)
+      } catch (error) {
+        console.error('Workspace commit listener failed', error)
+      }
+    }
+  }
   private projected?: { revision: number; workspace: WorkspaceSummary }
   private readonly publicTasks = new WeakMap<TaskSummary, WeakRef<Task>>()
   private readonly validatedSummaries = new WeakMap<object, TaskSummary>()
@@ -480,8 +500,12 @@ export class WorkspaceStore {
     const seed = this.seed
     const rewriteDocuments = this.rewriteDocuments
     const projected = this.projected
+    this.transactionDepth++
+    let succeeded = false
     try {
-      return this.db.transaction(fn)()
+      const result = this.db.transaction(fn)()
+      succeeded = true
+      return result
     } catch (error) {
       this.workspace = workspace
       this.revision = revision
@@ -490,6 +514,9 @@ export class WorkspaceStore {
       this.rewriteDocuments = rewriteDocuments
       this.projected = projected
       throw error
+    } finally {
+      this.transactionDepth--
+      if (succeeded) this.committed(workspace)
     }
   }
   removeAgent(id: string) {
@@ -790,6 +817,10 @@ export class WorkspaceStore {
             task.delegation &&
             (!previous ||
               previous.agentId !== task.agentId ||
+              !isDeepStrictEqual(
+                resolveTaskAgent(previous, this.workspace.agents),
+                resolveTaskAgent(task, parsed.agents),
+              ) ||
               !isDeepStrictEqual(previous.harness, task.harness) ||
               !isDeepStrictEqual(previous.agentOverrides, task.agentOverrides) ||
               previous.delegation?.parentTaskId !== task.delegation.parentTaskId ||
@@ -837,10 +868,12 @@ export class WorkspaceStore {
             if (
               parentAgent &&
               childAgent &&
-              delegatedAccess(
-                checkout?.access === 'read-only' ? 'read-only' : parentAgent.permission,
-                childAgent.permission,
-              ) !== childAgent.permission
+              ((task.delegation.checkoutId && !checkout) ||
+                !permissionPolicyWithinCeiling(
+                  parentAgent,
+                  childAgent,
+                  checkout?.access === 'read-only',
+                ))
             )
               throw new HttpError(
                 403,
@@ -913,6 +946,7 @@ export class WorkspaceStore {
         throw new HttpError(400, `Duplicate Jira issue link: ${link.sourceId} / ${link.issueId}`)
       issueLinks.add(key)
     }
+    next.tasks = propagateDelegatedPermissions(this.workspace, next)
     next.tasks = projectDelegatedAgents(next.tasks, next.agents)
     const nextTaskIds = new Set(next.tasks.map((task) => task.id))
     const removed = [...previousTasks.values()].filter((task) => !nextTaskIds.has(task.id))
@@ -997,6 +1031,7 @@ export class WorkspaceStore {
     this.seedHistory = false
     this.seed = undefined
     this.rewriteDocuments = false
+    const committedBefore = this.workspace
     this.workspace = next
     this.revision++
     for (const { id } of removed) this.histories.forget(id)
@@ -1004,6 +1039,7 @@ export class WorkspaceStore {
       const written = histories.has(task.id) && changes.get(task.id)
       if (written) this.histories.remember(task, written.after)
     }
+    this.committed(committedBefore)
     return next
   }
   taskDefaults(repositoryId?: string) {

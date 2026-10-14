@@ -1,3 +1,4 @@
+import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { LinkedCheckoutEditor } from '../tasks/detail/linked-projects'
 import { View } from 'react-native'
 import { Text } from '../ui/content/text'
@@ -121,16 +122,16 @@ export function StepFields({
           <ModelSettings agent={agent} onChange={changeAgent} disabled={disabled} />
           <Choice
             label="Permissions"
-            value={agent.permission}
+            value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
+            selectedLabel={permissionPolicyLabel(agent)}
             disabled={disabled}
             items={selectableAccessModes(agent.permission, agent.provider)
               .filter((mode) => supportsAccess(agent.provider, mode.id))
               .map((mode) => ({ id: mode.id, name: mode.name }))}
             onChange={(permission) =>
-              changeAgent({
-                ...agent,
-                permission: decode(agentSchema.fields.permission, permission),
-              })
+              changeAgent(
+                selectPermissionPreset(agent, decode(agentSchema.fields.permission, permission)),
+              )
             }
           />
           {(agent.provider === 'opencode' ||

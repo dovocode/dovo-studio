@@ -11,7 +11,7 @@ const bundle = await bundleBrowser(
       loader: 'tsx',
       contents: `import {createRoot} from 'react-dom/client';import {TaskFiles} from '${detail}task-files.tsx';
 window.fail=true;window.requests=[];window.opened=[];
-const request=async(path,input)=>{window.requests.push({path,input});if(path.endsWith('/list')&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/list'))return {files:['small.txt','large.txt','binary.txt']};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return {path:input.path,contents:input.path==='large.txt'?'é'.repeat(600000):'Small file'}};throw new Error('Unexpected request: '+path)};
+const request=async(path,input)=>{window.requests.push({path,input});if(path.endsWith('/list')&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/list'))return {files:['small.txt','large.txt','binary.txt','preview.png','vector.svg']};if(path==='/api/tasks/images/read'){if(window.failImage)throw new Error('Image unavailable');return {uri:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHioAAAAASUVORK5CYII='}};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return {path:input.path,contents:input.path==='large.txt'?'é'.repeat(600000):'Small file'}};throw new Error('Unexpected request: '+path)};
 window.runtime={connected:true,connection:{address:'http://runtime.test:7777',token:'paired-token'},request};
 createRoot(document.getElementById('app')).render(<TaskFiles task={{id:'task',files:[]}}/>);`,
     },
@@ -41,7 +41,8 @@ createRoot(document.getElementById('app')).render(<TaskFiles task={{id:'task',fi
     },
     {
       path: '@dovo/studio-ui/code-themes',
-      contents: 'export const preloadStudioHighlighter=async()=>{};',
+      contents:
+        "export {useDiffOptions} from '@dovo/studio-core';export const preloadStudioHighlighter=async()=>{};",
     },
     { path: '@pierre/diffs/edit', contents: 'export class Editor{}' },
     {
@@ -63,6 +64,12 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('http://studio.test/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  await page.route('http://runtime.test:7777/**', (route) =>
+    route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="red"/></svg>',
+    }),
   )
   await page.goto('http://studio.test/')
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
@@ -103,8 +110,62 @@ try {
   await page.getByRole('button', { name: 'binary.txt', exact: true }).click()
   await page.getByRole('alert').waitFor()
   assert.equal(await page.getByTestId('file-preview').count(), 0)
+  await page.evaluate(() => {
+    window.failImage = true
+  })
+  await page.getByRole('button', { name: 'preview.png', exact: true }).click()
+  await page.getByRole('alert').getByText('Image unavailable', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.failImage = false
+  })
+  await page.getByRole('button', { name: 'Retry file', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('img[alt="preview.png"]')?.naturalWidth > 0,
+  )
+  assert.equal(await page.getByRole('button', { name: 'Edit', exact: true }).count(), 0)
+  assert.equal(
+    await page.evaluate(() =>
+      window.requests.some(
+        (item) => item.path === '/api/tasks/files/read' && item.input.path === 'preview.png',
+      ),
+    ),
+    false,
+  )
+  const readsBeforeRefresh = await page.evaluate(
+    () => window.requests.filter((item) => item.path === '/api/tasks/images/read').length,
+  )
+  await page.getByRole('button', { name: 'Refresh files', exact: true }).click()
+  await page.waitForFunction(
+    (count) =>
+      window.requests.filter((item) => item.path === '/api/tasks/images/read').length > count,
+    readsBeforeRefresh,
+  )
+  await page.waitForFunction(
+    () => document.querySelector('img[alt="preview.png"]')?.naturalWidth > 0,
+  )
+  if (process.env.DOVO_IMAGE_PREVIEW_SCREENSHOT)
+    await page.screenshot({ path: process.env.DOVO_IMAGE_PREVIEW_SCREENSHOT })
+  await page.getByRole('button', { name: 'Open original', exact: true }).click()
+  await page.waitForFunction(() => window.opened.length === 2)
+  await page.getByRole('button', { name: 'vector.svg', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('img[alt="vector.svg"]')?.naturalWidth === 24,
+  )
+  assert.equal(
+    await page.evaluate(() =>
+      window.requests.some(
+        (item) => item.path === '/api/tasks/files/read' && item.input.path === 'vector.svg',
+      ),
+    ),
+    false,
+  )
+  await page.getByRole('button', { name: 'small.txt', exact: true }).click()
+  await page.getByTestId('file-preview').getByText('Small file', { exact: true }).waitFor()
+  assert.equal(await page.locator('img').count(), 0)
   assert.deepEqual(errors, [])
-  console.log('Project file preview error, retry, external opening, and read-only checks passed.')
+  console.log(
+    'Project text/image previews, retry, format switching, external opening and read-only checks passed.',
+  )
 } finally {
   await browser.close()
 }

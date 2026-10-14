@@ -1,4 +1,4 @@
-import { githubPullTarget } from '@dovo/protocol'
+import { forgePullTarget, pullRepositoryIdentity, decodeWorkTarget } from '@dovo/protocol'
 import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
 import {
   lazy,
@@ -18,6 +18,7 @@ import {
   SettingsTargetProvider,
   WorkspaceProvider,
   useWorkspace,
+  useRepositorySources,
   type StudioCommand,
   type StudioExtension,
   type StudioHostApi,
@@ -200,6 +201,18 @@ function WorkbenchContent({
   settingsNavigation.current = { target, extensions }
   const history = useRef<Array<{ target: StudioNavigation; runtimeId: string | null }>>([])
   const navigationAttempt = useRef(0)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      navigationAttempt.current++
+    }
+  }, [])
+  const taskNavigationGuard = useCallback(() => {
+    const attempt = navigationAttempt.current
+    return () => mounted.current && attempt === navigationAttempt.current
+  }, [])
   const currentRuntime = useRef(runtimeRegistry.activeId)
   currentRuntime.current = runtimeRegistry.activeId
   const [navigationKey, setNavigationKey] = useState(0)
@@ -214,11 +227,16 @@ function WorkbenchContent({
     )
   }, [confirmSettingsNavigation])
   const navigate = useCallback(
-    (next: StudioNavigation) => {
+    (next: StudioNavigation, options?: { replace?: boolean }) => {
       const { target } = settingsNavigation.current
       if (!canLeave()) return
       navigationAttempt.current++
-      if (target.viewId !== next.viewId || target.entityId !== next.entityId) {
+      if (
+        !options?.replace &&
+        (target.viewId !== next.viewId ||
+          target.entityId !== next.entityId ||
+          JSON.stringify(target.pullTarget) !== JSON.stringify(next.pullTarget))
+      ) {
         history.current.push({ target, runtimeId: currentRuntime.current })
         if (history.current.length > 50) history.current.shift()
       }
@@ -307,11 +325,57 @@ function WorkbenchContent({
     },
     [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
   )
+  const repositorySources = useRepositorySources()
+  const linkContext = useRef({ repositorySources, tasks: workspace.tasks })
+  linkContext.current = { repositorySources, tasks: workspace.tasks }
   const openPullLink = useCallback(
-    (url: string) => {
-      const pull = githubPullTarget(url)
+    (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => {
+      const { repositorySources, tasks } = linkContext.current
+      const pull = forgePullTarget(
+        url,
+        repositorySources.map((source) => ({
+          identity: pullRepositoryIdentity(source.repository),
+        })),
+      )
       if (!pull) return false
-      navigate({ viewId: 'pulls', entityId: pull.navigationUrl })
+      const { target } = settingsNavigation.current
+      const integrationOrigin = target.pullTarget ?? decodeWorkTarget(target.entityId)
+      const runtimeId =
+        origin?.runtimeId ??
+        integrationOrigin?.runtimeId ??
+        (target.viewId === 'tasks' ? currentRuntime.current : undefined)
+      const repositoryId =
+        origin?.repositoryId ??
+        integrationOrigin?.repositoryId ??
+        (target.viewId === 'tasks'
+          ? tasks.find((task) => task.id === target.entityId)?.repositoryId
+          : undefined)
+      const matches = repositorySources.filter(
+        (source) => pullRepositoryIdentity(source.repository) === pull.identity,
+      )
+      const contextual = matches.find(
+        (source) => source.runtimeId === runtimeId && source.repository.id === repositoryId,
+      )
+      const sameRuntime = matches.filter((source) => source.runtimeId === runtimeId)
+      const source =
+        contextual ??
+        (sameRuntime.length === 1 ? sameRuntime[0] : matches.length === 1 ? matches[0] : undefined)
+      navigate({
+        viewId: 'pulls',
+        entityId: pull.navigationUrl,
+        ...(source || runtimeId
+          ? {
+              pullTarget: {
+                runtimeId: source?.runtimeId ?? runtimeId ?? '',
+                repositoryId: source?.repository.id,
+                number: pull.number,
+                url: pull.navigationUrl,
+                tab: pull.tab,
+                fragment: pull.fragment,
+              },
+            }
+          : {}),
+      })
       return true
     },
     [navigate],
@@ -344,6 +408,7 @@ function WorkbenchContent({
     () => ({
       navigate,
       goBack,
+      taskNavigationGuard,
       popOutThread,
       threadWindow: !!threadWindow,
       registerCommand,
@@ -359,6 +424,7 @@ function WorkbenchContent({
     [
       navigate,
       goBack,
+      taskNavigationGuard,
       popOutThread,
       threadWindow,
       registerCommand,
@@ -580,7 +646,11 @@ function WorkbenchContent({
                       }
                     >
                       {ready && View ? (
-                        <View entityId={target.entityId} navigationKey={navigationKey} />
+                        <View
+                          entityId={target.entityId}
+                          pullTarget={target.pullTarget}
+                          navigationKey={navigationKey}
+                        />
                       ) : !ready ? (
                         <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
                       ) : (

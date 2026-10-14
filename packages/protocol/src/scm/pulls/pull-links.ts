@@ -1,5 +1,6 @@
 import { gitRemoteIdentity } from '../../runtime/connection/project-machines.js'
 import type { Task } from '../../workspace.js'
+import type { ForgeProvider } from '../forges/forges.js'
 export function pullReference(input: string): { number: number; url?: string } {
   const text = input.trim()
   if (/^#?\d+$/.test(text)) {
@@ -87,19 +88,108 @@ export function githubPullTarget(input: string) {
   }
 }
 
+/** Public hosts have known URL shapes. Private instances must match a configured
+ * repository and provider exactly; a GitHub-looking path alone is not trusted. */
+export function forgePullTarget(
+  input: string,
+  bindings: readonly { provider?: ForgeProvider; identity?: string }[] = [],
+) {
+  const github = githubPullTarget(input)
+  if (github) return { ...github, provider: 'github' as const }
+  try {
+    const url = new URL(input)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null
+    const shapes = [
+      {
+        provider: 'github',
+        expression: /^(\/.+?)\/pull\/([1-9]\d*)(?:\/(files|commits|checks))?\/?$/,
+      },
+      {
+        provider: 'forgejo',
+        expression: /^(\/.+?)\/pulls\/([1-9]\d*)(?:\/(files|commits|checks))?\/?$/,
+      },
+      {
+        provider: 'gitea',
+        expression: /^(\/.+?)\/pulls\/([1-9]\d*)(?:\/(files|commits|checks))?\/?$/,
+      },
+      {
+        provider: 'gitlab',
+        expression: /^(\/.+?)\/-\/merge_requests\/([1-9]\d*)(?:\/(diffs|commits|pipelines))?\/?$/,
+      },
+      {
+        provider: 'azure-devops',
+        expression: /^(\/.+?\/_git\/[^/]+)\/pullrequest\/([1-9]\d*)\/?$/i,
+      },
+      {
+        provider: 'bitbucket',
+        expression: /^(\/.+?)\/pull-requests\/([1-9]\d*)(?:\/(diff|commits))?\/?$/,
+      },
+    ] as const
+    for (const { provider, expression } of shapes) {
+      const match = url.pathname.match(expression)
+      if (!match) continue
+      const number = Number(match[2])
+      if (!Number.isSafeInteger(number)) return null
+      const repositoryUrl = `${url.origin}${match[1]}`
+      const rawIdentity = gitRemoteIdentity(repositoryUrl)
+      const identity = provider === 'github' ? rawIdentity?.toLowerCase() : rawIdentity
+      if (!identity) return null
+      if (
+        !(provider === 'gitlab' && url.hostname === 'gitlab.com' && !url.port) &&
+        !bindings.some(
+          (binding) =>
+            (!binding.provider || binding.provider === provider) && binding.identity === identity,
+        )
+      )
+        continue
+      const kind =
+        provider === 'gitlab'
+          ? '-/merge_requests'
+          : ['forgejo', 'gitea'].includes(provider)
+            ? 'pulls'
+            : provider === 'bitbucket'
+              ? 'pull-requests'
+              : provider === 'azure-devops'
+                ? 'pullrequest'
+                : 'pull'
+      const canonicalUrl = `${repositoryUrl}/${kind}/${number}`
+      const tab: 'overview' | 'changes' | 'checks' = ['checks', 'pipelines'].includes(
+        match[3] ?? '',
+      )
+        ? 'checks'
+        : match[3]
+          ? 'changes'
+          : 'overview'
+      return {
+        provider,
+        number,
+        identity,
+        url: canonicalUrl,
+        navigationUrl: `${canonicalUrl}${match[3] ? `/${match[3]}` : ''}${url.search}${url.hash}`,
+        tab,
+        fragment: url.hash,
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 /** Build a thread link from a full PR URL, including GitHub's detail tabs. */
 export function threadPullLink(
   input: string,
+  bindings: readonly { provider?: ForgeProvider; identity?: string }[] = [],
 ): NonNullable<Task['linkedPullRequests']>[number] | null {
-  const github = githubPullTarget(input)
+  const target = forgePullTarget(input, bindings)
   try {
-    const reference = pullReference(github?.url ?? input)
+    const reference = pullReference(target?.url ?? input)
     if (!reference.url) return null
     return {
       number: reference.number,
       url: reference.url,
       title: `PR #${reference.number}`,
-      ...(github ? { provider: 'github' as const } : {}),
+      ...(target ? { provider: target.provider } : {}),
       repositoryUrl: reference.url.replace(
         /\/(?:-\/)?(?:pull|pulls|pull-requests|pullrequest|merge_requests)\/\d+$/i,
         '',

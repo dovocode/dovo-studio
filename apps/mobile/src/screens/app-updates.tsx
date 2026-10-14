@@ -1,5 +1,5 @@
 import { usePushNotifications } from '../notifications/provider'
-import { openAppLink } from '../ui/content/open-link'
+import { useOpenAppLink } from '../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -14,6 +14,7 @@ import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { SettingsGroup, SettingsSwitchRow } from './settings-group'
 import { useLiveActivities } from '../live-activities/provider'
 export default function AppUpdates() {
+  const openLink = useOpenAppLink(undefined)
   const { styles } = useTheme()
 
   const activity = useLiveActivities()
@@ -81,7 +82,7 @@ export default function AppUpdates() {
             label={`View release ${release.version}`}
             onPress={() =>
               void runClientEffect(
-                nativeEffect(() => openAppLink(release.url)).pipe(
+                nativeEffect(() => openLink(release.url)).pipe(
                   Effect.catch(() =>
                     nativeEffect(() => setMessage('Could not open release notes.')),
                   ),

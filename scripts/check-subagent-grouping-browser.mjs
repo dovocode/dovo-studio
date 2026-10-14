@@ -6,7 +6,9 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,set]=useState(initial);const ref=useRef(value);ref.current=value;return [value,set,ref]}`
 const controls = `
-export const SidebarHeader=()=>null;
+export const SidebarHeader=()=>null;export const HeaderContent=({children})=>children;
+export const Conversation=({children,...props})=><div role="log" {...props}>{children}</div>;export const ConversationContent=({children,...props})=><div {...props}>{children}</div>;export const ConversationScrollButton=()=>null;
+export const Message=({children,from})=><div data-native-role={from}>{children}</div>;export const MessageContent=({children})=><div>{children}</div>;
 export const Button=({children,onClick,disabled,...props})=><button disabled={disabled} onClick={onClick} {...props}>{children}</button>;
 export const Toggle=({label,checked,onChange})=><button role="switch" aria-label={label} aria-checked={checked} onClick={()=>onChange(!checked)}/>;
 export const Switch=({accessibilityLabel,value,onValueChange})=><Toggle label={accessibilityLabel} checked={value} onChange={onValueChange}/>;
@@ -26,7 +28,7 @@ export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent})
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const SettingsAction=Action;export const SettingsSearchField=SearchField;
-export const ScreenHeader=({title})=><h1>{title}</h1>;
+export const ScreenHeader=({title,leading,buttons=[]})=><header>{leading}<h1>{title}</h1>{buttons.map(button=><button key={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;
 export const Icon=()=>null;export const RuntimeIcon=()=>null;export const IconButton=({label,onPress})=><button onClick={onPress}>{label}</button>;
 export const Sheet=View;export const colors={};export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const Alert={alert:()=>{}};
 `
@@ -158,11 +160,11 @@ try {
     page.setDefaultTimeout(8000)
     await page.setContent('<div id="app"></div>')
     const app = mobile
-      ? `import TasksScreen from '${root}/apps/mobile/src/screens/tasks.tsx';import {TaskAgents} from '${root}/apps/mobile/src/tasks/detail/task-agents.tsx';window.renderList=archived=>render(<TasksScreen archived={archived}/>);`
-      : `import {TaskList} from '${root}/packages/extension-tasks/src/list/task-list.tsx';import {TaskAgents} from '${root}/packages/extension-tasks/src/detail/task-agents.tsx';import Archived from '${root}/packages/extension-tasks/src/list/archived-view.tsx';window.renderList=archived=>render(archived?<Archived/>:<TaskList projectId="" onProjectChange={()=>{}} selectedId={JSON.stringify(['linux','nested'])} onSelect={entry=>window.opened.push({id:entry.task.id,runtimeId:entry.source.runtimeId})} onCreate={()=>{}} onCreateNoProject={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.orders.push(entries.map(e=>e.task.id))} sources={[window.source]} activeRuntimeId="mac" busy={false} error=""/>);`
+      ? `import TasksScreen from '${root}/apps/mobile/src/screens/tasks.tsx';import {TaskAgents} from '${root}/apps/mobile/src/tasks/detail/task-agents.tsx';import {NativeAgentThread} from '${root}/apps/mobile/src/tasks/detail/native-agent-thread.tsx';window.renderList=archived=>render(<TasksScreen archived={archived}/>);`
+      : `import {TaskList} from '${root}/packages/extension-tasks/src/list/task-list.tsx';import {TaskAgents} from '${root}/packages/extension-tasks/src/detail/task-agents.tsx';import {NativeAgentThread} from '${root}/packages/extension-tasks/src/detail/native-agent-thread.tsx';import Archived from '${root}/packages/extension-tasks/src/list/archived-view.tsx';window.renderList=archived=>render(archived?<Archived/>:<TaskList projectId="" onProjectChange={()=>{}} selectedId={JSON.stringify(['linux','nested'])} onSelect={entry=>window.opened.push({id:entry.task.id,runtimeId:entry.source.runtimeId})} onCreate={()=>{}} onCreateNoProject={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.orders.push(entries.map(e=>e.task.id))} sources={[window.source]} activeRuntimeId="mac" busy={false} error=""/>);`
     await page.addScriptTag({
       content: await bundle(
-        `import {createRoot} from 'react-dom/client';import {Effect} from 'effect';${app}${fixture}const root=createRoot(document.getElementById('app'));const render=node=>root.render(node);window.renderAgents=()=>render(<TaskAgents task={window.workspace.tasks[0]}/>);window.renderList(false);`,
+        `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';${app}${fixture}const root=createRoot(document.getElementById('app'));const render=node=>root.render(node);function Agents(){const [thread,setThread]=useState();return <><div data-agent-sidebar hidden={!!thread}><TaskAgents task={window.workspace.tasks[0]} onOpenThread={setThread}/></div>{thread&&<NativeAgentThread taskId={thread.taskId} agent={thread.agent} onClose={()=>setThread(undefined)}/>}</>}window.renderAgents=()=>render(<Agents/>);window.renderList(false);`,
       ),
     })
     await page.getByText('Main thread', { exact: true }).waitFor()
@@ -279,6 +281,7 @@ try {
       .first()
       .click()
     await page.getByText('Native final answer', { exact: true }).waitFor()
+    if (!mobile) await page.getByText('Read', { exact: true }).click()
     await page.getByText('Native tool output', { exact: true }).waitFor()
     const nativeRead = await page.evaluate(() => window.requests.at(-1))
     assert.equal(nativeRead.path, '/api/tasks/native-thread')
@@ -321,7 +324,7 @@ try {
     await page.getByText('Nested native', { exact: true }).click()
     await page
       .getByRole('button', { name: 'View native thread · codex', exact: true })
-      .first()
+      .last()
       .click()
     await page.getByText('Native final answer', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => window.requests.at(-1).input.taskId), 'child')

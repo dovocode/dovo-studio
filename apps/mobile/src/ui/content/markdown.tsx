@@ -2,6 +2,8 @@ import { TaskVisualization } from './task-visualization'
 import { markdownImages, type MarkdownImagePart } from './markdown-images'
 import { ServerImage } from './server-image'
 import { Text } from './text'
+import { useLinkOrigin } from './link-origin'
+import { useSheetNavigation } from '../layout/sheet'
 import { openAppLink } from './open-link'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -260,6 +262,8 @@ export const Markdown = memo(function Markdown({
   onLinkLongPress?: (url: string) => void
 }) {
   const { connection, connected } = useRuntime()
+  const origin = useLinkOrigin(taskId)
+  const navigateAfterSheet = useSheetNavigation()
   const [previewPath, setPreviewPath] = useState<string>()
   const previewFile = async (path: string) => {
     if (!taskId || !connection || !connected)
@@ -408,7 +412,13 @@ export const Markdown = memo(function Markdown({
               const target = resolveMarkdownLink(url, baseURL, fileBaseURL)
               if (target) {
                 void runClientEffect(
-                  nativeEffect(() => openAppLink(target)).pipe(
+                  nativeEffect(() =>
+                    navigateAfterSheet(() => {
+                      void openAppLink(target, false, origin).catch((error: unknown) =>
+                        Alert.alert('Could not open link', String(error)),
+                      )
+                    }),
+                  ).pipe(
                     Effect.catch((error) =>
                       nativeEffect(() => Alert.alert('Could not open link', String(error))),
                     ),

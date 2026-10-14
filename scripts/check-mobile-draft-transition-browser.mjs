@@ -29,7 +29,7 @@ const mocks = {
   '../../ui/controls/icon': 'export const Icon=()=>null;',
   'react-native': `
     export const Pressable=({children,onPress,disabled,accessibilityRole,accessibilityLabel})=><button role={accessibilityRole} aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>{children}</button>;
-    export const View=({children})=><div>{children}</div>;
+    export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={Array.isArray(style)?Object.assign({},...style):style}>{children}</div>;
     export const ScrollView=({children})=><div>{children}</div>;
     export const ActivityIndicator=()=> <span>Loading</span>;
     export const Keyboard={dismiss:()=>{}};
@@ -70,7 +70,9 @@ const mocks = {
   '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
   '../../ui/layout/sheet': `export const Sheet=()=>null;export const useSheetNavigation=()=>navigate=>navigate();`,
   '../../ui/theme': `export const useTheme=()=>({colors:{},styles:{}});`,
-  '../../ui/layout/screen-header': `export const ScreenHeader=({title,buttons})=><header>{title}{buttons?.filter(b=>!b.overflow||b.label==='Copy conversation'||b.label==='Chat').map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>;`,
+  '../../ui/layout/screen-header': `export const ScreenHeader=({title,buttons,leading,hidden})=>hidden?null:<header>{leading}{title}{buttons?.filter(b=>!b.overflow||b.label==='Copy conversation'||b.label==='Chat'||b.label==='Agents').map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>;`,
+  '../../ui/content/markdown': `export const Markdown=({text})=><p data-native-prose>{text}</p>;`,
+  './task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
   '../../ui/content/clipboard': `export const copyText=async text=>{(window.mobileCopies??=[]).push(text);return 'copied'};`,
   '../../ui/content/artifacts': `export const ArtifactBrowser=()=>null;`,
   '../draft/use-draft': `export const saveRuntimeDraft=async(...args)=>{window.savedDraft=args};`,
@@ -130,7 +132,6 @@ const mocks = {
 for (const [path, names] of Object.entries({
   './task-linked-pull-sheet': ['TaskLinkedPullSheet'],
   './task-thread-behavior': ['TaskThreadBehavior'],
-  './task-agents': ['TaskAgents'],
   '../preview/browser-pane': ['BrowserPane', 'DevicesPane'],
   '../composer/message-queue': ['MessageQueue'],
   './task-questions': ['TaskQuestions'],
@@ -229,12 +230,13 @@ const built = await build({
         const request=(runtimeId,path,input)=>Effect.tryPromise({try:async()=>{
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
           window.requests.push({runtimeId,path,input});
+          if(path==='/api/tasks/native-thread')return {entries:[{id:'native-prompt',role:'user',text:'Native mobile prompt'},{id:'native-answer',role:'assistant',text:'Native mobile answer'}]};
           if(path==='/api/workspace'){window.created=input.create;return {revision:1}}
           if(window.holdMessage&&path==='/api/tasks/message')await new Promise(resolve=>window.releaseMessage=resolve);
           if(window.failAttachment&&path==='/api/attachments/upload'){window.failAttachment=false;throw Error('Upload failed')}
           return {ok:true};
         },catch:error=>error});
-        const runtime={ready:true,activeId,profiles,profile:profiles.find(p=>p.id===activeId),connected:online,snapshot:snapshots[activeId],overviews,request,readCache:window.caches[activeId]??null,refresh:async()=>{}};
+        const runtime={ready:true,activeId,profiles,profile:profiles.find(p=>p.id===activeId),connected:online,snapshot:snapshots[activeId],overviews,request,call:(...args)=>Effect.runPromise(request(activeId,...args)),readEffect:(...args)=>request(activeId,...args),callEffect:(...args)=>request(activeId,...args),readCache:window.caches[activeId]??null,refresh:async()=>{}};
         return <FocusContext.Provider value={focused}><RuntimeContext.Provider value={runtime}><RouteContext.Provider value={route.params}>
           {route.href==='/new'?<NewTaskScreen key={route.key}/>:<TaskRouteScreen key={route.key}/>}
         </RouteContext.Provider></RuntimeContext.Provider></FocusContext.Provider>;
@@ -556,6 +558,43 @@ try {
   await page.evaluate(() => window.finishMobileCopy())
   await page.waitForFunction(() => !document.querySelector('header button:disabled'))
   assert.equal(await page.evaluate(() => window.mobileCopies.length), 1)
+  await page.evaluate(() => {
+    window.setFocused(true)
+    window.publish(
+      'a',
+      {
+        ...window.task,
+        subagents: [
+          {
+            id: 'native-claude',
+            sessionId: 'claude-mobile',
+            provider: 'claude',
+            name: 'Claude reviewer',
+            status: 'completed',
+          },
+        ],
+      },
+      true,
+    )
+  })
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  await input.fill('Mobile draft while reading a child')
+  await input.evaluate((element) => (window.nativeParentEditor = element))
+  await page.getByRole('button', { name: 'Agents', exact: true }).click()
+  await page.getByRole('button', { name: 'Open native Claude thread', exact: true }).click()
+  await page.getByText('Native mobile answer', { exact: true }).waitFor()
+  assert.equal(await input.isVisible(), false)
+  const nativeRead = await page.evaluate(() =>
+    window.requests.findLast((request) => request.path === '/api/tasks/native-thread'),
+  )
+  assert.equal(nativeRead.runtimeId, 'a')
+  assert.equal(nativeRead.input.provider, 'claude')
+  assert.equal(nativeRead.input.sessionId, 'claude-mobile')
+  await page.getByRole('button', { name: 'Back to agents', exact: true }).click()
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  await input.waitFor()
+  assert.equal(await input.inputValue(), 'Mobile draft while reading a child')
+  assert.equal(await input.evaluate((element) => element === window.nativeParentEditor), true)
   await page.evaluate(async () => {
     await Promise.all(Object.values(window.caches).map((cache) => cache.close()))
   })

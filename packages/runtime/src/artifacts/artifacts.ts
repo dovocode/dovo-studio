@@ -1,3 +1,4 @@
+import { permissionPolicyReadOnly } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
@@ -292,7 +293,7 @@ export class Artifacts {
     if (!this.preferences().enableArtifacts)
       throw new HttpError(403, 'Enable Dovo Artifacts in this computer’s settings first')
     const task = this.store.task(input.taskId)
-    if (resolveTaskAgent(task, this.store.get().agents)?.permission === 'read-only')
+    if (permissionPolicyReadOnly(resolveTaskAgent(task, this.store.get().agents)))
       throw new HttpError(403, 'Creating artifacts is disabled for read-only threads')
     if (Buffer.byteLength(input.content, 'utf8') > ARTIFACT_MAX_BYTES)
       throw new HttpError(413, 'Artifact exceeds the 100 MB limit')

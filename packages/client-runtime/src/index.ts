@@ -28,3 +28,8 @@ export { terminalInputFrames } from './effects/terminal-input.js'
 export { startMcpAppTools } from './effects/mcp-app-tools.js'
 
 export { DiscoveryCache } from './effects/discovery-cache.js'
+export {
+  ModelCatalogCache,
+  type ModelCatalogCacheScope,
+  type ModelCatalogCacheStorage,
+} from './effects/model-catalog-cache.js'

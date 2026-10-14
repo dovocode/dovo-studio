@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
@@ -70,6 +70,8 @@ const built = await build({
     import {TaskRow} from '../extension-tasks/src/list/task-row';
     import {TaskHeader} from '../extension-tasks/src/detail/task-header';
     import {TaskProjectPanel} from '../extension-tasks/src/detail/task-project-panel';
+    import {TaskProjectPopover} from '../extension-tasks/src/detail/task-project-popover';
+    import {Popover} from '@dovo/studio-ui';
     import {TaskTools} from '../extension-tasks/src/detail/task-tools';
     import {TaskLinkedPullPanel} from '../extension-tasks/src/detail/task-linked-pull-panel';
     import {TaskWaitingPanel} from '../extension-tasks/src/detail/task-waiting-panel';
@@ -93,12 +95,14 @@ const built = await build({
       const activeRequest=async(path,input,...rest)=>{if(path==='/api/tasks/waiting'&&input.unlink)window.stopped=true;return request(path,input,...rest)};
       window.store={workspace:{tasks:[task],repositories:[repo],agents:[]},snapshot:{runtimeHost:'Dominic Mac',questions:[],approvals:[],terminals:[],threadBehaviorSupported:true},connection:{address:'http://runtime',token:'token'},activeRuntimeId:'runtime',runtimes:[],connected:true,request:activeRequest,
         runtimeRegistry:{profiles:[]},readRuntime:activeRequest,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},previewTask:async(_,__,___,apply)=>apply(),setWorkspace:()=>{}};
-      if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} subagents={[]} selected={i===0} onSelect={()=>{}} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false} onOpenSubagent={()=>{}}/>)}</div>;
-      return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)',display:hideSidebar?'none':undefined}}><SidebarHeader/></aside></>}<div style={{minWidth:0,flex:1}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={next=>{window.surface=next;setSurface(next)}} sidebarVisible={true} hasDiff={false} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}} projectPanelOpen={panel} onProjectPanel={()=>setPanel(p=>!p)} onCreate={()=>{}} onDeselect={()=>{}}/>
+      if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,turns:[{id:'completed',status:'completed',startedAt:'2026-10-14T08:00:00Z',finishedAt:'2026-10-14T08:01:00Z'}],lastViewedTurnId:i%2?'completed':undefined,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} subagents={[]} selected={i===0} onSelect={()=>{}} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false} onOpenSubagent={()=>{}}/>)}</div>;
+      return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)',display:hideSidebar?'none':undefined}}><SidebarHeader/></aside></>}<Popover.Root open={panel} onOpenChange={setPanel}><div data-thread-content style={{minWidth:0,flex:1,display:'flex',flexDirection:'column'}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={next=>{window.surface=next;setSurface(next)}} sidebarVisible={true} hasDiff={false} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}} projectPanelOpen={panel} onProjectPanel={()=>setPanel(p=>!p)} onCreate={()=>{}} onDeselect={()=>{}}/>
+        <div data-project-panel-frame style={{position:'relative',minHeight:0,flex:1,marginRight:window.mobile?0:56}}>
+        <TaskProjectPopover><TaskProjectPanel task={task} onSurface={next=>{window.surface=next;setPanel(false)}} onTerminal={()=>{}}/></TaskProjectPopover>
         {!panel&&<TaskWaitingPanel taskId={task.id}/>}
         {!window.mobile&&<TaskTools surface={surface} onSelect={setSurface} hasDiff={false} hasLinkedPulls={!!task.linkedPullRequests?.length}/>}
         {surface==='linked-pulls'&&<TaskLinkedPullPanel task={task} onPullLink={url=>{window.selectedPull=url;return true}} onClose={()=>setSurface('chat')}/>}
-        {panel&&<TaskProjectPanel task={task} onClose={()=>setPanel(false)} onSurface={next=>window.surface=next} onTerminal={()=>{}}/>}</div></div></div></SidebarHeaderLayout>;
+        </div></div></Popover.Root></div></div></SidebarHeaderLayout>;
     }
     window.render=()=>root.render(<TooltipProvider><App/></TooltipProvider>);window.render();
   `,
@@ -127,7 +131,13 @@ const built = await build({
 })
 const stylesheet = process.env.DOVO_BROWSER_STYLE_PATH
   ? await readFile(process.env.DOVO_BROWSER_STYLE_PATH, 'utf8')
-  : ''
+  : (
+      await Promise.all(
+        (await readdir(root + 'apps/web/dist/client/assets'))
+          .filter((name) => name.endsWith('.css'))
+          .map((name) => readFile(root + 'apps/web/dist/client/assets/' + name, 'utf8')),
+      )
+    ).join('\n')
 const browser = await chromium.launch({ headless: true })
 try {
   for (const mobile of [false, true]) {
@@ -145,7 +155,7 @@ try {
       await page.addStyleTag({
         content:
           stylesheet +
-          '#app{height:100dvh;background:var(--background);color:var(--foreground)} [aria-label="Thread project"],[aria-label="Thread pull requests"]{width:min(360px,100%);height:calc(100% - 48px);margin-left:auto} .studio-tools-navigation{position:absolute;right:0;top:52px}.studio-navigation[aria-label="Main navigation"]{width:44px} @media(min-width:600px){[aria-label="Thread project"],[aria-label="Thread pull requests"]{margin-right:56px}}',
+          '#app{height:100dvh;background:var(--background);color:var(--foreground)} [aria-label="Thread pull requests"]{width:min(360px,100%);height:calc(100% - 48px);margin-left:auto} .studio-tools-navigation{position:absolute;right:0;top:52px}.studio-navigation[aria-label="Main navigation"]{width:44px} @media(min-width:600px){[aria-label="Thread pull requests"]{margin-right:56px}}',
       })
     await page.evaluate((mobile) => {
       window.mobile = mobile
@@ -168,8 +178,46 @@ try {
       await page.screenshot({
         path: `/tmp/dovo-shared-header-thread-${mobile ? 'compact' : 'desktop'}.png`,
       })
+    const chatWidth = (await page.locator('[data-thread-content]').boundingBox()).width
     await page.getByRole('button', { name: 'Show project panel', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Project information', exact: true }).waitFor()
+    const popover = await page
+      .getByRole('dialog', { name: 'Project information', exact: true })
+      .boundingBox()
+    assert.ok(popover && popover.width <= 304 && popover.width > 0)
+    const frame = await page.locator('[data-project-panel-frame]').boundingBox()
+    assert.ok(Math.abs(popover.y - frame.y - 32) < 1)
+    assert.ok(Math.abs(frame.x + frame.width - popover.x - popover.width - 32) < 1)
+    assert.ok(popover.y + popover.height <= frame.y + frame.height - 32 + 1)
+    assert.equal((await page.locator('[data-thread-content]').boundingBox()).width, chatWidth)
+    assert.equal(
+      await page.getByRole('button', { name: 'Close project panel', exact: true }).count(),
+      0,
+    )
+    await page.getByRole('button', { name: 'Hide project panel', exact: true }).click()
+    await page
+      .getByRole('region', { name: 'Thread project', exact: true })
+      .waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: 'Show project panel', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await page
+      .getByRole('region', { name: 'Thread project', exact: true })
+      .waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: 'Show project panel', exact: true }).click()
+
     await page.getByRole('region', { name: 'Thread project', exact: true }).waitFor()
+    await page.getByRole('heading', { name: 'Project', exact: true }).waitFor()
+    assert.equal(await page.locator('.studio-project-path').getAttribute('title'), '/project')
+    await page.getByText('Uncommitted changes · Synced', { exact: true }).waitFor()
+    await page.getByRole('button', { name: /^Changes · 1 file/ }).waitFor()
+    await page.getByRole('button', { name: 'Git actions and pull requests', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Advanced Git actions…', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Git & project actions', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    await page
+      .getByRole('dialog', { name: 'Git & project actions', exact: true })
+      .waitFor({ state: 'hidden' })
+    await page.getByRole('dialog', { name: 'Project information', exact: true }).waitFor()
     assert.equal(
       await page
         .locator('.studio-project-card')
@@ -215,13 +263,13 @@ try {
         await page
           .locator('.studio-project-card')
           .evaluate((element) => getComputedStyle(element).borderRadius),
-        '24px',
+        '0px',
       )
       assert.equal(
         await page
-          .locator('.studio-project-computer')
+          .locator('.studio-project-path')
           .evaluate((element) => getComputedStyle(element).fontSize),
-        '14px',
+        '12px',
       )
     }
     if (stylesheet) {
@@ -236,6 +284,7 @@ try {
     const stopDialog = page.getByRole('dialog', { name: 'Stop watching?', exact: true })
     await stopDialog.getByRole('button', { name: 'Stop watching', exact: true }).click()
     await page.waitForFunction(() => window.calls.some((call) => call.input.unlink))
+    await page.getByRole('button', { name: 'Hide project panel', exact: true }).click()
     await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
     if (stylesheet)
       await page.screenshot({ path: `/tmp/dovo-thread-menu-${mobile ? 'compact' : 'desktop'}.png` })
@@ -267,9 +316,12 @@ try {
       .getByRole('menuitem', { name: 'New thread on fix/reconnection', exact: true })
       .click()
     await page.waitForFunction(() => window.navigation?.entityId === 'new-thread')
+    await page.getByRole('button', { name: 'Show project panel', exact: true }).click()
     await page.getByRole('button', { name: /^Changes/ }).click()
     assert.equal(await page.evaluate(() => window.surface), 'changes')
-    await page.getByRole('button', { name: 'Close project panel', exact: true }).click()
+    await page
+      .getByRole('region', { name: 'Thread project', exact: true })
+      .waitFor({ state: 'hidden' })
     await page.getByRole('button', { name: 'Linked PRs', exact: true }).click()
     const pulls = page.getByRole('region', { name: 'Thread pull requests', exact: true })
     await pulls.waitFor()

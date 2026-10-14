@@ -1,4 +1,4 @@
-import { openAppLink } from '../ui/content/open-link'
+import { useOpenAppLink } from '../ui/content/open-link'
 import { mobileWorkflow, nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -32,6 +32,7 @@ export function CatalogPicker({
   onClose: () => void
   onSelect: (entry: ResourceSelection) => void
 }) {
+  const openLink = useOpenAppLink(undefined)
   const { styles } = useTheme()
 
   const { call, callEffect } = useRuntime(),
@@ -167,7 +168,7 @@ export function CatalogPicker({
                 secondary
                 label="View source"
                 disabled={busy}
-                onPress={() => act(() => openAppLink(entry.url))}
+                onPress={() => act(() => openLink(entry.url))}
               />
               <Action
                 label={`Import ${entry.name}`}

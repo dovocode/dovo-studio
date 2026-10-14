@@ -31,6 +31,7 @@ import {
   mcpServerSchema,
   mcpAppSchema,
   resolveTaskAgent,
+  permissionPolicyReadOnly,
   mergeResources,
   type McpServer,
   type Agent,
@@ -65,6 +66,8 @@ type Scope = {
   server: McpServer
   cwd: string
   permission: Agent['permission']
+  approvalPolicy?: Agent['approvalPolicy']
+  sandboxMode?: Agent['sandboxMode']
   signal?: AbortSignal
 }
 type StoredApp = McpApp & { fingerprint: string; cwd: string }
@@ -121,6 +124,7 @@ export class McpApps {
     permission: Agent['permission'],
     listener: { port: number; host: string },
     signal?: AbortSignal,
+    policy?: Pick<Agent, 'approvalPolicy' | 'sandboxMode'>,
   ) {
     const host = listener.host === '0.0.0.0' || listener.host === '::' ? '127.0.0.1' : listener.host
     const adjacent = new URL('./proxy.js', import.meta.url)
@@ -134,10 +138,20 @@ export class McpApps {
           scope.taskId === taskId &&
           fingerprint(scope.server) === fingerprint(server) &&
           scope.cwd === cwd &&
-          scope.permission === permission,
+          scope.permission === permission &&
+          scope.approvalPolicy === policy?.approvalPolicy &&
+          scope.sandboxMode === policy?.sandboxMode,
       )
       const token = previous?.[0] ?? randomBytes(32).toString('base64url')
-      this.scopes.set(token, { taskId, server, cwd, permission, signal })
+      this.scopes.set(token, {
+        taskId,
+        server,
+        cwd,
+        permission,
+        signal,
+        approvalPolicy: policy?.approvalPolicy,
+        sandboxMode: policy?.sandboxMode,
+      })
       return decode(mcpServerSchema, {
         name: server.name,
         enabled: true,
@@ -181,7 +195,14 @@ export class McpApps {
       task.existingWorktreePath ??
       project?.path
     if (!cwd) throw new HttpError(409, 'The thread checkout is unavailable')
-    return { taskId, server, cwd, permission: agent.permission }
+    return {
+      taskId,
+      server,
+      cwd,
+      permission: permissionPolicyReadOnly(agent) ? 'read-only' : agent.permission,
+      approvalPolicy: agent.approvalPolicy,
+      sandboxMode: agent.sandboxMode,
+    }
   }
   private async connect(scope: Scope): Promise<Session> {
     if (this.stopped) throw new HttpError(503, 'MCP bridge is stopping')
@@ -309,7 +330,9 @@ export class McpApps {
     const current = this.current(scope.taskId, scope.server.name)
     if (
       fingerprint(current.server) !== fingerprint(scope.server) ||
-      current.permission !== scope.permission
+      current.permission !== scope.permission ||
+      current.approvalPolicy !== scope.approvalPolicy ||
+      current.sandboxMode !== scope.sandboxMode
     )
       throw new HttpError(403, 'MCP configuration changed; start a new turn')
     return scope
@@ -424,7 +447,9 @@ export class McpApps {
         const latest = this.current(scope.taskId, scope.server.name)
         if (
           fingerprint(latest.server) !== fingerprint(scope.server) ||
-          latest.permission !== scope.permission
+          latest.permission !== scope.permission ||
+          latest.approvalPolicy !== scope.approvalPolicy ||
+          latest.sandboxMode !== scope.sandboxMode
         )
           throw new HttpError(409, 'MCP configuration changed during approval')
       }

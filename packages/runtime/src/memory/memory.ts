@@ -1,3 +1,4 @@
+import { permissionPolicyReadOnly } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import {
@@ -204,7 +205,7 @@ export class Memory {
     const task = this.store.taskSummary(taskId)
     if (!this.availableScopes(taskId).includes(scope))
       throw new HttpError(403, 'This memory scope is disabled or unavailable for this thread')
-    if (write && resolveTaskAgent(task, this.store.get().agents)?.permission === 'read-only')
+    if (write && permissionPolicyReadOnly(resolveTaskAgent(task, this.store.get().agents)))
       throw new HttpError(403, 'Read-only agents cannot change memory')
     return {
       scope,

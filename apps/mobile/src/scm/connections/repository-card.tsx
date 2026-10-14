@@ -1,3 +1,5 @@
+import { useSourceReader } from '../source-reader'
+import { useLinkOrigin } from '../../ui/content/link-origin'
 import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -22,6 +24,8 @@ export function RepositoryCard({
 }) {
   const { styles } = useTheme()
 
+  const { readEffect } = useSourceReader(repository.id)
+  const origin = useLinkOrigin(taskId, repository.id)
   const { openWork } = useNavigation()
   const { connected, callEffect } = useRuntime(),
     { busy, error, act } = useAction(),
@@ -88,7 +92,7 @@ export function RepositoryCard({
           onPress={() =>
             act(() =>
               mobileWorkflow(function* () {
-                return setPulls((yield* callEffect('/api/scm/pulls', input, responses.pulls)).pulls)
+                return setPulls((yield* readEffect('/api/scm/pulls', input, responses.pulls)).pulls)
               }),
             )
           }
@@ -150,7 +154,7 @@ export function RepositoryCard({
           key={pr.number}
           secondary
           label={`#${pr.number} ${pr.title}`}
-          onPress={() => act(() => openAppLink(pr.url))}
+          onPress={() => act(() => openAppLink(pr.url, false, origin))}
         />
       ))}
       {!!result && <Text style={styles.muted}>{result}</Text>}

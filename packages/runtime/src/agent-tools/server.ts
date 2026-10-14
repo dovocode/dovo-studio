@@ -29,6 +29,7 @@ const task = taskId
 const base = address
 const credential = token
 const readOnly = process.env.DOVO_TASK_READ_ONLY === '1'
+const terminalsDisabled = process.env.DOVO_TASK_TERMINALS_DISABLED === '1'
 const memoryScopes = decode(
   mutableArray(memoryScopeSchema),
   JSON.parse(process.env.DOVO_TASK_MEMORY_SCOPES ?? '[]'),
@@ -206,6 +207,18 @@ const tools: Array<
         agentId: { type: 'string' as const },
         model: { type: 'string' as const },
         reasoning: { type: 'string' as const },
+        approvalPolicy: {
+          description:
+            'Optional narrower approval policy. Omit to inherit the parent, including named configurations.',
+          type: 'string' as const,
+          enum: ['untrusted', 'on-failure', 'on-request', 'never'],
+        },
+        sandboxMode: {
+          description:
+            'Optional narrower native sandbox. Omit to inherit the parent. Unsupported guarantees are rejected.',
+          type: 'string' as const,
+          enum: ['read-only', 'workspace-write', 'danger-full-access'],
+        },
         permission: {
           description:
             'Optional narrower access. Omit to inherit the active parent thread’s permissions.',
@@ -761,6 +774,10 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
         )
       }
       case 'terminal_run': {
+        if (terminalsDisabled)
+          throw new Error(
+            'Dovo terminals cannot enforce this native sandbox. Use the provider command tool.',
+          )
         writable()
         const terminal = decode(
           mutableStruct({ id: Schema.String }),
@@ -810,7 +827,11 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
     }
   }
 }
-for (const tool of tools.filter((tool) => deviceHubEnabled || !deviceTools.has(tool.name)))
+for (const tool of tools.filter(
+  (tool) =>
+    (deviceHubEnabled || !deviceTools.has(tool.name)) &&
+    (!terminalsDisabled || !tool.name.startsWith('terminal_')),
+))
   server.registerTool(
     tool.name,
     { description: tool.description, inputSchema: fromJSONSchema(tool.inputSchema) },

@@ -1,3 +1,4 @@
+import { permissionPolicyUIIssue } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { runtimeComputerName, taskProjectGroups, preferredProjectEntry } from '@dovo/protocol'
 import { TaskLauncherControls } from './task-launcher-controls'
@@ -137,8 +138,11 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
         : null,
     )
   }, [snapshot, repositoryId, loadedRuntimeId, runtimeId])
+  const selectionIssue = selection?.harness
+    ? permissionPolicyUIIssue(selection.harness, snapshot?.permissionPolicySupported === true)
+    : undefined
   const dispatch = async () => {
-    if (submitting.current) return
+    if (submitting.current || selectionIssue) return
     const profile = runtimeRegistry.profiles.find((profile) => profile.id === runtimeId)
     const repository = snapshot?.workspace.repositories.find(
       (repository) => repository.id === repositoryId,
@@ -261,6 +265,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
                 title={busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'}
                 disabled={
                   busy ||
+                  !!selectionIssue ||
                   (!attempt.current &&
                     (!snapshot ||
                       loading ||
@@ -271,7 +276,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
                 }
               />
             }
-            error={error}
+            error={error || selectionIssue}
           >
             <ComposerTextarea
               ref={input}
@@ -368,7 +373,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
               </>
             )}
           </ComposerWorkspaceBar>
-          {error && !attempt.current && !loading && (
+          {(error || selectionIssue) && !attempt.current && !loading && (
             <Button
               type="button"
               size="sm"

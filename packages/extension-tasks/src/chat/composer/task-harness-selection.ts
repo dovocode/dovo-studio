@@ -60,6 +60,8 @@ export function changeTaskHarness(
         model: harness.model,
         reasoning: harness.reasoning ?? '',
         permission: harness.permission,
+        approvalPolicy: harness.approvalPolicy ?? null,
+        sandboxMode: harness.sandboxMode ?? null,
         serviceTier: harness.serviceTier ?? null,
         cyberAccessProgram: harness.cyberAccessProgram ?? null,
         ...(harness.provider === 'acp'

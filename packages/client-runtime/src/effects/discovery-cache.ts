@@ -3,7 +3,14 @@ export class DiscoveryCache<T> {
   private readonly entries = new Map<string, { value: T; expires: number }>()
   private readonly pending = new Map<string, Promise<T>>()
   private readonly listeners = new Set<() => void>()
-  constructor(private readonly ttl: number) {}
+  constructor(
+    private readonly ttl: number,
+    private readonly options: {
+      cacheable?: (value: T) => boolean
+      retainOnError?: boolean
+      maxPending?: number
+    } = {},
+  ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener)
     return () => {
@@ -21,17 +28,29 @@ export class DiscoveryCache<T> {
     if (running) return running
     const cached = this.entries.get(key)
     if (!refresh && cached && this.isFresh(key)) return Promise.resolve(cached.value)
+    if (this.pending.size >= (this.options.maxPending ?? Infinity))
+      return Promise.reject(new Error('Too many discoveries in progress'))
     const promise = Promise.resolve()
       .then(request)
       .then((value) => {
         this.entries.delete(key)
-        this.entries.set(key, { value, expires: Date.now() + this.ttl })
+        this.entries.set(key, {
+          value,
+          expires: this.options.cacheable?.(value) === false ? 0 : Date.now() + this.ttl,
+        })
         if (this.entries.size > 64) {
           const oldest = this.entries.keys().next().value
           if (oldest !== undefined) this.entries.delete(oldest)
         }
         for (const listener of this.listeners) listener()
         return value
+      })
+      .catch((error: unknown) => {
+        if (this.options.retainOnError === false) {
+          this.entries.delete(key)
+          for (const listener of this.listeners) listener()
+        }
+        throw error
       })
       .finally(() => {
         this.pending.delete(key)

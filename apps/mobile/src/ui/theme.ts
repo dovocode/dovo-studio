@@ -1,3 +1,4 @@
+import { nativeCodeColors, type resolveCodeTheme } from '@dovo/studio-core/code-themes'
 import { StyleSheet } from 'react-native'
 import { createContext, useContext } from 'react'
 import { studioThemes, type StudioThemeId, type StudioThemeMode } from '@dovo/studio-core/themes'
@@ -24,9 +25,19 @@ function createMobileColors(palette: StudioThemeId, mode: StudioThemeMode) {
   }
 }
 export type MobileColors = ReturnType<typeof createMobileColors>
-export function createMobileTheme(palette: StudioThemeId, mode: StudioThemeMode) {
+export function createMobileTheme(
+  palette: StudioThemeId,
+  mode: StudioThemeMode,
+  code?: { theme: ReturnType<typeof resolveCodeTheme>; custom: boolean },
+) {
   const colors = createMobileColors(palette, mode)
-  return { palette, mode, colors, styles: createStyles(colors) }
+  return {
+    palette,
+    mode,
+    colors,
+    styles: createStyles(colors),
+    code: code ? { colors: nativeCodeColors(code.theme), custom: code.custom } : undefined,
+  }
 }
 export type MobileTheme = ReturnType<typeof createMobileTheme>
 export const MobileThemeContext = createContext(createMobileTheme('dovo', 'dark'))

@@ -22,6 +22,8 @@ export function usePullTaskCreation(repositoryId: string, pull: PullDetail['pull
               repositoryId,
               number: pull.number,
               headSha: pull.headSha,
+              expectedDestination: pull.destination,
+              connectionId: pull.connectionId,
               objective: stackAction
                 ? 'Update the stack, restack branches and update PRs.'
                 : 'I want to work on this PR.',

@@ -6,6 +6,7 @@ import {
   forgePullIdentity,
   publicPullSummaries,
   pullRepositoryKey,
+  pullRepositoryIdentity,
   selectPullSources,
   uniquePulls,
 } from './pull-sources'
@@ -168,4 +169,44 @@ it('spreads remotes across connected computers, prefers the local computer and k
   // A custom remote identity dedupes other collections, such as Jira sites, the same way.
   const jira = assignRemoteSources(sources, { remote: (source) => source.repository.id })
   expect(jira.owners.size).toBe(3)
+})
+
+it('matches the bound target instead of a fork and rejects unknown bound identities', () => {
+  expect(pullRepositoryIdentity(repository)).toBe('github.com/team/app')
+  expect(
+    pullRepositoryIdentity({
+      ...repository,
+      forge: { connectionId: 'work', repository: 'upstream/app' },
+    }),
+  ).toBeUndefined()
+  expect(
+    pullRepositoryIdentity({
+      ...repository,
+      pullIdentity: 'github.com/upstream/app',
+      gitIdentityError: 'offline',
+    }),
+  ).toBe('github.com/upstream/app')
+})
+
+it('only hands a retained view to a verified reader of the same account', () => {
+  const remote = 'github.com/team/app'
+  const original = { ...source('a', false), readerIdentity: 'work' }
+  const unknown = source('b')
+  const personal = { ...source('c'), readerIdentity: 'personal' }
+  const same = { ...source('d'), readerIdentity: 'work' }
+  const options = {
+    previous: new Map([[remote, 'a']]),
+    previousReaderIdentities: new Map([[remote, 'work']]),
+    requireSameReader: true,
+  }
+  expect(assignRemoteSources([original, unknown, personal], options).selected).toEqual([original])
+  expect(assignRemoteSources([original, unknown, personal, same], options).selected).toEqual([same])
+  // Disappearing owners and changed accounts do not reset the identity requirement.
+  expect(assignRemoteSources([unknown, personal], options).selected).toEqual([])
+  expect(
+    assignRemoteSources([{ ...original, connected: true, readerIdentity: 'personal' }], options)
+      .selected,
+  ).toEqual([])
+  expect(assignRemoteSources([same], options).selected).toEqual([same])
+  expect(assignRemoteSources([unknown], { requireSameReader: true }).selected).toEqual([unknown])
 })

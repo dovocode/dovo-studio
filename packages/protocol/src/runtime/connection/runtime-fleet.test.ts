@@ -349,17 +349,12 @@ describe('Runtime dashboard', () => {
   it('does not mark a healthy device offline when PR loading fails', async () => {
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(json(snapshot))
-        .mockResolvedValueOnce(
-          json(
-            {
-              error: 'GitHub unavailable',
-            },
-            502,
-          ),
-        ),
+      vi.fn<typeof fetch>(async (input) => {
+        const url = new URL(input instanceof Request ? input.url : String(input))
+        return url.pathname === '/api/snapshot'
+          ? json(snapshot)
+          : json({ error: 'GitHub unavailable' }, 502)
+      }),
     )
     expect(await loadRuntimeOverview(profile, overview)).toMatchObject({
       connected: true,

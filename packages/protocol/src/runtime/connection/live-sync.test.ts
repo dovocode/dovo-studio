@@ -10,7 +10,12 @@ import type { RuntimeSnapshot } from './runtime.js'
 import { snapshotDelta } from './sync.js'
 import { snapshotSchema } from './runtime.js'
 import { decode } from '../../shared/schema.js'
+import { runtimeRequest } from '../../shared/client.js'
+import { runtimeTransportAddress } from './routes.js'
+import { Schema } from 'effect'
 const stopped: Array<() => void> = []
+const requestUrl = (input: Parameters<typeof fetch>[0]) =>
+  new URL(input instanceof Request ? input.url : input instanceof URL ? input.href : input)
 afterEach(() => {
   for (const stop of stopped.splice(0)) stop()
   vi.unstubAllGlobals()
@@ -80,6 +85,202 @@ async function stalledSocketFixture(address: string, format?: number) {
   })
   return { clock, Socket, receive, wake, live, frame }
 }
+
+async function routedSocketFixture(id: string, constructorFailure = false) {
+  vi.useFakeTimers()
+  vi.setSystemTime(100000)
+  vi.spyOn(Math, 'random').mockReturnValue(0.5)
+  const connection = {
+    address: `http://${id}-proxy.local`,
+    token: `${id}-paired-device-token`,
+    runtimeId: `paired-${id}`,
+    alternateAddresses: [`http://${id}-wrong.local`, `http://${id}-vpn.local`],
+  }
+  class Socket {
+    static instances: Socket[] = []
+    readyState = 0
+    sent: string[] = []
+    onopen?: () => void
+    onmessage?: (event: { data: string }) => void
+    onerror?: () => void
+    onclose?: () => void
+    constructor(readonly url: string) {
+      Socket.instances.push(this)
+      if (constructorFailure && Socket.instances.length === 1) throw new Error('Upgrade refused')
+    }
+    send(value: string) {
+      this.sent.push(value)
+    }
+    close() {
+      this.readyState = 3
+    }
+  }
+  const tickets: { origin: string; ticket: string }[] = []
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, options) => {
+    const url = requestUrl(input)
+    expect(new Headers(options?.headers).get('Authorization')).toBe(
+      url.pathname === '/health' ? null : `Bearer ${connection.token}`,
+    )
+    expect(url.hostname === `${id}-wrong.local` && url.pathname !== '/health').toBe(false)
+    if (url.pathname === '/health') {
+      return Response.json({
+        service: 'dovo-runtime',
+        runtimeId: url.hostname.endsWith('-wrong.local')
+          ? 'unpaired-runtime'
+          : connection.runtimeId,
+      })
+    }
+    if (url.pathname === '/api/sync/ticket') {
+      const ticket = `fresh-${tickets.length + 1}`
+      tickets.push({ origin: url.origin, ticket })
+      return Response.json({ ticket, format: 5 })
+    }
+    return Response.json({ ok: true })
+  })
+  vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('WebSocket', Socket)
+  const receive = vi.fn<(value: RuntimeSnapshot) => void>()
+  const live = startRuntimeSync(connection, { onSnapshot: receive })
+  stopped.push(live.stop)
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(1))
+  const baseline = decode(snapshotSchema, {
+    revision: 1,
+    runtimeId: connection.runtimeId,
+    workspace: {
+      version: 1,
+      runtimeAddress: '',
+      agents: [],
+      repositories: [],
+      tasks: [],
+      automations: [],
+    },
+    approvals: [],
+    questions: [],
+    terminals: [],
+    runs: [],
+    devices: [],
+    pendingDevices: [],
+    owner: false,
+  })
+  const frame = JSON.stringify({
+    type: 'snapshot',
+    epoch: id,
+    sequence: 7,
+    tag: 'baseline',
+    snapshot: baseline,
+  })
+  return { connection, Socket, tickets, fetcher, receive, live, frame }
+}
+
+it.each(['error', 'close', 'timeout', 'silent-open', 'constructor'])(
+  'advances a failed %s handshake to a verified VPN stream with a fresh ticket while HTTP stays on the proxy',
+  async (failure) => {
+    const { connection, Socket, tickets, fetcher, live, frame } = await routedSocketFixture(
+      `route-${failure}`,
+      failure === 'constructor',
+    )
+    const first = Socket.instances[0]!
+    if (failure === 'error') first.onerror?.()
+    else if (failure === 'close') first.onclose?.()
+    else if (failure === 'timeout' || failure === 'silent-open') {
+      if (failure === 'silent-open') {
+        first.readyState = 1
+        first.onopen?.()
+      }
+      // The watchdog samples once a second; allow its first tick after the 10s deadline.
+      await vi.advanceTimersByTimeAsync(11000)
+    }
+    await vi.advanceTimersByTimeAsync(500)
+    expect(Socket.instances).toHaveLength(2)
+    const second = Socket.instances[1]!
+    expect(new URL(first.url).origin).toBe(connection.address.replace('http:', 'ws:'))
+    expect(new URL(second.url).origin).toBe(
+      connection.alternateAddresses[1]!.replace('http:', 'ws:'),
+    )
+    expect(tickets).toEqual([
+      { origin: connection.address, ticket: 'fresh-1' },
+      { origin: connection.alternateAddresses[1], ticket: 'fresh-2' },
+    ])
+    expect(new URL(second.url).searchParams.get('ticket')).toBe('fresh-2')
+    second.readyState = 1
+    second.onopen?.()
+    second.onmessage?.({ data: frame })
+    expect(live.online()).toBe(true)
+    await runtimeRequest(
+      connection,
+      connection.address,
+      '/api/scm/pulls/action',
+      {},
+      Schema.Unknown,
+    )
+    const writes = fetcher.mock.calls.filter(
+      ([url]) => requestUrl(url).pathname === '/api/scm/pulls/action',
+    )
+    expect(writes).toHaveLength(1)
+    expect(requestUrl(writes[0]![0]).origin).toBe(connection.address)
+    expect(runtimeTransportAddress(connection)).toBe(connection.address)
+    expect(runtimeTransportAddress(connection, 'stream')).toBe(connection.alternateAddresses[1])
+    expect(connection.address).toBe(`http://route-${failure}-proxy.local`)
+  },
+)
+
+it('retains the epoch/cursor across a failed replacement upgrade and rejects stale callbacks on both old routes', async () => {
+  const { connection, Socket, tickets, receive, live, frame } =
+    await routedSocketFixture('route-resume')
+  const first = Socket.instances[0]!
+  first.readyState = 1
+  first.onopen?.()
+  first.onmessage?.({ data: frame })
+  first.onerror?.()
+  await vi.advanceTimersByTimeAsync(500)
+  const failed = Socket.instances[1]!
+  expect(new URL(failed.url).origin).toBe(connection.address.replace('http:', 'ws:'))
+  failed.onerror?.()
+  await vi.advanceTimersByTimeAsync(1000)
+  const vpn = Socket.instances[2]!
+  vpn.readyState = 1
+  vpn.onopen?.()
+  expect(JSON.parse(vpn.sent[0]!)).toEqual({ type: 'resume', epoch: 'route-resume', sequence: 7 })
+  vpn.onmessage?.({
+    data: JSON.stringify({ type: 'heartbeat', epoch: 'route-resume', sequence: 7 }),
+  })
+  expect(receive).toHaveBeenCalledTimes(2)
+  for (const old of [first, failed]) {
+    old.onmessage?.({ data: '{obsolete frame' })
+    old.onopen?.()
+    old.onerror?.()
+    old.onclose?.()
+  }
+  expect(live.online()).toBe(true)
+  expect(receive).toHaveBeenCalledTimes(2)
+  expect(vpn.readyState).toBe(1)
+  expect(tickets.map((ticket) => ticket.ticket)).toEqual(['fresh-1', 'fresh-2', 'fresh-3'])
+})
+
+it('cancels pending fallback tickets and never opens a socket after the owner is stopped', async () => {
+  const { connection, Socket, fetcher, live } = await routedSocketFixture('route-cancel')
+  const first = Socket.instances[0]!
+  first.onerror?.()
+  let ticketSignal: AbortSignal | null | undefined
+  let finish: ((response: Response) => void) | undefined
+  fetcher.mockImplementation(async (input, options) => {
+    const url = requestUrl(input)
+    if (url.pathname === '/health')
+      return Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId })
+    ticketSignal = options?.signal
+    return new Promise<Response>((resolve) => {
+      finish = resolve
+    })
+  })
+  await vi.advanceTimersByTimeAsync(500)
+  expect(ticketSignal).toBeDefined()
+  live.stop()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(ticketSignal?.aborted).toBe(true)
+  finish?.(Response.json({ ticket: 'cancelled-ticket', format: 5 }))
+  await vi.advanceTimersByTimeAsync(10000)
+  expect(Socket.instances).toHaveLength(1)
+})
 it('does not retain late activity frames after the final listener leaves a scope', async () => {
   const address = 'http://late-activity.local'
   const { Socket } = await stalledSocketFixture(address, 5)

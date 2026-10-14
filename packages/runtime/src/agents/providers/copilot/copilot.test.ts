@@ -169,3 +169,20 @@ it.each([
     )
   },
 )
+
+it.each(['on-request', 'never'] as const)(
+  'uses explicit %s in Copilot callback policy',
+  async (approvalPolicy) => {
+    const f = await fixture()
+    f.run.agent.permission = 'full-access'
+    f.run.agent.approvalPolicy = approvalPolicy
+    const approve = vi.fn<AgentRun['approve']>(async () => 'deny')
+    await f.adapter.run({ ...f.run, prompt: 'approval', approve })
+    expect(approve).toHaveBeenCalledTimes(approvalPolicy === 'never' ? 0 : 1)
+    expect(
+      (await f.messages()).find(
+        (frame) => frame.method === 'session.permissions.handlePendingPermissionRequest',
+      )?.params,
+    ).toMatchObject({ result: { kind: approvalPolicy === 'never' ? 'approve-once' : 'reject' } })
+  },
+)

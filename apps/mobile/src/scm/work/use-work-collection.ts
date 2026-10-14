@@ -13,6 +13,7 @@ import {
   type ForgePipeline,
   type ForgeWorkOptions,
 } from '@dovo/protocol'
+import { verifiedSourceRead, useSourceIdentities } from '../source-reader'
 import { useRuntime } from '../../runtime/connection/provider'
 import {
   workSources,
@@ -46,8 +47,14 @@ export function useWorkCollection(
 ) {
   const { overviews, readRuntimeEffect: readRuntime, cacheForRuntime } = useRuntime()
   const { focused } = useNavigation()
-  const sources = workSources(overviews, mode).filter(
+  const allSources = workSources(overviews, mode).filter(
     (entry) => !repositoryKey || entry.key === repositoryKey,
+  )
+  const sources = useSourceIdentities(
+    allSources,
+    workSourceContentIdentity,
+    workSourceInput,
+    focused,
   )
   const filterKey = JSON.stringify(jiraIssueFilterKey(jiraFilters))
   const identity = workSourceIdentity(sources)
@@ -74,6 +81,12 @@ export function useWorkCollection(
     knownOptions?: ForgeWorkOptions,
   ) =>
     Effect.gen(function* () {
+      const read: typeof readRuntime = (profile, path, input, schema, method) =>
+        verifiedSourceRead(
+          (path, input, schema, method) => readRuntime(profile, path, input, schema, method),
+          workSourceContentIdentity(source),
+          workSourceInput(source),
+        )(path, input, schema, method)
       const cache = cacheForRuntime(source.profile)
       const optionsKey = workCacheKey(
         source.kind === 'jira' ? source.jiraSource : source.repository,
@@ -159,7 +172,7 @@ export function useWorkCollection(
       return yield* Effect.gen(function* () {
         const options =
           knownOptions ??
-          (yield* readRuntime(
+          (yield* read(
             source.profile,
             '/api/scm/work/options',
             {
@@ -198,7 +211,7 @@ export function useWorkCollection(
         }
         const data =
           mode === 'issues'
-            ? yield* readRuntime(
+            ? yield* read(
                 source.profile,
                 '/api/scm/work/issues/list',
                 {
@@ -215,7 +228,7 @@ export function useWorkCollection(
                 },
                 forgeIssuePageSchema,
               )
-            : yield* readRuntime(
+            : yield* read(
                 source.profile,
                 '/api/scm/work/pipelines/list',
                 {

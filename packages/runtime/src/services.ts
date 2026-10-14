@@ -1,3 +1,4 @@
+import { permissionPolicyReadOnly } from '@dovo/protocol'
 import { resolveTaskAgent } from '@dovo/protocol'
 import { TaskReviews } from './scm/reviews/task-reviews.js'
 import { ReviewMarks } from './scm/reviews/progress.js'
@@ -252,7 +253,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         !task.draft.trim() &&
         !task.draftAttachments?.length &&
         !task.error &&
-        resolveTaskAgent(task, agents)?.permission !== 'read-only' &&
+        !permissionPolicyReadOnly(resolveTaskAgent(task, agents)) &&
         ((settings.enablePullRequestWatching && pulls.has(task.id)) ||
           (settings.enablePipelineWatching && pipelines.has(task.id)))
       return !!task.waitingForFeedback === waiting

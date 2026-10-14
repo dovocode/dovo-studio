@@ -1,4 +1,4 @@
-import { decode, workspaceSchema, defaultTaskHarness } from '@dovo/protocol'
+import { decode, workspaceSchema, defaultTaskHarness, resolveTaskAgent } from '@dovo/protocol'
 import { expect, it, vi } from 'vite-plus/test'
 import { taskHarnessSchema, type Task, type Workspace, type WorkspacePatch } from '@dovo/protocol'
 import { openDatabase } from './database'
@@ -103,7 +103,9 @@ it('retains ended children when parent access narrows and accepts old over-cap c
     })
     expect(store.task(parent.id).harness?.permission).toBe('read-only')
     const reopened = new WorkspaceStore(db)
-    expect(reopened.task(child.id).harness?.permission).toBe('workspace-write')
+    expect(resolveTaskAgent(reopened.task(child.id), reopened.get().agents)?.permission).toBe(
+      'read-only',
+    )
     reopened.updateTask(parent.id, (task) => ({ ...task, title: 'Renamed' }))
     expect(() =>
       reopened.updateTask(child.id, (task) => ({
@@ -1262,6 +1264,71 @@ it('pages all retained recovery records without gaps when new edits arrive', () 
     expect(
       new Set([...first.edits, ...second.edits, ...third.edits].map((edit) => edit.id)).size,
     ).toBe(205)
+  } finally {
+    db.close()
+  }
+})
+
+it('preserves advanced controls through storage and rejects clearing or widening each child dimension', () => {
+  const db = openDatabase(':memory:')
+  try {
+    let store = new WorkspaceStore(db)
+    const parent: Task = {
+      id: 'parent-policy',
+      title: 'Parent',
+      agentId: '',
+      repositoryId: '',
+      status: 'review',
+      createdAt: '',
+      draft: '',
+      messages: [],
+      files: [],
+      example: false,
+      harness: {
+        ...defaultTaskHarness('codex'),
+        approvalPolicy: 'on-request',
+        sandboxMode: 'workspace-write',
+      },
+    }
+    const child: Task = {
+      ...parent,
+      id: 'child-policy',
+      delegation: { parentTaskId: parent.id, parentRunId: 'old-run', key: 'child' },
+    }
+    store.update((workspace) => ({ ...workspace, tasks: [parent, child] }))
+    store = new WorkspaceStore(db)
+    expect(store.task(child.id).harness).toMatchObject({
+      approvalPolicy: 'on-request',
+      sandboxMode: 'workspace-write',
+    })
+    for (const override of [
+      { approvalPolicy: 'never' as const },
+      { approvalPolicy: null },
+      { sandboxMode: 'danger-full-access' as const },
+      { sandboxMode: null },
+    ]) {
+      expect(() =>
+        store.patch({
+          collection: 'tasks',
+          id: child.id,
+          changes: { agentOverrides: { before: undefined, after: override } },
+        }),
+      ).toThrow('cannot exceed')
+      expect(store.task(child.id).agentOverrides).toBeUndefined()
+    }
+    store.updateTask(parent.id, (task) => ({
+      ...task,
+      harness: { ...task.harness!, sandboxMode: 'read-only' },
+    }))
+    store = new WorkspaceStore(db)
+    expect(store.task(child.id).harness?.sandboxMode).toBe('workspace-write')
+    store.updateTask(child.id, (task) => ({ ...task, title: 'Retained result' }))
+    expect(() =>
+      store.updateTask(child.id, (task) => ({
+        ...task,
+        agentOverrides: { model: 'changed-model' },
+      })),
+    ).toThrow('cannot exceed')
   } finally {
     db.close()
   }

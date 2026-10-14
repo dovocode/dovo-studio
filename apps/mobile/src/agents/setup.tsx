@@ -1,3 +1,4 @@
+import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { configuredTaskHarness, resolveTaskDefaults } from '@dovo/protocol'
 import { HarnessLabel, ModelLabel } from './model-label'
 import { harnessNames } from '../tasks/creation/harness-choices'
@@ -7,6 +8,10 @@ import { runClientEffect } from '@dovo/client-runtime'
 import {
   decode,
   defaultTaskHarness,
+  changeAgentProvider,
+  selectableAccessModes,
+  supportsAccess,
+  agentSchema,
   acpInstallationHarness,
   acpHarnessChoiceId,
   providerSchema,
@@ -27,6 +32,7 @@ import { Sheet } from '../ui/layout/sheet'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
+import { PermissionPolicyControls, permissionPolicyUIIssue } from './permission-policy-controls'
 import { ModelSettings } from './model-settings'
 import { AcpRegistry } from './acp-registry'
 
@@ -127,15 +133,44 @@ function SetupForm({ onClose }: { onClose: () => void }) {
           model: settings.titles.model,
           reasoning: settings.titles.reasoning,
         }
-  const change = (next: Agent) =>
-    setSettings(
-      step === 0
+  const change = (next: Agent) => {
+    if (step !== 0) {
+      setSettings({ ...settings, titles: titleSettingsForHarness(next) })
+      return
+    }
+    const harness = decode(taskHarnessSchema, next)
+    const permissions = {
+      permission: next.permission,
+      approvalPolicy:
+        next.approvalPolicy ?? (snapshot?.permissionPolicySupported === true ? null : undefined),
+      sandboxMode:
+        next.sandboxMode ?? (snapshot?.permissionPolicySupported === true ? null : undefined),
+    }
+    const defaults = { ...settings.defaults, ...permissions, harness }
+    setSettings({
+      ...settings,
+      defaults: defaults.scopedSettings
         ? {
-            ...settings,
-            defaults: { ...settings.defaults, harness: decode(taskHarnessSchema, next) },
+            ...defaults,
+            scopedSettings: {
+              ...defaults.scopedSettings,
+              environment: {
+                ...defaults.scopedSettings.environment,
+                taskDefaults: {
+                  ...defaults.scopedSettings.environment.taskDefaults,
+                  ...permissions,
+                  harness,
+                },
+              },
+            },
           }
-        : { ...settings, titles: titleSettingsForHarness(next) },
-    )
+        : defaults,
+    })
+  }
+  const policyIssue = permissionPolicyUIIssue(
+    resolveTaskDefaults(settings.defaults, undefined).harness,
+    snapshot?.permissionPolicySupported === true,
+  )
   return (
     <View style={styles.content}>
       <Text style={[styles.muted, { color: colors.accent }]}>Step {step + 1} of 2</Text>
@@ -167,10 +202,17 @@ function SetupForm({ onClose }: { onClose: () => void }) {
           const installation = installations.find(
             (item) => acpHarnessChoiceId(item.id) === provider,
           )
+          const next = changeAgentProvider(
+            agent,
+            installation ? 'acp' : decode(providerSchema, provider),
+          )
           change({
             ...(installation
-              ? acpInstallationHarness(installation)
-              : defaultTaskHarness(decode(providerSchema, provider))),
+              ? acpInstallationHarness(installation, next.permission)
+              : defaultTaskHarness(next.provider)),
+            permission: next.permission,
+            approvalPolicy: next.approvalPolicy,
+            sandboxMode: next.sandboxMode,
             id: agent.id,
             name: agent.name,
           })
@@ -186,6 +228,32 @@ function SetupForm({ onClose }: { onClose: () => void }) {
         disabled={busy || !connected}
         serviceTier={step === 0}
       />
+      {step === 0 && (
+        <>
+          <Choice
+            label="Access mode"
+            value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
+            selectedLabel={permissionPolicyLabel(agent)}
+            disabled={busy || !connected}
+            items={selectableAccessModes(agent.permission, agent.provider).map((mode) => ({
+              id: mode.id,
+              name: mode.name,
+              disabled: !supportsAccess(agent.provider, mode.id),
+            }))}
+            onChange={(permission) =>
+              change(
+                selectPermissionPreset(agent, decode(agentSchema.fields.permission, permission)),
+              )
+            }
+          />
+          <PermissionPolicyControls
+            value={agent}
+            supported={snapshot?.permissionPolicySupported === true}
+            disabled={busy || !connected}
+            onChange={(policy) => change({ ...agent, ...policy })}
+          />
+        </>
+      )}
       <Action
         label={connection ? 'Hide connection options' : 'Connection options'}
         secondary
@@ -233,8 +301,9 @@ function SetupForm({ onClose }: { onClose: () => void }) {
         />
         <Action
           label={busy ? 'Saving…' : step ? 'Save setup' : 'Next: title model'}
-          disabled={busy || !connected || !baseline}
+          disabled={busy || !connected || !baseline || !!policyIssue}
           onPress={() => {
+            if (policyIssue) return
             if (!step) {
               setStep(1)
               return
@@ -261,9 +330,9 @@ function SetupForm({ onClose }: { onClose: () => void }) {
           }}
         />
       </View>
-      {!!error && (
+      {!!(error || policyIssue) && (
         <Text accessibilityRole="alert" style={styles.error}>
-          {error}
+          {error || policyIssue}
         </Text>
       )}
     </View>

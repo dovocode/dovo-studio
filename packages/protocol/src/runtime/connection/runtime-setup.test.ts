@@ -164,3 +164,33 @@ it('defaults new Git tasks to origin while preserving explicit opt-outs and fold
       worktreeFromOrigin: false,
     })
 })
+
+it('retains separate advanced defaults and lets each scoped dimension override its harness default', async () => {
+  const { resolveTaskDefaults } = await import('./runtime-setup')
+  const runtime = decode(runtimeDefaultsSchema, {
+    permission: 'full-access',
+    approvalPolicy: 'on-request',
+    sandboxMode: 'workspace-write',
+    harness: {
+      ...defaultTaskHarness('codex'),
+      approvalPolicy: 'never',
+      sandboxMode: 'danger-full-access',
+    },
+  })
+  expect(resolveTaskDefaults(runtime, undefined).harness).toMatchObject({
+    approvalPolicy: 'on-request',
+    sandboxMode: 'workspace-write',
+  })
+  expect(
+    resolveTaskDefaults(
+      {
+        ...runtime,
+        scopedSettings: {
+          environment: { taskDefaults: { harness: runtime.harness, approvalPolicy: 'untrusted' } },
+          shared: [],
+        },
+      },
+      undefined,
+    ).harness,
+  ).toMatchObject({ approvalPolicy: 'untrusted', sandboxMode: 'danger-full-access' })
+})

@@ -1,10 +1,11 @@
+import { useLinkOrigin } from '../../ui/content/link-origin'
 import { useCallback, useState } from 'react'
 import { Alert, Pressable, View } from 'react-native'
 import { taskWaitingSchema, type taskWaitingRequestSchema } from '@dovo/protocol'
 import { clientScopeKey } from '@dovo/client-runtime'
 import { router } from 'expo-router'
-import { githubPullTarget } from '@dovo/protocol'
-import { issueHref, jiraIssueHref, pipelineHref, pullHref } from '../../shell/source-route'
+import { forgePullTarget, pullRepositoryIdentity } from '@dovo/protocol'
+import { issueHref, jiraIssueHref, pipelineHref } from '../../shell/source-route'
 import { useSheetNavigation } from '../../ui/layout/sheet'
 import { useTaskWaiting } from '@dovo/studio-core'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -20,6 +21,7 @@ export function TaskWaitingPanel({
   taskId: string
   onPull?: (url: string) => void
 }) {
+  const origin = useLinkOrigin(taskId)
   const { call, connected, connection, activeId, snapshot } = useRuntime()
   const { styles, colors } = useTheme()
   const [linkError, setLinkError] = useState('')
@@ -29,7 +31,12 @@ export function TaskWaitingPanel({
     dependency?: { kind: 'pull' | 'pipeline'; repositoryId: string; target: string },
   ) => {
     setLinkError('')
-    const pull = githubPullTarget(url)
+    const pull = forgePullTarget(
+      url,
+      (snapshot?.workspace.repositories ?? []).map((repo) => ({
+        identity: pullRepositoryIdentity(repo),
+      })),
+    )
     if (pull && onPull) {
       onPull(url)
       return
@@ -40,15 +47,9 @@ export function TaskWaitingPanel({
         router.push(pipelineHref(activeId, dependency.repositoryId, dependency.target, url)),
       )
     } else if (activeId && pull) {
-      const repository = snapshot?.workspace.repositories.find(
-        (repo) =>
-          !repo.kind &&
-          ((!repo.gitIdentityError && repo.gitIdentity === pull.identity) ||
-            repo.pullIdentity === pull.identity),
-      )
-      navigateAfterSheet(() =>
-        router.push(pullHref(activeId, repository?.id ?? pull.url, pull.number, pull)),
-      )
+      navigateAfterSheet(() => {
+        void openAppLink(url, false, origin).catch((cause) => setLinkError(String(cause)))
+      })
     } else if (activeId && work?.url === url) {
       const task = snapshot?.workspace.tasks.find((task) => task.id === taskId)
       if (!task) return
@@ -61,7 +62,7 @@ export function TaskWaitingPanel({
       navigateAfterSheet(() => router.push(href))
     } else
       navigateAfterSheet(() => {
-        void openAppLink(url).catch((cause) => setLinkError(String(cause)))
+        void openAppLink(url, false, origin).catch((cause) => setLinkError(String(cause)))
       })
   }
   const read = useCallback(

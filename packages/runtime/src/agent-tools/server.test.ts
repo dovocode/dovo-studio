@@ -1283,3 +1283,40 @@ it('keeps device tools hidden while Device Hub is off', async () => {
     await transport.close()
   }
 })
+
+it('omits host terminal execution under an explicit restricted native sandbox while keeping child controls', async () => {
+  const config = taskToolsServer(
+    'task',
+    1,
+    'unused',
+    '127.0.0.1',
+    false,
+    false,
+    undefined,
+    false,
+    false,
+    [],
+    false,
+    'workspace-write',
+  )
+  const client = new Client({ name: 'sandbox-policy-test', version: '1' })
+  const transport = new StdioClientTransport({
+    command: config.command,
+    args: config.args,
+    env: { ...config.envValues },
+    stderr: 'ignore',
+  })
+  try {
+    await client.connect(transport)
+    const names = (await client.listTools()).tools.map((tool) => tool.name)
+    expect(names).toContain('subagent_spawn')
+    expect(names).not.toContain('terminal_run')
+    expect(names).not.toContain('terminal_input')
+    expect(
+      (await client.callTool({ name: 'terminal_run', arguments: { command: 'fixture' } })).isError,
+    ).toBe(true)
+  } finally {
+    await client.close()
+    await transport.close()
+  }
+})

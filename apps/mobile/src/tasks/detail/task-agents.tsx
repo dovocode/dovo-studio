@@ -22,8 +22,13 @@ import {
 } from '../../runtime/preferences/app-preferences'
 import { useAction } from '../../ui/controls/use-action'
 import { Switch } from '../../ui/controls/switch'
-import { NativeAgentThread } from './native-agent-thread'
-export function TaskAgents({ task }: { task: Task }) {
+export function TaskAgents({
+  task,
+  onOpenThread,
+}: {
+  task: Task
+  onOpenThread: (thread: { taskId: string; agent: Subagent }) => void
+}) {
   const { colors, styles } = useTheme()
 
   const { connected, profile, snapshot, callEffect } = useRuntime()
@@ -31,7 +36,6 @@ export function TaskAgents({ task }: { task: Task }) {
   const { navigate } = useNavigation()
   const [now, setNow] = useApplicationState(Date.now)
   const [expanded, setExpanded] = useApplicationState<string | null>(null)
-  const [thread, setThread] = useApplicationState<{ taskId: string; agent: Subagent } | null>(null)
   const indexed = useMemo(
     () => indexTaskSubagents(snapshot?.workspace.tasks ?? []),
     [snapshot?.workspace.tasks],
@@ -47,23 +51,7 @@ export function TaskAgents({ task }: { task: Task }) {
   const activeAgents = new Set(connected ? indexed(task, true) : [])
   const live = connected
   const working = activeAgents.size
-  useForegroundInterval(() => setNow(Date.now()), working && !thread ? 1000 : null)
-  if (thread)
-    return (
-      <NativeAgentThread
-        key={`${thread.taskId}:${thread.agent.sessionId}:${thread.agent.id}`}
-        taskId={thread.taskId}
-        agent={
-          agents.find(
-            (agent) =>
-              agent.id === thread.agent.id &&
-              agent.provider === thread.agent.provider &&
-              agent.sessionId === thread.agent.sessionId,
-          ) ?? thread.agent
-        }
-        onClose={() => setThread(null)}
-      />
-    )
+  useForegroundInterval(() => setNow(Date.now()), working ? 1000 : null)
   return (
     <View
       style={{
@@ -262,7 +250,7 @@ export function TaskAgents({ task }: { task: Task }) {
                     <Action
                       secondary
                       label={`View native thread · ${agent.provider}`}
-                      onPress={() => setThread({ taskId: owner.id, agent })}
+                      onPress={() => onOpenThread({ taskId: owner.id, agent })}
                     />
                   )}
                   {active && agent.source !== 'dovo' && owner && (

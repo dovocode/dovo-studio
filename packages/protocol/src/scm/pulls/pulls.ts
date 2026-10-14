@@ -1,3 +1,4 @@
+import { forgeDestinationGuardFields, forgeIdentityTokenSchema } from '../forges/source-identity.js'
 import { pullStackSchema, pullStackSummarySchema } from './pull-stack.js'
 import { mutableArray, mutableStruct } from '../../shared/schema.js'
 import { urlSchema, maxValue, minValue, refine } from '../../shared/schema.js'
@@ -8,6 +9,7 @@ const link = urlSchema({
   protocol: /^https?$/,
 })
 export const pullSummarySchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   additions: Schema.optional(
     Schema.NullOr(
       Schema.Number.pipe(
@@ -63,6 +65,7 @@ export const pullSummarySchema = mutableStruct({
   statusError: Schema.optional(Schema.String),
 })
 export const pullPageSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   cachedAt: Schema.optional(Schema.String),
   stale: Schema.optional(Schema.Boolean),
   refreshError: Schema.optional(Schema.String),
@@ -89,6 +92,7 @@ export const pullCommentSchema = mutableStruct({
   diff: Schema.optional(Schema.String),
 })
 export const pullDetailSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   stack: Schema.optional(pullStackSchema),
   capabilities: Schema.optional(forgeCapabilitiesSchema),
   fileBaseUrl: Schema.optional(link),
@@ -161,6 +165,7 @@ export type PullDetail = Schema.Schema.Type<typeof pullDetailSchema>
 export type PullComment = Schema.Schema.Type<typeof pullCommentSchema>
 export const pullTaskInputSchema = refine(
   mutableStruct({
+    ...forgeDestinationGuardFields,
     number: Schema.Number.pipe(Schema.check(Schema.isFinite()))
       .pipe(
         Schema.check(Schema.isInt()),
@@ -195,6 +200,8 @@ export function pullFilePatch(file: Pick<PullDetail['files'][number], 'patch' | 
 }
 export const pullLineCommentSchema = refine(
   mutableStruct({
+    ...forgeDestinationGuardFields,
+    connectionId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
     number: Schema.Number.pipe(Schema.check(Schema.isFinite()))
       .pipe(
         Schema.check(Schema.isInt()),

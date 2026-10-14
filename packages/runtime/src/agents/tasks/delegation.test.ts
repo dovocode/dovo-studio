@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
-import { defaultTaskHarness, taskFamilyRunToken } from '@dovo/protocol'
+import { defaultTaskHarness, resolveTaskAgent, taskFamilyRunToken, type Task } from '@dovo/protocol'
 import type { AgentAdapter, AgentRun } from '../execution/types'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -24,7 +24,7 @@ function taskId(run: AgentRun) {
   if (!run.taskId) throw new Error('Expected a task execution')
   return run.taskId
 }
-it('rechecks a stopped child against newly narrowed parent permissions at admission', async () => {
+it('updates an ended child to narrowed parent access and stops the running parent', async () => {
   const s = await setup()
   const childFinished = barrier()
   const parentRelease = barrier()
@@ -56,17 +56,24 @@ it('rechecks a stopped child against newly narrowed parent permissions at admiss
     objective: 'Work',
   })
   const running = await s.tasks.start(parent.id)
+  const stopped = running.done.then(
+    () => undefined,
+    (error: unknown) => error,
+  )
   try {
     await childFinished.promise
     s.store.updateTask(parent.id, (task) => ({
       ...task,
       harness: { ...defaultTaskHarness('codex'), permission: 'read-only' },
     }))
-    expect(s.store.task(childId).harness?.permission).toBe('ask')
-    await expect(s.tasks.start(childId)).rejects.toThrow('cannot exceed')
+    expect(resolveTaskAgent(s.store.task(childId), s.store.get().agents)?.permission).toBe(
+      'read-only',
+    )
   } finally {
     parentRelease.resolve()
-    await running.done
+    expect(await stopped).toMatchObject({
+      message: expect.stringContaining('Access was tightened'),
+    })
   }
 })
 async function setup() {
@@ -1199,3 +1206,264 @@ it.each(['read-only', 'ask', 'workspace-write', 'auto', 'full-access'] as const)
     expect(s.store.task(parent.id).error).toBeUndefined()
   },
 )
+
+it('inherits both advanced controls from the parent rather than a named preset and rejects escalation before creation', async () => {
+  const s = await setup()
+  const preset = {
+    ...defaultTaskHarness('codex'),
+    id: 'advanced-preset',
+    name: 'Advanced preset',
+    approvalPolicy: 'never' as const,
+    sandboxMode: 'danger-full-access' as const,
+  }
+  s.defaults.save(
+    { ...s.defaults.get(), scopedSettings: { environment: { agents: [preset] }, shared: [] } },
+    false,
+  )
+  let parentId = ''
+  const children: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (taskId(run) !== parentId) {
+        children.push(run)
+        run.onText('Done')
+        return
+      }
+      const scope = { taskId: parentId, name: 'Child', prompt: 'Fixture work' }
+      for (const [key, options] of [
+        ['builtin', { provider: 'codex' as const }],
+        ['named', { agentId: preset.id }],
+        [
+          'narrowed',
+          {
+            agentId: preset.id,
+            approvalPolicy: 'untrusted' as const,
+            sandboxMode: 'read-only' as const,
+          },
+        ],
+      ] as const) {
+        const child = s.tasks.subagentSpawn({ ...scope, key, ...options })
+        await s.tasks.subagentWait(parentId, child.id)
+        expect(s.store.task(child.id).harness).toMatchObject({
+          approvalPolicy: key === 'narrowed' ? 'untrusted' : 'on-request',
+          sandboxMode: key === 'narrowed' ? 'read-only' : 'workspace-write',
+        })
+      }
+      const count = s.store.get().tasks.length
+      expect(() =>
+        s.tasks.subagentSpawn({
+          ...scope,
+          key: 'approval-escape',
+          provider: 'codex',
+          approvalPolicy: 'never',
+        }),
+      ).toThrow('cannot exceed')
+      expect(() =>
+        s.tasks.subagentSpawn({
+          ...scope,
+          key: 'sandbox-escape',
+          provider: 'codex',
+          sandboxMode: 'danger-full-access',
+        }),
+      ).toThrow('cannot exceed')
+      expect(() =>
+        s.tasks.subagentSpawn({ ...scope, key: 'unsupported', provider: 'claude' }),
+      ).toThrow('does not support sandbox')
+      expect(s.store.get().tasks).toHaveLength(count)
+      run.onText('Parent done')
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Delegate',
+    harness: {
+      ...defaultTaskHarness('codex'),
+      approvalPolicy: 'on-request',
+      sandboxMode: 'workspace-write',
+    },
+  })
+  parentId = parent.id
+  await (
+    await s.tasks.start(parent.id)
+  ).done
+  expect(
+    children.map((child) => [
+      child.agent.approvalPolicy,
+      child.agent.sandboxMode,
+      child.agent.permission,
+    ]),
+  ).toEqual([
+    ['on-request', 'workspace-write', 'full-access'],
+    ['on-request', 'workspace-write', 'full-access'],
+    ['untrusted', 'read-only', 'read-only'],
+  ])
+  expect(s.store.task(parent.id).error).toBeUndefined()
+})
+
+it.each(['approvalPolicy', 'sandboxMode'] as const)(
+  'propagates tightened %s to ended children and revokes the running parent',
+  async (dimension) => {
+    const s = await setup()
+    const childFinished = barrier(),
+      parentRelease = barrier()
+    let childId = '',
+      parentId = ''
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        if (taskId(run) !== parentId) {
+          run.onText('Done')
+          return
+        }
+        childId = s.tasks.subagentSpawn({
+          taskId: parentId,
+          key: 'child',
+          name: 'Child',
+          prompt: 'Fixture',
+          provider: 'codex',
+        }).id
+        await s.tasks.subagentWait(parentId, childId)
+        childFinished.resolve()
+        await parentRelease.promise
+        run.onText('Parent done')
+      },
+    })
+    const parent = s.tasks.create({
+      title: 'Parent',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Delegate',
+      harness: {
+        ...defaultTaskHarness('codex'),
+        approvalPolicy: 'on-request',
+        sandboxMode: 'workspace-write',
+      },
+    })
+    parentId = parent.id
+    const running = await s.tasks.start(parent.id)
+    const stopped = running.done.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    try {
+      await childFinished.promise
+      s.store.updateTask(parent.id, (task) => ({
+        ...task,
+        harness: {
+          ...task.harness!,
+          ...(dimension === 'approvalPolicy'
+            ? { approvalPolicy: 'untrusted' as const }
+            : { sandboxMode: 'read-only' as const }),
+        },
+      }))
+      expect(resolveTaskAgent(s.store.task(childId), s.store.get().agents)).toMatchObject({
+        approvalPolicy: dimension === 'approvalPolicy' ? 'untrusted' : 'on-request',
+        sandboxMode: dimension === 'sandboxMode' ? 'read-only' : 'workspace-write',
+      })
+    } finally {
+      parentRelease.resolve()
+      expect(await stopped).toMatchObject({
+        message: expect.stringContaining('Access was tightened'),
+      })
+    }
+  },
+)
+
+it('retains unconfigured historical child metadata while refusing execution with unknown authority', async () => {
+  const s = await setup()
+  const parent = {
+    id: 'historical-unconfigured-parent',
+    title: 'Historical parent',
+    repositoryId: 'repo',
+    agentId: '',
+    status: 'review',
+    createdAt: new Date().toISOString(),
+    draft: '',
+    files: [],
+    example: false,
+    messages: [{ id: 'historical-user', role: 'user', text: 'Fixture history' }],
+  } satisfies Task
+  const child = {
+    ...parent,
+    id: 'historical-unconfigured-child',
+    delegation: {
+      parentTaskId: parent.id,
+      parentRunId: 'historical-run',
+      key: 'history',
+      completion: 'read' as const,
+    },
+  }
+  s.store.update((workspace) => ({ ...workspace, tasks: [parent, child] }))
+  s.store.patch({
+    collection: 'tasks',
+    id: parent.id,
+    changes: { archived: { before: undefined, after: true } },
+  })
+  expect(s.store.task(child.id).archived).toBe(true)
+  s.store.patch({
+    collection: 'tasks',
+    id: parent.id,
+    changes: { archived: { before: true, after: false } },
+  })
+  expect(s.store.task(child.id).archived).toBe(false)
+  s.store.updateTask(child.id, (task) => ({ ...task, title: 'Retained result' }))
+  const get = vi.spyOn(s.agents, 'get')
+  await expect(s.tasks.start(child.id)).rejects.toThrow('cannot exceed')
+  expect(get).not.toHaveBeenCalled()
+  expect(s.store.task(child.id).title).toBe('Retained result')
+})
+
+it('revokes pending approvals and stops both an active parent and child when their inherited access tightens', async () => {
+  const s = await setup()
+  const ready = barrier()
+  const runs: AgentRun[] = []
+  let parentId = '',
+    childId = ''
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      if (taskId(run) === parentId) {
+        childId = s.tasks.subagentSpawn({
+          taskId: parentId,
+          key: 'live-policy',
+          name: 'Child',
+          prompt: 'Fixture',
+          provider: 'claude',
+        }).id
+      }
+      const pending = run.approve('Apply file changes', '{}')
+      if (runs.length === 2) ready.resolve()
+      expect(await pending).toBe('deny')
+      run.signal.throwIfAborted()
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: '',
+    objective: 'Fixture',
+    harness: defaultTaskHarness('codex'),
+  })
+  parentId = parent.id
+  const running = await s.tasks.start(parentId)
+  const stopped = running.done.then(
+    () => undefined,
+    (error: unknown) => error,
+  )
+  await ready.promise
+  expect(s.approvals.list()).toHaveLength(2)
+  s.store.updateTask(parentId, (task) => ({
+    ...task,
+    harness: { ...task.harness!, permission: 'ask' },
+  }))
+  expect(runs.every((run) => run.signal.aborted)).toBe(true)
+  expect(s.approvals.list()).toHaveLength(0)
+  expect(resolveTaskAgent(s.store.taskSummary(childId), s.store.get().agents)?.permission).toBe(
+    'ask',
+  )
+  expect(await stopped).toMatchObject({ message: expect.stringContaining('Access was tightened') })
+})

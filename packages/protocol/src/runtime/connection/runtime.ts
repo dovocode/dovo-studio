@@ -100,6 +100,7 @@ export const snapshotSchema = mutableStruct({
   artifactsEnabled: Schema.optional(Schema.Boolean),
   codeReviewsEnabled: Schema.optional(Schema.Boolean),
   scopedAgentsSupported: Schema.optional(Schema.Boolean),
+  permissionPolicySupported: Schema.optional(Schema.Boolean),
   workspaceReconciliationSupported: Schema.optional(Schema.Boolean),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
@@ -109,6 +110,8 @@ export const snapshotSchema = mutableStruct({
   detailTaskIds: Schema.optional(mutableArray(Schema.String)),
   runtimeInstanceId: Schema.optional(Schema.String),
   runtimeId: Schema.optional(Schema.String),
+  /** Opaque launch/config revisions, scoped by provider or `acp:${installationId}`. */
+  catalogGenerations: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   runtimeAddresses: Schema.optional(mutableArray(Schema.String)),
   /** The runtime process ended unexpectedly before this start; shown until dismissed. */
   lastCrash: Schema.optional(mutableStruct({ at: Schema.String, message: Schema.String })),

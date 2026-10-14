@@ -32,9 +32,14 @@ async function setup() {
   s.store.update(() => f.workspace)
   return { f, s, runtime }
 }
-function detail(sha: string, base: string): PullDetail {
+function detail(
+  sha: string,
+  base: string,
+): PullDetail & { destination: string; pull: PullDetail['pull'] & { destination: string } } {
   return {
+    destination: 'test-repo-account',
     pull: {
+      destination: 'test-repo-account',
       number: 7,
       title: 'Fix runtime',
       url: 'https://github.com/test/repo/pull/7',
@@ -71,7 +76,7 @@ function detail(sha: string, base: string): PullDetail {
         line: 1,
       },
     ],
-  }
+  } satisfies PullDetail
 }
 it('creates a linked task at the PR head and leaves main edits untouched on first run and resume', async () => {
   const { f, s } = await setup()
@@ -391,6 +396,7 @@ it('creates an editable stack-update draft from fresh dependencies and rejects a
     head: 'test:parent',
   }
   vi.spyOn(s.pulls, 'list').mockResolvedValue({
+    destination: 'test-repo-account',
     pulls: [parent, { ...detail(sha, base).pull, base: 'test:parent' }],
     hasMore: false,
     page: 1,
@@ -409,7 +415,12 @@ it('creates an editable stack-update draft from fresh dependencies and rejects a
   })
   expect(s.store.task(result.id).draft).toContain('--force-with-lease=<ref>:<expected-tip>')
   expect(s.store.task(result.id).draft).toContain('https://github.com/test/repo/pull/6')
-  vi.spyOn(s.pulls, 'list').mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+  vi.spyOn(s.pulls, 'list').mockResolvedValue({
+    pulls: [],
+    hasMore: false,
+    page: 1,
+    destination: 'test-repo-account',
+  })
   await expect(
     createPullTask(s, 'repo', f.directory, {
       number: 7,

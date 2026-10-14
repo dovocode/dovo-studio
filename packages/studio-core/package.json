@@ -7,6 +7,8 @@
     ".": "./src/index.ts",
     "./fonts": "./src/fonts.ts",
     "./themes": "./src/themes.ts",
+    "./code-themes": "./src/code-themes.ts",
+    "./theme-catalog": "./src/theme-catalog.ts",
     "./state": "./src/runtime/application-state.ts",
     "./testing": "./src/testing.ts"
   },
@@ -19,6 +21,8 @@
     "@effect/atom-react": "4.0.1",
     "@noble/hashes": "2.4.0",
     "effect": "4.0.1",
+    "fflate": "0.8.3",
+    "jsonc-parser": "3.3.1",
     "react": "^19.3.0"
   },
   "devDependencies": {

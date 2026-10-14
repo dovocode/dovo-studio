@@ -30,6 +30,8 @@ import {
   mentionedResources,
   nativeTodos,
   supportsAccess,
+  permissionPolicyIssue,
+  effectivePermissionPolicy,
   resolveTaskAgent,
   lockedTaskProvider,
   mergeResources,
@@ -201,8 +203,13 @@ export class TaskTurnRunner {
         const artifactsEnabled = this.artifactsEnabled()
         const pullRequestWatchingEnabled = this.pullRequestWatchingEnabled()
         const pipelineWatchingEnabled = this.pipelineWatchingEnabled()
-        const configured = resolveTaskAgent(task, this.store.get().agents)
-        if (!configured) throw new HttpError(400, 'Choose a harness or agent first')
+        const selectedAgent = resolveTaskAgent(task, this.store.get().agents)
+        if (!selectedAgent) throw new HttpError(400, 'Choose a harness or agent first')
+        const policyIssue = permissionPolicyIssue(selectedAgent)
+        if (policyIssue) throw new HttpError(400, policyIssue)
+        const configured = effectivePermissionPolicy(selectedAgent).readOnly
+          ? { ...selectedAgent, permission: 'read-only' as const }
+          : selectedAgent
         const captureChanges = !task.delegation || configured.permission !== 'read-only'
         const captureGit = hasGit && captureChanges
         const providerLock = lockedTaskProvider(task, this.store.get().agents)
@@ -248,6 +255,7 @@ export class TaskTurnRunner {
               pipelineWatchingEnabled,
               memoryScopes,
               this.deviceHubEnabled(),
+              configured.sandboxMode,
             ),
           )
         }
@@ -259,6 +267,7 @@ export class TaskTurnRunner {
             configured.permission,
             this.taskTools,
             controller.signal,
+            configured,
           )
         // The app bridge resolves saved project/agent servers. Machine-owned Cua is
         // launched directly by the provider and follows its per-session lifecycle.
@@ -595,7 +604,12 @@ ${
             (current.status === 'running' || current.status === 'review') &&
             current.sessionId === nativeSessionId &&
             current.sessionAgentId === fingerprint &&
-            resolveTaskAgent(current, this.store.get().agents)?.permission === configured.permission
+            resolveTaskAgent(current, this.store.get().agents)?.permission ===
+              selectedAgent.permission &&
+            resolveTaskAgent(current, this.store.get().agents)?.approvalPolicy ===
+              selectedAgent.approvalPolicy &&
+            resolveTaskAgent(current, this.store.get().agents)?.sandboxMode ===
+              selectedAgent.sandboxMode
           )
         }
         const tokens = turnTokenCounter(agent.provider, () => this.store.taskSummary(id).sessionId)

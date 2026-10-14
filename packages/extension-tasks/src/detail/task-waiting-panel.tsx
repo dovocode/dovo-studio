@@ -76,7 +76,12 @@ export function TaskWaitingPanel({
       {panel ? (
         <div className="mb-2 flex items-center gap-2 text-muted-foreground">
           <Eye size={16} />
-          <h3 className="flex-1 text-xs font-medium">Watching</h3>
+          <h3
+            className="flex-1 text-xs font-medium"
+            title="Updates arrive in this thread. × stops watching."
+          >
+            Watching
+          </h3>
           <Button
             size="sm"
             variant="ghost"
@@ -98,12 +103,8 @@ export function TaskWaitingPanel({
           <RefreshCw size={13} />
         </Button>
       )}
-      {panel && (
-        <p className="mb-3 text-[11px] text-muted-foreground">
-          {data?.dependencies.length
-            ? 'Updates arrive in this thread. × stops watching.'
-            : 'No active watches for this thread.'}
-        </p>
+      {panel && !data?.dependencies.length && (
+        <p className="mb-2 text-[11px] text-muted-foreground">No active watches</p>
       )}
       <div className={panel ? 'flex flex-wrap gap-2' : 'contents'}>
         {data?.dependencies.map((item) => (

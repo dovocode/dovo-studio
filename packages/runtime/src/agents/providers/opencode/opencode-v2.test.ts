@@ -4,171 +4,192 @@ import { expect, it } from 'vite-plus/test'
 import { opencodeAdapter } from './opencode.js'
 import { decode, mcpServerSchema } from '@dovo/protocol'
 
-it('runs an OpenCode 2 prompt through its asynchronous event stream', async () => {
-  let stream: ServerResponse | undefined
-  let ready!: () => void
-  const connected = new Promise<void>((resolve) => {
-    ready = resolve
-  })
-  const requests: Array<{ path: string; body: unknown }> = []
-  let mcpName = ''
-  let childFinished = false
-  let mcpRemovedBeforeChild = false
-  let mcpReads = 0
-  const server = createServer((request, response) => {
-    const path = new URL(request.url ?? '/', 'http://localhost').pathname
-    if (path === '/api/event') {
-      stream = response
-      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-      response.flushHeaders()
-      response.write(`data: ${JSON.stringify({ type: 'server.connected' })}\n\n`)
-      ready()
-      return
-    }
-    const chunks: Buffer[] = []
-    request.on('data', (chunk: Buffer) => chunks.push(chunk))
-    request.on('end', async () => {
-      const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined
-      requests.push({ path, body })
-      response.setHeader('Content-Type', 'application/json')
-      if (path.startsWith('/api/experimental/mcp/')) {
-        if (request.method === 'DELETE' && !childFinished) mcpRemovedBeforeChild = true
-        mcpName = decodeURIComponent(path.split('/').at(-1) ?? '')
-        return response.writeHead(204).end()
-      }
-      if (path === '/api/mcp') {
-        mcpReads++
-        return response.end(
-          JSON.stringify({
-            data: [{ name: mcpName, status: { status: mcpReads === 1 ? 'pending' : 'connected' } }],
-          }),
-        )
-      }
-      if (path === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
-      if (path === '/api/session/active')
-        return response.end(JSON.stringify({ data: childFinished ? {} : { 'native-child': {} } }))
-      if (path.endsWith('/session') && request.method === 'POST') {
-        return response.end(JSON.stringify({ data: { id: 'session' } }))
-      }
-      if (path === '/api/session/session' && request.method === 'DELETE')
-        return response.writeHead(204).end()
-      if (request.method === 'PATCH' || request.method === 'PUT' || path.endsWith('/model')) {
-        response.statusCode = 204
-        return response.end()
-      }
-      if (path.endsWith('/prompt')) {
-        await connected
-        response.end(JSON.stringify({ id: 'inbox', sessionID: 'session' }))
-        const emit = (type: string, data: unknown) =>
-          stream?.write(
-            `data: ${JSON.stringify({ id: type, created: Date.now(), type, data })}\n\n`,
-          )
-        emit('session.execution.succeeded', { sessionID: 'session' })
-        emit('session.execution.started', { sessionID: 'session' })
-        emit('session.text.delta', {
-          sessionID: 'other',
-          assistantMessageID: 'a',
-          ordinal: 0,
-          delta: 'wrong',
-        })
-        emit('session.text.delta', {
-          sessionID: 'session',
-          assistantMessageID: 'a',
-          ordinal: 0,
-          delta: 'Hello',
-        })
-        emit('session.text.ended', { sessionID: 'other', assistantMessageID: 'a', ordinal: 0 })
-        emit('session.text.ended', { sessionID: 'session', assistantMessageID: 'a', ordinal: 0 })
-        emit('session.tool.input.started', {
-          sessionID: 'session',
-          assistantMessageID: 'a',
-          id: 'tool-1',
-          name: 'read',
-        })
-        emit('session.tool.called', {
-          sessionID: 'session',
-          assistantMessageID: 'a',
-          id: 'tool-1',
-          input: { filePath: '/tmp/file' },
-          executed: true,
-        })
-        emit('session.tool.success', {
-          sessionID: 'session',
-          assistantMessageID: 'a',
-          id: 'tool-1',
-          content: [{ type: 'text', text: 'ok' }],
-          executed: true,
-        })
-        emit('session.created', {
-          sessionID: 'native-child',
-          parentID: 'session',
-          title: 'Explore',
-        })
-        emit('session.execution.started', { sessionID: 'native-child' })
-        emit('session.execution.succeeded', { sessionID: 'session' })
-        setTimeout(() => {
-          childFinished = true
-          emit('session.execution.succeeded', { sessionID: 'native-child' })
-        }, 60)
+it.each([undefined, 'on-request', 'never'] as const)(
+  'runs OpenCode 2 through its event stream with explicit %s approval',
+  async (approvalPolicy) => {
+    let stream: ServerResponse | undefined
+    let ready!: () => void
+    const connected = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    const requests: Array<{ path: string; body: unknown }> = []
+    let mcpName = ''
+    let childFinished = false
+    let mcpRemovedBeforeChild = false
+    let mcpReads = 0
+    const server = createServer((request, response) => {
+      const path = new URL(request.url ?? '/', 'http://localhost').pathname
+      if (path === '/api/event') {
+        stream = response
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        response.flushHeaders()
+        response.write(`data: ${JSON.stringify({ type: 'server.connected' })}\n\n`)
+        ready()
         return
       }
-      response.end('{}')
-    })
-  })
-  server.listen(0, '127.0.0.1')
-  await once(server, 'listening')
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('No test address')
-  const text: string[] = []
-  const eventNames: string[] = []
-  try {
-    await opencodeAdapter.run({
-      ephemeral: true,
-      agent: {
-        id: 'agent',
-        name: 'Test',
-        provider: 'opencode',
-        endpoint: `http://127.0.0.1:${address.port}`,
-        model: 'openai/test',
-        permission: 'read-only',
-        instructions: '',
-        resources: {
-          skills: [],
-          mcpServers: [
-            decode(mcpServerSchema, {
-              name: 'dovo_task',
-              enabled: true,
-              transport: 'stdio',
-              command: 'node',
-              args: ['server.js'],
+      const chunks: Buffer[] = []
+      request.on('data', (chunk: Buffer) => chunks.push(chunk))
+      request.on('end', async () => {
+        const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined
+        requests.push({ path, body })
+        response.setHeader('Content-Type', 'application/json')
+        if (path.startsWith('/api/experimental/mcp/')) {
+          if (request.method === 'DELETE' && !childFinished) mcpRemovedBeforeChild = true
+          mcpName = decodeURIComponent(path.split('/').at(-1) ?? '')
+          return response.writeHead(204).end()
+        }
+        if (path === '/api/mcp') {
+          mcpReads++
+          return response.end(
+            JSON.stringify({
+              data: [
+                { name: mcpName, status: { status: mcpReads === 1 ? 'pending' : 'connected' } },
+              ],
             }),
-          ],
-        },
-      },
-      cwd: '/tmp',
-      prompt: 'Hi',
-      signal: AbortSignal.timeout(5000),
-      onSession: () => {},
-      onText: (part) => text.push(part),
-      onTextBoundary: () => text.push('boundary'),
-      onEvent: (name) => eventNames.push(name),
-      onActivity: () => {},
-      approve: async () => 'deny' as const,
-      ask: async () => null,
+          )
+        }
+        if (path === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
+        if (path === '/api/session/active')
+          return response.end(JSON.stringify({ data: childFinished ? {} : { 'native-child': {} } }))
+        if (path.endsWith('/session') && request.method === 'POST') {
+          return response.end(JSON.stringify({ data: { id: 'session' } }))
+        }
+        if (path === '/api/session/session' && request.method === 'DELETE')
+          return response.writeHead(204).end()
+        if (request.method === 'PATCH' || request.method === 'PUT' || path.endsWith('/model')) {
+          response.statusCode = 204
+          return response.end()
+        }
+        if (path.endsWith('/prompt')) {
+          await connected
+          response.end(JSON.stringify({ id: 'inbox', sessionID: 'session' }))
+          const emit = (type: string, data: unknown) =>
+            stream?.write(
+              `data: ${JSON.stringify({ id: type, created: Date.now(), type, data })}\n\n`,
+            )
+          emit('session.execution.succeeded', { sessionID: 'session' })
+          emit('session.execution.started', { sessionID: 'session' })
+          emit('session.text.delta', {
+            sessionID: 'other',
+            assistantMessageID: 'a',
+            ordinal: 0,
+            delta: 'wrong',
+          })
+          emit('session.text.delta', {
+            sessionID: 'session',
+            assistantMessageID: 'a',
+            ordinal: 0,
+            delta: 'Hello',
+          })
+          emit('session.text.ended', { sessionID: 'other', assistantMessageID: 'a', ordinal: 0 })
+          emit('session.text.ended', { sessionID: 'session', assistantMessageID: 'a', ordinal: 0 })
+          emit('session.tool.input.started', {
+            sessionID: 'session',
+            assistantMessageID: 'a',
+            id: 'tool-1',
+            name: 'read',
+          })
+          emit('session.tool.called', {
+            sessionID: 'session',
+            assistantMessageID: 'a',
+            id: 'tool-1',
+            input: { filePath: '/tmp/file' },
+            executed: true,
+          })
+          emit('session.tool.success', {
+            sessionID: 'session',
+            assistantMessageID: 'a',
+            id: 'tool-1',
+            content: [{ type: 'text', text: 'ok' }],
+            executed: true,
+          })
+          emit('session.created', {
+            sessionID: 'native-child',
+            parentID: 'session',
+            title: 'Explore',
+          })
+          emit('session.execution.started', { sessionID: 'native-child' })
+          emit('session.execution.succeeded', { sessionID: 'session' })
+          setTimeout(() => {
+            childFinished = true
+            emit('session.execution.succeeded', { sessionID: 'native-child' })
+          }, 60)
+          return
+        }
+        response.end('{}')
+      })
     })
-    expect(childFinished).toBe(true)
-    expect(mcpRemovedBeforeChild).toBe(false)
-    expect(mcpReads).toBe(2)
-    expect(requests.filter(({ path }) => path.endsWith('/prompt'))).toHaveLength(1)
-    expect(text).toEqual(['Hello', 'boundary'])
-    expect(eventNames.filter((name) => name === 'message.part.updated')).toHaveLength(3)
-    expect(requests.map((request) => request.path)).toContain('/api/session/session/prompt')
-    expect(requests.map((request) => request.path)).toContain('/api/session/session')
-  } finally {
-    stream?.end()
-    server.close()
-  }
-})
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('No test address')
+    const text: string[] = []
+    const eventNames: string[] = []
+    try {
+      await opencodeAdapter.run({
+        ephemeral: true,
+        agent: {
+          id: 'agent',
+          name: 'Test',
+          provider: 'opencode',
+          endpoint: `http://127.0.0.1:${address.port}`,
+          model: 'openai/test',
+          permission: approvalPolicy ? 'full-access' : 'read-only',
+          approvalPolicy,
+          instructions: '',
+          resources: {
+            skills: [],
+            mcpServers: [
+              decode(mcpServerSchema, {
+                name: 'dovo_task',
+                enabled: true,
+                transport: 'stdio',
+                command: 'node',
+                args: ['server.js'],
+              }),
+            ],
+          },
+        },
+        cwd: '/tmp',
+        prompt: 'Hi',
+        signal: AbortSignal.timeout(5000),
+        onSession: () => {},
+        onText: (part) => text.push(part),
+        onTextBoundary: () => text.push('boundary'),
+        onEvent: (name) => eventNames.push(name),
+        onActivity: () => {},
+        approve: async () => 'deny' as const,
+        ask: async () => null,
+      })
+      const created = requests.find(({ path }) => path === '/api/session')?.body
+      expect(created).toMatchObject({
+        permissions: expect.arrayContaining([
+          {
+            action: '*',
+            resource: '*',
+            effect:
+              approvalPolicy === 'never'
+                ? 'allow'
+                : approvalPolicy === 'on-request'
+                  ? 'ask'
+                  : 'deny',
+          },
+        ]),
+      })
+      expect(childFinished).toBe(true)
+      expect(mcpRemovedBeforeChild).toBe(false)
+      expect(mcpReads).toBe(2)
+      expect(requests.filter(({ path }) => path.endsWith('/prompt'))).toHaveLength(1)
+      expect(text).toEqual(['Hello', 'boundary'])
+      expect(eventNames.filter((name) => name === 'message.part.updated')).toHaveLength(3)
+      expect(requests.map((request) => request.path)).toContain('/api/session/session/prompt')
+      expect(requests.map((request) => request.path)).toContain('/api/session/session')
+    } finally {
+      stream?.end()
+      server.close()
+    }
+  },
+)
 
 it('waits for OpenCode 2 manual compaction to finish', async () => {
   let stream: ServerResponse | undefined

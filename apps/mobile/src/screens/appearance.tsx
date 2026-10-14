@@ -11,6 +11,7 @@ import { Text } from '../ui/content/text'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { SettingsGroup } from './settings-group'
+import { CodeThemeSettings } from './code-theme'
 
 export default function AppearanceScreen() {
   const { colors, styles } = useTheme()
@@ -76,6 +77,7 @@ export default function AppearanceScreen() {
             )
           })}
         </SettingsGroup>
+        <CodeThemeSettings />
         <SettingsGroup
           title="Terminal"
           footer="JetBrains Mono Nerd Font is bundled for offline shell and developer icons. Changes apply to open terminals."

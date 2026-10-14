@@ -191,3 +191,84 @@ it('surfaces catalog outages and rejects oversized payloads', async () => {
   await expect(catalogJson('https://skills.sh/api/search')).rejects.toThrow('rate limit')
   await expect(catalogJson('https://skills.sh/api/search', 2)).rejects.toThrow('too large')
 })
+it('finds catalog skills by their declared name when folder names differ, and keeps supporting files', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dovo-catalog-name-'))
+  roots.push(root)
+  const sha = 'b'.repeat(40)
+  const requests: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (input) => {
+      const url = input instanceof Request ? input.url : input.toString()
+      requests.push(url)
+      if (url.includes('/commits/')) return Response.json({ sha })
+      if (url.includes('/git/trees/'))
+        return Response.json({
+          truncated: false,
+          tree: [
+            { path: 'SKILL.md', type: 'blob', mode: '100644', size: 80 },
+            { path: 'skills/broken/SKILL.md', type: 'blob', mode: '100644', size: 80 },
+            {
+              path: 'skills/react-best-practices/SKILL.md',
+              type: 'blob',
+              mode: '100644',
+              size: 80,
+            },
+            {
+              path: 'skills/react-best-practices/rules/render.md',
+              type: 'blob',
+              mode: '100644',
+              size: 80,
+            },
+          ],
+        })
+      if (url.includes('/broken/')) return new Response('Invalid frontmatter')
+      if (url.endsWith('/rules/render.md')) return new Response('Supporting rule')
+      const name = url.includes('/react-best-practices/')
+        ? 'vercel-react-best-practices'
+        : 'repository-overview'
+      return new Response(
+        `---\nname: ${name}\ndescription: Review React\n---\nRead rules/render.md`,
+      )
+    }),
+  )
+  const skill = await installCatalogSkill(
+    { source: 'vercel-labs/agent-skills', skill: 'vercel-react-best-practices' },
+    root,
+  )
+  expect(skill.name).toBe('vercel-react-best-practices')
+  expect(skill.sourceRevision).toBe(sha)
+  expect(skill.sourceUrl).toBe(
+    'https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices',
+  )
+  expect(await readFile(join(skill.sourcePath!, '..', 'rules/render.md'), 'utf8')).toBe(
+    'Supporting rule',
+  )
+  expect(requests.filter((url) => url.endsWith('/react-best-practices/SKILL.md'))).toHaveLength(1)
+})
+it('rejects ambiguous declared skill names rather than installing a different directory', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dovo-catalog-ambiguous-'))
+  roots.push(root)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (input) => {
+      const url = input instanceof Request ? input.url : input.toString()
+      if (url.includes('/commits/')) return Response.json({ sha: 'a'.repeat(40) })
+      if (url.includes('/git/trees/'))
+        return Response.json({
+          truncated: false,
+          tree: ['first', 'second'].map((name) => ({
+            path: `skills/${name}/SKILL.md`,
+            type: 'blob',
+            mode: '100644',
+            size: 80,
+          })),
+        })
+      return new Response('---\nname: review\ndescription: Review\n---\nReview code')
+    }),
+  )
+  await expect(
+    installCatalogSkill({ source: 'owner/repo', skill: 'review' }, root),
+  ).rejects.toThrow('one SKILL.md')
+  expect(await readdir(root)).toEqual([])
+})

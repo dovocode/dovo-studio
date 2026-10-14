@@ -33,13 +33,16 @@ import { PullPipelineRuns } from './pipeline-runs'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 type PullTab = 'overview' | 'changes' | 'checks'
 const tabCache = createPullStateCache<PullTab>(50)
+const scrollCache = createPullStateCache<Record<PullTab, number>>(50)
 type PullDetailProps = {
   embedded?: boolean
   repositoryId: string
+  connectionId?: string
   number: number
   onBack: () => void
   onChanged: () => void
   onSelect?: (number: number) => void
+  onTabChange?: (tab: PullTab) => void
   initialTab?: PullTab
   initialFragment?: string
 }
@@ -67,16 +70,22 @@ function PullDetailSelection(props: PullDetailProps) {
 function PullDetailContent({
   repositoryId,
   number,
+  connectionId,
   onBack,
   onChanged,
   onSelect,
+  onTabChange,
   embedded = false,
   initialTab,
   initialFragment = '',
 }: PullDetailProps) {
   const { connected, workspace } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
-  const { detail, error, busy, refresh, invalidate } = usePullDetail(repositoryId, number)
+  const { detail, error, busy, readConnected, refresh, invalidate } = usePullDetail(
+    repositoryId,
+    number,
+    connectionId,
+  )
   const changed = () => {
     invalidate()
     onChanged()
@@ -85,15 +94,20 @@ function PullDetailContent({
   const [creatingStack, setCreatingStack] = useApplicationState(false)
   const selectPull = (next: number) => onSelect?.(next)
   const [starting, setStarting] = useApplicationState(false)
-  const stateKey = usePullStateKey(repositoryId, number)
+  const stateKey = usePullStateKey(repositoryId, number, connectionId)
   const [tab, setTab] = useRetainedPullState(tabCache, stateKey, initialTab ?? 'overview')
   const content = useRef<HTMLDivElement>(null)
-  const scrollPositions = useRef({ overview: 0, changes: 0, checks: 0 })
+  const scrollPositions = useRef(
+    scrollCache.read(stateKey) ?? { overview: 0, changes: 0, checks: 0 },
+  )
   useLayoutEffect(() => {
     if (content.current) content.current.scrollTop = scrollPositions.current[tab]
-  }, [tab])
+  }, [tab, !!detail])
   const [changesOpened, setChangesOpened] = useApplicationState(tab === 'changes')
   const [checksOpened, setChecksOpened] = useApplicationState(tab === 'checks')
+  const [objectiveBaseline, setObjectiveBaseline] = useApplicationState<
+    { headSha: string; expectedDestination?: string } | undefined
+  >(undefined)
   const [objective, setObjective] = useApplicationState<string | undefined>(undefined)
   const [discussionFilter, setDiscussionFilter] = useApplicationState<'all' | 'review' | 'comment'>(
     'all',
@@ -102,7 +116,9 @@ function PullDetailContent({
   const reviews = latestPullReviews(discussion)
   const selectTab = (value: typeof tab) => {
     if (content.current) scrollPositions.current[tab] = content.current.scrollTop
+    scrollCache.write(stateKey, { ...scrollPositions.current })
     setTab(value)
+    if (value !== tab) onTabChange?.(value)
     if (value === 'changes') setChangesOpened(true)
     if (value === 'checks') setChecksOpened(true)
   }
@@ -192,7 +208,7 @@ function PullDetailContent({
             className="size-8"
             variant="ghost"
             aria-label="Refresh details"
-            disabled={!connected || busy}
+            disabled={!readConnected || busy}
             onClick={refresh}
           >
             <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />
@@ -200,13 +216,22 @@ function PullDetailContent({
           {detail && repository && (
             <StartPullTask
               repositoryId={repositoryId}
-              pull={detail.pull}
+              pull={
+                objectiveBaseline
+                  ? {
+                      ...detail.pull,
+                      headSha: objectiveBaseline.headSha,
+                      destination: objectiveBaseline.expectedDestination,
+                    }
+                  : detail.pull
+              }
               initialObjective={objective}
               stackAction={stackAction}
               open={starting}
               onOpenChange={(open) => {
                 setStarting(open)
                 setObjective(undefined)
+                setObjectiveBaseline(undefined)
                 setStackAction(undefined)
               }}
             />
@@ -220,6 +245,7 @@ function PullDetailContent({
                 repository
                   ? () => {
                       setObjective(undefined)
+                      setObjectiveBaseline(undefined)
                       setStarting(true)
                     }
                   : undefined
@@ -369,6 +395,10 @@ function PullDetailContent({
         <>
           <div
             ref={content}
+            onScroll={(event) => {
+              scrollPositions.current[tab] = event.currentTarget.scrollTop
+              scrollCache.write(stateKey, { ...scrollPositions.current })
+            }}
             className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4"
             aria-label="Pull request content"
           >
@@ -386,7 +416,9 @@ function PullDetailContent({
                 className="mb-4 text-xs text-amber-700 dark:text-amber-400 [overflow-wrap:anywhere]"
               >
                 {!connected
-                  ? 'Offline · showing last loaded details.'
+                  ? readConnected
+                    ? 'Original computer offline · reading through an available source. Changes remain unavailable.'
+                    : 'Offline · showing last loaded details.'
                   : detail.refreshError
                     ? `Refresh failed: ${detail.refreshError}`
                     : 'Showing cached details · refreshing in background.'}
@@ -592,10 +624,11 @@ function PullDetailContent({
                   initialFragment={initialFragment}
                   repositoryId={repositoryId}
                   onPosted={changed}
-                  onSteer={(value) => {
+                  onSteer={(value, baseline) => {
                     if (!repository)
                       throw new Error('Connect this project before starting an agent task.')
                     setObjective(value)
+                    setObjectiveBaseline(baseline)
                     setStarting(true)
                   }}
                 />

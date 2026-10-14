@@ -1,9 +1,10 @@
-import { taskFileShareSchema } from '@dovo/protocol'
+import { taskFileShareSchema, markdownMediaKind } from '@dovo/protocol'
+import { ProjectImagePreview } from './project-image-preview'
 import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCallback, useEffect, useMemo, useRef, useDeferredValue } from 'react'
 import { getFiletypeFromFileName } from '@pierre/diffs'
-import { preloadStudioHighlighter } from '@dovo/studio-ui/code-themes'
+import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { Editor } from '@pierre/diffs/edit'
 import {
   EditProvider,
@@ -12,13 +13,7 @@ import {
   type FileOptions,
 } from '@pierre/diffs/react'
 import { RefreshCw, Search, X } from 'lucide-react'
-import {
-  responses,
-  useDiffOptions,
-  useWorkspace,
-  useStudioHost,
-  type Task,
-} from '@dovo/studio-core'
+import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
 import { Button, IconButton, FileBrowserTree } from '@dovo/studio-ui'
 import { ResizableSidebar } from './resizable-sidebar'
 import { useLiveRefresh } from './live-refresh'
@@ -257,6 +252,7 @@ export function TaskFiles({
   const [loadedPath, setLoadedPath] = useApplicationState('')
   const [paths, setPaths] = useApplicationState<string[]>([])
   const [selected, setSelected] = useApplicationState('')
+  const imageFile = markdownMediaKind(selected) === 'image'
   const selectedRef = useRef(selected)
   selectedRef.current = selected
   const [contents, setContents] = useApplicationState('')
@@ -297,7 +293,10 @@ export function TaskFiles({
           ? previous
           : listing.files,
       )
-      if (selected && !editing.current) {
+      if (selected && imageFile && selectedRef.current === selected) {
+        setLoadedPath(selected)
+        setReadError('')
+      } else if (selected && !editing.current) {
         const generation = editGeneration.current
         try {
           const result = await request(
@@ -326,8 +325,25 @@ export function TaskFiles({
     } finally {
       if (selectedRef.current === selected) setLoading(false)
     }
-  }, [request, task.id, selected, revision])
+  }, [request, task.id, selected, revision, imageFile])
   const refreshError = useLiveRefresh(connected, refresh)
+  const openOriginal = () => {
+    const preview = openExternalLink ? null : window.open('about:blank', '_blank')
+    if (preview) preview.opener = null
+    void request('/api/tasks/files/share', { taskId: task.id, path: selected }, taskFileShareSchema)
+      .then(async ({ url }) => {
+        if (!connection) throw new Error('Reconnect to open this file.')
+        const address = new URL(url, connection.address).toString()
+        if (openExternalLink) await openExternalLink(address)
+        else if (preview) preview.location.href = address
+        else throw new Error('Allow popups to open this file.')
+      })
+      .catch((cause: unknown) => {
+        preview?.close()
+        if (selectedRef.current === selected)
+          setReadError(cause instanceof Error ? cause.message : String(cause))
+      })
+  }
   const root = useMemo(
     () =>
       paths
@@ -367,39 +383,20 @@ export function TaskFiles({
                     >
                       Retry file
                     </Button>
-                    <Button
-                      variant="outline"
-                      disabled={!connected}
-                      onClick={() => {
-                        const preview = openExternalLink
-                          ? null
-                          : window.open('about:blank', '_blank')
-                        if (preview) preview.opener = null
-                        void request(
-                          '/api/tasks/files/share',
-                          { taskId: task.id, path: selected },
-                          taskFileShareSchema,
-                        )
-                          .then(async ({ url }) => {
-                            if (!connection) throw new Error('Reconnect to open this file.')
-                            const address = new URL(url, connection.address).toString()
-                            if (openExternalLink) await openExternalLink(address)
-                            else if (preview) preview.location.href = address
-                            else throw new Error('Allow popups to open this file.')
-                          })
-                          .catch((cause: unknown) => {
-                            preview?.close()
-                            if (selectedRef.current === selected)
-                              setReadError(cause instanceof Error ? cause.message : String(cause))
-                          })
-                      }}
-                    >
+                    <Button variant="outline" disabled={!connected} onClick={openOriginal}>
                       Open in browser
                     </Button>
                   </div>
                 </div>
               ) : loading ? (
                 <p className="p-4 text-xs text-muted-foreground">Loading file…</p>
+              ) : imageFile ? (
+                <ProjectImagePreview
+                  taskId={task.id}
+                  path={selected}
+                  onOpenOriginal={openOriginal}
+                  refreshRevision={revision}
+                />
               ) : (
                 <HighlightedFile
                   key={selected}

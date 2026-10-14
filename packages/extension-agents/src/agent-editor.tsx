@@ -1,3 +1,4 @@
+import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Check } from 'lucide-react'
@@ -23,6 +24,8 @@ import {
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   AgentAvatar,
+  PermissionPolicyFields,
+  permissionPolicyUIIssue,
   agentIconChoices,
   Button,
   Dialog,
@@ -61,7 +64,7 @@ export function AgentEditor({
   onDirtyChange?: (dirty: boolean) => void
   fixedProvider?: boolean
 }) {
-  const { connected } = useWorkspace()
+  const { connected, snapshot } = useWorkspace()
   const pending = useRef(false)
   const [busy, setBusy] = useApplicationState(false)
   const [agent, setAgent] = useApplicationState(initial)
@@ -138,7 +141,12 @@ export function AgentEditor({
             setError('Enter an agent name.')
             return
           }
-          if (pending.current || !connected) return
+          if (
+            pending.current ||
+            !connected ||
+            permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true)
+          )
+            return
           pending.current = true
           setBusy(true)
           setError('')
@@ -268,21 +276,32 @@ export function AgentEditor({
                   <AcpRegistry agent={agent} onChange={setAgent} showRegistry={false} />
                 )}
                 <ModelSettings agent={agent} onChange={setAgent} />
-                <FormField layout="settings" label="Access">
+                <FormField layout="settings" label="Access mode">
                   <div className="space-y-2">
                     <Select
-                      value={agent.permission}
-                      onValueChange={(value) =>
-                        setAgent({
-                          ...agent,
-                          permission: decode(agentSchema.fields.permission, value),
-                        })
+                      value={
+                        permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission
                       }
+                      onValueChange={(value) => {
+                        // Radix's form bridge emits an empty value while switching to Custom.
+                        if (!value || value === 'custom') return
+                        setAgent(
+                          selectPermissionPreset(
+                            agent,
+                            decode(agentSchema.fields.permission, value),
+                          ),
+                        )
+                      }}
                     >
-                      <SelectTrigger aria-label="Access" className="h-9 text-xs">
+                      <SelectTrigger aria-label="Access mode" className="h-9 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        {permissionPolicyLabel(agent) === 'Custom' && (
+                          <SelectItem value="custom" disabled>
+                            Custom
+                          </SelectItem>
+                        )}
                         {accessModes.map((mode) => (
                           <SelectItem
                             key={mode.id}
@@ -300,6 +319,13 @@ export function AgentEditor({
                     </p>
                   </div>
                 </FormField>
+                <PermissionPolicyFields
+                  value={agent}
+                  layout="settings"
+                  supported={snapshot?.permissionPolicySupported === true}
+                  disabled={busy || !connected}
+                  onChange={(policy) => setAgent({ ...agent, ...policy })}
+                />
                 {!supportsAccess(agent.provider, agent.permission) && (
                   <p role="alert" className="text-xs text-destructive">
                     Choose an access mode supported by this provider.
@@ -458,7 +484,12 @@ export function AgentEditor({
                 disabled={
                   busy ||
                   !connected ||
-                  (step === 2 && !supportsAccess(agent.provider, agent.permission))
+                  (step === 2 &&
+                    (!!permissionPolicyUIIssue(
+                      agent,
+                      snapshot?.permissionPolicySupported === true,
+                    ) ||
+                      !supportsAccess(agent.provider, agent.permission)))
                 }
               >
                 {busy

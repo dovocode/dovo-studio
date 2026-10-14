@@ -1,3 +1,5 @@
+import { integrationMutationError } from '../../connections/mutation-error'
+import { useEffect, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { pullTaskResponse, useStudioHost, useWorkspace, type PullDetail } from '@dovo/studio-core'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
@@ -22,8 +24,29 @@ export function StartPullTask({
   const host = useStudioHost()
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
+  const [created, setCreated] = useApplicationState('')
+  const mounted = useRef(true)
+  const pending = useRef(false)
+  const baseline = useRef(pull)
+  const previousOpen = useRef(open)
+  if (open && !previousOpen.current) baseline.current = pull
+  previousOpen.current = open
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const openTask = async (id: string, current = host.taskNavigationGuard?.() ?? (() => true)) => {
+    if (!mounted.current || !current()) return
+    if (activeRuntimeId && activeRuntimeId !== runtimeRegistry.activeId)
+      await switchRuntime(activeRuntimeId)
+    if (mounted.current && current()) host.navigate({ viewId: 'tasks', entityId: id })
+  }
   const create = async (checkoutMode: 'new-branch' | 'pr-branch') => {
-    if (busy || !connected) return
+    if (pending.current || !connected) return
+    pending.current = true
+    const current = host.taskNavigationGuard?.() ?? (() => true)
     setBusy(true)
     setError('')
     try {
@@ -31,8 +54,9 @@ export function StartPullTask({
         '/api/scm/pulls/task',
         {
           repositoryId,
-          number: pull.number,
-          headSha: pull.headSha,
+          number: baseline.current.number,
+          headSha: baseline.current.headSha,
+          expectedDestination: baseline.current.destination,
           objective: stackAction
             ? 'Update the stack, restack branches and update PRs.'
             : (initialObjective ?? 'I want to work on this PR.'),
@@ -42,20 +66,27 @@ export function StartPullTask({
         },
         pullTaskResponse,
       )
-      if (activeRuntimeId && activeRuntimeId !== runtimeRegistry.activeId)
-        await switchRuntime(activeRuntimeId)
-      host.navigate({ viewId: 'tasks', entityId: result.id })
+      if (!mounted.current) return
+      setCreated(result.id)
+      await openTask(result.id, current)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      if (mounted.current) setError(integrationMutationError(cause))
     } finally {
-      setBusy(false)
+      pending.current = false
+      if (mounted.current) setBusy(false)
     }
   }
   const itemClass =
     'cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40'
   return (
     <div className="relative">
-      <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
+      <DropdownMenu.Root
+        open={open}
+        onOpenChange={(value) => {
+          if (value) baseline.current = pull
+          onOpenChange?.(value)
+        }}
+      >
         <DropdownMenu.Trigger asChild>
           <Button
             size="sm"
@@ -92,6 +123,19 @@ export function StartPullTask({
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      {created && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            void openTask(created).catch((cause: unknown) => {
+              if (mounted.current) setError(integrationMutationError(cause))
+            })
+          }
+        >
+          Open created task
+        </Button>
+      )}
       {error && (
         <p
           role="alert"

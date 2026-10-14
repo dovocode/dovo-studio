@@ -1,9 +1,11 @@
+import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { runtimeComputerName } from '@dovo/protocol'
 import { changeAgentProvider, changeAgentConnection, agentConnectionValue } from '@dovo/protocol'
 import { parseAgentEnvironment, formatAgentEnvironment, providerDisplayName } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
 import { selectableAccessModes, supportsAccess } from '@dovo/protocol'
+import { PermissionPolicyControls, permissionPolicyUIIssue } from './permission-policy-controls'
 import { ModelSettings } from './model-settings'
 import { AcpRegistry } from './acp-registry'
 import { Alert, View } from 'react-native'
@@ -52,6 +54,8 @@ export function AgentEditor({
       ])
   }
   const save = async () => {
+    const issue = permissionPolicyUIIssue(draft, snapshot?.permissionPolicySupported === true)
+    if (issue) throw new Error(issue)
     const valid = decode(agentSchema, {
       ...draft,
       env: parseAgentEnvironment(environment),
@@ -94,9 +98,10 @@ export function AgentEditor({
       )}
       <ModelSettings key={draft.provider} agent={draft} onChange={setDraft} disabled={busy} />
       <Choice
-        label="Access"
+        label="Access mode"
         disabled={busy}
-        value={draft.permission}
+        value={permissionPolicyLabel(draft) === 'Custom' ? 'custom' : draft.permission}
+        selectedLabel={permissionPolicyLabel(draft)}
         items={selectableAccessModes(draft.permission, draft.provider)
           .filter((mode) => supportsAccess(draft.provider, mode.id))
           .map((mode) => ({
@@ -104,11 +109,14 @@ export function AgentEditor({
             name: mode.name,
           }))}
         onChange={(value) =>
-          setDraft({
-            ...draft,
-            permission: decode(agentSchema.fields.permission, value),
-          })
+          setDraft(selectPermissionPreset(draft, decode(agentSchema.fields.permission, value)))
         }
+      />
+      <PermissionPolicyControls
+        value={draft}
+        supported={snapshot?.permissionPolicySupported === true}
+        disabled={busy || !connected}
+        onChange={(policy) => setDraft({ ...draft, ...policy })}
       />
       <Field
         label="Instructions"
@@ -226,6 +234,7 @@ export function AgentEditor({
             !connected ||
             busy ||
             !draft.name.trim() ||
+            !!permissionPolicyUIIssue(draft, snapshot?.permissionPolicySupported === true) ||
             !supportsAccess(draft.provider, draft.permission)
           }
           onPress={() => act(save)}

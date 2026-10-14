@@ -1,14 +1,15 @@
+import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
+import { changeHarnessProvider } from './harness-permissions'
+import { PermissionPolicyFields } from './permission-policy-fields'
 import { useCallback } from 'react'
 import {
   providers,
   providerSchema,
-  defaultTaskHarness,
   acpInstallationHarness,
   acpHarnessChoiceId,
   selectableAccessModes,
   supportsAccess,
-  resolveProviderAccess,
   agentSchema,
   modelCatalogSchema,
   useWorkspace,
@@ -69,7 +70,15 @@ export function HarnessFields({
                 (!lockedProvider || lockedProvider === 'acp') &&
                 (lockedInstallationId === undefined || lockedInstallationId === installation.id)
               )
-                onChange(acpInstallationHarness(installation, value.permission))
+                onChange({
+                  ...acpInstallationHarness(installation, value.permission),
+                  ...changeHarnessProvider(value, 'acp'),
+                  acpInstallationId: installation.id,
+                  model: '',
+                  reasoning: '',
+                  acpMode: undefined,
+                  acpConfig: undefined,
+                })
               return
             }
             const next = decode(providerSchema, provider)
@@ -77,10 +86,7 @@ export function HarnessFields({
               (!lockedProvider || next === lockedProvider) &&
               (next !== 'acp' || lockedInstallationId === undefined || lockedInstallationId === '')
             )
-              onChange({
-                ...defaultTaskHarness(next),
-                permission: resolveProviderAccess(next, value.permission),
-              })
+              onChange(changeHarnessProvider(value, next))
           }}
         >
           {providerSchema.literals
@@ -151,17 +157,21 @@ export function HarnessFields({
           })
         }
       />
-      <FormField label="Access">
+      <FormField label="Access mode">
         <ChoicePicker
           aria-label="Harness access"
-          value={value.permission}
+          value={permissionPolicyLabel(value) === 'Custom' ? 'custom' : value.permission}
           onValueChange={(permission) =>
-            onChange({
-              ...value,
-              permission: decode(agentSchema.fields.permission, permission),
-            })
+            onChange(
+              selectPermissionPreset(value, decode(agentSchema.fields.permission, permission)),
+            )
           }
         >
+          {permissionPolicyLabel(value) === 'Custom' && (
+            <option value="custom" disabled>
+              Custom
+            </option>
+          )}
           {selectableAccessModes(value.permission, value.provider).map((mode) => (
             <option
               key={mode.id}
@@ -180,6 +190,12 @@ export function HarnessFields({
           )?.description
         }
       </p>
+      <PermissionPolicyFields
+        value={value}
+        supported={snapshot?.permissionPolicySupported === true}
+        disabled={!connected}
+        onChange={(policy) => onChange({ ...value, ...policy })}
+      />
       <details className="text-xs">
         <summary className="cursor-pointer text-muted-foreground">
           Connection and instructions

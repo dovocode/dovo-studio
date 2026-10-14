@@ -143,6 +143,7 @@ function TaskRowView({
           <Button
             variant="ghost"
             aria-current={selected ? 'true' : undefined}
+            data-unread={unread || undefined}
             className={cn(
               'mb-1 h-auto min-h-[72px] w-full min-w-0 flex-col items-stretch gap-1 whitespace-normal rounded-xl border border-transparent px-2.5 py-2 text-left font-normal',
               selected || multiSelected || selectedChildId

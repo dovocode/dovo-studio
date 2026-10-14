@@ -18,6 +18,7 @@ const mocks = {
   '@dovo/studio-core': `
     import {createContext,useContext} from 'react';
     export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';
+    export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';
     export * from '@dovo/protocol';
     export {providers} from '../studio-core/src/providers';
     export {studioSyntaxTheme} from '../studio-core/src/themes';
@@ -30,6 +31,7 @@ const mocks = {
   `,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `
+    export {permissionPolicyUIIssue} from './src/permission-policy-fields';
     export {ComposerSurface,ComposerTextarea,ComposerSubmit,ComposerWorkspaceBar} from './src/composer-surface';
     export {ComposerSettingsControls} from './src/composer-settings-controls';
     export {ModelSettings} from './src/model-settings';
@@ -60,6 +62,7 @@ const built = await build({
         window.requests.push({runtime:profile.id,path,input});
         if(path==='/api/snapshot'&&window.failNextSnapshot){window.failNextSnapshot=false;throw Error('Computer unavailable')}
         if(path==='/api/snapshot')return window.holdSnapshots?new Promise(resolve=>window.pendingSnapshots.push(()=>resolve(snapshots[profile.id]))):snapshots[profile.id];
+        if(path==='/api/agents/models/cached')return null;
         if(path==='/api/agents/models')return {models:[{id:'gpt-6.1-sol',name:'GPT-6.1-Sol',isDefault:true,defaultReasoning:'xhigh',reasoning:[{id:'high',name:'High'},{id:'xhigh',name:'Extra High'}],serviceTiers:[{id:'priority',name:'Fast'}]}],reasoning:[],codex:{fastModeBlocked:false,daybreakPrograms:[]}};
         if(path==='/api/agents/availability')return [{id:'harness:codex',available:true}];
         if(path==='/api/workspace')return {revision:1};

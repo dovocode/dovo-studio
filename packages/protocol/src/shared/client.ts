@@ -47,8 +47,44 @@ const readRetry = {
 // The runtime deduplicates these by client message ID, so a replay cannot post twice.
 const idempotentPaths = new Set(['/api/tasks/message', '/api/tasks/steer'])
 
+// These POST endpoints only read state. Keep the list explicit: adding an action,
+// task creation or provider write here could replay a side effect after a lost response.
+const postReadPaths = new Set([
+  '/api/scm/source/identity',
+  '/api/agents/models/cached',
+  '/api/scm/pulls',
+  '/api/scm/pulls/overview',
+  '/api/scm/pulls/detail',
+  '/api/scm/pulls/options/read',
+  '/api/scm/work/options',
+  '/api/scm/work/issues/list',
+  '/api/scm/work/issues/detail',
+  '/api/scm/work/pipelines/list',
+  '/api/scm/work/pipelines/detail',
+  '/api/scm/work/pipelines/definitions',
+  '/api/scm/jira/projects/read',
+  '/api/scm/connections/read',
+  '/api/scm/cli-profiles/read',
+  '/api/scm/repositories/forge/read',
+  '/api/scm/repositories/forge/inspect',
+  '/api/scm/repositories/github/read',
+  '/api/scm/repositories/git-status',
+  '/api/scm/directories/read',
+  '/api/scm/open-targets',
+  '/api/scm/instructions/read',
+  '/api/scm/instructions/preview',
+  '/api/scm/worktrees/read',
+  '/api/scm/worktrees/choices',
+  '/api/scm/action-state',
+  '/api/scm/inspect',
+  '/api/scm/changes',
+  '/api/scm/branches',
+  '/api/scm/branch-changes',
+])
+type RuntimeRequestOptions = { mutationId?: string; route?: 'http' | 'stream' }
+
 /** A single request; interruption aborts both the fetch and response body read.
- * GET reads and ID-deduplicated sends retry transient failures within the same deadline;
+ * GET and allowlisted POST reads and ID-deduplicated sends retry within the same deadline;
  * other mutations never retry. */
 export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
   connection: RuntimeConnection | null,
@@ -58,7 +94,7 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
   schema: T,
   method = 'POST',
   timeoutMs?: number,
-  options?: { mutationId?: string },
+  options?: RuntimeRequestOptions,
 ): Effect.Effect<T['Type'], RuntimeRequestError | ValidationError> {
   return Effect.gen(function* () {
     const target = yield* Effect.try({
@@ -124,7 +160,7 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
         const resolved =
           connection && target.origin === new URL(connection.address).origin
             ? yield* Effect.tryPromise({
-                try: () => resolveRuntimeRoute(connection, controller.signal),
+                try: () => resolveRuntimeRoute(connection, controller.signal, options?.route),
                 catch: (cause) =>
                   new RuntimeRequestError({
                     kind: 'connection',
@@ -154,7 +190,7 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
                 signal: controller.signal,
               }),
             catch: (cause) => {
-              if (connection) invalidateRuntimeRoute(connection)
+              if (connection) invalidateRuntimeRoute(connection, options?.route)
               return new RuntimeRequestError({
                 kind: 'connection',
                 cause,
@@ -247,7 +283,10 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
       }),
     ).pipe(
       (request) =>
-        method === 'GET' || !!options?.mutationId || idempotentPaths.has(path)
+        method.toUpperCase() === 'GET' ||
+        (method.toUpperCase() === 'POST' && postReadPaths.has(target.pathname)) ||
+        !!options?.mutationId ||
+        idempotentPaths.has(path)
           ? Effect.retry(request, readRetry)
           : request,
       Effect.timeoutOrElse({
@@ -275,10 +314,11 @@ export async function runtimeRequest<T extends Schema.Codec<unknown, unknown>>(
   method = 'POST',
   timeoutMs?: number,
   signal?: AbortSignal,
+  options?: RuntimeRequestOptions,
 ): Promise<T['Type']> {
   const result = await Effect.runPromise(
     Effect.result(
-      runtimeRequestEffect(connection, address, path, input, schema, method, timeoutMs),
+      runtimeRequestEffect(connection, address, path, input, schema, method, timeoutMs, options),
     ),
     { signal },
   )

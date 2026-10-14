@@ -26,7 +26,7 @@ import { Action } from '../controls/action'
 import { Icon, type IconName } from '../controls/icon'
 import { IconButton } from '../controls/icon-button'
 import { useTheme } from '../theme'
-import { openAppLink } from './open-link'
+import { useOpenAppLink } from './open-link'
 import { ArtifactFormatIcon } from './artifact-presentation'
 
 export const ArtifactCard = memo(function ArtifactCard({
@@ -136,6 +136,7 @@ export function ArtifactBrowser({
 }) {
   const { colors, styles } = useTheme()
 
+  const openLink = useOpenAppLink(taskId)
   const { read, connected } = useRuntime()
   const [items, setItems] = useState<ArtifactMetadata[]>()
   const [links, setLinks] = useState<ArtifactLink[]>([])
@@ -431,7 +432,7 @@ export function ArtifactBrowser({
             <Action
               label={`Open ${artifactLinkLabel(link.provider)}`}
               onPress={() => {
-                void openAppLink(link.url).catch((cause: unknown) =>
+                void openLink(link.url).catch((cause: unknown) =>
                   Alert.alert('Could not open link', String(cause)),
                 )
               }}

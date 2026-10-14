@@ -66,6 +66,35 @@ export class ForgeHttp {
         url = this.url(new URL(response.headers.get('location')!, url).toString())
         continue
       }
+      if (response.status === 401) this.onUnauthorized?.()
+      if (!response.ok) {
+        // Do not echo upstream bodies: they may contain credentials or private response payloads.
+        const reason =
+          response.status === 401
+            ? 'Authentication failed. Update the token on this runtime.'
+            : response.status === 403
+              ? 'This account does not have permission for this operation. Check token scopes and repository access.'
+              : response.status === 404
+                ? 'Repository, item or operation not found. Check the connection, repository name and server version.'
+                : response.status === 409 || response.status === 412
+                  ? 'The item changed or the operation conflicts with its current state. Refresh before continuing.'
+                  : response.status === 422 || response.status === 400
+                    ? 'The server rejected this action. Check the submitted fields, identities and project policies.'
+                    : response.status === 429
+                      ? 'The source control server rate limit was reached. Try again after it resets.'
+                      : 'The source control server could not complete the request.'
+        const failure = new HttpError(
+          response.status >= 500 ? 502 : response.status,
+          `${reason} (HTTP ${response.status})`,
+        )
+        try {
+          await response.body?.cancel()
+        } catch {
+          // Preserve the known rejection even if cancelling an interrupted error body fails.
+          throw failure
+        }
+        throw failure
+      }
       const reader = response.body?.getReader(),
         chunks: Uint8Array[] = []
       let size = 0
@@ -97,28 +126,7 @@ export class ForgeHttp {
         }
       }
       const text = Buffer.concat(chunks).toString('utf8')
-      if (response.status === 401) this.onUnauthorized?.()
-      if (!response.ok) {
-        // Do not echo upstream bodies: they may contain credentials or private response payloads.
-        const reason =
-          response.status === 401
-            ? 'Authentication failed. Update the token on this runtime.'
-            : response.status === 403
-              ? 'This account does not have permission for this operation. Check token scopes and repository access.'
-              : response.status === 404
-                ? 'Repository, item or operation not found. Check the connection, repository name and server version.'
-                : response.status === 409 || response.status === 412
-                  ? 'The item changed or the operation conflicts with its current state. Refresh before continuing.'
-                  : response.status === 422 || response.status === 400
-                    ? 'The server rejected this action. Check the submitted fields, identities and project policies.'
-                    : response.status === 429
-                      ? 'The source control server rate limit was reached. Try again after it resets.'
-                      : 'The source control server could not complete the request.'
-        throw new HttpError(
-          response.status >= 500 ? 502 : response.status,
-          `${reason} (HTTP ${response.status})`,
-        )
-      }
+
       return {
         text,
         status: response.status,

@@ -233,3 +233,32 @@ it.each([
 it('rejects a custom agent removed since the picker opened', () => {
   expect(() => chooseTaskAgent(draft, agents, 'removed')).toThrow('no longer available')
 })
+
+it('custom task permission dimensions survive model/access edits and clear with null', () => {
+  const policyAgent: Agent = {
+    ...custom,
+    permission: 'full-access',
+    approvalPolicy: 'untrusted',
+    sandboxMode: 'workspace-write',
+  }
+  const chosen = chooseTaskAgent(draft, [policyAgent], policyAgent.id)
+  const changed = changeTaskHarness(chosen, [policyAgent], {
+    ...decode(taskHarnessSchema, policyAgent),
+    permission: 'ask',
+    model: 'another-model',
+  })
+  expect(resolveTaskAgent(changed, [policyAgent])).toMatchObject({
+    permission: 'ask',
+    approvalPolicy: 'untrusted',
+    sandboxMode: 'workspace-write',
+  })
+  const cleared = changeTaskHarness(changed, [policyAgent], {
+    ...decode(taskHarnessSchema, policyAgent),
+    approvalPolicy: undefined,
+    sandboxMode: undefined,
+  })
+  expect(cleared.agentOverrides).toMatchObject({ approvalPolicy: null, sandboxMode: null })
+  expect(resolveTaskAgent(cleared, [policyAgent])?.approvalPolicy).toBeUndefined()
+  expect(resolveTaskAgent(cleared, [policyAgent])?.sandboxMode).toBeUndefined()
+  expect(policyAgent.sandboxMode).toBe('workspace-write')
+})

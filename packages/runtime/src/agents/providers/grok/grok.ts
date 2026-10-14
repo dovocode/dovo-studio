@@ -1,3 +1,4 @@
+import { checkedPolicyRun } from '../shared/permission-policy.js'
 import type { AgentDiscovery } from '@dovo/protocol'
 import type { AcpLaunch, AgentAdapter } from '../../execution/types.js'
 import { createAcpAdapter } from '../acp/acp.js'
@@ -32,7 +33,8 @@ export function createGrokAdapter(): AgentAdapter {
         }
       }
     },
-    run: (run) => {
+    run: async (run) => {
+      run = checkedPolicyRun(run, 'grok')
       if (run.tools === 'none' || run.agent.permission === 'read-only')
         return Promise.reject(
           new Error(

@@ -10,6 +10,8 @@ import type { PullRequests } from './pulls.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import {
   errorMessage,
+  HttpError,
+  RuntimeOperationError,
   runtimeOperation,
   runtimeFailure,
   type RuntimeFailure,
@@ -20,6 +22,17 @@ const rowSchema = mutableStruct({
   value: Schema.String,
   updated: Schema.Number.pipe(Schema.check(Schema.isFinite())),
 })
+type PullReader = {
+  list: (
+    cwd: string,
+    state: 'open' | 'closed' | 'all',
+    page: number,
+    background?: boolean,
+  ) => ReturnType<PullRequests['list']>
+  detail: (cwd: string, number: number) => ReturnType<PullRequests['detail']>
+  status?: (cwd: string, number: number, background?: boolean) => ReturnType<PullRequests['detail']>
+  feedback?: (cwd: string, number: number) => ReturnType<PullRequests['detail']>
+}
 export class PullCache {
   private pending = new Map<string, Fiber.Fiber<unknown, RuntimeFailure>>()
   private executor = ManagedRuntime.make(Layer.empty)
@@ -34,8 +47,7 @@ export class PullCache {
   private demanded = new Map<string, number>()
   constructor(
     private db: Database.Database,
-    private pulls: Pick<PullRequests, 'list' | 'detail'> &
-      Partial<Pick<PullRequests, 'status' | 'feedback'>>,
+    private pulls: PullReader & { forDestination?: (destination: string) => PullReader },
     private store: WorkspaceStore,
     private identity?: (cwd: string, refresh: boolean) => Promise<string>,
     private onDetail?: (detail: PullDetail) => void,
@@ -43,6 +55,18 @@ export class PullCache {
     db.exec(
       'CREATE TABLE IF NOT EXISTS pull_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS pull_cache_scopes (cwd TEXT PRIMARY KEY, scope TEXT NOT NULL)',
     )
+  }
+  private rejectCachedFallback(error: unknown): boolean {
+    if (error instanceof RuntimeOperationError) return this.rejectCachedFallback(error.cause)
+    const parsed = decodeResult(mutableStruct({ status: Schema.Number }), error)
+    return parsed.success && [401, 403, 409].includes(parsed.data.status)
+  }
+  private validateDestination(result: { destination?: string }, scope: string) {
+    if (result.destination !== undefined && result.destination !== scope)
+      throw new HttpError(
+        409,
+        'This integration destination changed during the read. Refresh before continuing.',
+      )
   }
   private rememberScope(cwd: string, scope: string) {
     if (this.scopes.get(cwd) === scope) return
@@ -153,7 +177,7 @@ export class PullCache {
         )
       return yield* refresh.pipe(
         Effect.catch((error) =>
-          cached && row
+          cached && row && !this.rejectCachedFallback(error)
             ? Effect.succeed({
                 ...cached,
                 cachedAt: new Date(row.updated).toISOString(),
@@ -171,15 +195,30 @@ export class PullCache {
     page: number,
     force = false,
     background = false,
+    expectedScope?: string,
   ) {
     return Effect.gen({ self: this }, function* () {
       const identify = this.identity
       const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+      if (expectedScope !== undefined && scope !== expectedScope)
+        throw new HttpError(
+          409,
+          'This integration reader account or destination changed. Refresh before continuing.',
+        )
       this.rememberScope(cwd, scope)
       return yield* this.readEffect(
         JSON.stringify(['list', scope, state, page]),
         pullPageSchema,
-        () => this.pulls.list(cwd, state, page, background),
+        async () => {
+          const result = await (this.pulls.forDestination?.(scope) ?? this.pulls).list(
+            cwd,
+            state,
+            page,
+            background,
+          )
+          this.validateDestination(result, scope)
+          return result
+        },
         force,
       )
     })
@@ -191,7 +230,12 @@ export class PullCache {
         if (Date.now() - at >= DEMAND_WINDOW) this.demanded.delete(key)
   }
   /** Reuse bounded, credential-scoped list caches instead of loading every PR detail. */
-  stackCatalogEffect(cwd: string, force = false, seed?: typeof pullPageSchema.Type) {
+  stackCatalogEffect(
+    cwd: string,
+    force = false,
+    seed?: typeof pullPageSchema.Type,
+    expectedScope?: string,
+  ) {
     return Effect.gen({ self: this }, function* () {
       const pulls: PullSummary[] = []
       let complete = false
@@ -200,7 +244,7 @@ export class PullCache {
         const result = yield* Effect.result(
           page === 1 && seed?.page === 1
             ? Effect.succeed(seed)
-            : this.listEffect(cwd, 'open', page, force),
+            : this.listEffect(cwd, 'open', page, force, false, expectedScope ?? seed?.destination),
         )
         if (result._tag === 'Failure') {
           warning = errorMessage(result.failure)
@@ -221,15 +265,22 @@ export class PullCache {
       return { pulls, complete, warning }
     })
   }
-  overviewEffect(cwd: string, state: 'open' | 'closed' | 'all', page: number, force = false) {
+  overviewEffect(
+    cwd: string,
+    state: 'open' | 'closed' | 'all',
+    page: number,
+    force = false,
+    expectedScope?: string,
+  ) {
     return Effect.gen({ self: this }, function* () {
       this.noteDemand(cwd)
-      const result = yield* this.listEffect(cwd, state, page, force)
+      const result = yield* this.listEffect(cwd, state, page, force, false, expectedScope)
       if (state === 'closed') return result
       const catalog = yield* this.stackCatalogEffect(
         cwd,
         force,
         state === 'open' && page === 1 ? result : undefined,
+        expectedScope ?? result.destination,
       )
       const stacks = pullStacks(catalog.pulls, catalog.complete)
       return {
@@ -241,9 +292,9 @@ export class PullCache {
       }
     })
   }
-  stackEffect(cwd: string, number: number, force = false) {
+  stackEffect(cwd: string, number: number, force = false, expectedScope?: string) {
     return Effect.gen({ self: this }, function* () {
-      const catalog = yield* this.stackCatalogEffect(cwd, force)
+      const catalog = yield* this.stackCatalogEffect(cwd, force, undefined, expectedScope)
       return {
         stack: pullStacks(catalog.pulls, catalog.complete).get(number),
         warning: catalog.warning,
@@ -253,13 +304,18 @@ export class PullCache {
   stack(cwd: string, number: number, force = false) {
     return runClientEffect(this.stackEffect(cwd, number, force))
   }
-  detailWithStackEffect(cwd: string, number: number, force = false) {
+  detailWithStackEffect(cwd: string, number: number, force = false, expectedScope?: string) {
     return Effect.gen({ self: this }, function* () {
       this.noteDemand(cwd)
-      const detail = yield* this.detailEffect(cwd, number, force)
+      const detail = yield* this.detailEffect(cwd, number, force, expectedScope)
       if (detail.pull.state !== 'open')
         return { ...detail, stack: undefined, pull: { ...detail.pull, stack: undefined } }
-      const { stack, warning } = yield* this.stackEffect(cwd, number, force)
+      const { stack, warning } = yield* this.stackEffect(
+        cwd,
+        number,
+        force,
+        expectedScope ?? detail.destination,
+      )
       return {
         ...detail,
         stack,
@@ -277,15 +333,27 @@ export class PullCache {
   ) {
     return runClientEffect(this.listEffect(cwd, state, page, force, background))
   }
-  detailEffect(cwd: string, number: number, force = false) {
+  detailEffect(cwd: string, number: number, force = false, expectedScope?: string) {
     return Effect.gen({ self: this }, function* () {
       const identify = this.identity
       const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+      if (expectedScope !== undefined && scope !== expectedScope)
+        throw new HttpError(
+          409,
+          'This integration reader account or destination changed. Refresh before continuing.',
+        )
       this.rememberScope(cwd, scope)
       return yield* this.readEffect(
         JSON.stringify(['detail', scope, number]),
         pullDetailSchema,
-        () => this.pulls.detail(cwd, number),
+        async () => {
+          const result = await (this.pulls.forDestination?.(scope) ?? this.pulls).detail(
+            cwd,
+            number,
+          )
+          this.validateDestination(result, scope)
+          return result
+        },
         force,
         (fresh, cached) => {
           const detail = retainUnavailableSections(fresh, cached)
@@ -309,8 +377,14 @@ export class PullCache {
         return yield* this.readEffect(
           JSON.stringify(['feedback', scope, number]),
           pullDetailSchema,
-          () =>
-            this.pulls.feedback ? this.pulls.feedback(cwd, number) : this.pulls.detail(cwd, number),
+          async () => {
+            const reader = this.pulls.forDestination?.(scope) ?? this.pulls
+            const result = await (reader.feedback
+              ? reader.feedback(cwd, number)
+              : reader.detail(cwd, number))
+            this.validateDestination(result, scope)
+            return result
+          },
           force,
           retainUnavailableSections,
         )
@@ -326,10 +400,14 @@ export class PullCache {
         return yield* this.readEffect(
           JSON.stringify(['status', scope, number]),
           pullDetailSchema,
-          () =>
-            this.pulls.status
-              ? this.pulls.status(cwd, number, background)
-              : this.pulls.detail(cwd, number),
+          async () => {
+            const reader = this.pulls.forDestination?.(scope) ?? this.pulls
+            const result = await (reader.status
+              ? reader.status(cwd, number, background)
+              : reader.detail(cwd, number))
+            this.validateDestination(result, scope)
+            return result
+          },
           force,
         )
       }),

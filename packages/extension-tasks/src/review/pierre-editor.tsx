@@ -1,8 +1,7 @@
-import { useDiffOptions } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
 import { parseDiffFromFile, getFiletypeFromFileName } from '@pierre/diffs'
-import { preloadStudioHighlighter } from '@dovo/studio-ui/code-themes'
+import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { Editor } from '@pierre/diffs/edit'
 import {
   EditProvider,

@@ -78,14 +78,21 @@ export default function PullsScreen() {
     }),
   )
   const { repositoryId, state, search, draft, attention, sort } = preferences
-  const setRepository = (value: string) => setField('repositoryId', value)
+  const setRepository = (value: string) => {
+    void chooseSource(value)
+      .then(() => setField('repositoryId', value))
+      .catch((error: unknown) => Alert.alert('Could not choose source', String(error)))
+  }
   const setState = (value: string) => setField('state', value)
   const setSearch = (value: string) => setField('search', value)
   const setDraft = (value: string) => setField('draft', value)
   const setAttention = (value: boolean) => setField('attention', value)
   const setSort = (value: string) => setField('sort', value)
   const [filters, setFilters] = useApplicationState(false)
-  const { pages, sources, busy, connected, more, refresh } = usePulls(repositoryId, state)
+  const { pages, sources, busy, connected, more, refresh, chooseSource } = usePulls(
+    repositoryId,
+    state,
+  )
   const openPull = (runtimeId: string, repositoryId: string, number: number) => {
     retainPosition()
     Keyboard.dismiss()

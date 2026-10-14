@@ -1,3 +1,4 @@
+import * as jiraContext from './jira-context.js'
 import { decode } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
@@ -62,7 +63,13 @@ async function setup() {
     self: `${source.site}/rest/api/3/project/TEAM`,
     issueTypes: [],
   })
+  vi.spyOn(jiraContext, 'captureJiraContext').mockResolvedValue({
+    env: { ACLI_CONFIG_DIR: '/fixture/pinned-jira' },
+    accountId: (_site, email) => email,
+    close: async () => {},
+  })
   const identity = vi.spyOn(JiraWork.prototype, 'identity').mockResolvedValue('jira-account')
+  vi.spyOn(JiraWork.prototype, 'assertAccount').mockResolvedValue()
   // Jira pages are slices of one cached prefix read.
   const list = vi.spyOn(JiraWork.prototype, 'issueRows').mockResolvedValue([issue.issue])
   const detail = vi.spyOn(JiraWork.prototype, 'issue').mockResolvedValue(issue)
@@ -450,6 +457,14 @@ it('restores repository native issues when legacy Jira bindings migrate', async 
       url: 'https://github.com/me/app',
     }),
   )
+  vi.spyOn(s.git, 'githubCredential').mockResolvedValue({
+    host: 'github.com',
+    token: 'fixture-only-token',
+    onUnauthorized: () => {},
+  })
+  vi.spyOn(s.git, 'githubAccount').mockResolvedValue(
+    JSON.stringify({ id: 1, login: 'fixture-account' }),
+  )
   vi.spyOn(GitForgeWork.prototype, 'options').mockResolvedValue(
     decode(forgeWorkOptionsSchema, {
       provider: 'github',
@@ -520,7 +535,7 @@ it('discovers Jira namespaces in runtime home without requiring a code checkout'
   const { post } = await setup()
   const cli = vi.spyOn(forgeCli, 'runForgeCli').mockImplementation(async (_executable, args) => {
     if (args.join(' ') === 'jira auth status')
-      return 'Site: team.atlassian.net\nAccount: user@example.com'
+      return 'Site: team.atlassian.net\nEmail: user@example.com'
     if (args.includes('list'))
       return JSON.stringify([
         {

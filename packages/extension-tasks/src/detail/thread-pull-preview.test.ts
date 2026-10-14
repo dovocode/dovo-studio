@@ -61,3 +61,39 @@ it('does not assume linked PRs belong to a legacy project with no remote identit
   }
   expect(threadPullPreview(url, linkedTask, [{ ...project, gitIdentity: undefined }])).toBeNull()
 })
+
+it('uses an explicit upstream binding rather than the checkout fork', () => {
+  const bound = {
+    ...project,
+    forge: { connectionId: 'work', repository: 'upstream/project' },
+    pullIdentity: 'github.com/upstream/project',
+  }
+  expect(threadPullPreview('https://github.com/team/project/pull/42', task, [bound])).toBeNull()
+  expect(threadPullPreview('https://github.com/upstream/project/pull/42', task, [bound])).toEqual({
+    repositoryId: 'repo',
+    number: 42,
+  })
+  expect(
+    threadPullPreview('https://github.com/team/project/pull/42', task, [
+      { ...bound, pullIdentity: undefined },
+    ]),
+  ).toBeNull()
+})
+
+it('matches configured forge detail tabs without losing the owning project', () => {
+  const repo = {
+    ...project,
+    forge: { connectionId: 'lab', repository: 'team/sub/project' },
+    pullIdentity: 'gitlab.example/team/sub/project',
+  }
+  expect(
+    threadPullPreview(
+      'https://gitlab.example/team/sub/project/-/merge_requests/9/diffs#note_5',
+      task,
+      [repo],
+    ),
+  ).toEqual({ repositoryId: 'repo', number: 9 })
+  expect(
+    threadPullPreview('https://gitlab.example/other/project/-/merge_requests/9', task, [repo]),
+  ).toBeNull()
+})

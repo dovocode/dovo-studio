@@ -1,13 +1,12 @@
 import { mutableStruct } from '@dovo/protocol'
-import { decodeResult, urlSchema, decode, maxValue, minValue } from '@dovo/protocol'
+import { decodeResult, decode, maxValue, minValue } from '@dovo/protocol'
 import { homedir } from 'node:os'
-import { isDeepStrictEqual } from 'node:util'
 import {
-  JiraWork,
-  jiraIssuePage,
-  jiraOffset,
-  type JiraVerification,
-} from '../forges/providers/jira.js'
+  guardSource,
+  opaqueIdentity,
+  type SourceContext,
+} from '../forges/integration/source-context.js'
+import { JiraWork, jiraIssuePage, jiraOffset } from '../forges/providers/jira.js'
 import { Schema } from 'effect'
 import type Database from 'better-sqlite3'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -29,10 +28,10 @@ import {
   mutableArray,
   type CommandSettings,
 } from '@dovo/protocol'
-import { connectionHttp } from '../forges/integration/forge-connections.js'
 import { GitForgeWork } from './forge-work-git.js'
 import { AzureForgeWork } from './forge-work-azure.js'
 import { BitbucketForgeWork } from './forge-work-bitbucket.js'
+import { GitLabForgeWork } from './forge-work-gitlab.js'
 import type { ForgeWorkProvider } from './forge-work-types.js'
 import type { ForgeConnections } from '../forges/integration/forge-connections.js'
 import type { ForgePullRequests } from '../forges/integration/forge-pulls.js'
@@ -41,8 +40,6 @@ import type { WorkspaceStore } from '../../storage/workspace.js'
 import { HttpError, errorMessage } from '../../errors.js'
 import type { runForgeCli } from '../forges/integration/forge-cli.js'
 import { ForgeWorkCache } from './cache.js'
-/** A verified Jira account and project serve requests for this long; refresh rechecks. */
-const JIRA_VERIFICATION_TTL = 600_000
 /** Jira pages are slices of one prefix read; keep at least two pages per read. */
 const JIRA_PREFIX_MINIMUM = 61
 const jiraPrefixSchema = mutableStruct({
@@ -54,96 +51,64 @@ const jiraPrefixSchema = mutableStruct({
 })
 export class ForgeWork {
   private cache: ForgeWorkCache
-  private jira = new Map<string, { expires: number; state: JiraVerification }>()
   constructor(
     db: Database.Database,
     private store: WorkspaceStore,
     private git: GitService,
-    private forges: ForgeConnections,
+    _forges: ForgeConnections,
     private pulls: ForgePullRequests,
     private commands: () => CommandSettings,
     private jiraRun?: typeof runForgeCli,
   ) {
     this.cache = new ForgeWorkCache(db)
   }
-  private async target(repositoryId: string): Promise<{
-    cwd: string
-    provider?: ForgeWorkProvider
-  }> {
+  private async target(
+    repositoryId: string,
+  ): Promise<{ cwd: string; provider?: ForgeWorkProvider; scope?: SourceContext }> {
     const repo = this.store.get().repositories.find((v) => v.id === repositoryId)
     if (!repo) throw new HttpError(404, 'Project not found')
     if (repo.kind) throw new HttpError(400, 'This project does not use Git')
-    const connection = repo.forge ? this.forges.get(repo.forge.connectionId) : undefined
-    if (connection && connection.provider !== 'github') {
-      const http = connectionHttp(this.forges, connection, repo.path)
-      const repository = repo.forge!.repository
+    let scope: SourceContext
+    try {
+      scope = await this.pulls.sourceContext(repo.path)
+    } catch (error) {
+      const stderr = decodeResult(mutableStruct({ stderr: Schema.String }), error)
+      const diagnostic = stderr.success ? stderr.data.stderr : errorMessage(error)
+      if (
+        !repo.forge &&
+        /^(?:Command failed: [^\r\n]+\r?\n)?no git remotes found\s*$/i.test(diagnostic.trim())
+      )
+        return { cwd: repo.path }
+      throw error
+    }
+    if (scope.provider !== 'github') {
+      if (!scope.http)
+        throw new HttpError(409, 'Provider credentials unavailable. Refresh before continuing.')
       return {
         cwd: repo.path,
+        scope,
         provider:
-          connection.provider === 'azure-devops'
-            ? new AzureForgeWork(http, repository)
-            : connection.provider === 'bitbucket'
-              ? new BitbucketForgeWork(http, repository)
-              : new GitForgeWork(http, connection.provider, repository),
+          scope.provider === 'azure-devops'
+            ? new AzureForgeWork(scope.http, scope.repository)
+            : scope.provider === 'gitlab'
+              ? new GitLabForgeWork(scope.http, scope.repository)
+              : scope.provider === 'bitbucket'
+                ? new BitbucketForgeWork(scope.http, scope.repository)
+                : new GitForgeWork(scope.http, scope.provider, scope.repository),
       }
     }
-    let remote: {
-      nameWithOwner: string
-      url: string
-    }
-    if (repo.forge)
-      remote = {
-        nameWithOwner: repo.forge.repository,
-        url: connection!.baseUrl,
-      }
-    else {
-      let result: string
-      try {
-        result = await this.git.github(repo.path, ['repo', 'view', '--json', 'nameWithOwner,url'])
-      } catch (error) {
-        const stderr = decodeResult(
-          mutableStruct({
-            stderr: Schema.String,
-          }),
-          error,
-        )
-        const diagnostic = stderr.success ? stderr.data.stderr : errorMessage(error)
-        // gh has no source to inspect for a local-only repository. Auth, network,
-        // missing-directory and other Git failures must continue to surface.
-        if (/^(?:Command failed: [^\r\n]+\r?\n)?no git remotes found\s*$/i.test(diagnostic.trim()))
-          return {
-            cwd: repo.path,
-          }
-        throw error
-      }
-      remote = decode(
-        mutableStruct({
-          nameWithOwner: Schema.String,
-          url: urlSchema(),
-        }),
-        JSON.parse(result),
-      )
-    }
-    const host = new URL(remote.url).hostname
     return {
       cwd: repo.path,
+      scope,
       provider: new GitForgeWork(
         {
           json: async (path, options) => {
-            if (connection && this.forges.get(connection.id).revision !== connection.revision)
-              throw new HttpError(
-                409,
-                'This source control account changed. Refresh before continuing.',
-              )
-            const token = connection
-              ? await this.forges.githubToken(connection.id, repo.path)
-              : undefined
-            // Shares the account budget and token cache with pull request reads.
+            scope.validate()
             const result = await this.git.githubAccount(
               [
                 'api',
                 '--hostname',
-                host,
+                scope.host,
                 path,
                 '--method',
                 options?.method ?? 'GET',
@@ -151,9 +116,7 @@ export class ForgeWork {
               ],
               { timeout: 60000, maxBuffer: 32 * 1024 * 1024 },
               repo.path,
-              token
-                ? { host, token, ...(connection?.cliEnv ? { env: connection.cliEnv } : {}) }
-                : undefined,
+              scope.github,
               false,
               options?.body === undefined ? undefined : JSON.stringify(options.body),
             )
@@ -161,18 +124,15 @@ export class ForgeWork {
           },
         },
         'github',
-        remote.nameWithOwner,
+        scope.repository,
       ),
     }
   }
   async request(repositoryId: string, operation: string, input: unknown) {
     if (decode(forgeWorkQuerySchema, input).jiraFilters !== undefined)
       throw new HttpError(400, 'Jira filters require a Jira issue source')
-    const selected = this.store.get().repositories.find((repo) => repo.id === repositoryId)
-    if (!selected) throw new HttpError(404, 'Project not found')
-    if (selected.forge) await this.forges.reconcileCli(selected.forge.connectionId, selected.path)
-    const { cwd, provider } = await this.target(repositoryId)
-    if (!provider) {
+    const { cwd, provider, scope } = await this.target(repositoryId)
+    if (!provider || !scope) {
       if (operation === 'options')
         return decode(forgeWorkOptionsSchema, {
           provider: 'github',
@@ -180,25 +140,20 @@ export class ForgeWork {
           pipelines: false,
           pipelineActions: [],
         })
-      if (operation === 'issues/list')
-        return decode(forgeIssuePageSchema, {
-          items: [],
-        })
-      if (operation === 'pipelines/list')
-        return decode(forgePipelinePageSchema, {
-          items: [],
-        })
+      if (operation === 'issues/list') return decode(forgeIssuePageSchema, { items: [] })
+      if (operation === 'pipelines/list') return decode(forgePipelinePageSchema, { items: [] })
       throw new HttpError(404, 'This project has no remote source.')
     }
-    return this.execute(provider, cwd, ['repository', repositoryId], operation, input, () => {
-      const current = this.store.get().repositories.find((repo) => repo.id === repositoryId)
-      if (
-        !current ||
-        current.path !== selected.path ||
-        !isDeepStrictEqual(current.forge, selected.forge)
-      )
-        throw new HttpError(409, 'This project source changed. Refresh before continuing.')
-    })
+    guardSource(scope, decode(forgeWorkQuerySchema, input))
+    return this.execute(
+      provider,
+      cwd,
+      ['repository', repositoryId],
+      operation,
+      input,
+      scope.validate,
+      scope,
+    )
   }
   async requestJira(sourceId: string, operation: string, input: unknown) {
     const selected = this.store.get().jiraSources?.find((source) => source.id === sourceId)
@@ -211,21 +166,67 @@ export class ForgeWork {
     }
     const executable = this.commands().acli
     const provider = new JiraWork(executable, selected, this.jiraRun, cwd, validateSource)
-    // The CLI has one active account; one verification serves every request for a site and
-    // project until it expires, an explicit refresh asks again, or the check fails.
-    const key = JSON.stringify([executable, new URL(selected.site).origin, selected.project])
-    const verified = this.jira.get(key)
-    if (verified && verified.expires > Date.now() && !decode(forgeWorkQuerySchema, input).refresh)
-      provider.adopt(verified.state)
-    else {
-      const state = provider.verification()
-      const entry = { expires: Date.now() + JIRA_VERIFICATION_TTL, state }
-      this.jira.set(key, entry)
-      void state.verified.catch(() => {
-        if (this.jira.get(key) === entry) this.jira.delete(key)
-      })
+    try {
+      const readerIdentity = opaqueIdentity([
+        'jira',
+        new URL(selected.site).origin,
+        await provider.identity(),
+      ])
+      const identity = {
+        readerIdentity,
+        destination: opaqueIdentity([
+          'jira',
+          sourceId,
+          new URL(selected.site).origin,
+          selected.project,
+          readerIdentity,
+          executable,
+          await provider.revision(),
+        ]),
+      }
+      guardSource(identity, decode(forgeWorkQuerySchema, input))
+      const result = await this.execute(
+        provider,
+        cwd,
+        ['jira', sourceId],
+        operation,
+        input,
+        validateSource,
+        identity,
+      )
+      await provider.assertAccount()
+      return result
+    } finally {
+      await provider.close()
     }
-    return this.execute(provider, cwd, ['jira', sourceId], operation, input, validateSource)
+  }
+  async sourceIdentityJira(sourceId: string) {
+    const selected = this.store.get().jiraSources?.find((source) => source.id === sourceId)
+    if (!selected) throw new HttpError(404, 'Jira source not found')
+    const executable = this.commands().acli
+    const provider = new JiraWork(executable, selected, this.jiraRun, homedir())
+    try {
+      const readerIdentity = opaqueIdentity([
+        'jira',
+        new URL(selected.site).origin,
+        await provider.identity(),
+      ])
+      await provider.assertAccount()
+      return {
+        readerIdentity,
+        destination: opaqueIdentity([
+          'jira',
+          sourceId,
+          new URL(selected.site).origin,
+          selected.project,
+          readerIdentity,
+          executable,
+          await provider.revision(),
+        ]),
+      }
+    } finally {
+      await provider.close()
+    }
   }
   private async execute(
     provider: ForgeWorkProvider,
@@ -234,6 +235,7 @@ export class ForgeWork {
     operation: string,
     input: unknown,
     validateSource: () => void,
+    identity: { readerIdentity: string; destination: string },
   ) {
     const data = decode(
       Schema.StructWithRest(
@@ -262,14 +264,9 @@ export class ForgeWork {
     if (operation === 'options') {
       const result = decode(forgeWorkOptionsSchema, await provider.options(data.type, area))
       validateSource()
-      return result
+      return { ...result, destination: identity.destination }
     }
-    const source = JSON.stringify([
-      sourceId,
-      provider instanceof JiraWork
-        ? [provider.binding, await provider.identity()]
-        : await this.pulls.identity(cwd, query.refresh),
-    ])
+    const source = JSON.stringify([sourceId, identity.destination])
     validateSource()
     const id = () => decode(maxValue(minValue(Schema.String, 1), 300), data.id)
     if (
@@ -306,9 +303,12 @@ export class ForgeWork {
           key: prefixKey,
           source,
           schema: jiraPrefixSchema,
+          retainLoad: () => provider.retain(),
           refresh: query.refresh || (known?.value.limit ?? 0) < required,
           load: async (): Promise<typeof jiraPrefixSchema.Type> => ({
-            items: await provider.issueRows(query.state, query.query, limit, query.jiraFilters),
+            items: (
+              await provider.issueRows(query.state, query.query, limit, query.jiraFilters)
+            ).map((item) => ({ ...item, destination: identity.destination })),
             limit,
           }),
           validateSource,
@@ -316,6 +316,7 @@ export class ForgeWork {
       )
       return decode(forgeIssuePageSchema, {
         ...jiraIssuePage(prefix.items, offset),
+        destination: identity.destination,
         cachedAt: prefix.cachedAt,
         stale: prefix.stale,
         refreshError: prefix.refreshError,
@@ -328,7 +329,14 @@ export class ForgeWork {
           source,
           schema: forgeIssuePageSchema,
           refresh: query.refresh,
-          load: () => provider.issues(query.state, query.cursor, query.query),
+          load: async () => {
+            const result = await provider.issues(query.state, query.cursor, query.query)
+            return {
+              ...result,
+              destination: identity.destination,
+              items: result.items.map((item) => ({ ...item, destination: identity.destination })),
+            }
+          },
           validateSource,
         }),
       )
@@ -338,8 +346,16 @@ export class ForgeWork {
           key,
           source,
           schema: forgeIssueDetailSchema,
+          retainLoad: provider instanceof JiraWork ? () => provider.retain() : undefined,
           refresh: query.refresh,
-          load: () => provider.issue(id(), query.cursor),
+          load: async () => {
+            const result = await provider.issue(id(), query.cursor)
+            return {
+              ...result,
+              destination: identity.destination,
+              issue: { ...result.issue, destination: identity.destination },
+            }
+          },
           validateSource,
         }),
       )
@@ -350,7 +366,14 @@ export class ForgeWork {
           source,
           schema: forgePipelinePageSchema,
           refresh: query.refresh,
-          load: () => provider.pipelines(query.cursor),
+          load: async () => {
+            const result = await provider.pipelines(query.cursor)
+            return {
+              ...result,
+              destination: identity.destination,
+              items: result.items.map((item) => ({ ...item, destination: identity.destination })),
+            }
+          },
           validateSource,
         }),
       )
@@ -361,12 +384,22 @@ export class ForgeWork {
           source,
           schema: forgePipelineDetailSchema,
           refresh: query.refresh,
-          load: () => provider.pipeline(id(), query.cursor),
+          load: async () => {
+            const result = await provider.pipeline(id(), query.cursor)
+            return {
+              ...result,
+              destination: identity.destination,
+              run: { ...result.run, destination: identity.destination },
+            }
+          },
           validateSource,
         }),
       )
     if (operation === 'pipelines/definitions')
-      return decode(forgeDefinitionsSchema, await provider.definitions(query.cursor))
+      return {
+        ...decode(forgeDefinitionsSchema, await provider.definitions(query.cursor)),
+        destination: identity.destination,
+      }
     throw new HttpError(404, 'Source control operation not found')
   }
 }

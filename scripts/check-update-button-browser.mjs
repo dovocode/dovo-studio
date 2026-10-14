@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -12,7 +13,7 @@ const built = await bundleBrowser(
     import {useState} from 'react';
     import {ActivityBar} from './packages/studio-shell/src/activity-bar';
     window.checks=0;window.downloads=0;
-    function App(){const[state,setState]=useState({status:'idle'});window.update=setState;return <ActivityBar views={[]} activeId="" onSelect={()=>{}} update={state} onCheckUpdates={()=>window.checks++} onUpdate={()=>window.downloads++}/>}
+    function App(){const[state,setState]=useState({status:'idle'});window.update=setState;return <ActivityBar views={[{id:'settings',title:'Settings',icon:'runtime',navigationGroup:'settings'}]} activeId="" onSelect={()=>{}} update={state} onCheckUpdates={()=>window.checks++} onUpdate={()=>window.downloads++}/>}
     createRoot(document.getElementById('app')).render(<App/>);
   `,
     },
@@ -39,17 +40,34 @@ const built = await bundleBrowser(
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
-  await page.setContent('<div id="app"></div>')
+  const assets = root + 'apps/web/dist/client/assets/'
+  const cssFile = (await readdir(assets)).find((name) => name.endsWith('.css'))
+  const css = await readFile(assets + cssFile, 'utf8')
+  await page.setContent('<style>' + css + '</style><div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const rail = page.getByRole('navigation', { name: 'Main navigation' })
-  assert.equal(await rail.getByRole('button').count(), 1)
-  await rail.getByRole('button').click()
+  assert.equal(await rail.getByRole('button').count(), 2)
+  const update = rail.locator('.studio-update-item')
+  const settings = rail.getByRole('button', { name: 'Settings', exact: true })
+  const buttonColor = (button) => button.evaluate((element) => getComputedStyle(element).color)
+  assert.equal(await buttonColor(update), await buttonColor(settings))
+  await page.evaluate(() => window.update({ status: 'error', error: 'Network unavailable' }))
+  await page.waitForFunction(
+    () => document.querySelector('.studio-update-item')?.dataset.updateAvailable === undefined,
+  )
+  assert.equal(await buttonColor(update), await buttonColor(settings))
+  await page.evaluate(() => window.update({ status: 'idle' }))
+  await update.click()
   await page.getByRole('button', { name: 'Check updates', exact: true }).click()
   assert.equal(await page.evaluate(() => window.checks), 1)
   await page.evaluate(() =>
     window.update({ status: 'available', version: '0.0.9', notes: 'New release' }),
   )
-  assert.equal(await rail.getByRole('button').count(), 1)
+  assert.equal(await rail.getByRole('button').count(), 2)
+  await page.waitForFunction(
+    () => document.querySelector('.studio-update-item')?.dataset.updateAvailable === 'true',
+  )
+  assert.notEqual(await buttonColor(update), await buttonColor(settings))
   await page.getByRole('button', { name: 'Download update', exact: true }).click()
   assert.equal(await page.evaluate(() => window.downloads), 1)
   await page.evaluate(() =>
@@ -60,7 +78,7 @@ try {
   await page.evaluate(() => window.update({ status: 'downloaded', version: '0.0.9' }))
   await page.getByRole('button', { name: 'Restart and install', exact: true }).click()
   assert.equal(await page.evaluate(() => window.downloads), 2)
-  assert.equal(await rail.getByRole('button').count(), 1)
+  assert.equal(await rail.getByRole('button').count(), 2)
   console.log('One update button handles checking, downloading, progress and restarting.')
 } finally {
   await browser.close()

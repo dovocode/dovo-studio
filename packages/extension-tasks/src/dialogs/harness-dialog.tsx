@@ -1,3 +1,4 @@
+import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode, resolveScopedAgents } from '@dovo/protocol'
 import { useCallback } from 'react'
@@ -25,6 +26,8 @@ import {
   ModelSettings,
   FormField,
   ChoicePicker,
+  PermissionPolicyFields,
+  permissionPolicyUIIssue,
 } from '@dovo/studio-ui'
 import { HarnessFields } from '../harness-fields'
 import { changeTaskHarness } from '../chat/composer/task-harness-selection'
@@ -49,7 +52,13 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
     [request],
   )
   const save = async () => {
-    if (busy || !connected || task.status === 'running') return
+    if (
+      busy ||
+      !connected ||
+      task.status === 'running' ||
+      permissionPolicyUIIssue(value, snapshot?.permissionPolicySupported === true)
+    )
+      return
     setBusy(true)
     setError('')
     try {
@@ -103,17 +112,24 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
                 loadModels={loadModels}
                 onChange={(next) => setValue(decode(taskHarnessSchema, next))}
               />
-              <FormField label="Access">
+              <FormField label="Access mode">
                 <ChoicePicker
                   aria-label="Harness access"
-                  value={value.permission}
+                  value={permissionPolicyLabel(value) === 'Custom' ? 'custom' : value.permission}
                   onValueChange={(permission) =>
-                    setValue({
-                      ...value,
-                      permission: decode(taskHarnessSchema.fields.permission, permission),
-                    })
+                    setValue(
+                      selectPermissionPreset(
+                        value,
+                        decode(taskHarnessSchema.fields.permission, permission),
+                      ),
+                    )
                   }
                 >
+                  {permissionPolicyLabel(value) === 'Custom' && (
+                    <option value="custom" disabled>
+                      Custom
+                    </option>
+                  )}
                   {selectableAccessModes(value.permission).map((mode) => (
                     <option
                       key={mode.id}
@@ -125,6 +141,12 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
                   ))}
                 </ChoicePicker>
               </FormField>
+              <PermissionPolicyFields
+                value={value}
+                supported={snapshot?.permissionPolicySupported === true}
+                disabled={!connected || busy || task.status === 'running'}
+                onChange={(policy) => setValue({ ...value, ...policy })}
+              />
             </>
           ) : (
             <HarnessFields
@@ -136,6 +158,7 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
           )}
           <Button
             disabled={
+              !!permissionPolicyUIIssue(value, snapshot?.permissionPolicySupported === true) ||
               !supportsAccess(value.provider, value.permission) ||
               (!!providerLock && value.provider !== providerLock) ||
               (installationLock !== undefined &&

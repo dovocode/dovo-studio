@@ -18,7 +18,23 @@ export function createPullTaskEffect(
       const input = decode(pullTaskInputSchema, value)
       if (input.agentId && !s.store.get().agents.some((a) => a.id === input.agentId))
         throw new HttpError(400, 'Choose an existing agent')
-      const detail = yield* runtimeOperation(() => s.pulls.detail(cwd, input.number))
+      const scope =
+        input.expectedDestination !== undefined
+          ? yield* runtimeOperation(() => s.pulls.guard(cwd, input))
+          : undefined
+      const detail = yield* runtimeOperation(() =>
+        input.expectedDestination !== undefined
+          ? s.pulls.detail(cwd, input.number, input.expectedDestination)
+          : s.pulls.detail(cwd, input.number),
+      )
+      if (
+        input.expectedDestination !== undefined &&
+        input.expectedDestination !== detail.destination
+      )
+        throw new HttpError(
+          409,
+          'This integration destination or account changed. Refresh before creating a task.',
+        )
       const pull = detail.pull
       if (pull.headSha !== input.headSha)
         throw new HttpError(409, 'This PR changed. Refresh its details before creating a task.')
@@ -85,6 +101,7 @@ export function createPullTaskEffect(
         files: [],
         example: false,
       }
+      scope?.validate()
       s.store.update((workspace) => ({
         ...workspace,
         tasks: [...workspace.tasks, task],

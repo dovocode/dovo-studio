@@ -1,3 +1,4 @@
+import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { opencodeNative } from './opencode-native.js'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
@@ -86,6 +87,7 @@ const remoteAdapter: AgentAdapter = {
     }
   },
   async run(run) {
+    run = checkedPolicyRun(run, 'opencode')
     run.signal.throwIfAborted()
     if (await isOpencodeV2(run.agent.endpoint, run.agent.env)) return opencodeV2Adapter.run(run)
     const lease = client(run.agent.endpoint, run.cwd, run.agent.env, true)
@@ -144,7 +146,7 @@ const remoteAdapter: AgentAdapter = {
           action:
             run.tools === 'none'
               ? 'deny'
-              : run.agent.permission === 'full-access'
+              : toolPolicyDisposition(run, 'other') === 'allow'
                 ? 'allow'
                 : run.agent.permission === 'read-only'
                   ? 'deny'
@@ -158,7 +160,11 @@ const remoteAdapter: AgentAdapter = {
             pattern: '*',
             action: 'allow',
           })
-      if (run.tools !== 'none' && run.agent.permission === 'workspace-write')
+      if (
+        run.tools !== 'none' &&
+        !run.agent.approvalPolicy &&
+        run.agent.permission === 'workspace-write'
+      )
         permission.push({
           permission: 'edit',
           pattern: '*',
@@ -185,7 +191,7 @@ const remoteAdapter: AgentAdapter = {
           action:
             run.agent.permission === 'read-only'
               ? 'deny'
-              : run.agent.permission === 'full-access'
+              : toolPolicyDisposition(run, 'other') === 'allow'
                 ? 'allow'
                 : 'ask',
         })
@@ -357,21 +363,23 @@ const remoteAdapter: AgentAdapter = {
             (event.properties.sessionID === sessionID || native.owns(event.properties.sessionID))
           ) {
             const allow =
+              run.tools !== 'none' &&
               run.agent.permission !== 'read-only' &&
-              (await untilAborted(
-                !prompting && event.properties.sessionID === sessionID
-                  ? Promise.resolve(false)
-                  : run
-                      .approve(
-                        event.properties.permission,
-                        event.properties.patterns.join('\n'),
-                        ['webfetch', 'websearch'].includes(event.properties.permission)
-                          ? 'web'
-                          : undefined,
-                      )
-                      .then((decision) => decision !== 'deny'),
-                eventsController.signal,
-              ))
+              (run.agent.approvalPolicy === 'never' ||
+                (await untilAborted(
+                  !prompting && event.properties.sessionID === sessionID
+                    ? Promise.resolve(false)
+                    : run
+                        .approve(
+                          event.properties.permission,
+                          event.properties.patterns.join('\n'),
+                          ['webfetch', 'websearch'].includes(event.properties.permission)
+                            ? 'web'
+                            : undefined,
+                        )
+                        .then((decision) => decision !== 'deny'),
+                  eventsController.signal,
+                )))
             await api.permission.reply(
               {
                 requestID: event.properties.id,
@@ -581,7 +589,10 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
         }
       }
     },
-    run: async (run) => remoteAdapter.run({ ...run, agent: await resolve(run.agent) }),
+    run: async (run) => {
+      run = checkedPolicyRun(run, 'opencode')
+      return remoteAdapter.run({ ...run, agent: await resolve(run.agent) })
+    },
     dispose: () => servers.dispose(),
   }
 }

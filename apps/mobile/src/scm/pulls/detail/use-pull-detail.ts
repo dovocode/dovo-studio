@@ -1,15 +1,21 @@
 import { useEffect, useRef } from 'react'
 import { Effect } from 'effect'
 import { startPolling, runClientEffect } from '@dovo/client-runtime'
+import { useSourceReader } from '../../source-reader'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { pullDetailSchema, type PullDetail as Detail } from '@dovo/protocol'
 import { AppState } from 'react-native'
 import { useNavigation } from '../../../shell/navigation'
 
-export function usePullDetail(repositoryId: string, number: number) {
+export function usePullDetail(repositoryId: string, number: number, connectionId?: string) {
   const { focused } = useNavigation()
-  const { readEffect: request, connected, snapshot, readCache } = useRuntime()
+  const { connected, snapshot, readCache } = useRuntime()
+  const { readEffect: request, acceptCurrentAccount: acceptReader } = useSourceReader(
+    repositoryId,
+    undefined,
+    connectionId,
+  )
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)
   const cacheKey = JSON.stringify([
     'pulls',
@@ -18,8 +24,10 @@ export function usePullDetail(repositoryId: string, number: number) {
     repository?.path ?? '',
     number,
     repository?.forge,
+    connectionId,
   ])
   const [state, setState] = useApplicationState({
+    scope: cacheKey,
     detail: null as Detail | null,
     error: '',
     busy: false,
@@ -29,7 +37,7 @@ export function usePullDetail(repositoryId: string, number: number) {
   const forceNext = useRef(false)
   const setError = (error: string) => setState((current) => ({ ...current, error }))
   useEffect(() => {
-    setState((current) => ({ ...current, detail: null, error: '' }))
+    setState((current) => ({ ...current, scope: cacheKey, detail: null, error: '' }))
   }, [cacheKey, readCache])
   useEffect(() => {
     let stopped = false
@@ -67,11 +75,13 @@ export function usePullDetail(repositoryId: string, number: number) {
       setState((current) => ({ ...current, busy: true, refreshing: refresh }))
       yield* request(
         '/api/scm/pulls/detail',
-        { repositoryId, number, refresh },
+        { repositoryId, number, refresh, connectionId },
         pullDetailSchema,
       ).pipe(
         Effect.tap((value) =>
-          Effect.sync(() => setState((current) => ({ ...current, detail: value, error: '' }))),
+          Effect.sync(() => {
+            if (!stopped) setState((current) => ({ ...current, detail: value, error: '' }))
+          }),
         ),
         Effect.flatMap((value) =>
           (readCache ? readCache.writeEffect(cacheKey, value) : Effect.void).pipe(
@@ -92,7 +102,12 @@ export function usePullDetail(repositoryId: string, number: number) {
     const polling = startPolling(load, {
       interval: 10000,
       onError: (error) => {
-        if (!stopped) setError(error.message)
+        if (!stopped)
+          setState((current) => ({
+            ...current,
+            error: error.message,
+            detail: current.detail ? { ...current.detail, stale: true } : null,
+          }))
       },
     })
     return () => {
@@ -123,12 +138,31 @@ export function usePullDetail(repositoryId: string, number: number) {
     refresh()
   }
   return {
-    detail: state.detail,
+    detail: state.scope === cacheKey ? state.detail : null,
     error: state.error,
     setError,
     busy: state.busy,
     refreshing: state.refreshing,
     refresh,
     invalidate,
+    acceptCurrentAccount: () => {
+      if (!connected) return
+      void runClientEffect(
+        (readCache ? readCache.removeEffect(cacheKey) : Effect.void).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              acceptReader()
+              setState((current) => ({
+                ...current,
+                detail: null,
+                error: '',
+                revision: current.revision + 1,
+              }))
+            }),
+          ),
+          Effect.catch((error) => Effect.sync(() => setError(error.message))),
+        ),
+      )
+    },
   }
 }

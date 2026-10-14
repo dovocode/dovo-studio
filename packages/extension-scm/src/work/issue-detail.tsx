@@ -15,6 +15,7 @@ export function IssueDetail({
   repositoryId,
   jiraSourceId,
   connected,
+  readConnected = connected,
   busy,
   stale,
   notice,
@@ -29,6 +30,7 @@ export function IssueDetail({
   repositoryId?: string
   jiraSourceId?: string
   connected: boolean
+  readConnected?: boolean
   busy: boolean
   stale: boolean
   notice?: string
@@ -197,7 +199,7 @@ export function IssueDetail({
         ))}
       </div>
       {next && (
-        <Button disabled={busy || !connected} onClick={onMore}>
+        <Button disabled={busy || !readConnected} onClick={onMore}>
           More comments
         </Button>
       )}

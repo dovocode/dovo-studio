@@ -112,6 +112,7 @@ export function createWorkTaskEffect(s: Services, value: unknown) {
         forgeWorkOptionsSchema,
         yield* request('options', {
           area,
+          expectedDestination: input.expectedDestination,
         }),
       )
       if (!options[area])
@@ -126,6 +127,7 @@ export function createWorkTaskEffect(s: Services, value: unknown) {
           yield* request('issues/detail', {
             id: input.id,
             refresh: true,
+            expectedDestination: input.expectedDestination,
           }),
         )
         requireFresh(detail)
@@ -159,6 +161,7 @@ export function createWorkTaskEffect(s: Services, value: unknown) {
           yield* request('pipelines/detail', {
             id: input.id,
             refresh: true,
+            expectedDestination: input.expectedDestination,
           }),
         )
         requireFresh(detail)

@@ -172,7 +172,12 @@ export function PullChanges({
             height: Math.max(280, Math.min(600, height * 0.55)),
           }}
         >
-          <DiffView key={file.path} patch={pullFilePatch(file)} />
+          <DiffView
+            key={file.path}
+            patch={pullFilePatch(file)}
+            path={file.path}
+            previousPath={file.previousPath}
+          />
         </View>
       ) : (
         <Text style={styles.muted}>No text patch available. Open this PR on its server.</Text>

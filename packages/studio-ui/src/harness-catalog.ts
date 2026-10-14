@@ -1,4 +1,7 @@
-import { DiscoveryCache } from '@dovo/studio-core'
+import { browserModelCatalogCache } from '@dovo/studio-core'
+import { modelCatalogCacheScope } from '@dovo/protocol'
+import { Schema } from 'effect'
+import { useCatalogVisible } from './catalog-demand'
 import { createModelLabels, type ModelLabelHarness } from './model-labels'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useSyncExternalStore } from 'react'
@@ -7,7 +10,6 @@ import {
   modelDiscoveryInput,
   useWorkspace,
   type TaskHarness,
-  type ModelCatalog,
 } from '@dovo/studio-core'
 const modelLabels = (() => {
   try {
@@ -24,35 +26,40 @@ export function useModelLabel(address: string | undefined, harness: ModelLabelHa
     () => undefined,
   )
 }
-const cachedCatalogs = new DiscoveryCache<ModelCatalog>(5 * 60_000)
+const cachedCatalogs = browserModelCatalogCache()
+const cachedSchema = Schema.NullOr(modelCatalogSchema)
 export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
-  const { request, connected, connection, snapshot } = useWorkspace()
+  const { request, connected, connection, snapshot, activeRuntimeId } = useWorkspace()
+  const visible = useCatalogVisible()
   const savedModelName = useModelLabel(connection?.address, harness)
   const [state, setState] = useApplicationState({ key: '', loading: false, error: '' })
   const input = modelDiscoveryInput(harness)
   const model = harness.model
-  const key = JSON.stringify([
-    connection?.address,
-    connection?.token,
-    snapshot?.runtimeInstanceId,
-    snapshot?.acpInstallations,
-    input,
-  ])
+  const scope = modelCatalogCacheScope(activeRuntimeId, connection, snapshot, harness)
+  const key = scope.key
   const catalog = useSyncExternalStore(
     cachedCatalogs.subscribe,
-    () => cachedCatalogs.peek(key),
+    () => cachedCatalogs.peek(scope),
     () => null,
   )
   useEffect(() => {
+    void cachedCatalogs.ensure(scope)
+  }, [key])
+  useEffect(() => {
     if (!active) return
+    if (!visible) return
     let stopped = false
-    setState({ key, error: '', loading: connected && !cachedCatalogs.isFresh(key) })
+    setState({ key, error: '', loading: connected && !cachedCatalogs.isFresh(scope) })
     if (!connected) return
     void cachedCatalogs
-      .load(key, async () => {
-        const value = await request('/api/agents/models', input, modelCatalogSchema)
-        modelLabels.save(connection?.address, harness, value)
-        return value
+      .load(
+        scope,
+        () => request('/api/agents/models', input, modelCatalogSchema),
+        false,
+        () => request('/api/agents/models/cached', input, cachedSchema),
+      )
+      .then((value) => {
+        if (!stopped) modelLabels.save(connection?.address, harness, value)
       })
       .catch((error) => {
         if (!stopped) setState({ key, error: String(error), loading: false })
@@ -63,11 +70,11 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
     return () => {
       stopped = true
     }
-  }, [active, connected, request, key])
+  }, [active, visible, connected, request, key])
   return {
     catalog,
     modelName: catalog?.models.find((item) => item.id === model)?.name ?? savedModelName,
     error: state.key === key ? state.error : '',
-    loading: active && connected && (state.key !== key || state.loading),
+    loading: active && visible && connected && (state.key !== key || state.loading),
   }
 }

@@ -1,9 +1,30 @@
-import { expect, it, vi } from 'vite-plus/test'
+import * as jiraContext from './jira-context.js'
+import { beforeEach, afterEach, expect, it, vi } from 'vite-plus/test'
 import { readFile } from 'node:fs/promises'
 import { JiraWork, jiraMarkdown, listJiraProjects } from './jira'
 import type { runForgeCli } from '../integration/forge-cli'
 const auth =
   '✓ Authenticated\n  Site: team.atlassian.net\n  Email: user@example.com\n  Authentication Type: oauth'
+beforeEach(() => {
+  vi.spyOn(jiraContext, 'captureJiraContext').mockResolvedValue({
+    env: { ACLI_CONFIG_DIR: '/fixture/pinned-jira' },
+    accountId: (_site, email) => email.toLowerCase(),
+    close: async () => {},
+  })
+})
+afterEach(() => vi.restoreAllMocks())
+/** Extra verification probes read the fixture's captured status; provider data/write mocks
+ * remain independent so existing rich-text and revision regressions still exercise dispatch. */
+function readContext(run: typeof runForgeCli): typeof runForgeCli {
+  let status: string | undefined
+  return async (command, args, input, cwd, env) => {
+    expect(env).toMatchObject({ ACLI_CONFIG_DIR: '/fixture/pinned-jira' })
+    if (args.includes('auth') && status !== undefined) return status
+    const result = await run(command, args, input, cwd, env)
+    if (args.includes('auth')) status = result
+    return result
+  }
+}
 const binding = {
   site: 'https://team.atlassian.net',
   project: 'TEAM',
@@ -91,7 +112,7 @@ it('checks the active CLI site before a write instead of switching accounts', as
     .fn<typeof runForgeCli>()
     .mockResolvedValue(auth.replace('team.atlassian.net', 'other.atlassian.net'))
   await expect(
-    new JiraWork('acli', binding, run).createIssue({
+    new JiraWork('acli', binding, readContext(run)).createIssue({
       title: 'test',
       body: 'body',
       type: 'Task',
@@ -119,7 +140,7 @@ it('keeps Jira independent of any repository provider and paginates with scoped 
         ),
       ),
     )
-  const page = await new JiraWork('acli', binding, run).issues('all')
+  const page = await new JiraWork('acli', binding, readContext(run)).issues('all')
   expect(page.items).toHaveLength(30)
   expect(page.next).toBe('30')
   expect(run.mock.calls[2]?.[1]).toContain('project = TEAM ORDER BY updated DESC, key DESC')
@@ -131,7 +152,7 @@ it('preserves original ADF for an unchanged description', async () => {
     .mockResolvedValueOnce(JSON.stringify(project))
     .mockResolvedValueOnce(JSON.stringify(raw))
     .mockResolvedValueOnce('{}')
-  await new JiraWork('acli', binding, run).actOnIssue({
+  await new JiraWork('acli', binding, readContext(run)).actOnIssue({
     action: 'edit',
     id: 'TEAM-1',
     revision: raw.fields.updated,
@@ -147,7 +168,7 @@ it('does not invoke a CLI mutation when an edit contains no changed fields', asy
     .mockResolvedValueOnce(auth)
     .mockResolvedValueOnce(JSON.stringify(project))
     .mockResolvedValueOnce(JSON.stringify(raw))
-  const result = await new JiraWork('acli', binding, run).actOnIssue({
+  const result = await new JiraWork('acli', binding, readContext(run)).actOnIssue({
     action: 'edit',
     id: raw.key,
     revision: raw.fields.updated,
@@ -173,7 +194,7 @@ it('distinguishes partial Jira discussion from a failed refresh', async () => {
         },
       }),
     )
-  const detail = await new JiraWork('acli', binding, run).issue(raw.key)
+  const detail = await new JiraWork('acli', binding, readContext(run)).issue(raw.key)
   expect(detail.discussionNotice).toContain('More comments are available in Jira')
   expect(detail).not.toHaveProperty('refreshError')
 })
@@ -193,7 +214,7 @@ it('writes comments through a private temporary file and never places the body i
       expect(args.join(' ')).not.toContain('private comment')
       return '{}'
     })
-  await new JiraWork('acli', binding, run).actOnIssue({
+  await new JiraWork('acli', binding, readContext(run)).actOnIssue({
     action: 'comment',
     id: 'TEAM-1',
     revision: raw.fields.updated,
@@ -208,7 +229,7 @@ it('rejects stale Jira edits before issuing a mutation', async () => {
     .mockResolvedValueOnce(JSON.stringify(project))
     .mockResolvedValueOnce(JSON.stringify(raw))
   await expect(
-    new JiraWork('acli', binding, run).actOnIssue({
+    new JiraWork('acli', binding, readContext(run)).actOnIssue({
       action: 'edit',
       id: 'TEAM-1',
       revision: 'old',
@@ -224,7 +245,7 @@ it('transitions Jira status as a single explicit CLI operation', async () => {
     .mockResolvedValueOnce(JSON.stringify(project))
     .mockResolvedValueOnce(JSON.stringify(raw))
     .mockResolvedValueOnce('{}')
-  await new JiraWork('acli', binding, run).actOnIssue({
+  await new JiraWork('acli', binding, readContext(run)).actOnIssue({
     action: 'edit',
     id: 'TEAM-1',
     revision: raw.fields.updated,
@@ -245,6 +266,7 @@ it('transitions Jira status as a single explicit CLI operation', async () => {
     ],
     undefined,
     undefined,
+    { ACLI_CONFIG_DIR: '/fixture/pinned-jira' },
   )
 })
 it('runs Jira identity, reads and mutations from the selected project checkout', async () => {
@@ -258,7 +280,7 @@ it('runs Jira identity, reads and mutations from the selected project checkout',
       if (args.includes('view')) return JSON.stringify(raw)
       return '{}'
     })
-  const jira = new JiraWork('acli', binding, run, cwd)
+  const jira = new JiraWork('acli', binding, readContext(run), cwd)
   await jira.identity()
   await jira.actOnIssue({
     action: 'edit',
@@ -266,7 +288,7 @@ it('runs Jira identity, reads and mutations from the selected project checkout',
     revision: raw.fields.updated,
     title: 'Updated',
   })
-  expect(run).toHaveBeenCalledTimes(4)
+  expect(run).toHaveBeenCalledTimes(5)
   expect(run.mock.calls.every(([, args]) => !args.includes('switch'))).toBe(true)
 })
 it('refuses a combined Jira edit and transition instead of partially applying it', async () => {
@@ -276,7 +298,7 @@ it('refuses a combined Jira edit and transition instead of partially applying it
     .mockResolvedValueOnce(JSON.stringify(project))
     .mockResolvedValueOnce(JSON.stringify(raw))
   await expect(
-    new JiraWork('acli', binding, run).actOnIssue({
+    new JiraWork('acli', binding, readContext(run)).actOnIssue({
       action: 'edit',
       id: 'TEAM-1',
       revision: raw.fields.updated,
@@ -304,7 +326,7 @@ it('accepts OAuth gateway self links while checking the authenticated site', asy
         self: `${gateway}/issue/100`,
       }),
     )
-  const jira = new JiraWork('acli', binding, run)
+  const jira = new JiraWork('acli', binding, readContext(run))
   expect((await jira.options()).issueTypes).toEqual([])
   const detail = await jira.issue(raw.key)
   expect(detail.issue.url).toBe('https://team.atlassian.net/browse/TEAM-1')
@@ -356,7 +378,7 @@ it('reads supported search fields without inventing a date or revision', async (
         },
       ]),
     )
-  const page = await new JiraWork('acli', binding, run).issues('open')
+  const page = await new JiraWork('acli', binding, readContext(run)).issues('open')
   expect(page.items[0]).toMatchObject({
     updatedAt: '',
     revision: '',
@@ -387,7 +409,11 @@ it('paginates recently updated issues and searches by key with project scope int
         ),
       ),
     )
-  const page = await new JiraWork('acli', binding, run).issues('closed', '30', 'team-40')
+  const page = await new JiraWork('acli', binding, readContext(run)).issues(
+    'closed',
+    '30',
+    'team-40',
+  )
   expect(page.items).toHaveLength(30)
   expect(page.items[0]?.id).toBe('TEAM-70')
   expect(page.next).toBe('60')
@@ -403,7 +429,7 @@ it('keeps exact custom states and escapes search text as a JQL literal', async (
     .mockResolvedValueOnce(auth)
     .mockResolvedValueOnce(JSON.stringify(project))
     .mockResolvedValueOnce('[]')
-  await new JiraWork('acli', binding, run).issues(
+  await new JiraWork('acli', binding, readContext(run)).issues(
     'Waiting for review',
     undefined,
     'deploy "OR" project = OTHER',
@@ -468,7 +494,7 @@ it('keeps readable content and a notice when one ADF extension is unsupported', 
         },
       }),
     )
-  const detail = await new JiraWork('acli', binding, run).issue(raw.key)
+  const detail = await new JiraWork('acli', binding, readContext(run)).issue(raw.key)
   expect(detail.issue).toMatchObject({
     body: 'Ship the fix: IN REVIEW',
     bodyNotice: expect.stringContaining('rich content'),
@@ -494,7 +520,7 @@ it('requires a real detail revision before any write', async () => {
       }),
     )
   await expect(
-    new JiraWork('acli', binding, run).actOnIssue({
+    new JiraWork('acli', binding, readContext(run)).actOnIssue({
       action: 'edit',
       id: raw.key,
       revision: 'old',
@@ -510,7 +536,7 @@ it('accepts an unset Jira priority without inventing a severity', async () => {
     .mockResolvedValueOnce(auth)
     .mockResolvedValueOnce(JSON.stringify(project))
     .mockResolvedValueOnce(JSON.stringify({ ...raw, fields: { ...raw.fields, priority: null } }))
-  const detail = await new JiraWork('acli', binding, run).issue(raw.key)
+  const detail = await new JiraWork('acli', binding, readContext(run)).issue(raw.key)
   expect(detail.issue.priority).toBeUndefined()
 })
 
@@ -521,7 +547,7 @@ it('quotes structured filter values without allowing JQL injection', async () =>
     .mockResolvedValueOnce(JSON.stringify(project))
     .mockResolvedValueOnce('[]')
   const payload = 'High" OR project = OTHER OR priority = "Low\\'
-  await new JiraWork('acli', binding, run).issues('all', undefined, undefined, {
+  await new JiraWork('acli', binding, readContext(run)).issues('all', undefined, undefined, {
     assignee: 'mine',
     priority: payload,
     type: payload,
@@ -541,7 +567,7 @@ it.each(['todo', 'done'] as const)(
       .mockResolvedValueOnce(auth)
       .mockResolvedValueOnce(JSON.stringify(project))
       .mockResolvedValueOnce('[]')
-    await new JiraWork('acli', binding, run).issues('open', undefined, 'team-1', {
+    await new JiraWork('acli', binding, readContext(run)).issues('open', undefined, 'team-1', {
       assignee: 'unassigned',
       statusCategory,
     })
@@ -551,3 +577,21 @@ it.each(['todo', 'done'] as const)(
     )
   },
 )
+
+it('revalidates the captured Jira account before a warmed verification can authorize a write', async () => {
+  let status = auth
+  const run = vi
+    .fn<typeof runForgeCli>()
+    .mockImplementation(async (_cmd, args) =>
+      args.includes('auth') ? status : JSON.stringify(project),
+    )
+  const jira = new JiraWork('acli', binding, run)
+  await jira.identity()
+  status = auth.replace('team.atlassian.net', 'other.atlassian.net')
+  await expect(
+    jira.createIssue({ title: 'Draft', body: '', type: 'Task', assignees: [], labels: [] }),
+  ).rejects.toThrow('another Jira site')
+  expect(
+    run.mock.calls.some(([, args]) => args.includes('workitem') || args.includes('switch')),
+  ).toBe(false)
+})

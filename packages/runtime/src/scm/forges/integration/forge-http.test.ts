@@ -68,3 +68,24 @@ it('retains queued response status, bounds content, and reports invalid JSON', a
   await expect(http.json('invalid')).rejects.toThrow('invalid JSON')
   await expect(http.text('large')).rejects.toThrow('exceeds 16 MB')
 })
+it('invalidates the bound credential even if an unauthorized response body is interrupted', async () => {
+  const unauthorized = vi.fn<() => void>()
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error('private provider output'))
+          },
+        }),
+        { status: 401 },
+      ),
+  )
+  const http = new ForgeHttp(connection, () => 'token private', fetcher, unauthorized)
+  await expect(http.json('user')).rejects.toMatchObject({
+    status: 401,
+    message: expect.stringContaining('Authentication failed'),
+  })
+  expect(unauthorized).toHaveBeenCalledTimes(1)
+  expect(fetcher).toHaveBeenCalledTimes(1)
+})

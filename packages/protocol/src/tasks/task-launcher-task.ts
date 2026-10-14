@@ -33,6 +33,8 @@ export function createLauncherTask(
             model: agent.harness.model,
             reasoning: agent.harness.reasoning ?? '',
             permission: agent.harness.permission,
+            approvalPolicy: agent.harness.approvalPolicy ?? null,
+            sandboxMode: agent.harness.sandboxMode ?? null,
             serviceTier: agent.harness.serviceTier ?? null,
             cyberAccessProgram: agent.harness.cyberAccessProgram ?? null,
             ...(agent.provider === 'acp'

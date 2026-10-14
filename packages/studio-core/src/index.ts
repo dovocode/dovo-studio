@@ -228,6 +228,7 @@ export { whitespaceOnlyFile, whitespaceOnlyPatch } from './whitespace-changes'
 export { projectActivity } from './project-order'
 
 export { WorkspaceScope } from './workspace/scope'
+export { browserModelCatalogCache } from './workspace/model-catalog-cache'
 
 export * from './fonts'
 
@@ -235,3 +236,5 @@ export { DiscoveryCache } from '@dovo/client-runtime'
 
 export { terminalInputFrames } from '@dovo/client-runtime'
 export { useFileReview } from './review/use-file-review'
+
+export * from './code-themes'

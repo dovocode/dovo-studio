@@ -1,8 +1,15 @@
 import { PullRequestIcon } from '../../../ui/content/pull-request-icon'
-import { githubPullTarget, runtimeComputerName } from '@dovo/protocol'
+import {
+  gitRemoteIdentity,
+  forgePullTarget,
+  forgeConnectionsSchema,
+  type ForgeConnection,
+  runtimeComputerName,
+} from '@dovo/protocol'
 import { CreatePull } from '../list/create-pull'
 import { pullHeadBranch, pullStackLabel } from '@dovo/protocol'
 import { pullHref } from '../../../shell/source-route'
+import { useLinkOrigin } from '../../../ui/content/link-origin'
 import { openAppLink } from '../../../ui/content/open-link'
 import { formatTime } from '../../../runtime/preferences/app-preferences'
 import { nativeEffect } from '../../../runtime/state/native-effect'
@@ -24,6 +31,7 @@ import {
   forgeLabels,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
+import { Choice } from '../../../ui/controls/choice'
 import { Action } from '../../../ui/controls/action'
 import { useTheme } from '../../../ui/theme'
 import { Icon } from '../../../ui/controls/icon'
@@ -50,6 +58,7 @@ const pullNavigation = createDetailDrafts<{ tab: PullTab; metadataOpen: boolean 
 export function PullDetail({
   repositoryId,
   number,
+  connectionId,
   onBack,
   initialTab,
   initialFragment = '',
@@ -59,6 +68,7 @@ export function PullDetail({
 }: {
   repositoryId: string
   number: number
+  connectionId?: string
   onBack: () => void
   initialTab?: 'overview' | 'changes' | 'checks'
   initialFragment?: string
@@ -68,24 +78,65 @@ export function PullDetail({
 }) {
   const { colors, styles } = useTheme()
 
-  const { connected, snapshot, profile, readCache, connection } = useRuntime()
+  const { connected, snapshot, profile, readCache, connection, readEffect } = useRuntime()
+  const origin = useLinkOrigin(undefined, repositoryId)
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)
+  const [account, setAccount] = useApplicationState(connectionId)
+  const [accounts, setAccounts] = useApplicationState<ForgeConnection[]>([])
+  const urlTarget = forgePullTarget(repositoryId)
+  useEffect(() => {
+    if (!urlTarget || !connected) return
+    let active = true
+    void runClientEffect(
+      readEffect('/api/scm/connections/read', {}, forgeConnectionsSchema).pipe(
+        Effect.tap((value) =>
+          Effect.sync(() => {
+            if (active)
+              setAccounts(
+                value.connections.filter(
+                  (connection) =>
+                    connection.provider === urlTarget.provider &&
+                    new URL(connection.baseUrl).host === new URL(urlTarget.url).host,
+                ),
+              )
+          }),
+        ),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            if (active) setError(error.message)
+          }),
+        ),
+      ),
+    )
+    return () => {
+      active = false
+    }
+  }, [readEffect, repositoryId, connected])
   const body = useRef<ScrollView>(null)
   const content = useRef<View>(null)
   const navigateAfterSheet = useSheetNavigation()
-  const { detail, error, setError, busy, refreshing, refresh, invalidate } = usePullDetail(
-    repositoryId,
-    number,
-  )
+  const { detail, error, setError, busy, refreshing, refresh, invalidate, acceptCurrentAccount } =
+    usePullDetail(repositoryId, number, account)
   const onPosted = () => {
     invalidate()
     invalidatePullList(readCache, repositoryId)
   }
   const taskCreation = usePullTaskCreation(repositoryId, detail?.pull)
+  const actionOrigin = useRef(detail)
+  const lineOrigin = useRef(detail)
+  const stackOrigin = useRef(detail)
   const [creatingStack, setCreatingStack] = useApplicationState(false)
   const { draft: navigation, setField } = useDetailDraft(
     pullNavigation,
-    integrationDraftKey(connection, snapshot, repositoryId, undefined, 'pull-navigation', number),
+    integrationDraftKey(
+      connection,
+      snapshot,
+      repositoryId,
+      undefined,
+      'pull-navigation',
+      number,
+      account,
+    ),
     () => ({ tab: initialTab ?? 'overview', metadataOpen: false }),
   )
   const { tab, metadataOpen } = navigation
@@ -120,8 +171,19 @@ export function PullDetail({
   const [action, setAction] = useApplicationState<PullActionTarget | null>(null)
   const [lineComment, setLineComment] = useApplicationState<string | null>(null)
   const open = (url: string, external = false) => {
-    const target = githubPullTarget(url)
-    if (!external && target && detail && githubPullTarget(detail.pull.url)?.url === target.url) {
+    const bindings = [
+      {
+        provider: detail?.pull.provider,
+        identity: gitRemoteIdentity(detail?.pull.repositoryUrl ?? ''),
+      },
+    ]
+    const target = forgePullTarget(url, bindings)
+    if (
+      !external &&
+      target &&
+      detail &&
+      forgePullTarget(detail.pull.url, bindings)?.url === target.url
+    ) {
       anchored.current = false
       setFragment(target.fragment)
       setTab(target.tab)
@@ -130,7 +192,7 @@ export function PullDetail({
     }
     navigateAfterSheet(() => {
       void runClientEffect(
-        nativeEffect(() => openAppLink(url, external)).pipe(
+        nativeEffect(() => openAppLink(url, external, origin)).pipe(
           Effect.catch((error) => nativeEffect(() => setError(String(error)))),
         ),
       )
@@ -145,7 +207,10 @@ export function PullDetail({
   const actionDisabled = !connected || !!detail?.stale || !!detail?.refreshError
   const actions = detail ? pullActionOptions(detail) : undefined
   const openAction = (target: PullActionTarget) => {
-    if (!actionDisabled) setAction(target)
+    if (!actionDisabled && detail) {
+      actionOrigin.current = detail
+      setAction(target)
+    }
   }
   return (
     <View style={styles.screen}>
@@ -194,6 +259,22 @@ export function PullDetail({
           )
         }
       />
+      {urlTarget && !!accounts.length && (
+        <Choice
+          label="Source account"
+          value={account ?? detail?.pull.connectionId ?? ''}
+          onChange={setAccount}
+          items={accounts.map((account) => ({ id: account.id, name: account.name }))}
+        />
+      )}
+      {/different account/.test(error) && (
+        <Action
+          label="Use current account"
+          secondary
+          disabled={!connected || busy}
+          onPress={acceptCurrentAccount}
+        />
+      )}
       {!!taskCreation.error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {taskCreation.error}
@@ -362,7 +443,10 @@ export function PullDetail({
                         disabled={
                           !connected || detail.pull.state !== 'open' || !pullHeadBranch(detail.pull)
                         }
-                        onPress={() => setCreatingStack(true)}
+                        onPress={() => {
+                          stackOrigin.current = detail
+                          setCreatingStack(true)
+                        }}
                       />
                       {detail.stack && (
                         <Action
@@ -500,7 +584,7 @@ export function PullDetail({
                     onAnchor={tab === 'discussion' ? scrollToAnchor : undefined}
                     onOpen={open}
                     fileBaseURL={fileBaseURL}
-                    onAction={actionDisabled ? undefined : setAction}
+                    onAction={actionDisabled ? undefined : openAction}
                     capabilities={detail.capabilities}
                   />
                 </View>
@@ -542,8 +626,15 @@ export function PullDetail({
                     fragment={fragment}
                     onAnchor={tab === 'changes' ? scrollToAnchor : undefined}
                     onOpen={open}
-                    onAction={actionDisabled ? undefined : setAction}
-                    onLineComment={actionDisabled ? undefined : setLineComment}
+                    onAction={actionDisabled ? undefined : openAction}
+                    onLineComment={
+                      actionDisabled
+                        ? undefined
+                        : (path) => {
+                            lineOrigin.current = detail
+                            setLineComment(path)
+                          }
+                    }
                   />
                 )}
               </View>
@@ -559,7 +650,7 @@ export function PullDetail({
       {creatingStack && detail && (
         <CreatePull
           repositoryId={repositoryId}
-          initialParent={detail.pull}
+          initialParent={(stackOrigin.current ?? detail).pull}
           onClose={() => setCreatingStack(false)}
           onCreated={(repo, next) => {
             onPosted()
@@ -571,7 +662,7 @@ export function PullDetail({
       {action && detail && (
         <PullActionSheet
           repositoryId={repositoryId}
-          detail={detail}
+          detail={actionOrigin.current ?? detail}
           target={action}
           onClose={() => setAction(null)}
           onDone={onPosted}
@@ -580,7 +671,7 @@ export function PullDetail({
       {lineComment && detail && (
         <LineComment
           repositoryId={repositoryId}
-          detail={detail}
+          detail={lineOrigin.current ?? detail}
           path={lineComment}
           onClose={() => setLineComment(null)}
           onDone={onPosted}

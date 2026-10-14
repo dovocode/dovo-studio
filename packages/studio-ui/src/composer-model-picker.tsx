@@ -12,15 +12,14 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import {
-  defaultTaskHarness,
   providers,
   providerSchema,
-  acpInstallationHarness,
   acpHarnessName,
   useWorkspace,
   type Agent,
   type TaskHarness,
 } from '@dovo/studio-core'
+import { changeHarnessProvider } from './harness-permissions'
 import { AgentAvatar } from './agent-avatar'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
@@ -163,11 +162,14 @@ export function ComposerModelPicker({
       ? value
       : activeProvider === 'acp' && activeInstallationId
         ? {
-            ...defaultTaskHarness('acp'),
+            ...changeHarnessProvider(value, 'acp'),
             acpInstallationId: activeInstallationId,
-            permission: value.permission,
+            model: '',
+            reasoning: '',
+            acpMode: undefined,
+            acpConfig: undefined,
           }
-        : { ...defaultTaskHarness(activeProvider), permission: value.permission }
+        : changeHarnessProvider(value, activeProvider)
   const harnessAvailable = availability.available.has(harnessChoiceId(selectedHarness))
   const { catalog, loading, error } = useHarnessCatalog(
     selectedHarness,
@@ -284,10 +286,10 @@ export function ComposerModelPicker({
     const base = sameHarness
       ? value
       : installation
-        ? acpInstallationHarness(installation, value.permission)
+        ? { ...selectedHarness, acpInstallationId: installation.id }
         : item.provider === activeProvider
           ? selectedHarness
-          : { ...defaultTaskHarness(item.provider), permission: value.permission }
+          : changeHarnessProvider(value, item.provider)
     const saved = await onChange({
       ...base,
       model: item.id,

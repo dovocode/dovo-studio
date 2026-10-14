@@ -1,5 +1,5 @@
 import { useApplicationState } from '../../runtime/state/application-state'
-import { openAppLink } from '../../ui/content/open-link'
+import { useOpenAppLink } from '../../ui/content/open-link'
 import { Pressable, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import {
@@ -18,6 +18,7 @@ import { useTheme } from '../../ui/theme'
 
 /** The task's pull request state and checks; failing checks can be handed to the agent. */
 function PrimaryPullStatus({ task, onOpen }: { task: Task; onOpen?: (url: string) => void }) {
+  const openLink = useOpenAppLink(task.id)
   const { colors } = useTheme()
 
   const { connected, callEffect } = useRuntime()
@@ -39,7 +40,7 @@ function PrimaryPullStatus({ task, onOpen }: { task: Task; onOpen?: (url: string
         <Pressable
           accessibilityRole="link"
           accessibilityLabel={`${pullStatusLabel(status)}. Opens the pull request.`}
-          onPress={() => (onOpen ? onOpen(status.url) : act(() => openAppLink(status.url)))}
+          onPress={() => (onOpen ? onOpen(status.url) : act(() => openLink(status.url)))}
           style={({ pressed }) => ({
             flex: 1,
             flexDirection: 'row',
@@ -99,6 +100,7 @@ export function PullStatus({
   onOpen?: (url: string) => void
   showLinked?: boolean
 }) {
+  const openLink = useOpenAppLink(task.id)
   const { colors } = useTheme()
 
   const [expanded, setExpanded] = useApplicationState(false)
@@ -133,7 +135,7 @@ export function PullStatus({
                     return
                   }
                   setLinkError('')
-                  void openAppLink(pull.url).catch((error) => setLinkError(String(error)))
+                  void openLink(pull.url).catch((error) => setLinkError(String(error)))
                 }}
                 style={{ minHeight: 36, justifyContent: 'center' }}
               >

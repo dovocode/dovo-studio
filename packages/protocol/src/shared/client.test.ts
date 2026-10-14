@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { ValidationError } from './schema.js'
 import { mutableStruct } from './schema.js'
 import { decodeResult } from './schema.js'
@@ -895,6 +896,129 @@ it('never retries mutations or rejected reads', async () => {
   transport.mockReset().mockResolvedValue(Response.json({ error: 'Revoked' }, { status: 401 }))
   await expect(readSnapshot()).rejects.toMatchObject({ status: 401, message: 'Revoked' })
   expect(transport).toHaveBeenCalledTimes(1)
+})
+
+it.each([
+  '/api/scm/source/identity',
+  '/api/agents/models/cached',
+  '/api/scm/pulls/detail',
+  '/api/scm/pulls/overview',
+  '/api/scm/pulls/options/read',
+  '/api/scm/inspect',
+  '/api/scm/changes',
+  '/api/scm/work/options',
+  '/api/scm/work/issues/list',
+  '/api/scm/work/issues/detail',
+  '/api/scm/work/pipelines/list',
+  '/api/scm/work/pipelines/detail',
+  '/api/scm/work/pipelines/definitions',
+])('retries the safe POST read %s after a transient gateway failure', async (path) => {
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response('Runtime reconnecting', { status: 503 }))
+    .mockResolvedValue(Response.json({ revision: 2 }))
+  vi.stubGlobal('fetch', transport)
+  const input = { repositoryId: 'source', expectedReaderIdentity: 'verified-account' }
+  await expect(
+    runtimeRequest(connection, connection.address, path + '?refresh=true', input, dataSchema),
+  ).resolves.toEqual({ revision: 2 })
+  expect(transport).toHaveBeenCalledTimes(2)
+  for (const [url, init] of transport.mock.calls) {
+    expect(url instanceof Request ? url.url : url instanceof URL ? url.href : url).toBe(
+      connection.address + path + '?refresh=true',
+    )
+    expect(init?.body).toBe(JSON.stringify(input))
+    expect(init?.headers).toMatchObject({ Authorization: `Bearer ${connection.token}` })
+  }
+})
+
+it.each([401, 403, 404, 409, 500])(
+  'never retries a safe POST read rejected with %s',
+  async (status) => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json({ error: 'Read rejected' }, { status }))
+    vi.stubGlobal('fetch', transport)
+    await expect(
+      runtimeRequest(connection, connection.address, '/api/scm/source/identity', {}, dataSchema),
+    ).rejects.toMatchObject({ status })
+    expect(transport).toHaveBeenCalledOnce()
+  },
+)
+
+it.each([
+  '/api/scm/pulls/action',
+  '/api/scm/pulls/comment',
+  '/api/scm/pulls/create',
+  '/api/scm/pulls/task',
+  '/api/scm/work/issues/create',
+  '/api/scm/work/issues/action',
+  '/api/scm/work/pipelines/action',
+  '/api/scm/work/task',
+  '/api/scm/instructions/save',
+  '/api/sync/ticket',
+  '/api/scm/future/read',
+])('dispatches %s once on an uncertain failure or 503', async (path) => {
+  const transport = vi.fn<typeof fetch>().mockRejectedValue(new Error('Response lost'))
+  vi.stubGlobal('fetch', transport)
+  await expect(
+    runtimeRequest(connection, connection.address, path, {}, dataSchema),
+  ).rejects.toMatchObject({ kind: 'connection' })
+  expect(transport).toHaveBeenCalledOnce()
+  transport.mockReset().mockImplementation(async () => new Response('Unavailable', { status: 503 }))
+  await expect(
+    runtimeRequest(connection, connection.address, path, {}, dataSchema),
+  ).rejects.toMatchObject({ status: 503 })
+  expect(transport).toHaveBeenCalledOnce()
+})
+
+it('bounds safe POST reads to two retries and one overall deadline', async () => {
+  vi.useFakeTimers()
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async () => new Response('Unavailable', { status: 503 }))
+  vi.stubGlobal('fetch', transport)
+  const failed = runtimeRequest(
+    connection,
+    connection.address,
+    '/api/scm/pulls/detail',
+    {},
+    dataSchema,
+  ).catch((error: unknown) => error)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(await failed).toMatchObject({ status: 503 })
+  expect(transport).toHaveBeenCalledTimes(3)
+  transport.mockClear()
+  const timed = runtimeRequest(
+    connection,
+    connection.address,
+    '/api/scm/source/identity',
+    {},
+    dataSchema,
+    'POST',
+    50,
+  ).catch((error: unknown) => error)
+  await vi.advanceTimersByTimeAsync(50)
+  expect(await timed).toMatchObject({ kind: 'timeout' })
+  expect(transport).toHaveBeenCalledOnce()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(transport).toHaveBeenCalledOnce()
+})
+
+it('does not classify a non-POST mutation as a safe read by its path', async () => {
+  const transport = vi.fn<typeof fetch>().mockRejectedValue(new Error('Response lost'))
+  vi.stubGlobal('fetch', transport)
+  await expect(
+    runtimeRequest(
+      connection,
+      connection.address,
+      '/api/scm/pulls/detail',
+      {},
+      dataSchema,
+      'PATCH',
+    ),
+  ).rejects.toMatchObject({ kind: 'connection' })
+  expect(transport).toHaveBeenCalledOnce()
 })
 
 it('reports the status of a plain-text gateway failure', async () => {

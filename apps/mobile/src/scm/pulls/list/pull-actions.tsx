@@ -32,6 +32,8 @@ export type PullActionTarget = {
   comment?: PullComment
 }
 const actionDrafts = createDetailDrafts<{
+  connectionId: string | undefined
+  expectedDestination: string | undefined
   headSha: string
   title: string
   body: string
@@ -44,7 +46,7 @@ const actionDrafts = createDetailDrafts<{
 }>()
 export function PullActionSheet({
   repositoryId,
-  detail,
+  detail: initialDetail,
   target,
   onClose,
   onDone,
@@ -55,26 +57,32 @@ export function PullActionSheet({
   onClose: () => void
   onDone: () => void
 }) {
+  const detail = useRef(initialDetail).current
   const { styles } = useTheme()
 
   const { connected, callEffect, connection, snapshot } = useRuntime()
   const { draft, setField, clear } = useDetailDraft(
     actionDrafts,
-    integrationDraftKey(
-      connection,
-      snapshot,
-      repositoryId,
-      undefined,
-      'pull-action',
-      detail.pull.repositoryUrl,
-      detail.pull.number,
-      target.action,
-      target.comment?.id,
-    ),
+    useRef(
+      integrationDraftKey(
+        connection,
+        snapshot,
+        repositoryId,
+        undefined,
+        'pull-action',
+        detail.destination ?? detail.pull.destination,
+        detail.pull.repositoryUrl,
+        detail.pull.number,
+        target.action,
+        target.comment?.id,
+      ),
+    ).current,
     () => {
       const preferred = readMobilePreferences().mergeMethod
       const offered: readonly string[] = detail.capabilities?.mergeMethods ?? []
       return {
+        connectionId: detail.pull.connectionId,
+        expectedDestination: detail.destination ?? detail.pull.destination,
         headSha: detail.pull.headSha,
         title: detail.pull.title,
         body: target.action === 'edit' ? detail.pull.body : '',
@@ -88,7 +96,19 @@ export function PullActionSheet({
       }
     },
   )
-  const { headSha, title, body, base, reviewers, teams, event, method, operation } = draft
+  const {
+    connectionId,
+    expectedDestination,
+    headSha,
+    title,
+    body,
+    base,
+    reviewers,
+    teams,
+    event,
+    method,
+    operation,
+  } = draft
   const setTitle = (value: string) => setField('title', value)
   const setBody = (value: string) => setField('body', value)
   const setBase = (value: string) => setField('base', value)
@@ -147,6 +167,8 @@ export function PullActionSheet({
             {
               repositoryId,
               ...input,
+              expectedDestination,
+              connectionId,
             },
             pullActionResultSchema,
           )

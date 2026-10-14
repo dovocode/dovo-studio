@@ -24,22 +24,9 @@ export function WorkspaceScope({
 }) {
   const root = useWorkspace()
   const { readRuntimeEffect, refreshRuntime, runtimeReadCache, setWorkspace } = root
-  const {
-    id,
-    name,
-    connection: { address, token },
-  } = profile
-  const owner = useMemo(
-    () => ({
-      id,
-      name,
-      connection: {
-        address,
-        token,
-      },
-    }),
-    [id, name, address, token],
-  )
+  const { id, name, connection } = profile
+  const { address, token } = connection
+  const owner = useMemo(() => ({ id, name, connection }), [id, name, connection])
   const entry = root.runtimes.find(
     (item) =>
       item.profile.id === id &&

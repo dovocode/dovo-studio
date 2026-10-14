@@ -54,12 +54,17 @@ it('probes configured providers independently, authenticates, caches and never e
     ])
     expect(JSON.stringify(entries)).not.toContain('private credential')
     const calls = probe.mock.calls.length
+    const unavailableCalls = probe.mock.calls.filter(
+      ([agent]) =>
+        agent.provider !== 'claude' &&
+        runtime.services.agents.configure(agent).endpoint !== '/custom/codex',
+    ).length
     await call()
-    expect(probe).toHaveBeenCalledTimes(calls)
+    expect(probe).toHaveBeenCalledTimes(calls + unavailableCalls)
     runtime.services.commands.save({ ...runtime.services.commands.get(), codex: '/custom/codex' })
     const changed = decode(harnessAvailabilitySchema, await (await call()).json())
     expect(changed.find((entry) => entry.id === 'harness:codex')?.available).toBe(true)
-    expect(probe).toHaveBeenCalledTimes(calls + 1)
+    expect(probe).toHaveBeenCalledTimes(calls + unavailableCalls * 2)
   } finally {
     get.mockRestore()
     await runtime.close()

@@ -1,3 +1,4 @@
+import { permissionPolicyReadOnly } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { Effect, Schema } from 'effect'
@@ -181,12 +182,12 @@ export class PipelineWatch {
       !task.delegation &&
       !task.archived &&
       !task.archivedAt &&
-      resolveTaskAgent(task, this.s.store.get().agents)?.permission !== 'read-only'
+      !permissionPolicyReadOnly(resolveTaskAgent(task, this.s.store.get().agents))
     )
   }
   private writable(taskId: string) {
     const task = this.s.store.taskSummary(taskId)
-    if (resolveTaskAgent(task, this.s.store.get().agents)?.permission === 'read-only')
+    if (permissionPolicyReadOnly(resolveTaskAgent(task, this.s.store.get().agents)))
       throw new HttpError(403, 'Pipeline watching is disabled for read-only threads')
     return task
   }

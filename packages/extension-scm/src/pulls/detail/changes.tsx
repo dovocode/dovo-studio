@@ -1,9 +1,4 @@
-import {
-  githubPullTarget,
-  pullFileFingerprint,
-  reviewFileState,
-  orderReviewFiles,
-} from '@dovo/protocol'
+import { pullFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
 import { OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -35,7 +30,7 @@ export function PullChanges({
   detail: PullDetail
   active?: boolean
   repositoryId: string
-  onSteer: (objective: string) => void
+  onSteer: (objective: string, baseline?: { headSha: string; expectedDestination?: string }) => void
   onPosted: () => void
 }) {
   const { hideWhitespaceChanges } = useAppPreferences()
@@ -244,9 +239,10 @@ export function PullChanges({
                       onDraft={(update) => updateDraft(file.path, update)}
                       commentDisabled={!connected}
                       headSha={detail.pull.headSha}
+                      expectedDestination={detail.destination ?? detail.pull.destination}
                       split={split}
                       provider={detail.pull.provider}
-                      allowAgent={!githubPullTarget(repositoryId)}
+                      allowAgent={!repositoryId.startsWith('http')}
                       allowInlineComment={
                         detail.capabilities?.actions.includes('inline-comment') ?? true
                       }
@@ -265,6 +261,8 @@ export function PullChanges({
                                     repositoryId,
                                     number: detail.pull.number,
                                     headSha: baseline.headSha,
+                                    expectedDestination: baseline.expectedDestination,
+                                    connectionId: detail.pull.connectionId,
                                     path: baseline.path,
                                     body,
                                     ...range,
@@ -275,6 +273,7 @@ export function PullChanges({
                               } else
                                 onSteer(
                                   `Address this feedback on ${baseline.path}:${range.start}-${range.end} (${range.side === 'additions' ? 'new' : 'old'} version), PR commit ${baseline.headSha}:\n${body}\n\nReference patch at time of comment:\n${baseline.patch.slice(0, 1500)}`,
+                                  baseline,
                                 )
                             }
                           : undefined

@@ -8,6 +8,7 @@ const mocks = {
   '@dovo/studio-core': `
     import {createContext,useContext,useState} from 'react';
     import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/context.ts';
+    export const useRepositorySources=()=>[];
     export {useWorkspace} from '${root}packages/studio-core/src/workspace/context.ts';
     export {updateTask} from '${root}packages/studio-core/src/workspace/actions.ts';
     const Host=createContext(null);
@@ -65,7 +66,10 @@ const built = await build({
   format: 'iife',
   platform: 'browser',
   jsx: 'automatic',
-  alias: { '@dovo/client-runtime': root + 'packages/client-runtime/src/index.ts' },
+  alias: {
+    '@dovo/protocol': root + 'packages/protocol/src/index.ts',
+    '@dovo/client-runtime': root + 'packages/client-runtime/src/index.ts',
+  },
   define: { 'process.env.NODE_ENV': '"production"' },
   plugins: [
     {

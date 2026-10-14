@@ -501,32 +501,40 @@ it('recovers saved apps and completed actions, and never replays interrupted cal
   ).rejects.toThrow('interrupted')
   expect(s.calls()).toBe(2)
 })
-it('rechecks device authorization after an approval and rejects read-only app mutations', async () => {
-  const s = await setup(),
-    bridge = s.runtime.services.mcpApps
-  await bridge.proxy(s.token, 'tools/call', { name: 'chart' })
-  const ref = recentTools(
-    s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events,
-  ).flatMap((event) => mcpAppReferences(event.payload))[0]
-  let revoked = false
-  vi.spyOn(s.runtime.services.approvals, 'request').mockImplementation(async () => {
-    revoked = true
-    return 'approve' as const
-  })
-  await expect(
-    bridge.action(s.task.id, ref.id, 'revoked', 'tools/call', { name: 'refresh' }, () => {
-      if (revoked) throw new HttpError(401, 'Device revoked')
-    }),
-  ).rejects.toThrow('Device revoked')
-  expect(s.calls()).toBe(1)
-  s.runtime.services.store.update((workspace) => ({
-    ...workspace,
-    agents: workspace.agents.map((agent) => ({ ...agent, permission: 'read-only' })),
-  }))
-  await expect(
-    bridge.action(s.task.id, ref.id, 'readonly', 'tools/call', { name: 'refresh' }),
-  ).rejects.toThrow('read-only')
-})
+it.each(['permission', 'sandboxMode'] as const)(
+  'rechecks device authorization after an approval and rejects %s read-only app mutations',
+  async (dimension) => {
+    const s = await setup(),
+      bridge = s.runtime.services.mcpApps
+    await bridge.proxy(s.token, 'tools/call', { name: 'chart' })
+    const ref = recentTools(
+      s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events,
+    ).flatMap((event) => mcpAppReferences(event.payload))[0]
+    let revoked = false
+    vi.spyOn(s.runtime.services.approvals, 'request').mockImplementation(async () => {
+      revoked = true
+      return 'approve' as const
+    })
+    await expect(
+      bridge.action(s.task.id, ref.id, 'revoked', 'tools/call', { name: 'refresh' }, () => {
+        if (revoked) throw new HttpError(401, 'Device revoked')
+      }),
+    ).rejects.toThrow('Device revoked')
+    expect(s.calls()).toBe(1)
+    s.runtime.services.store.update((workspace) => ({
+      ...workspace,
+      agents: workspace.agents.map((agent) => ({
+        ...agent,
+        ...(dimension === 'permission'
+          ? { permission: 'read-only' as const }
+          : { sandboxMode: 'read-only' as const }),
+      })),
+    }))
+    await expect(
+      bridge.action(s.task.id, ref.id, 'readonly', 'tools/call', { name: 'refresh' }),
+    ).rejects.toThrow('read-only')
+  },
+)
 it('stores bounded model context and delivers app messages through the normal queue', async () => {
   const s = await setup(),
     bridge = s.runtime.services.mcpApps
@@ -684,3 +692,23 @@ it('routes agent calls to ticket-authenticated live app tools and removes them w
     ).rejects.toThrow('no longer available')
   })
 })
+
+it.each(['approvalPolicy', 'sandboxMode'] as const)(
+  'revokes an old MCP proxy when advanced %s changes without changing the legacy mode',
+  async (dimension) => {
+    const s = await setup()
+    await s.runtime.services.mcpApps.proxy(s.token, 'tools/list', {})
+    s.runtime.services.store.updateTask(s.task.id, (task) => ({
+      ...task,
+      agentOverrides: {
+        ...task.agentOverrides,
+        ...(dimension === 'approvalPolicy'
+          ? { approvalPolicy: 'never' as const }
+          : { sandboxMode: 'workspace-write' as const }),
+      },
+    }))
+    expect(() => s.runtime.services.mcpApps.authenticateProxy(s.token)).toThrow(
+      'configuration changed',
+    )
+  },
+)

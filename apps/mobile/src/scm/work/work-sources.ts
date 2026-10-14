@@ -1,3 +1,5 @@
+import { clientScopeKey } from '@dovo/client-runtime'
+import { jiraDestination } from '../source-key'
 import type { JiraSource, RuntimeOverview, RuntimeProfile } from '@dovo/protocol'
 import { runtimeComputerName } from '@dovo/protocol'
 import {
@@ -31,9 +33,8 @@ export const workSourceContentIdentity = (source: WorkSource) =>
   source.kind === 'jira'
     ? JSON.stringify([
         source.key,
-        source.profile.connection,
-        source.jiraSource.site,
-        source.jiraSource.project,
+        clientScopeKey(source.profile.connection),
+        jiraDestination(source.jiraSource),
       ])
     : projectContentIdentity(source)
 export const workSourceIdentity = (sources: WorkSource[]) =>

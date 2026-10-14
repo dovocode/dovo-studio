@@ -1,19 +1,73 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { FlatList, ScrollView, Switch, View, Pressable, useWindowDimensions } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { useTheme } from '../../ui/theme'
-import { diffRows, type DiffRow, type ReviewDiffProps } from './diff-lines'
+import { useTheme, type MobileColors } from '../../ui/theme'
+import type { ReviewDiffProps } from './diff-lines'
+import { highlightedDiffRows, type HighlightedDiffRow } from './diff-syntax'
+
+function syntaxColor(kind: string | undefined, colors: MobileColors) {
+  switch (kind) {
+    case 'comment':
+    case 'prolog':
+    case 'doctype':
+      return colors.muted
+    case 'keyword':
+    case 'tag':
+    case 'boolean':
+      return colors.syntaxKeyword
+    case 'function':
+      return colors.syntaxFunction
+    case 'string':
+    case 'char':
+    case 'attr-value':
+    case 'template-string':
+      return colors.success
+    case 'number':
+    case 'constant':
+    case 'class-name':
+    case 'builtin':
+    case 'attr-name':
+      return colors.warning
+    default:
+      return colors.text
+  }
+}
 // Android: upstream react-native-diffs only implements the iOS renderer.
-export function DiffView({ patch, focusedLine, onLinePress, annotations = [] }: ReviewDiffProps) {
-  const { colors, styles } = useTheme()
+export function DiffView({
+  patch,
+  path,
+  previousPath,
+  focusedLine,
+  onLinePress,
+  annotations = [],
+}: ReviewDiffProps) {
+  const { colors, styles, code } = useTheme()
+  const codeColors = code
+    ? {
+        ...colors,
+        background: code.colors.background,
+        surface: code.colors.background,
+        text: code.colors.text,
+        muted: code.colors.gutter,
+        syntaxKeyword: code.colors.keyword,
+        syntaxFunction: code.colors.function,
+        success: code.colors.string,
+        warning: code.colors.number,
+      }
+    : colors
+  const addition = code?.colors.addition ?? colors.success
+  const deletion = code?.colors.deletion ?? colors.error
   const { width } = useWindowDimensions()
   const [wrap, setWrap] = useState(false)
-  const rows = useMemo(() => diffRows(patch), [patch])
+  const rows = useMemo(
+    () => highlightedDiffRows(patch, path, previousPath),
+    [patch, path, previousPath],
+  )
   const contentWidth = useMemo(
     () => rows.reduce((max, row) => Math.max(max, row.text.length * 8 + 92), width),
     [rows, width],
   )
-  const listRef = useRef<FlatList<DiffRow>>(null)
+  const listRef = useRef<FlatList<HighlightedDiffRow>>(null)
   useEffect(() => {
     const index = rows.findIndex((row) => row.after === focusedLine)
     if (focusedLine === undefined || index < 0) return
@@ -22,21 +76,21 @@ export function DiffView({ patch, focusedLine, onLinePress, annotations = [] }: 
     )
     return () => cancelAnimationFrame(frame)
   }, [rows, focusedLine])
-  const render = ({ item }: { item: DiffRow }) => (
+  const render = ({ item }: { item: HighlightedDiffRow }) => (
     <View>
       <View
         style={{
           flexDirection: 'row',
           backgroundColor:
             focusedLine !== undefined && item.after === focusedLine
-              ? colors.selection
+              ? (code?.colors.selection ?? colors.selection)
               : item.kind === 'addition'
-                ? `${colors.success}15`
+                ? `${addition}15`
                 : item.kind === 'deletion'
-                  ? `${colors.error}15`
+                  ? `${deletion}15`
                   : item.kind === 'header'
-                    ? colors.surface
-                    : colors.background,
+                    ? codeColors.surface
+                    : codeColors.background,
           minHeight: onLinePress ? 44 : 22,
         }}
       >
@@ -70,19 +124,41 @@ export function DiffView({ patch, focusedLine, onLinePress, annotations = [] }: 
           selectable
           style={{
             flex: 1,
-            color:
-              item.kind === 'addition'
-                ? colors.success
-                : item.kind === 'deletion'
-                  ? colors.error
-                  : colors.text,
+            color: item.kind === 'header' ? codeColors.muted : codeColors.text,
             fontFamily: 'monospace',
             fontSize: 13,
             lineHeight: 22,
           }}
         >
-          {item.kind === 'addition' ? '+' : item.kind === 'deletion' ? '−' : ' '}
-          {item.text || ' '}
+          <Text
+            style={{
+              color:
+                item.kind === 'addition'
+                  ? addition
+                  : item.kind === 'deletion'
+                    ? deletion
+                    : colors.muted,
+            }}
+          >
+            {item.kind === 'addition' ? '+' : item.kind === 'deletion' ? '−' : ' '}
+          </Text>
+          {item.spans?.length
+            ? item.spans.map((span, index) => (
+                <Text
+                  key={index}
+                  style={{
+                    color:
+                      span.kind === 'comment' && code
+                        ? code.colors.comment
+                        : (span.kind === 'class-name' || span.kind === 'builtin') && code
+                          ? code.colors.type
+                          : syntaxColor(span.kind, codeColors),
+                  }}
+                >
+                  {span.text}
+                </Text>
+              ))
+            : item.text || ' '}
         </Text>
       </View>
       {annotations
@@ -119,7 +195,7 @@ export function DiffView({ patch, focusedLine, onLinePress, annotations = [] }: 
     />
   )
   return (
-    <View style={{ flex: 1, minHeight: 0 }}>
+    <View style={{ flex: 1, minHeight: 0, backgroundColor: codeColors.background }}>
       <View
         style={{
           flexDirection: 'row',

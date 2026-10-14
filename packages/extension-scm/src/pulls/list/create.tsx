@@ -1,3 +1,5 @@
+import { useVerifiedRead } from '../../connections/verified-read'
+import { integrationMutationError } from '../../connections/mutation-error'
 import {
   pullPageSchema,
   pullDetailSchema,
@@ -15,6 +17,7 @@ import {
   pullCreateOptionsSchema,
   readAppPreferences,
   useWorkspace,
+  useStudioHost,
 } from '@dovo/studio-core'
 import {
   Button,
@@ -42,9 +45,19 @@ export function CreatePull({
   onCreated: (repositoryId: string, number: number) => void
 }) {
   const { workspace, request, connected } = useWorkspace()
+  const host = useStudioHost()
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const [created, setCreated] = useApplicationState<number | null>(null)
   const [repositoryId, setRepository] = useApplicationState(
     initialRepositoryId || workspace.repositories[0]?.id || '',
   )
+  const readRequest = useVerifiedRead({ repositoryId })
   const [head, setHead] = useApplicationState(
     workspace.repositories.find((repo) => repo.id === repositoryId)?.branch ?? '',
   )
@@ -77,7 +90,7 @@ export function CreatePull({
     setOptionsError('')
     setDraft(readAppPreferences().pullDraft)
     if (connected && repositoryId)
-      void request(
+      void readRequest(
         '/api/scm/pulls/options/read',
         {
           repositoryId,
@@ -93,7 +106,7 @@ export function CreatePull({
     return () => {
       stopped = true
     }
-  }, [connected, repositoryId, request])
+  }, [connected, repositoryId, readRequest])
   useEffect(() => {
     if (!connected || !repositoryId) return
     let stopped = false
@@ -101,7 +114,7 @@ export function CreatePull({
     void (async () => {
       const loaded: PullSummary[] = []
       for (let page = 1; page <= 10 && !stopped; page++) {
-        const result = await request(
+        const result = await readRequest(
           '/api/scm/pulls/overview',
           { repositoryId, state: 'open', page },
           pullPageSchema,
@@ -121,7 +134,7 @@ export function CreatePull({
     return () => {
       stopped = true
     }
-  }, [repositoryId, connected, request])
+  }, [repositoryId, connected, readRequest])
   const chooseParent = async (value: string) => {
     setParentError('')
     if (!value) {
@@ -131,7 +144,7 @@ export function CreatePull({
     }
     setParentBusy(true)
     try {
-      const detail = await request(
+      const detail = await readRequest(
         '/api/scm/pulls/detail',
         { repositoryId, number: Number(value), refresh: true },
         pullDetailSchema,
@@ -150,6 +163,7 @@ export function CreatePull({
   const submit = async () => {
     if (
       pending.current ||
+      created !== null ||
       !connected ||
       !options ||
       parentBusy ||
@@ -160,6 +174,7 @@ export function CreatePull({
     )
       return
     pending.current = true
+    const current = host.taskNavigationGuard?.() ?? (() => true)
     setBusy(true)
     setError('')
     try {
@@ -169,6 +184,7 @@ export function CreatePull({
           repositoryId,
           title,
           body,
+          expectedDestination: parent?.destination ?? options.destination,
           head,
           base,
           draft: !!options.draft && draft,
@@ -176,13 +192,17 @@ export function CreatePull({
         },
         pullActionResultSchema,
       )
-      onCreated(repositoryId, result.number)
-      onClose()
+      if (!mounted.current) return
+      setCreated(result.number)
+      if (current()) {
+        onCreated(repositoryId, result.number)
+        onClose()
+      }
     } catch (error) {
-      setError(error instanceof Error ? error.message : String(error))
+      if (mounted.current) setError(integrationMutationError(error))
     } finally {
       pending.current = false
-      setBusy(false)
+      if (mounted.current) setBusy(false)
     }
   }
   return (
@@ -362,6 +382,20 @@ export function CreatePull({
               Create as draft
             </label>
           )}
+          {created !== null && (
+            <div role="status">
+              <p>Pull request #{created} created.</p>
+              <Button
+                type="button"
+                onClick={() => {
+                  onCreated(repositoryId, created)
+                  onClose()
+                }}
+              >
+                Open created PR
+              </Button>
+            </div>
+          )}
           {optionsError && (
             <p role="alert" className="text-xs text-destructive">
               {optionsError}
@@ -380,6 +414,7 @@ export function CreatePull({
               type="submit"
               disabled={
                 busy ||
+                created !== null ||
                 parentBusy ||
                 !options ||
                 !connected ||

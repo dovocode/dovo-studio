@@ -6,18 +6,24 @@ import { chromium } from './browser/harness.mjs'
 
 const require = createRequire(new URL('../packages/studio-ui/package.json', import.meta.url))
 const mocks = {
-  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';export {providers} from '../studio-core/src/providers';export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);`,
+  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';export {providers} from '../studio-core/src/providers';export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './agent-avatar': `export const AgentAvatar=()=>null;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
-  'react-native': `export const View=({children})=><div>{children}</div>;`,
-  '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const MobileContext=createContext(null);export const useRuntime=()=>useContext(MobileContext);`,
+  'react-native': `export const Pressable=({children,onPress,disabled,accessibilityRole,accessibilityState})=><button role={accessibilityRole} aria-expanded={accessibilityState?.expanded} onClick={onPress} disabled={disabled}>{children}</button>;export const View=({children})=><div>{children}</div>;export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
+  '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const MobileContext=createContext(null);export const useRuntime=()=>useContext(MobileContext);export const useRuntimeSelector=select=>select(useContext(MobileContext));`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../agents/model-settings': `export const ModelSettings=()=>null;`,
   '../../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled,selectedLabel})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{!items.some(item=>item.id===value)&&<option value={value} disabled hidden>{selectedLabel}</option>}{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
   '../../ui/theme': `export const styles={};export const useTheme=()=>({styles,colors:{},mode:'dark'});`,
 }
+mocks['../screens/settings-controls'] = mocks['../../ui/controls/choice'].replace(
+  'const Choice=',
+  'const SettingsChoice=',
+)
+mocks['../ui/content/text'] = mocks['../../ui/content/text']
+mocks['../ui/theme'] = mocks['../../ui/theme']
 const built = await build({
   alias: {
     react: dirname(require.resolve('react/package.json')),
@@ -32,7 +38,7 @@ const repository={id:'repo',name:'Repo',path:'/repo',branch:'main'};
 const snapshot={workspace:{agents,repositories:[repository],tasks:[]},defaults:{},acpInstallations:installations};
 window.deferModels=false;window.pendingModels=[];window.modelRequests=[];window.pending=[];window.changes=[];window.mode='desktop';
 function App(){const[host,setHost]=useState('one');const[mode,setMode]=useState('desktop');const[locked,setLocked]=useState(undefined);const[value,setValue]=useState(defaultTaskHarness('codex'));window.host=setHost;window.mode=setMode;window.lock=setLocked;window.value=value;
-const request=useCallback(async(path,input)=>{if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'model',name:input.provider+' model'}]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
+const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'model',name:input.provider+' model'}],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
 const profile={id:host,connection:{address:'http://'+host,token:'token-'+host}};
 const change=async next=>{window.changes.push(next);setValue(next);return true};
 return mode==='desktop'?<Context.Provider value={{request,connected:true,connection:profile.connection,snapshot}}><ComposerModelPicker repositoryId="repo" value={value} agents={agents} disabled={false} lockedProvider={locked} onChange={change} onConfigure={()=>{}} onSelectAgent={async id=>{window.changes.push(id);return true}} onUseHarness={change}/></Context.Provider>:<MobileContext.Provider value={{profile,connected:true,snapshot,readRuntime:(_profile,path,input)=>request(path,input)}}><TaskLauncherControls snapshot={snapshot} repository={repository} selection={{key:'harness:codex',name:'Codex',provider:'codex',model:'',harness:value}} disabled={false} onChange={next=>window.changes.push(next)}/></MobileContext.Provider>};
@@ -67,7 +73,10 @@ const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
   const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('pageerror', (error) => {
+    errors.push(error.message)
+    console.error(error.message)
+  })
   await page.route('https://dovo.test/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
@@ -123,12 +132,20 @@ try {
   await page.getByRole('button', { name: 'Refresh providers' }).click()
   await waitRequests(5)
   await page.evaluate(() => window.pending[4].reject(new Error('Refresh failed')))
-  await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
+  await absent(page.getByRole('button', { name: 'Codex models', exact: true }))
+  await page
+    .getByText('Could not check available providers: Error: Refresh failed', { exact: true })
+    .waitFor()
   const modelRequests = await page.evaluate(() => window.modelRequests.length)
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
+  await waitRequests(6)
+  await finish(5, ['harness:claude', 'harness:codex'])
   await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
-  if (await page.evaluate(() => window.pending.length !== 5))
+  await page.getByRole('button', { name: 'Choose agent and model' }).click()
+  await page.getByRole('button', { name: 'Choose agent and model' }).click()
+  await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
+  if (await page.evaluate(() => window.pending.length !== 6))
     throw new Error('Reopening discarded fresh provider cache')
   if (await page.evaluate((count) => window.modelRequests.length !== count, modelRequests))
     throw new Error('Reopening rediscovered cached models')
@@ -137,8 +154,8 @@ try {
   if (await page.evaluate(() => window.changes.length))
     throw new Error('Availability changed saved selection')
   await page.evaluate(() => window.mode('mobile'))
-  await waitRequests(6)
-  await finish(5, ['harness:claude', 'agent:custom', 'acp:installed'])
+  await waitRequests(7)
+  await finish(6, ['harness:claude', 'agent:custom', 'acp:installed'])
   const choice = page.getByRole('combobox', { name: 'Agent', exact: true })
   await choice.getByRole('option', { name: 'Claude', exact: true }).waitFor({ state: 'attached' })
   await absent(choice.getByRole('option', { name: 'Cursor', exact: true }))
@@ -146,9 +163,9 @@ try {
   if (await page.evaluate(() => window.changes.at(-1)?.provider !== 'claude'))
     throw new Error('Available mobile provider was not selectable')
   await page.evaluate(() => window.host('four'))
-  await waitRequests(7)
+  await waitRequests(8)
   await absent(choice.getByRole('option', { name: 'Claude', exact: true }))
-  await page.evaluate(() => window.pending[6].reject(new Error('Offline')))
+  await page.evaluate(() => window.pending[7].reject(new Error('Offline')))
   await page.getByText('Could not check available providers: Error: Offline').waitFor()
   await page.evaluate(() => {
     window.host('three')
@@ -164,14 +181,14 @@ try {
     window.deferModels = true
   })
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
-  await waitRequests(8)
+  await waitRequests(9)
+  await finish(8, ['harness:codex', 'harness:claude'])
   await page.waitForFunction(() => window.pendingModels.length === 1)
   await page.locator('[role=option][data-value=model]').waitFor()
   await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
   await page.evaluate(() => window.pendingModels[0].reject(new Error('Model refresh failed')))
   await page.getByText('Error: Model refresh failed', { exact: true }).waitFor()
   await page.locator('[role=option][data-value=model]').waitFor()
-  await finish(7, ['harness:codex', 'harness:claude'])
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop/mobile provider availability, favorites, saved agents, runtime isolation, locks, cached reopening, stale model refresh and failure recovery passed.',

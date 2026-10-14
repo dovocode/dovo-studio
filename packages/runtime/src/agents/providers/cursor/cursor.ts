@@ -1,3 +1,4 @@
+import { checkedPolicyRun } from '../shared/permission-policy.js'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
@@ -84,6 +85,7 @@ export function createCursorAdapter(openWorker = openCursorWorker): AgentAdapter
       }
     },
     async run(run) {
+      run = checkedPolicyRun(run, 'cursor')
       run.signal.throwIfAborted()
       if (run.compact)
         throw new Error(

@@ -15,9 +15,21 @@ export type StudioIcon =
 export interface StudioNavigation {
   viewId: string
   entityId?: string
+  pullTarget?: StudioPullTarget
+}
+/** The entity's origin survives transport handoff and shell history. */
+export interface StudioPullTarget {
+  runtimeId: string
+  repositoryId?: string
+  number: number
+  url?: string
+  tab?: 'overview' | 'changes' | 'checks'
+  fragment?: string
+  connectionId?: string
 }
 export interface StudioViewProps {
   entityId?: string
+  pullTarget?: StudioPullTarget
   /** Changes for explicit navigation, including reopening the same destination. */
   navigationKey?: number
 }
@@ -52,13 +64,15 @@ export interface StudioHostApi {
   taskLauncher?: import('@dovo/protocol').TaskLauncherBridge
   browser?: import('@dovo/protocol').BrowserBridge
   /** Ask where a link should open; true requests the thread sidebar browser. */
-  /** Opens a known GitHub PR in native details; false leaves normal link handling. */
-  openPullLink?: (url: string) => boolean
+  /** Opens a recognized forge PR in native details; false leaves normal link handling. */
+  openPullLink?: (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => boolean
+  /** A handoff is valid only while its initiating view and navigation are still current. */
+  taskNavigationGuard?: () => () => boolean
   chooseLink?: (url: string) => Promise<boolean>
   openExternalLink?: (url: string) => Promise<void>
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
   goBack?: () => boolean
-  navigate: (target: StudioNavigation) => void
+  navigate: (target: StudioNavigation, options?: { replace?: boolean }) => void
   registerCommand: (command: StudioCommand) => () => void
 }
 export interface StudioExtension {

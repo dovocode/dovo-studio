@@ -11,6 +11,7 @@ import {
 import { ChoicePicker, Input } from '@dovo/studio-ui'
 import { SettingRow, SettingsGroup, SettingsPage } from './layout'
 import { SettingsSelect } from './settings-select'
+import { CodeThemeSettings } from './code-theme'
 
 export default function AppearanceSettings() {
   const {
@@ -84,6 +85,7 @@ export default function AppearanceSettings() {
           </div>
         </fieldset>
       </SettingsGroup>
+      <CodeThemeSettings />
       <datalist id="app-fonts">
         {['system-ui', 'Arial', 'Helvetica Neue', 'Georgia', 'serif'].map((font) => (
           <option key={font} value={font} />

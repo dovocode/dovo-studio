@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util'
+import { verifySourceContext, guardSource, type SourceContext } from './source-context.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { dirname } from 'node:path'
@@ -5,7 +7,8 @@ import { homedir } from 'node:os'
 import { Schema } from 'effect'
 import {
   forgeRepositorySchema,
-  githubPullTarget,
+  forgePullTarget,
+  forgeLabels,
   pullLineCommentSchema,
   type ForgeRepositoryPage,
   type PullAction,
@@ -14,6 +17,7 @@ import {
 import { PullRequests } from '../../pulls/pulls.js'
 import { pullAttributes } from '../../pulls/pull-attributes.js'
 import { GiteaForge } from '../providers/forge-gitea.js'
+import { GitLabForge } from '../providers/forge-gitlab.js'
 import { BitbucketForge } from '../providers/forge-bitbucket.js'
 import { AzureForge } from '../providers/forge-azure.js'
 import { connectionHttp } from './forge-connections.js'
@@ -23,55 +27,122 @@ import type { GitService } from '../../git/git.js'
 import type { WorkspaceStore } from '../../../storage/workspace.js'
 import { HttpError } from '../../../errors.js'
 export class ForgePullRequests {
-  private github: PullRequests
   private githubTargets = new Map<string, PullRequests>()
   constructor(
     private git: GitService,
     private connections: ForgeConnections,
     private store: WorkspaceStore,
-  ) {
-    this.github = new PullRequests(git)
-  }
-  /** URL targets use the runtime's GitHub login without creating a local project. */
-  urlTarget(url: string) {
-    const target = githubPullTarget(url)
-    if (!target) throw new HttpError(400, 'Enter a GitHub pull request URL')
-    const repository = new URL(target.url).pathname.split('/').slice(1, 3).join('/')
-    const connection = this.connections
+  ) {}
+  /** Prefer a project binding, or require the caller to choose between unrelated accounts. */
+  urlTarget(url: string, connectionId?: string) {
+    const target = forgePullTarget(url)
+    if (!target) throw new HttpError(400, 'Enter a supported public pull request URL')
+    const label = forgeLabels[target.provider]
+    const host = new URL(target.url).hostname
+    const repository = new URL(target.url).pathname
+      .replace(/\/(?:-\/merge_requests|pull)\/\d+$/, '')
+      .replace(/^\//, '')
+    const candidates = this.connections
       .list()
-      .find(
-        (connection) =>
-          connection.provider === 'github' && new URL(connection.baseUrl).hostname === 'github.com',
+      .filter((c) => c.provider === target.provider && new URL(c.baseUrl).hostname === host)
+    const projects = this.store
+      .get()
+      .repositories.filter(
+        (repo) =>
+          repo.forge &&
+          candidates.some((c) => c.id === repo.forge?.connectionId) &&
+          repo.forge.repository.toLowerCase() === repository.toLowerCase(),
       )
-    const key = `url:${repository}`
-    const pulls = connection
-      ? this.githubTarget(
-          connection.id,
-          connection.revision,
-          'github.com',
-          repository,
-          connection.cliProfile,
+    const bound = [...new Set(projects.map((repo) => repo.forge!.connectionId))]
+    const choices = connectionId
+      ? candidates.filter((c) => c.id === connectionId)
+      : candidates.filter((c) => (bound.length ? bound.includes(c.id) : true))
+    if (connectionId && !choices.length)
+      throw new HttpError(400, `Choose a ${label} account configured for this host.`)
+    if (choices.length > 1)
+      throw new HttpError(
+        409,
+        `Multiple ${label} accounts match this PR. Choose a source control connection and refresh.`,
+      )
+    const selected = choices[0]
+    if (!selected && target.provider !== 'github')
+      throw new HttpError(
+        409,
+        `Connect a ${label} account on this runtime to open this pull request.`,
+      )
+    const project = projects.find((repo) => repo.forge?.connectionId === selected?.id)
+    const cwd = project?.path ?? homedir()
+    const prepare = async () => {
+      const validate = () => {
+        if (selected && this.connections.get(selected.id).revision !== selected.revision)
+          throw new HttpError(
+            409,
+            'This source control account changed. Refresh before continuing.',
+          )
+        if (
+          project &&
+          !isDeepStrictEqual(
+            this.store.get().repositories.find((repo) => repo.id === project.id)?.forge,
+            project.forge,
+          )
         )
-      : (this.githubTargets.get(key) ??
-        new PullRequests(this.git, { host: 'github.com', repository }))
-    if (!connection) {
-      if (this.githubTargets.size >= 100) this.githubTargets.clear()
-      this.githubTargets.set(key, pulls)
+          throw new HttpError(409, 'This project source changed. Refresh before continuing.')
+      }
+      return verifySourceContext(
+        this.git,
+        this.connections,
+        cwd,
+        repository,
+        host,
+        selected,
+        ['url', target.url, project?.id, project?.forge],
+        validate,
+      )
     }
     return {
-      identity: (refresh: boolean) => pulls.identity(homedir(), refresh),
-      detail: (number: number) => pulls.detail(homedir(), number),
-      act: (input: PullAction) => pulls.act(homedir(), input),
-      comment: (input: typeof pullLineCommentSchema.Type) => pulls.comment(homedir(), input),
+      identity: async (_refresh: boolean) => (await prepare()).destination,
+      sourceIdentity: async () => {
+        const { readerIdentity, destination } = await prepare()
+        return { readerIdentity, destination }
+      },
+      guard: async (input: { expectedReaderIdentity?: string; expectedDestination?: string }) =>
+        guardSource(await prepare(), input),
+      detail: async (number: number, expectedDestination?: string) => {
+        const scope = await prepare()
+        guardSource(scope, { expectedDestination })
+        return this.tagDetail(
+          await (this.scopedAdapter(scope, cwd)?.detail(number) ??
+            this.scopedGithub(scope).detail(cwd, number)),
+          scope,
+        )
+      },
+      act: async (input: PullAction) => {
+        const scope = await prepare()
+        guardSource(scope, input)
+        return (
+          this.scopedAdapter(scope, cwd)?.act(input) ?? this.scopedGithub(scope).act(cwd, input)
+        )
+      },
+      comment: async (input: typeof pullLineCommentSchema.Type) => {
+        const scope = await prepare()
+        guardSource(scope, input)
+        return (
+          this.scopedAdapter(scope, cwd)?.comment(input) ??
+          this.scopedGithub(scope).comment(cwd, input)
+        )
+      },
     }
   }
-  private async binding(cwd: string) {
+  private async boundRepository(cwd: string) {
     const exact = this.store.get().repositories.find((repo) => repo.path === cwd)
-    if (exact) return exact.forge
+    if (exact) return exact
     const common = (
       await this.git.command(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
     ).trim()
-    return this.store.get().repositories.find((repo) => repo.path === dirname(common))?.forge
+    return this.store.get().repositories.find((repo) => repo.path === dirname(common))
+  }
+  private async binding(cwd: string) {
+    return (await this.boundRepository(cwd))?.forge
   }
   async githubEnvironment(cwd: string): Promise<Record<string, string>> {
     if (
@@ -97,7 +168,12 @@ export class ForgePullRequests {
         : {}),
     }
   }
-  adapter(connectionId: string, repository: string, cwd?: string): ForgeAdapter {
+  adapter(
+    connectionId: string,
+    repository: string,
+    cwd?: string,
+    scope?: SourceContext,
+  ): ForgeAdapter {
     const connection = this.connections.get(connectionId)
     const directory =
       cwd ??
@@ -110,7 +186,9 @@ export class ForgePullRequests {
       homedir()
     if (
       repository &&
-      (repository.split('/').length !== 2 ||
+      ((connection.provider === 'gitlab'
+        ? repository.split('/').length < 2
+        : repository.split('/').length !== 2) ||
         repository
           .split('/')
           .some(
@@ -118,19 +196,22 @@ export class ForgePullRequests {
           ))
     )
       throw new HttpError(400, 'Enter owner/repository, or project/repository for Azure DevOps')
-    const http = connectionHttp(this.connections, connection, directory)
+    const http = scope?.http ?? connectionHttp(this.connections, connection, directory)
+    if (connection.provider === 'gitlab') return new GitLabForge(http, repository)
     if (connection.provider === 'bitbucket') return new BitbucketForge(http, repository)
     if (connection.provider === 'azure-devops') return new AzureForge(http, repository)
     if (connection.provider === 'forgejo' || connection.provider === 'gitea')
       return new GiteaForge(http, repository)
     const host = new URL(connection.baseUrl).hostname
-    const github = this.githubTarget(
-      connection.id,
-      connection.revision,
-      host,
-      repository,
-      connection.cliProfile,
-    )
+    const github = scope
+      ? this.scopedGithub(scope)
+      : this.githubTarget(
+          connection.id,
+          connection.revision,
+          host,
+          repository,
+          connection.cliProfile,
+        )
     const api = async (path: string) => {
       if (this.connections.get(connection.id).revision !== connection.revision)
         throw new HttpError(409, 'This source control account changed. Refresh before continuing.')
@@ -205,6 +286,7 @@ export class ForgePullRequests {
       repository,
       profile,
       env: this.connections.get(id).cliEnv,
+      onUnauthorized: () => this.connections.forgetCredentials(id),
       token: (cwd) => {
         if (this.connections.get(id).revision !== revision)
           throw new HttpError(
@@ -218,100 +300,177 @@ export class ForgePullRequests {
     this.githubTargets.set(key, result)
     return result
   }
-  private async target(cwd: string) {
-    const binding = await this.binding(cwd)
-    return binding ? this.adapter(binding.connectionId, binding.repository, cwd) : undefined
+  private scopedGithub(scope: SourceContext) {
+    const credential = scope.github
+    if (!credential)
+      throw new HttpError(409, 'GitHub credentials are unavailable. Refresh before continuing.')
+    return new PullRequests(this.git, {
+      host: scope.host,
+      repository: scope.repository,
+      env: credential.env,
+      token: async () => {
+        scope.validate()
+        return credential.token
+      },
+      onUnauthorized: credential.onUnauthorized,
+      validate: scope.validate,
+    })
   }
-  async identity(cwd: string, refresh = false) {
-    if (githubPullTarget(cwd))
-      return JSON.stringify([cwd, await this.urlTarget(cwd).identity(refresh)])
-    const binding = await this.binding(cwd)
-    if (binding) {
-      const connection = await this.connections.reconcileCli(binding.connectionId, cwd)
-      const account =
-        connection.provider === 'github'
-          ? await this.githubTarget(
-              connection.id,
-              connection.revision,
-              new URL(connection.baseUrl).hostname,
-              binding.repository,
-              connection.cliProfile,
-            ).identity(cwd, refresh)
-          : undefined
-      return JSON.stringify([connection.id, connection.revision, binding.repository, account])
+  async sourceContext(cwd: string): Promise<SourceContext> {
+    const repository = await this.boundRepository(cwd)
+    const selected = repository?.forge
+    let connection = selected ? this.connections.get(selected.connectionId) : undefined
+    if (selected && connection?.credential === 'cli') {
+      this.connections.forgetCredentials(selected.connectionId)
+      connection = await this.connections.reconcileCli(selected.connectionId, cwd)
     }
-    return this.github.identity(cwd, refresh)
-  }
-  // PullCache calls this through its structural Pick<PullRequests, ...> contract.
-  // fallow-ignore-next-line unused-class-member
-  async list(cwd: string, state: 'open' | 'closed' | 'all', page: number, background = false) {
-    return (
-      (await this.target(cwd))?.list(state, page, background) ??
-      this.github.list(cwd, state, page, background)
+    const currentConnection = connection
+    const validate = () => {
+      // Exact project bindings are checked synchronously before each provider request.
+      const exact = repository
+        ? this.store.get().repositories.find((repo) => repo.id === repository.id)
+        : undefined
+      if (
+        repository &&
+        (!exact || exact.path !== repository.path || !isDeepStrictEqual(exact.forge, selected))
+      )
+        throw new HttpError(409, 'This project source changed. Refresh before continuing.')
+      if (
+        currentConnection &&
+        this.connections.get(currentConnection.id).revision !== currentConnection.revision
+      )
+        throw new HttpError(409, 'This source control account changed. Refresh before continuing.')
+    }
+    const remote = selected
+      ? { nameWithOwner: selected.repository, url: connection!.baseUrl }
+      : decode(
+          mutableStruct({ nameWithOwner: Schema.String, url: Schema.String }),
+          JSON.parse(await this.git.github(cwd, ['repo', 'view', '--json', 'nameWithOwner,url'])),
+        )
+    return verifySourceContext(
+      this.git,
+      this.connections,
+      cwd,
+      remote.nameWithOwner,
+      new URL(remote.url).hostname,
+      connection,
+      [cwd, selected],
+      validate,
     )
   }
-  // PullCache refreshes through its structural Pick<PullRequests, ...> contract.
-  // fallow-ignore-next-line unused-class-member
-  async status(cwd: string, number: number, background = false) {
-    const binding = await this.binding(cwd)
-    if (!binding) return this.github.status(cwd, number, background)
-    const connection = this.connections.get(binding.connectionId)
-    if (connection.provider !== 'github') return this.readDetail(cwd, number)
-    const detail = await this.githubTarget(
-      connection.id,
-      connection.revision,
-      new URL(connection.baseUrl).hostname,
-      binding.repository,
-      connection.cliProfile,
-    ).status(cwd, number, background)
-    detail.pull.connectionId = binding.connectionId
-    return detail
+  private scopedAdapter(scope: SourceContext, cwd: string) {
+    return scope.connection
+      ? this.adapter(scope.connection.id, scope.repository, cwd, scope)
+      : undefined
   }
-  async detail(cwd: string, number: number) {
-    if (githubPullTarget(cwd)) return this.urlTarget(cwd).detail(number)
-    return pullAttributes(this.git, cwd, await this.readDetail(cwd, number))
+  private tagDetail(detail: Awaited<ReturnType<PullRequests['detail']>>, scope: SourceContext) {
+    scope.validate()
+    return {
+      ...detail,
+      destination: scope.destination,
+      pull: {
+        ...detail.pull,
+        destination: scope.destination,
+        ...(scope.connection ? { connectionId: scope.connection.id } : {}),
+      },
+    }
   }
-  private async readDetail(cwd: string, number: number) {
-    const binding = await this.binding(cwd)
-    const detail = binding
-      ? await this.adapter(binding.connectionId, binding.repository, cwd).detail(number)
-      : await this.github.detail(cwd, number)
-    if (binding) detail.pull.connectionId = binding.connectionId
-    return detail
+  /** Cache discovery and its later load must agree before the load issues provider reads. */
+  forDestination(destination: string) {
+    return {
+      list: (cwd: string, state: 'open' | 'closed' | 'all', page: number, background = false) =>
+        this.list(cwd, state, page, background, destination),
+      detail: (cwd: string, number: number) => this.detail(cwd, number, destination),
+      status: (cwd: string, number: number, background = false) =>
+        this.status(cwd, number, background, destination),
+      feedback: (cwd: string, number: number) => this.feedback(cwd, number, destination),
+    }
   }
-  // PullCache calls this through its structural provider contract.
-  // fallow-ignore-next-line unused-class-member
-  async feedback(cwd: string, number: number) {
-    const binding = await this.binding(cwd)
-    if (!binding) return this.github.feedback(cwd, number)
-    const connection = this.connections.get(binding.connectionId)
-    if (connection.provider !== 'github') return this.readDetail(cwd, number)
-    const detail = await this.githubTarget(
-      connection.id,
-      connection.revision,
-      new URL(connection.baseUrl).hostname,
-      binding.repository,
-      connection.cliProfile,
-    ).feedback(cwd, number)
-    detail.pull.connectionId = binding.connectionId
-    return detail
+  async identity(cwd: string, refresh = false) {
+    if (forgePullTarget(cwd)) return this.urlTarget(cwd).identity(refresh)
+    return (await this.sourceContext(cwd)).destination
+  }
+  async sourceIdentity(cwd: string) {
+    const { readerIdentity, destination } = await this.sourceContext(cwd)
+    return { readerIdentity, destination }
+  }
+  async guard(
+    cwd: string,
+    input: { expectedDestination?: string; expectedReaderIdentity?: string },
+  ) {
+    const scope = await this.sourceContext(cwd)
+    guardSource(scope, input)
+    return scope
+  }
+  async list(
+    cwd: string,
+    state: 'open' | 'closed' | 'all',
+    page: number,
+    background = false,
+    expectedDestination?: string,
+  ) {
+    const scope = await this.sourceContext(cwd)
+    guardSource(scope, { expectedDestination })
+    const result = await (this.scopedAdapter(scope, cwd)?.list(state, page, background) ??
+      this.scopedGithub(scope).list(cwd, state, page, background))
+    scope.validate()
+    return {
+      ...result,
+      destination: scope.destination,
+      pulls: result.pulls.map((pull) => ({ ...pull, destination: scope.destination })),
+    }
+  }
+  async status(cwd: string, number: number, background = false, expectedDestination?: string) {
+    const scope = await this.sourceContext(cwd)
+    guardSource(scope, { expectedDestination })
+    return this.tagDetail(
+      await (scope.provider === 'github'
+        ? this.scopedGithub(scope).status(cwd, number, background)
+        : this.scopedAdapter(scope, cwd)!.detail(number)),
+      scope,
+    )
+  }
+  async detail(cwd: string, number: number, expectedDestination?: string) {
+    if (forgePullTarget(cwd)) return this.urlTarget(cwd).detail(number, expectedDestination)
+    const scope = await this.sourceContext(cwd)
+    guardSource(scope, { expectedDestination })
+    const detail = await (this.scopedAdapter(scope, cwd)?.detail(number) ??
+      this.scopedGithub(scope).detail(cwd, number))
+    return this.tagDetail(await pullAttributes(this.git, cwd, detail), scope)
+  }
+  async feedback(cwd: string, number: number, expectedDestination?: string) {
+    const scope = await this.sourceContext(cwd)
+    guardSource(scope, { expectedDestination })
+    return this.tagDetail(
+      await (scope.provider === 'github'
+        ? this.scopedGithub(scope).feedback(cwd, number)
+        : this.scopedAdapter(scope, cwd)!.detail(number)),
+      scope,
+    )
   }
   async comment(cwd: string, value: unknown) {
     const input = decode(pullLineCommentSchema, value)
-    return (await this.target(cwd))?.comment(input) ?? this.github.comment(cwd, input)
+    const scope = await this.guard(cwd, input)
+    return (
+      this.scopedAdapter(scope, cwd)?.comment(input) ?? this.scopedGithub(scope).comment(cwd, input)
+    )
   }
   async create(cwd: string, input: PullCreate) {
-    return (await this.target(cwd))?.create(input) ?? this.github.create(cwd, input)
+    const scope = await this.guard(cwd, input)
+    return (
+      this.scopedAdapter(scope, cwd)?.create(input) ?? this.scopedGithub(scope).create(cwd, input)
+    )
   }
   async createOptions(cwd: string) {
-    const binding = await this.binding(cwd)
-    const provider = binding ? this.connections.get(binding.connectionId).provider : 'github'
+    const scope = await this.sourceContext(cwd)
     return {
-      provider,
-      draft: provider === 'github' || provider === 'bitbucket' || provider === 'azure-devops',
+      provider: scope.provider,
+      destination: scope.destination,
+      draft: ['github', 'gitlab', 'bitbucket', 'azure-devops'].includes(scope.provider),
     }
   }
   async act(cwd: string, input: PullAction) {
-    return (await this.target(cwd))?.act(input) ?? this.github.act(cwd, input)
+    const scope = await this.guard(cwd, input)
+    return this.scopedAdapter(scope, cwd)?.act(input) ?? this.scopedGithub(scope).act(cwd, input)
   }
 }

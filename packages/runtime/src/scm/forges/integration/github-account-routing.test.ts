@@ -34,7 +34,7 @@ if (args[0] === 'auth' && args[1] === 'token') {
   // gh only mints tokens; API requests carry the minted token to GitHub.
   vi.spyOn(GithubTransport.prototype, 'send').mockImplementation(async (request, token) => {
     const login = token.replace(/^fixture-token-/, '')
-    if (request.path === 'user') return JSON.stringify({ login })
+    if (request.path === 'user') return JSON.stringify({ id: login === 'personal' ? 1 : 2, login })
     if (request.path.startsWith('user/repos'))
       return JSON.stringify([
         {
@@ -103,8 +103,8 @@ if (args[0] === 'auth' && args[1] === 'token') {
     s.git.github(personal.directory, ['api', '--hostname', 'github.com', 'user']),
     s.git.github(work.directory, ['api', '--hostname', 'github.com', 'user']),
   ])
-  expect(JSON.parse(first)).toEqual({ login: 'personal' })
-  expect(JSON.parse(second)).toEqual({ login: 'work' })
+  expect(JSON.parse(first)).toEqual({ id: 1, login: 'personal' })
+  expect(JSON.parse(second)).toEqual({ id: 2, login: 'work' })
   // Selecting a new account from another project's checkout must not inherit its wrapper selector.
   const listed = await s.pulls.adapter(named.id, 'personal/app', work.directory).repositories(1)
   expect(listed.repositories[0]?.fullName).toBe('personal/app')
@@ -117,8 +117,8 @@ if (args[0] === 'auth' && args[1] === 'token') {
   const personalIdentity = await s.pulls.identity(personal.directory)
   const workIdentity = await s.pulls.identity(worktree)
   expect(personalIdentity).not.toBe(workIdentity)
-  expect(personalIdentity).toContain('personal')
-  expect(workIdentity).toContain('work')
+  expect(personalIdentity).toMatch(/^[a-f0-9]{64}$/)
+  expect(workIdentity).toMatch(/^[a-f0-9]{64}$/)
   expect(personalIdentity + workIdentity).not.toContain('fixture-token')
   await s.git.command(work.directory, [
     'remote',
@@ -161,4 +161,104 @@ if (args[0] === 'auth' && args[1] === 'token') {
   expect(JSON.stringify(s.forges.list())).not.toContain('fixture-token')
   expect(process.env.GH_TOKEN).toBe('ambient-token')
   expect(process.env.GH_ACCOUNT).toBe(originalSelector)
+})
+
+it.each(['gh', 'gh-wrapper'] as const)(
+  'invalidates the actual bound %s credential source on 401 without retrying a mutation',
+  async (credential) => {
+    const { ForgeCliAccounts } = await import('./forge-cli-accounts.js')
+    let token = 'fixture-old-token'
+    const mint = vi
+      .spyOn(ForgeCliAccounts.prototype, 'githubToken')
+      .mockImplementation(async () => token)
+    const runtime = await startRuntime({
+      databasePath: ':memory:',
+      ownerToken: 'github-rejected-test-owner-token-with-32-characters',
+      port: 0,
+    })
+    cleanup.push(() => runtime.close())
+    const s = runtime.services
+    const connection = s.forges.save({
+      name: 'Bound',
+      provider: 'github',
+      baseUrl: 'https://github.com',
+      credential,
+      ...(credential === 'gh' ? { cliProfile: 'viewer' } : { cliEnv: { GH_ACCOUNT: 'viewer' } }),
+    })
+    const rejected = vi.fn<(token: string) => void>()
+    vi.spyOn(GithubTransport.prototype, 'send').mockImplementation(
+      async (request, supplied, options) => {
+        if (request.path === 'user') return JSON.stringify({ id: 17, login: 'viewer' })
+        if (request.path.endsWith('/pulls/7'))
+          return JSON.stringify({
+            number: 7,
+            head: { sha: 'a'.repeat(40) },
+            state: 'open',
+            merged: false,
+            html_url: 'https://github.com/owner/project/pull/7',
+          })
+        rejected(supplied)
+        options?.onUnauthorized?.()
+        const { GithubApiError } = await import('../../git/github-transport.js')
+        throw new GithubApiError(401, 'GitHub API HTTP 401')
+      },
+    )
+    const adapter = s.pulls.adapter(connection.id, 'owner/project', '/fixture')
+    await expect(
+      adapter.act({ action: 'comment', number: 7, headSha: 'a'.repeat(40), body: 'Private draft' }),
+    ).rejects.toThrow('HTTP 401')
+    expect(rejected).toHaveBeenCalledTimes(1)
+    expect(rejected).toHaveBeenCalledWith('fixture-old-token')
+    token = 'fixture-new-token'
+    await expect(s.forges.githubToken(connection.id, '/fixture')).resolves.toBe('fixture-new-token')
+    expect(mint).toHaveBeenCalledTimes(2)
+  },
+)
+it('rechecks destination immediately before a budget-queued GitHub mutation dispatches', async () => {
+  const { GitService } = await import('../../git/git.js')
+  const { HttpError } = await import('../../../errors.js')
+  const git = new GitService()
+  const release: Array<() => void> = []
+  const writes = vi.fn<() => void>()
+  vi.spyOn(GithubTransport.prototype, 'send').mockImplementation(async (request) => {
+    if (request.method === 'GET')
+      return new Promise<string>((resolve) => release.push(() => resolve('{}')))
+    writes()
+    return '{}'
+  })
+  const account = { host: 'github.com', token: 'fixture-budget-token' }
+  const reading = Array.from({ length: 4 }, () =>
+    git.githubAccount(['api', '--hostname', 'github.com', 'user'], undefined, '/fixture', account),
+  )
+  await vi.waitFor(() => expect(release).toHaveLength(4))
+  let destination = 'original'
+  const queued = git.githubAccount(
+    [
+      'api',
+      '--hostname',
+      'github.com',
+      'repos/owner/project/issues/7/comments',
+      '--method',
+      'POST',
+    ],
+    undefined,
+    '/fixture',
+    {
+      ...account,
+      beforeDispatch: () => {
+        if (destination !== 'original')
+          throw new HttpError(409, 'Destination changed before dispatch')
+      },
+    },
+  )
+  const rejected = queued.then(
+    () => undefined,
+    (error: unknown) => error,
+  )
+  destination = 'rebound'
+  release[0]!()
+  expect(await rejected).toMatchObject({ status: 409 })
+  for (const finish of release.slice(1)) finish()
+  await Promise.all(reading)
+  expect(writes).not.toHaveBeenCalled()
 })

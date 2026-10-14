@@ -506,6 +506,8 @@ textarea {
 }
 .studio-navigation .studio-update-item {
   position: relative;
+}
+.studio-navigation .studio-update-item[data-update-available='true'] {
   color: var(--primary);
 }
 .studio-update-dot {
@@ -960,9 +962,17 @@ a:focus-visible {
 }
 
 /* Project controls follow the flat, grouped card used in the thread design. */
+.studio-project-popover {
+  width: min(304px, var(--radix-popover-content-available-width), calc(100vw - 64px));
+  max-height: min(720px, var(--radix-popover-content-available-height));
+  scrollbar-width: none;
+}
+.studio-project-popover::-webkit-scrollbar {
+  display: none;
+}
 .studio-project-panel {
   gap: 4px;
-  background: var(--background);
+  background: var(--popover);
 }
 .studio-project-card {
   flex-shrink: 0;
@@ -972,8 +982,13 @@ a:focus-visible {
   background: color-mix(in srgb, var(--background) 85%, var(--foreground) 3%);
   color: color-mix(in srgb, var(--foreground) 82%, var(--background));
 }
+.studio-project-popover .studio-project-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
 .studio-project-section {
-  padding: 12px 16px;
+  padding: 14px 16px;
 }
 .studio-project-actions {
   display: flex;
@@ -983,31 +998,43 @@ a:focus-visible {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 12px;
-  min-height: 40px;
+  gap: 10px;
+  min-height: 36px;
   height: auto;
-  padding: 8px 4px;
+  padding: 6px 2px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   box-shadow: none;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 20px;
   white-space: nowrap;
   color: inherit;
 }
 .studio-project-row > svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
 }
 button.studio-project-row:hover,
 a.studio-project-row:hover {
   background: var(--accent);
 }
-.studio-project-computer {
-  padding-bottom: 10px;
+.studio-project-checkout > .studio-project-row {
+  border: 1px solid var(--border);
+  padding-inline: 10px;
+  background: var(--accent);
+  color: var(--foreground);
+}
+.studio-project-checkout > .studio-project-row > svg:first-child {
+  display: none;
+}
+.studio-project-changes {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding-top: 14px;
 }
 .studio-project-split-row {
   display: flex;
@@ -1018,7 +1045,6 @@ a.studio-project-row:hover {
   height: 24px;
   padding: 0;
   border: 0;
-  border-left: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -1029,9 +1055,7 @@ a.studio-project-row:hover {
   height: 16px;
 }
 .studio-project-branch-chevron {
-  box-sizing: content-box;
-  border-left: 1px solid var(--border);
-  padding-left: 12px;
+  margin-left: auto;
 }
 .studio-project-pull {
   margin: 2px 0 6px;
@@ -1063,4 +1087,7 @@ a.studio-project-row:hover {
 /* Secondary thread-card rows recede while project colours and status accents stay vivid. */
 .studio-thread-card-context {
   color: color-mix(in srgb, var(--foreground) 38%, var(--sidebar));
+}
+[data-unread='true'] .studio-thread-card-context {
+  color: color-mix(in srgb, var(--foreground) 60%, var(--sidebar));
 }

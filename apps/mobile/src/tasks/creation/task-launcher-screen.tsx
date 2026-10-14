@@ -1,3 +1,4 @@
+import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FolderPicker } from './folder-picker'
 import { TaskLauncherControls } from './task-launcher-controls'
 import { useEffect, useRef } from 'react'
@@ -94,8 +95,11 @@ export function TaskLauncherScreen() {
   const selectedRepository = snapshot?.workspace.repositories.find(
     (entry) => entry.id === repositoryId,
   )
+  const selectionIssue = selection?.harness
+    ? permissionPolicyUIIssue(selection.harness, snapshot?.permissionPolicySupported === true)
+    : undefined
   const dispatch = async () => {
-    if (submitting.current) return
+    if (submitting.current || selectionIssue) return
     const profile = profiles.find((profile) => profile.id === runtimeId)
     const repository = snapshot?.workspace.repositories.find(
       (repository) => repository.id === repositoryId,
@@ -240,11 +244,17 @@ export function TaskLauncherScreen() {
               {!!attempt.current && (
                 <Text style={styles.muted}>Retry keeps the same task and message.</Text>
               )}
+              {selectionIssue && (
+                <Text accessibilityRole="alert" style={styles.error}>
+                  {selectionIssue}
+                </Text>
+              )}
               <Action
                 wide
                 label={busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'}
                 disabled={
                   busy ||
+                  !!selectionIssue ||
                   (!attempt.current &&
                     (!snapshot ||
                       loading ||

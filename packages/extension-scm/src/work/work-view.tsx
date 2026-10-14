@@ -30,8 +30,8 @@ import { JiraSourcesDialog } from '../connections/jira-binding'
 import {
   useIssueSources,
   jiraSourceKey,
-  workRemoteKey,
   matchesWorkSource,
+  workRemoteKey,
   type WorkSource,
 } from './work-sources'
 import { PipelineState } from './pipeline-detail'
@@ -109,7 +109,7 @@ function WorkView({
     const timer = setTimeout(() => setQuery(mode === 'issues' ? search.trim() : ''), 300)
     return () => clearTimeout(timer)
   }, [mode, search])
-  const { sources, pages, busy, refresh, more } = useWorkSources(
+  const { sources, pages, busy, refresh, more, chooseReader } = useWorkSources(
     mode,
     query,
     sourceKind,
@@ -209,7 +209,7 @@ function WorkView({
     }
     setError('')
     lastTarget.current = entityId
-    setProject(workRemoteKey(source))
+    setProject(source.key)
     setSearch(target.sha ?? '')
     setSelected(
       target.id
@@ -244,7 +244,9 @@ function WorkView({
       setOpening(false)
     }
   }
-  const visiblePages = pages.filter((page) => matchesWorkSource(page.source, project))
+  const projectSource = sources.find((source) => source.key === project)
+  const projectRemote = projectSource ? workRemoteKey(projectSource) : project
+  const visiblePages = pages.filter((page) => matchesWorkSource(page.source, projectRemote))
   const rows = visiblePages
     .flatMap((page) =>
       page.items.map((item) => ({
@@ -299,7 +301,7 @@ function WorkView({
     }
     const candidates = target
       ? [target]
-      : canCreate.filter((source) => matchesWorkSource(source, project))
+      : canCreate.filter((source) => matchesWorkSource(source, projectRemote))
     if (candidates.length !== 1 || !candidates[0]?.connected) {
       setPicking(true)
       return
@@ -321,7 +323,7 @@ function WorkView({
       setOpening(false)
     }
   }
-  const visibleSources = sources.filter((source) => matchesWorkSource(source, project))
+  const visibleSources = sources.filter((source) => matchesWorkSource(source, projectRemote))
   const sourceProblems = visiblePages.filter(
     (page) =>
       page.error ||
@@ -338,7 +340,7 @@ function WorkView({
   const closePreview = () => {
     if (selected) focusAfterClose.current = jiraIssueRowKey(selected.source, selected.id)
     setSelected(null)
-    if (entityId) host.navigate({ viewId: isJira ? 'jira' : mode })
+    if (entityId && !host.goBack?.()) host.navigate({ viewId: isJira ? 'jira' : mode })
   }
   const detail = selected ? (
     selectedSource ? (
@@ -421,7 +423,7 @@ function WorkView({
               disabled={
                 opening ||
                 !(project
-                  ? canCreate.some((source) => matchesWorkSource(source, project))
+                  ? canCreate.some((source) => matchesWorkSource(source, projectRemote))
                   : canCreate.length)
               }
               onClick={() => void chooseSource('create')}
@@ -500,8 +502,14 @@ function WorkView({
                 sources={sources}
                 source={project}
                 onSource={(value) => {
-                  setProject(value)
-                  setSelected(null)
+                  void (chooseReader?.(value) ?? Promise.resolve())
+                    .then(() => {
+                      setProject(value)
+                      setSelected(null)
+                    })
+                    .catch((cause: unknown) =>
+                      setError(cause instanceof Error ? cause.message : String(cause)),
+                    )
                 }}
                 linked={linked}
                 onLinked={setLinked}
@@ -523,14 +531,18 @@ function WorkView({
                   className="h-8 w-auto max-w-72 text-xs"
                   value={project}
                   onValueChange={(value) => {
-                    setProject(value)
+                    void (chooseReader?.(value) ?? Promise.resolve())
+                      .then(() => setProject(value))
+                      .catch((cause: unknown) =>
+                        setError(cause instanceof Error ? cause.message : String(cause)),
+                      )
                     if (isJira) setSelected(null)
                     else setState('all')
                   }}
                 >
                   <option value="">All sources</option>
                   {sources.map((source) => (
-                    <option key={source.key} value={workRemoteKey(source)}>
+                    <option key={source.key} value={source.key}>
                       {source.name} · {source.runtimeName}
                     </option>
                   ))}
@@ -877,7 +889,7 @@ function WorkView({
       {picking && (
         <SourcePicker
           title={mode === 'issues' ? 'New issue' : 'Run pipeline'}
-          sources={canCreate.filter((source) => matchesWorkSource(source, project))}
+          sources={canCreate.filter((source) => matchesWorkSource(source, projectRemote))}
           onClose={() => setPicking(false)}
           onSelect={(source) => {
             const page = pages.find(

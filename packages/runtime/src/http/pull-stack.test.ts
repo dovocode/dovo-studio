@@ -14,8 +14,10 @@ it('verifies the parent at submission, rejects changed or closed parents and rec
   const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
   cleanups.push(() => runtime.close())
   runtime.services.store.update(() => f.workspace)
-  const parent: PullDetail = {
+  const parent = {
+    destination: 'pull-stack-test-account',
     pull: {
+      destination: 'pull-stack-test-account',
       number: 1,
       title: 'Parent',
       url: 'https://github.com/test/repo/pull/1',
@@ -41,7 +43,7 @@ it('verifies the parent at submission, rejects changed or closed parents and rec
     checks: [],
     comments: [],
     warnings: [],
-  }
+  } satisfies PullDetail
   const detail = vi.spyOn(runtime.services.pulls, 'detail').mockResolvedValue(parent)
   const create = vi
     .spyOn(runtime.services.pulls, 'create')

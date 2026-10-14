@@ -1,3 +1,8 @@
+import {
+  forgeReadGuardFields,
+  forgeDestinationGuardFields,
+  forgeIdentityTokenSchema,
+} from './source-identity.js'
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { minValue, maxValue, refine, urlSchema } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
@@ -26,6 +31,8 @@ const cached = {
   refreshError: Schema.optional(Schema.String),
 }
 export const forgeWorkQuerySchema = mutableStruct({
+  ...forgeReadGuardFields,
+  ...forgeDestinationGuardFields,
   jiraFilters: Schema.optional(jiraIssueFiltersSchema),
   cursor: Schema.optional(maxValue(Schema.String, 4000)),
   query: Schema.optional(maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 300)),
@@ -35,6 +42,7 @@ export const forgeWorkQuerySchema = mutableStruct({
   refresh: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
 })
 export const forgeWorkOptionsSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   provider: Schema.Union([forgeProviderSchema, Schema.Literal('jira')]),
   issues: Schema.Boolean,
   issueNotice: Schema.optional(Schema.String),
@@ -53,6 +61,7 @@ export const forgeWorkOptionsSchema = mutableStruct({
 })
 export type ForgeWorkOptions = Schema.Schema.Type<typeof forgeWorkOptionsSchema>
 export const forgeIssueSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   id,
   title: Schema.String,
   body: Schema.String,
@@ -74,11 +83,13 @@ export const forgeIssueSchema = mutableStruct({
 })
 export type ForgeIssue = Schema.Schema.Type<typeof forgeIssueSchema>
 export const forgeIssuePageSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   items: mutableArray(forgeIssueSchema),
   next: Schema.optional(Schema.String),
   ...cached,
 })
 export const forgeIssueDetailSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   issue: forgeIssueSchema,
   discussionNotice: Schema.optional(Schema.String),
   comments: mutableArray(
@@ -110,6 +121,7 @@ const fields = {
   ),
 }
 export const forgeIssueCreateSchema = mutableStruct({
+  ...forgeDestinationGuardFields,
   ...fields,
   assignees: fields.assignees.pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
   labels: fields.labels.pipe(Schema.withDecodingDefaultType(Effect.sync(() => []))),
@@ -120,6 +132,7 @@ export const forgeIssueCreateSchema = mutableStruct({
 export type ForgeIssueCreate = Schema.Schema.Type<typeof forgeIssueCreateSchema>
 export const forgeIssueActionSchema = Schema.Union([
   mutableStruct({
+    ...forgeDestinationGuardFields,
     action: Schema.Literal('edit'),
     id,
     revision: id,
@@ -132,6 +145,7 @@ export const forgeIssueActionSchema = Schema.Union([
     labels: Schema.optional(fields.labels),
   }),
   mutableStruct({
+    ...forgeDestinationGuardFields,
     action: Schema.Literal('comment'),
     id,
     revision: id,
@@ -145,6 +159,7 @@ const pipelineTiming = {
 }
 const pipelineErrors = Schema.optional(maxValue(mutableArray(maxValue(Schema.String, 2000)), 10))
 export const forgePipelineSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   id,
   title: Schema.String,
   url,
@@ -174,6 +189,7 @@ export const forgePipelineSchema = mutableStruct({
 })
 export type ForgePipeline = Schema.Schema.Type<typeof forgePipelineSchema>
 export const forgePipelinePageSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   items: mutableArray(forgePipelineSchema),
   next: Schema.optional(Schema.String),
   ...cached,
@@ -216,6 +232,7 @@ export const forgePipelineGraphNodeSchema = mutableStruct({
 })
 export type ForgePipelineGraphNode = Schema.Schema.Type<typeof forgePipelineGraphNodeSchema>
 export const forgePipelineDetailSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   graph: Schema.optional(mutableArray(forgePipelineGraphNodeSchema)),
   graphNotice: Schema.optional(Schema.String),
   run: forgePipelineSchema,
@@ -225,6 +242,7 @@ export const forgePipelineDetailSchema = mutableStruct({
 })
 export type ForgePipelineDetail = Schema.Schema.Type<typeof forgePipelineDetailSchema>
 export const forgeDefinitionsSchema = mutableStruct({
+  destination: Schema.optional(forgeIdentityTokenSchema),
   items: mutableArray(
     mutableStruct({
       id,
@@ -238,6 +256,7 @@ export const forgeDefinitionsSchema = mutableStruct({
 })
 export const forgePipelineActionSchema = Schema.Union([
   mutableStruct({
+    ...forgeDestinationGuardFields,
     action: Schema.Literal('run'),
     definition: id,
     ref: id,
@@ -251,18 +270,22 @@ export const forgePipelineActionSchema = Schema.Union([
     ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => ({})))),
   }),
   mutableStruct({
+    ...forgeDestinationGuardFields,
     action: Schema.Literal('rerun'),
     id,
   }),
   mutableStruct({
+    ...forgeDestinationGuardFields,
     action: Schema.Literal('cancel'),
     id,
   }),
   mutableStruct({
+    ...forgeDestinationGuardFields,
     action: Schema.Literal('enable'),
     id,
   }),
   mutableStruct({
+    ...forgeDestinationGuardFields,
     action: Schema.Literal('disable'),
     id,
   }),

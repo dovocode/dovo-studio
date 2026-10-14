@@ -1,3 +1,4 @@
+import { createDetailDrafts, integrationDraftKey } from '../../runtime/state/detail-drafts'
 import { decode } from '@dovo/protocol'
 import { expect, it } from 'vite-plus/test'
 import { runtimeProfile, snapshotSchema, type RuntimeOverview } from '@dovo/protocol'
@@ -173,4 +174,51 @@ it('keeps Jira cache separate from repository cache and namespace changes', () =
     ),
   ]
   expect(new Set(keys).size).toBe(keys.length)
+})
+
+it('preserves a Jira detail draft across cosmetic renames and isolates destination changes', () => {
+  const entry = overview('laptop')
+  const renamed = {
+    ...entry,
+    snapshot: {
+      ...entry.snapshot!,
+      workspace: {
+        ...entry.snapshot!.workspace,
+        jiraSources: [{ ...jira, name: 'Renamed source' }],
+      },
+    },
+  }
+  const before = workSources([entry], 'issues')[0]
+  const after = workSources([renamed], 'issues')[0]
+  expect(workSourceContentIdentity(before)).toBe(workSourceContentIdentity(after))
+  const key = integrationDraftKey(
+    entry.profile.connection,
+    entry.snapshot,
+    undefined,
+    jira.id,
+    'comment',
+    'TEAM-42',
+  )
+  const renamedKey = integrationDraftKey(
+    entry.profile.connection,
+    renamed.snapshot,
+    undefined,
+    jira.id,
+    'comment',
+    'TEAM-42',
+  )
+  const drafts = createDetailDrafts<{ body: string }>()
+  drafts.write(key, { body: 'Unsent Jira comment' })
+  expect(drafts.read(renamedKey)?.body).toBe('Unsent Jira comment')
+  renamed.snapshot.workspace.jiraSources[0].site = 'https://other.atlassian.net'
+  expect(
+    integrationDraftKey(
+      entry.profile.connection,
+      renamed.snapshot,
+      undefined,
+      jira.id,
+      'comment',
+      'TEAM-42',
+    ),
+  ).not.toBe(key)
 })

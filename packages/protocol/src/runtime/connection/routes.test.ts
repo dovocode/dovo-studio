@@ -5,6 +5,7 @@ import {
   resolveRuntimeRoute,
   runtimeTransportAddress,
   invalidateRuntimeRoute,
+  failRuntimeStreamingRoute,
 } from './routes.js'
 import { runtimeRequest } from '../../shared/client.js'
 import { decode } from '../../shared/schema.js'
@@ -200,4 +201,162 @@ it('uses saved route metadata in a fresh client session without sending tokens t
   expect(await resolveRuntimeRoute(connection, new AbortController().signal)).toBe(
     'http://restored-vpn.local',
   )
+})
+
+it('returns a verified preferred route without waiting for stale lower-priority probes and aborts them', async () => {
+  const connection = {
+    address: 'http://fast-preferred.local',
+    token,
+    runtimeId: 'paired-runtime',
+    alternateAddresses: ['http://never-answers.local'],
+  }
+  let staleSignal: AbortSignal | null | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(async (input, options) => {
+      const url = new URL(
+        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
+      )
+      if (url.origin === connection.address)
+        return Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId })
+      staleSignal = options?.signal
+      return new Promise<Response>((_resolve, reject) => {
+        staleSignal?.addEventListener('abort', () => reject(new Error('Cancelled probe')), {
+          once: true,
+        })
+      })
+    }),
+  )
+  let selected: string | undefined
+  const pending = resolveRuntimeRoute(connection, new AbortController().signal).then((address) => {
+    selected = address
+    return address
+  })
+  await vi.waitFor(() => expect(selected).toBe(connection.address))
+  expect(await pending).toBe(connection.address)
+  expect(staleSignal?.aborted).toBe(true)
+})
+
+it('keeps streaming cooldowns independent of HTTP selection and rechecks the preferred route after thirty seconds', async () => {
+  const connection = {
+    address: 'http://http-only-proxy.local',
+    token,
+    runtimeId: 'paired-runtime',
+    alternateAddresses: ['http://streaming-vpn.local'],
+  }
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(100000)
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId }),
+      ),
+  )
+  const signal = new AbortController().signal
+  expect(await resolveRuntimeRoute(connection, signal)).toBe(connection.address)
+  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe(connection.address)
+  failRuntimeStreamingRoute(connection, connection.address)
+  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe('http://streaming-vpn.local')
+  expect(runtimeTransportAddress(connection)).toBe(connection.address)
+  expect(runtimeTransportAddress(connection, 'stream')).toBe('http://streaming-vpn.local')
+  expect(await resolveRuntimeRoute(connection, signal)).toBe(connection.address)
+  clock.mockReturnValue(129999)
+  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe('http://streaming-vpn.local')
+  clock.mockReturnValue(130000)
+  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe(connection.address)
+})
+
+it('does not retain a selection from cancelled probes, even if a descriptor arrives late', async () => {
+  const connection = {
+    address: 'http://cancelled-probe.local',
+    token,
+    runtimeId: 'paired-runtime',
+  }
+  let finish: ((response: Response) => void) | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve
+        }),
+    ),
+  )
+  const controller = new AbortController()
+  const pending = resolveRuntimeRoute(connection, controller.signal).catch(
+    (error: unknown) => error,
+  )
+  controller.abort(new Error('Changed runtime'))
+  finish?.(Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId }))
+  expect(await pending).toMatchObject({ message: 'Changed runtime' })
+  expect(runtimeTransportAddress(connection)).toBe(connection.address)
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async () =>
+      Response.json({ service: 'dovo-runtime', runtimeId: 'different-runtime' }),
+    )
+  vi.stubGlobal('fetch', fetcher)
+  await expect(resolveRuntimeRoute(connection, new AbortController().signal)).rejects.toThrow(
+    'No verified address',
+  )
+  expect(fetcher).toHaveBeenCalledOnce()
+})
+
+it('bounds exhaustion of all streaming routes without blocking HTTP or permanently excluding the runtime', async () => {
+  const connection = {
+    address: 'http://all-streams-blocked.local',
+    token,
+    runtimeId: 'paired-runtime',
+    alternateAddresses: ['http://also-blocked-vpn.local'],
+  }
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(100000)
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId }),
+      ),
+  )
+  const signal = new AbortController().signal
+  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe(connection.address)
+  failRuntimeStreamingRoute(connection, connection.address)
+  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe(
+    connection.alternateAddresses[0],
+  )
+  failRuntimeStreamingRoute(connection, connection.alternateAddresses[0]!)
+  await expect(resolveRuntimeRoute(connection, signal, 'stream')).rejects.toThrow(
+    'No verified address',
+  )
+  expect(await resolveRuntimeRoute(connection, signal)).toBe(connection.address)
+  clock.mockReturnValue(130000)
+  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe(connection.address)
+})
+
+it('rejects changed saved runtime identity before trusting an already warm route', async () => {
+  const connection = { address: 'http://warm-identity.local', token, runtimeId: 'paired-runtime' }
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async () =>
+      Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId }),
+    )
+  vi.stubGlobal('fetch', fetcher)
+  expect(await resolveRuntimeRoute(connection, new AbortController().signal)).toBe(
+    connection.address,
+  )
+  fetcher.mockClear()
+  await expect(
+    runtimeRequest(
+      { ...connection, runtimeId: 'different-runtime' },
+      connection.address,
+      '/api/scm/pulls/action',
+      {},
+      Schema.Unknown,
+    ),
+  ).rejects.toMatchObject({
+    kind: 'connection',
+    message: expect.stringContaining('different runtime'),
+  })
+  expect(fetcher).not.toHaveBeenCalled()
 })

@@ -26,6 +26,8 @@ vi.mock('@dovo/studio-core', async (importOriginal) => ({
 vi.mock('react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react')>()),
   useMemo: (factory: () => unknown) => factory(),
+  useEffect: () => {},
+  useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
   useRef: <T>(value: T) => ({ current: value }),
 }))
 const snapshot = decode(snapshotSchema, {
@@ -106,7 +108,7 @@ beforeEach(() => {
     runtimeReadCache: () => cache,
   }
 })
-it('reads one Jira project through this computer and fails over when it disconnects', () => {
+it('keeps an unverified Jira account on its original reader when it disconnects', () => {
   const sources = useIssueSources(true)
   expect(sources).toHaveLength(1)
   expect(sources[0]).toMatchObject({
@@ -117,7 +119,7 @@ it('reads one Jira project through this computer and fails over when it disconne
   })
   expect(sources[0].key).toBe(jiraSourceKey(mac.id, 'tracker'))
   store.connected = false
-  expect(useIssueSources(true)[0].key).toBe(jiraSourceKey(linux.id, 'tracker'))
+  expect(useIssueSources(true)[0].key).toBe(jiraSourceKey(mac.id, 'tracker'))
   // A different Jira project on another computer stays a separate source.
   store.runtimes[1] = {
     ...store.runtimes[1],
@@ -137,7 +139,7 @@ it('reads one Jira project through this computer and fails over when it disconne
 })
 it('keeps requests bound to the Jira owner and invalidates scope on credential changes', async () => {
   store.connected = false
-  const source = useIssueSources(true)[0]
+  const source = useIssueSources(true, false)[1]
   expect(
     await source.request(
       '/api/scm/work/issues/list',
@@ -165,12 +167,12 @@ it('keeps requests bound to the Jira owner and invalidates scope on credential c
       },
     },
   }
-  expect(useIssueSources(true)[0].scope).not.toBe(source.scope)
+  expect(useIssueSources(true, false)[1].scope).not.toBe(source.scope)
 })
 it('keeps every owner available for an open Jira detail when the list reader changes', () => {
   expect(useIssueSources(true, false).map((source) => source.runtimeId)).toEqual([mac.id, linux.id])
   store.connected = false
-  expect(useIssueSources(true)[0].runtimeId).toBe(linux.id)
+  expect(useIssueSources(true)[0].runtimeId).toBe(mac.id)
   expect(
     useIssueSources(true, false).find((source) => source.runtimeId === mac.id)?.connected,
   ).toBe(false)
@@ -209,7 +211,7 @@ it('retains a source filter across reader handoff without merging distinct Jira 
   const original = useIssueSources(true)[0]
   const filter = workRemoteKey(original)
   store.connected = false
-  const replacement = useIssueSources(true)[0]
+  const replacement = useIssueSources(true, false)[1]
   expect(replacement.key).not.toBe(original.key)
   expect(matchesWorkSource(replacement, filter)).toBe(true)
   expect(

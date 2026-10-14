@@ -28,7 +28,7 @@ try {
       'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
       '@dovo/studio-ui':
         controls +
-        `export {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '${root}/packages/studio-ui/src/components/ui/select.tsx';export {SettingSource} from '${root}/packages/studio-ui/src/setting-source.tsx';export {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`,
+        `export {PermissionPolicyFields,permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields';export {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '${root}/packages/studio-ui/src/components/ui/select.tsx';export {SettingSource} from '${root}/packages/studio-ui/src/setting-source.tsx';export {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`,
     }
     const built = await build({
       stdin: {
@@ -168,16 +168,19 @@ try {
     await editor.getByLabel('Name', { exact: true }).fill('Cursor worker')
     if (!mobile) await editor.getByRole('button', { name: 'Next', exact: true }).click()
     if (mobile) {
-      assert.equal(await editor.getByLabel('Access', { exact: true }).inputValue(), 'read-only')
+      assert.equal(
+        await editor.getByLabel('Access mode', { exact: true }).inputValue(),
+        'read-only',
+      )
       assert.deepEqual(
         await editor
-          .getByLabel('Access', { exact: true })
+          .getByLabel('Access mode', { exact: true })
           .locator('option')
           .evaluateAll((rows) => rows.map((row) => row.value)),
         ['read-only', 'auto', 'full-access'],
       )
     } else {
-      const access = editor.getByRole('combobox', { name: 'Access', exact: true })
+      const access = editor.getByRole('combobox', { name: 'Access mode', exact: true })
       assert.match(await access.textContent(), /Read/)
       await access.click()
       assert.deepEqual(await page.getByRole('option').allTextContents(), [

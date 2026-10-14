@@ -14,7 +14,7 @@ import { useApplicationState } from '../../runtime/state/application-state'
 import { useAppActive } from '../../runtime/state/app-active'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { Text } from '../../ui/content/text'
-import { openAppLink } from '../../ui/content/open-link'
+import { useOpenAppLink } from '../../ui/content/open-link'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
 import { useAction } from '../../ui/controls/use-action'
@@ -28,6 +28,7 @@ const commitSchema = mutableStruct({
 type GitState = Schema.Schema.Type<typeof responses.gitActionState>
 
 export function CommitSection({ task }: { task: Task }) {
+  const openLink = useOpenAppLink(task.id)
   const { styles } = useTheme()
   const { connected, profile, snapshot, readEffect, callEffect } = useRuntime()
   const foreground = useAppActive()
@@ -143,7 +144,7 @@ export function CommitSection({ task }: { task: Task }) {
     )
   const primaryAction = () => {
     setStatus('')
-    if (primary === 'Open PR' && pullUrl) act(() => nativeEffect(() => openAppLink(pullUrl)))
+    if (primary === 'Open PR' && pullUrl) act(() => nativeEffect(() => openLink(pullUrl)))
     else if (primary === 'Push branch') push()
     else commit(primary === 'Commit & push')
   }

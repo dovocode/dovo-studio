@@ -3,6 +3,7 @@ import { decode } from '../../shared/schema'
 import { taskSchema } from '../../workspace'
 import {
   githubPullTarget,
+  forgePullTarget,
   addTaskPullLinks,
   pullReferencesInText,
   threadPullLink,
@@ -121,4 +122,83 @@ it('builds thread links from full PR URLs and normalizes GitHub detail tabs', ()
     'https://user@host/pull/42',
   ])
     expect(threadPullLink(input)).toBeNull()
+})
+
+it('recognizes configured Enterprise and Forgejo repositories without trusting arbitrary hosts', () => {
+  const bindings = [
+    { provider: 'github' as const, identity: 'github.internal/team/project' },
+    { provider: 'forgejo' as const, identity: 'forge.internal/Team/Project' },
+  ]
+  expect(
+    forgePullTarget('http://github.internal/Team/Project/pull/42/files#discussion', bindings),
+  ).toMatchObject({
+    provider: 'github',
+    number: 42,
+    identity: 'github.internal/team/project',
+    url: 'http://github.internal/Team/Project/pull/42',
+    tab: 'changes',
+    fragment: '#discussion',
+  })
+  expect(
+    forgePullTarget('http://forge.internal/Team/Project/pulls/42/commits', bindings),
+  ).toMatchObject({ provider: 'forgejo', tab: 'changes' })
+  for (const url of [
+    'https://github.internal.evil/Team/Project/pull/42',
+    'https://github.internal/Team/Other/pull/42',
+    'https://forge.internal/Team/Project/pull/42',
+    'https://user@forge.internal/Team/Project/pulls/42',
+    'https://forge.internal/Team/Project/pulls/9007199254740992',
+    'https://forge.internal/Team/Project/pulls/42/unknown',
+  ])
+    expect(forgePullTarget(url, bindings)).toBeNull()
+})
+
+it('recognizes nested GitLab merge requests and separates repository identity from tabs', () => {
+  const bindings = [{ identity: 'gitlab.internal/group/subgroup/project' }]
+  expect(
+    forgePullTarget(
+      'http://gitlab.internal/group/subgroup/project/-/merge_requests/42/pipelines#note_7',
+      bindings,
+    ),
+  ).toMatchObject({
+    provider: 'gitlab',
+    identity: 'gitlab.internal/group/subgroup/project',
+    number: 42,
+    url: 'http://gitlab.internal/group/subgroup/project/-/merge_requests/42',
+    navigationUrl:
+      'http://gitlab.internal/group/subgroup/project/-/merge_requests/42/pipelines#note_7',
+    tab: 'checks',
+    fragment: '#note_7',
+  })
+  expect(
+    forgePullTarget('https://gitlab.com/group/subgroup/project/-/merge_requests/7/diffs'),
+  ).toMatchObject({ tab: 'changes' })
+  expect(forgePullTarget('https://gitlab.com.evil/group/project/-/merge_requests/7')).toBeNull()
+  expect(
+    forgePullTarget('https://gitlab.internal/42/subgroup/project/-/merge_requests/42', [
+      { identity: 'gitlab.internal/42/subgroup/project' },
+    ])?.url,
+  ).toBe('https://gitlab.internal/42/subgroup/project/-/merge_requests/42')
+})
+
+it('routes configured Gitea and Azure DevOps PRs and retains explicit providers', () => {
+  expect(
+    forgePullTarget('http://gitea.local/team/project/pulls/7/files', [
+      { provider: 'gitea', identity: 'gitea.local/team/project' },
+    ]),
+  ).toMatchObject({ provider: 'gitea', tab: 'changes' })
+  const url = 'https://dev.azure.com/org/project/_git/repository/pullrequest/7'
+  expect(
+    forgePullTarget(url, [
+      { provider: 'azure-devops', identity: 'dev.azure.com/org/project/_git/repository' },
+    ]),
+  ).toMatchObject({ provider: 'azure-devops', number: 7, url })
+  expect(forgePullTarget(url)).toBeNull()
+  expect(
+    threadPullLink('https://gitlab.com/group/project/-/merge_requests/7/diffs#note'),
+  ).toMatchObject({
+    provider: 'gitlab',
+    number: 7,
+    url: 'https://gitlab.com/group/project/-/merge_requests/7',
+  })
 })

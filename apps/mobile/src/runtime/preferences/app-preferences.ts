@@ -2,6 +2,7 @@ import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/proto
 import { mergeSharedSettings, sharedSettingsSchema } from '@dovo/protocol'
 import { nerdFontFamily, terminalFontSizeSchema } from '@dovo/studio-core/fonts'
 import { studioThemeIds } from '@dovo/studio-core/themes'
+import { codeThemeSchema, importedCodeThemesSchema } from '@dovo/studio-core/code-themes'
 import { useSyncExternalStore } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Schema } from 'effect'
@@ -19,6 +20,8 @@ const schema = mutableStruct({
   terminalFontFamily: Schema.Literals(['', nerdFontFamily]),
   terminalFontSize: terminalFontSizeSchema,
   themePalette: Schema.Literals([...studioThemeIds]),
+  codeTheme: codeThemeSchema,
+  importedCodeThemes: importedCodeThemesSchema,
   sharedScopedSettings: sharedSettingsSchema,
   globalModelPreferencesUpdatedAt: Schema.Number,
   globalModelPreferences: Schema.NullOr(modelPreferencesSchema),
@@ -53,6 +56,8 @@ export type MobilePreferences = Schema.Schema.Type<typeof schema>
 const defaults: MobilePreferences = {
   theme: 'dark',
   themePalette: 'dovo',
+  codeTheme: 'app',
+  importedCodeThemes: [],
   terminalFontFamily: '',
   terminalFontSize: 12,
   sharedScopedSettings: [],

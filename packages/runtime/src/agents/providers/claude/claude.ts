@@ -1,3 +1,4 @@
+import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { claudeLaunchFlags } from '../../configuration/launch-flags.js'
 import { claudeAuthenticated, claudeCommand } from '../../configuration/claude-command.js'
 import { decode } from '@dovo/protocol'
@@ -69,14 +70,19 @@ function claudeStream(
               append: run.agent.instructions,
             },
       permissionMode:
-        run.agent.permission === 'full-access'
-          ? 'bypassPermissions'
-          : run.agent.permission === 'auto'
-            ? 'auto'
-            : run.agent.permission === 'workspace-write'
-              ? 'acceptEdits'
-              : 'default',
-      ...(run.agent.permission === 'full-access'
+        run.agent.permission === 'read-only'
+          ? 'default'
+          : run.agent.approvalPolicy === 'on-request'
+            ? 'default'
+            : run.agent.approvalPolicy === 'never' || run.agent.permission === 'full-access'
+              ? 'bypassPermissions'
+              : run.agent.permission === 'auto'
+                ? 'auto'
+                : run.agent.permission === 'workspace-write'
+                  ? 'acceptEdits'
+                  : 'default',
+      ...((run.agent.approvalPolicy === 'never' && run.agent.permission !== 'read-only') ||
+      (!run.agent.approvalPolicy && run.agent.permission === 'full-access')
         ? {
             allowDangerouslySkipPermissions: true,
           }
@@ -134,14 +140,18 @@ function claudeStream(
         if (!current)
           return { behavior: 'deny', message: 'This Claude request has no active owner' }
         if (name === 'AskUserQuestion') return claudeQuestions(input, current, options.signal)
+        const disposition = toolPolicyDisposition(
+          current,
+          ['Read', 'Glob', 'Grep'].includes(name) ? 'read' : 'other',
+        )
         const allowed =
-          current.agent.permission === 'read-only'
-            ? ['Read', 'Glob', 'Grep'].includes(name)
-            : (await current.approve(
-                name,
-                JSON.stringify(input, null, 2),
-                ['WebFetch', 'WebSearch'].includes(name) ? 'web' : undefined,
-              )) !== 'deny'
+          disposition === 'allow' ||
+          (disposition === 'ask' &&
+            (await current.approve(
+              name,
+              JSON.stringify(input, null, 2),
+              ['WebFetch', 'WebSearch'].includes(name) ? 'web' : undefined,
+            )) !== 'deny')
         return allowed
           ? {
               behavior: 'allow',
@@ -496,6 +506,7 @@ export function createClaudeAdapter(): AgentAdapter {
         'Requires Claude CLI authenticated on this runtime host, using a Claude login or supported API credentials.',
     }),
     async run(run) {
+      run = checkedPolicyRun(run, 'claude')
       const command = await claudeCommand(run.agent.endpoint, run.agent.env)
       if (run.taskId && run.tools !== 'none') return runWarm(run, command)
       const controller = new AbortController(),

@@ -320,3 +320,46 @@ it('shows the effective source of each default, including false/empty overrides 
     ),
   ).toMatchObject({ source: 'project', overridden: false })
 })
+
+it('resets inherited custom policy at a narrower scope without resurrecting harness overrides', async () => {
+  const { selectDefaultPermissionPreset } = await import('../../auth/permission-policy')
+  const runtime = decode(runtimeDefaultsSchema, {
+    scopedSettings: {
+      environment: {},
+      shared: [
+        {
+          key: 'global',
+          updatedAt: 1,
+          changeId: 'policy',
+          value: {
+            taskDefaults: {
+              permission: 'ask',
+              approvalPolicy: 'untrusted',
+              sandboxMode: 'read-only',
+              harness: {
+                ...defaultTaskHarness('codex'),
+                approvalPolicy: 'untrusted',
+                sandboxMode: 'read-only',
+              },
+            },
+          },
+        },
+      ],
+    },
+  })
+  const repo = { ...project, taskDefaults: selectDefaultPermissionPreset({}, 'full-access') }
+  const resolved = resolveTaskDefaults(runtime, repo).harness
+  expect(resolved.permission).toBe('full-access')
+  expect(resolved.approvalPolicy).toBeUndefined()
+  expect(resolved.sandboxMode).toBeUndefined()
+  // Inherit restores the original scope, including its advanced policy.
+  const inherited = resolveTaskDefaults(runtime, {
+    ...repo,
+    taskDefaults: selectDefaultPermissionPreset(repo.taskDefaults, undefined),
+  }).harness
+  expect(inherited).toMatchObject({
+    permission: 'ask',
+    approvalPolicy: 'untrusted',
+    sandboxMode: 'read-only',
+  })
+})

@@ -1,3 +1,8 @@
+import {
+  selectDefaultPermissionPreset,
+  resolveDefaultPermissionPolicy,
+  permissionPolicyLabel,
+} from '@dovo/protocol'
 import { Struct } from 'effect'
 import { randomUUID } from 'expo-crypto'
 import {
@@ -30,6 +35,7 @@ import {
   defaultWorktreeFromOrigin,
   agentConnectionValue,
   changeAgentConnection,
+  changeAgentProvider,
   taskHarnessSchema,
   type ProjectTaskDefaults,
   type Repository,
@@ -46,6 +52,10 @@ import { Switch } from '../../ui/controls/switch'
 import { useTheme } from '../../ui/theme'
 import { SettingsGroup } from '../../screens/settings-group'
 import { ModelSettings } from '../../agents/model-settings'
+import {
+  PermissionPolicyControls,
+  permissionPolicyUIIssue,
+} from '../../agents/permission-policy-controls'
 import { SettingSource } from './setting-source'
 import { useSettingsDraft } from './settings-target'
 export function TaskDefaultSettings(props: {
@@ -163,6 +173,17 @@ function TaskDefaultSettingsForm({
     if (value.setupCommand === undefined) setShowSetupCommand(false)
   }
   const harness = draft.harness
+  const policySupported = snapshot?.permissionPolicySupported === true
+  const inherited = setup?.defaults
+  const inheritedHarness = inherited?.harness ?? defaultTaskHarness('codex')
+  const effectiveHarness = harness ?? inheritedHarness
+  const defaultPolicy = resolveDefaultPermissionPolicy(effectiveHarness, inherited, draft)
+  const policyIssue =
+    (!policySupported && (draft.approvalPolicy === null || draft.sandboxMode === null)
+      ? 'Update this runtime to reset inherited approval and sandbox controls.'
+      : undefined) ||
+    permissionPolicyUIIssue(defaultPolicy, policySupported) ||
+    (harness && permissionPolicyUIIssue(harness, policySupported))
   const disabled =
     !connected || busy || !setup || loadedScope !== `${scope}:${repository?.id ?? ''}`
   const origins = taskDefaultOrigins(snapshot?.defaults, repository, scope, draft)
@@ -174,7 +195,9 @@ function TaskDefaultSettingsForm({
           {...origin}
           setting={{ field: { group: 'taskDefaults', key }, repository, scope, value: draft[key] }}
           label={origin.label}
-          disabled={disabled}
+          disabled={
+            disabled || ((key === 'approvalPolicy' || key === 'sandboxMode') && !policySupported)
+          }
           onReset={() => change({ ...draft, [key]: undefined })}
         />
       )
@@ -310,16 +333,27 @@ function TaskDefaultSettingsForm({
                     : agent
                       ? decode(taskHarnessSchema.mapFields(Struct.omit(['resources'])), agent)
                       : (setup?.defaults.harness ?? defaultTaskHarness('codex')),
-                ...(agent ? { permission: agent.permission } : {}),
+                ...(agent
+                  ? {
+                      permission: agent.permission,
+                      approvalPolicy: agent.approvalPolicy ?? (policySupported ? null : undefined),
+                      sandboxMode: agent.sandboxMode ?? (policySupported ? null : undefined),
+                    }
+                  : {}),
               })
             }}
           />
           {source('harness')}
           <Choice
             row
-            label="Default permissions"
+            label="Access mode"
             disabled={disabled}
-            value={draft.permission ?? 'inherit'}
+            value={
+              permissionPolicyLabel(defaultPolicy) === 'Custom'
+                ? 'custom'
+                : (draft.permission ?? 'inherit')
+            }
+            selectedLabel={permissionPolicyLabel(defaultPolicy) === 'Custom' ? 'Custom' : undefined}
             items={[
               {
                 id: 'inherit',
@@ -331,17 +365,45 @@ function TaskDefaultSettingsForm({
               })),
             ]}
             onChange={(value) =>
-              change({
-                ...draft,
-                permission:
+              change(
+                selectDefaultPermissionPreset(
+                  draft,
                   value === 'inherit' ? undefined : decode(agentSchema.fields.permission, value),
-              })
+                  policySupported,
+                ),
+              )
             }
           />
           {source('permission')}
           <Text style={styles.muted}>
             Applies to new tasks across all harnesses. Existing tasks keep their access setting.
           </Text>
+          <PermissionPolicyControls
+            value={{
+              ...defaultPolicy,
+              approvalPolicy: draft.approvalPolicy ?? undefined,
+              sandboxMode: draft.sandboxMode ?? undefined,
+            }}
+            inherited={resolveDefaultPermissionPolicy(effectiveHarness, inherited)}
+            resetFields={[
+              ...(draft.approvalPolicy === null ? ['approvalPolicy' as const] : []),
+              ...(draft.sandboxMode === null ? ['sandboxMode' as const] : []),
+            ]}
+            onResetField={(field) => change({ ...draft, [field]: null })}
+            supported={policySupported}
+            disabled={disabled}
+            onReset={() => change(selectDefaultPermissionPreset(draft, defaultPolicy.permission))}
+            onChange={(policy, field) =>
+              change(field ? { ...draft, [field]: policy[field] } : { ...draft, ...policy })
+            }
+          />
+          {source('approvalPolicy')}
+          {source('sandboxMode')}
+          {policyIssue && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {policyIssue}
+            </Text>
+          )}
           {harness && (
             <>
               <Choice
@@ -350,9 +412,24 @@ function TaskDefaultSettingsForm({
                 disabled={disabled}
                 value={harness.provider}
                 items={providerSchema.literals.map((id) => ({ id, name: providerDisplayName(id) }))}
-                onChange={(value) =>
-                  change({ ...draft, harness: defaultTaskHarness(decode(providerSchema, value)) })
-                }
+                onChange={(value) => {
+                  const next = changeAgentProvider(
+                    { ...harness, ...defaultPolicy, id: 'defaults', name: 'Defaults' },
+                    decode(providerSchema, value),
+                  )
+                  change({
+                    ...draft,
+                    permission: next.permission,
+                    approvalPolicy: next.approvalPolicy ?? (policySupported ? null : undefined),
+                    sandboxMode: next.sandboxMode ?? (policySupported ? null : undefined),
+                    harness: {
+                      ...defaultTaskHarness(next.provider),
+                      permission: next.permission,
+                      approvalPolicy: next.approvalPolicy,
+                      sandboxMode: next.sandboxMode,
+                    },
+                  })
+                }}
               />
               <ModelSettings
                 disabled={disabled}
@@ -739,10 +816,10 @@ function TaskDefaultSettingsForm({
       <Action
         wide
         label={busy ? 'Saving…' : 'Save defaults'}
-        disabled={disabled || !dirty}
+        disabled={disabled || !dirty || !!policyIssue}
         onPress={() =>
           act(async () => {
-            if (!setup) return
+            if (!setup || disabled || policyIssue) return
             const value = decode(projectTaskDefaultsSchema, draft)
             const result = await call(
               '/api/agents/settings/save',

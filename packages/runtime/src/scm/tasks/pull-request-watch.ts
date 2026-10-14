@@ -1,3 +1,4 @@
+import { permissionPolicyReadOnly } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
 import { Effect, Schema } from 'effect'
@@ -171,7 +172,7 @@ export class PullRequestWatch {
   }
   private writable(taskId: string) {
     const task = this.s.store.taskSummary(taskId)
-    if (resolveTaskAgent(task, this.s.store.get().agents)?.permission === 'read-only')
+    if (permissionPolicyReadOnly(resolveTaskAgent(task, this.s.store.get().agents)))
       throw new HttpError(403, 'PR watching is disabled for read-only threads')
     return task
   }
@@ -325,7 +326,7 @@ export class PullRequestWatch {
           task.archivedAt ||
           task.example ||
           task.delegation ||
-          resolveTaskAgent(task, this.s.store.get().agents)?.permission === 'read-only'
+          permissionPolicyReadOnly(resolveTaskAgent(task, this.s.store.get().agents))
         )
           continue
         const accessError = watchRepositoryError(
@@ -354,7 +355,7 @@ export class PullRequestWatch {
             latest.archivedAt ||
             latest.example ||
             latest.delegation ||
-            resolveTaskAgent(latest, this.s.store.get().agents)?.permission === 'read-only'
+            permissionPolicyReadOnly(resolveTaskAgent(latest, this.s.store.get().agents))
           )
             continue
           verifyPullUrl(state.url, detail.pull.url)

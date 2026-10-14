@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
 import { Effect, Schema, Semaphore } from 'effect'
-import { startPolling, clientTaskScope } from '@dovo/client-runtime'
+import { startPolling, clientTaskScope, runClientEffect } from '@dovo/client-runtime'
 import {
   assignRemoteSources,
   pullRepositoryKey,
@@ -19,6 +19,9 @@ import {
   collectionSourceIdentity,
   projectContentIdentity,
 } from '../../../runtime/state/collection-sources'
+import { useSourceIdentities, verifiedSourceRead } from '../../source-reader'
+import { mobileReaders } from '../../verified-reader'
+import type { Runtime } from '../../../runtime/connection/provider'
 import { useNavigation } from '../../../shell/navigation'
 import { acknowledgePullList, pullListRevision } from './pull-list-invalidation'
 type Page = PullPage & {
@@ -42,16 +45,55 @@ const cacheKey = (repository: Repository, state: string) =>
   JSON.stringify(['pulls', 'list', repository.id, repository.path, state, repository.forge])
 export function usePulls(repositoryId: string, state: string) {
   const { focused: enabled } = useNavigation()
-  const { readRuntimeEffect: request, overviews, cacheForRuntime, activeId } = useRuntime()
+  const { readRuntimeEffect: rawRead, overviews, cacheForRuntime, activeId } = useRuntime()
   const allSources = collectionSources(overviews).filter(
     (source) => !repositoryId || source.key === repositoryId,
   )
-  const owners = useRef(new Map<string, string>())
-  const assigned = assignRemoteSources(
-    allSources.map((source) => ({ ...source, runtimeId: source.profile.id })),
-    { previous: owners.current, preferredRuntimeId: activeId },
+  const identified = useSourceIdentities(
+    allSources,
+    projectContentIdentity,
+    (source) => ({ repositoryId: source.repository.id }),
+    enabled,
   )
-  owners.current = assigned.owners
+  const readers = mobileReaders.selection(JSON.stringify(['pulls', repositoryId]))
+  const assigned = assignRemoteSources(
+    identified.map((source) => ({ ...source, runtimeId: source.profile.id })),
+    {
+      previous: readers.owners,
+      previousReaderIdentities: readers.readerIdentities,
+      requireSameReader: true,
+      preferredRuntimeId: activeId,
+    },
+  )
+  for (const [remote, owner] of assigned.owners) readers.owners.set(remote, owner)
+  for (const source of assigned.selected) {
+    if (source.readerIdentity)
+      readers.readerIdentities.set(
+        pullRepositoryKey(source.repository, source.key),
+        source.readerIdentity,
+      )
+  }
+  const allSourcesRef = useRef(allSources)
+  allSourcesRef.current = allSources
+  const request = useCallback<Runtime['readRuntimeEffect']>(
+    (profile, path, input, schema, method) => {
+      const repository =
+        typeof input === 'object' && input !== null && 'repositoryId' in input
+          ? input.repositoryId
+          : undefined
+      const source = allSourcesRef.current.find(
+        (entry) => entry.profile.id === profile.id && entry.repository.id === repository,
+      )
+      const read: Runtime['readEffect'] = (path, input, schema, method) =>
+        rawRead(profile, path, input, schema, method)
+      return source
+        ? verifiedSourceRead(read, projectContentIdentity(source), {
+            repositoryId: source.repository.id,
+          })(path, input, schema, method)
+        : read(path, input, schema, method)
+    },
+    [rawRead],
+  )
   const sources = assigned.selected
   const key = collectionSourceIdentity(sources)
   const sourcesRef = useRef(sources)
@@ -86,7 +128,23 @@ export function usePulls(repositoryId: string, state: string) {
     })
     setPages((previous) => {
       if (sourceState.current !== remoteState) return {}
-      const retained: Record<string, Page> = {}
+      const retained: Record<string, Page> = Object.fromEntries(
+        Object.entries(previous)
+          .filter(
+            ([, page]) =>
+              !repositories.some((source) => source.key === page.sourceKey) &&
+              readers.owners.get(page.remoteKey) === page.sourceKey,
+          )
+          .map(([key, page]) => [
+            key,
+            {
+              ...page,
+              connected: false,
+              stale: true,
+              error: 'The original account is unavailable. Choose a source to continue.',
+            },
+          ]),
+      )
       for (const entry of repositories) {
         const saved = previous[entry.key]
         if (saved?.sourceIdentity === projectContentIdentity(entry)) {
@@ -364,6 +422,15 @@ export function usePulls(repositoryId: string, state: string) {
       ? []
       : Object.values(pages).flatMap((page) => {
           const entry = currentSources.get(page.sourceKey)
+          if (!entry && readers.owners.get(page.remoteKey) === page.sourceKey)
+            return [
+              {
+                ...page,
+                connected: false,
+                stale: true,
+                error: 'The original account is unavailable. Choose a source to continue.',
+              },
+            ]
           return entry && page.sourceIdentity === projectContentIdentity(entry)
             ? [
                 {
@@ -382,5 +449,16 @@ export function usePulls(repositoryId: string, state: string) {
     connected,
     more: (id: string) => moreRef.current(id),
     refresh,
+    chooseSource: async (sourceKey: string) => {
+      const source = allSources.find((source) => source.key === sourceKey)
+      if (!source) return
+      await runClientEffect(
+        cacheForRuntime(source.profile).removeEffect(cacheKey(source.repository, remoteState)),
+      )
+      mobileReaders.acceptAccount(projectContentIdentity(source))
+      mobileReaders.resetSelection(JSON.stringify(['pulls', sourceKey]))
+      setPages({})
+      setRevision((value) => value + 1)
+    },
   }
 }

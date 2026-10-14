@@ -1,3 +1,4 @@
+import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { legacyAcpModels } from './acp-models.js'
 import { mutableStruct, nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
@@ -73,6 +74,7 @@ export function createAcpAdapter(): AgentAdapter {
           : 'Set an ACP executable and arguments.',
     }),
     async run(run) {
+      run = checkedPolicyRun(run, 'acp')
       run.signal.throwIfAborted()
       if (!run.acpLaunch && !run.agent.endpoint)
         throw new Error('Configure an ACP executable and arguments first')
@@ -196,11 +198,17 @@ export function createAcpAdapter(): AgentAdapter {
             return { outcome: { outcome: 'cancelled' } }
           if (prompting) run.onPromptAccepted?.()
           run.onEvent?.('permission', params)
+          const disposition = toolPolicyDisposition(
+            owner,
+            ['read', 'search', 'think'].includes(params.toolCall.kind ?? '')
+              ? 'read'
+              : params.toolCall.kind === 'edit'
+                ? 'edit'
+                : 'other',
+          )
           const allow =
-            run.agent.permission !== 'read-only' &&
-            run.tools !== 'none' &&
-            (run.agent.permission === 'full-access' ||
-              (run.agent.permission === 'workspace-write' && params.toolCall.kind === 'edit') ||
+            disposition === 'allow' ||
+            (disposition === 'ask' &&
               (await owner.approve(
                 params.toolCall.title ?? 'ACP tool request',
                 JSON.stringify(params.toolCall, null, 2),

@@ -1,3 +1,4 @@
+import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { workspacePatchResultSchema } from '@dovo/protocol'
@@ -17,6 +18,10 @@ import {
   type Agent,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
+import {
+  PermissionPolicyControls,
+  permissionPolicyUIIssue,
+} from '../../agents/permission-policy-controls'
 import { ModelSettings } from '../../agents/model-settings'
 import { useHarnessAvailability } from '../../agents/use-harness-availability'
 import { Sheet } from '../../ui/layout/sheet'
@@ -130,8 +135,9 @@ export function HarnessSettings({
       />
       <Choice
         row
-        label="Access"
-        value={agent.permission}
+        label="Access mode"
+        value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
+        selectedLabel={permissionPolicyLabel(agent)}
         disabled={controlsDisabled || !selectionAllowed}
         items={selectableAccessModes(agent.permission, agent.provider)
           .filter((mode) => supportsAccess(agent.provider, mode.id))
@@ -140,10 +146,7 @@ export function HarnessSettings({
             name: mode.name,
           }))}
         onChange={(value) =>
-          setAgent({
-            ...agent,
-            permission: decode(agentSchema.fields.permission, value),
-          })
+          setAgent(selectPermissionPreset(agent, decode(agentSchema.fields.permission, value)))
         }
       />
       <Text style={styles.muted}>
@@ -153,6 +156,12 @@ export function HarnessSettings({
           )?.description
         }
       </Text>
+      <PermissionPolicyControls
+        value={agent}
+        supported={snapshot?.permissionPolicySupported === true}
+        disabled={controlsDisabled || !selectionAllowed}
+        onChange={(policy) => setAgent({ ...agent, ...policy })}
+      />
       {!custom &&
         (agent.provider === 'opencode' ||
           ['hermes', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
@@ -218,12 +227,18 @@ export function HarnessSettings({
           task.status === 'running' ||
           !selectionAllowed ||
           !!task.archived ||
+          !!permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true) ||
           !supportsAccess(agent.provider, agent.permission)
         }
         onPress={() =>
           act(() =>
             mobileWorkflow(function* () {
-              if (controlsDisabled || !selectionAllowed) return
+              if (
+                controlsDisabled ||
+                !selectionAllowed ||
+                permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true)
+              )
+                return
               if (!profile) throw new Error('This computer is no longer saved.')
               const changes = taskHarnessChanges(task, selection, agent)
               yield* previewTaskEffect(

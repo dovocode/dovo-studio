@@ -9,6 +9,7 @@ const mocks = {
   '@dovo/studio-core/state': `export * from '../studio-core/src/runtime/application-state';`,
   '@dovo/studio-core': `
     export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';
+    export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';
     export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
@@ -28,6 +29,7 @@ const mocks = {
   `,
   '../../dialogs/harness-dialog': 'export const HarnessDialog=()=>null;',
   '@dovo/studio-ui': `
+export {permissionPolicyUIIssue} from './src/permission-policy-fields';
 export const SidebarHeader=()=>null;
 export {PullRequestIcon,pullRequestIconTone} from '${new URL('../packages/studio-ui/src/pull-request-icon.tsx', import.meta.url).pathname}';
 import {useState as useSidebarState} from 'react';export const useLeftSidebar=initial=>useSidebarState(initial);export const useNavigationSidebar=()=>null;export const HeaderContent=({children})=>children;
@@ -69,6 +71,7 @@ for (const [path, names] of [
   ['@dovo/extension-scm/projects', ['ProjectsMenu']],
   ['./detail/task-tools', ['TaskTools']],
   ['./detail/task-agents', ['TaskAgents']],
+  ['./detail/native-agent-thread', ['NativeAgentThread']],
   ['./detail/linked-projects', ['LinkedProjects']],
   ['./chat/artifacts', ['ThreadArtifacts']],
   ['./browser/browser-pane', ['BrowserPane', 'DevicesPane']],
@@ -114,12 +117,13 @@ const built = await build({
         const [entity,setEntity]=useState(),[revision,setRevision]=useState(0);
         const [workspace,setWorkspace]=useApplicationState({tasks:[other],agents:[],skills:[],mcpServers:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''},{id:'project',name:'Project with Sonnet default',path:'/project',branch:'main',taskDefaults:{harness:{provider:'claude',model:'sonnet',permission:'full-access',endpoint:'',instructions:''}}}]});
         window.setEntity=setEntity;window.saved=workspace.tasks;window.setWorkspace=setWorkspace;
-        const snapshot={workspace,questions:[],approvals:[],defaults:{harness:{provider:window.defaultProvider,model:'default',permission:'full-access',endpoint:'',instructions:''}},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
+        const snapshot={workspace,questions:[],approvals:[],acpInstallations:[],permissionPolicySupported:true,defaults:{harness:{provider:window.defaultProvider,model:'default',permission:'full-access',endpoint:'',instructions:''}},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
         window.hydrate=()=>setRevision(value=>value+1);
         const request=async(path,input)=>{
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
           window.requests.push({path,input});
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true},{id:'harness:claude',available:true}];
+          if(path==='/api/agents/models/cached')return null;
           if(path==='/api/agents/models')return {models:[{id:'default',name:'Default (recommended)',isDefault:true},{id:'opus',name:'Opus 5.5'},{id:'sonnet',name:'Sonnet 5.5'}],reasoning:[]};
           if(path==='/api/tasks/title')return {title:'New task'};
           if(path==='/api/workspace'){setWorkspace(current=>({...current,tasks:[input.create,...current.tasks]}));return {revision:1};}
@@ -169,7 +173,10 @@ try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
     page.setDefaultTimeout(10000)
     const errors = []
-    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('pageerror', (error) => {
+      errors.push(error.message)
+      console.error(error.message)
+    })
     await page.setContent('<div id="app"></div>')
     const assets = new URL('../apps/desktop/dist/assets/', import.meta.url)
     for (const file of (await readdir(assets)).filter((file) => file.endsWith('.css')))

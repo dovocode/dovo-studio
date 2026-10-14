@@ -35,6 +35,7 @@ import { SettingsGroup, SettingsRow } from '../../screens/settings-group'
 import { DirectoryPicker } from './directory-picker'
 const defaults: Record<ForgeProvider, string> = {
   github: 'https://github.com',
+  gitlab: 'https://gitlab.com',
   bitbucket: 'https://api.bitbucket.org/2.0',
   forgejo: 'https://codeberg.org',
   gitea: 'https://gitea.example.com',
@@ -380,7 +381,7 @@ function ConnectionForm({
           setName(forgeLabels[next])
           setToken('')
           setCliProfile('')
-          setCredential(next === 'github' ? 'gh' : 'cli')
+          setCredential(next === 'github' ? 'gh' : ['gitlab'].includes(next) ? 'token' : 'cli')
         }}
         disabled={busy}
         items={forgeProviderSchema.literals.map((id) => ({
@@ -457,10 +458,9 @@ function ConnectionForm({
               }}
               disabled={busy}
               items={[
-                {
-                  id: 'cli',
-                  name: 'Signed-in CLI account',
-                },
+                ...(['gitlab'].includes(provider)
+                  ? []
+                  : [{ id: 'cli', name: 'Signed-in CLI account' }]),
                 {
                   id: 'token',
                   name: 'API token on runtime',
@@ -758,7 +758,12 @@ function ProjectConnection({
               connections.find((connection) => connection.id === connectionId)?.provider ===
               'azure-devops'
                 ? 'project/repository'
-                : 'owner/repository'
+                : ['gitlab'].includes(
+                      connections.find((connection) => connection.id === connectionId)?.provider ??
+                        '',
+                    )
+                  ? 'group/subgroup/project'
+                  : 'owner/repository'
             }
           />
           <Action

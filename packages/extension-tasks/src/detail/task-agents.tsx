@@ -13,14 +13,18 @@ import { useStudioHost } from '@dovo/studio-core'
 import { Button, Toggle, cn } from '@dovo/studio-ui'
 import { indexTaskSubagents, taskFamilyRunToken } from '@dovo/protocol'
 import type { Subagent } from '@dovo/protocol'
-import { NativeAgentThread } from './native-agent-thread'
-export function TaskAgents({ task }: { task: Task }) {
+export function TaskAgents({
+  task,
+  onOpenThread,
+}: {
+  task: Task
+  onOpenThread: (thread: { taskId: string; agent: Subagent }) => void
+}) {
   const host = useStudioHost()
   const { connected, workspace, request } = useWorkspace()
   const { hideFinishedSubagents } = useAppPreferences()
   const [stopping, setStopping] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
-  const [thread, setThread] = useApplicationState<{ taskId: string; agent: Subagent } | null>(null)
   const stopAgents = async (target = task, stopTurn = false, childId?: string) => {
     setStopping(true)
     setError('')
@@ -51,26 +55,10 @@ export function TaskAgents({ task }: { task: Task }) {
   const live = connected
   const working = activeAgents.size
   useEffect(() => {
-    if (!working || thread) return
+    if (!working) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [working, thread])
-  if (thread)
-    return (
-      <NativeAgentThread
-        key={`${thread.taskId}:${thread.agent.sessionId}:${thread.agent.id}`}
-        taskId={thread.taskId}
-        agent={
-          agents.find(
-            (agent) =>
-              agent.id === thread.agent.id &&
-              agent.provider === thread.agent.provider &&
-              agent.sessionId === thread.agent.sessionId,
-          ) ?? thread.agent
-        }
-        onClose={() => setThread(null)}
-      />
-    )
+  }, [working])
   return (
     <section className="flex min-h-full flex-col" aria-label="Subagents">
       {task.delegation && (
@@ -194,7 +182,7 @@ export function TaskAgents({ task }: { task: Task }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setThread({ taskId: owner.id, agent })}
+                    onClick={() => onOpenThread({ taskId: owner.id, agent })}
                   >
                     View native thread · {agent.provider}
                   </Button>

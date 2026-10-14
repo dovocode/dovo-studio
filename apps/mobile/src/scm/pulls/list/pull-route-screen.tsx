@@ -1,4 +1,4 @@
-import { githubPullTarget } from '@dovo/protocol'
+import { forgePullTarget } from '@dovo/protocol'
 import { useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
 import { RuntimeRoute } from '../../../shell/runtime-route'
@@ -19,6 +19,7 @@ export function PullRouteScreen() {
     number: string
     tab?: string
     fragment?: string
+    connectionId?: string
     navigationUrl?: string
   }>()
   const number = pullRouteNumber(params.number)
@@ -26,7 +27,7 @@ export function PullRouteScreen() {
   return (
     <RuntimeRoute
       runtimeId={params.runtimeId}
-      repositoryId={githubPullTarget(params.repositoryId) ? undefined : params.repositoryId}
+      repositoryId={forgePullTarget(params.repositoryId) ? undefined : params.repositoryId}
       title={number ? `PR #${number}` : 'Pull request'}
       backTo="/pulls"
     >
@@ -35,6 +36,7 @@ export function PullRouteScreen() {
           key={JSON.stringify([params.runtimeId, params.repositoryId, number])}
           repositoryId={params.repositoryId}
           number={number}
+          connectionId={params.connectionId}
           initialTab={
             params.tab === 'changes' || params.tab === 'checks' || params.tab === 'overview'
               ? params.tab

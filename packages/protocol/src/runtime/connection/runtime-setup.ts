@@ -10,6 +10,7 @@ import {
 } from '../../workspace.js'
 import { titleGenerationSettingsSchema } from '../../tasks/title-generation.js'
 import { resolveScopedSettings } from './scoped-settings.js'
+import { resolveDefaultPermissionPolicy } from '../../auth/permission-policy.js'
 import { resolveProviderAccess } from '../../auth/access.js'
 
 export const modelPreferencesSchema = Schema.Record(
@@ -28,6 +29,8 @@ export const runtimeDefaultsSchema = mutableStruct({
   permission: agentSchema.fields.permission.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => 'full-access' as const)),
   ),
+  approvalPolicy: projectTaskDefaultsSchema.fields.approvalPolicy,
+  sandboxMode: projectTaskDefaultsSchema.fields.sandboxMode,
   configured: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   // Ignore unknown keys like the rest of the protocol: a newer runtime's extra field must
   // not break an older client's snapshot, nor a downgraded runtime's stored defaults.
@@ -52,12 +55,15 @@ export function resolveTaskDefaults(
   const defaults = resolveScopedSettings(runtime, repository).taskDefaults ?? {}
   const selected = defaults.harness ?? defaultTaskHarness('codex')
   const permission = defaults.permission ?? 'full-access'
+  const policy = resolveDefaultPermissionPolicy(selected, defaults)
   return {
     setupCommand: repository?.kind ? undefined : defaults.setupCommand,
     ...(defaults.submodules && !repository?.kind ? { submodules: defaults.submodules } : {}),
     harness: {
       ...selected,
       permission: resolveProviderAccess(selected.provider, permission),
+      approvalPolicy: policy.approvalPolicy,
+      sandboxMode: policy.sandboxMode,
     },
     execution: repository?.kind ? ('main' as const) : (defaults.execution ?? 'main'),
     worktreeFromOrigin: repository?.kind

@@ -294,24 +294,50 @@ export class Conversations {
   }
   /** `searchTaskMessages` over stored history. Every matching task is listed; hits are bounded. */
   search(orderedTaskIds: readonly string[], needle: string, limit = 50): TaskSearchResult {
-    if (!needle) return { taskIds: [], hits: [] }
+    if (!needle || !orderedTaskIds.length) return { taskIds: [], hits: [] }
     // SQLite encodes strings as UTF-8. For malformed UTF-16, replacement characters, and
     // NULs, match original JSON text in JS to preserve the protocol's exact semantics.
     if (/[\ud800-\udfff]/u.test(needle) || needle.includes('\ufffd') || needle.includes('\0'))
       return this.searchOriginalText(orderedTaskIds, needle, limit)
     const candidates = this.searchCandidates(needle)
     const candidateJson = candidates === undefined ? undefined : JSON.stringify(candidates)
+    if (orderedTaskIds.length === 1) {
+      const taskId = orderedTaskIds[0]
+      const rows = decode(
+        valuesSchema,
+        this.db
+          .prepare(`SELECT item.value FROM conversation_index AS entry
+        JOIN conversation_items AS item USING (task_id, kind, item_id)
+        WHERE ${candidateJson === undefined ? '' : 'entry.rowid IN (SELECT value FROM json_each(?)) AND'}
+          entry.task_id = ? AND entry.kind = 'message' AND instr(entry.search_text, ?) > 0
+        ORDER BY entry.ordinal DESC LIMIT ?`)
+          .all(
+            ...(candidateJson === undefined ? [] : [candidateJson]),
+            taskId,
+            needle,
+            Math.max(1, limit),
+          ),
+      )
+      const hits = rows.flatMap((row) => {
+        const hit = taskSearchHit(taskId, decode(messageSchema, JSON.parse(row.value)), needle)
+        return hit ? [hit] : []
+      })
+      return { taskIds: hits.length ? [taskId] : [], hits: hits.slice(0, Math.max(0, limit)) }
+    }
+    // Narrow by task before scanning common terms. Keep the global trigram index for rare
+    // terms, but never scan unrelated histories when the caller already supplied a scope.
+    const scope = JSON.stringify(orderedTaskIds)
     const matching = new Set(
       decode(
         mutableArray(mutableStruct({ task_id: Schema.String })),
         this.db
           .prepare(
             candidateJson === undefined
-              ? "SELECT DISTINCT task_id FROM conversation_index WHERE kind = 'message' AND instr(search_text, ?) > 0"
+              ? "SELECT DISTINCT task_id FROM conversation_index WHERE task_id IN (SELECT value FROM json_each(?)) AND kind = 'message' AND instr(search_text, ?) > 0"
               : `SELECT DISTINCT task_id FROM conversation_index WHERE rowid IN (SELECT value FROM json_each(?))
-                  AND kind = 'message' AND instr(search_text, ?) > 0`,
+                  AND task_id IN (SELECT value FROM json_each(?)) AND kind = 'message' AND instr(search_text, ?) > 0`,
           )
-          .all(...(candidateJson === undefined ? [needle] : [candidateJson, needle])),
+          .all(...(candidateJson === undefined ? [scope, needle] : [candidateJson, scope, needle])),
       ).map((row) => row.task_id),
     )
     const read = this.db.prepare(`SELECT item.value FROM conversation_index AS entry

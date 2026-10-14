@@ -37,7 +37,14 @@ function setup() {
   )
   const connections = new ForgeConnections(db)
   const pulls = new ForgePullRequests(git, connections, store)
-  vi.spyOn(pulls, 'identity').mockResolvedValue('fixture-account')
+  vi.spyOn(git, 'githubCredential').mockResolvedValue({
+    host: 'github.com',
+    token: 'fixture-token',
+    onUnauthorized: () => {},
+  })
+  vi.spyOn(git, 'githubAccount').mockResolvedValue(
+    JSON.stringify({ id: 1, login: 'fixture-account' }),
+  )
   const service = new ForgeWork(db, store, git, connections, pulls, () =>
     decode(commandsSchema, {}),
   )

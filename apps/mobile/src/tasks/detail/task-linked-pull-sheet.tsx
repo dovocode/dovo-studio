@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
-import { githubPullTarget, taskPullLinks, type Task } from '@dovo/protocol'
+import { forgePullTarget, pullRepositoryIdentity, taskPullLinks, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { Text } from '../../ui/content/text'
 import { PullRequestIcon } from '../../ui/content/pull-request-icon'
+import { useLinkOrigin } from '../../ui/content/link-origin'
 import { openAppLink } from '../../ui/content/open-link'
 import { useTheme } from '../../ui/theme'
 import { PullDetail } from '../../scm/pulls/detail/pull-detail'
@@ -18,21 +19,25 @@ export function TaskLinkedPullSheet({
   initialUrl?: string
   onClose: () => void
 }) {
+  const origin = useLinkOrigin(task.id)
   const { snapshot } = useRuntime()
   const { colors, styles } = useTheme()
   const [error, setError] = useState('')
   const links = taskPullLinks(task)
   const sheet = useRef<SheetHandle>(null)
   const destination = (url: string) => {
-    const target = githubPullTarget(url)
+    const repositories = snapshot?.workspace.repositories.filter((repo) => !repo.kind) ?? []
+    const target = forgePullTarget(
+      url,
+      repositories.map((repo) => ({ identity: pullRepositoryIdentity(repo) })),
+    )
+    const matches = target
+      ? repositories.filter((repo) => pullRepositoryIdentity(repo) === target.identity)
+      : []
     const repository =
-      target &&
-      snapshot?.workspace.repositories.find(
-        (repo) =>
-          !repo.kind &&
-          ((!repo.gitIdentityError && repo.gitIdentity === target.identity) ||
-            repo.pullIdentity === target.identity),
-      )
+      matches.find((repo) => repo.id === task.repositoryId) ??
+      (matches.length === 1 ? matches[0] : undefined)
+    if (matches.length > 1 && !repository) return null
     return target
       ? {
           repositoryId: repository?.id ?? target.url,
@@ -50,7 +55,7 @@ export function TaskLinkedPullSheet({
     else {
       setError('')
       sheet.current?.dismiss(() => {
-        void openAppLink(url).catch((cause) => setError(String(cause)))
+        void openAppLink(url, false, origin).catch((cause) => setError(String(cause)))
       })
     }
   }

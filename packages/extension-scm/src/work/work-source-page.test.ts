@@ -59,7 +59,14 @@ function fixture(response: (input: unknown) => unknown) {
     Effect.try({
       try: () => {
         calls.push({ path, input })
-        return decode(schema, path.endsWith('/options') ? options : response(input))
+        return decode(
+          schema,
+          path === '/api/scm/source/identity'
+            ? { readerIdentity: 'jira-account', destination: 'jira-destination' }
+            : path.endsWith('/options')
+              ? options
+              : response(input),
+        )
       },
       catch: (error) => (error instanceof Error ? error : new Error(String(error))),
     })
@@ -123,11 +130,16 @@ it('keeps loaded depth, filters and server order during a forced refresh and rep
   expect(refreshed).toMatchObject({ loadedPages: 2, next: '60', query: 'triage' })
   expect(refreshed.stale).toBeFalsy()
   expect(calls).toEqual([
-    { path: '/api/scm/work/options', input: { jiraSourceId: 'tracker', area: 'issues' } },
+    { path: '/api/scm/source/identity', input: { jiraSourceId: 'tracker' } },
+    {
+      path: '/api/scm/work/options',
+      input: { jiraSourceId: 'tracker', area: 'issues', expectedReaderIdentity: 'jira-account' },
+    },
     {
       path: '/api/scm/work/issues/list',
       input: {
         jiraSourceId: 'tracker',
+        expectedReaderIdentity: 'jira-account',
         state: 'open',
         query: 'triage',
         cursor: undefined,
@@ -138,6 +150,7 @@ it('keeps loaded depth, filters and server order during a forced refresh and rep
       path: '/api/scm/work/issues/list',
       input: {
         jiraSourceId: 'tracker',
+        expectedReaderIdentity: 'jira-account',
         state: 'open',
         query: 'triage',
         cursor: '30',

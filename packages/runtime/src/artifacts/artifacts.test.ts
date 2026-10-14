@@ -556,38 +556,42 @@ it('lets paired devices copy artifacts between writable threads and delete all v
   expect(references.map((reference) => reference.id)).toEqual([sibling.id])
 })
 
-it('rejects copying into settled, archived, missing and read-only threads', async () => {
-  const f = await fixture()
-  const source = f.runtime.services.artifacts.write({
-    taskId: f.taskId,
-    title: 'Source',
-    format: 'code',
-    content: 'const value = 1',
-  })
-  const input = { taskId: f.taskId, id: source.id, targetTaskId: f.otherId }
-  f.runtime.services.store.updateTask(f.otherId, (task) => ({ ...task, archived: true }))
-  expect((await f.post('attach', input)).status).toBe(409)
-  f.runtime.services.store.updateTask(f.otherId, (task) => ({
-    ...task,
-    archived: false,
-    archivedAt: new Date().toISOString(),
-  }))
-  expect((await f.post('attach', input)).status).toBe(409)
-  expect((await f.post('attach', { ...input, targetTaskId: randomUUID() })).status).toBe(404)
-  f.runtime.services.store.updateTask(f.otherId, (task) => ({
-    ...task,
-    archivedAt: undefined,
-    harness: {
-      provider: 'claude',
-      permission: 'read-only',
-      model: '',
-      endpoint: '',
-      reasoning: '',
-      instructions: '',
-    },
-  }))
-  expect((await f.post('attach', input)).status).toBe(403)
-})
+it.each(['permission', 'sandboxMode'] as const)(
+  'rejects copying into settled, archived, missing and %s read-only threads',
+  async (dimension) => {
+    const f = await fixture()
+    const source = f.runtime.services.artifacts.write({
+      taskId: f.taskId,
+      title: 'Source',
+      format: 'code',
+      content: 'const value = 1',
+    })
+    const input = { taskId: f.taskId, id: source.id, targetTaskId: f.otherId }
+    f.runtime.services.store.updateTask(f.otherId, (task) => ({ ...task, archived: true }))
+    expect((await f.post('attach', input)).status).toBe(409)
+    f.runtime.services.store.updateTask(f.otherId, (task) => ({
+      ...task,
+      archived: false,
+      archivedAt: new Date().toISOString(),
+    }))
+    expect((await f.post('attach', input)).status).toBe(409)
+    expect((await f.post('attach', { ...input, targetTaskId: randomUUID() })).status).toBe(404)
+    f.runtime.services.store.updateTask(f.otherId, (task) => ({
+      ...task,
+      archivedAt: undefined,
+      harness: {
+        provider: 'codex',
+        permission: dimension === 'permission' ? 'read-only' : 'full-access',
+        ...(dimension === 'sandboxMode' ? { sandboxMode: 'read-only' as const } : {}),
+        model: '',
+        endpoint: '',
+        reasoning: '',
+        instructions: '',
+      },
+    }))
+    expect((await f.post('attach', input)).status).toBe(403)
+  },
+)
 
 it('caches revision snapshots, checks scope on cache hits, and invalidates deleted previews', async () => {
   const f = await fixture()

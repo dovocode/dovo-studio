@@ -13,6 +13,7 @@ afterEach(() => {
   db.prepare('DELETE FROM forge_connections').run()
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
 const store = new ForgeConnections(db)
 const input = {
@@ -168,6 +169,12 @@ it('rotates persisted and client cache identities before startup snapshots, incl
   }
   let runtime: Awaited<ReturnType<typeof startRuntime>> | undefined
   vi.stubEnv('DOVO_TEST_FORGE_TOKEN', 'first-private-account')
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json({ id: 17, login: 'fixture-account' })),
+  )
   try {
     runtime = await startRuntime(options)
     const first = runtime.services
@@ -194,7 +201,12 @@ it('rotates persisted and client cache identities before startup snapshots, incl
       ],
     }))
     const oldIdentity = await first.pulls.identity('/fixture/repository')
-    vi.spyOn(first.pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+    vi.spyOn(first.pulls, 'list').mockResolvedValue({
+      pulls: [],
+      page: 1,
+      hasMore: false,
+      destination: oldIdentity,
+    })
     expect((await first.pullCache.list('/fixture/repository', 'open', 1)).cachedAt).toBeDefined()
     await runtime.close()
     runtime = undefined
@@ -218,7 +230,7 @@ it('rotates persisted and client cache identities before startup snapshots, incl
     expect(second.store.get().repositories[0].forge!.revision).toBe(missing)
     expect(() => second.forges.secret(connection.id)).toThrow('Set DOVO_TEST_FORGE_TOKEN')
     await expect(second.pullCache.list('/fixture/repository', 'open', 1)).rejects.toThrow(
-      'Provider offline',
+      'Set DOVO_TEST_FORGE_TOKEN',
     )
 
     vi.stubEnv('DOVO_TEST_FORGE_TOKEN', 'first-private-account')

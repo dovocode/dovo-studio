@@ -1,4 +1,6 @@
 import { runtimeComputerName } from '@dovo/protocol'
+import { useSourceReader } from '../source-reader'
+import { useLinkOrigin } from '../../ui/content/link-origin'
 import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { Effect, Schema, Semaphore } from 'effect'
@@ -99,7 +101,9 @@ function WorkItemContent({
 }: WorkItemProps) {
   const { colors, styles } = useTheme()
 
-  const { read, connected, snapshot, profile, readCache, readEffect } = useRuntime()
+  const { read, connected, snapshot, profile, readCache, readEffect: mutationEffect } = useRuntime()
+  const { readEffect, acceptCurrentAccount } = useSourceReader(repositoryId, jiraSourceId)
+  const origin = useLinkOrigin(undefined, repositoryId, jiraSourceId)
   const { focused } = useNavigation()
   const repository = snapshot?.workspace.repositories.find((item) => item.id === repositoryId)
   const jiraSource = snapshot?.workspace.jiraSources?.find((source) => source.id === jiraSourceId)
@@ -135,6 +139,12 @@ function WorkItemContent({
     null,
   )
   const [confirm, setConfirm] = useApplicationState<RunAction | null>(null)
+  const formOrigin = useRef<{
+    issue?: ForgeIssueDetail['issue']
+    options?: ForgeWorkOptions
+    pipeline?: ForgePipelineDetail
+  }>({})
+  const confirmOrigin = useRef<ForgePipelineDetail | undefined>(undefined)
   const pending = useRef(false)
   const refreshInFlight = useRef(false)
   const hydrated = useRef(false)
@@ -515,11 +525,16 @@ function WorkItemContent({
   }
   const open = (url: string) => {
     void runClientEffect(
-      nativeEffect(() => openAppLink(url)).pipe(
+      nativeEffect(() => openAppLink(url, false, origin)).pipe(
         Effect.catch((cause) => nativeEffect(() => setError(String(cause)))),
       ),
     )
   }
+  const openForm = (kind: 'edit' | 'comment' | 'run' | 'transition') => {
+    formOrigin.current = { issue: issue?.issue, options, pipeline }
+    setForm(kind)
+  }
+  const confirmed = confirmOrigin.current ?? pipeline
   const mutationDisabled = !focused || !connected || busy || refreshing || stale
   const confirmAllowed = !!(
     confirm &&
@@ -533,19 +548,19 @@ function WorkItemContent({
           {
             label: 'Edit issue',
             disabled: mutationDisabled,
-            onPress: () => setForm('edit'),
+            onPress: () => openForm('edit'),
           },
           {
             label: 'Comment',
             disabled: mutationDisabled,
-            onPress: () => setForm('comment'),
+            onPress: () => openForm('comment'),
           },
           ...(options?.provider === 'jira'
             ? [
                 {
                   label: 'Change status',
                   disabled: mutationDisabled,
-                  onPress: () => setForm('transition'),
+                  onPress: () => openForm('transition'),
                 },
               ]
             : []),
@@ -566,7 +581,7 @@ function WorkItemContent({
                 {
                   label: 'Run pipeline',
                   disabled: mutationDisabled,
-                  onPress: () => setForm('run'),
+                  onPress: () => openForm('run'),
                 },
               ]
             : []),
@@ -580,6 +595,7 @@ function WorkItemContent({
                 ((action === 'enable' || action === 'disable') && !pipeline.run.definition),
               onPress: () => {
                 setError('')
+                confirmOrigin.current = pipeline
                 setConfirm(action)
               },
             })),
@@ -641,6 +657,33 @@ function WorkItemContent({
         }
       >
         {!connected && <Text style={styles.muted}>Offline · showing last loaded {mode}.</Text>}
+        {/different account/.test(error) && (
+          <Action
+            label="Use current account"
+            secondary
+            disabled={!connected || busy}
+            onPress={() => {
+              void runClientEffect(
+                Effect.all([
+                  readCache?.removeEffect(detailKey) ?? Effect.void,
+                  readCache?.removeEffect(optionsKey) ?? Effect.void,
+                ]).pipe(
+                  Effect.tap(() =>
+                    Effect.sync(() => {
+                      acceptCurrentAccount()
+                      hydrated.current = true
+                      setIssue(undefined)
+                      setPipeline(undefined)
+                      setOptions(undefined)
+                      reload((value) => value + 1)
+                    }),
+                  ),
+                  Effect.catch((error) => Effect.sync(() => setError(error.message))),
+                ),
+              )
+            }}
+          />
+        )}
         {!!error && (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
@@ -795,7 +838,7 @@ function WorkItemContent({
               secondary
               label="Add comment"
               disabled={mutationDisabled}
-              onPress={() => setForm('comment')}
+              onPress={() => openForm('comment')}
             />
             {!issue.comments.length && !issue.discussionNotice && (
               <Text style={styles.muted}>No comments yet.</Text>
@@ -871,22 +914,22 @@ function WorkItemContent({
           kind={form}
           disabled={mutationDisabled}
           {...sourceInput}
-          issue={issue?.issue}
-          options={options}
-          initialDefinition={pipeline?.run.definition}
-          initialRef={pipeline?.run.ref || repository?.branch}
+          issue={formOrigin.current.issue}
+          options={formOrigin.current.options ?? options}
+          initialDefinition={formOrigin.current.pipeline?.run.definition}
+          initialRef={formOrigin.current.pipeline?.run.ref || repository?.branch}
           onClose={() => setForm(null)}
           onDone={done}
         />
       )}
-      {confirm && pipeline && (
+      {confirm && confirmed && (
         <Sheet
           title={`${confirm[0]!.toUpperCase() + confirm.slice(1)} pipeline?`}
           onClose={() => setConfirm(null)}
           busy={busy}
         >
           <Text style={styles.muted}>
-            {pipeline.run.title}. This changes the pipeline on its server.
+            {confirmed.run.title}. This changes the pipeline on its server.
           </Text>
           <Action
             label={`Confirm ${confirm}`}
@@ -896,15 +939,16 @@ function WorkItemContent({
               pending.current = true
               setBusy(true)
               void runClientEffect(
-                readEffect(
+                mutationEffect(
                   '/api/scm/work/pipelines/action',
                   {
                     repositoryId,
                     action: confirm,
+                    expectedDestination: confirmed.destination ?? confirmed.run.destination,
                     id:
                       confirm === 'enable' || confirm === 'disable'
-                        ? pipeline.run.definition
-                        : pipeline.run.id,
+                        ? confirmed.run.definition
+                        : confirmed.run.id,
                   },
                   forgeWorkResultSchema,
                 )

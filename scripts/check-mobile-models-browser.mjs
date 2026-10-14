@@ -10,10 +10,10 @@ const mocks = {
   '../ui/content/format-date': `export const formatDateTime=value=>value;`,
   '../ui/controls/pill': `export const Pill=({label,onPress})=><button onClick={onPress}>{label}</button>;`,
   '../screens/settings-controls': `export {Choice as SettingsChoice} from '../ui/controls/choice';export {Field as SettingsField} from '../ui/controls/field';export {Action as SettingsAction} from '../ui/controls/action';`,
-  'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert:()=>{}};`,
+  'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert:()=>{}};export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,
   'expo-crypto': `export const CryptoDigestAlgorithm={SHA256:'SHA-256'};export const digestStringAsync=async(_,text)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('');`,
-  '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const Context=createContext(null);export const useRuntime=()=>useContext(Context);`,
+  '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const Context=createContext(null);export const useRuntime=()=>useContext(Context);export const useRuntimeSelector=select=>select(useContext(Context));`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../runtime/preferences/app-preferences': `export const useMobilePreferences=()=>({globalModelPreferences:{},globalModelPreferencesUpdatedAt:0});export const updateMobilePreferences=()=>{};`,
   '../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
@@ -31,7 +31,7 @@ const built = await build({
     contents: `
 import {useState,useEffect} from 'react';import {createRoot} from 'react-dom/client';import {defaultTaskHarness,decode,taskSchema,resolveTaskAgent} from '@dovo/protocol';import {Effect} from 'effect';import {HarnessSettings} from './src/tasks/detail/harness-settings.tsx';import {ModelSettings} from './src/agents/model-settings.tsx';import {Context} from '../runtime/connection/provider';import {ConnectionPill} from './src/runtime/connection/connection-status.tsx';import {optimisticTaskEffect,optimisticTaskConfirmed,previewTasks} from './src/runtime/state/optimistic-tasks.ts';
 window.requests=[];window.finishes=[];
-const readRuntime=async(profile,path,input)=>new Promise(resolve=>{window.requests.push({host:profile.id,path,input});window.finishes.push(resolve)});
+const readRuntime=async(profile,path,input)=>path==='/api/agents/models/cached'?null:new Promise(resolve=>{window.requests.push({host:profile.id,path,input});window.finishes.push(resolve)});
 function App(){
  const[queueStatus,setQueueStatus]=useState({pending:0,error:null});window.queueStatus=setQueueStatus;
  const[task,setTask]=useState(null),[editing,setEditing]=useState(false),[pending,setPending]=useState([]),[revision,setRevision]=useState(1);
@@ -146,7 +146,7 @@ try {
   await page
     .getByRole('option', { name: 'Updated Host Model', exact: true })
     .waitFor({ state: 'attached' })
-  const stored = await page.evaluate(() => localStorage.getItem('dovo.model-catalogs.v1'))
+  const stored = await page.evaluate(() => localStorage.getItem('dovo.model-catalogs.v2'))
   if (!stored || stored.includes('private-token'))
     throw new Error('Persistent model cache contains credentials or is missing')
   await page.reload()

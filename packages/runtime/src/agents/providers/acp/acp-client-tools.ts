@@ -1,7 +1,8 @@
+import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { constants } from 'node:fs'
 import { lstat, open, realpath } from 'node:fs/promises'
-import { isAbsolute, relative, resolve, dirname, basename, join } from 'node:path'
+import { isAbsolute, relative, dirname, basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Client, ClientCapabilities, TerminalExitStatus } from '@agentclientprotocol/sdk'
 import type { AgentRun } from '../../execution/types.js'
@@ -33,6 +34,7 @@ export async function acpClientTools(
   session: () => string | undefined,
   acceptsSession?: (id: string) => boolean,
 ) {
+  run = checkedPolicyRun(run, run.agent.provider)
   const root = await realpath(run.cwd)
   const fullAccess = run.agent.permission === 'full-access'
   const terminals = new Map<string, Terminal>()
@@ -46,11 +48,11 @@ export async function acpClientTools(
 
   async function checkedPath(path: string, writing = false) {
     if (!isAbsolute(path)) throw new Error('ACP file path must be absolute')
-    const target = resolve(path)
-    const actual = await realpath(writing ? dirname(target) : target)
+    // Preserve symlink/.. traversal: realpath must see the original absolute path.
+    const actual = await realpath(writing ? dirname(path) : path)
     if (!fullAccess && !inside(root, actual))
       throw new Error('ACP file path resolves outside the workspace')
-    return writing ? join(actual, basename(target)) : actual
+    return writing ? join(actual, basename(path)) : actual
   }
 
   function checkSession(id: string) {
@@ -111,8 +113,7 @@ export async function acpClientTools(
           if (Buffer.byteLength(params.content) > 4 * 1024 * 1024)
             throw new Error('ACP file exceeds the 4 MB write limit')
           if (
-            !fullAccess &&
-            run.agent.permission !== 'workspace-write' &&
+            toolPolicyDisposition(run, 'edit') === 'ask' &&
             (await run.approve('ACP write file', file)) === 'deny'
           )
             throw new Error('ACP file write declined')
@@ -159,7 +160,7 @@ export async function acpClientTools(
           )
           if (params.cwd) await checkedPath(params.cwd)
           if (
-            !fullAccess &&
+            toolPolicyDisposition(run, 'execute') === 'ask' &&
             (await run.approve(
               'ACP run command',
               [params.command, ...(params.args ?? [])].join(' '),

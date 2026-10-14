@@ -55,7 +55,7 @@ try {
         },
       ],
     })
-    const page = await browser.newPage()
+    const page = await browser.newPage({ viewport: { width: 1280, height: 1600 } })
     page.setDefaultTimeout(6000)
     let errors = []
     page.on('pageerror', (e) => errors.push(e.message))

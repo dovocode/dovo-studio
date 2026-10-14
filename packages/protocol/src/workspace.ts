@@ -11,6 +11,19 @@ import { attachmentSchema, MAX_ATTACHMENTS } from './shared/attachments.js'
 import { Schema, Struct } from 'effect'
 import { forgeBindingSchema, forgeProviderSchema } from './scm/forges/forges.js'
 import type { TaskSummary, TaskTurnSummary } from './tasks/task-summary.js'
+export const approvalPolicySchema = Schema.Literals([
+  'untrusted',
+  'on-failure',
+  'on-request',
+  'never',
+])
+export type ApprovalPolicy = Schema.Schema.Type<typeof approvalPolicySchema>
+export const sandboxModeSchema = Schema.Literals([
+  'read-only',
+  'workspace-write',
+  'danger-full-access',
+])
+export type SandboxMode = Schema.Schema.Type<typeof sandboxModeSchema>
 export const executionSchema = Schema.Literals(['main', 'worktree'])
 export const providerSchema = Schema.Literals([
   'codex',
@@ -48,6 +61,8 @@ export const agentPresetSchema = mutableStruct({
   cyberAccessProgram: Schema.optional(Schema.Literals(['standard', 'daybreakBlue', 'daybreakRed'])),
   instructions: Schema.String,
   permission: Schema.Literals(['ask', 'read-only', 'workspace-write', 'auto', 'full-access']),
+  approvalPolicy: Schema.optional(approvalPolicySchema),
+  sandboxMode: Schema.optional(sandboxModeSchema),
   endpoint: Schema.String,
   executablePath: Schema.optional(Schema.String),
   configDirectory: Schema.optional(Schema.String),
@@ -82,6 +97,8 @@ export const projectTaskDefaultsSchema = mutableStruct({
   defaultServerId: Schema.optional(maxValue(minValue(Schema.String, 1), 500)),
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
   permission: Schema.optional(agentSchema.fields.permission),
+  approvalPolicy: Schema.optional(Schema.NullOr(approvalPolicySchema)),
+  sandboxMode: Schema.optional(Schema.NullOr(sandboxModeSchema)),
   harness: Schema.optional(taskHarnessSchema.mapFields(Struct.omit(['resources']))),
   execution: Schema.optional(executionSchema),
   submodules: Schema.optional(Schema.Literals(['none', 'direct', 'recursive'])),
@@ -436,6 +453,8 @@ export const taskModelSchema = mutableStruct({
   model: Schema.optional(agentSchema.fields.model),
   reasoning: agentSchema.fields.reasoning,
   permission: Schema.optional(agentSchema.fields.permission),
+  approvalPolicy: Schema.optional(Schema.NullOr(approvalPolicySchema)),
+  sandboxMode: Schema.optional(Schema.NullOr(sandboxModeSchema)),
   serviceTier: Schema.optional(
     Schema.NullOr(Schema.required(agentSchema.fields.serviceTier.schema.schema)),
   ),
@@ -642,6 +661,14 @@ export const taskSchema = mutableStruct({
       parentTaskId: maxValue(minValue(Schema.String, 1), 200),
       parentRunId: maxValue(minValue(Schema.String, 1), 200),
       checkoutId: Schema.optional(Schema.String),
+      /** Explicit narrower choices survive parent policy changes. Other dimensions follow. */
+      permissionLimits: Schema.optional(
+        mutableStruct({
+          permission: Schema.optional(agentSchema.fields.permission),
+          approvalPolicy: Schema.optional(approvalPolicySchema),
+          sandboxMode: Schema.optional(sandboxModeSchema),
+        }),
+      ),
       key: maxValue(minValue(Schema.String, 1), 100),
     }),
   ),
@@ -960,6 +987,8 @@ export function resolveTaskAgent(
   }
   return {
     ...merged,
+    approvalPolicy: merged.approvalPolicy ?? undefined,
+    sandboxMode: merged.sandboxMode ?? undefined,
     acpInstallationId: merged.acpInstallationId ?? undefined,
     serviceTier: merged.serviceTier ?? undefined,
     cyberAccessProgram: merged.cyberAccessProgram ?? undefined,

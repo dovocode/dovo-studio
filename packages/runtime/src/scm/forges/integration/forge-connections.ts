@@ -274,6 +274,7 @@ export class ForgeConnections {
       return `Basic ${Buffer.from(`${git ? 'x-bitbucket-api-token-auth' : connection.username}:${token}`).toString('base64')}`
     if (connection.provider === 'azure-devops')
       return `Basic ${Buffer.from(`:${token}`).toString('base64')}`
+    if (connection.provider === 'gitlab' && !git) return `Bearer ${token}`
     if (git)
       return `Basic ${Buffer.from(`${connection.username || 'oauth2'}:${token}`).toString('base64')}`
     return `token ${token}`

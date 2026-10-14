@@ -1,3 +1,4 @@
+import { permissionPolicyReadOnly } from '@dovo/protocol'
 import { resolveTaskAgent, type taskWaitingRequestSchema, type TaskWaiting } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 
@@ -26,7 +27,7 @@ export async function taskWaiting(
   const pulls = await s.pullRequestWatch.manage({ taskId: input.taskId, action: 'status' })
   const pipelines = await s.pipelineWatch.manage({ taskId: input.taskId, action: 'status' })
   const settings = s.preferences.get()
-  const readOnly = resolveTaskAgent(task, s.store.get().agents)?.permission === 'read-only'
+  const readOnly = permissionPolicyReadOnly(resolveTaskAgent(task, s.store.get().agents))
   const pausedReason = (enabled: boolean) =>
     !enabled
       ? 'Monitoring paused: watcher disabled in runtime settings'

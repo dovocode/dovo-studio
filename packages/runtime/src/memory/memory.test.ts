@@ -139,47 +139,66 @@ it('shares notes across project threads while isolating other projects, system m
   })
 })
 
-it('keeps read-only agents from changing memory and authenticates agent access', async () => {
-  const { s, create, post } = await setup()
-  const task = create()
-  s.memory.configure({ scope: 'system', enabled: true })
-  s.memory.write({ scope: 'system', key: 'preferences', content: 'Saved' })
-  s.store.updateTask(task.id, (current) => ({
-    ...current,
-    agentOverrides: { ...current.agentOverrides, permission: 'read-only' },
-  }))
-  expect(
-    (await post('agent/read', { taskId: task.id, scope: 'system', key: 'preferences' })).status,
-  ).toBe(200)
-  expect(
-    (await post('agent/write', { taskId: task.id, scope: 'system', key: 'new', content: 'Denied' }))
-      .status,
-  ).toBe(403)
-  expect(
-    (
-      await post('agent/delete', {
-        taskId: task.id,
-        scope: 'system',
-        key: 'preferences',
-        expectedRevision: '00000000-0000-0000-0000-000000000000',
-      })
-    ).status,
-  ).toBe(403)
-  expect(
-    (await post('agent/read', { taskId: task.id, scope: 'system', key: 'preferences' }, 'invalid'))
-      .status,
-  ).toBe(401)
-  s.devices.add('Phone', 'paired-memory-test-token')
-  expect(
-    (
-      await post(
-        'agent/read',
-        { taskId: task.id, scope: 'system', key: 'preferences' },
-        'paired-memory-test-token',
-      )
-    ).status,
-  ).toBe(403)
-})
+it.each(['permission', 'sandboxMode'] as const)(
+  'keeps %s read-only agents from changing memory and authenticates agent access',
+  async (dimension) => {
+    const { s, create, post } = await setup()
+    const task = create()
+    s.memory.configure({ scope: 'system', enabled: true })
+    s.memory.write({ scope: 'system', key: 'preferences', content: 'Saved' })
+    s.store.updateTask(task.id, (current) => ({
+      ...current,
+      agentOverrides: {
+        ...current.agentOverrides,
+        ...(dimension === 'permission'
+          ? { permission: 'read-only' as const }
+          : { sandboxMode: 'read-only' as const }),
+      },
+    }))
+    expect(
+      (await post('agent/read', { taskId: task.id, scope: 'system', key: 'preferences' })).status,
+    ).toBe(200)
+    expect(
+      (
+        await post('agent/write', {
+          taskId: task.id,
+          scope: 'system',
+          key: 'new',
+          content: 'Denied',
+        })
+      ).status,
+    ).toBe(403)
+    expect(
+      (
+        await post('agent/delete', {
+          taskId: task.id,
+          scope: 'system',
+          key: 'preferences',
+          expectedRevision: '00000000-0000-0000-0000-000000000000',
+        })
+      ).status,
+    ).toBe(403)
+    expect(
+      (
+        await post(
+          'agent/read',
+          { taskId: task.id, scope: 'system', key: 'preferences' },
+          'invalid',
+        )
+      ).status,
+    ).toBe(401)
+    s.devices.add('Phone', 'paired-memory-test-token')
+    expect(
+      (
+        await post(
+          'agent/read',
+          { taskId: task.id, scope: 'system', key: 'preferences' },
+          'paired-memory-test-token',
+        )
+      ).status,
+    ).toBe(403)
+  },
+)
 
 it('rejects stale revisions, supports pagination and search, and retains memory when projects are removed', async () => {
   const { s } = await setup()

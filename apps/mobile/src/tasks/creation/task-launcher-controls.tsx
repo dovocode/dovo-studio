@@ -1,3 +1,4 @@
+import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { View } from 'react-native'
 import {
   resolveScopedAgents,
@@ -11,6 +12,7 @@ import {
   type RuntimeSnapshot,
   type Repository,
 } from '@dovo/protocol'
+import { PermissionPolicyControls } from '../../agents/permission-policy-controls'
 import { ModelSettings } from '../../agents/model-settings'
 import { useHarnessAvailability } from '../../agents/use-harness-availability'
 import { Text } from '../../ui/content/text'
@@ -85,8 +87,9 @@ export function TaskLauncherControls({
         }}
       />
       <Choice
-        label="Access"
-        value={agent.permission}
+        label="Access mode"
+        selectedLabel={permissionPolicyLabel(agent)}
+        value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
         disabled={disabled}
         items={selectableAccessModes(agent.permission, agent.provider)
           .filter((mode) => supportsAccess(agent.provider, mode.id))
@@ -96,7 +99,15 @@ export function TaskLauncherControls({
             (mode) => mode.id === permission,
           )
           if (mode && !disabled && supportsAccess(agent.provider, mode.id))
-            onChange({ ...selection, harness: { ...harness, permission: mode.id } })
+            onChange({ ...selection, harness: selectPermissionPreset(harness, mode.id) })
+        }}
+      />
+      <PermissionPolicyControls
+        value={agent}
+        supported={snapshot.permissionPolicySupported === true}
+        disabled={disabled}
+        onChange={(policy) => {
+          if (!disabled) onChange({ ...selection, harness: { ...harness, ...policy } })
         }}
       />
     </View>

@@ -6,7 +6,7 @@ import {
   acpInstallationHarness,
   canChangeTaskProvider,
   defaultTaskHarness,
-  resolveProviderAccess,
+  changeAgentProvider,
   lockedTaskProvider,
   lockedAcpInstallationId,
   resolveTaskAgent,
@@ -98,10 +98,16 @@ export function selectedTaskHarness(
   if (!choice) return undefined
   // Re-selecting the current entry must retain its task-specific model and access settings.
   if (selection === taskHarnessSelection(task)) return resolveTaskAgent(task, agents)
+  const current = resolveTaskAgent(task, agents)
+  const next = current
+    ? changeAgentProvider(current, choice.provider)
+    : { ...defaultTaskHarness(choice.provider), id: 'task', name: harnessNames[choice.provider] }
   const installation = installations.find((item) => acpHarnessChoiceId(item.id) === selection)
   if (installation)
     return {
-      ...acpInstallationHarness(installation, resolveTaskAgent(task, agents)?.permission),
+      ...acpInstallationHarness(installation, next.permission),
+      approvalPolicy: next.approvalPolicy,
+      sandboxMode: next.sandboxMode,
       id: 'task',
       name: installation.name,
     }
@@ -109,10 +115,9 @@ export function selectedTaskHarness(
     ? agents.find((agent) => agent.id === selection.slice(6))
     : {
         ...defaultTaskHarness(choice.provider),
-        permission: resolveProviderAccess(
-          choice.provider,
-          resolveTaskAgent(task, agents)?.permission ?? 'full-access',
-        ),
+        permission: next.permission,
+        ...(next.approvalPolicy ? { approvalPolicy: next.approvalPolicy } : {}),
+        ...(next.sandboxMode ? { sandboxMode: next.sandboxMode } : {}),
         id: 'task',
         name: harnessNames[choice.provider],
       }
@@ -137,6 +142,8 @@ export function taskHarnessChanges(task: Task, selection: string, agent: Agent) 
             model: agent.model,
             reasoning: agent.reasoning,
             permission: agent.permission,
+            approvalPolicy: agent.approvalPolicy ?? null,
+            sandboxMode: agent.sandboxMode ?? null,
             serviceTier: agent.serviceTier ?? null,
             cyberAccessProgram: agent.cyberAccessProgram ?? null,
             ...(agent.provider === 'acp'

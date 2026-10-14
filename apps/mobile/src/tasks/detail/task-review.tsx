@@ -43,7 +43,7 @@ export function TaskReview({
   edit: FileEditDraft | null
   onEditChange: (draft: FileEditDraft | null) => void
 }) {
-  const { styles } = useTheme()
+  const { styles, code } = useTheme()
 
   const task = useConversationSelector((value) => value.task)
   const { call, connected, callEffect, snapshot } = useRuntime(),
@@ -525,6 +525,9 @@ export function TaskReview({
                 styles.input,
                 {
                   minHeight: 300,
+                  ...(code
+                    ? { color: code.colors.text, backgroundColor: code.colors.background }
+                    : {}),
                   fontFamily: 'monospace',
                   textAlignVertical: 'top',
                 },
@@ -570,6 +573,7 @@ export function TaskReview({
           <DiffView
             key={`${checkpoint}:${checkoutId}:${file?.path}:${since?.id ?? ''}`}
             patch={patch}
+            path={file?.path}
             focusedLine={focusedLine}
             onLinePress={
               !checkpoint && !checkoutId && !since && scope === 'working'

@@ -22,11 +22,15 @@ const mocks = {
     export const formatDateTime=value=>value;
   `,
   '@dovo/studio-ui': `
+export {permissionPolicyUIIssue} from './src/permission-policy-fields';
+export * as Popover from '@radix-ui/react-popover';
 export const SidebarHeader=()=>null;
 export {PullRequestIcon,pullRequestIconTone} from '${new URL('../packages/studio-ui/src/pull-request-icon.tsx', import.meta.url).pathname}';
 import {useState as useSidebarState} from 'react';export const useLeftSidebar=initial=>useSidebarState(initial);export const useNavigationSidebar=()=>null;export const HeaderContent=({children})=>children;
 
     export {FileTypeIcon} from './src/file-tree';
+    export const Conversation=({children,...props})=><div role="log" {...props}>{children}</div>;export const ConversationContent=({children,...props})=><div {...props}>{children}</div>;export const ConversationScrollButton=()=>null;
+    export const Message=({children,from})=><div data-native-role={from}>{children}</div>;export const MessageContent=({children})=><div>{children}</div>;export const MessageResponse=({children})=><div>{children}</div>;
     export const cn=(...values)=>values.filter(Boolean).join(' ');
     export const useCompactLayout=()=>false;
     const Box=({children})=><div>{children}</div>;
@@ -50,7 +54,8 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   './detail/resizable-sidebar':
     'export const ResizableSidebar=({children,className})=><div className={className}>{children}</div>;',
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
-  './detail/task-header': `export const TaskHeader=({task})=><header data-thread-header={task.id}>{task.title}</header>;`,
+  './detail/task-header': `export const TaskHeader=({task,onSurface})=><header data-thread-header={task.id}>{task.title}<button onClick={()=>onSurface('agents')}>Agents</button></header>;`,
+  './detail/task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
   '../chat/thread/chat-thread': `export const ChatThread=({task})=><div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
   '../chat/thread/use-task-viewed': 'export const useTaskViewed=()=>({error:null});',
@@ -60,7 +65,6 @@ for (const [path, names] of [
   ['@dovo/extension-scm/pull-detail', ['PullDetail']],
   ['@dovo/extension-scm/projects', ['ProjectsMenu']],
   ['./detail/task-tools', ['TaskTools']],
-  ['./detail/task-agents', ['TaskAgents']],
   ['./detail/linked-projects', ['LinkedProjects']],
   ['./chat/artifacts', ['ThreadArtifacts']],
   ['./browser/browser-pane', ['BrowserPane', 'DevicesPane']],
@@ -118,6 +122,7 @@ const built = await build({
         const request=async(path,input)=>{
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
           window.requests.push({path,input});
+          if(path==='/api/tasks/native-thread')return {entries:[{id:'native-prompt',role:'user',text:'Claude native prompt'},{id:'native-answer',role:'assistant',text:'Claude native answer'}]};
           if(path==='/api/tasks/title')return {title:'New task'};
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:'message',role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
@@ -160,7 +165,7 @@ try {
     errors.push(error.message)
     console.error(error.message)
   })
-  await page.setContent('<div id="app"></div>')
+  await page.setContent('<style>.hidden{display:none}</style><div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const editor = page.getByLabel('Message task', { exact: true })
   await editor.waitFor()
@@ -242,6 +247,46 @@ try {
   assert.equal(await editor.evaluate((element) => element === window.originalEditor), true)
   await editor.fill('Next input')
   await page.waitForFunction(() => window.saved.some((task) => task.draft === 'Next input'))
+  await page.evaluate(() =>
+    window.setWorkspace((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) =>
+        task.id === window.navigations.at(-1).entityId
+          ? {
+              ...task,
+              subagents: [
+                {
+                  id: 'native-claude',
+                  sessionId: 'claude-session',
+                  provider: 'claude',
+                  name: 'Claude reviewer',
+                  status: 'completed',
+                },
+              ],
+            }
+          : task,
+      ),
+    })),
+  )
+  await page.getByRole('button', { name: 'Agents', exact: true }).click()
+  await page.getByRole('button', { name: 'Open native Claude thread', exact: true }).click()
+  await page.getByText('Claude native answer', { exact: true }).waitFor()
+  assert.equal(
+    await page.locator('[aria-label="Workspace tools"] [data-native-thread-main]').count(),
+    0,
+  )
+  assert.equal(await page.locator('[data-native-thread-main] [data-native-role="user"]').count(), 1)
+  assert.equal(await editor.isVisible(), false)
+  const nativeRead = await page.evaluate(() =>
+    window.requests.findLast((request) => request.path === '/api/tasks/native-thread'),
+  )
+  assert.equal(nativeRead.input.provider, 'claude')
+  assert.equal(nativeRead.input.sessionId, 'claude-session')
+  assert.equal(nativeRead.input.id, 'native-claude')
+  await page.getByRole('button', { name: 'Back to agents', exact: true }).click()
+  await editor.waitFor()
+  assert.equal(await editor.inputValue(), 'Next input')
+  assert.equal(await editor.evaluate((element) => element === window.originalEditor), true)
   // Leaving an untouched new thread discards it without creating another persisted task.
   await page.evaluate(() => window.commands.get('tasks.new')())
   await page.waitForFunction(() => document.querySelector('textarea') !== window.originalEditor)

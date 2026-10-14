@@ -1,3 +1,4 @@
+import { checkedPolicyRun } from '../shared/permission-policy.js'
 import { ResponseError, ErrorCodes } from 'vscode-jsonrpc/node'
 import { nativeWait } from '../shared/native.js'
 import { homedir } from 'node:os'
@@ -126,6 +127,7 @@ export function createHermesAdapter(): AgentAdapter {
       }
     },
     async run(run) {
+      run = checkedPolicyRun(run, 'hermes')
       run.signal.throwIfAborted()
       if (run.agent.permission === 'read-only' || run.tools === 'none')
         throw new Error(

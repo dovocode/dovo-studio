@@ -31,16 +31,19 @@ export function pullOverviewScope(repositories: readonly Repository[]) {
   )
 }
 
-/** A forge binding can target a different repository from the checkout's origin. */
-export function pullRepositoryKey(repository: Repository, sourceKey: string) {
+/** A bound PR target is authoritative; never match a stale checkout or its fork instead. */
+export function pullRepositoryIdentity(repository: Repository) {
   return (
     repository.pullIdentity ||
-    (!repository.kind &&
-      !repository.forge &&
-      !repository.gitIdentityError &&
-      repository.gitIdentity) ||
-    sourceKey
+    (!repository.kind && !repository.forge && !repository.gitIdentityError
+      ? repository.gitIdentity
+      : undefined)
   )
+}
+
+/** A forge binding can target a different repository from the checkout's origin. */
+export function pullRepositoryKey(repository: Repository, sourceKey: string) {
+  return pullRepositoryIdentity(repository) || sourceKey
 }
 
 /** One remote read per repository. Keep a stable owner until it disconnects; an explicit
@@ -78,11 +81,20 @@ export function publicPullSummaries(pulls: readonly PullSummary[]): PullSummary[
  * client is using serves what it has; other remotes spread across connected computers by load.
  * A previous owner is kept while it stays connected, so refreshes do not move between computers. */
 export function assignRemoteSources<
-  T extends { key: string; repository?: Repository; connected: boolean; runtimeId?: string },
+  T extends {
+    key: string
+    repository?: Repository
+    connected: boolean
+    runtimeId?: string
+    readerIdentity?: string
+  },
 >(
   sources: readonly T[],
   options: {
     previous?: ReadonlyMap<string, string>
+    /** Verified identity of the previously selected reader, indexed by remote key. */
+    previousReaderIdentities?: ReadonlyMap<string, string>
+    requireSameReader?: boolean
     preferredRuntimeId?: string | null
     remote?: (source: T) => string
   } = {},
@@ -107,11 +119,33 @@ export function assignRemoteSources<
   for (const [key, candidates] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
     const online = candidates.filter((candidate) => candidate.connected)
     const previous = options.previous?.get(key)
-    const kept = candidates.find(
-      (candidate) => candidate.key === previous && (candidate.connected || !online.length),
-    )
-    if (kept) own(key, kept)
-    else unassigned.push([key, candidates])
+    const previousSource = candidates.find((candidate) => candidate.key === previous)
+    const previousIdentity =
+      options.previousReaderIdentities?.get(key) ?? previousSource?.readerIdentity
+    if (options.requireSameReader && previous) {
+      const eligible = candidates.filter(
+        (candidate) => previousIdentity && candidate.readerIdentity === previousIdentity,
+      )
+      const kept =
+        previousSource &&
+        (!previousIdentity || previousSource.readerIdentity === previousIdentity) &&
+        (previousSource.connected || !eligible.some((candidate) => candidate.connected))
+          ? previousSource
+          : undefined
+      if (kept) own(key, kept)
+      else if (eligible.some((candidate) => candidate.connected)) unassigned.push([key, eligible])
+      else {
+        // Keep the assignment even if its source vanished. An unknown/new account must not
+        // silently inherit the view. Its caller can retain cached rows and explain availability.
+        owners.set(key, previous)
+      }
+    } else {
+      const kept = candidates.find(
+        (candidate) => candidate.key === previous && (candidate.connected || !online.length),
+      )
+      if (kept) own(key, kept)
+      else unassigned.push([key, candidates])
+    }
   }
   for (const [key, candidates] of unassigned) {
     const online = candidates.filter((candidate) => candidate.connected)
@@ -129,5 +163,16 @@ export function assignRemoteSources<
     if (chosen) own(key, chosen)
   }
   const keys = new Set(owners.values())
-  return { selected: sources.filter((source) => keys.has(source.key)), owners }
+  return {
+    selected: sources.filter((source) => {
+      if (!keys.has(source.key)) return false
+      const previousIdentity = options.previousReaderIdentities?.get(remote(source))
+      return (
+        !options.requireSameReader ||
+        !previousIdentity ||
+        source.readerIdentity === previousIdentity
+      )
+    }),
+    owners,
+  }
 }

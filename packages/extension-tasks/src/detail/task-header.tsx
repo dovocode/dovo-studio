@@ -24,7 +24,7 @@ import {
   ChevronDown,
   Info,
 } from 'lucide-react'
-import { HeaderContent, Button, IconButton, ProjectIcon, cn } from '@dovo/studio-ui'
+import { HeaderContent, Button, IconButton, ProjectIcon, Popover, cn } from '@dovo/studio-ui'
 import { taskPresentation } from '../list/task-presentation'
 import { retainTaskOwner } from '../list/task-collection'
 import { TaskContextMenu } from './task-context-menu'
@@ -133,14 +133,15 @@ export function TaskHeader({
     </TaskContextMenu>
   )
   const actions = (
-    <IconButton
-      label={projectPanelOpen ? 'Hide project panel' : 'Show project panel'}
-      aria-pressed={projectPanelOpen}
-      className="size-7"
-      onClick={onProjectPanel}
-    >
-      <Info size={15} />
-    </IconButton>
+    <Popover.Trigger asChild>
+      <IconButton
+        label={projectPanelOpen ? 'Hide project panel' : 'Show project panel'}
+        aria-pressed={projectPanelOpen}
+        className={cn('size-7', projectPanelOpen && 'bg-accent text-accent-foreground')}
+      >
+        <Info size={15} />
+      </IconButton>
+    </Popover.Trigger>
   )
   return (
     <>

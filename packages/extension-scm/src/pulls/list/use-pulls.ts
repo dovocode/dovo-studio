@@ -2,18 +2,21 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef } from 'react'
 import { Effect, Schema, Semaphore } from 'effect'
 import {
-  assignRemoteSources,
   pullRepositoryKey,
   publicPullSummaries,
   mutableArray,
   mutableStruct,
   pullPageSchema,
   useRepositorySources,
-  useWorkspace,
   startPolling,
   clientTaskScope,
   type RepositorySource,
 } from '@dovo/studio-core'
+import {
+  useSourceReaders,
+  verifySourceReader,
+  chooseSourceReader,
+} from '../../connections/source-readers'
 import { refreshPageCount, refreshPullPage, type CachedPullPage } from './collection-pages'
 type Page = CachedPullPage & { source: RepositorySource; error?: string }
 const cachedPullPageSchema = mutableStruct({
@@ -31,18 +34,26 @@ const cacheKey = (source: RepositorySource, state: string) =>
   ])
 export function usePulls(state: string, repositoryId = '') {
   const allSources = useRepositorySources()
-  const { activeRuntimeId } = useWorkspace()
-  // Each remote is read through one computer: this computer when it has the checkout,
-  // otherwise the least loaded connected computer. Owners stay put until they disconnect.
-  const owners = useRef(new Map<string, string>())
-  const sources = useMemo(() => {
-    const assigned = assignRemoteSources(
-      allSources.filter((source) => !repositoryId || source.key === repositoryId),
-      { previous: owners.current, preferredRuntimeId: activeRuntimeId },
-    )
-    owners.current = assigned.owners
-    return assigned.selected
-  }, [allSources, repositoryId, activeRuntimeId])
+  const origin = allSources.find((source) => source.key === repositoryId)
+  const eligible = useMemo(
+    () =>
+      allSources.filter(
+        (source) =>
+          !repositoryId ||
+          source.key === repositoryId ||
+          (origin &&
+            pullRepositoryKey(origin.repository, origin.key) ===
+              pullRepositoryKey(source.repository, source.key)),
+      ),
+    [allSources, repositoryId],
+  )
+  const { sources, unavailable } = useSourceReaders(
+    eligible,
+    `pulls:${repositoryId}`,
+    undefined,
+    true,
+    origin,
+  )
   const [stored, setStored, pagesRef] = useApplicationState<Record<string, Page>>({})
   const [busy, setBusy] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
@@ -70,7 +81,8 @@ export function usePulls(state: string, repositoryId = '') {
         Object.entries(previous).filter(
           ([key, page]) =>
             sameState &&
-            sources.some((source) => source.key === key && source.scope === page.source.scope),
+            (sources.some((source) => source.key === key && source.scope === page.source.scope) ||
+              unavailable.has(pullRepositoryKey(page.source.repository, page.source.key))),
         ),
       ),
     )
@@ -153,6 +165,7 @@ export function usePulls(state: string, repositoryId = '') {
         sources.filter((source) => source.connected),
         (source) =>
           Effect.gen(function* () {
+            const expectedReaderIdentity = yield* verifySourceReader(source)
             const previous = pagesRef.current[source.key]
             const sweepKey = JSON.stringify([source.scope, remoteState])
             const lastSweep = fullSweepAt.current.get(sweepKey) ?? Date.now()
@@ -165,6 +178,7 @@ export function usePulls(state: string, repositoryId = '') {
                 '/api/scm/pulls/overview',
                 {
                   repositoryId: source.repository.id,
+                  expectedReaderIdentity,
                   state: remoteState,
                   page: number,
                   refresh,
@@ -232,12 +246,14 @@ export function usePulls(state: string, repositoryId = '') {
         }
         setBusy(true)
         yield* Effect.gen(function* () {
+          const expectedReaderIdentity = yield* verifySourceReader(source)
           const next = yield* source.requestEffect(
             '/api/scm/pulls/overview',
             {
               repositoryId: source.repository.id,
               state: remoteState,
               page: previous.page + 1,
+              expectedReaderIdentity,
             },
             pullPageSchema,
           )
@@ -275,22 +291,52 @@ export function usePulls(state: string, repositoryId = '') {
       void polling.stop()
       void commands.stop()
     }
-  }, [sources, remoteState, revision])
+  }, [sources, unavailable, remoteState, revision])
   const refresh = () => {
     forceNext.current = true
     setRevision((value) => value + 1)
   }
-  const pages = sources.flatMap((source) => {
+  const selectedPages = sources.flatMap((source) => {
     const page = stored[source.key]
     return page && page.source.scope === source.scope && lastState.current === remoteState
       ? [{ ...page, source }]
       : []
   })
+  const pages = [
+    ...selectedPages,
+    ...Object.values(stored)
+      .filter(
+        (page) =>
+          unavailable.has(pullRepositoryKey(page.source.repository, page.source.key)) &&
+          lastState.current === remoteState,
+      )
+      .map((page) => ({
+        ...page,
+        stale: true,
+        source: { ...page.source, connected: false },
+        error:
+          'The original reader is unavailable. A different or unverified account cannot take over. Choose a project source explicitly to continue.',
+      })),
+  ]
   return {
     sources: allSources,
     pages,
     busy,
     connected: sources.some((source) => source.connected),
+    chooseReader: async (key: string) => {
+      const source = allSources.find((source) => source.key === key)
+      if (!source?.connected) return
+      await Effect.runPromise(
+        chooseSourceReader(
+          source,
+          `pulls:${key}`,
+          pullRepositoryKey(source.repository, source.key),
+        ),
+      )
+      setStored((previous) =>
+        Object.fromEntries(Object.entries(previous).filter(([entryKey]) => entryKey !== key)),
+      )
+    },
     more: (key: string) => moreRef.current(key),
     refresh,
   }

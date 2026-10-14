@@ -11,6 +11,7 @@ import {
   type ForgePipeline,
   type ForgeWorkOptions,
 } from '@dovo/protocol'
+import { verifySourceReader } from '../connections/source-readers'
 import type { WorkSource } from './work-sources'
 
 export type WorkItemsPage = {
@@ -132,11 +133,12 @@ export function loadWorkSourcePage(
   jiraFilters?: JiraIssueFilters,
 ) {
   return Effect.gen(function* () {
+    const expectedReaderIdentity = yield* verifySourceReader(source)
     const options =
       reusableOptions(previous, source, mode, refresh) ??
       (yield* source.requestEffect(
         '/api/scm/work/options',
-        { ...source.input, area: mode },
+        { ...source.input, expectedReaderIdentity, area: mode },
         forgeWorkOptionsSchema,
       ))
     const optionsFetchedAt =
@@ -163,6 +165,7 @@ export function loadWorkSourcePage(
                 {
                   ...source.input,
                   state,
+                  expectedReaderIdentity,
                   query,
                   cursor: response.next,
                   refresh,
@@ -172,7 +175,7 @@ export function loadWorkSourcePage(
               )
             : yield* source.requestEffect(
                 '/api/scm/work/pipelines/list',
-                { ...source.input, cursor: response.next, refresh },
+                { ...source.input, expectedReaderIdentity, cursor: response.next, refresh },
                 forgePipelinePageSchema,
               )
         response = appendWorkPage(response, next)

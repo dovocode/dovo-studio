@@ -31,6 +31,8 @@ import {
 } from '../../runtime/state/detail-drafts'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { TaskAgents } from './task-agents'
+import { NativeAgentThread } from './native-agent-thread'
+import type { Subagent } from '@dovo/protocol'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BrowserPane, DevicesPane } from '../preview/browser-pane'
 import { Conversation } from '../conversation/view'
@@ -457,6 +459,24 @@ function TaskDetailContent({
   const [reviewLine, setReviewLine] = useApplicationState<number | undefined>(undefined)
   const [reviewTab, setReviewTab] = useApplicationState<'diff' | 'findings'>('diff')
   const [terminalId, setTerminalId] = useApplicationState('')
+  const [nativeThread, setNativeThread] = useState<{
+    parentKey: string
+    taskId: string
+    agent: Subagent
+  }>()
+  const native =
+    nativeThread?.parentKey === JSON.stringify([activeId, task.id]) ? nativeThread : undefined
+  const nativeAgent =
+    native &&
+    (snapshot?.workspace.tasks
+      .find((item) => item.id === native.taskId)
+      ?.subagents?.find(
+        (agent) =>
+          agent.id === native.agent.id &&
+          agent.provider === native.agent.provider &&
+          agent.sessionId === native.agent.sessionId,
+      ) ??
+      native.agent)
   const car = useCarMode()
   const [pane, setPane] = useApplicationState<
     'chat' | 'diff' | 'terminal' | 'browser' | 'devices' | 'agents'
@@ -489,7 +509,7 @@ function TaskDetailContent({
     const error = lifecycle.error || newSession.error
     if (error) Alert.alert('Could not update thread', error)
   }, [lifecycle.error, newSession.error])
-  const viewed = useTaskViewed(task, pane === 'chat' && !linkingProjects && !renaming)
+  const viewed = useTaskViewed(task, !native && pane === 'chat' && !linkingProjects && !renaming)
   return (
     <View
       style={[
@@ -501,6 +521,15 @@ function TaskDetailContent({
           },
       ]}
     >
+      {native && nativeAgent && (
+        <NativeAgentThread
+          key={`${native.parentKey}:${native.taskId}:${nativeAgent.provider}:${nativeAgent.sessionId}:${nativeAgent.id}`}
+          taskId={native.taskId}
+          agent={nativeAgent}
+          parentTitle={task.title}
+          onClose={() => setNativeThread(undefined)}
+        />
+      )}
       <ScreenHeader
         title={task.title}
         titleMenu={!startup?.temporary}
@@ -532,7 +561,7 @@ function TaskDetailContent({
             </View>
           )
         }
-        hidden={(pane === 'browser' || pane === 'devices') && expandedPreview}
+        hidden={!!native || ((pane === 'browser' || pane === 'devices') && expandedPreview)}
         gestureEnabled={pane !== 'browser' && pane !== 'devices'}
         onBack={pane === 'browser' || pane === 'devices' ? onBack : undefined}
         leading={<Action secondary label="Back" onPress={onBack} />}
@@ -758,7 +787,7 @@ function TaskDetailContent({
         }
       />
       {/* Offline and reconnect state lives in the floating pill above the composer. */}
-      {viewed.error && (
+      {viewed.error && !native && (
         <View
           style={[
             styles.row,
@@ -783,104 +812,146 @@ function TaskDetailContent({
           <Action secondary label="Retry" disabled={viewed.busy} onPress={viewed.retry} />
         </View>
       )}
-      <ConversationProvider
-        key={task.id}
-        task={task}
-        temporary={startup?.temporary}
-        visible={focused && pane === 'chat' && !linkingProjects && !renaming}
-        openTerminal={(id) => {
-          setTerminalId(id)
-          setPane('terminal')
-        }}
-        openCheckpoint={(id, path) => {
-          setReviewLine(undefined)
-          setReviewTab('diff')
-          setCheckpointPath(path ?? '')
-          setCheckpoint(id)
-          setPane('diff')
-        }}
-      >
-        <View
-          style={{
-            flex: 1,
-            display: pane === 'chat' ? 'flex' : 'none',
+      <View style={{ flex: 1, display: native ? 'none' : 'flex' }}>
+        <ConversationProvider
+          key={task.id}
+          task={task}
+          temporary={startup?.temporary}
+          visible={focused && !native && pane === 'chat' && !linkingProjects && !renaming}
+          openTerminal={(id) => {
+            setTerminalId(id)
+            setPane('terminal')
+          }}
+          openCheckpoint={(id, path) => {
+            setReviewLine(undefined)
+            setReviewTab('diff')
+            setCheckpointPath(path ?? '')
+            setCheckpoint(id)
+            setPane('diff')
           }}
         >
-          <Composer
-            renderAbove={(setup) => (
-              <>
-                <Conversation onBrowse={startup?.onBrowse} setup={setup} />
-                {preparation ? (
-                  <PreparationProgress
-                    preparation={preparation}
-                    onRetry={
-                      connected
-                        ? () =>
-                            retry.act(() =>
+          <View
+            style={{
+              flex: 1,
+              display: pane === 'chat' ? 'flex' : 'none',
+            }}
+          >
+            <Composer
+              renderAbove={(setup) => (
+                <>
+                  <Conversation onBrowse={startup?.onBrowse} setup={setup} />
+                  {preparation ? (
+                    <PreparationProgress
+                      preparation={preparation}
+                      onRetry={
+                        connected
+                          ? () =>
+                              retry.act(() =>
+                                callEffect('/api/tasks/run', { id: task.id }, responses.ok),
+                              )
+                          : undefined
+                      }
+                      retrying={retry.busy}
+                      retryError={retry.error}
+                    />
+                  ) : task.status === 'running' && task.runPhase === 'preparing' ? (
+                    <View
+                      accessibilityRole="text"
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 10,
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <ActivityIndicator size="small" color={colors.muted} />
+                      <Text style={[styles.muted, { flex: 1 }]}>Starting agent…</Text>
+                    </View>
+                  ) : null}
+                  {task.quotaContinuation && (
+                    <View style={{ padding: 12, gap: 8 }}>
+                      <Text style={styles.muted}>
+                        {task.quotaContinuation.resume ? 'Scheduled to resume' : 'Snoozed'} at{' '}
+                        {new Date(task.quotaContinuation.at).toLocaleString()}
+                      </Text>
+                      <Action
+                        secondary
+                        label="Cancel quota continuation"
+                        disabled={!connected || quota.busy}
+                        onPress={() =>
+                          quota.act(() =>
+                            callEffect('/api/tasks/quota/cancel', { id: task.id }, responses.ok),
+                          )
+                        }
+                      />
+                      {quota.error && <Text style={{ color: colors.error }}>{quota.error}</Text>}
+                    </View>
+                  )}
+                  <TaskQuestions taskId={task.id} questionId={questionId} />
+                  {(budget.tokenExceeded || budget.timeExceeded) && (
+                    <Text
+                      accessibilityRole="alert"
+                      style={[styles.muted, { color: colors.warning, paddingHorizontal: 16 }]}
+                    >
+                      Task budget reached · {budget.tokens ?? 'unknown'} tokens ·{' '}
+                      {Math.round(budget.minutes)} agent minutes. The agent can continue.
+                    </Text>
+                  )}
+                  {task.restartRecovery &&
+                    task.status !== 'running' &&
+                    !task.archived &&
+                    !snapshot?.runs.some((run) => run.taskIds.includes(task.id)) && (
+                      <View style={{ paddingHorizontal: 16, gap: 8 }}>
+                        <Action
+                          label={
+                            task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume task'
+                          }
+                          disabled={!connected || resume.busy}
+                          onPress={() =>
+                            resume.act(() =>
                               callEffect('/api/tasks/run', { id: task.id }, responses.ok),
                             )
-                        : undefined
-                    }
-                    retrying={retry.busy}
-                    retryError={retry.error}
-                  />
-                ) : task.status === 'running' && task.runPhase === 'preparing' ? (
-                  <View
-                    accessibilityRole="text"
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 10,
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
-                    }}
-                  >
-                    <ActivityIndicator size="small" color={colors.muted} />
-                    <Text style={[styles.muted, { flex: 1 }]}>Starting agent…</Text>
-                  </View>
-                ) : null}
-                {task.quotaContinuation && (
-                  <View style={{ padding: 12, gap: 8 }}>
-                    <Text style={styles.muted}>
-                      {task.quotaContinuation.resume ? 'Scheduled to resume' : 'Snoozed'} at{' '}
-                      {new Date(task.quotaContinuation.at).toLocaleString()}
-                    </Text>
-                    <Action
-                      secondary
-                      label="Cancel quota continuation"
-                      disabled={!connected || quota.busy}
-                      onPress={() =>
-                        quota.act(() =>
-                          callEffect('/api/tasks/quota/cancel', { id: task.id }, responses.ok),
-                        )
-                      }
-                    />
-                    {quota.error && <Text style={{ color: colors.error }}>{quota.error}</Text>}
-                  </View>
-                )}
-                <TaskQuestions taskId={task.id} questionId={questionId} />
-                {(budget.tokenExceeded || budget.timeExceeded) && (
-                  <Text
-                    accessibilityRole="alert"
-                    style={[styles.muted, { color: colors.warning, paddingHorizontal: 16 }]}
-                  >
-                    Task budget reached · {budget.tokens ?? 'unknown'} tokens ·{' '}
-                    {Math.round(budget.minutes)} agent minutes. The agent can continue.
-                  </Text>
-                )}
-                {task.restartRecovery &&
-                  task.status !== 'running' &&
-                  !task.archived &&
-                  !snapshot?.runs.some((run) => run.taskIds.includes(task.id)) && (
+                          }
+                        />
+                        {!!resume.error && (
+                          <Text accessibilityRole="alert" style={styles.error}>
+                            {resume.error}
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                  {task.status === 'cancelled' && !task.archived && !task.restartRecovery && (
                     <View style={{ paddingHorizontal: 16, gap: 8 }}>
+                      <Text style={styles.muted}>
+                        Stopped ·{' '}
+                        {task.queue?.length
+                          ? `${task.queue.length} queued messages ready`
+                          : 'continue with a follow-up'}
+                      </Text>
                       <Action
-                        label={
-                          task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume task'
-                        }
+                        label="Continue"
                         disabled={!connected || resume.busy}
                         onPress={() =>
                           resume.act(() =>
-                            callEffect('/api/tasks/run', { id: task.id }, responses.ok),
+                            Effect.gen(function* () {
+                              if (!task.queue?.length)
+                                yield* callEffect(
+                                  '/api/tasks/message',
+                                  {
+                                    id: task.id,
+                                    messageId: randomUUID(),
+                                    text: 'Continue from where you stopped.',
+                                    attachmentIds: [],
+                                  },
+                                  responses.ok,
+                                )
+                              yield* callEffect(
+                                '/api/tasks/queue',
+                                { id: task.id, action: 'resume' },
+                                responses.ok,
+                              )
+                            }),
                           )
                         }
                       />
@@ -891,107 +962,84 @@ function TaskDetailContent({
                       )}
                     </View>
                   )}
-                {task.status === 'cancelled' && !task.archived && !task.restartRecovery && (
-                  <View style={{ paddingHorizontal: 16, gap: 8 }}>
-                    <Text style={styles.muted}>
-                      Stopped ·{' '}
-                      {task.queue?.length
-                        ? `${task.queue.length} queued messages ready`
-                        : 'continue with a follow-up'}
-                    </Text>
-                    <Action
-                      label="Continue"
-                      disabled={!connected || resume.busy}
-                      onPress={() =>
-                        resume.act(() =>
-                          Effect.gen(function* () {
-                            if (!task.queue?.length)
-                              yield* callEffect(
-                                '/api/tasks/message',
-                                {
-                                  id: task.id,
-                                  messageId: randomUUID(),
-                                  text: 'Continue from where you stopped.',
-                                  attachmentIds: [],
-                                },
-                                responses.ok,
-                              )
-                            yield* callEffect(
-                              '/api/tasks/queue',
-                              { id: task.id, action: 'resume' },
-                              responses.ok,
-                            )
-                          }),
-                        )
-                      }
-                    />
-                    {!!resume.error && (
-                      <Text accessibilityRole="alert" style={styles.error}>
-                        {resume.error}
-                      </Text>
-                    )}
-                  </View>
-                )}
-                <PlanApproval task={task} />
-                <NativeTodos task={task} />
-                <CodeReviewCard
-                  task={task}
-                  onOpen={(finding) => {
-                    setCheckpoint('')
-                    setCheckpointPath(finding?.path ?? '')
-                    setReviewLine(finding?.line)
-                    setReviewTab(finding ? 'diff' : 'findings')
-                    setPane('diff')
-                  }}
-                />
-                <ReviewFindings task={task} onOpen={() => setPane('diff')} />
-                <ReviewComments task={task} />
-                <MessageQueue task={task} />
-              </>
-            )}
-            key={task.id}
-            task={task}
-            onSelectRemote={startup?.temporary ? startup.onSelectRemote : undefined}
-            onAsk={() => {
-              Keyboard.dismiss()
-              setAsking(true)
-            }}
-          />
-        </View>
-        {pane === 'agents' && <TaskAgents key={task.id} task={task} />}
-        {asking && (
-          <SideQuestion
-            task={task}
-            drafts={detailDraft.sideChat}
-            setDrafts={(update) =>
-              setDraftField(
-                'sideChat',
-                typeof update === 'function' ? update(detailDraft.sideChat) : update,
-              )
-            }
-            onClose={() => setAsking(false)}
-          />
-        )}
-        {pane === 'browser' && (
-          <BrowserPane taskId={task.id} expanded={expandedPreview} onExpand={setExpandedPreview} />
-        )}
-        {pane === 'devices' && (
-          <DevicesPane taskId={task.id} expanded={expandedPreview} onExpand={setExpandedPreview} />
-        )}
-        {pane === 'diff' && (
-          <TaskReview
-            initialCheckpoint={checkpoint}
-            initialPath={checkpointPath}
-            initialLine={!checkpoint ? reviewLine : undefined}
-            initialTab={!checkpoint ? reviewTab : 'diff'}
-            edit={detailDraft.file}
-            onEditChange={(draft) => setDraftField('file', draft)}
-          />
-        )}
-        {pane === 'terminal' && (
-          <TerminalPane task={task} selected={terminalId} onSelect={setTerminalId} />
-        )}
-      </ConversationProvider>
+                  <PlanApproval task={task} />
+                  <NativeTodos task={task} />
+                  <CodeReviewCard
+                    task={task}
+                    onOpen={(finding) => {
+                      setCheckpoint('')
+                      setCheckpointPath(finding?.path ?? '')
+                      setReviewLine(finding?.line)
+                      setReviewTab(finding ? 'diff' : 'findings')
+                      setPane('diff')
+                    }}
+                  />
+                  <ReviewFindings task={task} onOpen={() => setPane('diff')} />
+                  <ReviewComments task={task} />
+                  <MessageQueue task={task} />
+                </>
+              )}
+              key={task.id}
+              task={task}
+              onSelectRemote={startup?.temporary ? startup.onSelectRemote : undefined}
+              onAsk={() => {
+                Keyboard.dismiss()
+                setAsking(true)
+              }}
+            />
+          </View>
+          {pane === 'agents' && (
+            <TaskAgents
+              key={task.id}
+              task={task}
+              onOpenThread={(thread) => {
+                Keyboard.dismiss()
+                setNativeThread({ ...thread, parentKey: JSON.stringify([activeId, task.id]) })
+              }}
+            />
+          )}
+          {asking && (
+            <SideQuestion
+              task={task}
+              drafts={detailDraft.sideChat}
+              setDrafts={(update) =>
+                setDraftField(
+                  'sideChat',
+                  typeof update === 'function' ? update(detailDraft.sideChat) : update,
+                )
+              }
+              onClose={() => setAsking(false)}
+            />
+          )}
+          {pane === 'browser' && (
+            <BrowserPane
+              taskId={task.id}
+              expanded={expandedPreview}
+              onExpand={setExpandedPreview}
+            />
+          )}
+          {pane === 'devices' && (
+            <DevicesPane
+              taskId={task.id}
+              expanded={expandedPreview}
+              onExpand={setExpandedPreview}
+            />
+          )}
+          {pane === 'diff' && (
+            <TaskReview
+              initialCheckpoint={checkpoint}
+              initialPath={checkpointPath}
+              initialLine={!checkpoint ? reviewLine : undefined}
+              initialTab={!checkpoint ? reviewTab : 'diff'}
+              edit={detailDraft.file}
+              onEditChange={(draft) => setDraftField('file', draft)}
+            />
+          )}
+          {pane === 'terminal' && (
+            <TerminalPane task={task} selected={terminalId} onSelect={setTerminalId} />
+          )}
+        </ConversationProvider>
+      </View>
       {artifactsOpen && snapshot?.artifactsEnabled && (
         <ArtifactBrowser
           key={`${activeId}:${task.id}`}

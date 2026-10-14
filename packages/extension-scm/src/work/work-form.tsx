@@ -1,3 +1,5 @@
+import { useVerifiedRead } from '../connections/verified-read'
+import { integrationMutationError } from '../connections/mutation-error'
 import { useWorkDraftText, clearWorkDraft } from './work-drafts'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode } from '@dovo/protocol'
@@ -64,7 +66,10 @@ export function WorkForm({
     jiraSourceId,
     initialIssue?.id,
     workspace.repositories.find((item) => item.id === repositoryId)?.forge,
-    workspace.jiraSources?.find((item) => item.id === jiraSourceId),
+    (() => {
+      const source = workspace.jiraSources?.find((item) => item.id === jiraSourceId)
+      return source ? [source.id, source.site, source.project] : undefined
+    })(),
   ])
   const target = useMemo(
     () =>
@@ -76,6 +81,10 @@ export function WorkForm({
             repositoryId,
           },
     [jiraSourceId, repositoryId],
+  )
+  const readRequest = useVerifiedRead(target)
+  const [expectedDestination] = useApplicationState(
+    initialIssue?.destination ?? options.destination,
   )
   const [issue] = useApplicationState(initialIssue)
   const [title, setTitle] = useWorkDraftText(
@@ -118,7 +127,7 @@ export function WorkForm({
   useEffect(() => {
     if (kind !== 'edit' || options.provider !== 'azure-devops' || !issue) return
     let current = true
-    void request(
+    void readRequest(
       '/api/scm/work/options',
       {
         ...target,
@@ -136,7 +145,7 @@ export function WorkForm({
     return () => {
       current = false
     }
-  }, [kind, options.provider, issue, target, request])
+  }, [kind, options.provider, issue, target, readRequest])
   const [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
@@ -146,7 +155,7 @@ export function WorkForm({
     definitionPending.current = true
     setDefinitionsLoading(true)
     setError('')
-    void request(
+    void readRequest(
       '/api/scm/work/pipelines/definitions',
       {
         repositoryId,
@@ -169,7 +178,7 @@ export function WorkForm({
         }
       })
     return () => definitionRequests.current.cancel()
-  }, [kind, repositoryId, request, definitionsRevision])
+  }, [kind, repositoryId, readRequest, definitionsRevision])
   const moreDefinitions = async () => {
     if (!definitions?.next || definitionPending.current || busy || !connected) return
     definitionPending.current = true
@@ -177,7 +186,7 @@ export function WorkForm({
     setDefinitionsLoading(true)
     setError('')
     try {
-      const value = await request(
+      const value = await readRequest(
         '/api/scm/work/pipelines/definitions',
         {
           repositoryId,
@@ -272,6 +281,7 @@ export function WorkForm({
               : 'issues/action'),
         {
           ...target,
+          expectedDestination,
           ...(kind === 'run'
             ? decode(forgePipelineActionSchema, data)
             : kind === 'create'
@@ -283,7 +293,7 @@ export function WorkForm({
       clearWorkDraft(draftKey)
       onDone(result.message, result)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(integrationMutationError(e))
     } finally {
       pending.current = false
       setBusy(false)

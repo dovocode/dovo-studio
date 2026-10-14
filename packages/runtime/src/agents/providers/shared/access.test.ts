@@ -231,3 +231,46 @@ it('reports missing Claude CLI for discovery, model listing and execution', asyn
   )
   expect(captured.options).toHaveLength(0)
 })
+
+it.each([
+  ['full-access', 'on-request', 'default'],
+  ['workspace-write', 'on-request', 'default'],
+  ['ask', 'never', 'bypassPermissions'],
+  ['read-only', 'never', 'default'],
+] as const)(
+  'maps explicit Claude approval %s/%s without bypassing restrictions',
+  async (permission, approvalPolicy, permissionMode) => {
+    const input = run(permission)
+    input.agent.provider = 'claude'
+    input.agent.approvalPolicy = approvalPolicy
+    await claudeAdapter.run(input)
+    const options = captured.options.at(-1)!
+    expect(options.permissionMode).toBe(permissionMode)
+    const decision = await options.canUseTool!(
+      'Bash',
+      { command: 'pwd' },
+      { signal: input.signal, toolUseID: 'policy', requestId: 'policy-request' },
+    )
+    expect(decision?.behavior).toBe(permissionMode === 'bypassPermissions' ? 'allow' : 'deny')
+    expect(input.approve).toHaveBeenCalledTimes(approvalPolicy === 'on-request' ? 1 : 0)
+  },
+)
+
+it('keeps explicit never text-only Claude sessions tool-free', async () => {
+  const input = run('full-access')
+  input.agent.provider = 'claude'
+  input.agent.approvalPolicy = 'never'
+  input.tools = 'none'
+  await claudeAdapter.run(input)
+  const options = captured.options.at(-1)!
+  expect(options.tools).toEqual([])
+  expect(options.allowDangerouslySkipPermissions).toBeUndefined()
+  expect(
+    await options.canUseTool!(
+      'Bash',
+      {},
+      { signal: input.signal, toolUseID: 'policy', requestId: 'policy-request' },
+    ),
+  ).toMatchObject({ behavior: 'deny' })
+  expect(input.approve).not.toHaveBeenCalled()
+})

@@ -115,3 +115,20 @@ it('does not persist a read interrupted while its provider request is pending', 
   await Promise.resolve()
   expect(db.prepare('SELECT count(*) AS count FROM forge_work_cache').get()).toEqual({ count: 0 })
 })
+it.each([401, 403, 409])('never returns cached private work data after HTTP %s', async (status) => {
+  const { cache } = setup()
+  const { HttpError } = await import('../../errors.js')
+  await runClientEffect(cache.readEffect(options()))
+  await expect(
+    runClientEffect(
+      cache.readEffect(
+        options({
+          refresh: true,
+          load: async () => {
+            throw new HttpError(status, 'Account or destination rejected')
+          },
+        }),
+      ),
+    ),
+  ).rejects.toMatchObject({ status })
+})

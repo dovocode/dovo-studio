@@ -1,3 +1,5 @@
+import { LinkOriginProvider } from '../ui/content/link-origin'
+import { jiraDestination } from '../scm/source-key'
 import { Fragment, type ReactNode } from 'react'
 import { ActivityIndicator, View } from 'react-native'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
@@ -57,10 +59,12 @@ function RuntimeRouteContent({
           project?.path,
           project?.forge,
           project?.jira,
-          jiraSource,
+          jiraDestination(jiraSource),
         ])}
       >
-        {children}
+        <LinkOriginProvider origin={{ runtimeId, repositoryId, jiraSourceId }}>
+          {children}
+        </LinkOriginProvider>
       </Fragment>
     )
 

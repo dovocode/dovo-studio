@@ -3,7 +3,8 @@ import { sharedSettingsSchema } from '@dovo/protocol'
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
 import { fontFamilySchema, terminalFontSizeSchema } from './fonts'
-import { studioThemeIds, studioSyntaxTheme, studioThemes } from './themes'
+import { studioThemeIds, studioThemes } from './themes'
+import { codeThemeSchema, importedCodeThemesSchema, resolveCodeTheme } from './code-themes'
 import {
   repositoryOpenTargetSchema,
   modelPreferencesSchema,
@@ -44,6 +45,8 @@ const schema = mutableStruct({
   quitShortcut: Schema.Literals(['immediate', 'hold', 'disabled']),
   theme: Schema.Literals(['dark', 'light', 'system']),
   themePalette: Schema.Literals([...studioThemeIds]),
+  codeTheme: codeThemeSchema,
+  importedCodeThemes: importedCodeThemesSchema,
   appFontFamily: fontFamilySchema,
   codeFontFamily: fontFamilySchema,
   terminalFontFamily: fontFamilySchema,
@@ -134,6 +137,8 @@ export const defaultAppPreferences: AppPreferences = {
   quitShortcut: 'immediate',
   theme: 'dark',
   themePalette: 'dovo',
+  codeTheme: 'app',
+  importedCodeThemes: [],
   appFontFamily: '',
   codeFontFamily: '',
   terminalFontFamily: '',
@@ -287,23 +292,31 @@ export function useStudioTheme() {
 
 /** Settings → Diffs, as options for the Pierre diff renderer. */
 export function useDiffOptions() {
-  const { diffOverflow, diffHighlight, diffLineNumbers, diffLayout, themePalette } =
-    useAppPreferences()
+  const {
+    diffOverflow,
+    diffHighlight,
+    diffLineNumbers,
+    diffLayout,
+    themePalette,
+    codeTheme,
+    importedCodeThemes,
+  } = useAppPreferences()
   const theme = useResolvedTheme()
+  const code = resolveCodeTheme(codeTheme, importedCodeThemes, themePalette, theme)
   // Stable identity: diff views memoize on these options and re-render when they change.
   return useMemo(
     () =>
       ({
         defaultSplit: diffLayout === 'split',
         options: {
-          theme: studioSyntaxTheme(themePalette, theme).name,
-          themeType: theme,
+          theme: code.name,
+          themeType: code.type,
           overflow: diffOverflow,
           lineDiffType: diffHighlight,
           disableLineNumbers: !diffLineNumbers,
         },
       }) as const,
-    [diffOverflow, diffHighlight, diffLineNumbers, diffLayout, theme, themePalette],
+    [diffOverflow, diffHighlight, diffLineNumbers, diffLayout, code],
   )
 }
 

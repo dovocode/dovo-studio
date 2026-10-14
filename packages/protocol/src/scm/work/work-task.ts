@@ -1,3 +1,4 @@
+import { forgeDestinationGuardFields } from '../forges/source-identity.js'
 import { uuidSchema } from '../../shared/schema.js'
 import { mutableStruct } from '../../shared/schema.js'
 import { minValue, maxValue } from '../../shared/schema.js'
@@ -26,6 +27,7 @@ export const taskWorkItemSchema = Schema.Union([
   }),
 ])
 const input = {
+  ...forgeDestinationGuardFields,
   repositoryId: maxValue(minValue(Schema.String, 1), 200),
   id: source.id,
   url: source.url,

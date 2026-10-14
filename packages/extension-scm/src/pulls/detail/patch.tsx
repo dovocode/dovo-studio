@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Button, ChoicePicker } from '@dovo/studio-ui'
-import { preloadStudioHighlighter } from '@dovo/studio-ui/code-themes'
+import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { selectedPatchCode } from './selected-code'
 import { LineCommentForm } from '@dovo/studio-ui'
 import { reviewPatch } from './review-patch'
@@ -8,7 +8,7 @@ import { useEffect, useMemo } from 'react'
 import { getFiletypeFromFileName, parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { PullDetail } from '@dovo/studio-core'
-import { forgeLabels, pullFilePatch, type ForgeProvider, useDiffOptions } from '@dovo/studio-core'
+import { forgeLabels, pullFilePatch, type ForgeProvider } from '@dovo/studio-core'
 
 /** A selected line range, kept with the PR revision and patch it was written against. */
 export type PullLineSelection = {
@@ -17,6 +17,7 @@ export type PullLineSelection = {
   side: 'additions' | 'deletions'
   file: PullDetail['files'][number]
   headSha: string
+  expectedDestination?: string
 }
 /** Comment state owned by the file list, so it outlives a file leaving the render window. */
 export type PullLineDraft = {
@@ -44,6 +45,7 @@ export function PullPatch({
   allowInlineComment = true,
   allowInlineRange = true,
   headSha = '',
+  expectedDestination,
   draft = emptyPullLineDraft,
   onDraft,
   commentDisabled = false,
@@ -59,13 +61,14 @@ export function PullPatch({
       side: 'additions' | 'deletions'
     },
     destination: 'github' | 'agent',
-    baseline: { headSha: string; path: string; patch: string },
+    baseline: { headSha: string; path: string; patch: string; expectedDestination?: string },
   ) => Promise<void>
   provider?: ForgeProvider
   allowAgent?: boolean
   allowInlineComment?: boolean
   allowInlineRange?: boolean
   headSha?: string
+  expectedDestination?: string
   draft?: PullLineDraft
   onDraft?: (update: (draft: PullLineDraft) => PullLineDraft) => void
   commentDisabled?: boolean
@@ -115,7 +118,8 @@ export function PullPatch({
           ? {
               ...diff,
               name: draftFile.path,
-              prevName: draftFile.previousPath ?? diff.prevName,
+              // Discard the synthetic old filename; unchanged paths use name on both sides.
+              prevName: draftFile.previousPath,
             }
           : undefined,
         error: '',
@@ -141,7 +145,11 @@ export function PullPatch({
     setReady(false)
     setError('')
     if (binary) return
-    void preloadStudioHighlighter(getFiletypeFromFileName(file.path))
+    const languages = new Set([
+      getFiletypeFromFileName(draftFile.path),
+      getFiletypeFromFileName(draftFile.previousPath ?? draftFile.path),
+    ])
+    void Promise.all([...languages].map(preloadStudioHighlighter))
       .then(() => {
         if (!stopped) setReady(true)
       })
@@ -151,7 +159,7 @@ export function PullPatch({
     return () => {
       stopped = true
     }
-  }, [file.path, highlightAttempt, binary])
+  }, [draftFile.path, draftFile.previousPath, highlightAttempt, binary])
   if (binary)
     return (
       <p className="p-4 text-xs text-muted-foreground">
@@ -255,6 +263,7 @@ export function PullPatch({
                     destination,
                     {
                       headSha: selection.headSha,
+                      expectedDestination: selection.expectedDestination,
                       path: selection.file.path,
                       patch: selection.file.patch ?? '',
                     },
@@ -294,6 +303,7 @@ export function PullPatch({
                   side: range.side ?? 'additions',
                   file: draftFile,
                   headSha: selection?.headSha ?? headSha,
+                  expectedDestination: selection?.expectedDestination ?? expectedDestination,
                 })
             },
             onGutterUtilityClick: (range) => {
@@ -304,6 +314,7 @@ export function PullPatch({
                   side: range.side ?? 'additions',
                   file: draftFile,
                   headSha: selection?.headSha ?? headSha,
+                  expectedDestination: selection?.expectedDestination ?? expectedDestination,
                 })
             },
           }}

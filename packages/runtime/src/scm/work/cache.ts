@@ -1,8 +1,13 @@
-import { mutableStruct, decode } from '@dovo/protocol'
+import { mutableStruct, decode, decodeResult } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { errorMessage, runtimeOperation, type RuntimeFailure } from '../../errors.js'
+import {
+  errorMessage,
+  runtimeOperation,
+  RuntimeOperationError,
+  type RuntimeFailure,
+} from '../../errors.js'
 
 const rowSchema = mutableStruct({
   value: Schema.String,
@@ -71,6 +76,7 @@ export class ForgeWorkCache {
       schema: Schema.Codec<T, I>
       load: () => Promise<T>
       validateSource: () => void
+      retainLoad?: () => () => Promise<void>
     },
     background: boolean,
   ) {
@@ -85,6 +91,7 @@ export class ForgeWorkCache {
         interest: number
         keep: boolean
       }
+      const release = options.retainLoad?.()
       created.promise = (async () => {
         const value = decode(schema, await options.load())
         validateSource()
@@ -103,8 +110,9 @@ export class ForgeWorkCache {
             .run()
         }
         return { ...value, cachedAt: new Date(updated).toISOString(), stale: !current }
-      })().finally(() => {
+      })().finally(async () => {
         if (this.loads.get(key) === created) this.loads.delete(key)
+        await release?.()
       })
       entry = created
       this.loads.set(key, created)
@@ -121,6 +129,7 @@ export class ForgeWorkCache {
     refresh: boolean
     load: () => Promise<T>
     validateSource: () => void
+    retainLoad?: () => () => Promise<void>
   }): Effect.Effect<Loaded<T>, RuntimeFailure> {
     return Effect.gen({ self: this }, function* () {
       const { key, schema, refresh, validateSource } = options
@@ -149,7 +158,12 @@ export class ForgeWorkCache {
       if (refreshed._tag === 'Success') return refreshed.success
 
       yield* runtimeOperation(validateSource)
-      if (cached)
+      const failure =
+        refreshed.failure instanceof RuntimeOperationError
+          ? refreshed.failure.cause
+          : refreshed.failure
+      const status = decodeResult(mutableStruct({ status: Schema.Number }), failure)
+      if (cached && !(status.success && [401, 403, 409].includes(status.data.status)))
         return {
           ...cached.value,
           cachedAt: new Date(cached.updated).toISOString(),
