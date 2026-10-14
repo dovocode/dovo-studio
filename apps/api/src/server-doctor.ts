@@ -33,7 +33,7 @@ export async function serverDoctor(directory: string, checkUpdates = false) {
           redirect: 'error',
           signal: AbortSignal.timeout(5000),
         }),
-        fetch(connection.address + '/api/snapshot', {
+        fetch(connection.address + '/api/snapshot?scope=overview', {
           headers,
           redirect: 'error',
           signal: AbortSignal.timeout(5000),

@@ -44,7 +44,7 @@ export function processExists(pid: number) {
   }
 }
 async function accessible(connection: LocalConnection, timeout = 5000) {
-  const response = await fetch(`${connection.address}/api/snapshot`, {
+  const response = await fetch(`${connection.address}/api/snapshot?scope=overview`, {
     headers: {
       Authorization: `Bearer ${connection.token}`,
     },

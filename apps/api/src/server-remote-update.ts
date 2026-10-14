@@ -140,7 +140,7 @@ async function download(
 async function prepareRestart(directory: string) {
   const connection = readConnection(join(directory, 'runtime-connection.json'))
   const headers = { Authorization: `Bearer ${connection.token}` }
-  const response = await fetch(`${connection.address}/api/snapshot`, {
+  const response = await fetch(`${connection.address}/api/snapshot?scope=overview`, {
     headers,
     signal: AbortSignal.timeout(5000),
   })
@@ -172,7 +172,7 @@ async function prepareRestart(directory: string) {
 }
 async function verifyInstalled(directory: string, version: string) {
   const connection = readConnection(join(directory, 'runtime-connection.json'))
-  const response = await fetch(`${connection.address}/api/snapshot`, {
+  const response = await fetch(`${connection.address}/api/snapshot?scope=overview`, {
     headers: { Authorization: `Bearer ${connection.token}` },
     signal: AbortSignal.timeout(5000),
   })
