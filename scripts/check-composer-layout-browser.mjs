@@ -58,6 +58,7 @@ const built = await build({
         const request=async(path,input)=>{
           window.requests.push({path,input});
           if(path==='/api/agents/settings/read')return {value:{taskDefaults:{defaultServerId:'linux'}},inherited:{taskDefaults:{}},projectKey:'project:github.com/dovo/studio'};
+          if(path==='/api/agents/models/cached')return null;
           if(path==='/api/agents/models')return {models:[{id:'gpt-6.1-sol',name:'GPT-6.1-Sol',isDefault:true,defaultReasoning:'xhigh',reasoning:[{id:'xhigh',name:'Extra High'}]}],reasoning:[]};
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true}];
           if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:'refs/heads/main'}]};
@@ -68,7 +69,7 @@ const built = await build({
           }
           throw Error('Unexpected request '+path);
         };
-        const value={workspace,setWorkspace,snapshot:{workspace,defaults,questions:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{}};
+        const value={workspace,setWorkspace,snapshot:{workspace,defaults,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{}};
         const visiblePending=pending?[pending]:[];
         const displayed=task&&{...task,messages:pending?.destination==='thread'&&!task.messages.some(m=>m.id===pending.message.id)?[...task.messages,pending.message]:task.messages};
         return <Context.Provider value={value}>{settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?<><ChatThread task={displayed} pending={visiblePending}/><Composer key={task.id} task={task} onPending={setPending}/></>:<StartupDraft onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
@@ -106,7 +107,10 @@ try {
   const page = await browser.newPage({ deviceScaleFactor: 2 })
   page.setDefaultTimeout(10000)
   const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('pageerror', (error) => {
+    errors.push(error.message)
+    console.error(error)
+  })
   await page.route('http://layout.test/**', (route) =>
     route.fulfill({
       contentType: 'text/html',

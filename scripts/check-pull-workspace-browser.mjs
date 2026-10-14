@@ -21,7 +21,7 @@ const mocks = {
   './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
   '../list/start-task': `export const StartPullTask=()=> <button>New task</button>;`,
   './create': `export const CreatePull=()=>null;`,
-  '../../connections/forge-connections': `export const ForgeConnections=()=>null;`,
+  '../../connections/forge-connections': `export const ForgeConnections=()=>null;export const useForgeConnections=()=>({connections:[],loading:false,error:''});`,
   '../../connections/source-picker': `export const SourcePicker=()=>null;`,
 }
 const built = await build({

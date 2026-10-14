@@ -15,7 +15,8 @@ try {
       '../../ui/layout/sheet': 'export const useSheetNavigation=()=>action=>action();',
       'expo-router': 'export const router={push:href=>{window.opened=href}};',
       '../../runtime/connection/provider': 'export const useRuntime=()=>window.store;',
-      '../../ui/content/open-link': 'export const openAppLink=async url=>{window.opened=url};',
+      '../../ui/content/open-link':
+        'export const openAppLink=async url=>{window.opened=url};export const useOpenAppLink=()=>openAppLink;',
       '../../ui/controls/icon': 'export const Icon=()=> <span>×</span>;',
       'react-native':
         'export const Keyboard={dismiss:()=>{}};export const Alert={alert:(title,message,buttons)=>{if(window.confirm(title)) buttons.find(b=>b.style==="destructive").onPress()}};export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,disabled})=><button role={accessibilityRole} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;',

@@ -44,7 +44,7 @@ Object.assign(mocks, {
   '../../ui/controls/use-action': `import {useRef,useState} from 'react';import {Effect} from 'effect';export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');const lock=useRef(false);return {busy,error,act:work=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');Promise.resolve().then(work).then(result=>Effect.isEffect(result)?Effect.runPromise(result):result).catch(error=>setError(error.message)).finally(()=>{lock.current=false;setBusy(false)})}}}`,
   '../../runtime/state/native-effect': `import {Effect} from 'effect';export const mobileWorkflow=Effect.gen;export const nativeEffect=work=>Effect.tryPromise({try:()=>Promise.resolve(work()),catch:error=>error});`,
   '@dovo/client-runtime': `import {Effect} from 'effect';export const runClientEffect=Effect.runPromise;`,
-  '../../ui/content/open-link': `export const openAppLink=async()=>{};`,
+  '../../ui/content/open-link': `export const openAppLink=async()=>{};export const useOpenAppLink=()=>openAppLink;`,
   'react-native-webview': `export const WebView=()=>null;`,
   './remote-browser': `export const RemoteBrowser=props=>{window.liveDeviceProps=props;return <div>Live device</div>};`,
   './physical-controls': `export const PhysicalControls=()=> <div>Physical iOS controls</div>;`,

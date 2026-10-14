@@ -25,7 +25,8 @@ const mocks = {
     };
   `,
   'expo-crypto': `let id=0;export const randomUUID=()=> 'thread-'+(++id);`,
-  '../../ui/content/open-link': 'export const openAppLink=async()=>{};',
+  '../../ui/content/open-link':
+    'export const openAppLink=async()=>{};export const useOpenAppLink=()=>openAppLink;',
   '../../ui/controls/icon': 'export const Icon=()=>null;',
   'react-native': `
     export const Pressable=({children,onPress,disabled,accessibilityRole,accessibilityLabel})=><button role={accessibilityRole} aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>{children}</button>;

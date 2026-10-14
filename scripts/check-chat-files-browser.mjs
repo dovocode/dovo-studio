@@ -20,7 +20,7 @@ const mocks = {
   './server-image':
     'export const ServerImage=({label,source})=><img alt={label} data-image-source={JSON.stringify(source)} src={window.imageURI} style={{maxWidth:"100%",borderRadius:10}}/>;',
   '../layout/sheet':
-    'export const Sheet=({children,title,onClose})=><div role="dialog" aria-label={title}><button onClick={onClose}>Close preview</button>{children}</div>;',
+    'export const useSheetNavigation=()=>navigate=>navigate();export const Sheet=({children,title,onClose})=><div role="dialog" aria-label={title}><button onClick={onClose}>Close preview</button>{children}</div>;',
   '../controls/action':
     'export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;',
   '../../runtime/state/application-state': "export {useState as useApplicationState} from 'react';",
@@ -32,7 +32,7 @@ const mocks = {
 
   './mermaid-diagram': 'export const MermaidDiagram=()=>null;',
   './open-link':
-    'export const openAppLink=async(url,external)=>{window.opened.push(url);window.external=external};',
+    'export const openAppLink=async(url,external)=>{window.opened.push(url);window.external=external};export const useOpenAppLink=()=>openAppLink;',
   'react-native': `export const useWindowDimensions=()=>({height:844,width:390});export const ActivityIndicator=()=>null;export const ScrollView=({children})=><div>{children}</div>;export const Platform={OS:'ios'};export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',minWidth:0,...style}}>{children}</div>;export const Pressable=({children,onPress,accessibilityLabel,style})=><button aria-label={accessibilityLabel} onClick={onPress} style={{display:'flex',font:'inherit',textAlign:'left',color:'inherit',background:'transparent',...style}}>{children}</button>;export const Alert={alert:(title,message)=>window.alerts.push(title+': '+message)};`,
   'react-native-enriched-markdown': `import {fromMarkdown} from 'mdast-util-from-markdown';const nativeStyle=style=>{const {underline,...rest}=style??{};return {...rest,textDecoration:underline?'underline':undefined,lineHeight:style?.lineHeight?style.lineHeight+'px':undefined}};export const EnrichedMarkdownText=({markdown,onLinkPress,markdownStyle})=>{const render=node=>node.type==='link'?<a style={nativeStyle({...markdownStyle.link,...Object.entries(markdownStyle.linkVariants??{}).find(([pattern])=>new RegExp(pattern).test(node.url))?.[1]})} href={node.url} onClick={event=>{event.preventDefault();onLinkPress({url:node.url})}}>{node.children.map(render)}</a>:node.type==='paragraph'?<p style={nativeStyle(markdownStyle.paragraph)}>{node.children.map(render)}</p>:node.type==='heading'?<h2 style={nativeStyle(markdownStyle['h'+node.depth])}>{node.children.map(render)}</h2>:node.children?<>{node.children.map((child,index)=><span key={index}>{render(child)}</span>)}</>:node.value??'';return <div>{render(fromMarkdown(markdown))}</div>};`,
 }

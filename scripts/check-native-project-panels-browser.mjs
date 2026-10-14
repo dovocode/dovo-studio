@@ -33,7 +33,7 @@ const mocks = {
   '../../ui/layout/sheet': `import {useImperativeHandle} from 'react';export const useSheetNavigation=()=>action=>action();export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section role="dialog" style={{padding:16,background:'#17171c',color:'#efeff2',height:'100vh',overflow:'auto'}}><header style={{display:'flex',justifyContent:'space-between'}}><h2>{title}</h2><button onClick={onClose}>Close</button></header>{children}</section>};`,
   '../../ui/controls/field': `export const Field=({label,value,onChangeText,editable=true})=><label>{label}<input aria-label={label} disabled={!editable} value={value} onChange={e=>onChangeText(e.target.value)}/></label>;`,
   '../../ui/controls/choice': `export const Choice=({label,value,onChange,items,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
-  '../../ui/content/open-link': `export const openAppLink=async url=>window.opened=url;`,
+  '../../ui/content/open-link': `export const openAppLink=async url=>window.opened=url;export const useOpenAppLink=()=>openAppLink;`,
   '../../scm/pulls/detail/pull-detail': `export const PullDetail=({repositoryId,number,onBack})=><div>Native PR #{number} {repositoryId}<button onClick={onBack}>Back to linked PRs</button></div>;`,
   './task-source': `export const TaskSource=()=>null;`,
   './pull-status': `export const PullStatus=()=>null;`,

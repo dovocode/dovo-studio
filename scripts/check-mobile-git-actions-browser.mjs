@@ -43,7 +43,7 @@ const built = await build({
           '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
           '../../runtime/state/app-active': `export const useAppActive=()=>window.foreground;`,
           '../../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
-          '../../ui/content/open-link': `export const openAppLink=async url=>{window.links.push(url)};`,
+          '../../ui/content/open-link': `export const openAppLink=async url=>{window.links.push(url)};export const useOpenAppLink=()=>openAppLink;`,
         }
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
           Object.hasOwn(mocks, path) ? { path, namespace: 'mock' } : undefined,

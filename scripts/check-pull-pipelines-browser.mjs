@@ -13,8 +13,9 @@ const built = await bundleBrowser(
 import {PullPipelineRuns} from '${root}/packages/extension-scm/src/pulls/detail/pipeline-runs.tsx';
 const run={id:'run-1',number:1,title:'PR build',url:'https://github.com/team/project/actions/runs/1',status:'success',sha:'commit',ref:'feature',workflow:'Build',updatedAt:'2026-10-14',createdAt:'2026-10-14',actor:'Dominic'};
 const job={id:'job-1',name:'Build job',status:'success',url:run.url+'/job/1',steps:[{id:'step-1',name:'Compile source',status:'success'}]};
-window.reads=[];window.store={connected:true,activeRuntimeId:'owner',connection:{address:'http://owner.local'},workspace:{repositories:[{id:'repo',name:'Project',forge:{connectionId:'account-1',repository:'team/project'}}]},request:async(path,input)=>{
+window.reads=[];window.store={connected:true,activeRuntimeId:'owner',runtimes:[],connection:{address:'http://owner.local'},workspace:{repositories:[{id:'repo',name:'Project',forge:{connectionId:'account-1',repository:'team/project'}}]},request:async(path,input)=>{
 window.reads.push({path,input});
+if(path==='/api/scm/source/identity')return {readerIdentity:'fixture-account',destination:'fixture-destination'};
 if(path.endsWith('/options'))return {provider:'github',pipelines:true,issues:false,pipelineActions:[],pipelineDefinitions:[]};
 if(path.endsWith('/pipelines/list'))return {items:[run]};
 if(path.endsWith('/pipelines/detail'))return {run,jobs:[job]};
@@ -37,7 +38,7 @@ const app=createRoot(document.getElementById('app'));window.active=true;window.m
   [
     {
       path: '@dovo/studio-core',
-      contents: `export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export {appendUniqueRows,RequestScope} from '${root}/packages/client-runtime/src/effects/request-scope.ts';export const useWorkspace=()=>window.store;export const formatDateTime=x=>String(x);`,
+      contents: `export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export {appendUniqueRows,RequestScope} from '${root}/packages/client-runtime/src/effects/request-scope.ts';const sources=[];export const useRepositorySources=()=>sources;export const useWorkspace=()=>window.store;export const formatDateTime=x=>String(x);`,
     },
     {
       path: '@dovo/studio-core/state',

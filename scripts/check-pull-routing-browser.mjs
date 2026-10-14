@@ -8,6 +8,7 @@ const mocks = {
   '@dovo/studio-core': `export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const useRepositorySources=()=>window.sources;export const useWorkspace=()=>({activeRuntimeId:window.activeRuntimeId??null});`,
   '@dovo/studio-core/state': state,
   '../../../runtime/state/application-state': state,
+  '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
   '../../../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
   '../../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
   'react-native': `export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};`,
@@ -21,7 +22,7 @@ import {createRoot} from 'react-dom/client';import {useState} from 'react';impor
 import {usePulls as useDesktopPulls} from '${root}/packages/extension-scm/src/pulls/list/use-pulls.ts';
 import {usePulls as useMobilePulls} from '${root}/apps/mobile/src/scm/pulls/list/use-pulls.ts';
 const cache={readEffect:()=>Effect.succeed(null),writeEffect:()=>Effect.void};
-window.requests=[];const request=(profile,path,input)=>Effect.sync(()=>{window.requests.push({runtime:profile.id,path,input});return {pulls:[{number:7,title:'PR',url:'https://github.com/team/app/pull/7',state:'open',draft:false,author:'work',updatedAt:'2026-10-07',head:'feature',base:'main',labels:[],viewerIsAuthor:profile.id==='a-work'}],page:1,hasMore:false}});
+window.requests=[];const request=(profile,path,input)=>Effect.sync(()=>{window.requests.push({runtime:profile.id,path,input});if(path==='/api/scm/source/identity')return {readerIdentity:profile.id==='a-work'?'work-account':'personal-account',destination:profile.id+'-destination'};return {pulls:[{number:7,title:'PR',url:'https://github.com/team/app/pull/7',state:'open',draft:false,author:'work',updatedAt:'2026-10-07',head:'feature',base:'main',labels:[],viewerIsAuthor:profile.id==='a-work'}],page:1,hasMore:false}});
 const make=(id,account,connected=true)=>{const profile={id,name:id,connection:{address:'http://'+id+':8787',token:id+'-token'}};const repository={id:'app',name:'App',path:'/app',branch:'main',gitIdentity:'github.com/team/app',pullIdentity:'github.com/team/app',forge:{connectionId:account,repository:'team/app',revision:'1'}};return {key:JSON.stringify([id,repository.id]),runtimeId:id,runtimeName:id,profile,repository,connected,scope:JSON.stringify([id,account]),readCache:cache,requestEffect:(path,input)=>request(profile,path,input)}};
 window.sources=[make('a-work','work'),make('z-personal','personal')];
 window.runtime={readRuntimeEffect:request,cacheForRuntime:()=>cache,overviews:window.sources.map(source=>({profile:source.profile,connected:source.connected,snapshot:{workspace:{repositories:[source.repository]}}}))};
@@ -67,33 +68,59 @@ try {
     await page.addScriptTag({ content: bundle.outputFiles[0].text })
     await page.evaluate((mode) => window.start(mode), mode)
     await page.waitForFunction(() => window.result?.pages.length === 1 && !window.result.busy)
-    assert.deepEqual(await page.evaluate(() => window.requests.map((request) => request.runtime)), [
-      'a-work',
-    ])
+    assert.deepEqual(
+      await page.evaluate(() => [
+        ...new Set(
+          window.requests
+            .filter((request) => request.path === '/api/scm/pulls/overview')
+            .map((request) => request.runtime),
+        ),
+      ]),
+      ['a-work'],
+    )
     assert.equal(await page.evaluate(() => window.result.pages[0].pulls[0].viewerIsAuthor), true)
     await page.evaluate(() => {
       window.requests = []
       window.selectTarget(JSON.stringify(['z-personal', 'app']))
     })
-    await page.waitForFunction(() => window.requests.length && !window.result.busy)
-    assert.deepEqual(await page.evaluate(() => window.requests.map((request) => request.runtime)), [
-      'z-personal',
-    ])
+    await page.waitForFunction(
+      () =>
+        window.requests.some((request) => request.path === '/api/scm/pulls/overview') &&
+        !window.result.busy,
+    )
+    assert.deepEqual(
+      await page.evaluate(() => [
+        ...new Set(
+          window.requests
+            .filter((request) => request.path === '/api/scm/pulls/overview')
+            .map((request) => request.runtime),
+        ),
+      ]),
+      ['z-personal'],
+    )
     assert.equal(await page.evaluate(() => window.result.pages[0].pulls[0].viewerIsAuthor), false)
     await page.evaluate(() => {
       window.requests = []
       window.disconnect()
     })
-    await page.waitForFunction(() => window.requests.length && !window.result.busy)
-    assert.deepEqual(await page.evaluate(() => window.requests.map((request) => request.runtime)), [
-      'z-personal',
-    ])
-    assert.equal(await page.evaluate(() => window.result.pages.length), 1)
+    await page.waitForFunction(() => !window.result.connected && !window.result.busy)
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window.requests.filter((request) => request.path === '/api/scm/pulls/overview'),
+      ),
+      [],
+      'a personal account must not silently replace the disconnected work account',
+    )
+    await page.evaluate(() => window.selectTarget(JSON.stringify(['z-personal', 'app'])))
+    await page.waitForFunction(
+      () => window.result.connected && window.result.pages.length === 1 && !window.result.busy,
+    )
+    assert.equal(await page.evaluate(() => window.result.pages[0].pulls[0].viewerIsAuthor), false)
     assert.deepEqual(errors, [])
     await page.close()
   }
   console.log(
-    'Desktop and mobile PR hooks query one server, preserve account flags, honor project selection and fail over.',
+    'Desktop and mobile PR hooks query one server, preserve account flags, honor explicit source selection and refuse different-account failover.',
   )
 } finally {
   await browser.close()

@@ -71,7 +71,7 @@ export const WebView=forwardRef((props,ref)=>{
   {
     path: '../../ui/content/open-link',
     importer: mobile,
-    contents: `export const openAppLink=async()=>{};`,
+    contents: `export const openAppLink=async()=>{};export const useOpenAppLink=()=>openAppLink;`,
   },
   {
     path: '../../screens/device-host-form',

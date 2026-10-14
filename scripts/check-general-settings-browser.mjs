@@ -5,7 +5,9 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const core = `import {createContext,useContext} from 'react';
-export {useAppPreferences,updateAppPreferences} from '${root}/packages/studio-core/src/preferences.ts';
+export {useAppPreferences,updateAppPreferences,readAppPreferences} from '${root}/packages/studio-core/src/preferences.ts';
+export {importCodeTheme,maxCodeThemeBytes} from '${root}/packages/studio-core/src/code-themes.ts';
+export {browserModelCatalogCache} from '${root}/packages/studio-core/src/workspace/model-catalog-cache.ts';
 export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft,useConfirmSettingsNavigation} from '${root}/packages/studio-core/src/settings-target.tsx';
 export * from '@dovo/protocol';
 export * from '${root}/packages/studio-core/src/themes.ts';
@@ -30,6 +32,7 @@ export {AgentAvatar,agentIconChoices} from '${root}/packages/studio-ui/src/agent
 export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';
 export {SettingSource} from '${root}/packages/studio-ui/src/setting-source.tsx';
 export {ModelSettings} from '${root}/packages/studio-ui/src/model-settings.tsx';
+export {PermissionPolicyFields,permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields.tsx';
 export {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';
 export {TaskDefaultSettings} from '${root}/packages/studio-ui/src/task-default-settings.tsx';
 export {TaskBehaviorSettings} from '${root}/packages/studio-ui/src/task-behavior-settings.tsx';

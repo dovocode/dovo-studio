@@ -64,7 +64,7 @@ export const Alert={alert:()=>{}};export const StyleSheet={create:x=>x};export c
   './text': `export {Text} from 'react-native';`,
   '../ui/content/text': `export {Text} from 'react-native';`,
   './markdown': `import React from 'react';export const Markdown=({text})=><p>{text}</p>;`,
-  './open-link': `export const openAppLink=async url=>{window.openedArtifactLinks.push(url)};`,
+  './open-link': `export const openAppLink=async url=>{window.openedArtifactLinks.push(url)};export const useOpenAppLink=()=>openAppLink;`,
   '../controls/action': `import React from 'react';export const Action=({label,onPress,disabled})=><button onClick={onPress} disabled={disabled}>{label}</button>;`,
   '../controls/icon': `import {FileText,Files,CodeXml,Eye,Globe,ChevronRight,ArrowUpRight,History,Share2,RotateCw,X,Check} from 'lucide-react';const icons={artifact:FileText,artifactList:Files,code:CodeXml,preview:Eye,web:Globe,next:ChevronRight,external:ArrowUpRight,history:History,share:Share2,refresh:RotateCw,close:X,check:Check};export const Icon=({name,size=20,color='#a0a1a8'})=>{const Glyph=icons[name];return Glyph?<Glyph aria-hidden="true" size={size} color={color}/>:null};`,
   '../ui/controls/icon': `export {Icon} from '../controls/icon';`,
