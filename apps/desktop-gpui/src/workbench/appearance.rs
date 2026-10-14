@@ -41,21 +41,21 @@ pub(super) fn apply(cx: &mut App) {
         let dark = theme.mode.is_dark();
         let color =
             |dark_color, light_color| rgb(if dark { dark_color } else { light_color }).into();
-        let background = color(0x22262d, 0xffffff);
-        let panel = color(0x1c2026, 0xf4f5f7);
-        let surface = color(0x282d35, 0xf8f9fb);
-        let hover = color(0x303640, 0xe9edf3);
-        let selection = color(0x303e54, 0xe2ebf8);
-        let foreground = color(0xd7dce5, 0x27303f);
-        let muted = color(0x929baa, 0x687487);
-        let border = color(0x343a44, 0xdfe3ea);
-        let primary = color(0x8eafe5, 0x3d67a7);
-        theme.font_size = px(14.);
+        let background = color(0x202329, 0xffffff);
+        let panel = color(0x191c21, 0xf5f6f8);
+        let surface = color(0x262a31, 0xf9fafb);
+        let hover = color(0x2d323a, 0xebeef2);
+        let selection = color(0x2b3546, 0xe8eef8);
+        let foreground = color(0xdfe3eb, 0x242a35);
+        let muted = color(0x969eac, 0x657083);
+        let border = color(0x31363e, 0xe3e6ec);
+        let primary = color(0x8ab4f8, 0x426ac4);
+        theme.font_size = px(13.);
         if let Some(font) = font {
             theme.font_family = font.into();
         }
-        theme.radius = px(4.);
-        theme.radius_lg = px(6.);
+        theme.radius = px(5.);
+        theme.radius_lg = px(8.);
         theme.background = background;
         theme.foreground = foreground;
         theme.border = border;

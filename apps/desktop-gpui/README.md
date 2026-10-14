@@ -12,6 +12,11 @@ appearance preferences remain available. Inter 4.1 is embedded for consistent ty
 Open Font License is included in `assets/fonts/LICENSE.txt` and packaged under `licenses/Inter.txt`.
 Provider icon notices are packaged under `licenses/brand-icons.md`.
 
+GPUI Kit supplies the component library. Shared light/dark palettes keep controls, menus, editors
+and window chrome consistent. Thread cards retain project and server context; the tools rail shows
+change, agent and side-conversation counts. File editors highlight the selected file and unsaved
+changes, and the computer overview provides compact machine cards with source-aware task rows.
+
 Drag the task sidebar divider to resize it; its width and visibility persist across restarts.
 Use **Ctrl/Cmd+B** or the title-bar sidebar button for a wider conversation, and **Ctrl/Cmd+L** to
 focus the composer while keeping the right pane open. **Ctrl+backtick** toggles the bottom terminal and

@@ -1,4 +1,5 @@
 use super::*;
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     assets::IconName as UiIcon,
     component::{Icon, Sizable, TitleBar},
@@ -12,7 +13,7 @@ pub(super) fn icon_button(id: impl Into<ElementId>, icon: UiIcon, label: &'stati
         .icon(Icon::new(icon).size(px(16.)))
         .w(px(28.))
         .h(px(28.))
-        .rounded(px(4.))
+        .rounded(px(5.))
         .accessibility_label(label)
         .tooltip(label)
 }
@@ -33,6 +34,21 @@ pub(super) fn harness_icon(provider: &str, cx: &App) -> AnyElement {
             .size(px(14.))
             .text_color(cx.theme().muted_foreground)
             .into_any_element()
+    }
+}
+
+pub(super) fn harness_label(provider: &str) -> &str {
+    match provider {
+        "claude" => "Claude Code",
+        "codex" => "Codex",
+        "opencode" => "OpenCode",
+        "hermes" => "Hermes",
+        "copilot" => "GitHub Copilot",
+        "grok" => "Grok",
+        "muse" => "Muse",
+        "cursor" => "Cursor",
+        "acp" => "ACP",
+        other => other,
     }
 }
 
@@ -157,7 +173,15 @@ impl Workbench {
                 .child(
                     Button::new(SharedString::from(format!("nav-{}", page.label())))
                         .ghost()
-                        .icon(Icon::new(page.icon()).size(px(18.)))
+                        .icon(
+                            Icon::new(page.icon())
+                                .size(px(18.))
+                                .text_color(if selected {
+                                    cx.theme().primary
+                                } else {
+                                    cx.theme().muted_foreground
+                                }),
+                        )
                         .accessibility_label(page.label())
                         .tooltip(page.label())
                         .selected(selected)
@@ -270,7 +294,7 @@ impl Workbench {
             .into_any_element()
     }
 
-    pub(super) fn workspace_titlebar(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn workspace_titlebar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let project = self
             .task()
             .and_then(|task| {
@@ -281,6 +305,7 @@ impl Workbench {
                     .iter()
                     .find(|repo| repo.id == task.repository_id)
             })
+            .filter(|_| f32::from(window.viewport_size().width) >= 1000.)
             .map(|repo| repo.name.clone());
         TitleBar::new()
             .bg(cx.theme().title_bar)
@@ -298,7 +323,12 @@ impl Workbench {
                             .items_center()
                             .gap_2()
                             .min_w_0()
-                            .child(div().font_weight(FontWeight::SEMIBOLD).child("dovo"))
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_size(px(14.))
+                                    .child("dovo"),
+                            )
                             .child(self.server_picker(cx))
                             .children(project.map(|name| {
                                 div()
@@ -349,8 +379,25 @@ impl Workbench {
                                 Button::new("title-search")
                                     .ghost()
                                     .small()
-                                    .icon(UiIcon::Search)
-                                    .label("Search")
+                                    .icon(Icon::new(UiIcon::Search).size(px(13.)))
+                                    .child(div().when(
+                                        f32::from(window.viewport_size().width) >= 1000.,
+                                        |content| {
+                                            content
+                                                .flex()
+                                                .items_center()
+                                                .gap_4()
+                                                .child("Search workspace")
+                                                .child(
+                                                    div().text_size(px(10.)).child(shortcut("K")),
+                                                )
+                                        },
+                                    ))
+                                    .bg(cx.theme().background)
+                                    .border_1()
+                                    .border_color(cx.theme().border)
+                                    .text_color(cx.theme().muted_foreground)
+                                    .accessibility_label("Search workspace")
                                     .tooltip(format!("Search workspace · {}", shortcut("K")))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.search_open = true;
@@ -361,7 +408,7 @@ impl Workbench {
                                 Button::new("new-task")
                                     .ghost()
                                     .small()
-                                    .icon(UiIcon::Plus)
+                                    .icon(Icon::new(UiIcon::Plus).size(px(14.)))
                                     .label("New task")
                                     .tooltip(format!("New task · {}", shortcut("N")))
                                     .on_click(cx.listener(|this, _, _, cx| {

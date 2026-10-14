@@ -97,7 +97,10 @@ impl Workbench {
         let filter = Button::new("task-list-filter")
             .ghost()
             .small()
-            .icon(UiIcon::ListFilter)
+            .compact()
+            .w(px(26.))
+            .h(px(26.))
+            .icon(Icon::new(UiIcon::ListFilter).size(px(14.)))
             .selected(selected_filter != TaskFilter::All)
             .accessibility_label("Filter tasks")
             .tooltip(selected_filter.label())
@@ -135,7 +138,7 @@ impl Workbench {
                         .text_size(px(11.))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(cx.theme().muted_foreground)
-                        .child(section)
+                        .child(section.to_uppercase())
                         .into_any_element(),
                 );
                 last_section = section;
@@ -171,10 +174,11 @@ impl Workbench {
             rows.push(
                 div()
                     .id(SharedString::from(task.id))
-                    .mx_1()
-                    .my(px(1.))
+                    .mx_2()
+                    .my(px(2.))
                     .px_2()
                     .py_2()
+                    .rounded(px(6.))
                     .flex()
                     .flex_col()
                     .gap_1()
@@ -206,6 +210,12 @@ impl Workbench {
                                     .font_weight(FontWeight::MEDIUM)
                                     .child(task.title),
                             )
+                            .child(
+                                div()
+                                    .text_size(px(10.))
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(date),
+                            )
                             .children(task.pinned.unwrap_or(false).then(|| {
                                 Icon::new(UiIcon::Pin)
                                     .size(px(12.))
@@ -226,36 +236,40 @@ impl Workbench {
                             .gap_2()
                             .text_size(px(11.))
                             .text_color(cx.theme().muted_foreground)
-                            .child(div().truncate().flex_1().min_w_0().child(project))
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_1()
-                                    .child(
-                                        div()
-                                            .size(px(4.))
-                                            .rounded_full()
-                                            .bg(super::appearance::status_color(task.status, cx)),
-                                    )
-                                    .text_color(if attention.is_some() {
-                                        cx.theme().warning
-                                    } else {
-                                        cx.theme().muted_foreground
-                                    })
-                                    .child(attention.unwrap_or(task.status.label())),
-                            )
-                            .child(date),
+                            .child(Icon::new(UiIcon::FolderGit2).size(px(11.)))
+                            .child(div().truncate().flex_1().min_w_0().child(project)),
                     )
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap_1()
+                            .min_w_0()
                             .text_size(px(10.))
                             .text_color(cx.theme().muted_foreground)
                             .child(Icon::new(self.runtime_icon()).size(px(11.)))
-                            .child(self.server_label()),
+                            .child(
+                                div()
+                                    .truncate()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(self.server_label()),
+                            )
+                            .child(
+                                div()
+                                    .size(px(4.))
+                                    .rounded_full()
+                                    .bg(appearance::status_color(task.status, cx)),
+                            )
+                            .child(
+                                div()
+                                    .text_color(if attention.is_some() {
+                                        cx.theme().warning
+                                    } else {
+                                        cx.theme().muted_foreground
+                                    })
+                                    .child(attention.unwrap_or(task.status.label())),
+                            ),
                     )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.select_task(id.clone(), window, cx)
@@ -292,7 +306,13 @@ impl Workbench {
                         .text_size(px(11.))
                         .text_color(cx.theme().muted_foreground)
                         .child(Icon::new(icon).size(px(12.)))
-                        .child(server_name.clone())
+                        .child(
+                            div()
+                                .truncate()
+                                .min_w_0()
+                                .flex_1()
+                                .child(server_name.clone()),
+                        )
                         .children(
                             entry
                                 .result
@@ -328,7 +348,11 @@ impl Workbench {
                         rows.push(
                             div()
                                 .id(SharedString::from(format!("server-thread:{target}:{id}")))
-                                .mx_1()
+                                .mx_2()
+                                .my(px(2.))
+                                .rounded(px(6.))
+                                .border_l_2()
+                                .border_color(cx.theme().transparent)
                                 .px_2()
                                 .py_2()
                                 .flex()
@@ -413,10 +437,14 @@ impl Workbench {
                             .items_center()
                             .gap_2()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child(if archived { "Archive" } else { "Tasks" })
+                            .child(if archived { "Archive" } else { "Threads" })
                             .child(
                                 div()
-                                    .text_size(px(11.))
+                                    .text_size(px(10.))
+                                    .px(px(5.))
+                                    .py(px(1.))
+                                    .rounded(px(4.))
+                                    .bg(cx.theme().muted)
                                     .text_color(cx.theme().muted_foreground)
                                     .child(count.to_string()),
                             ),
@@ -444,7 +472,10 @@ impl Workbench {
                                 Button::new("sidebar-new-task")
                                     .ghost()
                                     .small()
-                                    .icon(UiIcon::Plus)
+                                    .compact()
+                                    .w(px(26.))
+                                    .h(px(26.))
+                                    .icon(Icon::new(UiIcon::Plus).size(px(14.)))
                                     .accessibility_label("New task")
                                     .tooltip("New task")
                                     .on_click(cx.listener(|this, _, _, cx| {
@@ -460,6 +491,7 @@ impl Workbench {
                 div().px_3().pb_2().child(
                     Input::new(&search)
                         .small()
+                        .h(px(28.))
                         .prefix(Icon::new(UiIcon::Search).size(px(13.))),
                 ),
             )
@@ -983,25 +1015,25 @@ impl Workbench {
             let turn = turns.iter().find(|turn| turn.assistant_id == message.id);
             let header = div().flex().items_center().gap_2().min_w_0()
                 .child(div().flex().items_center().justify_center().size(px(24.)).flex_shrink_0().rounded(px(5.))
-                    .bg(if user {cx.theme().muted} else {cx.theme().primary.opacity(0.12)})
-                    .text_color(if user {cx.theme().muted_foreground} else {cx.theme().primary})
+                    .bg(cx.theme().muted)
+                    .text_color(cx.theme().muted_foreground)
                     .child(if user { Icon::new(UiIcon::UserRound).size(px(14.)).into_any_element() } else { shell::harness_icon(turn.map(|turn|turn.provider.name()).unwrap_or(""),cx) }))
                 .child(div().text_size(px(12.)).font_weight(FontWeight::SEMIBOLD).child(if user { "You" } else { "Agent" }))
-                .children(turn.map(|turn| div().min_w_0().truncate().text_size(px(11.)).text_color(cx.theme().muted_foreground).child(format!("{} · {}",turn.provider.name(),if turn.model.is_empty() {"Provider default"} else {&turn.model}))));
+                .children(turn.map(|turn| div().min_w_0().truncate().text_size(px(11.)).text_color(cx.theme().muted_foreground).child(format!("{} · {}",shell::harness_label(turn.provider.name()),if turn.model.is_empty() {"Provider default"} else {&turn.model}))));
             let actions = div().flex().items_center().gap_1()
-                .child(Button::new(SharedString::from(format!("copy-{id}"))).ghost().small().icon(UiIcon::Copy)
+                .child(Button::new(SharedString::from(format!("copy-{id}"))).ghost().compact().small().w(px(26.)).h(px(26.)).icon(Icon::new(UiIcon::Copy).size(px(14.)))
                     .accessibility_label("Copy message").tooltip("Copy message as Markdown")
                     .on_click(move |_,_,cx| cx.write_to_clipboard(ClipboardItem::new_string(text.clone()))))
-                .when(!user, |actions| actions.child(Button::new(SharedString::from(format!("bookmark-{id}"))).ghost().small()
+                .when(!user, |actions| actions.child(Button::new(SharedString::from(format!("bookmark-{id}"))).ghost().compact().small().w(px(26.)).h(px(26.))
                     .icon(if bookmarked {UiIcon::BookmarkCheck} else {UiIcon::Bookmark})
                     .accessibility_label(if bookmarked {"Remove bookmark"} else {"Bookmark message"})
                     .tooltip(if bookmarked {"Remove bookmark"} else {"Bookmark message"})
                     .on_click(move |_, _, _| {
                         if let Err(error) = bookmark_service.send(Command::Request { generation, key: format!("bookmark:{id}"), method: Method::POST, path: "/api/tasks/message/bookmark".into(), input: json!({"id":task_id,"messageId":id,"bookmarked":!bookmarked}) }) { eprintln!("Could not bookmark message: {error}"); }
                     })));
-            div().w_full().flex().justify_center().child(div().px_6().py_4().w_full().max_w(px(820.))
+            div().w_full().flex().justify_center().child(div().px_6().py_4().w_full().max_w(px(820.)).text_size(px(14.))
                 .child(div().flex().items_center().justify_between().gap_2().mb_2().child(header).child(actions))
-                .child(div().when(user, |body| body.p_3().rounded(px(6.)).bg(cx.theme().muted.opacity(0.5)).border_1().border_color(cx.theme().border.opacity(0.5)))
+                .child(div().when(user, |body| body.p_3().rounded(px(8.)).bg(cx.theme().muted).border_1().border_color(cx.theme().border.opacity(0.7)))
                     .child(TextView::markdown(SharedString::from(format!("message-{}", message.id)), message.text.clone()).selectable(true).on_link_click(|url, _, _, cx| {
                         if url::Url::parse(url).is_ok_and(|url| matches!(url.scheme(), "http" | "https" | "mailto")) { cx.open_url(url); }
                     })))
@@ -1321,31 +1353,20 @@ impl Workbench {
                     || key == &format!("attachment-upload:{}", task.id)
                     || key.starts_with(&format!("attachment-remove:{}:", task.id))
             });
-            let mut controls = div()
-                .flex()
-                .flex_wrap()
-                .gap_2()
-                .items_center()
-                .justify_between()
-                .mt_2()
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(if !self.online {
-                            "Offline · drafts saved locally".into()
-                        } else if running {
-                            format!(
-                                "{} to queue · Steer changes this run",
-                                super::shell::shortcut("Enter")
-                            )
-                        } else {
-                            format!(
-                                "{} to send · @ files · / commands",
-                                super::shell::shortcut("Enter")
-                            )
-                        }),
-                );
+            let hint = if !self.online {
+                "Offline · draft saved on this computer".into()
+            } else if running {
+                format!(
+                    "{} to queue · Steer changes this run",
+                    super::shell::shortcut("Enter")
+                )
+            } else {
+                format!(
+                    "{} to send · @ files · / commands",
+                    super::shell::shortcut("Enter")
+                )
+            };
+            let mut controls = div().flex().flex_col().gap_2().mt_2();
             let mut buttons = div().flex().gap_2();
             if running {
                 let id = task.id.clone();
@@ -1356,6 +1377,7 @@ impl Workbench {
                             .small()
                             .icon(UiIcon::Square)
                             .label("Stop")
+                            .h(px(28.))
                             .disabled(run_id.is_none())
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.request(
@@ -1370,6 +1392,7 @@ impl Workbench {
                         Button::new("steer-task")
                             .small()
                             .label("Steer")
+                            .h(px(28.))
                             .disabled(
                                 sending
                                     || !self.online
@@ -1382,43 +1405,59 @@ impl Workbench {
                             })),
                     );
             }
-            buttons = buttons.child(
-                Button::new("send-message")
-                    .primary()
-                    .small()
-                    .icon(UiIcon::ArrowUp)
-                    .label(if sending {
-                        "Sending…"
-                    } else if running {
-                        "Queue"
-                    } else {
-                        "Send"
-                    })
-                    .disabled(!self.online || sending || empty || attachment_pending)
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.submit_message(false, window, cx)),
-                    ),
-            );
+            let send = Button::new("send-message")
+                .primary()
+                .small()
+                .h(px(28.))
+                .min_w(px(62.))
+                .icon(UiIcon::ArrowUp)
+                .label(if sending {
+                    "Sending…"
+                } else if running {
+                    "Queue"
+                } else {
+                    "Send"
+                })
+                .disabled(!self.online || sending || empty || attachment_pending)
+                .on_click(
+                    cx.listener(|this, _, window, cx| this.submit_message(false, window, cx)),
+                );
             let uploading = self
                 .pending
                 .contains(&format!("attachment-upload:{}", task.id))
                 || self
                     .pending
                     .contains(&format!("attachment-pick:{}", task.id));
-            buttons = buttons.child(
-                Button::new("attach-file")
-                    .ghost()
-                    .small()
-                    .icon(UiIcon::Paperclip)
-                    .label(if uploading {
-                        "Uploading…"
-                    } else {
-                        "Attach file"
-                    })
-                    .disabled(uploading || !self.online || task.draft_attachments.len() >= 5)
-                    .on_click(cx.listener(|this, _, _, cx| this.pick_attachment(cx))),
-            );
-            controls = controls.child(buttons);
+            let attach = Button::new("attach-file")
+                .ghost()
+                .small()
+                .icon(UiIcon::Paperclip)
+                .accessibility_label("Attach file")
+                .tooltip(if uploading {
+                    "Uploading…"
+                } else {
+                    "Attach file"
+                })
+                .w(px(28.))
+                .h(px(28.))
+                .disabled(uploading || !self.online || task.draft_attachments.len() >= 5)
+                .on_click(cx.listener(|this, _, _, cx| this.pick_attachment(cx)));
+            controls = controls
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_2()
+                        .child(attach)
+                        .child(buttons.child(send)),
+                )
+                .child(
+                    div()
+                        .text_size(px(10.))
+                        .text_color(cx.theme().muted_foreground)
+                        .child(hint),
+                );
             for attachment in &task.draft_attachments {
                 let id = attachment.id.clone();
                 let task_id = task.id.clone();
@@ -1457,7 +1496,7 @@ impl Workbench {
                             .w_full()
                             .max_w(px(820.))
                             .p_3()
-                            .rounded(px(6.))
+                            .rounded(px(10.))
                             .bg(cx.theme().muted)
                             .border_1()
                             .border_color(if composer_focused {
@@ -1593,6 +1632,7 @@ impl Workbench {
                         .compact()
                         .small()
                         .w_full()
+                        .selected(selected.as_ref() == Some(&path))
                         .child(
                             div()
                                 .flex()
@@ -1626,7 +1666,21 @@ impl Workbench {
                 let key = format!("file-editor:{}:{path}", task.id);
                 let editor = self.code_editor(&key, &path, &contents, window, cx);
                 let id = task.id.clone();
-                root = root.child(div().flex().flex_col().flex_1().min_h_0().min_w_0().p_2().gap_2().child(Editor::new(&editor).flex_1().min_h_0()).child(div().flex().items_center().justify_between().gap_2().child(div().truncate().text_size(px(11.)).child(path.clone())).child(Button::new("save-file").ghost().small().icon(UiIcon::Save).label("Save").on_click(cx.listener(move |this, _, _, cx| { this.request(format!("save:{id}:{path}"), "/api/tasks/files/write", json!({"id":id,"path":path,"contents":this.code_value(&key,cx),"expectedContents":contents})); cx.notify(); })))));
+                let changed = self.code_value(&key, cx) != contents;
+                root = root.child(div().flex().flex_col().flex_1().min_h_0().min_w_0()
+                    .child(div().flex().items_center().gap_2().h(px(32.)).px_3().flex_shrink_0()
+                        .bg(cx.theme().sidebar).border_y_1().border_color(cx.theme().border)
+                        .child(Icon::new(UiIcon::FileCode).size(px(13.)).text_color(cx.theme().muted_foreground))
+                        .child(div().truncate().min_w_0().flex_1().text_size(px(11.)).child(path.clone()))
+                        .children(changed.then(|| div().size(px(5.)).rounded_full().bg(cx.theme().primary))))
+                    .child(Editor::new(&editor).appearance(false).bordered(false).flex_1().min_h_0())
+                    .child(div().flex().items_center().justify_between().gap_2().h(px(32.)).px_3().flex_shrink_0()
+                        .border_t_1().border_color(cx.theme().border)
+                        .child(div().text_size(px(10.)).text_color(cx.theme().muted_foreground).child(if changed {"Unsaved changes"} else {"Saved"}))
+                        .child(Button::new("save-file").ghost().small().icon(Icon::new(UiIcon::Save).size(px(13.))).label("Save").disabled(!changed || self.pending.contains(&format!("save:{id}:{path}")))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.request(format!("save:{id}:{path}"), "/api/tasks/files/write", json!({"id":id,"path":path,"contents":this.code_value(&key,cx),"expectedContents":contents})); cx.notify();
+                            })))));
             } else {
                 root = root.child(Self::empty(
                     "Loading file…",

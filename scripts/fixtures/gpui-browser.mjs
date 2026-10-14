@@ -10,9 +10,13 @@ const requests = []
 const browserCalls = []
 let writes = Promise.resolve()
 function record() {
-  writes = writes.then(() =>
-    writeFile(join(root, 'browser-events.json'), JSON.stringify({ requests, browserCalls })),
-  )
+  writes = writes.then(async () => {
+    await writeFile(
+      join(root, 'browser-events.pending'),
+      JSON.stringify({ requests, browserCalls }),
+    )
+    await rename(join(root, 'browser-events.pending'), join(root, 'browser-events.json'))
+  })
   return writes
 }
 const website = createServer((request, response) => {

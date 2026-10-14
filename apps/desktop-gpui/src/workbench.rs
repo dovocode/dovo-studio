@@ -114,7 +114,7 @@ impl Page {
     ];
     pub fn label(self) -> &'static str {
         match self {
-            Self::Tasks => "Tasks",
+            Self::Tasks => "Threads",
             Self::Artifacts => "Artifacts",
             Self::Projects => "Projects",
             Self::Pulls => "Pull requests",
@@ -1666,7 +1666,7 @@ impl Render for Workbench {
         let sidebar = self.activity_rail(cx);
         let settings =
             (self.page.is_settings() && !self.search_open).then(|| self.settings_sidebar(cx));
-        let titlebar = self.workspace_titlebar(cx);
+        let titlebar = self.workspace_titlebar(window, cx);
         let statusbar = self.workspace_statusbar(cx);
         div()
             .key_context("DovoWorkbench")

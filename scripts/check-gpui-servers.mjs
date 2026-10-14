@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtemp, readFile, readdir, access, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, access, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -10,6 +10,7 @@ if (process.platform !== 'linux') throw new Error('This native GUI check require
 const directory = await mkdtemp(join(tmpdir(), 'dovo-gpui-servers-check-'))
 const children = []
 const diagnostics = []
+let guiEnvironment
 function start(command, args, env) {
   const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
   children.push(child)
@@ -61,6 +62,7 @@ try {
     XDG_DATA_HOME: join(directory, 'client'),
     WEBKIT_DISABLE_COMPOSITING_MODE: '1',
   }
+  guiEnvironment = gui
   const x = (...args) => exec('xdotool', args, { env: gui })
   const click = (xpos, ypos) => x('mousemove', String(xpos), String(ypos), 'click', '1')
   const key = (...keys) => x('key', '--clearmodifiers', ...keys)
@@ -135,8 +137,15 @@ try {
   }, 'switching back restores the first task and composer')
   await click(135, 795)
   await delay(1000)
-  // The second server's task is in the second overview card.
-  await click(800, 792)
+  // The second server's task is in the compact second overview card.
+  const nativeWindow = (await x('search', '--name', '^Dovo Studio GPUI$')).stdout.trim()
+  const geometry = Object.fromEntries(
+    (await x('getwindowgeometry', '--shell', nativeWindow)).stdout
+      .trim()
+      .split('\n')
+      .map((line) => line.split('=')),
+  )
+  await click(Number(geometry.X) + 288, Number(geometry.Y) + 565)
   await delay(1000)
   await click(650, 750)
   await key('End')
@@ -152,6 +161,14 @@ try {
     'Native cross-server thread sidebar, server picker, scoped drafts and overview navigation pass.',
   )
 } catch (error) {
+  if (process.env.GPUI_SCREENSHOT_DIR && guiEnvironment) {
+    await mkdir(process.env.GPUI_SCREENSHOT_DIR, { recursive: true })
+    await exec(
+      'import',
+      ['-window', 'root', join(process.env.GPUI_SCREENSHOT_DIR, 'servers-failure.png')],
+      { env: guiEnvironment },
+    )
+  }
   console.error(diagnostics.join('').slice(-4000))
   throw error
 } finally {

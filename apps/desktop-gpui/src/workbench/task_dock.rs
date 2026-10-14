@@ -82,9 +82,17 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let header = self.thread_header(task, cx);
-        let rail = self.thread_tools(cx);
+        let rail = self.thread_tools(task, cx);
         let compact = !self.tools_fit(window);
         let expanded = self.tools_expanded || compact;
+        // A resize can unmount the focused composer without a tab-change action.
+        // Transfer focus to the workbench so its shortcuts remain reachable.
+        if expanded
+            && self.tab != TaskTab::Chat
+            && self.composer.read(cx).focus_handle(cx).is_focused(window)
+        {
+            window.focus(&self.focus, cx);
+        }
         let main = if self.tab != TaskTab::Chat {
             let tools = self.tool_pane(task, window, cx);
             if expanded {
@@ -182,12 +190,8 @@ impl Workbench {
             .h(px(44.)).flex_shrink_0().flex().items_center().gap_2().px_3()
             .border_b_1().border_color(cx.theme().border)
             .child(self.task_agent_icon(task, cx))
-            .child(div().flex().items_center().gap_1().min_w_0().max_w(px(160.))
-                .text_size(px(11.)).text_color(cx.theme().muted_foreground)
-                .child(Icon::new(self.runtime_icon()).size(px(12.)))
-                .child(div().truncate().child(self.server_label())).child("/"))
             .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::MEDIUM).child(task.title.clone()))
-            .child(div().flex().items_center().gap_1().text_size(px(11.)).text_color(cx.theme().muted_foreground)
+            .child(div().flex_shrink_0().flex().items_center().gap_1().px_2().py(px(3.)).rounded(px(5.)).bg(appearance::status_color(task.status,cx).opacity(0.08)).text_size(px(10.)).text_color(appearance::status_color(task.status,cx))
                 .child(div().size(px(4.)).rounded_full().bg(appearance::status_color(task.status, cx)))
                 .child(task.status.label()))
             .child(div().flex().items_center().gap_1().border_l_1().border_color(cx.theme().border).pl_2()
@@ -205,9 +209,6 @@ impl Workbench {
                         cx.notify();
                     }))))
             .child(div().flex().items_center().gap_1().border_l_1().border_color(cx.theme().border).pl_2()
-                .child(shell::icon_button("thread-left-panel", UiIcon::PanelLeft, "Toggle task sidebar")
-                    .selected(self.layout.task_sidebar_visible && !self.tools_expanded)
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_task_sidebar(cx))))
                 .child(shell::icon_button("thread-bottom-panel", UiIcon::PanelBottom, "Toggle terminal")
                     .tooltip("Toggle terminal · Ctrl+`").selected(self.bottom_terminal_open)
                     .on_click(cx.listener(|this, _, window, cx| this.set_bottom_terminal(!this.bottom_terminal_open, window, cx))))
@@ -220,7 +221,7 @@ impl Workbench {
             .into_any_element()
     }
 
-    fn thread_tools(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn thread_tools(&self, task: &Task, cx: &mut Context<Self>) -> AnyElement {
         let tools = [
             TaskTab::Files,
             TaskTab::LinkedProjects,
@@ -255,18 +256,51 @@ impl Workbench {
                     .min_h_0()
                     .overflow_y_scroll()
                     .children(tools.into_iter().map(|tab| {
+                        let selected = self.tab == tab;
+                        let count = match tab {
+                            TaskTab::Changes => self
+                                .responses
+                                .get(&format!("changes:{}", task.id))
+                                .and_then(|v| v.get("files"))
+                                .and_then(Value::as_array)
+                                .map(Vec::len)
+                                .unwrap_or(task.files.len()),
+                            TaskTab::SideChats => task.side_chats.len(),
+                            TaskTab::Agents => task.subagents.as_ref().map(Vec::len).unwrap_or(0),
+                            _ => 0,
+                        };
                         div()
+                            .relative()
+                            .w(px(39.))
+                            .flex()
+                            .justify_center()
                             .when(tab == TaskTab::Browser, |row| {
                                 row.mt_2()
                                     .pt_2()
                                     .border_t_1()
                                     .border_color(cx.theme().border)
                             })
+                            .children(selected.then(|| {
+                                div()
+                                    .absolute()
+                                    .right_0()
+                                    .top(px(8.))
+                                    .h(px(18.))
+                                    .w(px(2.))
+                                    .rounded_full()
+                                    .bg(cx.theme().primary)
+                            }))
                             .child(
                                 shell::icon_button(tab.title(), tab.icon(), tab.title())
-                                    .selected(self.tab == tab)
-                                    .icon(Icon::new(tab.icon()).size(px(18.)))
-                                    .w(px(34.))
+                                    .selected(selected)
+                                    .icon(Icon::new(tab.icon()).size(px(17.)).text_color(
+                                        if selected {
+                                            cx.theme().primary
+                                        } else {
+                                            cx.theme().muted_foreground
+                                        },
+                                    ))
+                                    .w(px(32.))
                                     .h(px(34.))
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         let next =
@@ -274,6 +308,22 @@ impl Workbench {
                                         this.open_task_tab(next, window, cx);
                                     })),
                             )
+                            .children((count > 0).then(|| {
+                                div()
+                                    .absolute()
+                                    .right(px(2.))
+                                    .top_0()
+                                    .px(px(3.))
+                                    .rounded(px(3.))
+                                    .bg(cx.theme().sidebar)
+                                    .text_size(px(9.))
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(if count > 99 {
+                                        "99+".into()
+                                    } else {
+                                        count.to_string()
+                                    })
+                            }))
                     })),
             )
             .child(
@@ -350,7 +400,7 @@ impl Workbench {
                             .size(px(14.))
                             .text_color(cx.theme().muted_foreground),
                     )
-                    .child(div().flex_1().child(title))
+                    .child(div().flex_1().font_weight(FontWeight::MEDIUM).child(title))
                     .child(
                         shell::icon_button(
                             "expand-thread-tool",

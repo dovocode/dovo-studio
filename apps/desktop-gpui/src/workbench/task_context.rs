@@ -84,6 +84,9 @@ impl Workbench {
             .items_center()
             .gap_1()
             .pb_2()
+            .mb_2()
+            .border_b_1()
+            .border_color(cx.theme().border.opacity(0.7))
             .text_size(px(11.))
             .text_color(cx.theme().muted_foreground)
             .child(
@@ -91,14 +94,13 @@ impl Workbench {
                     .ghost()
                     .compact()
                     .small()
+                    .h(px(24.))
                     .child(shell::harness_icon(&context.provider, cx))
-                    .child(
-                        div()
-                            .min_w_0()
-                            .max_w(px(300.))
-                            .truncate()
-                            .child(format!("{} · {}", context.provider, context.model)),
-                    )
+                    .child(div().min_w_0().max_w(px(300.)).truncate().child(format!(
+                        "{} · {}",
+                        shell::harness_label(&context.provider),
+                        context.model
+                    )))
                     .tooltip(format!("{description} · Task settings"))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.open_task_tab(TaskTab::Details, window, cx)
@@ -110,7 +112,7 @@ impl Workbench {
                     .ghost()
                     .compact()
                     .small()
-                    .icon(UiIcon::FolderGit2)
+                    .icon(gpui_kit::component::Icon::new(UiIcon::FolderGit2).size(px(13.)))
                     .label(checkout)
                     .tooltip("View task checkout and settings")
                     .on_click(cx.listener(|this, _, window, cx| {

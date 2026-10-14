@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtemp, readFile, readdir, access, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, access, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -11,6 +11,7 @@ if (process.platform !== 'linux') throw new Error('This native GUI check require
 const directory = await mkdtemp(join(tmpdir(), 'dovo-gpui-composer-check-'))
 const children = []
 const diagnostics = []
+let guiEnvironment
 function start(command, args, env) {
   const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
   children.push(child)
@@ -68,6 +69,7 @@ try {
     XDG_DATA_HOME: join(directory, 'client'),
     WEBKIT_DISABLE_COMPOSITING_MODE: '1',
   }
+  guiEnvironment = gui
   await until(async () => {
     try {
       await exec('xdotool', ['getdisplaygeometry'], { env: gui })
@@ -183,6 +185,8 @@ try {
   await x('mousemove', '500', '450')
   await delay(100)
   await x('mouseup', '1')
+  // Preference persistence precedes GPUI's settling frame; finish that frame before the next pointer move.
+  await delay(250)
   const layoutPath = join(gui.XDG_DATA_HOME, 'dovostudiogpui/layout.json')
   await until(async () => {
     const layout = await json(layoutPath)
@@ -314,10 +318,37 @@ try {
     const layout = await json(layoutPath)
     return layout?.taskSidebarWidth >= 375 && layout.taskSidebarWidth <= 385
   }, 'restart restores the real divider position')
+  // Shrinking a split view removes the focused composer from the render tree.
+  // Workspace shortcuts must still bring it back and preserve its draft.
+  await key('ctrl+shift+b')
+  await delay(300)
+  await key('ctrl+l')
+  await x(
+    'windowsize',
+    (await x('search', '--name', '^Dovo Studio GPUI$')).stdout.trim(),
+    '840',
+    '560',
+  )
+  await delay(350)
+  await key('ctrl+l')
+  await type(' in a narrow window')
+  await draft('Persistent layout draft in focus mode beside files restored in a narrow window')
   console.log(
     'Native composer verified: suggestions, Unicode, review/send, simultaneous tools, PTY dock, context navigation, focus mode and persistent layout/drafts.',
   )
 } catch (error) {
+  if (process.env.GPUI_SCREENSHOT_DIR && guiEnvironment) {
+    await mkdir(process.env.GPUI_SCREENSHOT_DIR, { recursive: true })
+    await exec(
+      'import',
+      ['-window', 'root', join(process.env.GPUI_SCREENSHOT_DIR, 'composer-failure.png')],
+      { env: guiEnvironment },
+    )
+    console.error(
+      'Layout at failure:',
+      await json(join(guiEnvironment.XDG_DATA_HOME, 'dovostudiogpui/layout.json')),
+    )
+  }
   console.error(diagnostics.join('').slice(-4000))
   throw error
 } finally {

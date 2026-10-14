@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtemp, readFile, readdir, access, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, access, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -11,6 +11,7 @@ if (process.platform !== 'linux') throw new Error('This native GUI check require
 const directory = await mkdtemp(join(tmpdir(), 'dovo-gpui-browser-check-'))
 const children = []
 const diagnostics = []
+let guiEnvironment
 function start(command, args, env) {
   const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
   children.push(child)
@@ -68,6 +69,7 @@ try {
     XDG_DATA_HOME: join(directory, 'client'),
     WEBKIT_DISABLE_COMPOSITING_MODE: '1',
   }
+  guiEnvironment = gui
   await until(async () => {
     try {
       await exec('xdotool', ['getdisplaygeometry'], { env: gui })
@@ -181,27 +183,27 @@ try {
   await x('windowfocus', '--sync', registeredWindow.trim().split('\n')[0])
   await click(135, 832)
   await delay(350)
-  await click(650, 566)
+  await click(650, 552)
   await type('Native Personal')
-  await click(1225, 566)
+  await click(1225, 552)
   const added = await until(
     async () => (await profiles()).find((p) => p.name === 'Native Personal'),
     'native profile creation',
   )
   await delay(350)
-  await click(650, 566)
+  await click(650, 552)
   await key('ctrl+a')
   await type('Renamed Personal')
-  await click(1153, 566)
+  await click(1153, 552)
   await until(
     async () => (await profiles()).some((p) => p.id === added.id && p.name === 'Renamed Personal'),
     'native profile rename',
   )
   await delay(350)
-  await click(1234, 566)
+  await click(1234, 552)
   await delay(250)
   // Confirmation is below the three profile rows.
-  await click(451, 645)
+  await click(451, 620)
   await until(
     async () => !(await profiles()).some((p) => p.id === added.id),
     'native profile removal',
@@ -209,7 +211,7 @@ try {
   alive()
   await click(135, 795)
   await delay(700)
-  await click(800, 630)
+  await click(400, 510)
   await delay(300)
   await click(650, 750)
   await type('Fleet task draft')
@@ -227,6 +229,14 @@ try {
     'Native browser profiles, cookie persistence, exact session closure, workbench survival and fleet task navigation pass.',
   )
 } catch (error) {
+  if (process.env.GPUI_SCREENSHOT_DIR && guiEnvironment) {
+    await mkdir(process.env.GPUI_SCREENSHOT_DIR, { recursive: true })
+    await exec(
+      'import',
+      ['-window', 'root', join(process.env.GPUI_SCREENSHOT_DIR, 'browser-failure.png')],
+      { env: guiEnvironment },
+    )
+  }
   console.error(diagnostics.join('').slice(-4000))
   throw error
 } finally {

@@ -1,4 +1,8 @@
 use super::*;
+use gpui_kit::{
+    assets::IconName as UiIcon,
+    component::{Icon, Sizable},
+};
 
 impl Workbench {
     pub(super) fn refresh_fleet(&mut self) {
@@ -271,13 +275,28 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut root=div().id("computers-page").flex().flex_col().flex_1().overflow_y_scroll().p_6().gap_4().child(Self::header("Computers","Connect directly over LAN, Tailscale, NetBird or optional HTTPS. No Dovo account is required."));
+        let mut root = div()
+            .id("computers-page")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .overflow_y_scroll()
+            .p_6()
+            .gap_4()
+            .child(Self::header(
+                "Computers",
+                "Your connected workspaces, tasks and trusted devices.",
+            ));
         root = root.child(
             div()
                 .flex()
                 .gap_2()
                 .child(
                     Button::new("local-runtime")
+                        .small()
+                        .h(px(28.))
+                        .icon(Icon::new(UiIcon::Laptop).size(px(14.)))
                         .label("Connect local runtime")
                         .disabled(self.pending.contains("local-runtime"))
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -289,31 +308,68 @@ impl Workbench {
                 .child(
                     Button::new("disconnect-runtime")
                         .ghost()
+                        .small()
+                        .h(px(28.))
                         .label("Disconnect")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.command(Command::Disconnect);
                             cx.notify();
                         })),
+                )
+                .child(
+                    Button::new("read-device-hub-settings")
+                        .ghost()
+                        .small()
+                        .h(px(28.))
+                        .icon(Icon::new(UiIcon::Smartphone).size(px(14.)))
+                        .label("Device Hub")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.request_method(
+                                "device-host-settings",
+                                Method::GET,
+                                "/api/device-hosts",
+                                json!({}),
+                            );
+                            cx.notify();
+                        })),
                 ),
-        );
-        root = root.child(
-            Button::new("read-device-hub-settings")
-                .label("Device Hub settings")
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.request_method(
-                        "device-host-settings",
-                        Method::GET,
-                        "/api/device-hosts",
-                        json!({}),
-                    );
-                    cx.notify();
-                })),
         );
         if let Some(settings) = self.responses.get("device-host-settings").cloned() {
             root = root.child(self.device_host_settings(settings, window, cx));
         }
-        root = root.child(Self::header("Computer overview", "Live project and task counts for the current connection and paired computers. Refreshes every 15 seconds while this page is open."))
-            .child(Button::new("fleet-refresh").label(if self.pending.contains("fleet") { "Refreshing computers…" } else { "Refresh computers" }).disabled(self.pending.contains("fleet")).on_click(cx.listener(|this, _, _, cx| { this.refresh_fleet(); cx.notify(); })));
+        root = root.child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_3()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(
+                            div()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_size(px(15.))
+                                .child("Connected computers"),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(cx.theme().muted_foreground)
+                                .child("Live activity across your servers"),
+                        ),
+                )
+                .child(
+                    shell::icon_button("fleet-refresh", UiIcon::RefreshCw, "Refresh computers")
+                        .disabled(self.pending.contains("fleet"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.refresh_fleet();
+                            cx.notify();
+                        })),
+                ),
+        );
         let fleet_search = self.input(
             "fleet-task-search",
             "",
@@ -322,32 +378,150 @@ impl Workbench {
             cx,
         );
         let query = self.value("fleet-task-search", cx).to_lowercase();
-        root = root.child(Input::new(&fleet_search));
+        root =
+            root.child(Input::new(&fleet_search).prefix(Icon::new(UiIcon::Search).size(px(14.))));
         for entry in self.fleet_entries.clone() {
+            let current = entry.address == self.address;
+            let available = entry.result.is_ok();
+            let icon = entry
+                .result
+                .as_ref()
+                .map(|summary| shell::server_icon(&summary.runtime_icon))
+                .unwrap_or(UiIcon::Server);
+            let name = if current {
+                self.server_label()
+            } else if entry.name == entry.address {
+                servers::address_label(&entry.address)
+            } else {
+                entry.name.clone()
+            };
             let mut card = div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .p_3()
+                .gap_3()
+                .p_4()
                 .border_1()
                 .border_color(cx.theme().border)
-                .rounded_md()
-                .child(format!("{} · {}", entry.name, entry.address));
+                .rounded(px(8.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_3()
+                        .min_w_0()
+                        .child(
+                            div()
+                                .size(px(32.))
+                                .rounded(px(7.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .flex_shrink_0()
+                                .bg(cx.theme().muted)
+                                .child(
+                                    Icon::new(icon)
+                                        .size(px(17.))
+                                        .text_color(cx.theme().muted_foreground),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .truncate()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .child(name),
+                                )
+                                .child(
+                                    div()
+                                        .truncate()
+                                        .text_size(px(11.))
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(entry.address.clone()),
+                                ),
+                        )
+                        .children(current.then(|| {
+                            div()
+                                .rounded(px(4.))
+                                .px_2()
+                                .py(px(3.))
+                                .bg(cx.theme().primary.opacity(0.1))
+                                .text_size(px(10.))
+                                .text_color(cx.theme().primary)
+                                .child("Connected")
+                        }))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .flex_shrink_0()
+                                .text_size(px(11.))
+                                .text_color(cx.theme().muted_foreground)
+                                .child(div().size(px(5.)).rounded_full().bg(if available {
+                                    cx.theme().success
+                                } else {
+                                    cx.theme().warning
+                                }))
+                                .child(if available { "Online" } else { "Unavailable" }),
+                        ),
+                );
             card = match &entry.result {
-                Ok(summary) => card
-                    .child(format!(
-                        "Online · {} projects · {} active tasks",
-                        summary.projects, summary.tasks
-                    ))
-                    .child(format!(
-                        "{} running · {} in review · {} failed",
-                        summary.running, summary.review, summary.failed
-                    ))
-                    .child(format!(
-                        "{} approvals · {} questions waiting",
-                        summary.approvals, summary.questions
-                    )),
-                Err(error) => card.child(format!("Unavailable · {error}")),
+                Ok(summary) => card.child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_4()
+                        .py_1()
+                        .children(
+                            [
+                                (summary.projects, "Projects"),
+                                (summary.tasks, "Tasks"),
+                                (summary.running, "Running"),
+                                (summary.review, "In review"),
+                                (summary.failed, "Failed"),
+                            ]
+                            .into_iter()
+                            .map(|(count, label)| {
+                                div()
+                                    .flex()
+                                    .items_baseline()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_size(px(15.))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .child(count.to_string()),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(label),
+                                    )
+                            }),
+                        )
+                        .children((summary.approvals + summary.questions > 0).then(|| {
+                            div()
+                                .text_size(px(11.))
+                                .text_color(cx.theme().warning)
+                                .child(format!(
+                                    "{} approvals · {} questions waiting",
+                                    summary.approvals, summary.questions
+                                ))
+                        })),
+                ),
+                Err(error) => card.child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(cx.theme().muted_foreground)
+                        .child(error.clone()),
+                ),
             };
             if let Ok(summary) = &entry.result {
                 let matches: Vec<_> = summary
@@ -371,12 +545,56 @@ impl Workbench {
                             "fleet-task:{}:{}",
                             entry.id, task.id
                         )))
-                        .label(format!(
-                            "{} · {} · {}",
-                            task.title,
-                            task.project,
-                            task.status.label()
-                        ))
+                        .ghost()
+                        .small()
+                        .w_full()
+                        .h(px(40.))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .w_full()
+                                .min_w_0()
+                                .child(shell::harness_icon(&task.provider, cx))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .flex()
+                                        .flex_col()
+                                        .child(
+                                            div()
+                                                .truncate()
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .child(task.title.clone()),
+                                        )
+                                        .child(
+                                            div()
+                                                .truncate()
+                                                .text_size(px(10.))
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child(task.project.clone()),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .size(px(4.))
+                                        .rounded_full()
+                                        .bg(appearance::status_color(task.status, cx)),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(10.))
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(task.status.label()),
+                                )
+                                .child(
+                                    Icon::new(UiIcon::ChevronRight)
+                                        .size(px(13.))
+                                        .text_color(cx.theme().muted_foreground),
+                                ),
+                        )
                         .disabled(!can_open)
                         .on_click(cx.listener(
                             move |this, _, window, cx| {
