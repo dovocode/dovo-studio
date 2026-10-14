@@ -226,6 +226,8 @@ it('resumes the interrupted turn but leaves queued follow-ups paused after resta
   const runtime = await startRuntime(options)
   cleanups.push(runtime.close)
   await waitForRecovery(() => expect(runtime.services.store.task(id).status).toBe('review'))
+  // Review is saved before the worker's finalizer releases execution ownership.
+  await waitForRecovery(() => expect(runtime.services.tasks.hasWorkingFamily(id)).toBe(false))
   await waitForRecovery(() => expect(prompts).toHaveLength(1))
   expect(prompts[0]).toContain('Original request')
   expect(prompts[0]).not.toContain('Queued follow-up')
