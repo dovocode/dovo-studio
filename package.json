@@ -43,7 +43,7 @@
     "test:mobile-startup-thread:browser": "node scripts/check-mobile-startup-thread-browser.mjs && node scripts/check-mobile-draft-transition-browser.mjs",
     "test:mobile-thread-folder:browser": "node scripts/check-mobile-thread-folder-browser.mjs",
     "test:task-project-panel:browser": "node scripts/check-task-project-panel-browser.mjs",
-    "test:task-waiting:browser": "node scripts/check-task-waiting-browser.mjs",
+    "test:task-waiting:browser": "node scripts/check-task-waiting-browser.mjs && node scripts/check-task-waiting-sync-browser.mjs",
     "test:desktop-runtime-connections": "node scripts/check-desktop-runtime-connections.mjs",
     "test:thread-popout:browser": "node scripts/check-thread-popout-browser.mjs",
     "test:thread-folder:browser": "node scripts/check-thread-folder-browser.mjs",
@@ -54,7 +54,7 @@
     "test:startup-draft:browser": "node scripts/check-startup-draft-browser.mjs && node scripts/check-startup-sidebar-browser.mjs && node scripts/check-startup-composer-browser.mjs",
     "test:thread-startup:browser": "node scripts/check-thread-startup-browser.mjs",
     "test:mobile-notifications:browser": "node scripts/check-mobile-notifications-browser.mjs",
-    "test:pull-workspace:browser": "pnpm --filter @dovo/desktop build && node scripts/check-pull-routing-browser.mjs && node scripts/check-pull-workspace-browser.mjs",
+    "test:pull-workspace:browser": "pnpm --filter @dovo/desktop build && node scripts/check-pull-routing-browser.mjs && node scripts/check-pull-workspace-browser.mjs && node scripts/check-pull-pipelines-browser.mjs",
     "test:pull-stability:browser": "pnpm --filter @dovo/desktop build && node scripts/check-pull-stability-browser.mjs && node scripts/check-mobile-pull-attributes-browser.mjs",
     "test:pr-task-checkout:browser": "node scripts/check-pr-task-checkout-browser.mjs",
     "test:section-thread:browser": "node scripts/check-section-thread-browser.mjs",
@@ -64,7 +64,7 @@
     "test:runtime-icons:browser": "node scripts/check-runtime-icons-browser.mjs",
     "test:runtime-settings:browser": "node scripts/check-runtime-settings-browser.mjs",
     "test:general-settings:browser": "pnpm --filter @dovo/web build && node scripts/check-general-settings-browser.mjs",
-    "test:jira-workspace:browser": "pnpm --filter @dovo/web build && node scripts/check-jira-workspace-browser.mjs",
+    "test:jira-workspace:browser": "pnpm --filter @dovo/web build && node scripts/check-jira-workspace-browser.mjs && node scripts/check-jira-source-recovery-browser.mjs",
     "test:mobile-jira-views:browser": "node scripts/check-mobile-jira-views-browser.mjs",
     "test:jira-views:browser": "node scripts/check-jira-views-browser.mjs",
     "test:device-deployment:browser": "node scripts/check-device-deployment-browser.mjs",
@@ -120,8 +120,9 @@
     "test:code-review:browser": "node scripts/check-code-review-browser.mjs && node scripts/check-mobile-review-browser.mjs && node scripts/check-mobile-review-report-browser.mjs",
     "test:attachment-images:browser": "node scripts/check-attachment-images-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs",
     "test:file-drop:browser": "node scripts/check-composer-send-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs",
-    "test:native-project-panels:browser": "node scripts/check-native-project-panels-browser.mjs",
-    "test:shared-pages:browser": "node scripts/check-shared-pages-browser.mjs"
+    "test:native-project-panels:browser": "node scripts/check-native-project-panels-browser.mjs && node scripts/check-native-audit-browser.mjs",
+    "test:shared-pages:browser": "node scripts/check-shared-pages-browser.mjs",
+    "test:integration-scopes:browser": "node scripts/check-integration-scopes-browser.mjs && node scripts/check-work-navigation-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

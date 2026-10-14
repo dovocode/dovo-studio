@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { suggestionComment } from './suggestion'
-import { type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { Button } from './components/ui/button'
 import { Textarea } from './components/ui/textarea'
 export function LineCommentForm({
@@ -10,6 +10,9 @@ export function LineCommentForm({
   onCancel,
   children,
   selectedCode,
+  draft,
+  onDraft,
+  disabled = false,
 }: {
   label: string
   submitLabel: string
@@ -17,18 +20,28 @@ export function LineCommentForm({
   onCancel: () => void
   children?: ReactNode
   selectedCode?: string
+  draft?: { body: string; suggesting: boolean; replacement: string }
+  onDraft?: (draft: { body: string; suggesting: boolean; replacement: string }) => void
+  disabled?: boolean
 }) {
-  const [body, setBody] = useApplicationState(''),
+  const [localDraft, setLocalDraft] = useApplicationState({
+      body: '',
+      suggesting: false,
+      replacement: selectedCode ?? '',
+    }),
     [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
-  const [suggesting, setSuggesting] = useApplicationState(false),
-    [replacement, setReplacement] = useApplicationState(selectedCode ?? '')
+  const { body, suggesting, replacement } = draft ?? localDraft
+  const updateDraft = onDraft ?? setLocalDraft
+  const pending = useRef(false)
   const submitted = suggesting ? suggestionComment(body, replacement) : body.trim()
   return (
     <form
       className="space-y-2 rounded border bg-background p-3 text-xs"
       onSubmit={async (e) => {
         e.preventDefault()
+        if (disabled || pending.current || !submitted || submitted.length > 10000) return
+        pending.current = true
         setBusy(true)
         setError('')
         try {
@@ -36,6 +49,7 @@ export function LineCommentForm({
         } catch (e) {
           setError(String(e))
         } finally {
+          pending.current = false
           setBusy(false)
         }
       }}
@@ -48,7 +62,7 @@ export function LineCommentForm({
         value={body}
         disabled={busy}
         maxLength={10000}
-        onChange={(e) => setBody(e.target.value)}
+        onChange={(e) => updateDraft({ body: e.target.value, suggesting, replacement })}
         placeholder="Explain what should change and why…"
       />
       <Button
@@ -56,7 +70,7 @@ export function LineCommentForm({
         size="sm"
         variant="outline"
         disabled={busy || selectedCode === undefined}
-        onClick={() => setSuggesting((v) => !v)}
+        onClick={() => updateDraft({ body, suggesting: !suggesting, replacement })}
       >
         {suggesting ? 'Remove suggestion' : 'Suggest code change'}
       </Button>
@@ -74,7 +88,7 @@ export function LineCommentForm({
             value={replacement}
             disabled={busy}
             maxLength={9900}
-            onChange={(e) => setReplacement(e.target.value)}
+            onChange={(e) => updateDraft({ body, suggesting, replacement: e.target.value })}
           />
           <p className="text-muted-foreground">
             An empty replacement suggests deleting the selected lines. This does not edit files
@@ -92,8 +106,13 @@ export function LineCommentForm({
           {error}
         </p>
       )}
+      {disabled && (
+        <p role="status" className="text-muted-foreground">
+          Offline · your draft is preserved. Connect to submit.
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={busy || !submitted || submitted.length > 10000}>
+        <Button size="sm" disabled={disabled || busy || !submitted || submitted.length > 10000}>
           {busy ? 'Saving…' : submitLabel}
         </Button>
         <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={onCancel}>

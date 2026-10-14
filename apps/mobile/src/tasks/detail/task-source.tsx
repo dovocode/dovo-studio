@@ -5,6 +5,10 @@ import { Effect } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { View } from 'react-native'
 import { type Task, issueLabel } from '@dovo/protocol'
+import { router } from 'expo-router'
+import { issueHref, jiraIssueHref, pipelineHref } from '../../shell/source-route'
+import { useRuntime } from '../../runtime/connection/provider'
+import { useSheetNavigation } from '../../ui/layout/sheet'
 import { useNavigation } from '../../shell/navigation'
 import { Action } from '../../ui/controls/action'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -14,6 +18,8 @@ export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () =
   const { styles } = useTheme()
 
   const { openWork } = useNavigation()
+  const { activeId } = useRuntime()
+  const navigateAfterSheet = useSheetNavigation()
   const [error, setError] = useApplicationState('')
   const source = task.workItem
   if (!source) return null
@@ -39,17 +45,23 @@ export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () =
               : `Open pipeline #${source.id}`
           }
           onPress={() => {
-            onNavigate?.()
-            openWork({
-              repositoryId: task.repositoryId,
-              ...(source.kind === 'issue' && source.jiraSourceId
-                ? {
-                    jiraSourceId: source.jiraSourceId,
-                  }
-                : {}),
-              kind: source.kind,
-              id: source.id,
-              url: source.url,
+            navigateAfterSheet(() => {
+              onNavigate?.()
+              if (activeId) {
+                const href =
+                  source.kind === 'pipeline'
+                    ? pipelineHref(activeId, task.repositoryId, source.id, source.url)
+                    : source.jiraSourceId
+                      ? jiraIssueHref(activeId, source.jiraSourceId, source.id, source.url)
+                      : issueHref(activeId, task.repositoryId, source.id, source.url)
+                router.push(href)
+              } else
+                openWork({
+                  repositoryId: task.repositoryId,
+                  kind: source.kind,
+                  id: source.id,
+                  url: source.url,
+                })
             })
           }}
         />
@@ -58,9 +70,11 @@ export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () =
           label="Open source on server"
           onPress={() =>
             void runClientEffect(
-              nativeEffect(() => openAppLink(source.url)).pipe(
-                Effect.catch((cause) => nativeEffect(() => setError(String(cause)))),
-              ),
+              nativeEffect(() =>
+                navigateAfterSheet(() => {
+                  void openAppLink(source.url, true).catch((cause) => setError(String(cause)))
+                }),
+              ).pipe(Effect.catch((cause) => nativeEffect(() => setError(String(cause))))),
             )
           }
         />

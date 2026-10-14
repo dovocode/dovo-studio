@@ -94,7 +94,7 @@ const built = await build({
       window.store={workspace:{tasks:[task],repositories:[repo],agents:[]},snapshot:{runtimeHost:'Dominic Mac',questions:[],approvals:[],terminals:[],threadBehaviorSupported:true},connection:{address:'http://runtime',token:'token'},activeRuntimeId:'runtime',runtimes:[],connected:true,request:activeRequest,
         runtimeRegistry:{profiles:[]},readRuntime:activeRequest,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},previewTask:async(_,__,___,apply)=>apply(),setWorkspace:()=>{}};
       if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} subagents={[]} selected={i===0} onSelect={()=>{}} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false} onOpenSubagent={()=>{}}/>)}</div>;
-      return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&!hideSidebar&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)'}}><SidebarHeader/></aside></>}<div style={{minWidth:0,flex:1}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={next=>{window.surface=next;setSurface(next)}} sidebarVisible={true} hasDiff={false} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}} projectPanelOpen={panel} onProjectPanel={()=>setPanel(p=>!p)} onCreate={()=>{}} onDeselect={()=>{}}/>
+      return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)',display:hideSidebar?'none':undefined}}><SidebarHeader/></aside></>}<div style={{minWidth:0,flex:1}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={next=>{window.surface=next;setSurface(next)}} sidebarVisible={true} hasDiff={false} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}} projectPanelOpen={panel} onProjectPanel={()=>setPanel(p=>!p)} onCreate={()=>{}} onDeselect={()=>{}}/>
         {!panel&&<TaskWaitingPanel taskId={task.id}/>}
         {!window.mobile&&<TaskTools surface={surface} onSelect={setSurface} hasDiff={false} hasLinkedPulls={!!task.linkedPullRequests?.length}/>}
         {surface==='linked-pulls'&&<TaskLinkedPullPanel task={task} onPullLink={url=>{window.selectedPull=url;return true}} onClose={()=>setSurface('chat')}/>}
@@ -179,9 +179,9 @@ try {
     )
     await page.getByRole('heading', { name: 'Watching', exact: true }).waitFor()
     for (const [state, draft, tone] of [
-      ['open', false, 'text-emerald-400'],
-      ['merged', false, 'text-violet-400'],
-      ['closed', false, 'text-red-400'],
+      ['open', false, 'text-emerald-600'],
+      ['merged', false, 'text-violet-600'],
+      ['closed', false, 'text-red-600'],
       ['open', true, 'text-muted-foreground'],
     ]) {
       await page.evaluate(([state, draft]) => window.setPullState(state, draft), [state, draft])
@@ -232,8 +232,9 @@ try {
     await page.getByRole('button', { name: 'Show 1 more', exact: true }).click()
     await page.getByRole('button', { name: /Preserve the runtime session/ }).waitFor()
     await page.getByRole('button', { name: 'Show less', exact: true }).click()
-    page.on('dialog', (dialog) => dialog.accept())
     await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).click()
+    const stopDialog = page.getByRole('dialog', { name: 'Stop watching?', exact: true })
+    await stopDialog.getByRole('button', { name: 'Stop watching', exact: true }).click()
     await page.waitForFunction(() => window.calls.some((call) => call.input.unlink))
     await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
     if (stylesheet)

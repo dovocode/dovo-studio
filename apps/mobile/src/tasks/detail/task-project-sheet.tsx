@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
 import { Effect } from 'effect'
 import { randomUUID } from 'expo-crypto'
@@ -20,7 +20,7 @@ import { useAction } from '../../ui/controls/use-action'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
 import { Icon, type IconName } from '../../ui/controls/icon'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { type HeaderAction } from '../../ui/layout/screen-header'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
@@ -83,7 +83,7 @@ export function TaskProjectSheet({
   scripts: HeaderAction[]
   branchActions: HeaderAction[]
   onChanges: () => void
-  onPulls: () => void
+  onPulls: (url?: string) => void
   onAgents?: () => void
   onClose: () => void
 }) {
@@ -146,8 +146,10 @@ export function TaskProjectSheet({
   )
   const agents = indexed(task, true)
   const pulls = taskPullLinks(task)
+  const sheet = useRef<SheetHandle>(null)
+  const dismissThen = (action: () => void) => sheet.current?.dismiss(action)
   return (
-    <Sheet title="Project information" busy={busy} onClose={onClose}>
+    <Sheet ref={sheet} title="Project information" busy={busy} onClose={onClose}>
       <View
         accessibilityLabel="Thread project"
         style={[styles.card, { borderRadius: 24, padding: 16, gap: 12 }]}
@@ -205,10 +207,7 @@ export function TaskProjectSheet({
             label={action.label}
             icon="terminal"
             disabled={action.disabled}
-            onPress={() => {
-              onClose()
-              action.onPress()
-            }}
+            onPress={() => dismissThen(action.onPress)}
           />
         ))}
         <ProjectRow
@@ -235,19 +234,20 @@ export function TaskProjectSheet({
             label={action.label}
             icon={action.icon}
             disabled={action.disabled}
-            onPress={() => {
-              onClose()
-              action.onPress()
-            }}
+            onPress={() => dismissThen(action.onPress)}
           />
         ))}
-        <PullStatus task={task} />
+        <PullStatus
+          task={task}
+          showLinked={false}
+          onOpen={(url) => dismissThen(() => onPulls(url))}
+        />
         {!!pulls.length && (
           <ProjectRow
             secondary
             label={`Linked PRs (${pulls.length})`}
             icon="pulls"
-            onPress={onPulls}
+            onPress={() => dismissThen(() => onPulls())}
           />
         )}
         {!repository?.kind && (
@@ -264,11 +264,11 @@ export function TaskProjectSheet({
           secondary
           label={`Changes (${task.files.length})`}
           icon="changes"
-          onPress={onChanges}
+          onPress={() => dismissThen(onChanges)}
         />
         <View style={styles.separator} />
-        <TaskSource task={task} onNavigate={onClose} />
-        <TaskWaitingPanel taskId={task.id} />
+        <TaskSource task={task} />
+        <TaskWaitingPanel taskId={task.id} onPull={(url) => dismissThen(() => onPulls(url))} />
         {!!agents.length && (
           <View style={{ gap: 8 }} accessibilityLabel="Working subagents">
             <Text style={styles.muted}>Working agents</Text>
@@ -278,7 +278,7 @@ export function TaskProjectSheet({
                 secondary
                 icon="agents"
                 label={`${agent.name} · ${subagentMetadata(agent)}`}
-                onPress={onAgents ?? onClose}
+                onPress={() => dismissThen(onAgents ?? (() => {}))}
               />
             ))}
           </View>

@@ -37,6 +37,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   Plus,
+  ChevronUp,
   GitPullRequest,
   FileDiff,
   X,
@@ -199,7 +200,10 @@ export function TaskProjectPanel({
   }
   const primary = gitPrimaryAction(gitState, linkedPulls.length > 0)
   const openPull = (url: string) => {
-    if (!onPullLink?.(url)) window.open(url, '_blank', 'noopener,noreferrer')
+    if (!onPullLink?.(url) && !host.openPullLink?.(url)) {
+      if (host.openExternalLink) void host.openExternalLink(url)
+      else window.open(url, '_blank', 'noopener,noreferrer')
+    }
   }
   const primaryAction = () => {
     if (primary === 'Commit & push') void commitAndPush()
@@ -504,7 +508,7 @@ export function TaskProjectPanel({
               className="studio-project-row text-muted-foreground"
               onClick={() => setShowAllPulls((value) => !value)}
             >
-              <Plus size={18} />{' '}
+              {showAllPulls ? <ChevronUp size={18} /> : <Plus size={18} />}{' '}
               {showAllPulls ? 'Show less' : `Show ${displayedPulls.length - 1} more`}
             </Button>
           )}
@@ -532,7 +536,12 @@ export function TaskProjectPanel({
             </span>
           </Button>
         </div>
-        <TaskWaitingPanel panel key={`${activeRuntimeId}:${task.id}`} taskId={task.id} />
+        <TaskWaitingPanel
+          onPullLink={onPullLink}
+          panel
+          key={`${activeRuntimeId}:${task.id}`}
+          taskId={task.id}
+        />
       </div>
       <WorkingSubagents
         subagents={subagents}

@@ -4,6 +4,7 @@ import { Schema } from 'effect'
 import { forgeIssueSchema } from '../forges/forge-work.js'
 export const workTargetSchema = refine(
   mutableStruct({
+    runtimeId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
     repositoryId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
     jiraSourceId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
     url: Schema.optional(forgeIssueSchema.fields.url),

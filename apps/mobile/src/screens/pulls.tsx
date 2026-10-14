@@ -7,6 +7,7 @@ import { openAppLink } from '../ui/content/open-link'
 import { nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
+import { createDetailDrafts, detailDraftKey, useDetailDraft } from '../runtime/state/detail-drafts'
 import { useApplicationState } from '../runtime/state/application-state'
 import {
   comparePulls,
@@ -41,17 +42,15 @@ import { CreatePull } from '../scm/pulls/list/create-pull'
 import { useNavigation } from '../shell/navigation'
 import { pullHref } from '../shell/source-route'
 import { invalidatePullList } from '../scm/pulls/list/pull-list-invalidation'
-export default function PullsScreen() {
-  const [repositoryId, setRepository] = useApplicationState('')
-  return <PullsContent repositoryId={repositoryId} setRepository={setRepository} />
-}
-function PullsContent({
-  repositoryId,
-  setRepository,
-}: {
+const pullPreferences = createDetailDrafts<{
   repositoryId: string
-  setRepository: (id: string) => void
-}) {
+  state: string
+  search: string
+  draft: string
+  attention: boolean
+  sort: string
+}>()
+export default function PullsScreen() {
   const { colors, styles } = useTheme()
 
   const { overviews, cacheForRuntime } = useRuntime()
@@ -60,12 +59,32 @@ function PullsContent({
   const [creating, setCreating] = useApplicationState(false)
   const [marked, setMarked] = useApplicationState<string[]>([])
   const [adding, setAdding] = useApplicationState<PullSummary[] | null>(null)
-  const [state, setState] = useApplicationState('open'),
-    [search, setSearch] = useApplicationState(''),
-    [draft, setDraft] = useApplicationState('all'),
-    [filters, setFilters] = useApplicationState(false),
-    [attention, setAttention] = useApplicationState(false),
-    [sort, setSort] = useApplicationState('attention')
+  const { draft: preferences, setField } = useDetailDraft(
+    pullPreferences,
+    detailDraftKey(
+      null,
+      'pulls-section',
+      overviews
+        .map((entry) => [entry.profile.id, entry.profile.connection] as const)
+        .sort(([a], [b]) => a.localeCompare(b)),
+    ),
+    () => ({
+      repositoryId: '',
+      state: 'open',
+      search: '',
+      draft: 'all',
+      attention: false,
+      sort: 'attention',
+    }),
+  )
+  const { repositoryId, state, search, draft, attention, sort } = preferences
+  const setRepository = (value: string) => setField('repositoryId', value)
+  const setState = (value: string) => setField('state', value)
+  const setSearch = (value: string) => setField('search', value)
+  const setDraft = (value: string) => setField('draft', value)
+  const setAttention = (value: boolean) => setField('attention', value)
+  const setSort = (value: string) => setField('sort', value)
+  const [filters, setFilters] = useApplicationState(false)
   const { pages, sources, busy, connected, more, refresh } = usePulls(repositoryId, state)
   const openPull = (runtimeId: string, repositoryId: string, number: number) => {
     retainPosition()
@@ -231,7 +250,7 @@ function PullsContent({
                   }}
                   onPress={() => {
                     setMarked([])
-                    setAttention((value) => !value)
+                    setAttention(!attention)
                   }}
                   style={({ pressed }) => [
                     styles.row,

@@ -3,15 +3,27 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
+import {
+  createDetailDrafts,
+  integrationDraftKey,
+  useDetailDraft,
+} from '../../../runtime/state/detail-drafts'
 import { useRef } from 'react'
 import { pullLineCommentSchema, pullLineCommentResponse, type PullDetail } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
-import { Sheet } from '../../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../../ui/layout/sheet'
 import { Field } from '../../../ui/controls/field'
 import { Choice } from '../../../ui/controls/choice'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
+const lineDrafts = createDetailDrafts<{
+  headSha: string
+  line: string
+  end: string
+  side: string
+  body: string
+}>()
 export function LineComment({
   repositoryId,
   detail,
@@ -27,19 +39,34 @@ export function LineComment({
 }) {
   const { styles } = useTheme()
 
-  const { connected, callEffect } = useRuntime()
-  const [headSha] = useApplicationState(detail.pull.headSha),
-    [line, setLine] = useApplicationState(''),
-    [end, setEnd] = useApplicationState(''),
-    [side, setSide] = useApplicationState('additions'),
-    [body, setBody] = useApplicationState(''),
-    [busy, setBusy] = useApplicationState(false),
+  const { connected, callEffect, connection, snapshot } = useRuntime()
+  const { draft, setField, clear } = useDetailDraft(
+    lineDrafts,
+    integrationDraftKey(
+      connection,
+      snapshot,
+      repositoryId,
+      undefined,
+      'pull-line',
+      detail.pull.repositoryUrl,
+      detail.pull.number,
+      path,
+    ),
+    () => ({ headSha: detail.pull.headSha, line: '', end: '', side: 'additions', body: '' }),
+  )
+  const { headSha, line, end, side, body } = draft
+  const setLine = (value: string) => setField('line', value)
+  const setEnd = (value: string) => setField('end', value)
+  const setSide = (value: string) => setField('side', value)
+  const setBody = (value: string) => setField('body', value)
+  const [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const pending = useRef(false)
+  const sheet = useRef<SheetHandle>(null)
   const submit = () => {
     return runClientEffect(
       mobileWorkflow(function* () {
-        if (pending.current) return
+        if (pending.current || !connected || detail.stale || detail.refreshError) return
         pending.current = true
         setBusy(true)
         setError('')
@@ -61,8 +88,8 @@ export function LineComment({
             },
             pullLineCommentResponse,
           )
-          onDone()
-          onClose()
+          clear()
+          sheet.current?.dismiss(onDone)
         }).pipe(
           Effect.catch((cause) =>
             nativeEffect(() => {
@@ -80,7 +107,7 @@ export function LineComment({
     )
   }
   return (
-    <Sheet title="Comment on code" onClose={onClose} busy={busy}>
+    <Sheet ref={sheet} title="Comment on code" onClose={onClose} busy={busy}>
       <Text selectable style={styles.muted}>
         {path}
       </Text>
@@ -134,7 +161,7 @@ export function LineComment({
       )}
       <Action
         label={busy ? 'Posting…' : 'Post comment'}
-        disabled={busy || !connected}
+        disabled={busy || !connected || !!detail.stale || !!detail.refreshError}
         onPress={() => void submit()}
       />
     </Sheet>

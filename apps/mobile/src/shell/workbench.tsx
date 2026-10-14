@@ -343,7 +343,7 @@ export function Workbench() {
     (view: string, id?: string, runtimeId?: string) => {
       Keyboard.dismiss()
       if (view === 'tasks' && id) {
-        const host = runtimeId ?? runtime.activeId
+        const host = runtimeId
         if (host)
           router.navigate(taskHref(host, id), {
             withAnchor: true,

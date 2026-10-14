@@ -31,7 +31,15 @@ export function WorkTaskLinks({
   source: ForgeIssue | ForgePipeline
   disabled: boolean
 }) {
-  const { workspace, request, connected, refreshRuntimes } = useWorkspace()
+  const {
+    workspace,
+    request,
+    connected,
+    refreshRuntimes,
+    activeRuntimeId,
+    runtimeRegistry,
+    switchRuntime,
+  } = useWorkspace()
   const host = useStudioHost()
   const kind = 'revision' in source ? 'issue' : 'pipeline'
   const linkedProject = jiraSourceId
@@ -57,6 +65,7 @@ export function WorkTaskLinks({
   const pending = useRef(false)
   const linkPending = useRef(false)
   const mounted = useRef(true)
+  const failedNavigation = useRef('')
   const [busy, setBusy] = useApplicationState(false)
   const [linking, setLinking] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
@@ -70,14 +79,27 @@ export function WorkTaskLinks({
       mounted.current = false
     }
   }, [])
+  const openTask = async (id: string) => {
+    if (activeRuntimeId && activeRuntimeId !== runtimeRegistry.activeId)
+      await switchRuntime(activeRuntimeId)
+    host.navigate({ viewId: 'tasks', entityId: id })
+  }
   useEffect(() => {
-    if (!created || !workspace.tasks.some((task) => task.id === created)) return
+    if (
+      !created ||
+      failedNavigation.current === created ||
+      !workspace.tasks.some((task) => task.id === created)
+    )
+      return
     setCreated('')
-    host.navigate({
-      viewId: 'tasks',
-      entityId: created,
+    void openTask(created).catch((cause) => {
+      if (mounted.current) {
+        failedNavigation.current = created
+        setCreated(created)
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
     })
-  }, [created, workspace.tasks, host])
+  }, [created, workspace.tasks, host, activeRuntimeId, runtimeRegistry.activeId])
   const linkProject = async (selected: string) => {
     if (!jiraSourceId || linkPending.current || disabled || !connected) return
     linkPending.current = true
@@ -113,7 +135,11 @@ export function WorkTaskLinks({
     setError('')
     try {
       if (created) {
-        await refreshRuntimes()
+        if (workspace.tasks.some((task) => task.id === created)) {
+          await openTask(created)
+          failedNavigation.current = ''
+          setCreated('')
+        } else await refreshRuntimes()
         return
       }
       if (!target) return
@@ -228,10 +254,9 @@ export function WorkTaskLinks({
                 type="button"
                 className="flex min-w-0 items-center gap-2 rounded px-2 py-2 text-left text-xs hover:bg-muted"
                 onClick={() =>
-                  host.navigate({
-                    viewId: 'tasks',
-                    entityId: task.id,
-                  })
+                  void openTask(task.id).catch((cause) =>
+                    setError(cause instanceof Error ? cause.message : String(cause)),
+                  )
                 }
               >
                 <span className="min-w-0 flex-1 truncate">{task.title}</span>

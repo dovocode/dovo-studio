@@ -9,14 +9,16 @@ const browser = await chromium.launch({ headless: true })
 try {
   for (const mobile of [false, true]) {
     const mocks = {
-      '@dovo/studio-core': `export {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting.ts';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openPullLink:url=>{if(url.includes('/pull/')){window.opened=url;window.internal=true;return true}return false},openExternalLink:url=>{window.opened=url;window.internal=false}});`,
+      '@dovo/studio-core': `export {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting.ts';export const encodeWorkTarget=JSON.stringify;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{window.opened=JSON.parse(target.entityId).url;window.internal=true},openPullLink:url=>{if(url.includes('/pull/')){window.opened=url;window.internal=true;return true}return false},openExternalLink:url=>{window.opened=url;window.internal=false}});`,
       '@dovo/studio-ui':
-        'export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;',
+        'export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;export const Dialog=({open,children})=>open?<div role="dialog">{children}</div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogHeader=DialogContent;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;',
+      '../../ui/layout/sheet': 'export const useSheetNavigation=()=>action=>action();',
+      'expo-router': 'export const router={push:href=>{window.opened=href}};',
       '../../runtime/connection/provider': 'export const useRuntime=()=>window.store;',
       '../../ui/content/open-link': 'export const openAppLink=async url=>{window.opened=url};',
       '../../ui/controls/icon': 'export const Icon=()=> <span>×</span>;',
       'react-native':
-        'export const Alert={alert:(title,message,buttons)=>{if(window.confirm(title)) buttons.find(b=>b.style==="destructive").onPress()}};export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,disabled})=><button role={accessibilityRole} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;',
+        'export const Keyboard={dismiss:()=>{}};export const Alert={alert:(title,message,buttons)=>{if(window.confirm(title)) buttons.find(b=>b.style==="destructive").onPress()}};export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,disabled})=><button role={accessibilityRole} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;',
       '../../ui/content/text':
         'export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;',
       '../../ui/controls/action':
@@ -107,11 +109,13 @@ try {
     await link.click()
     assert.equal(await page.evaluate(() => window.opened), 'https://github.com/team/project/pull/7')
     if (!mobile) assert.equal(await page.evaluate(() => window.internal), true)
-    page.once('dialog', (dialog) => dialog.dismiss())
+    if (mobile) page.once('dialog', (dialog) => dialog.dismiss())
     await page.getByRole('button', { name: 'Stop watching PR #7', exact: true }).click()
+    if (!mobile) await page.getByRole('button', { name: 'Keep watching', exact: true }).click()
     assert.equal(await page.evaluate(() => window.calls.some((call) => call.unlink)), false)
-    page.on('dialog', (dialog) => dialog.accept())
+    if (mobile) page.on('dialog', (dialog) => dialog.accept())
     await page.getByRole('button', { name: 'Stop watching PR #7', exact: true }).click()
+    if (!mobile) await page.getByRole('button', { name: 'Stop watching', exact: true }).click()
     await page.waitForFunction(() => !document.body.textContent.includes('PR #7'))
     assert.equal(
       await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).count(),
@@ -148,7 +152,7 @@ try {
       window.store.connected = false
       window.render()
     })
-    await page.waitForFunction(() => document.body.textContent.includes('Connect the runtime'))
+    await page.waitForFunction(() => document.body.textContent.toLowerCase().includes('offline'))
     assert.equal(await page.getByRole('button', { name: /Refresh/ }).isDisabled(), true)
     assert.equal(
       await page
@@ -161,6 +165,7 @@ try {
       window.render()
     })
     await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).click()
+    if (!mobile) await page.getByRole('button', { name: 'Stop watching', exact: true }).click()
     await page.waitForFunction(() => document.getElementById('app').textContent === '')
     // The empty panel keeps discovering new watches without taking up space.
     await page.evaluate(() => {
@@ -196,6 +201,7 @@ try {
     })
     await page.getByRole('button', { name: 'Stop watching Pipeline run 9', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Stop watching Pipeline run 9', exact: true }).click()
+    if (!mobile) await page.getByRole('button', { name: 'Stop watching', exact: true }).click()
     await page.waitForFunction(() => document.getElementById('app').textContent === '')
     assert.equal(await page.evaluate(() => window.calls.at(-1).taskId), 'second')
     // A related item remains a link after monitoring ends, with no stop control.

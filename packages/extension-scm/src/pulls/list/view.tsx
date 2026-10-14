@@ -8,6 +8,8 @@ import {
   matchesPull,
   pullNeedsAttention,
   useWorkspace,
+  useStudioHost,
+  WorkspaceRuntimeScope,
   repositorySourceKey,
   type RepositorySource,
 } from '@dovo/studio-core'
@@ -30,33 +32,58 @@ import { PullDetail } from '../detail/detail'
 import { CreatePull } from './create'
 import { ForgeConnections } from '../../connections/forge-connections'
 import { SourcePicker } from '../../connections/source-picker'
-export default function PullRequestsView({ entityId }: { entityId?: string }) {
+import { createPullStateCache, useRetainedPullState } from '../retained-state'
+type SavedSelection = { source: Pick<RepositorySource, 'key' | 'scope'>; number: number } | null
+const filterCache = createPullStateCache<string>(100)
+const flagCache = createPullStateCache<boolean>(40)
+const selectionCache = createPullStateCache<SavedSelection>(20)
+const urlCache = createPullStateCache<string | null>(60)
+const personalCache = createPullStateCache<'all' | 'authored' | 'assigned' | 'involved' | 'review'>(
+  20,
+)
+export default function PullRequestsView({
+  entityId,
+  navigationKey,
+}: {
+  entityId?: string
+  navigationKey?: number
+}) {
   const [sidebarVisible] = useLeftSidebar()
-  const { activeRuntimeId, switchRuntime } = useWorkspace()
-  const [repositoryId, setRepository] = useApplicationState(
+  const host = useStudioHost()
+  const { activeRuntimeId, runtimes, connection } = useWorkspace()
+  const listKey = JSON.stringify([activeRuntimeId, connection?.address])
+  const [repositoryId, setRepository] = useRetainedPullState(
+      filterCache,
+      listKey + ':repository',
       entityId && !githubPullTarget(entityId)
         ? repositorySourceKey(activeRuntimeId ?? '', entityId)
         : '',
     ),
-    [state, setState] = useApplicationState('open'),
-    [search, setSearch] = useApplicationState(''),
-    [draft, setDraft] = useApplicationState('all'),
-    [attention, setAttention] = useApplicationState(false),
-    [sort, setSort] = useApplicationState('updated'),
-    [filtersOpen, setFiltersOpen] = useApplicationState(false),
-    [personal, setPersonal] = useApplicationState<
-      'all' | 'authored' | 'assigned' | 'involved' | 'review'
-    >('all'),
+    [state, setState] = useRetainedPullState(filterCache, listKey + ':state', 'open'),
+    [search, setSearch] = useRetainedPullState(filterCache, listKey + ':search', ''),
+    [draft, setDraft] = useRetainedPullState(filterCache, listKey + ':draft', 'all'),
+    [attention, setAttention] = useRetainedPullState(flagCache, listKey + ':attention', false),
+    [sort, setSort] = useRetainedPullState(filterCache, listKey + ':sort', 'updated'),
+    [filtersOpen, setFiltersOpen] = useRetainedPullState(
+      flagCache,
+      listKey + ':filtersOpen',
+      false,
+    ),
+    [personal, setPersonal] = useRetainedPullState(personalCache, listKey, 'all'),
     [picking, setPicking] = useApplicationState<'create' | 'connections' | null>(null),
     [connections, setConnections] = useApplicationState<RepositorySource | null>(null),
     [creating, setCreating] = useApplicationState<RepositorySource | null>(null),
     [openError, setOpenError] = useApplicationState(''),
     [opening, setOpening] = useApplicationState(false),
-    [selected, setSelected] = useApplicationState<{
-      source: RepositorySource
-      number: number
-    } | null>(null)
-  const [urlSelection, setUrlSelection] = useApplicationState<string | null>(null)
+    [selected, setSelected] = useRetainedPullState(selectionCache, listKey, null)
+  const [urlSelection, setUrlSelection] = useRetainedPullState(urlCache, listKey + ':url', null)
+  const [urlOwnerId, setUrlOwnerId] = useRetainedPullState(urlCache, listKey + ':owner', null)
+  const [selectedNavigation, setSelectedNavigation] = useRetainedPullState(
+    urlCache,
+    listKey + ':navigation',
+    null,
+  )
+  const detailTarget = githubPullTarget(selectedNavigation ?? urlSelection ?? '')
   const [marked, setMarked] = useApplicationState<string[]>([])
   const [adding, setAdding] = useApplicationState<PullSummary[] | null>(null)
   const selectionAnchor = useRef<string | null>(null)
@@ -67,23 +94,35 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
     if (entityId && !githubPullTarget(entityId)) {
       setRepository(repositorySourceKey(activeRuntimeId ?? '', entityId))
       setSelected(null)
+      setUrlSelection(null)
+      setSelectedNavigation(null)
+      setUrlOwnerId(null)
     }
   }, [entityId, activeRuntimeId])
   const { sources, pages: allPages, busy, connected, more, refresh } = usePulls(state, repositoryId)
   const pages = allPages.filter((page) => !repositoryId || page.source.key === repositoryId)
   const openingRef = useRef(false)
+  const localNavigation = useRef<string | null>(null)
   const open = async (source: RepositorySource, number: number) => {
     if (openingRef.current) return
     openingRef.current = true
     setOpening(true)
     setOpenError('')
     try {
-      if (source.runtimeId !== activeRuntimeId) await switchRuntime(source.runtimeId)
       setUrlSelection(null)
-      setSelected({
-        source,
-        number,
-      })
+      setSelectedNavigation(null)
+      setSelected({ source: { key: source.key, scope: source.scope }, number })
+      const pull = pages
+        .find((page) => page.source.key === source.key)
+        ?.pulls.find((pull) => pull.number === number)
+      const identity = source.repository.pullIdentity || source.repository.gitIdentity
+      const target =
+        pull?.url ??
+        (identity?.startsWith('github.com/') ? `https://${identity}/pull/${number}` : '')
+      const entity = githubPullTarget(target)?.url
+      localNavigation.current = entity ?? ''
+      handledLink.current = JSON.stringify([entity, navigationKey])
+      host.navigate({ viewId: 'pulls', ...(entity ? { entityId: entity } : {}) })
     } catch (error) {
       setOpenError(String(error))
     } finally {
@@ -135,27 +174,72 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
       : pages.flatMap((page) => page.pulls).filter((pull) => pull[personalField] === undefined)
           .length
   const handledLink = useRef('')
+  const previousEntity = useRef(entityId)
   useEffect(() => {
-    if (!entityId || handledLink.current === entityId) return
+    const previous = previousEntity.current
+    previousEntity.current = entityId
+    if (!entityId) {
+      // Shell history can return to the list without using the detail's Back callback.
+      if (previous && localNavigation.current !== '') {
+        setSelected(null)
+        setUrlSelection(null)
+        setSelectedNavigation(null)
+        setUrlOwnerId(null)
+      }
+      localNavigation.current = null
+      handledLink.current = ''
+      return
+    }
+    const navigation = JSON.stringify([entityId, navigationKey])
+    if (localNavigation.current === entityId) {
+      localNavigation.current = null
+      handledLink.current = navigation
+      return
+    }
+    if (handledLink.current === navigation) return
     const target = githubPullTarget(entityId)
     if (!target) return
-    const source = sources.find(
-      (source) =>
-        source.runtimeId === activeRuntimeId &&
-        (source.repository.gitIdentity === target.identity ||
-          source.repository.pullIdentity === target.identity),
-    )
+    const source = [...sources]
+      .sort(
+        (a, b) =>
+          Number(b.connected) - Number(a.connected) ||
+          Number(b.runtimeId === activeRuntimeId) - Number(a.runtimeId === activeRuntimeId),
+      )
+      .find(
+        (source) =>
+          (!source.repository.gitIdentityError &&
+            source.repository.gitIdentity === target.identity) ||
+          source.repository.pullIdentity === target.identity,
+      )
     if (!source) {
-      handledLink.current = entityId
+      handledLink.current = navigation
       setSelected(null)
-      setUrlSelection(target.url)
+      setSelectedNavigation(null)
+      setUrlSelection(target.navigationUrl)
+      setUrlOwnerId(activeRuntimeId ?? runtimes[0]?.profile.id ?? null)
       return
     }
     setUrlSelection(null)
-    handledLink.current = entityId
+    handledLink.current = navigation
     setOpenError('')
-    setSelected({ source, number: target.number })
-  }, [entityId, sources, activeRuntimeId])
+    setSelectedNavigation(target.navigationUrl)
+    setSelected({ source: { key: source.key, scope: source.scope }, number: target.number })
+  }, [entityId, navigationKey, sources, activeRuntimeId])
+  const back = () => {
+    handledLink.current = ''
+    localNavigation.current = null
+    setSelected(null)
+    setUrlSelection(null)
+    setSelectedNavigation(null)
+    setUrlOwnerId(null)
+    if (entityId && host.goBack?.()) return
+    host.navigate({ viewId: 'pulls' })
+  }
+  const hasDetail = !!selected || !!urlSelection
+  const urlRuntimeId = urlOwnerId ?? activeRuntimeId ?? runtimes[0]?.profile.id
+  useEffect(() => {
+    if (urlSelection && !urlOwnerId && urlRuntimeId) setUrlOwnerId(urlRuntimeId)
+  }, [urlSelection, urlOwnerId, urlRuntimeId])
   const rowKey = (pull: (typeof pulls)[number]) => JSON.stringify([pull.source.key, pull.number])
   const selectRow = (pull: (typeof pulls)[number], event: React.MouseEvent<HTMLButtonElement>) => {
     const key = rowKey(pull)
@@ -200,45 +284,45 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
         <nav
           style={sidebarVisible || (!selected && !urlSelection) ? undefined : { display: 'none' }}
           aria-label="Pull request sidebar"
-          className={`@container/pr-list min-h-0 min-w-0 flex-col overflow-hidden ${selected ? 'hidden w-full shrink-0 border-r md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
+          className={`@container/pr-list min-h-0 min-w-0 flex-col overflow-hidden ${hasDetail ? 'hidden w-full shrink-0 border-r md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
         >
-          <SidebarHeader enabled={!!selected} />
+          <SidebarHeader enabled={hasDetail} />
+          <PageHeader title="Pull requests" embedded={hasDetail}>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8"
+              aria-label="Refresh pull requests"
+              title="Refresh pull requests"
+              disabled={!connected || busy}
+              onClick={refresh}
+            >
+              <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Connections"
+              title="Source control connections"
+              disabled={!sources.some((source) => source.connected)}
+              onClick={() => setPicking('connections')}
+            >
+              <Plug className="size-3.5" />
+              <span className="hidden @xl/pr-list:inline">Connections</span>
+            </Button>
+            <Button
+              size="sm"
+              aria-label="Create pull request"
+              disabled={!sources.some((source) => source.connected)}
+              onClick={() => setPicking('create')}
+            >
+              <Plus className="size-3.5" /> Create
+            </Button>
+          </PageHeader>
           <div
-            className="min-h-0 max-h-[60%] shrink-0 overflow-y-auto overscroll-contain"
+            className="min-h-0 max-h-[calc(50%-var(--studio-header-height,52px))] shrink-0 overflow-y-auto overscroll-contain"
             aria-label="Pull request filters"
           >
-            <PageHeader title="Pull requests">
-              <Button
-                size="icon"
-                variant="ghost"
-                className="size-8"
-                aria-label="Refresh pull requests"
-                title="Refresh pull requests"
-                disabled={!connected || busy}
-                onClick={refresh}
-              >
-                <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label="Connections"
-                title="Source control connections"
-                disabled={!sources.some((source) => source.connected)}
-                onClick={() => setPicking('connections')}
-              >
-                <Plug className="size-3.5" />
-                <span className="hidden @xl/pr-list:inline">Connections</span>
-              </Button>
-              <Button
-                size="sm"
-                aria-label="Create pull request"
-                disabled={!sources.some((source) => source.connected)}
-                onClick={() => setPicking('create')}
-              >
-                <Plus className="size-3.5" /> Create
-              </Button>
-            </PageHeader>
             <div
               className="flex shrink-0 gap-1 overflow-x-auto border-b px-3 [scrollbar-width:none]"
               aria-label="Personal pull request filters"
@@ -458,7 +542,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
               </p>
             )}
             {!!unknownRelationships && (
-              <p role="status" className="mb-3 px-2 text-xs text-amber-400">
+              <p role="status" className="mb-3 px-2 text-xs text-amber-700 dark:text-amber-400">
                 Personal relationship data is unavailable for {unknownRelationships} loaded PRs.
                 Refresh or update their computer to include them in personal views.
               </p>
@@ -486,7 +570,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                 {!sources.length ? ' Add a project from the Projects menu in Tasks.' : ''}
               </p>
             )}
-            {!selected && !!pulls.length && (
+            {!hasDetail && !!pulls.length && (
               <div className="hidden items-center gap-3 border-b py-2 pl-10 pr-12 text-[0.625rem] font-medium text-muted-foreground @4xl/pr-list:flex">
                 <span className="flex-1">Pull request</span>
                 <span className="w-44">Checks & review</span>
@@ -511,7 +595,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
                 <PullRow
                   key={JSON.stringify([p.source.key, p.number])}
                   pull={p}
-                  compact={!!selected}
+                  compact={hasDetail}
                   repository={`${p.repositoryName} · ${p.source.runtimeName}${p.source.connected ? '' : ' · Offline'}`}
                   selected={
                     marked.includes(rowKey(p)) ||
@@ -552,31 +636,40 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
             ))}
           </div>
         </nav>
-        {urlSelection && githubPullTarget(urlSelection) ? (
-          <PullDetail
-            key={JSON.stringify([activeRuntimeId, urlSelection])}
-            repositoryId={urlSelection}
-            number={githubPullTarget(urlSelection)?.number ?? 0}
-            onBack={() => setUrlSelection(null)}
-            onChanged={() => {}}
-          />
-        ) : selected && selectedSource && activeRuntimeId === selectedSource.runtimeId ? (
-          <PullDetail
-            key={JSON.stringify([
-              selectedSource.scope,
-              selectedSource.repository.id,
-              selected.number,
-            ])}
-            repositoryId={selectedSource.repository.id}
-            number={selected.number}
-            onBack={() => setSelected(null)}
-            onChanged={refresh}
-            onSelect={(next) => void open(selectedSource, next)}
-          />
+        {urlSelection && githubPullTarget(urlSelection) && urlRuntimeId ? (
+          <WorkspaceRuntimeScope runtimeId={urlRuntimeId}>
+            <PullDetail
+              key={JSON.stringify([urlRuntimeId, urlSelection, navigationKey])}
+              repositoryId={githubPullTarget(urlSelection)?.url ?? urlSelection}
+              number={githubPullTarget(urlSelection)?.number ?? 0}
+              initialTab={detailTarget?.tab}
+              initialFragment={detailTarget?.fragment}
+              onBack={back}
+              onChanged={() => {}}
+            />
+          </WorkspaceRuntimeScope>
+        ) : selected && selectedSource ? (
+          <WorkspaceRuntimeScope runtimeId={selectedSource.runtimeId}>
+            <PullDetail
+              key={JSON.stringify([
+                selectedSource.scope,
+                selectedSource.repository.id,
+                selected.number,
+                navigationKey,
+              ])}
+              repositoryId={selectedSource.repository.id}
+              number={selected.number}
+              initialTab={detailTarget?.tab}
+              initialFragment={detailTarget?.fragment}
+              onBack={back}
+              onChanged={refresh}
+              onSelect={(next) => void open(selectedSource, next)}
+            />
+          </WorkspaceRuntimeScope>
         ) : selected ? (
           <div className="p-5 text-sm">
             <p>This project connection changed. Open the PR again from the list.</p>
-            <Button variant="ghost" onClick={() => setSelected(null)}>
+            <Button variant="ghost" onClick={back}>
               Back to PRs
             </Button>
           </div>
@@ -596,7 +689,6 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
         />
       )}
       {connections &&
-        activeRuntimeId === connections.runtimeId &&
         sources.some(
           (source) => source.key === connections.key && source.scope === connections.scope,
         ) && (
@@ -607,35 +699,36 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
             }}
           >
             <DialogContent className="max-h-[85dvh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Source control · {connections.runtimeName}</DialogTitle>
-                <DialogDescription>
-                  {connections.repository.name} · Accounts on this computer.
-                </DialogDescription>
-              </DialogHeader>
-              <ForgeConnections repositoryId={connections.repository.id} onChange={refresh} />
+              <WorkspaceRuntimeScope runtimeId={connections.runtimeId}>
+                <DialogHeader>
+                  <DialogTitle>Source control · {connections.runtimeName}</DialogTitle>
+                  <DialogDescription>
+                    {connections.repository.name} · Accounts on this computer.
+                  </DialogDescription>
+                </DialogHeader>
+                <ForgeConnections repositoryId={connections.repository.id} onChange={refresh} />
+              </WorkspaceRuntimeScope>
             </DialogContent>
           </Dialog>
         )}
-      {creatingSource && activeRuntimeId === creatingSource.runtimeId && (
-        <CreatePull
-          key={creatingSource.scope}
-          initialRepositoryId={creatingSource.repository.id}
-          onClose={() => setCreating(null)}
-          onCreated={(repositoryId, number) => {
-            const source = sources.find(
-              (source) =>
-                source.runtimeId === activeRuntimeId && source.repository.id === repositoryId,
-            )
-            if (source)
-              setSelected({
-                source,
-                number,
-              })
-            setState('open')
-            refresh()
-          }}
-        />
+      {creatingSource && (
+        <WorkspaceRuntimeScope runtimeId={creatingSource.runtimeId}>
+          <CreatePull
+            key={creatingSource.scope}
+            initialRepositoryId={creatingSource.repository.id}
+            onClose={() => setCreating(null)}
+            onCreated={(repositoryId, number) => {
+              const source = sources.find(
+                (source) =>
+                  source.runtimeId === creatingSource.runtimeId &&
+                  source.repository.id === repositoryId,
+              )
+              if (source) void open(source, number)
+              setState('open')
+              refresh()
+            }}
+          />
+        </WorkspaceRuntimeScope>
       )}
     </section>
   )

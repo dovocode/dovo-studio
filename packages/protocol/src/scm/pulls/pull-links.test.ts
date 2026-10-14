@@ -29,6 +29,14 @@ it('routes GitHub PR detail links while excluding issues, credentials and lookal
       number: 42,
       identity: 'github.com/team/repo',
       url: 'https://github.com/Team/Repo/pull/42',
+      navigationUrl: `https://github.com/Team/Repo/pull/42${suffix === '/' ? '' : suffix}`,
+      tab:
+        suffix === '/checks'
+          ? 'checks'
+          : ['/files', '/commits'].includes(suffix)
+            ? 'changes'
+            : 'overview',
+      fragment: suffix.includes('#') ? '#comment' : '',
     })
   }
   for (const url of [
@@ -39,6 +47,18 @@ it('routes GitHub PR detail links while excluding issues, credentials and lookal
     'https://github.com/o/r/pull/9007199254740992',
   ])
     expect(githubPullTarget(url)).toBeNull()
+})
+it('keeps canonical identity separate from the requested PR section and comment', () => {
+  expect(githubPullTarget('http://github.com/o/r/pull/7/files/#discussion_r123')).toMatchObject({
+    url: 'https://github.com/o/r/pull/7',
+    navigationUrl: 'https://github.com/o/r/pull/7/files#discussion_r123',
+    tab: 'changes',
+    fragment: '#discussion_r123',
+  })
+  expect(githubPullTarget('https://github.com/o/r/pull/7#issuecomment-42')).toMatchObject({
+    tab: 'overview',
+    fragment: '#issuecomment-42',
+  })
 })
 it('adds foreign-project PR links idempotently without changing checkout, launch state or primary PR', () => {
   const task = decode(taskSchema, {

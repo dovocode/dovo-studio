@@ -9,12 +9,12 @@ const setup = `const pull=number=>({number,title:'PR '+number,url:'https://githu
 const browser = await chromium.launch()
 async function bundle(contents, mobile = false) {
   const mocks = {
-    '@dovo/studio-core': `export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const repositorySourceKey=(r,p)=>JSON.stringify([r,p]);export const formatDateTime=x=>x;`,
+    '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({goBack:()=>window.goBack?.()??false,navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export const repositorySourceKey=(r,p)=>JSON.stringify([r,p]);export const formatDateTime=x=>x;`,
     '@dovo/studio-core/state': state,
     '@dovo/studio-ui': controls,
     './use-pulls': `export const usePulls=()=>({sources:window.sources,pages:[{source:window.sources[0],pulls:window.pulls}],busy:false,connected:true,more:()=>{},refresh:()=>{}});`,
     '../detail/status': `export const Signal=()=>null;`,
-    '../detail/detail': `export const PullDetail=({number})=><div>Native PR detail {number}</div>;`,
+    '../detail/detail': `export const PullDetail=({number,initialTab,initialFragment,onBack})=><section data-testid="detail" data-tab={initialTab} data-fragment={initialFragment}><p>Native PR detail {number}</p><button onClick={onBack}>Back to PRs</button></section>;`,
     './create': `export const CreatePull=()=>null;`,
     '../../connections/forge-connections': `export const ForgeConnections=()=>null;`,
     '../../connections/source-picker': `export const SourcePicker=()=>null;`,
@@ -106,10 +106,72 @@ try {
   await linkedPage.setContent('<div id="app"></div>')
   await linkedPage.addScriptTag({
     content: await bundle(
-      `import {createRoot} from 'react-dom/client';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';${setup}createRoot(document.getElementById('app')).render(<View entityId="https://github.com/team/project/pull/42/files#note"/>);`,
+      `import {createRoot} from 'react-dom/client';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';${setup}const rootView=createRoot(document.getElementById('app'));window.entity='https://github.com/team/project/pull/42/files#note';window.nonce=0;window.mount=()=>rootView.render(<View entityId={window.entity} navigationKey={window.nonce++}/>);window.onNavigate=target=>{window.entity=target.entityId;window.mount()};window.mount();`,
     ),
   })
   await linkedPage.getByText('Native PR detail 42', { exact: true }).waitFor()
+  assert.equal(await linkedPage.getByTestId('detail').getAttribute('data-tab'), 'changes')
+  assert.equal(await linkedPage.getByTestId('detail').getAttribute('data-fragment'), '#note')
+  await linkedPage.getByRole('button', { name: 'Back to PRs', exact: true }).click()
+  await linkedPage.getByTestId('detail').waitFor({ state: 'detached' })
+  assert.deepEqual(await linkedPage.evaluate(() => window.prNavigations.at(-1)), {
+    viewId: 'pulls',
+  })
+  await linkedPage.evaluate(() => {
+    window.entity = 'https://github.com/team/project/pull/42/checks'
+    window.mount()
+  })
+  await linkedPage.getByText('Native PR detail 42', { exact: true }).waitFor()
+  assert.equal(await linkedPage.getByTestId('detail').getAttribute('data-tab'), 'checks')
+  await linkedPage.getByRole('button').filter({ hasText: 'PR 2' }).first().click()
+  await linkedPage.getByText('Native PR detail 2', { exact: true }).waitFor()
+  assert.equal(
+    await linkedPage.evaluate(() => window.prNavigations.at(-1).entityId),
+    'https://github.com/team/project/pull/2',
+  )
+  await linkedPage.evaluate(() => {
+    window.entity = 'https://github.com/team/project/pull/42/checks'
+    window.mount()
+  })
+  await linkedPage.getByText('Native PR detail 42', { exact: true }).waitFor()
+  // Explicit navigation to the same target still reopens it.
+  await linkedPage.evaluate(() => window.mount())
+  await linkedPage.getByText('Native PR detail 42', { exact: true }).waitFor()
+
+  await linkedPage.evaluate(() => {
+    window.entity = undefined
+    window.mount()
+  })
+  await linkedPage.getByTestId('detail').waitFor({ state: 'detached' })
+  await linkedPage.evaluate(() => {
+    window.entity = 'https://github.com/team/project/pull/42/checks'
+    window.mount()
+  })
+  await linkedPage.getByText('Native PR detail 42', { exact: true }).waitFor()
+
+  await linkedPage.evaluate(() => {
+    window.entity = 'https://github.com/unlinked/project/pull/123/files#note'
+    window.mount()
+  })
+  await linkedPage.getByText('Native PR detail 123', { exact: true }).waitFor()
+  assert.equal(await linkedPage.getByTestId('detail').getAttribute('data-tab'), 'changes')
+  assert.equal(await linkedPage.getByTestId('detail').getAttribute('data-fragment'), '#note')
+
+  const navigationsBeforeBack = await linkedPage.evaluate(() => window.prNavigations.length)
+  await linkedPage.evaluate(() => {
+    window.goBack = () => {
+      window.historyReturned = true
+      return true
+    }
+  })
+  await linkedPage.getByRole('button', { name: 'Back to PRs', exact: true }).click()
+  await linkedPage.waitForFunction(() => window.historyReturned === true)
+  assert.equal(
+    await linkedPage.evaluate(() => window.prNavigations.length),
+    navigationsBeforeBack,
+    'Back ignored shell history',
+  )
+
   await linkedPage.close()
   const foreign = await browser.newPage()
   await foreign.setContent('<div id="app"></div>')

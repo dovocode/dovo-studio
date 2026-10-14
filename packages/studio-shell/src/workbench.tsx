@@ -198,21 +198,62 @@ function WorkbenchContent({
   const threadSelections = useRef(new Map<string | null, string>())
   const settingsNavigation = useRef({ target, extensions })
   settingsNavigation.current = { target, extensions }
-  const navigate = useCallback(
-    (next: StudioNavigation) => {
-      const { target, extensions } = settingsNavigation.current
-      if (target.viewId === next.viewId && target.entityId === next.entityId) return
-      const leavingSettings = extensions.some((extension) =>
+  const history = useRef<Array<{ target: StudioNavigation; runtimeId: string | null }>>([])
+  const navigationAttempt = useRef(0)
+  const currentRuntime = useRef(runtimeRegistry.activeId)
+  currentRuntime.current = runtimeRegistry.activeId
+  const [navigationKey, setNavigationKey] = useState(0)
+  const canLeave = useCallback(() => {
+    const { target, extensions } = settingsNavigation.current
+    return (
+      !extensions.some((extension) =>
         extension.views.some(
           (view) => view.navigationGroup === 'settings' && view.id === target.viewId,
         ),
-      )
-      if (!leavingSettings || confirmSettingsNavigation()) {
-        updateTarget(next)
+      ) || confirmSettingsNavigation()
+    )
+  }, [confirmSettingsNavigation])
+  const navigate = useCallback(
+    (next: StudioNavigation) => {
+      const { target } = settingsNavigation.current
+      if (!canLeave()) return
+      navigationAttempt.current++
+      if (target.viewId !== next.viewId || target.entityId !== next.entityId) {
+        history.current.push({ target, runtimeId: currentRuntime.current })
+        if (history.current.length > 50) history.current.shift()
       }
+      settingsNavigation.current.target = next
+      updateTarget(next)
+      setNavigationKey((key) => key + 1)
     },
-    [updateTarget, confirmSettingsNavigation],
+    [updateTarget, canLeave],
   )
+  const goBack = useCallback(() => {
+    const previous = history.current.at(-1)
+    if (!previous || !canLeave()) return false
+    const attempt = ++navigationAttempt.current
+    history.current.pop()
+    const restore = () => {
+      if (attempt !== navigationAttempt.current) return
+      settingsNavigation.current.target = previous.target
+      updateTarget(previous.target)
+      setNavigationKey((key) => key + 1)
+    }
+    if (
+      previous.target.viewId === 'tasks' &&
+      previous.runtimeId &&
+      previous.runtimeId !== currentRuntime.current
+    ) {
+      void switchRuntime(previous.runtimeId)
+        .then(restore)
+        .catch((cause: unknown) => {
+          if (attempt !== navigationAttempt.current) return
+          history.current.push(previous)
+          setSwitchError(cause instanceof Error ? cause.message : String(cause))
+        })
+    } else restore()
+    return true
+  }, [canLeave, updateTarget, switchRuntime, setSwitchError])
   const compact = useCompactLayout()
   const [collapsedSections, setCollapsedSections] = useApplicationState<Record<string, boolean>>({})
   const sidebarCollapsed =
@@ -252,49 +293,29 @@ function WorkbenchContent({
   }, [target.viewId, target.entityId])
   const openNotification = useCallback(
     (destination: NotificationTarget | (StudioNavigation & { runtimeId: string })) => {
+      const attempt = ++navigationAttempt.current
       setSwitchError('')
       void (async () => {
         if (destination.runtimeId !== runtimeRegistry.activeId)
           await switchRuntime(destination.runtimeId)
+        if (attempt !== navigationAttempt.current) return
         navigate({ viewId: destination.viewId, entityId: destination.entityId })
-      })().catch((error: unknown) =>
-        setSwitchError(error instanceof Error ? error.message : String(error)),
-      )
+      })().catch((error: unknown) => {
+        if (attempt === navigationAttempt.current)
+          setSwitchError(error instanceof Error ? error.message : String(error))
+      })
     },
     [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
   )
-  const pullSources = useRef({
-    runtimes,
-    activeId: runtimeRegistry.activeId,
-    openNotification,
-    navigate,
-  })
-  pullSources.current = { runtimes, activeId: runtimeRegistry.activeId, openNotification, navigate }
-  const openPullLink = useCallback((url: string) => {
-    const pull = githubPullTarget(url)
-    if (!pull) return false
-    const current = pullSources.current
-    const source = [...current.runtimes]
-      .sort(
-        (a, b) =>
-          Number(b.profile.id === current.activeId) - Number(a.profile.id === current.activeId),
-      )
-      .find((entry) =>
-        entry.snapshot?.workspace.repositories.some(
-          (repo) =>
-            !repo.kind &&
-            !repo.gitIdentityError &&
-            (repo.gitIdentity === pull.identity || repo.pullIdentity === pull.identity),
-        ),
-      )
-    const runtimeId = source?.profile.id ?? current.activeId ?? current.runtimes[0]?.profile.id
-    if (!runtimeId) {
-      current.navigate({ viewId: 'pulls', entityId: pull.url })
+  const openPullLink = useCallback(
+    (url: string) => {
+      const pull = githubPullTarget(url)
+      if (!pull) return false
+      navigate({ viewId: 'pulls', entityId: pull.navigationUrl })
       return true
-    }
-    current.openNotification({ runtimeId, viewId: 'pulls', entityId: pull.url })
-    return true
-  }, [])
+    },
+    [navigate],
+  )
   const taskNotice = useTaskNotifications(
     openNotification,
     inputPreview,
@@ -322,6 +343,7 @@ function WorkbenchContent({
   const api = useMemo<StudioHostApi>(
     () => ({
       navigate,
+      goBack,
       popOutThread,
       threadWindow: !!threadWindow,
       registerCommand,
@@ -335,6 +357,8 @@ function WorkbenchContent({
       taskLauncher,
     }),
     [
+      navigate,
+      goBack,
       popOutThread,
       threadWindow,
       registerCommand,
@@ -372,6 +396,23 @@ function WorkbenchContent({
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (
+        event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        event.key === 'ArrowLeft' &&
+        !event.defaultPrevented &&
+        !event.isComposing &&
+        !(
+          event.target instanceof Element &&
+          event.target.closest(
+            'input, textarea, [contenteditable="true"], [role="dialog"], [role="menu"]',
+          )
+        )
+      ) {
+        if (goBack()) event.preventDefault()
+        return
+      }
+      if (
         (event.metaKey || event.ctrlKey) &&
         !event.altKey &&
         event.key.toLowerCase() === 'k' &&
@@ -405,13 +446,17 @@ function WorkbenchContent({
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [palette])
+  }, [palette, navigate, goBack, setPalette])
   const settingsViews = catalog.views.filter((view) => view.navigationGroup === 'settings')
   const inSettings = settingsViews.some((view) => view.id === target.viewId)
   const View = views.get(target.viewId)
   const navigationCommands = catalog.views
     .filter(
-      (view) => view.navigationGroup !== 'hidden' && (view.id !== 'artifacts' || artifactsEnabled),
+      (view) =>
+        view.navigationGroup !== 'hidden' &&
+        (view.id !== 'artifacts' || artifactsEnabled) &&
+        (view.id !== 'issues' || showIssues) &&
+        (view.id !== 'jira' || showJira),
     )
     .map((view) => ({
       id: `${view.extensionId}.open.${view.id}`,
@@ -421,7 +466,12 @@ function WorkbenchContent({
   return (
     <StudioHostProvider api={api}>
       <SidebarHeaderLayout
-        collapsible={inSettings || ['tasks', 'pulls', 'jobs'].includes(target.viewId)}
+        collapsible={
+          inSettings ||
+          ['tasks', 'pulls', 'jobs', 'issues', 'jira', 'pipelines', 'artifacts'].includes(
+            target.viewId,
+          )
+        }
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
         brand={
@@ -435,11 +485,7 @@ function WorkbenchContent({
           />
         }
       >
-        <div
-          className="studio dark"
-          data-platform={desktopPlatform}
-          data-thread-window={!!threadWindow}
-        >
+        <div className="studio" data-platform={desktopPlatform} data-thread-window={!!threadWindow}>
           {taskNotice.notice && (
             <div
               role="status"
@@ -477,55 +523,6 @@ function WorkbenchContent({
               onSearch={() => setPalette(true)}
             />
           </HeaderFallback>
-          {connected && snapshot?.defaults?.configured === false && target.viewId !== 'agents' && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-2">
-              <p className="text-xs text-muted-foreground">
-                Make this workspace yours: choose default models for tasks and titles.
-              </p>
-              <Button size="sm" onClick={() => navigate({ viewId: 'agents' })}>
-                Set up defaults
-              </Button>
-            </div>
-          )}
-          {(storageError || syncError || switchError) && (
-            <p
-              role="alert"
-              className="flex items-center gap-3 border-b bg-destructive/10 px-4 py-2 text-xs text-destructive"
-            >
-              <span className="min-w-0 flex-1">{storageError || switchError || syncError}</span>
-              {pendingSync && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={switching}
-                    onClick={() => {
-                      setSwitching(true)
-                      setSwitchError('')
-                      void retrySync()
-                        .catch((error) =>
-                          setSwitchError(error instanceof Error ? error.message : String(error)),
-                        )
-                        .finally(() => setSwitching(false))
-                    }}
-                  >
-                    Retry sync
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      navigate({
-                        viewId: 'runtime',
-                      })
-                    }
-                  >
-                    Resolve edits
-                  </Button>
-                </>
-              )}
-            </p>
-          )}
           <div className="studio-body">
             <ActivityBar
               update={update}
@@ -542,7 +539,6 @@ function WorkbenchContent({
               )}
               activeId={target.viewId}
               onSelect={(viewId) => {
-                setCollapsedSections((previous) => ({ ...previous, [viewId]: false }))
                 navigateSection(viewId)
               }}
             />
@@ -584,7 +580,7 @@ function WorkbenchContent({
                       }
                     >
                       {ready && View ? (
-                        <View entityId={target.entityId} />
+                        <View entityId={target.entityId} navigationKey={navigationKey} />
                       ) : !ready ? (
                         <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
                       ) : (
@@ -596,6 +592,59 @@ function WorkbenchContent({
                   </ErrorBoundary>
                 </div>
               </div>
+              {connected &&
+                snapshot?.defaults?.configured === false &&
+                target.viewId !== 'agents' && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 border-t bg-card px-4 py-2">
+                    <p className="text-xs text-muted-foreground">
+                      Make this workspace yours: choose default models for tasks and titles.
+                    </p>
+                    <Button size="sm" onClick={() => navigate({ viewId: 'agents' })}>
+                      Set up defaults
+                    </Button>
+                  </div>
+                )}
+              {(storageError || syncError || switchError) && (
+                <p
+                  role="alert"
+                  className="flex items-center gap-3 shrink-0 border-t bg-destructive/10 px-4 py-2 text-xs text-destructive"
+                >
+                  <span className="min-w-0 flex-1">{storageError || switchError || syncError}</span>
+                  {pendingSync && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={switching}
+                        onClick={() => {
+                          setSwitching(true)
+                          setSwitchError('')
+                          void retrySync()
+                            .catch((error) =>
+                              setSwitchError(
+                                error instanceof Error ? error.message : String(error),
+                              ),
+                            )
+                            .finally(() => setSwitching(false))
+                        }}
+                      >
+                        Retry sync
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          navigate({
+                            viewId: 'runtime',
+                          })
+                        }
+                      >
+                        Resolve edits
+                      </Button>
+                    </>
+                  )}
+                </p>
+              )}
             </main>
           </div>
           {taskLauncher && <TaskLauncher bridge={taskLauncher} />}

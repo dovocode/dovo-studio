@@ -1,3 +1,4 @@
+import { useWorkDraftText, clearWorkDraft } from './work-drafts'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode } from '@dovo/protocol'
 import { issueEditInput, issueLabel } from '@dovo/studio-core'
@@ -32,6 +33,7 @@ import {
 
 export function WorkForm({
   kind,
+  available = true,
   repositoryId,
   jiraSourceId,
   issue: initialIssue,
@@ -41,6 +43,7 @@ export function WorkForm({
   onClose,
   onDone,
 }: {
+  available?: boolean
   kind: 'create' | 'edit' | 'comment' | 'run' | 'transition'
   repositoryId?: string
   jiraSourceId?: string
@@ -51,7 +54,18 @@ export function WorkForm({
   onClose: () => void
   onDone: (message: string, result?: ForgeWorkResult) => void
 }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected: online, activeRuntimeId, connection, workspace } = useWorkspace()
+  const connected = online && available
+  const draftKey = JSON.stringify([
+    activeRuntimeId,
+    connection,
+    kind,
+    repositoryId,
+    jiraSourceId,
+    initialIssue?.id,
+    workspace.repositories.find((item) => item.id === repositoryId)?.forge,
+    workspace.jiraSources?.find((item) => item.id === jiraSourceId),
+  ])
   const target = useMemo(
     () =>
       jiraSourceId
@@ -64,17 +78,35 @@ export function WorkForm({
     [jiraSourceId, repositoryId],
   )
   const [issue] = useApplicationState(initialIssue)
-  const [title, setTitle] = useApplicationState(kind === 'edit' ? (issue?.title ?? '') : '')
-  const [body, setBody] = useApplicationState(kind === 'edit' ? (issue?.body ?? '') : '')
-  const [type, setType] = useApplicationState(
+  const [title, setTitle] = useWorkDraftText(
+    draftKey,
+    'title',
+    kind === 'edit' ? (issue?.title ?? '') : '',
+  )
+  const [body, setBody] = useWorkDraftText(
+    draftKey,
+    'body',
+    kind === 'edit' ? (issue?.body ?? '') : '',
+  )
+  const [type, setType] = useWorkDraftText(
+    draftKey,
+    'type',
     options.issueTypes[0] ?? (options.provider === 'jira' ? 'Task' : 'Issue'),
   )
-  const [state, setState] = useApplicationState(issue?.state ?? '')
-  const [assignees, setAssignees] = useApplicationState(issue?.assignees.join(', ') ?? '')
-  const [labels, setLabels] = useApplicationState(issue?.labels.join(', ') ?? '')
-  const [definition, setDefinition] = useApplicationState(initialDefinition ?? ''),
-    [ref, setRef] = useApplicationState(initialRef),
-    [inputs, setInputs] = useApplicationState('{}')
+  const [state, setState] = useWorkDraftText(draftKey, 'state', issue?.state ?? '')
+  const [assignees, setAssignees] = useWorkDraftText(
+    draftKey,
+    'assignees',
+    issue?.assignees.join(', ') ?? '',
+  )
+  const [labels, setLabels] = useWorkDraftText(draftKey, 'labels', issue?.labels.join(', ') ?? '')
+  const [definition, setDefinition] = useWorkDraftText(
+      draftKey,
+      'definition',
+      initialDefinition ?? '',
+    ),
+    [ref, setRef] = useWorkDraftText(draftKey, 'ref', initialRef),
+    [inputs, setInputs] = useWorkDraftText(draftKey, 'inputs', '{}')
   const [definitions, setDefinitions] = useApplicationState<
     Schema.Schema.Type<typeof forgeDefinitionsSchema> | undefined
   >(undefined)
@@ -248,6 +280,7 @@ export function WorkForm({
         },
         forgeWorkResultSchema,
       )
+      clearWorkDraft(draftKey)
       onDone(result.message, result)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -286,6 +319,13 @@ export function WorkForm({
                   : 'Create an issue in the selected project.'}
           </DialogDescription>
         </DialogHeader>
+        {!connected && (
+          <p role="status" className="text-xs text-muted-foreground">
+            {available
+              ? 'Offline · Your draft is kept here. Reconnect this computer to send it.'
+              : 'This source connection changed. Your original draft is kept; reopen the form from the source to continue.'}
+          </p>
+        )}
         <form
           className="grid gap-4"
           onSubmit={(e) => {
@@ -293,7 +333,7 @@ export function WorkForm({
             void submit()
           }}
         >
-          <fieldset className="grid gap-4" disabled={busy || !connected}>
+          <fieldset className="grid gap-4" disabled={busy || !available}>
             {kind === 'transition' ? (
               <FormField label="New Jira status">
                 <Input
@@ -443,7 +483,7 @@ export function WorkForm({
               </Button>
               <Button
                 type="submit"
-                disabled={kind === 'run' && (!definitions || definitionsLoading)}
+                disabled={!connected || (kind === 'run' && (!definitions || definitionsLoading))}
               >
                 {busy
                   ? 'Saving…'

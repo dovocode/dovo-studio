@@ -12,8 +12,8 @@ const controls =
   `export {ProjectIcon} from '${uiDir}/project-icon.tsx';export * from '${uiDir}/sidebar-header.tsx';export const OrganizeReview=()=>null;export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
 const mocks = {
   '@dovo/studio-ui': controls,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
-  '../workspace/context': 'export const useWorkspace=()=>window.store;',
+  '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
+  '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
   './use-pull-detail': `export const usePullDetail=()=>({detail:window.detail,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
@@ -45,7 +45,7 @@ window.store.request = async (path, input, ...rest) => {
   if (path.endsWith('/set')) { const file = files.find(file => file.path === input.path); if (!file || file.fingerprint !== input.fingerprint || file.version !== input.version) throw new Error('File changed'); Object.assign(file,{viewed:input.viewed,version:file.version+1}); }
   return {files:files.map(file=>({...file})), groups:[{label:'src',basis:'folder',paths:files.map(file=>file.path)}]};
 };
-const rootView=createRoot(document.getElementById('app'));window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);rootView.render(<TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio dark" data-platform="darwin"><HeaderFallback><TitleBar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div className="studio-body"><nav className="studio-navigation" aria-label="Main navigation"/><main className="studio-main"><View/></main></div></div></SidebarHeaderLayout></TooltipProvider>);`,
+const rootView=createRoot(document.getElementById('app'));window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showDestination=(tab,fragment)=>rootView.render(<main className="studio flex flex-col" style={{height:'100vh'}}><PullDetail key={tab+fragment} repositoryId="repo" number={7} initialTab={tab} initialFragment={fragment} onBack={()=>{}} onChanged={()=>{}}/></main>);window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);rootView.render(<TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio dark" data-platform="darwin"><HeaderFallback><TitleBar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div className="studio-body"><nav className="studio-navigation" aria-label="Main navigation"/><main className="studio-main"><View/></main></div></div></SidebarHeaderLayout></TooltipProvider>);`,
   },
   bundle: true,
   write: false,
@@ -369,6 +369,58 @@ try {
       `Narrow hidden height overflow in ${selector}`,
     )
   }
+  // Exercise destination handling in the real detail, including a comment far down the page.
+  await page.evaluate(() => {
+    window.detail.comments = Array.from({ length: 30 }, (_, i) => ({
+      id: 'comment-' + i,
+      kind: 'comment',
+      author: 'reviewer',
+      body: 'Discussion ' + i,
+      url: window.detail.pull.url + '#issuecomment-' + i,
+      date: '2026-10-04',
+    }))
+    window.showDestination('overview', '#issuecomment-29')
+  })
+  await page.waitForFunction(() => {
+    const target = document.querySelector('[data-comment-fragment="#issuecomment-29"]')
+    const content = document.querySelector('[aria-label="Pull request content"]')
+    return (
+      target &&
+      content &&
+      content.scrollTop > 0 &&
+      target.getBoundingClientRect().top < content.getBoundingClientRect().bottom
+    )
+  })
+  await page.evaluate(() => window.showDestination('changes', ''))
+  await page.waitForFunction(
+    () => document.querySelector('#pr-tab-changes')?.getAttribute('aria-selected') === 'true',
+  )
+  await page.evaluate(() => {
+    window.detail.comments.push({
+      id: 'inline-1',
+      kind: 'inline',
+      path: 'src/second.ts',
+      author: 'reviewer',
+      body: 'Inline destination',
+      url: window.detail.pull.url + '#discussion_r1',
+      date: '2026-10-04',
+    })
+    window.showDestination('overview', '#discussion_r1')
+  })
+  await page.waitForFunction(() => {
+    const target = document.querySelector('[data-comment-fragment="#discussion_r1"]')
+    const content = document.querySelector('[aria-label="Pull request content"]')
+    return (
+      document.querySelector('#pr-tab-changes')?.getAttribute('aria-selected') === 'true' &&
+      target?.getClientRects().length &&
+      content &&
+      target.getBoundingClientRect().top < content.getBoundingClientRect().bottom
+    )
+  })
+  await page.evaluate(() => window.showDestination('checks', ''))
+  await page.waitForFunction(
+    () => document.querySelector('#pr-tab-checks')?.getAttribute('aria-selected') === 'true',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts and embedded previews passed.',

@@ -6,6 +6,11 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mobile = `${root}/apps/mobile/src`
 const stubs = [
   {
+    path: '../../../runtime/connection/provider',
+    importer: mobile,
+    contents: 'export const useRuntime=()=>({connection:null,snapshot:null});',
+  },
+  {
     path: 'react-native',
     contents:
       'export const View=({children})=><div>{children}</div>;export const useWindowDimensions=()=>({height:800});',
@@ -24,11 +29,6 @@ const stubs = [
     path: '../../../ui/controls/action',
     importer: mobile,
     contents: 'export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;',
-  },
-  {
-    path: '../../../runtime/state/application-state',
-    importer: mobile,
-    contents: "export {useState as useApplicationState} from 'react';",
   },
   {
     path: '../../review/use-file-review',

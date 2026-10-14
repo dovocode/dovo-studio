@@ -42,6 +42,7 @@ import {
 import {
   Button,
   HeaderContent,
+  SidebarHeader,
   useLeftSidebar,
   useNavigationSidebar,
   IconButton,
@@ -767,10 +768,17 @@ export default function TasksView({ entityId }: StudioViewProps) {
       >
         {temporary ? (
           <HeaderContent>
-            <header className="studio-task-thread-header">New task</header>
+            <header
+              className="studio-task-thread-header"
+              data-window-edge
+              data-window-right-edge={!splitTask || undefined}
+            >
+              New task
+            </header>
           </HeaderContent>
         ) : (
           <TaskHeader
+            windowRightEdge={!splitTask}
             onPullLink={(url) => openPullPreview(task, url)}
             task={task}
             projectPanelOpen={projectPanelOpen}
@@ -808,7 +816,11 @@ export default function TasksView({ entityId }: StudioViewProps) {
           />
         )}
         {!temporary && !projectPanelOpen && (
-          <TaskWaitingPanel key={`${activeRuntimeId}:${task.id}`} taskId={task.id} />
+          <TaskWaitingPanel
+            onPullLink={(url) => openPullPreview(task, url)}
+            key={`${activeRuntimeId}:${task.id}`}
+            taskId={task.id}
+          />
         )}
         <div ref={workspacePane} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <div
@@ -1240,6 +1252,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
           resizable={sidebar && !compact}
           className={cn('min-h-0', (!sidebar || compact) && 'hidden')}
         >
+          <SidebarHeader enabled={!sidebar && !compact} />
           {sidebar && !compact && (
             <div className="h-full min-w-0">
               <TaskList
@@ -1293,7 +1306,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   aria-label={`Side by side: ${splitTask.title}`}
                   className="flex h-full min-h-0 flex-col border-l"
                 >
-                  <header className="studio-task-thread-header text-xs">
+                  <header className="studio-task-thread-header text-xs" data-window-right-edge>
                     <ProjectIcon
                       repository={workspace.repositories.find(
                         (repo) => repo.id === splitTask.repositoryId,

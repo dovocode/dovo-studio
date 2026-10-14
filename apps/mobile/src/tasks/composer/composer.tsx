@@ -103,7 +103,7 @@ export function Composer({
   )
   const type = useCallback((text: string) => draft.update(text, 'keyboard'), [draft.update])
   const meter = contextMeter(task)
-  const { callEffect: commandCall } = useRuntime()
+  const { callEffect: commandCall, activeId } = useRuntime()
   const startFork = () => {
     const text = draft.text.trim()
     const attachmentIds = (actions.draftAttachments ?? []).map((file) => file.id)
@@ -137,7 +137,7 @@ export function Composer({
                 ),
               )
             forkAttempt.current = null
-            navigate('tasks', result.id)
+            navigate('tasks', result.id, activeId ?? undefined)
           }),
         ),
       ),

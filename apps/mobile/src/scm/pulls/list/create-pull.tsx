@@ -12,18 +12,41 @@ import { useApplicationState } from '../../../runtime/state/application-state'
 import { decode, mutableStruct } from '@dovo/protocol'
 
 const describedSchema = mutableStruct({ title: Schema.String, body: Schema.String })
+import {
+  createDetailDrafts,
+  integrationDraftKey,
+  useDetailDraft,
+} from '../../../runtime/state/detail-drafts'
 import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import { Switch } from '../../../ui/controls/switch'
 import { pullCreateSchema, pullActionResultSchema, pullCreateOptionsSchema } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { readMobilePreferences } from '../../../runtime/preferences/app-preferences'
-import { Sheet } from '../../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../../ui/layout/sheet'
 import { Field } from '../../../ui/controls/field'
 import { Choice } from '../../../ui/controls/choice'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
+type ParentDraft = Pick<PullDetail['pull'], 'number' | 'title' | 'head' | 'url' | 'headSha'>
+const createDrafts = createDetailDrafts<{
+  repositoryId: string
+  title: string
+  body: string
+  head: string
+  base: string
+  draft: boolean
+  parent: ParentDraft | undefined
+  sourceTask: string
+}>()
+const parentDraft = (pull: ParentDraft): ParentDraft => ({
+  number: pull.number,
+  title: pull.title,
+  head: pull.head,
+  url: pull.url,
+  headSha: pull.headSha,
+})
 export function CreatePull({
   repositoryId: initial,
   initialParent,
@@ -37,25 +60,51 @@ export function CreatePull({
 }) {
   const { styles } = useTheme()
 
-  const { read: call, connected, snapshot, callEffect } = useRuntime()
+  const { read: call, connected, snapshot, callEffect, connection } = useRuntime()
   const repos = snapshot?.workspace.repositories ?? []
-  const [repositoryId, setRepository] = useApplicationState(initial || repos[0]?.id || '')
-  const [title, setTitle] = useApplicationState(''),
-    [body, setBody] = useApplicationState(''),
-    [head, setHead] = useApplicationState(''),
-    [base, setBase] = useApplicationState(
-      initialParent ? (pullHeadBranch(initialParent) ?? '') : '',
+  const {
+    draft: fields,
+    setField,
+    clear,
+  } = useDetailDraft(
+    createDrafts,
+    integrationDraftKey(
+      connection,
+      snapshot,
+      initial || repos[0]?.id,
+      undefined,
+      'create-pull',
+      initialParent?.number,
+      repos.map((repo) => [repo.id, repo.forge] as const).sort(([a], [b]) => a.localeCompare(b)),
     ),
-    // Settings → General → Create pull requests as drafts.
-    [draft, setDraft] = useApplicationState(() => readMobilePreferences().pullDraft)
-  const [parent, setParent] = useApplicationState<PullDetail['pull'] | undefined>(initialParent)
+    () => ({
+      repositoryId: initial || repos[0]?.id || '',
+      title: '',
+      body: '',
+      head: '',
+      base: initialParent ? (pullHeadBranch(initialParent) ?? '') : '',
+      draft: readMobilePreferences().pullDraft,
+      parent: initialParent ? parentDraft(initialParent) : undefined,
+      sourceTask: '',
+    }),
+  )
+  const { repositoryId, title, body, head, base, draft, parent, sourceTask } = fields
+  const setRepository = (value: string) => setField('repositoryId', value)
+  const setTitle = (value: string) => setField('title', value)
+  const setBody = (value: string) => setField('body', value)
+  const setHead = (value: string) => setField('head', value)
+  const setBase = (value: string) => setField('base', value)
+  const setDraft = (value: boolean) => setField('draft', value)
+  const setParent = (value: ParentDraft | undefined) =>
+    setField('parent', value ? parentDraft(value) : undefined)
+  const setSourceTask = (value: string) => setField('sourceTask', value)
+  const sheet = useRef<SheetHandle>(null)
   const [parents, setParents] = useApplicationState<PullSummary[]>([])
   const [parentBusy, setParentBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
   const [supportsDraft, setSupportsDraft] = useApplicationState(false)
-  const [sourceTask, setSourceTask] = useApplicationState('')
   const [describing, setDescribing] = useApplicationState(false)
   const sourceTasks = (snapshot?.workspace.tasks ?? []).filter(
     (task) => task.repositoryId === repositoryId && task.workItem && task.checkoutBranch,
@@ -63,8 +112,7 @@ export function CreatePull({
   useEffect(() => {
     let active = true
     setSupportsDraft(false)
-    setDraft(readMobilePreferences().pullDraft)
-    if (repositoryId)
+    if (repositoryId && connected)
       void runClientEffect(
         callEffect(
           '/api/scm/pulls/options/read',
@@ -91,7 +139,7 @@ export function CreatePull({
     return () => {
       active = false
     }
-  }, [call, repositoryId])
+  }, [call, repositoryId, connected])
   useEffect(() => {
     if (!connected || !repositoryId) return
     let stopped = false
@@ -148,7 +196,7 @@ export function CreatePull({
   const submit = () => {
     return runClientEffect(
       mobileWorkflow(function* () {
-        if (pending.current || parentBusy) return
+        if (pending.current || parentBusy || !connected) return
         pending.current = true
         setBusy(true)
         setError('')
@@ -169,7 +217,8 @@ export function CreatePull({
             },
             pullActionResultSchema,
           )
-          onCreated(repositoryId, result.number)
+          clear()
+          sheet.current?.dismiss(() => onCreated(repositoryId, result.number))
         }).pipe(
           Effect.catch((cause) =>
             nativeEffect(() => {
@@ -187,7 +236,7 @@ export function CreatePull({
     )
   }
   return (
-    <Sheet title="Create pull request" onClose={onClose} busy={busy}>
+    <Sheet ref={sheet} title="Create pull request" onClose={onClose} busy={busy}>
       <Choice
         label="Project"
         value={repositoryId}

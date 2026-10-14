@@ -237,6 +237,9 @@ textarea {
 .studio-window-header-slot:empty {
   display: none;
 }
+.studio-header-layout[data-compact='true'] .studio-titlebar-section {
+  display: none;
+}
 .studio-titlebar-identity:has(.studio-window-header-content) > .studio-titlebar-section {
   display: none;
 }
@@ -246,7 +249,7 @@ textarea {
   padding-inline: 0;
 }
 .studio-header-layout[data-inline-header='true']
-  :is(.studio-page-header, .studio-task-thread-header) {
+  :is(.studio-page-header, .studio-task-thread-header)[data-window-edge] {
   -webkit-app-region: drag;
 }
 .studio-header-layout
@@ -256,7 +259,7 @@ textarea {
 }
 .studio-header-layout[data-inline-header='true']
   .studio:is([data-platform='win32'], [data-platform='linux'])
-  :is(.studio-task-thread-header, .studio-page-header:not(nav .studio-page-header)) {
+  :is(.studio-task-thread-header, .studio-page-header)[data-window-right-edge] {
   padding-right: max(
     12px,
     calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 144px)) + 12px)
@@ -292,7 +295,7 @@ textarea {
 }
 .studio-header-layout[data-sidebar-collapsed='true']
   .studio[data-platform='darwin']
-  :is(.studio-task-thread-header, .studio-page-header) {
+  :is(.studio-task-thread-header, .studio-page-header)[data-window-edge] {
   padding-left: 51px;
 }
 .studio-header-layout[data-inline-header='true']

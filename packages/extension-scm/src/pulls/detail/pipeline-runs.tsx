@@ -11,11 +11,23 @@ import {
 import { Button } from '@dovo/studio-ui'
 import { PipelineState } from '../../work/pipeline-detail'
 import { WorkContent } from '../../work/content'
-export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; sha: string }) {
+import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
+const selectedRunCache = createPullStateCache<Pick<ForgePipeline, 'id' | 'url'> | null>(30)
+export function PullPipelineRuns({
+  repositoryId,
+  sha,
+  active = true,
+}: {
+  repositoryId: string
+  sha: string
+  active?: boolean
+}) {
   const { connected, request, workspace, readCache } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
+  const ownerKey = usePullStateKey(repositoryId, 0)
   const cacheKey = JSON.stringify([
     'pull-pipelines',
+    ownerKey,
     repositoryId,
     repository?.path,
     repository?.forge,
@@ -23,7 +35,7 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
   ])
   const [runs, setRuns] = useApplicationState<ForgePipeline[]>([])
   const [next, setNext] = useApplicationState<string | undefined>(undefined)
-  const [selected, setSelected] = useApplicationState<ForgePipeline | undefined>(undefined)
+  const [selected, setSelected] = useRetainedPullState(selectedRunCache, cacheKey, null)
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [notice, setNotice] = useApplicationState('')
@@ -33,7 +45,14 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
   const stored = useRef<ForgePipeline[]>([])
   const load = useCallback(
     async (cursor?: string, refresh = false) => {
-      if (!connected || pending.current || !sha) return
+      if (
+        !active ||
+        !connected ||
+        document.visibilityState !== 'visible' ||
+        pending.current ||
+        !sha
+      )
+        return
       pending.current = true
       const current = generation.current
       setBusy(true)
@@ -101,8 +120,10 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
         }
       }
     },
-    [connected, request, repositoryId, sha, readCache, cacheKey],
+    [active, connected, request, repositoryId, sha, readCache, cacheKey],
   )
+  const loadRef = useRef(load)
+  loadRef.current = load
   useEffect(() => {
     const current = ++generation.current
     pending.current = false
@@ -110,7 +131,6 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
     stored.current = []
     setRuns([])
     setNext(undefined)
-    setSelected(undefined)
     setError('')
     setNotice('')
     void (async () => {
@@ -126,12 +146,23 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
       } catch {
         if (current === generation.current) setError('Saved pipeline runs could not be read.')
       }
-      if (current === generation.current) await load()
+      if (current === generation.current) await loadRef.current()
     })()
     return () => {
       generation.current++
     }
-  }, [cacheKey, readCache, load])
+  }, [cacheKey, readCache])
+  useEffect(() => {
+    if (!active || !connected) return
+    const refresh = () => void loadRef.current(undefined, true)
+    refresh()
+    const timer = setInterval(refresh, 10000)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [active, connected, cacheKey])
   if (selected)
     return (
       <div className="mb-5 min-w-0 rounded-xl border">
@@ -142,11 +173,12 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
           branch={repository?.branch ?? ''}
           collectionHeader={null}
           mode="pipelines"
+          preview
           initialSelected={selected.id}
           initialSourceURL={selected.url}
-          connected={connected}
+          connected={connected && active}
           request={request}
-          onBack={() => setSelected(undefined)}
+          onBack={() => setSelected(null)}
         />
       </div>
     )
@@ -192,7 +224,7 @@ export function PullPipelineRuns({ repositoryId, sha }: { repositoryId: string; 
             <button
               type="button"
               className="group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-3 text-left hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary"
-              onClick={() => setSelected(run)}
+              onClick={() => setSelected({ id: run.id, url: run.url })}
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

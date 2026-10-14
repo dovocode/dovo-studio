@@ -83,12 +83,12 @@ export function PullRow({
           : GitPullRequest
   const stateColor =
     pull.state === 'merged'
-      ? 'text-violet-400'
+      ? 'text-violet-700 dark:text-violet-400'
       : pull.state === 'closed'
-        ? 'text-red-400'
+        ? 'text-red-700 dark:text-red-400'
         : pull.draft
           ? 'text-muted-foreground'
-          : 'text-emerald-400'
+          : 'text-emerald-700 dark:text-emerald-400'
   return (
     <div className="relative">
       <div
@@ -158,7 +158,7 @@ export function PullRow({
                       </time>
                       {pull.stack && (
                         <span
-                          className="inline-flex shrink-0 items-center gap-1 text-violet-400"
+                          className="inline-flex shrink-0 items-center gap-1 text-violet-700 dark:text-violet-400"
                           title={
                             pull.stack.parentNumber
                               ? `Depends on PR #${pull.stack.parentNumber}`
@@ -170,12 +170,14 @@ export function PullRow({
                         </span>
                       )}
                       {pull.state === 'open' && !pull.draft && pull.viewerReviewRequested && (
-                        <span className="text-violet-400">Your review requested</span>
+                        <span className="text-violet-700 dark:text-violet-400">
+                          Your review requested
+                        </span>
                       )}
                       <span className="inline-flex items-center gap-2 font-mono tabular-nums">
                         {pull.additions != null && (
                           <span
-                            className="text-emerald-400"
+                            className="text-emerald-700 dark:text-emerald-400"
                             aria-label={`${pull.additions} lines added`}
                           >
                             +{pull.additions.toLocaleString()}
@@ -183,7 +185,7 @@ export function PullRow({
                         )}
                         {pull.deletions != null && (
                           <span
-                            className="text-red-400"
+                            className="text-red-700 dark:text-red-400"
                             aria-label={`${pull.deletions} lines deleted`}
                           >
                             −{pull.deletions.toLocaleString()}
@@ -246,7 +248,10 @@ export function PullRow({
                 </div>
               </div>
               {!!pull.statusError && (
-                <p className="mt-2 text-[0.625rem] text-amber-400" title={pull.statusError}>
+                <p
+                  className="mt-2 text-[0.625rem] text-amber-700 dark:text-amber-400"
+                  title={pull.statusError}
+                >
                   Status unavailable · refresh to retry
                 </p>
               )}

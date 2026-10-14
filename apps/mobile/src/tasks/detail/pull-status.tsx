@@ -17,7 +17,7 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
 /** The task's pull request state and checks; failing checks can be handed to the agent. */
-function PrimaryPullStatus({ task }: { task: Task }) {
+function PrimaryPullStatus({ task, onOpen }: { task: Task; onOpen?: (url: string) => void }) {
   const { colors } = useTheme()
 
   const { connected, callEffect } = useRuntime()
@@ -39,7 +39,7 @@ function PrimaryPullStatus({ task }: { task: Task }) {
         <Pressable
           accessibilityRole="link"
           accessibilityLabel={`${pullStatusLabel(status)}. Opens the pull request.`}
-          onPress={() => act(() => openAppLink(status.url))}
+          onPress={() => (onOpen ? onOpen(status.url) : act(() => openAppLink(status.url)))}
           style={({ pressed }) => ({
             flex: 1,
             flexDirection: 'row',
@@ -90,18 +90,26 @@ function PrimaryPullStatus({ task }: { task: Task }) {
   )
 }
 
-export function PullStatus({ task }: { task: Task }) {
+export function PullStatus({
+  task,
+  onOpen,
+  showLinked = true,
+}: {
+  task: Task
+  onOpen?: (url: string) => void
+  showLinked?: boolean
+}) {
   const { colors } = useTheme()
 
   const [expanded, setExpanded] = useApplicationState(false)
   const [linkError, setLinkError] = useApplicationState('')
-  const links = (task.linkedPullRequests ?? []).filter(
+  const links = (showLinked ? (task.linkedPullRequests ?? []) : []).filter(
     (pull) => pull.url !== task.pullStatus?.url && pull.url !== task.pullRequest?.url,
   )
   if (!task.pullStatus && !links.length) return null
   return (
     <View style={{ gap: 4 }}>
-      <PrimaryPullStatus task={task} />
+      <PrimaryPullStatus task={task} onOpen={onOpen} />
       {!!links.length && (
         <View style={{ paddingHorizontal: 16, gap: 8 }}>
           <Pressable
@@ -120,6 +128,10 @@ export function PullStatus({ task }: { task: Task }) {
                 accessibilityRole="link"
                 accessibilityLabel={`Open PR #${pull.number}: ${pull.title}`}
                 onPress={() => {
+                  if (onOpen) {
+                    onOpen(pull.url)
+                    return
+                  }
                   setLinkError('')
                   void openAppLink(pull.url).catch((error) => setLinkError(String(error)))
                 }}

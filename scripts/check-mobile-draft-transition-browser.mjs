@@ -68,7 +68,7 @@ const mocks = {
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
   '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
-  '../../ui/layout/sheet': `export const Sheet=()=>null;`,
+  '../../ui/layout/sheet': `export const Sheet=()=>null;export const useSheetNavigation=()=>navigate=>navigate();`,
   '../../ui/theme': `export const useTheme=()=>({colors:{},styles:{}});`,
   '../../ui/layout/screen-header': `export const ScreenHeader=({title,buttons})=><header>{title}{buttons?.filter(b=>!b.overflow||b.label==='Copy conversation'||b.label==='Chat').map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>;`,
   '../../ui/content/clipboard': `export const copyText=async text=>{(window.mobileCopies??=[]).push(text);return 'copied'};`,

@@ -1,3 +1,5 @@
+import { useEffect, useRef, type ReactNode } from 'react'
+import { pullFragment } from './pull-destination'
 import { Markdown } from '../../../ui/content/markdown'
 import { Platform, Pressable, View } from 'react-native'
 import { Text } from '../../../ui/content/text'
@@ -8,17 +10,50 @@ import { Icon } from '../../../ui/controls/icon'
 import { useTheme } from '../../../ui/theme'
 import { formatShortDateTime } from '../../../ui/content/format-date'
 import { PullCommentLabel } from './pull-status'
+function CommentAnchor({
+  children,
+  url,
+  fragment,
+  onAnchor,
+}: {
+  children: ReactNode
+  url: string
+  fragment?: string
+  onAnchor?: (node: View) => void
+}) {
+  const node = useRef<View>(null)
+  const { colors } = useTheme()
+  useEffect(() => {
+    if (fragment && pullFragment(url) === fragment && node.current) onAnchor?.(node.current)
+  }, [fragment, url, onAnchor])
+  return (
+    <View
+      ref={node}
+      collapsable={false}
+      onLayout={() => {
+        if (fragment && pullFragment(url) === fragment && node.current) onAnchor?.(node.current)
+      }}
+      style={{ gap: 8, paddingBottom: 14, borderBottomWidth: 0.5, borderColor: colors.border }}
+    >
+      {children}
+    </View>
+  )
+}
 export function PullComments({
   comments,
   onOpen,
   fileBaseURL,
   onAction,
   capabilities,
+  fragment,
+  onAnchor,
 }: {
   comments: PullComment[]
   onOpen: (url: string) => void
   fileBaseURL?: string
   onAction?: (target: PullActionTarget) => void
+  fragment?: string
+  onAnchor?: (node: View) => void
   capabilities?: ForgeCapabilities
 }) {
   const { colors, styles } = useTheme()
@@ -27,10 +62,7 @@ export function PullComments({
     <View style={{ gap: 12, minWidth: 0 }}>
       {!comments.length && <Text style={styles.muted}>No discussion yet.</Text>}
       {comments.map((c) => (
-        <View
-          key={c.id}
-          style={{ gap: 8, paddingBottom: 14, borderBottomWidth: 0.5, borderColor: colors.border }}
-        >
+        <CommentAnchor key={c.id} url={c.url} fragment={fragment} onAnchor={onAnchor}>
           <Pressable
             accessibilityRole="link"
             accessibilityLabel={`View ${c.author}'s ${pullCommentSignal(c).label} on server`}
@@ -95,7 +127,7 @@ export function PullComments({
               )}
             </View>
           )}
-        </View>
+        </CommentAnchor>
       ))}
     </View>
   )

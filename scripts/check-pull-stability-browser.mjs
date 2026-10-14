@@ -13,8 +13,9 @@ const controls =
   `export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export const OrganizeReview=()=>null;export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
 const mocks = {
   '@dovo/studio-ui': controls,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useWorkspace=()=>window.store;export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo'});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
-  '../workspace/context': 'export const useWorkspace=()=>window.store;',
+  '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo'});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
+  '../workspace/context':
+    'export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});',
   '@dovo/studio-core/state': `export * from '${root}/packages/studio-core/src/runtime/application-state.ts';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
   './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
@@ -32,7 +33,13 @@ const pull={number:7,title:'Improve pull request reviews',url:'https://github.co
 window.pulls=[pull,{...pull,number:8,url:'https://github.com/team/project/pull/8',title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,url:'https://github.com/team/project/pull/9',title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
 window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project'}};
 window.detail={pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
-window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};window.detailReads=0;window.store.requestEffect=()=>Effect.sync(()=>{window.detailReads++;return JSON.parse(JSON.stringify(window.detail));});const realRoot=createRoot(document.getElementById('app'));const rootView={render:element=>realRoot.render(<ApplicationStateProvider>{element}</ApplicationStateProvider>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);window.renderKey=0;window.showProbe=()=>rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><nav className="studio-navigation" style={{width:44}}/><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key={window.renderKey++}/></div></div></main></div></div>);
+window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};const cachedReads=window.savedReads=new Map();window.store.readCache={
+read:async key=>cachedReads.get(key)??null,
+write:async(key,value)=>cachedReads.set(key,{value:structuredClone(value),cachedAt:'2026-10-14'}),
+remove:async key=>cachedReads.delete(key),
+readEffect:key=>Effect.sync(()=>cachedReads.get(key)??null),
+writeEffect:(key,value)=>Effect.sync(()=>{cachedReads.set(key,{value:structuredClone(value),cachedAt:'2026-10-14'})})
+};window.detailReads=0;window.store.requestEffect=()=>Effect.sync(()=>{window.detailReads++;return JSON.parse(JSON.stringify(window.detail));});const realRoot=createRoot(document.getElementById('app'));const rootView={render:element=>realRoot.render(<ApplicationStateProvider>{element}</ApplicationStateProvider>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);window.renderKey=0;window.showProbe=()=>rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><nav className="studio-navigation" style={{width:44}}/><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key={window.renderKey++}/></div></div></main></div></div>);
 const originalRequest = window.store.request; const marks = new Map();
 window.store.request = async (path, input, ...rest) => {
   if (!path.startsWith('/api/review/')) return originalRequest(path, input, ...rest);
@@ -218,6 +225,50 @@ try {
   )
   const inline = detail.getByRole('textbox', { name: 'Line comment', exact: true })
   await inline.fill('Keep my inline feedback across pushes')
+  const preservedInlineForm = inline.locator('xpath=ancestor::form')
+  await preservedInlineForm
+    .getByRole('button', { name: 'Suggest code change', exact: true })
+    .click()
+  await preservedInlineForm
+    .getByRole('textbox', { name: 'Suggested replacement', exact: true })
+    .fill('suggested replacement survives')
+  await page.evaluate(() => {
+    window.store.connected = false
+    window.showProbe()
+  })
+  await inline.waitFor()
+  assert.equal(await inline.inputValue(), 'Keep my inline feedback across pushes')
+  assert.equal(
+    await preservedInlineForm
+      .getByRole('textbox', { name: 'Suggested replacement', exact: true })
+      .inputValue(),
+    'suggested replacement survives',
+  )
+  assert.equal(
+    await preservedInlineForm
+      .getByRole('button', { name: 'Start agent task', exact: true })
+      .isDisabled(),
+    true,
+  )
+  await inline.fill('Edited while offline')
+  await page.evaluate(() => {
+    window.store.connected = true
+    window.showProbe()
+  })
+  assert.equal(await inline.inputValue(), 'Edited while offline')
+  // Leave the detail and return to the same owner/account/PR.
+  await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
+  await open()
+  await detail.getByRole('tab', { name: 'Changes (30)', exact: true }).waitFor()
+  assert.equal(await inline.inputValue(), 'Edited while offline')
+  assert.equal(
+    await preservedInlineForm
+      .getByRole('textbox', { name: 'Suggested replacement', exact: true })
+      .inputValue(),
+    'suggested replacement survives',
+  )
+  await inline.fill('Keep my inline feedback across pushes')
+
   await page.evaluate(() => {
     window.detail.pull.headSha = 'b'.repeat(40)
     window.detail.files[0].patch = '@@ -1 +1,2 @@\n old\n+updated'
@@ -305,6 +356,8 @@ try {
     ),
   )
   await bounded(content)
+  // Start the independent large-PR fixture from the list; section remount now retains selection.
+  await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
   // Large PRs defer parsing; attribute-collapsed files and binary files never parse eagerly.
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.evaluate(() => {
@@ -320,6 +373,7 @@ try {
     window.detail.pull.title = 'Improve pull request reviews'
     window.pulls = [{ ...window.detail.pull }]
     window.parseCount = 0
+    window.savedReads.clear()
     window.showProbe()
   })
   await open()

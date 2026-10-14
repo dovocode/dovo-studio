@@ -18,6 +18,8 @@ export interface StudioNavigation {
 }
 export interface StudioViewProps {
   entityId?: string
+  /** Changes for explicit navigation, including reopening the same destination. */
+  navigationKey?: number
 }
 /** Settings sidebar headings, grouped the way Codex and T3 Code organize theirs. */
 export type SettingsSection = 'app' | 'agents' | 'coding' | 'computers' | 'archived'
@@ -55,6 +57,7 @@ export interface StudioHostApi {
   chooseLink?: (url: string) => Promise<boolean>
   openExternalLink?: (url: string) => Promise<void>
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
+  goBack?: () => boolean
   navigate: (target: StudioNavigation) => void
   registerCommand: (command: StudioCommand) => () => void
 }

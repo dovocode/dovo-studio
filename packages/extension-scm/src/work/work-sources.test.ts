@@ -5,7 +5,7 @@ import { beforeEach, expect, it, vi } from 'vite-plus/test'
 import { Schema } from 'effect'
 import { snapshotSchema, runtimeProfile } from '@dovo/studio-core'
 import type { useWorkspace, RepositorySource } from '@dovo/studio-core'
-import { jiraSourceKey, useIssueSources } from './work-sources'
+import { jiraSourceKey, useIssueSources, workRemoteKey, matchesWorkSource } from './work-sources'
 type Store = Pick<
   ReturnType<typeof useWorkspace>,
   | 'workspace'
@@ -167,6 +167,14 @@ it('keeps requests bound to the Jira owner and invalidates scope on credential c
   }
   expect(useIssueSources(true)[0].scope).not.toBe(source.scope)
 })
+it('keeps every owner available for an open Jira detail when the list reader changes', () => {
+  expect(useIssueSources(true, false).map((source) => source.runtimeId)).toEqual([mac.id, linux.id])
+  store.connected = false
+  expect(useIssueSources(true)[0].runtimeId).toBe(linux.id)
+  expect(
+    useIssueSources(true, false).find((source) => source.runtimeId === mac.id)?.connected,
+  ).toBe(false)
+})
 it('adds optional per-issue project labels without changing the Jira identity', () => {
   const source = useIssueSources(true)[0]
   store.workspace = {
@@ -195,4 +203,16 @@ it('adds optional per-issue project labels without changing the Jira identity', 
   expect(linked.input).toEqual({
     jiraSourceId: 'tracker',
   })
+})
+
+it('retains a source filter across reader handoff without merging distinct Jira projects', () => {
+  const original = useIssueSources(true)[0]
+  const filter = workRemoteKey(original)
+  store.connected = false
+  const replacement = useIssueSources(true)[0]
+  expect(replacement.key).not.toBe(original.key)
+  expect(matchesWorkSource(replacement, filter)).toBe(true)
+  expect(
+    matchesWorkSource({ ...replacement, jira: { ...replacement.jira!, project: 'OTHER' } }, filter),
+  ).toBe(false)
 })

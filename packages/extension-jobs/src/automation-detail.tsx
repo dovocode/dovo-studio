@@ -1,7 +1,7 @@
 import { githubEventChoices } from '@dovo/protocol'
 import { PageHeader } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { ArrowLeft, Ellipsis, Monitor, Plus, Workflow, X } from 'lucide-react'
+import { ArrowLeft, Ellipsis, Monitor, Plus, Settings2, Workflow, X } from 'lucide-react'
 import { useWorkspace } from '@dovo/studio-core'
 import {
   Button,
@@ -328,16 +328,21 @@ export function AutomationDetail({
               </div>
             )}
             {!compact && surface !== 'runs' && inspectorOpen && node && (
-              <aside className="flex w-80 min-w-0 shrink-0 flex-col border-l bg-sidebar">
-                <div className="flex justify-end border-b px-3 py-2">
+              <aside
+                aria-label="Step settings"
+                className="studio-side-panel flex w-80 min-w-0 shrink-0 flex-col border-l bg-sidebar"
+              >
+                <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3 text-xs">
+                  <Settings2 aria-hidden="true" size={15} />
+                  <h2 className="min-w-0 flex-1 truncate">Step settings</h2>
                   <IconButton
                     label="Close step settings"
                     className="size-7"
                     onClick={() => setInspectorOpen(false)}
                   >
-                    <X className="size-4" />
+                    <X size={14} />
                   </IconButton>
-                </div>
+                </header>
                 {inspector}
               </aside>
             )}

@@ -22,7 +22,7 @@ export function PullStack({
       className="space-y-3 rounded-lg border border-border/60 bg-card p-3 text-xs"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Layers className="size-4 text-violet-400" aria-hidden />
+        <Layers className="size-4 text-violet-700 dark:text-violet-400" aria-hidden />
         <span className="mr-auto font-medium">
           {stack ? pullStackLabel(stack) : 'Build a stack'}
         </span>

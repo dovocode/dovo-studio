@@ -2,6 +2,11 @@ import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
 import { appendUniqueRows, RequestScope, runClientEffect } from '@dovo/client-runtime'
+import {
+  createDetailDrafts,
+  integrationDraftKey,
+  useDetailDraft,
+} from '../../runtime/state/detail-drafts'
 import { useEffect, useRef } from 'react'
 import { Schema, Effect } from 'effect'
 import {
@@ -23,7 +28,19 @@ import { useTheme } from '../../ui/theme'
 import { Choice } from '../../ui/controls/choice'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
+const workDrafts = createDetailDrafts<{
+  issue: ForgeIssueDetail['issue'] | undefined
+  title: string
+  body: string
+  type: string
+  state: string
+  assignees: string
+  labels: string
+  definition: string
+  ref: string
+  inputs: string
+}>()
 export function WorkForm({
   kind,
   repositoryId,
@@ -49,26 +66,50 @@ export function WorkForm({
 }) {
   const { styles } = useTheme()
 
-  const { read, connected, readEffect } = useRuntime()
+  const { read, connected, readEffect, connection, snapshot } = useRuntime()
   const { focused } = useNavigation()
-  const [issue] = useApplicationState(initialIssue)
+  const { draft, setField, clear } = useDetailDraft(
+    workDrafts,
+    integrationDraftKey(
+      connection,
+      snapshot,
+      repositoryId,
+      jiraSourceId,
+      'work-form',
+      kind,
+      initialIssue?.id,
+      initialDefinition,
+    ),
+    () => ({
+      issue: initialIssue,
+      title: kind === 'edit' ? (initialIssue?.title ?? '') : '',
+      body: kind === 'edit' ? (initialIssue?.body ?? '') : '',
+      type: options.issueTypes[0] ?? (options.provider === 'jira' ? 'Task' : 'Issue'),
+      state: initialIssue?.state ?? '',
+      assignees: initialIssue?.assignees.join(', ') ?? '',
+      labels: initialIssue?.labels.join(', ') ?? '',
+      definition: initialDefinition ?? '',
+      ref: initialRef ?? '',
+      inputs: '{}',
+    }),
+  )
+  const { issue, title, body, type, state, assignees, labels, definition, ref, inputs } = draft
+  const setTitle = (value: string) => setField('title', value)
+  const setBody = (value: string) => setField('body', value)
+  const setType = (value: string) => setField('type', value)
+  const setState = (value: string) => setField('state', value)
+  const setAssignees = (value: string) => setField('assignees', value)
+  const setLabels = (value: string) => setField('labels', value)
+  const setDefinition = (value: string) => setField('definition', value)
+  const setRef = (value: string) => setField('ref', value)
+  const setInputs = (value: string) => setField('inputs', value)
+  const sheet = useRef<SheetHandle>(null)
   const available =
     kind === 'run'
       ? options.pipelines && options.pipelineActions.includes('run')
       : options.issues &&
         (kind === 'create' || !!issue) &&
         (kind !== 'transition' || options.provider === 'jira')
-  const [title, setTitle] = useApplicationState(kind === 'edit' ? (issue?.title ?? '') : ''),
-    [body, setBody] = useApplicationState(kind === 'edit' ? (issue?.body ?? '') : '')
-  const [type, setType] = useApplicationState(
-      options.issueTypes[0] ?? (options.provider === 'jira' ? 'Task' : 'Issue'),
-    ),
-    [state, setState] = useApplicationState(issue?.state ?? '')
-  const [assignees, setAssignees] = useApplicationState(issue?.assignees.join(', ') ?? ''),
-    [labels, setLabels] = useApplicationState(issue?.labels.join(', ') ?? '')
-  const [definition, setDefinition] = useApplicationState(initialDefinition ?? ''),
-    [ref, setRef] = useApplicationState(initialRef ?? ''),
-    [inputs, setInputs] = useApplicationState('{}')
   const [definitions, setDefinitions] = useApplicationState<
     Schema.Schema.Type<typeof forgeDefinitionsSchema> | undefined
   >(undefined)
@@ -78,7 +119,7 @@ export function WorkForm({
   const definitionPending = useRef(false)
   const [issueStates, setIssueStates] = useApplicationState(options.issueStates)
   useEffect(() => {
-    if (kind !== 'edit' || options.provider !== 'azure-devops' || !issue) return
+    if (!connected || kind !== 'edit' || options.provider !== 'azure-devops' || !issue) return
     let current = true
     void runClientEffect(
       readEffect(
@@ -108,12 +149,12 @@ export function WorkForm({
     return () => {
       current = false
     }
-  }, [kind, options.provider, issue, repositoryId, read])
+  }, [kind, options.provider, issue, repositoryId, read, connected])
   const [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const pending = useRef(false)
   useEffect(() => {
-    if (kind !== 'run') return
+    if (kind !== 'run' || !connected) return
     const current = definitionRequests.current.begin()
     definitionPending.current = true
     setDefinitionsLoading(true)
@@ -131,7 +172,7 @@ export function WorkForm({
             nativeEffect(() => {
               if (current()) {
                 setDefinitions(value)
-                setDefinition((chosen) => chosen || value.items[0]?.id || '')
+                setDefinition(definition || value.items[0]?.id || '')
               }
             }),
           ),
@@ -155,7 +196,7 @@ export function WorkForm({
         ),
     )
     return () => definitionRequests.current.cancel()
-  }, [kind, repositoryId, read, definitionsRevision])
+  }, [kind, repositoryId, read, connected, definitionsRevision])
   const moreDefinitions = () => {
     return runClientEffect(
       mobileWorkflow(function* () {
@@ -291,7 +332,8 @@ export function WorkForm({
             },
             forgeWorkResultSchema,
           )
-          onDone(result.message, result)
+          clear()
+          sheet.current?.dismiss(() => onDone(result.message, result))
         }).pipe(
           Effect.catch((e) =>
             nativeEffect(() => {
@@ -310,6 +352,7 @@ export function WorkForm({
   }
   return (
     <Sheet
+      ref={sheet}
       title={
         kind === 'transition'
           ? 'Change Jira status'

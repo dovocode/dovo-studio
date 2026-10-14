@@ -2,7 +2,7 @@ import { randomUUID } from '@dovo/protocol'
 import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
-import { ArrowRight, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
 import {
   clientScopeKey,
   useWorkspace,
@@ -18,6 +18,7 @@ import {
   DialogDescription,
   DialogTitle,
   EmptyState,
+  IconButton,
   Input,
 } from '@dovo/studio-ui'
 import { AutomationDetail } from './automation-detail'
@@ -29,6 +30,8 @@ type Selection = {
   automationId: string
   canvas?: boolean
 }
+/** Section navigation unmounts this page; keep its list position, not the automation view. */
+const remembered: { search: string; selected: Selection | null } = { search: '', selected: null }
 type Creation = {
   runtimeId: string
   connection: RuntimeConnection
@@ -47,9 +50,9 @@ export default function JobsView({ entityId }: StudioViewProps) {
     setWorkspace,
     refreshRuntimes,
   } = useWorkspace()
-  const [selected, setSelected] = useApplicationState<Selection | null>(null)
+  const [selected, setSelected] = useApplicationState<Selection | null>(remembered.selected)
   const [sidebarVisible] = useLeftSidebar()
-  const [search, setSearch] = useApplicationState('')
+  const [search, setSearch] = useApplicationState(remembered.search)
   const [error, setError] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [refreshing, setRefreshing] = useApplicationState(false)
@@ -57,6 +60,14 @@ export default function JobsView({ entityId }: StudioViewProps) {
   const [owner, setOwner] = useApplicationState('')
   const [name, setName] = useApplicationState('')
   const [pending, setPending] = useApplicationState<Creation | null>(null)
+  useEffect(() => {
+    // A new automation opens its canvas once; returning later shows its runs.
+    remembered.selected = selected && {
+      runtimeId: selected.runtimeId,
+      automationId: selected.automationId,
+    }
+    remembered.search = search
+  }, [selected, search])
   const completedCreation = useRef('')
   const request = useRef(0)
   useEffect(
@@ -371,15 +382,19 @@ export default function JobsView({ entityId }: StudioViewProps) {
               )
             ) : (
               <section className="flex h-full min-h-0 flex-col">
-                <PageHeader title="Automation unavailable">
-                  <Button variant="ghost" size="sm" onClick={back}>
-                    Back to automations
-                  </Button>
-                </PageHeader>
+                <PageHeader
+                  title="Automation unavailable"
+                  leading={
+                    <IconButton label="Back to automations" className="size-8" onClick={back}>
+                      <ArrowLeft className="size-4" />
+                    </IconButton>
+                  }
+                />
                 <EmptyState
                   icon={<Workflow />}
                   title="Automation unavailable"
                   description="This automation or its computer is no longer available."
+                  action={<Button onClick={back}>Back to automations</Button>}
                 />
               </section>
             )}

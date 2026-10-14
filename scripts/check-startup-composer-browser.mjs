@@ -32,7 +32,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     const Box=({children})=><div>{children}</div>;
     export const ResizablePanel=Box,ResizablePanelGroup=Box,ResizableHandle=()=>null;
     export const Dialog=({open,children})=>open?<div>{children}</div>:null;
-    export const DialogContent=Box,DialogTitle=Box,DialogDescription=Box;
+    export const DialogContent=Box,DialogHeader=Box,DialogTitle=Box,DialogDescription=Box;
     export const ProjectIcon=()=>null;
     export const Button=({children,onClick,disabled,type,...props})=><button aria-label={props['aria-label']} type={type} disabled={disabled} onClick={onClick}>{children}</button>;
     export const IconButton=({children,label,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;

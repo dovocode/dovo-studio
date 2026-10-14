@@ -20,7 +20,7 @@ export function RunProgress({
 }) {
   const { colors, styles } = useTheme()
 
-  const { snapshot, connected, callEffect } = useRuntime()
+  const { snapshot, connected, callEffect, profile } = useRuntime()
   const { navigate, focused } = useNavigation()
   const { busy, error, act } = useAction()
   const [expanded, setExpanded] = useApplicationState(
@@ -135,7 +135,7 @@ export function RunProgress({
             secondary
             label={needsInput ? 'Respond in task' : 'Open current task'}
             disabled={!focused}
-            onPress={() => navigate('tasks', current.taskId)}
+            onPress={() => navigate('tasks', current.taskId, profile?.id)}
           />
         )}
       {run.status === 'waiting' && (
@@ -287,7 +287,7 @@ export function RunProgress({
                     accessibilityRole="button"
                     accessibilityLabel={`Open task ${task.title}`}
                     disabled={!focused}
-                    onPress={() => navigate('tasks', task.id)}
+                    onPress={() => navigate('tasks', task.id, profile?.id)}
                     style={[
                       styles.row,
                       {
@@ -322,7 +322,7 @@ export function RunProgress({
                       accessibilityRole="button"
                       accessibilityLabel={`Open task ${task.title}`}
                       disabled={!focused}
-                      onPress={() => navigate('tasks', id)}
+                      onPress={() => navigate('tasks', id, profile?.id)}
                       style={{
                         minHeight: 48,
                         justifyContent: 'center',

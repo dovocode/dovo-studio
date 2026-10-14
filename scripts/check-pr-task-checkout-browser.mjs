@@ -5,6 +5,7 @@ import { chromium } from 'playwright'
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const native = `
 export const Text=({children,accessibilityRole})=><p role={accessibilityRole}>{children}</p>;
+export const useSheetNavigation=()=>navigate=>navigate();
 export const Sheet=({title,children})=><div role="menu" aria-label={title}>{children}</div>;
 export const Pressable=({children,accessibilityLabel,onPress,disabled})=><button aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>{children}</button>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
@@ -19,7 +20,7 @@ const mocks = {
   '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=()=>null;`,
   '../../list/task-collection': `export const taskSources=store=>[{runtimeId:'machine',name:'Machine',online:true,workspace:store.workspace}];`,
   '../../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
-  '../../../runtime/connection/provider': `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`,
+  '../../../runtime/connection/provider': `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,activeId:'machine',callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`,
   '../../../shell/navigation': `export const useNavigation=()=>({navigate:(...args)=>window.events.push(['navigate',...args])});`,
   '../../../ui/controls/use-action': `import {useState} from 'react';export function useAction(){const [busy,setBusy]=useState(false),[error,setError]=useState('');return {busy,error,act:callback=>{setBusy(true);return callback().catch(error=>setError(error.message)).finally(()=>setBusy(false))}}}`,
   '../../../ui/content/text': native,
@@ -43,7 +44,7 @@ const root=createRoot(document.getElementById('app'));
 const repository={id:'repo',name:'Project',path:'/repo',branch:'main'};
 const pull={number:7,title:'Fix',url:'https://github.com/team/project/pull/7',head:'contributor:fix',base:'team:main',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',headCloneUrl:'https://github.com/contributor/fork.git'};
 window.request=async(path,input)=>{window.events.push(['request',path,input]);if(window.fail)throw Error('PR branch is already checked out');return {id:'task'}};
-window.store={connected:true,workspace:{tasks:[],repositories:[repository],agents:[]},activeRuntimeId:'machine',runtimeRegistry:{profiles:[]},request:window.request};
+window.store={connected:true,workspace:{tasks:[],repositories:[repository],agents:[]},activeRuntimeId:'machine',runtimeRegistry:{activeId:'machine',profiles:[]},request:window.request};
 window.render=(mobile,available=true,stack=false)=>{window.events=[];window.fail=false;flushSync(()=>root.render(null));const source={...pull,headCloneUrl:available?pull.headCloneUrl:undefined};flushSync(()=>root.render(mobile?<MobileStart repositoryId="repo" pull={source} stackAction={stack?'update':undefined}/>:<DesktopStart repositoryId="repo" pull={source} stackAction={stack?'update':undefined}/>));};
 window.composer=(checkoutMode,legacy=false)=>{const task={id:'task',title:'Draft',repositoryId:'repo',agentId:'',status:'draft',execution:'worktree',worktreeFromOrigin:true,messages:[],files:[],draft:'',example:false,pullRequest:{...pull,headBranch:legacy?undefined:pull.head,checkoutMode}};flushSync(()=>root.render(<ComposerWorkspace task={task} disabled={false} onMachineMoving={()=>{}}/>));};
 window.render(false);
@@ -100,6 +101,11 @@ try {
       assert.equal(request[2].checkoutMode, mode)
       assert.equal(request[2].objective, 'I want to work on this PR.')
       assert.equal(request[2].run, false)
+      if (mobile)
+        assert.equal(
+          (await page.evaluate(() => window.events.find((event) => event[0] === 'navigate')))[3],
+          'machine',
+        )
     }
     await page.evaluate((mobile) => {
       window.render(mobile)

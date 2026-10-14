@@ -46,6 +46,7 @@ export type TaskSurface =
   | 'artifacts'
 export function TaskHeader({
   task,
+  windowRightEdge = true,
   onPullLink,
   surface,
   onSurface,
@@ -66,6 +67,7 @@ export function TaskHeader({
   onCreate: () => void
   onDeselect: () => void
   task: Task
+  windowRightEdge?: boolean
   onPullLink?: (url: string) => boolean
   surface: TaskSurface
   onSurface: (surface: TaskSurface) => void
@@ -144,7 +146,12 @@ export function TaskHeader({
     <>
       {!compact && (
         <HeaderContent>
-          <header className="studio-task-thread-header" data-sidebar={sidebarVisible}>
+          <header
+            className="studio-task-thread-header"
+            data-sidebar={sidebarVisible}
+            data-window-edge
+            data-window-right-edge={windowRightEdge || undefined}
+          >
             <ProjectIcon repository={repo} className="size-4" />
             <h1
               className="studio-titlebar-heading min-w-0 flex-1"

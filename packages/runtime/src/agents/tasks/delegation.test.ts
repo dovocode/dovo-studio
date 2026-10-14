@@ -1136,3 +1136,66 @@ it('rejects unsupported child access before creation and chooses a safe supporte
   expect(s.store.task(childId).harness?.permission).toBe('read-only')
   expect(s.store.task(childId).status).toBe('review')
 })
+
+it.each(['read-only', 'ask', 'workspace-write', 'auto', 'full-access'] as const)(
+  'inherits %s access across harnesses and named configurations unless explicitly narrowed',
+  async (permission) => {
+    const s = await setup()
+    const preset = {
+      ...defaultTaskHarness('claude'),
+      id: 'reviewer',
+      name: 'Reviewer',
+      permission: 'read-only' as const,
+    }
+    const current = s.defaults.get()
+    s.defaults.save(
+      { ...current, scopedSettings: { environment: { agents: [preset] }, shared: [] } },
+      false,
+    )
+    const children: AgentRun[] = []
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        if (run.agent.provider === 'claude') {
+          children.push(run)
+          run.onText('Done')
+          return
+        }
+        for (const [key, options] of [
+          ['builtin', { provider: 'claude' as const }],
+          ['named', { agentId: preset.id }],
+          ['narrowed', { agentId: preset.id, permission: 'read-only' as const }],
+        ] as const) {
+          const child = s.tasks.subagentSpawn({
+            taskId: taskId(run),
+            key,
+            name: key,
+            prompt: 'Inspect without changing files',
+            ...options,
+          })
+          await s.tasks.subagentWait(taskId(run), child.id)
+          expect(s.store.task(child.id).harness?.permission).toBe(
+            key === 'narrowed' ? 'read-only' : permission,
+          )
+        }
+        run.onText('Parent done')
+      },
+    })
+    const parent = s.tasks.create({
+      title: 'Parent',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Delegate',
+      harness: { ...defaultTaskHarness('codex'), permission },
+    })
+    await (
+      await s.tasks.start(parent.id)
+    ).done
+    expect(children.map((child) => child.agent.permission)).toEqual([
+      permission,
+      permission,
+      'read-only',
+    ])
+    expect(s.store.task(parent.id).error).toBeUndefined()
+  },
+)

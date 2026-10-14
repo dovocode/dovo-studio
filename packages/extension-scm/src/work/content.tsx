@@ -4,14 +4,13 @@ import { WorkForm } from './work-form'
 import { IssueDetail } from './issue-detail'
 import { formatDate } from './format-date'
 import { PipelineDetail as PipelineDetailView, PipelineState } from './pipeline-detail'
-import { ArrowLeft, X, GitBranch, Search, CircleDot, MoreHorizontal, RefreshCw } from 'lucide-react'
+import { ArrowLeft, GitBranch, Search, CircleDot, MoreHorizontal, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Effect, Schema } from 'effect'
 import {
   useWorkspace,
   startPolling,
   issueLabel,
-  forgeLabels,
   matchesWorkItem,
   pipelineActionAllowed,
   type ForgeIssue,
@@ -430,8 +429,9 @@ export function WorkContent({
   }
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {selected && !preview && (
+      {selected && (
         <PageHeader
+          embedded={preview}
           title={
             <>
               <span className="studio-titlebar-project">{repositoryName}</span>
@@ -445,7 +445,7 @@ export function WorkContent({
             <Button
               size="icon"
               variant="ghost"
-              aria-label={`Back to ${mode}`}
+              aria-label={preview && mode === 'pipelines' ? 'Back to runs' : `Back to ${mode}`}
               onClick={() => (onBack ? onBack() : setSelected(''))}
             >
               <ArrowLeft className="size-4" />
@@ -483,46 +483,23 @@ export function WorkContent({
               </div>
             )}
 
-            {selected ? (
-              <>
-                {preview && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => (onBack ? onBack() : setSelected(''))}
-                  >
-                    <X className="size-4" />
-                    Close preview
-                  </Button>
-                )}
-                {preview && (
-                  <span className="mr-auto min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                    {repositoryName}
-                    {options?.provider
-                      ? ` · ${options.provider === 'jira' ? 'Jira' : forgeLabels[options.provider]}`
-                      : ''}
-                  </span>
-                )}
-              </>
-            ) : (
-              mode === 'issues' && (
-                <ChoicePicker
-                  className="h-8 w-auto min-w-36"
-                  aria-label="Issue state"
-                  value={state}
-                  onValueChange={(v) => {
-                    setState(v)
-                    setCursor(undefined)
-                  }}
-                >
-                  <option value="all">All states</option>
-                  {options?.issueStates.map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </ChoicePicker>
-              )
+            {!selected && mode === 'issues' && (
+              <ChoicePicker
+                className="h-8 w-auto min-w-36"
+                aria-label="Issue state"
+                value={state}
+                onValueChange={(v) => {
+                  setState(v)
+                  setCursor(undefined)
+                }}
+              >
+                <option value="all">All states</option>
+                {options?.issueStates.map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </ChoicePicker>
             )}
-            {(!selected || preview) && (
+            {!selected && (
               <Button
                 size="sm"
                 variant="ghost"

@@ -48,22 +48,24 @@ export function LinkBrowser() {
       const target = githubPullTarget(url)
       if (!target) return false
       const ordered = [...overviews].sort(
-        (a, b) => Number(b.profile.id === profile?.id) - Number(a.profile.id === profile?.id),
+        (a, b) =>
+          Number(b.connected) - Number(a.connected) ||
+          Number(b.profile.id === profile?.id) - Number(a.profile.id === profile?.id),
       )
       for (const entry of ordered) {
         const repository = entry.snapshot?.workspace.repositories.find(
           (repo) =>
             !repo.kind &&
-            !repo.gitIdentityError &&
-            (repo.gitIdentity === target.identity || repo.pullIdentity === target.identity),
+            ((!repo.gitIdentityError && repo.gitIdentity === target.identity) ||
+              repo.pullIdentity === target.identity),
         )
         if (repository) {
-          router.push(pullHref(entry.profile.id, repository.id, target.number))
+          router.push(pullHref(entry.profile.id, repository.id, target.number, target))
           return true
         }
       }
       const runtimeId = profile?.id ?? ordered[0]?.profile.id
-      if (runtimeId) router.push(pullHref(runtimeId, target.url, target.number))
+      if (runtimeId) router.push(pullHref(runtimeId, target.url, target.number, target))
       else Alert.alert('Connect a computer', 'Connect a computer to load this PR in Dovo.')
       return true
     }

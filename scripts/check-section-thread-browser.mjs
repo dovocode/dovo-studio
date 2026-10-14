@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { chromium } from 'playwright'
+import { chromium } from './browser/harness.mjs'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -20,7 +20,7 @@ const mocks = {
     export function WorkspaceProvider({children}) {
       const [runtimeId,setRuntimeId]=useState('mac');
       const [spaces,setSpaces]=useState({mac:{tasks:[{id:'mac-a',draft:''},{id:'mac-b',draft:''}]},remote:{tasks:[{id:'remote-a',draft:''}]}});
-      const switchRuntime=async id=>setRuntimeId(id);
+      const switchRuntime=async id=>{if(window.holdSwitch){window.holdSwitch=false;await new Promise(resolve=>window.finishSwitch=resolve)}setRuntimeId(id);window.finishedSwitchId=id};
       window.switchRuntime=switchRuntime;window.spaces=spaces;
       const workspace=spaces[runtimeId];
       const store={workspace,ready:true,connected:true,snapshot:null,storageError:null,syncError:null,pendingSync:false,runtimes:[],
@@ -53,8 +53,8 @@ const built = await build({
       import {useComposerDraft} from '../extension-tasks/src/chat/composer/use-composer-draft';
       window.allowSettings=true;
       function Composer({task}){const {controller,update}=useComposerDraft(task);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea aria-label="Message" value={text} onChange={e=>update(e.target.value)}/>;}
-      function Threads({entityId}){const host=useStudioHost(),store=useWorkspace();const task=store.workspace.tasks.find(t=>t.id===entityId);return <><output id="selected">{task?.id||'fresh'}</output>{store.workspace.tasks.map(t=><button key={t.id} onClick={()=>host.navigate({viewId:'tasks',entityId:t.id})}>Select {t.id}</button>)}<button onClick={()=>host.navigate({viewId:'tasks'})}>New thread</button>{task&&<Composer key={store.activeRuntimeId+task.id} task={task}/>}</>;}
-      function PRs(){const host=useStudioHost();return <><p>PR section</p><button onClick={()=>host.navigate({viewId:'tasks'})}>Explicit fresh composer</button></>;}
+      function Threads({entityId}){const host=useStudioHost(),store=useWorkspace();const task=store.workspace.tasks.find(t=>t.id===entityId);return <><output id="selected">{task?.id||'fresh'}</output>{store.workspace.tasks.map(t=><button key={t.id} onClick={()=>host.navigate({viewId:'tasks',entityId:t.id})}>Select {t.id}</button>)}<button onClick={()=>host.openPullLink('https://github.com/team/project/pull/7/files#diff-example')}>Open linked PR</button><button onClick={()=>host.navigate({viewId:'tasks'})}>New thread</button>{task&&<Composer key={store.activeRuntimeId+task.id} task={task}/>}</>;}
+      function PRs({entityId,navigationKey}){const host=useStudioHost();window.host=host;return <><p>PR section</p><output id="pull-target">{entityId}</output><output id="navigation-key">{navigationKey}</output><button onClick={()=>host.goBack()}>Back to origin</button><button onClick={()=>host.navigate({viewId:'tasks'})}>Explicit fresh composer</button></>;}
       function Settings(){return <p>Settings section</p>;}
       const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'settings',title:'Settings',navigationGroup:'settings',order:2,load:async()=>({default:Settings})}]}];
       const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions}/>);window.restart();
@@ -142,6 +142,55 @@ try {
   await section('PRs')
   await page.getByRole('button', { name: 'Explicit fresh composer', exact: true }).click()
   await selected('fresh')
+  assert.equal(await page.locator('.studio.dark').count(), 0, 'Appearance controls dark variants')
+  await page.getByRole('button', { name: 'Select remote-a', exact: true }).click()
+  await page.getByRole('button', { name: 'Open linked PR', exact: true }).click()
+  await page.waitForFunction(
+    () =>
+      document.getElementById('pull-target')?.textContent ===
+      'https://github.com/team/project/pull/7/files#diff-example',
+  )
+  const key = await page.locator('#navigation-key').innerText()
+  await page.evaluate(() =>
+    window.host.openPullLink('https://github.com/team/project/pull/7/files#diff-example'),
+  )
+  await page.waitForFunction(
+    (key) => document.getElementById('navigation-key')?.textContent !== key,
+    key,
+  )
+  await page.getByRole('button', { name: 'Back to origin', exact: true }).click()
+  await selected('remote-a')
+  await page.getByRole('button', { name: 'Open linked PR', exact: true }).click()
+  await page.getByText('PR section', { exact: true }).waitFor()
+  await page.keyboard.press('Alt+ArrowLeft')
+  await selected('remote-a')
+  await page.getByRole('button', { name: 'Open linked PR', exact: true }).click()
+  await page.getByText('PR section', { exact: true }).waitFor()
+  await page.evaluate(async () => {
+    await window.switchRuntime('mac')
+    window.holdSwitch = true
+  })
+  await page.getByRole('button', { name: 'Back to origin', exact: true }).click()
+  await section('Settings')
+  await page.getByText('Settings section', { exact: true }).waitFor()
+  await page.evaluate(() => window.finishSwitch())
+  await page.waitForFunction(() => window.finishedSwitchId === 'remote')
+  await page.getByText('Settings section', { exact: true }).waitFor()
+  assert.equal(await page.locator('#selected').count(), 0, 'a late Back replaced newer navigation')
+  await page.evaluate(() => {
+    window.holdSwitch = true
+    window.notify({ runtimeId: 'mac', viewId: 'tasks', entityId: 'mac-b' })
+  })
+  await section('PRs')
+  await page.getByText('PR section', { exact: true }).waitFor()
+  await page.evaluate(() => window.finishSwitch())
+  await page.waitForFunction(() => window.finishedSwitchId === 'mac')
+  await page.getByText('PR section', { exact: true }).waitFor()
+  assert.equal(
+    await page.locator('#selected').count(),
+    0,
+    'a late notification replaced newer navigation',
+  )
   await page.evaluate(() => window.restart())
   await selected('fresh')
   assert.deepEqual(errors, [])

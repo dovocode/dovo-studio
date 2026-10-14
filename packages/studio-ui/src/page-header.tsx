@@ -7,15 +7,22 @@ export function PageHeader({
   description,
   children,
   leading,
+  embedded = false,
 }: {
   title: ReactNode
   description?: ReactNode
   leading?: ReactNode
   children?: ReactNode
+  embedded?: boolean
 }) {
   return (
-    <HeaderContent>
-      <header className="studio-page-header border-b">
+    <HeaderContent enabled={!embedded}>
+      <header
+        className="studio-page-header border-b"
+        data-window-edge={!embedded || undefined}
+        data-window-right-edge={!embedded || undefined}
+        data-embedded={embedded || undefined}
+      >
         {leading}
         <div className="studio-page-heading">
           <h1>{title}</h1>

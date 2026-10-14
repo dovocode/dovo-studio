@@ -20,6 +20,9 @@ export function PullComments({
         <article
           key={comment.id}
           id={comment.id}
+          data-comment-fragment={
+            comment.url.includes('#') ? `#${comment.url.split('#')[1]}` : undefined
+          }
           data-comment-kind={comment.kind}
           aria-label={`${comment.author} ${comment.kind}`}
           className={`min-w-0 overflow-hidden rounded-xl border ${comment.kind === 'review' && comment.state === 'APPROVED' ? 'border-emerald-400/20' : comment.kind === 'review' && comment.state === 'CHANGES_REQUESTED' ? 'border-red-400/25' : ''}`}
@@ -36,6 +39,7 @@ export function PullComments({
             )}
             {comment.outdated && <span className="text-muted-foreground">Outdated</span>}
             <a
+              data-dovo-external="true"
               href={comment.url}
               target="_blank"
               rel="noreferrer"

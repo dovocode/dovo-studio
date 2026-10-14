@@ -1,4 +1,9 @@
 import { hasJiraIssueFilters, type JiraIssueFilters, runtimeComputerName } from '@dovo/protocol'
+import {
+  createDetailDrafts,
+  detailDraftKey,
+  useDetailDraft,
+} from '../../runtime/state/detail-drafts'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { router } from 'expo-router'
 import { useDeferredValue, useEffect, useRef } from 'react'
@@ -10,6 +15,7 @@ import {
   type ForgePipeline,
   type RuntimeProfile,
   type JiraSource,
+  type ForgeWorkOptions,
 } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { projectSourceKey } from '../../runtime/state/collection-sources'
@@ -31,7 +37,7 @@ import { Action } from '../../ui/controls/action'
 import { Icon } from '../../ui/controls/icon'
 import { ScreenHeader } from '../../ui/layout/screen-header'
 import { SearchField } from '../../ui/controls/field'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { JiraProjectForm } from '../connections/jira-binding'
 import { WorkForm } from './work-form'
 import { WorkSignal } from '../pulls/detail/pipeline-details'
@@ -41,6 +47,14 @@ import { matchesPipelineCommit } from './work-list'
 import { startsStatusGroup } from './jira-list'
 import { JiraChip, JiraQuickViews, JiraFilterFields } from './jira-filters'
 type Mode = 'issues' | 'pipelines'
+const workPreferences = createDetailDrafts<{
+  jiraFilters: JiraIssueFilters
+  layout: 'list' | 'status'
+  nativeState: string
+  jiraState: string
+  search: string
+  sort: string
+}>()
 export function WorkScreen({
   mode,
   repositoryId,
@@ -67,20 +81,39 @@ export function WorkScreen({
     (selected
       ? selected.kind === 'jira'
       : sources.length > 0 && sources.every((source) => source.kind === 'jira'))
-  const [jiraFilters, setJiraFilters] = useApplicationState<JiraIssueFilters>({})
-  const [layout, setLayout] = useApplicationState<'list' | 'status'>('list')
-  const [nativeState, setNativeState] = useApplicationState('all')
-  const [jiraState, setJiraState] = useApplicationState('open')
+  const { draft: preferences, setField } = useDetailDraft(
+    workPreferences,
+    detailDraftKey(
+      null,
+      'work-section',
+      mode,
+      repositoryId,
+      sources.map(workSourceContentIdentity).sort(),
+    ),
+    () => ({
+      jiraFilters: {},
+      layout: 'list' as const,
+      nativeState: 'all',
+      jiraState: 'open',
+      search: '',
+      sort: 'updated',
+    }),
+  )
+  const { jiraFilters, layout, nativeState, jiraState, search, sort } = preferences
+  const setJiraFilters = (value: JiraIssueFilters) => setField('jiraFilters', value)
+  const setLayout = (value: 'list' | 'status') => setField('layout', value)
+  const setNativeState = (value: string) => setField('nativeState', value)
+  const setJiraState = (value: string) => setField('jiraState', value)
+  const setSearch = (value: string) => setField('search', value)
+  const setSort = (value: string) => setField('sort', value)
   const state = jiraOnly ? jiraState : nativeState
   const setState = jiraOnly ? setJiraState : setNativeState
-  const [search, setSearch] = useApplicationState('')
   const query = useDeferredValue(search)
   const [serverQuery, setServerQuery] = useApplicationState('')
   useEffect(() => {
     const timer = setTimeout(() => setServerQuery(search.trim()), 300)
     return () => clearTimeout(timer)
   }, [search])
-  const [sort, setSort] = useApplicationState('updated')
   const [filters, setFilters] = useApplicationState(false)
   const [sourcesOpen, setSourcesOpen] = useApplicationState(false)
   const [sourceBusy, setSourceBusy] = useApplicationState(false)
@@ -92,7 +125,12 @@ export function WorkScreen({
     | undefined
   >(undefined)
   const [creating, setCreating] = useApplicationState(false)
-  const [formSource, setFormSource] = useApplicationState<WorkSource | undefined>(undefined)
+  const [formTarget, setFormTarget] = useApplicationState<
+    { source: WorkSource; options: ForgeWorkOptions } | undefined
+  >(undefined)
+  const sourcePicker = useRef<SheetHandle>(null)
+  const pinForm = (page: WorkPage | undefined) =>
+    setFormTarget(page?.options ? { source: page.source, options: page.options } : undefined)
   const [message, setMessage] = useApplicationState('')
   const { pages, busy, refresh, more } = useWorkCollection(
     mode,
@@ -150,11 +188,13 @@ export function WorkScreen({
   const eligible = pages.filter(
     (page) => page.source.connected && !page.stale && page.options?.issues,
   )
-  const formPage =
-    formSource &&
-    pages.find(
-      (page) => workSourceContentIdentity(page.source) === workSourceContentIdentity(formSource),
+  const currentFormSource =
+    formTarget &&
+    sources.find(
+      (source) =>
+        workSourceContentIdentity(source) === workSourceContentIdentity(formTarget.source),
     )
+  const formPage = formTarget
   const choose = (page: WorkPage, row: ForgeIssue | ForgePipeline) => {
     if (!focused) return
     retainPosition()
@@ -188,7 +228,7 @@ export function WorkScreen({
                   label: 'New issue',
                   disabled: !focused || !eligible.length,
                   onPress: () => {
-                    setFormSource(eligible.length === 1 ? eligible[0].source : undefined)
+                    pinForm(eligible.length === 1 ? eligible[0] : undefined)
                     setCreating(true)
                   },
                 },
@@ -723,7 +763,7 @@ export function WorkScreen({
       )}
       {creating &&
         (!formPage?.options ? (
-          <Sheet title="New issue" onClose={() => setCreating(false)}>
+          <Sheet ref={sourcePicker} title="New issue" onClose={() => setCreating(false)}>
             <Text style={styles.muted}>
               Choose the issue tracker. You can link a Dovo project later.
             </Text>
@@ -732,7 +772,12 @@ export function WorkScreen({
                 key={page.source.key}
                 secondary
                 label={`${workSourceName(page.source)} · ${page.source.computerName}`}
-                onPress={() => setFormSource(page.source)}
+                onPress={() =>
+                  sourcePicker.current?.dismiss(() => {
+                    pinForm(page)
+                    setCreating(true)
+                  })
+                }
               />
             ))}
           </Sheet>
@@ -741,7 +786,7 @@ export function WorkScreen({
             <WorkForm
               key={workSourceContentIdentity(formPage.source)}
               kind="create"
-              disabled={!focused || !formPage.source.connected || formPage.stale}
+              disabled={!focused || !currentFormSource?.connected}
               {...workSourceInput(formPage.source)}
               options={formPage.options}
               onClose={() => setCreating(false)}

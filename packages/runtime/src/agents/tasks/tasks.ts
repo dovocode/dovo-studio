@@ -2078,7 +2078,7 @@ export class Tasks {
     const ceiling = selectedCheckout?.access === 'read-only' ? 'read-only' : parentAgent.permission
     const permission = resolveProviderAccess(
       base.provider,
-      delegatedAccess(ceiling, input.permission ?? preset?.permission ?? parentAgent.permission),
+      delegatedAccess(ceiling, input.permission ?? parentAgent.permission),
     )
     if (delegatedAccess(ceiling, permission) !== permission)
       throw new HttpError(

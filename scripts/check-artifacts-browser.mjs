@@ -40,6 +40,7 @@ export {Dialog,DialogContent,DialogDescription,DialogTitle} from '${uiRoot}compo
 export {EmptyState} from '${uiRoot}components/empty-state.tsx';
 export {MessageResponse} from '${uiRoot}components/ai-elements/message.tsx';
 export const IconButton=({label,...props})=><Button variant="ghost" size="icon" aria-label={label} {...props}/>;
+export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true,()=>{}];
 export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=({children})=>children;export const TooltipContent=()=>null;
 `,
   '../../runtime/connection/provider': `import {useWorkspace} from '@dovo/studio-core';export const useRuntime=()=>{const value=useWorkspace();return {...value,read:value.request,activeId:value.activeRuntimeId}};`,
@@ -82,7 +83,7 @@ const interfaces = await Promise.all(
   ['desktop', 'mobile', 'library', 'mobile-library'].map(async (platform) => {
     const contents =
       platform === 'library'
-        ? `import {createRoot} from 'react-dom/client';import {useState} from 'react';import ArtifactsView from './src/artifacts-view.tsx';function App(){const[tick,setTick]=useState(0);window.updateLibrary=()=>setTick(x=>x+1);return <ArtifactsView/>}createRoot(document.getElementById('app')).render(<App/>);`
+        ? `import {createRoot} from 'react-dom/client';import {useState} from 'react';import ArtifactsView from './src/artifacts-view.tsx';function App(){const[tick,setTick]=useState(0),[shown,setShown]=useState(true);window.updateLibrary=()=>setTick(x=>x+1);window.showLibrary=setShown;return shown?<ArtifactsView/>:null}createRoot(document.getElementById('app')).render(<App/>);`
         : platform === 'mobile-library'
           ? `import {createRoot} from 'react-dom/client';import ArtifactsScreen from './src/screens/artifacts.tsx';createRoot(document.getElementById('app')).render(<ArtifactsScreen/>);`
           : platform === 'desktop'
@@ -698,6 +699,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         runtimes: sources,
         overviews: sources,
         switchRuntime: async () => {},
+        runtimeReadCache: () => ({ read: async () => null, write: async () => {} }),
         readRuntime: async (profile, path, input) => {
           if (path.endsWith('/snapshot')) {
             window.snapshotCalls.push([profile.id, input.id])
@@ -744,8 +746,14 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       'Open artifact API client',
       'Library must show recently updated artifacts first',
     )
-    if (!native) assert.match(await library.getByRole('alert').textContent(), /Offline host/)
-    else await library.getByText(/Offline host/).waitFor()
+    if (!native) {
+      await library.getByRole('status').filter({ hasText: 'Offline host is offline.' }).waitFor()
+      assert.equal(
+        await library.getByRole('alert').count(),
+        0,
+        'A disconnected computer is a status, not a request failure',
+      )
+    } else await library.getByText(/Offline host/).waitFor()
     assert.deepEqual(await library.evaluate(() => window.libraryCalls), ['0', '1'])
     assert.deepEqual(
       await library.evaluate(() => window.previewHosts),
@@ -800,12 +808,41 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     await library.getByText('Content from Host 1', { exact: true }).waitFor()
     assert.ok((await library.evaluate(() => window.previewHosts)).every((host) => host === '1'))
     if (!native) {
+      assert.equal(
+        await library.getByRole('dialog').count(),
+        0,
+        'The library opens artifacts beside its list, not in a modal',
+      )
+      assert.equal(
+        await library.getByRole('heading', { level: 1 }).textContent(),
+        'Launch brief',
+        'The selected artifact owns the page header',
+      )
+      assert.equal(
+        await library
+          .getByRole('navigation', { name: 'Artifact library' })
+          .getByRole('button', { name: 'Open artifact Launch brief' })
+          .getAttribute('aria-current'),
+        'true',
+      )
       await library.getByRole('button', { name: 'Copy source', exact: true }).click()
       await library.getByRole('button', { name: 'Copied source', exact: true }).waitFor()
       assert.equal(await library.evaluate(() => window.copiedSource), 'Content from Host 1')
       if (screenshotDirectory)
         await library.screenshot({ path: `${screenshotDirectory}/library-preview.png` })
-      await library.getByRole('button', { name: 'Close', exact: true }).click()
+      await library.getByRole('button', { name: 'Expand artifact', exact: true }).click()
+      await library.getByRole('dialog').waitFor()
+      await library.keyboard.press('Escape')
+      await library.getByRole('dialog').waitFor({ state: 'detached' })
+      await library.setViewportSize({ width: 390, height: 844 })
+      assert.equal(
+        await library.getByLabel('Search artifacts').isVisible(),
+        false,
+        'Compact layouts stack the detail over the list',
+      )
+      await library.getByRole('button', { name: 'Back to artifacts', exact: true }).click()
+      await library.getByLabel('Search artifacts').waitFor()
+      await library.setViewportSize({ width: 1280, height: 800 })
     } else
       await library.getByRole('button', { name: 'Close artifact preview', exact: true }).click()
     assert.deepEqual(
@@ -873,9 +910,145 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     )
     await library.close()
   }
+  {
+    const owners = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+    await prepareView(owners)
+    await owners.evaluate(() => {
+      const artifact = (id, title) => ({
+        id,
+        taskId: 'thread',
+        title,
+        format: 'markdown',
+        revision: 1,
+        createdAt: '2026-10-01T00:00:00Z',
+        updatedAt: '2026-10-02T00:00:00Z',
+        threadTitle: 'Research',
+        threadState: 'active',
+      })
+      const runtime = (id, name, token) => ({
+        profile: {
+          id,
+          name,
+          nameIsCustom: true,
+          connection: { address: `http://${id}.lan`, token },
+        },
+        connected: true,
+        snapshot: {
+          artifactsEnabled: true,
+          workspace: { agents: [], repositories: [], tasks: [] },
+        },
+      })
+      window.ownerRuntimes = [runtime('a', 'Host A', 'first'), runtime('b', 'Host B', 'first')]
+      window.ownerCalls = []
+      window.pendingB = []
+      window.replicas = new Map()
+      const replica = (profile) => `${profile.id}:${profile.connection.token}`
+      window.artifactWorkspace = {
+        connected: true,
+        activeRuntimeId: 'a',
+        snapshot: { artifactsEnabled: true },
+        get runtimes() {
+          return window.ownerRuntimes
+        },
+        switchRuntime: async () => {},
+        runtimeReadCache: (profile) => ({
+          read: async () => window.replicas.get(replica(profile)) ?? null,
+          write: async (_key, value) =>
+            window.replicas.set(replica(profile), { value, cachedAt: '2026-10-14T09:00:00Z' }),
+        }),
+        readRuntime: (profile, path) => {
+          if (path.endsWith('/snapshot')) return Promise.resolve({ excerpt: 'Snapshot' })
+          window.ownerCalls.push(profile.id)
+          if (profile.id === 'b') return new Promise((resolve) => window.pendingB.push(resolve))
+          if (window.failA) return Promise.reject(new Error('403 Forbidden'))
+          return Promise.resolve({ artifacts: [artifact('a1', 'Alpha notes')] })
+        },
+      }
+      window.artifactRequest = async () => ({ artifacts: [] })
+      window.setRuntime = (id, patch) => {
+        window.ownerRuntimes = window.ownerRuntimes.map((entry) =>
+          entry.profile.id === id
+            ? {
+                ...entry,
+                ...patch,
+                profile: { ...entry.profile, ...patch.profile },
+              }
+            : entry,
+        )
+        window.updateLibrary()
+      }
+      window.resolveB = (index, title) =>
+        window.pendingB[index]({ artifacts: [artifact(`b${index}`, title)] })
+    })
+    await owners.addScriptTag({ content: interfaces.find((ui) => ui.platform === 'library').code })
+    const row = (title) => owners.getByRole('button', { name: `Open artifact ${title}` })
+    await row('Alpha notes').waitFor()
+    // Host B is still loading; a newer read must win over the slower older reply.
+    await owners.evaluate(() => window.setRuntime('b', { connected: false }))
+    await owners.getByText('Host B is offline.', { exact: false }).waitFor()
+    await owners.evaluate(() => window.setRuntime('b', { connected: true }))
+    await owners.waitForFunction(() => window.pendingB.length === 2)
+    await owners.evaluate(() => window.resolveB(1, 'Fresh B'))
+    await row('Fresh B').waitFor()
+    await owners.evaluate(() => window.resolveB(0, 'Stale B'))
+    await owners.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    assert.equal(
+      await row('Stale B').count(),
+      0,
+      'Slow earlier results must not replace newer rows',
+    )
+    assert.equal(await row('Fresh B').count(), 1)
+
+    await owners.evaluate(() => window.setRuntime('a', { connected: false }))
+    await owners.getByText('Host A is offline. Showing artifacts saved', { exact: false }).waitFor()
+    assert.equal(await row('Alpha notes').count(), 1, 'Disconnects keep the last healthy rows')
+    assert.equal(await owners.getByRole('alert').count(), 0)
+    assert.deepEqual(await owners.evaluate(() => window.ownerCalls), ['a', 'b', 'b'])
+
+    await owners.getByLabel('Search artifacts').fill('Alpha')
+    await row('Alpha notes').click()
+    await owners.getByRole('heading', { name: 'Host A is offline', exact: true }).waitFor()
+    await owners.evaluate(() => window.showLibrary(false))
+    await owners.evaluate(() => window.showLibrary(true))
+    assert.equal(await owners.getByLabel('Search artifacts').inputValue(), 'Alpha')
+    assert.equal(
+      await owners.getByRole('heading', { level: 1 }).textContent(),
+      'Alpha notes',
+      'Section navigation keeps the selected artifact',
+    )
+    assert.deepEqual(
+      await owners.evaluate(() => window.ownerCalls),
+      ['a', 'b', 'b', 'b'],
+      'Remounting reads connected computers again but never the offline one',
+    )
+
+    await owners.evaluate(() =>
+      window.setRuntime('a', {
+        profile: { connection: { address: 'http://a.lan', token: 'second' } },
+      }),
+    )
+    await owners.getByText('Artifact unavailable', { exact: true }).first().waitFor()
+    assert.equal(
+      await row('Alpha notes').count(),
+      0,
+      'A re-paired computer must not borrow the previous pairing’s rows',
+    )
+    await owners.getByRole('button', { name: 'Back to artifacts', exact: true }).first().click()
+    await owners.getByLabel('Search artifacts').fill('')
+    await owners.evaluate(() => {
+      window.failA = true
+      window.setRuntime('a', { connected: true })
+    })
+    assert.match(
+      await owners.getByRole('alert').textContent(),
+      /Host A: 403 Forbidden/,
+      'Request failures stay distinct from disconnects',
+    )
+    await owners.close()
+  }
   assert.deepEqual(pageErrors, [], 'Artifact interfaces must not raise browser errors')
   console.log(
-    'Artifacts: thread cards open beside chat, expanded versions, desktop/mobile galleries and filters, hosted links, thread and host isolation, interactive HTML/SVG, sandbox, lazy snapshots, versions, add to thread, deletion/cancellation/error recovery, copy and source views passed.',
+    'Artifacts: thread cards open beside chat, expanded versions, desktop/mobile galleries and filters, desktop sidebar detail, per-owner offline retention, re-pairing isolation, slow replies, remembered filters and selection, hosted links, thread and host isolation, interactive HTML/SVG, sandbox, lazy snapshots, versions, add to thread, deletion/cancellation/error recovery, copy and source views passed.',
   )
 } finally {
   await browser.close()

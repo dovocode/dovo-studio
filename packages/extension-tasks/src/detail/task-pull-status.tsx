@@ -24,11 +24,11 @@ export function TaskPullStatus({
   const failing = status.state === 'open' && status.checks === 'failed'
   const tone =
     status.state === 'merged'
-      ? 'text-violet-400'
+      ? 'text-violet-700 dark:text-violet-400'
       : status.state === 'closed' || failing
         ? 'text-destructive'
         : status.checks === 'passed'
-          ? 'text-emerald-400'
+          ? 'text-emerald-700 dark:text-emerald-400'
           : 'text-muted-foreground'
   const fix = () => {
     if (busy) return

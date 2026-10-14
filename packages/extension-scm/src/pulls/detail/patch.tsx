@@ -22,8 +22,17 @@ export type PullLineSelection = {
 export type PullLineDraft = {
   selection: PullLineSelection | null
   destination: 'github' | 'agent'
+  body: string
+  suggesting: boolean
+  replacement: string
 }
-export const emptyPullLineDraft: PullLineDraft = { selection: null, destination: 'agent' }
+export const emptyPullLineDraft: PullLineDraft = {
+  selection: null,
+  destination: 'agent',
+  body: '',
+  suggesting: false,
+  replacement: '',
+}
 
 export function PullPatch({
   file,
@@ -37,6 +46,7 @@ export function PullPatch({
   headSha = '',
   draft = emptyPullLineDraft,
   onDraft,
+  commentDisabled = false,
 }: {
   file: PullDetail['files'][number]
   split: boolean
@@ -58,11 +68,24 @@ export function PullPatch({
   headSha?: string
   draft?: PullLineDraft
   onDraft?: (update: (draft: PullLineDraft) => PullLineDraft) => void
+  commentDisabled?: boolean
 }) {
   const { selection } = draft
   const destination = allowAgent ? draft.destination : 'github'
   const setSelection = (next: PullLineSelection | null) =>
-    onDraft?.((current) => ({ ...current, selection: next }))
+    onDraft?.((current) =>
+      next
+        ? {
+            ...current,
+            selection: next,
+            replacement: current.selection
+              ? current.replacement
+              : next.side === 'additions' && parsed.diff
+                ? (selectedPatchCode(parsed.diff, next.start, next.end) ?? '')
+                : '',
+          }
+        : { ...emptyPullLineDraft, destination: current.destination },
+    )
   const setDestination = (next: PullLineDraft['destination']) =>
     onDraft?.((current) => ({ ...current, destination: next }))
   const diffs = useDiffOptions()
@@ -200,8 +223,7 @@ export function PullPatch({
               : []
           }
           renderAnnotation={() =>
-            selection &&
-            onComment && (
+            selection && (
               <LineCommentForm
                 key={`${selection.side}:${selection.start}:${selection.end}`}
                 selectedCode={
@@ -210,11 +232,15 @@ export function PullPatch({
                     : undefined
                 }
                 label={`${file.path}:${selection.start}–${selection.end}`}
+                draft={draft}
+                onDraft={(value) => onDraft?.((current) => ({ ...current, ...value }))}
+                disabled={commentDisabled || !onComment}
                 submitLabel={
                   destination === 'github' ? `Post to ${forgeLabels[provider]}` : 'Start agent task'
                 }
                 onCancel={() => setSelection(null)}
                 onSubmit={async (body) => {
+                  if (!onComment || commentDisabled) return
                   if (
                     destination === 'github' &&
                     !allowInlineRange &&

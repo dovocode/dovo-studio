@@ -33,7 +33,14 @@ export function pullOverviewScope(repositories: readonly Repository[]) {
 
 /** A forge binding can target a different repository from the checkout's origin. */
 export function pullRepositoryKey(repository: Repository, sourceKey: string) {
-  return repository.pullIdentity || (!repository.forge && repository.gitIdentity) || sourceKey
+  return (
+    repository.pullIdentity ||
+    (!repository.kind &&
+      !repository.forge &&
+      !repository.gitIdentityError &&
+      repository.gitIdentity) ||
+    sourceKey
+  )
 }
 
 /** One remote read per repository. Keep a stable owner until it disconnects; an explicit
@@ -54,6 +61,17 @@ export function uniquePulls<T extends Pick<PullSummary, 'url'>>(pulls: readonly 
     if (!selected.has(key)) selected.set(key, pull)
   }
   return [...selected.values()]
+}
+
+/** Public rows can remain visible during reader handoff; account relationships must be reloaded. */
+export function publicPullSummaries(pulls: readonly PullSummary[]): PullSummary[] {
+  return pulls.map((pull) => ({
+    ...pull,
+    viewerIsAuthor: undefined,
+    viewerIsAssigned: undefined,
+    viewerIsInvolved: undefined,
+    viewerReviewRequested: undefined,
+  }))
 }
 
 /** Deterministic owner assignment for remotes that several computers can read. The computer this

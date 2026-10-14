@@ -1,21 +1,63 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { taskWaitingSchema, type taskWaitingRequestSchema } from '@dovo/protocol'
-import { useTaskWaiting, useWorkspace, useStudioHost } from '@dovo/studio-core'
+import { useTaskWaiting, useWorkspace, useStudioHost, encodeWorkTarget } from '@dovo/studio-core'
 import { Eye, Link2, RefreshCw, X } from 'lucide-react'
-import { Button } from '@dovo/studio-ui'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@dovo/studio-ui'
 
-export function TaskWaitingPanel({ taskId, panel = false }: { taskId: string; panel?: boolean }) {
-  const { openExternalLink, openPullLink } = useStudioHost()
-  const { request, connected } = useWorkspace()
+export function TaskWaitingPanel({
+  taskId,
+  panel = false,
+  onPullLink,
+}: {
+  taskId: string
+  panel?: boolean
+  onPullLink?: (url: string) => boolean
+}) {
+  const { openExternalLink, openPullLink, navigate } = useStudioHost()
+  const { request, connected, activeRuntimeId, connection, workspace } = useWorkspace()
+  const [confirmation, setConfirmation] = useState<
+    typeof taskWaitingRequestSchema.Type.unlink | undefined
+  >(undefined)
   const read = useCallback(
     (input: typeof taskWaitingRequestSchema.Type) =>
       request('/api/tasks/waiting', input, taskWaitingSchema),
     [request],
   )
-  const { data, error, busy, refresh } = useTaskWaiting(taskId, connected, read)
+  const { data, error, busy, refresh } = useTaskWaiting(
+    taskId,
+    connected,
+    read,
+    JSON.stringify([activeRuntimeId, connection]),
+  )
   const watchingUrls = new Set(data?.dependencies.map((item) => item.url))
   const related = data?.related?.filter((item) => !watchingUrls.has(item.url)) ?? []
-  if (!error && !data?.dependencies.length && !related.length) return null
+  if (connected && !error && !data?.dependencies.length && !related.length) return null
+  const openPull = (url: string) => onPullLink?.(url) || openPullLink?.(url)
+  const openRelated = (url: string) => {
+    if (openPull(url)) return
+    const task = workspace?.tasks.find((task) => task.id === taskId)
+    const work = task?.workItem
+    if (task && work?.url === url) {
+      const jiraSourceId = work.kind === 'issue' ? work.jiraSourceId : undefined
+      navigate({
+        viewId: work.kind === 'pipeline' ? 'pipelines' : jiraSourceId ? 'jira' : 'issues',
+        entityId: encodeWorkTarget({
+          runtimeId: activeRuntimeId ?? undefined,
+          ...(jiraSourceId ? { jiraSourceId } : { repositoryId: task.repositoryId }),
+          id: work.id,
+          url,
+        }),
+      })
+    } else if (openExternalLink) void openExternalLink(url)
+    else window.open(url, '_blank', 'noopener,noreferrer')
+  }
   return (
     <section
       aria-label="Related items and watchers"
@@ -25,9 +67,9 @@ export function TaskWaitingPanel({ taskId, panel = false }: { taskId: string; pa
           : 'flex max-h-32 shrink-0 flex-wrap items-center gap-2 overflow-y-auto px-4 py-2 text-xs'
       }
     >
-      {!connected && <p>Connect the runtime to manage waiting items.</p>}
+      {!connected && <p>Offline · Showing saved watches. Reconnect to update or stop them.</p>}
       {error && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="max-w-full truncate text-destructive">
           {error}
         </p>
       )}
@@ -75,15 +117,24 @@ export function TaskWaitingPanel({ taskId, panel = false }: { taskId: string; pa
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="min-w-0 truncate py-1.5 pl-3 pr-1 hover:underline"
-              onClick={
-                openExternalLink || openPullLink
-                  ? (event) => {
-                      event.preventDefault()
-                      if (!openPullLink?.(item.url)) void openExternalLink?.(item.url)
-                    }
-                  : undefined
-              }
+              className="min-w-0 truncate py-1.5 pl-1.5 pr-1 hover:underline"
+              onClick={(event) => {
+                event.preventDefault()
+                if (item.kind === 'pipeline')
+                  navigate({
+                    viewId: 'pipelines',
+                    entityId: encodeWorkTarget({
+                      runtimeId: activeRuntimeId ?? undefined,
+                      repositoryId: item.repositoryId,
+                      id: item.target,
+                      url: item.url,
+                    }),
+                  })
+                else if (!openPull(item.url)) {
+                  if (openExternalLink) void openExternalLink(item.url)
+                  else window.open(item.url, '_blank', 'noopener,noreferrer')
+                }
+              }}
             >
               {item.project} · {item.label}
             </a>
@@ -94,7 +145,7 @@ export function TaskWaitingPanel({ taskId, panel = false }: { taskId: string; pa
             )}
             {item.pausedReason && <span className="px-1 text-muted-foreground">Paused</span>}
             {item.error && (
-              <span className="text-destructive" role="status">
+              <span className="max-w-full truncate text-destructive" role="status">
                 {item.error}
               </span>
             )}
@@ -105,12 +156,11 @@ export function TaskWaitingPanel({ taskId, panel = false }: { taskId: string; pa
               disabled={!connected || busy}
               className="h-7 w-7 rounded-full p-0"
               onClick={() => {
-                if (window.confirm(`Stop watching ${item.label} for this thread?`))
-                  void refresh({
-                    kind: item.kind,
-                    repositoryId: item.repositoryId,
-                    target: item.target,
-                  })
+                setConfirmation({
+                  kind: item.kind,
+                  repositoryId: item.repositoryId,
+                  target: item.target,
+                })
               }}
             >
               <X size={12} />
@@ -136,7 +186,7 @@ export function TaskWaitingPanel({ taskId, panel = false }: { taskId: string; pa
               openExternalLink || openPullLink
                 ? (event) => {
                     event.preventDefault()
-                    if (!openPullLink?.(item.url)) void openExternalLink?.(item.url)
+                    openRelated(item.url)
                   }
                 : undefined
             }
@@ -146,6 +196,43 @@ export function TaskWaitingPanel({ taskId, panel = false }: { taskId: string; pa
           </a>
         ))}
       </div>
+      <Dialog
+        open={!!confirmation}
+        onOpenChange={(open) => {
+          if (!open && !busy) setConfirmation(undefined)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Stop watching?</DialogTitle>
+            <DialogDescription>
+              Updates for this item will stop arriving in this thread.
+            </DialogDescription>
+          </DialogHeader>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" disabled={busy} onClick={() => setConfirmation(undefined)}>
+              Keep watching
+            </Button>
+            <Button
+              disabled={!connected || busy}
+              onClick={() => {
+                const unlink = confirmation
+                if (unlink) {
+                  setConfirmation(undefined)
+                  void refresh(unlink)
+                }
+              }}
+            >
+              Stop watching
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

@@ -6,6 +6,7 @@ import {
   jiraProjectsSchema,
   responses,
   useWorkspace,
+  WorkspaceRuntimeScope,
   type JiraSource,
   jiraSourceSchema,
   useRuntimeSources,
@@ -28,7 +29,7 @@ export function JiraSourcesDialog({
   onClose: () => void
   onSaved?: () => void
 }) {
-  const { workspace, activeRuntimeId, switchRuntime, refreshRuntime } = useWorkspace()
+  const { workspace, activeRuntimeId, refreshRuntime } = useWorkspace()
   const runtimes = useRuntimeSources()
   const [selected, setSelected] = useApplicationState<
     | {
@@ -38,36 +39,29 @@ export function JiraSourcesDialog({
     | undefined
   >(undefined)
   const [busy, setBusy] = useApplicationState(false)
-  const [error, setError] = useApplicationState('')
-  const pending = useRef(false)
-  const choose = async (runtimeId: string, source?: JiraSource) => {
-    if (pending.current) return
-    pending.current = true
-    setBusy(true)
-    setError('')
-    try {
-      if (runtimeId !== activeRuntimeId) await switchRuntime(runtimeId)
-      setSelected({
-        runtimeId,
-        source,
-      })
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error))
-    } finally {
-      pending.current = false
-      setBusy(false)
-    }
+  const [notice, setNotice] = useApplicationState('')
+  const [dirty, setDirty] = useApplicationState(false)
+  const canClose = () =>
+    !dirty || window.confirm('Close this Jira form without saving your changes?')
+  const choose = (runtimeId: string, source?: JiraSource) => {
+    if (busy) return
+    setSelected({ runtimeId, source })
   }
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !busy) onClose()
+        if (!open && !busy && canClose()) onClose()
       }}
     >
       <DialogContent className="max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
+            {notice && (
+              <p role="status" className="text-xs text-muted-foreground">
+                {notice}
+              </p>
+            )}
             {selected ? (selected.source ? 'Manage Jira source' : 'Connect Jira') : 'Issue sources'}
           </DialogTitle>
           <DialogDescription>
@@ -75,29 +69,49 @@ export function JiraSourcesDialog({
             later.
           </DialogDescription>
         </DialogHeader>
-        {selected && activeRuntimeId === selected.runtimeId ? (
+        {selected ? (
           <>
             <Button
               variant="ghost"
               size="sm"
               className="justify-start"
               disabled={busy}
-              onClick={() => setSelected(undefined)}
+              onClick={() => {
+                if (canClose()) {
+                  setDirty(false)
+                  setSelected(undefined)
+                }
+              }}
             >
               ← All issue sources
             </Button>
-            <JiraForm
-              key={JSON.stringify(selected)}
-              initial={selected.source}
-              busy={busy}
-              setBusy={setBusy}
-              onDone={async () => {
-                const owner = runtimes.find((runtime) => runtime.profile.id === selected.runtimeId)
-                if (owner) await refreshRuntime(owner.profile)
-                setSelected(undefined)
-                onSaved?.()
-              }}
-            />
+            <WorkspaceRuntimeScope runtimeId={selected.runtimeId}>
+              <JiraForm
+                key={JSON.stringify(selected)}
+                initial={selected.source}
+                onDirty={() => setDirty(true)}
+                busy={busy}
+                setBusy={setBusy}
+                onDone={async () => {
+                  const owner = runtimes.find(
+                    (runtime) => runtime.profile.id === selected.runtimeId,
+                  )
+                  setDirty(false)
+                  setSelected(undefined)
+                  onSaved?.()
+                  if (owner) {
+                    try {
+                      await refreshRuntime(owner.profile)
+                      setNotice('')
+                    } catch {
+                      setNotice(
+                        'Saved successfully. Reconnect this computer to refresh its issue sources.',
+                      )
+                    }
+                  }
+                }}
+              />
+            </WorkspaceRuntimeScope>
           </>
         ) : (
           <div className="space-y-4">
@@ -118,7 +132,7 @@ export function JiraSourcesDialog({
                       size="sm"
                       variant="outline"
                       disabled={busy || !runtime.connected}
-                      onClick={() => void choose(runtime.profile.id)}
+                      onClick={() => choose(runtime.profile.id)}
                     >
                       Connect Jira
                     </Button>
@@ -129,7 +143,7 @@ export function JiraSourcesDialog({
                       variant="ghost"
                       className="h-auto w-full justify-start py-3 text-left"
                       disabled={busy || !runtime.connected}
-                      onClick={() => void choose(runtime.profile.id, source)}
+                      onClick={() => choose(runtime.profile.id, source)}
                     >
                       <span className="min-w-0">
                         <span className="block truncate">{source.name || source.project}</span>
@@ -156,22 +170,19 @@ export function JiraSourcesDialog({
             </p>
           </div>
         )}
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
       </DialogContent>
     </Dialog>
   )
 }
 function JiraForm({
   initial,
+  onDirty,
   onDone,
   busy,
   setBusy,
 }: {
   initial?: JiraSource
+  onDirty: () => void
   onDone: () => void | Promise<void>
   busy: boolean
   setBusy: (value: boolean) => void
@@ -181,6 +192,8 @@ function JiraForm({
     [project, setProject] = useApplicationState(initial?.project ?? '')
   const [name, setName] = useApplicationState(initial?.name ?? '')
   const [error, setError] = useApplicationState('')
+  const [confirmRemove, setConfirmRemove] = useApplicationState(false)
+  const [operation, setOperation] = useApplicationState<'save' | 'remove'>('save')
   const [discovery, setDiscovery] = useApplicationState<
     | {
         site: string
@@ -222,6 +235,7 @@ function JiraForm({
     if (pending.current || !connected) return
     pending.current = true
     setBusy(true)
+    setOperation(remove ? 'remove' : 'save')
     setError('')
     try {
       if (remove && initial) {
@@ -309,7 +323,10 @@ function JiraForm({
         <FormField label="Source name (optional)">
           <Input
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              onDirty()
+              setName(event.target.value)
+            }}
             placeholder="Team backlog"
             maxLength={200}
           />
@@ -321,7 +338,10 @@ function JiraForm({
             required
             placeholder="https://team.atlassian.net"
             value={site}
-            onChange={(e) => setSite(e.target.value)}
+            onChange={(e) => {
+              onDirty()
+              setSite(e.target.value)
+            }}
           />
         </FormField>
         {!manualProject &&
@@ -332,7 +352,10 @@ function JiraForm({
               disabled={!!initial}
               aria-label="Jira project"
               value={project}
-              onValueChange={setProject}
+              onValueChange={(value) => {
+                onDirty()
+                setProject(value)
+              }}
             >
               <option value="">Choose a project…</option>
               {project && !discovery.projects.some((item) => item.key === project) && (
@@ -365,22 +388,58 @@ function JiraForm({
               required
               disabled={!!initial}
               value={project}
-              onChange={(e) => setProject(e.target.value.toUpperCase())}
+              onChange={(e) => {
+                onDirty()
+                setProject(e.target.value.toUpperCase())
+              }}
               placeholder="TEAM"
             />
           </FormField>
         )}
         <div className="flex justify-end gap-2">
           {initial && (
-            <Button variant="outline" type="button" onClick={() => void save(true)}>
+            <Button variant="outline" type="button" onClick={() => setConfirmRemove(true)}>
               Remove source
             </Button>
           )}
           <Button type="submit" disabled={!site.trim() || !project.trim()}>
-            {busy ? 'Checking connection…' : initial ? 'Save connection' : 'Connect Jira'}
+            {busy
+              ? operation === 'remove'
+                ? 'Removing…'
+                : 'Saving…'
+              : initial
+                ? 'Save connection'
+                : 'Connect Jira'}
           </Button>
         </div>
       </fieldset>
+      {confirmRemove && initial && (
+        <div
+          role="alertdialog"
+          aria-label="Remove Jira source?"
+          className="rounded-lg border p-3 text-sm"
+        >
+          <p>Remove {initial.name || initial.project} from Dovo? Issues in Jira stay unchanged.</p>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setConfirmRemove(false)}
+            >
+              Keep source
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={busy || !connected}
+              onClick={() => void save(true)}
+            >
+              Confirm removal
+            </Button>
+          </div>
+        </div>
+      )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

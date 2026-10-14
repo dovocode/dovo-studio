@@ -42,6 +42,7 @@ export * from './host-context'
 export * from './providers'
 export * from './workspace/schema'
 export * from './workspace/provider'
+export { WorkspaceRuntimeScope } from './workspace/runtime-scope'
 export * from './workspace/actions'
 export * from './runtime/client'
 export {

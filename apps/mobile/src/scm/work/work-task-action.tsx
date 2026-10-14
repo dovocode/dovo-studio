@@ -19,7 +19,7 @@ import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { WorkMenu } from './work-menu'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, useSheetNavigation, type SheetHandle } from '../../ui/layout/sheet'
 import { Choice } from '../../ui/controls/choice'
 export function WorkTaskAction({
   repositoryId,
@@ -44,11 +44,20 @@ export function WorkTaskAction({
 
   const { snapshot, activeId, callEffect, refreshEffect } = useRuntime()
   const { navigate, focused } = useNavigation()
+  const navigateAfterSheet = useSheetNavigation()
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [created, setCreated] = useApplicationState('')
   const [choosing, setChoosing] = useApplicationState(false)
   const [destination, setDestination] = useApplicationState('')
+  const projectPicker = useRef<SheetHandle>(null)
+  const openTask = (id: string) => {
+    if (!activeId) {
+      setError('The computer that owns this task is unavailable.')
+      return
+    }
+    navigateAfterSheet(() => navigate('tasks', id, activeId))
+  }
   const projects = snapshot?.workspace.repositories ?? []
   const pending = useRef(false)
   const attempt = useRef<WorkTaskInput | undefined>(undefined)
@@ -69,15 +78,22 @@ export function WorkTaskAction({
         task.workItem.url === source.item.url,
     ) ?? []
   useEffect(() => {
-    if (focused && created && snapshot?.workspace.tasks.some((task) => task.id === created)) {
+    if (
+      activeId &&
+      focused &&
+      created &&
+      snapshot?.workspace.tasks.some((task) => task.id === created)
+    ) {
       setCreated('')
-      navigate('tasks', created, activeId ?? undefined)
+      const open = () => navigateAfterSheet(() => navigate('tasks', created, activeId))
+      if (projectPicker.current) projectPicker.current.dismiss(open)
+      else open()
     }
   }, [created, snapshot, navigate, activeId, focused])
   const create = (targetId = repositoryId) => {
     return runClientEffect(
       mobileWorkflow(function* () {
-        if (pending.current || disabled || !focused) return
+        if (pending.current || disabled || !focused || !activeId) return
         if (!targetId && !attempt.current && !created) {
           setDestination(projects.length === 1 ? projects[0]!.id : '')
           setChoosing(true)
@@ -116,7 +132,6 @@ export function WorkTaskAction({
           const result = yield* callEffect('/api/scm/work/task', input, workTaskResponseSchema)
           attempt.current = undefined
           if (!current.current) return
-          setChoosing(false)
           setCreated(result.id)
           yield* refreshEffect()
         }).pipe(
@@ -156,7 +171,7 @@ export function WorkTaskAction({
           }}
         >
           {linked[0] ? (
-            <Action label="Open linked task" onPress={() => navigate('tasks', linked[0]!.id)} />
+            <Action label="Open linked task" onPress={() => openTask(linked[0]!.id)} />
           ) : (
             <Action
               label={
@@ -173,7 +188,7 @@ export function WorkTaskAction({
             actions={[
               ...linked.map((task) => ({
                 label: task.title,
-                onPress: () => navigate('tasks', task.id),
+                onPress: () => openTask(task.id),
               })),
               {
                 label: busy ? 'Opening task…' : 'Start another task',
@@ -195,7 +210,12 @@ export function WorkTaskAction({
         </Text>
       )}
       {choosing && (
-        <Sheet title="Start task in a project" busy={busy} onClose={() => setChoosing(false)}>
+        <Sheet
+          ref={projectPicker}
+          title="Start task in a project"
+          busy={busy}
+          onClose={() => setChoosing(false)}
+        >
           <Text style={styles.muted}>
             Choose the codebase for this task. The issue stays in Jira.
           </Text>

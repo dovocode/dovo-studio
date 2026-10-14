@@ -24,6 +24,11 @@ import { Effect, Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
 import { useAction } from '../../ui/controls/use-action'
+import {
+  createDetailDrafts,
+  detailDraftKey,
+  useDetailDraft,
+} from '../../runtime/state/detail-drafts'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { TaskAgents } from './task-agents'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -159,6 +164,10 @@ export function TaskDetail({
     />
   )
 }
+const threadDrafts = createDetailDrafts<{
+  sideChat: Record<string, string>
+  file: FileEditDraft | null
+}>()
 function TaskDetailContent({
   task,
   onBack,
@@ -175,7 +184,7 @@ function TaskDetailContent({
   const { focused, navigate } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const { snapshot, connected, profiles, profile, callEffect, activeId } = useRuntime()
+  const { snapshot, connected, profiles, profile, callEffect, activeId, connection } = useRuntime()
   const worktreeThread = useAction()
   const worktreeActions: HeaderAction[] =
     task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
@@ -190,7 +199,11 @@ function TaskDetailContent({
                 '/api/tasks/worktree-thread',
                 { id: task.id, mode },
                 mutableStruct({ id: Schema.String }),
-              ).pipe(Effect.tap((result) => Effect.sync(() => navigate('tasks', result.id)))),
+              ).pipe(
+                Effect.tap((result) =>
+                  Effect.sync(() => navigate('tasks', result.id, activeId ?? undefined)),
+                ),
+              ),
             ),
         }))
       : []
@@ -202,9 +215,11 @@ function TaskDetailContent({
   const budget = taskBudgetUsage(task)
   const quota = useAction()
   const retry = useAction()
-  const sideChatKey = `${activeId}:${task.id}`
-  const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
-  const [fileDrafts, setFileDrafts] = useState<Record<string, FileEditDraft | null>>({})
+  const { draft: detailDraft, setField: setDraftField } = useDetailDraft(
+    threadDrafts,
+    detailDraftKey(connection, 'thread', activeId, task.id),
+    () => ({ sideChat: {}, file: null }),
+  )
   const [asking, setAsking] = useApplicationState(false)
   const [editingInstructions, setEditingInstructions] = useApplicationState(false)
   const [editingApprovalRules, setEditingApprovalRules] = useApplicationState(false)
@@ -448,7 +463,7 @@ function TaskDetailContent({
   >('chat')
   // Keep Git controls reachable after committing, including push-only retries.
   const hasDiff =
-    !!fileDrafts[sideChatKey] ||
+    !!detailDraft.file ||
     (!!repository && !repository.kind) ||
     !!task.pullStatus ||
     !!task.linkedPullRequests?.length ||
@@ -465,6 +480,7 @@ function TaskDetailContent({
   const [artifactsOpen, setArtifactsOpen] = useState(false)
   const [projectInfo, setProjectInfo] = useState(false)
   const [linkedPulls, setLinkedPulls] = useState(false)
+  const [linkedPullUrl, setLinkedPullUrl] = useState<string | undefined>(undefined)
   const [threadBehavior, setThreadBehavior] = useState(false)
   const pulls = taskPullLinks(task)
   const lifecycle = useTaskLifecycle(task, undefined, onBack)
@@ -946,13 +962,12 @@ function TaskDetailContent({
         {asking && (
           <SideQuestion
             task={task}
-            drafts={sideChatDrafts[sideChatKey] ?? {}}
+            drafts={detailDraft.sideChat}
             setDrafts={(update) =>
-              setSideChatDrafts((current) => {
-                const previous = current[sideChatKey] ?? {}
-                const next = typeof update === 'function' ? update(previous) : update
-                return next === previous ? current : { ...current, [sideChatKey]: next }
-              })
+              setDraftField(
+                'sideChat',
+                typeof update === 'function' ? update(detailDraft.sideChat) : update,
+              )
             }
             onClose={() => setAsking(false)}
           />
@@ -969,10 +984,8 @@ function TaskDetailContent({
             initialPath={checkpointPath}
             initialLine={!checkpoint ? reviewLine : undefined}
             initialTab={!checkpoint ? reviewTab : 'diff'}
-            edit={fileDrafts[sideChatKey] ?? null}
-            onEditChange={(draft) =>
-              setFileDrafts((current) => ({ ...current, [sideChatKey]: draft }))
-            }
+            edit={detailDraft.file}
+            onEditChange={(draft) => setDraftField('file', draft)}
           />
         )}
         {pane === 'terminal' && (
@@ -1001,8 +1014,8 @@ function TaskDetailContent({
             setProjectInfo(false)
             setPane('diff')
           }}
-          onPulls={() => {
-            setProjectInfo(false)
+          onPulls={(url) => {
+            setLinkedPullUrl(url)
             setLinkedPulls(true)
           }}
         />
@@ -1011,7 +1024,11 @@ function TaskDetailContent({
         <TaskLinkedPullSheet
           key={`${activeId}:${task.id}`}
           task={task}
-          onClose={() => setLinkedPulls(false)}
+          initialUrl={linkedPullUrl}
+          onClose={() => {
+            setLinkedPulls(false)
+            setLinkedPullUrl(undefined)
+          }}
         />
       )}
       {threadBehavior && (

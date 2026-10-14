@@ -3,14 +3,16 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { pullTaskResponse, type PullDetail } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { useNavigation } from '../../../shell/navigation'
+import { useSheetNavigation } from '../../../ui/layout/sheet'
 import { useAction } from '../../../ui/controls/use-action'
 
 export function usePullTaskCreation(repositoryId: string, pull: PullDetail['pull'] | undefined) {
-  const { connected, callEffect } = useRuntime()
+  const { connected, callEffect, activeId } = useRuntime()
   const { navigate } = useNavigation()
   const action = useAction()
+  const navigateAfterSheet = useSheetNavigation()
   const start = (checkoutMode: 'new-branch' | 'pr-branch', stackAction?: 'update') => {
-    if (!pull || !connected || action.busy) return
+    if (!pull || !connected || !activeId || action.busy) return
     action.act(() =>
       runClientEffect(
         mobileWorkflow(function* () {
@@ -29,7 +31,7 @@ export function usePullTaskCreation(repositoryId: string, pull: PullDetail['pull
             },
             pullTaskResponse,
           )
-          navigate('tasks', result.id)
+          navigateAfterSheet(() => navigate('tasks', result.id, activeId))
         }),
       ),
     )

@@ -19,13 +19,13 @@ export function Signal({ signal }: { signal: PullSignal }) {
           : CircleDashed
   const color =
     signal.tone === 'danger'
-      ? 'text-red-400'
+      ? 'text-red-700 dark:text-red-400'
       : signal.tone === 'positive'
-        ? 'text-emerald-400'
+        ? 'text-emerald-700 dark:text-emerald-400'
         : signal.tone === 'warning'
-          ? 'text-amber-400'
+          ? 'text-amber-700 dark:text-amber-400'
           : signal.tone === 'accent'
-            ? 'text-violet-400'
+            ? 'text-violet-700 dark:text-violet-400'
             : 'text-muted-foreground'
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs ${color}`}>

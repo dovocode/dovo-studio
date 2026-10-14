@@ -177,7 +177,7 @@ const tools: Array<
   {
     name: 'subagent_spawn',
     description:
-      'Launch a Dovo child agent on Codex, Claude, OpenCode, or a named configuration (including ACP). It works in this thread’s checkout with its own conversation. Supply all necessary context in prompt. Access cannot exceed the parent. Use a stable key to retry safely. Children survive normal replies and automatically deliver completion to this thread. Read or wait when you need results immediately; a wait timeout never cancels work. Explicit Stop cancels descendants. Use a fresh key and full context for each review round.',
+      'Launch a Dovo child agent on Codex, Claude, OpenCode, or a named configuration (including ACP). It works in this thread’s checkout with its own conversation. Supply all necessary context in prompt. Children inherit the parent’s access by default, including named configurations. Request permission only to narrow access; it cannot exceed the parent. Use a stable key to retry safely. Children survive normal replies and automatically deliver completion to this thread. Read or wait when you need results immediately; a wait timeout never cancels work. Explicit Stop cancels descendants. Use a fresh key and full context for each review round.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -207,6 +207,8 @@ const tools: Array<
         model: { type: 'string' as const },
         reasoning: { type: 'string' as const },
         permission: {
+          description:
+            'Optional narrower access. Omit to inherit the active parent thread’s permissions.',
           type: 'string' as const,
           enum: ['read-only', 'ask', 'workspace-write', 'auto', 'full-access'],
         },

@@ -4,6 +4,11 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
+import {
+  createDetailDrafts,
+  integrationDraftKey,
+  useDetailDraft,
+} from '../../../runtime/state/detail-drafts'
 import { useRef } from 'react'
 import { Alert, View } from 'react-native'
 import {
@@ -14,7 +19,7 @@ import {
   type PullDetail,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
-import { Sheet } from '../../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../../ui/layout/sheet'
 import { Choice } from '../../../ui/controls/choice'
 import { Field } from '../../../ui/controls/field'
 import { Action } from '../../../ui/controls/action'
@@ -26,6 +31,17 @@ export type PullActionTarget = {
   action: PullAction['action']
   comment?: PullComment
 }
+const actionDrafts = createDetailDrafts<{
+  headSha: string
+  title: string
+  body: string
+  base: string
+  reviewers: string
+  teams: string
+  event: string
+  method: string
+  operation: string
+}>()
 export function PullActionSheet({
   repositoryId,
   detail,
@@ -41,26 +57,50 @@ export function PullActionSheet({
 }) {
   const { styles } = useTheme()
 
-  const { connected, callEffect } = useRuntime()
-  const [headSha] = useApplicationState(detail.pull.headSha)
-  const [title, setTitle] = useApplicationState(detail.pull.title),
-    [body, setBody] = useApplicationState(target.action === 'edit' ? detail.pull.body : '')
-  const [base, setBase] = useApplicationState(detail.pull.base),
-    [reviewers, setReviewers] = useApplicationState(''),
-    [teams, setTeams] = useApplicationState('')
-  const [event, setEvent] = useApplicationState('comment'),
-    // Settings → General → Merge method, when this forge offers it.
-    [method, setMethod] = useApplicationState<string>(() => {
+  const { connected, callEffect, connection, snapshot } = useRuntime()
+  const { draft, setField, clear } = useDetailDraft(
+    actionDrafts,
+    integrationDraftKey(
+      connection,
+      snapshot,
+      repositoryId,
+      undefined,
+      'pull-action',
+      detail.pull.repositoryUrl,
+      detail.pull.number,
+      target.action,
+      target.comment?.id,
+    ),
+    () => {
       const preferred = readMobilePreferences().mergeMethod
       const offered: readonly string[] = detail.capabilities?.mergeMethods ?? []
-      return preferred !== 'auto' && offered.includes(preferred)
-        ? preferred
-        : (offered[0] ?? 'merge')
-    })
+      return {
+        headSha: detail.pull.headSha,
+        title: detail.pull.title,
+        body: target.action === 'edit' ? detail.pull.body : '',
+        base: detail.pull.base,
+        reviewers: '',
+        teams: '',
+        event: 'comment',
+        operation: 'add',
+        method:
+          preferred !== 'auto' && offered.includes(preferred) ? preferred : (offered[0] ?? 'merge'),
+      }
+    },
+  )
+  const { headSha, title, body, base, reviewers, teams, event, method, operation } = draft
+  const setTitle = (value: string) => setField('title', value)
+  const setBody = (value: string) => setField('body', value)
+  const setBase = (value: string) => setField('base', value)
+  const setReviewers = (value: string) => setField('reviewers', value)
+  const setTeams = (value: string) => setField('teams', value)
+  const setEvent = (value: string) => setField('event', value)
+  const setMethod = (value: string) => setField('method', value)
+  const setOperation = (value: string) => setField('operation', value)
   const [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const pending = useRef(false)
-  const [operation, setOperation] = useApplicationState('add')
+  const sheet = useRef<SheetHandle>(null)
   const labels: Record<PullAction['action'], string> = {
     comment: 'Add comment',
     review: 'Submit review',
@@ -110,8 +150,8 @@ export function PullActionSheet({
             },
             pullActionResultSchema,
           )
-          onDone()
-          onClose()
+          clear()
+          sheet.current?.dismiss(onDone)
           if (result.status === 'queued')
             Alert.alert(
               'Merge queued',
@@ -137,6 +177,7 @@ export function PullActionSheet({
   const textAction = ['comment', 'review', 'reply', 'edit'].includes(target.action)
   return (
     <Sheet
+      ref={sheet}
       title={labels[target.action]}
       onClose={onClose}
       busy={busy}

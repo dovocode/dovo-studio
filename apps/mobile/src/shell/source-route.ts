@@ -39,10 +39,30 @@ export function pipelineRunsHref(
   }
 }
 
-export function pullHref(runtimeId: string, repositoryId: string, number: number) {
+export function pullHref(
+  runtimeId: string,
+  repositoryId: string,
+  number: number,
+  destination?: {
+    tab: 'overview' | 'changes' | 'checks'
+    fragment: string
+    navigationUrl?: string
+  },
+) {
   return {
     pathname: '/pulls/pr/[runtimeId]/[repositoryId]/[number]' as const,
-    params: { runtimeId, repositoryId, number: String(number) },
+    params: {
+      runtimeId,
+      repositoryId,
+      number: String(number),
+      ...(destination
+        ? {
+            tab: destination.tab,
+            fragment: destination.fragment,
+            navigationUrl: destination.navigationUrl,
+          }
+        : {}),
+    },
   }
 }
 

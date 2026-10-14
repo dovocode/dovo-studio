@@ -1,7 +1,7 @@
 import { PullStack } from './stack'
 import { CreatePull } from '../list/create'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { usePullDetail } from './use-pull-detail'
 import {
   useWorkspace,
@@ -30,6 +30,9 @@ import { StartPullTask } from '../list/start-task'
 import { ReviewBadge } from './review-badge'
 import { PullActions, PullCommentComposer } from '../list/actions'
 import { PullPipelineRuns } from './pipeline-runs'
+import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
+type PullTab = 'overview' | 'changes' | 'checks'
+const tabCache = createPullStateCache<PullTab>(50)
 type PullDetailProps = {
   embedded?: boolean
   repositoryId: string
@@ -37,6 +40,8 @@ type PullDetailProps = {
   onBack: () => void
   onChanged: () => void
   onSelect?: (number: number) => void
+  initialTab?: PullTab
+  initialFragment?: string
 }
 export function PullDetail(props: PullDetailProps) {
   const { activeRuntimeId } = useWorkspace()
@@ -66,6 +71,8 @@ function PullDetailContent({
   onChanged,
   onSelect,
   embedded = false,
+  initialTab,
+  initialFragment = '',
 }: PullDetailProps) {
   const { connected, workspace } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
@@ -78,13 +85,15 @@ function PullDetailContent({
   const [creatingStack, setCreatingStack] = useApplicationState(false)
   const selectPull = (next: number) => onSelect?.(next)
   const [starting, setStarting] = useApplicationState(false)
-  const [tab, setTab] = useApplicationState<'overview' | 'changes' | 'checks'>('overview')
+  const stateKey = usePullStateKey(repositoryId, number)
+  const [tab, setTab] = useRetainedPullState(tabCache, stateKey, initialTab ?? 'overview')
   const content = useRef<HTMLDivElement>(null)
   const scrollPositions = useRef({ overview: 0, changes: 0, checks: 0 })
   useLayoutEffect(() => {
     if (content.current) content.current.scrollTop = scrollPositions.current[tab]
   }, [tab])
-  const [changesOpened, setChangesOpened] = useApplicationState(false)
+  const [changesOpened, setChangesOpened] = useApplicationState(tab === 'changes')
+  const [checksOpened, setChecksOpened] = useApplicationState(tab === 'checks')
   const [objective, setObjective] = useApplicationState<string | undefined>(undefined)
   const [discussionFilter, setDiscussionFilter] = useApplicationState<'all' | 'review' | 'comment'>(
     'all',
@@ -95,7 +104,40 @@ function PullDetailContent({
     if (content.current) scrollPositions.current[tab] = content.current.scrollTop
     setTab(value)
     if (value === 'changes') setChangesOpened(true)
+    if (value === 'checks') setChecksOpened(true)
   }
+  useEffect(() => {
+    if (initialTab) selectTab(initialTab)
+  }, [initialTab, initialFragment])
+  const scrolledFragment = useRef('')
+  useEffect(() => {
+    if (!initialFragment || !detail || scrolledFragment.current === initialFragment) return
+    const comment = detail.comments.find(
+      (item) => item.url.endsWith(initialFragment) || `#${item.id}` === initialFragment,
+    )
+    if (comment) {
+      const destination = comment.kind === 'inline' ? 'changes' : 'overview'
+      if (tab !== destination) {
+        selectTab(destination)
+        return
+      }
+      setDiscussionFilter('all')
+    }
+    const frame = requestAnimationFrame(() => {
+      const target = [
+        ...(content.current?.querySelectorAll<HTMLElement>('[id], [data-comment-fragment]') ?? []),
+      ].find(
+        (element) =>
+          `#${element.id}` === initialFragment ||
+          element.dataset.commentFragment === initialFragment,
+      )
+      if (target && target.getClientRects().length) {
+        target.scrollIntoView({ block: 'start' })
+        scrolledFragment.current = initialFragment
+      }
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [initialFragment, detail, tab, discussionFilter, changesOpened])
   const stackControls = detail && repository && (
     <PullStack
       detail={detail}
@@ -113,78 +155,83 @@ function PullDetailContent({
       aria-label="Pull request details"
       className="@container/pr-detail flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
     >
+      <HeaderContent enabled={!embedded}>
+        <header
+          className="studio-task-thread-header studio-pull-header"
+          data-window-edge={!embedded || undefined}
+          data-window-right-edge={!embedded || undefined}
+          data-embedded={embedded || undefined}
+        >
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onBack}
+            aria-label={embedded ? 'Close preview' : 'Back to PRs'}
+            className="shrink-0 px-2"
+          >
+            <ArrowLeft className="size-4" />
+            <span className="hidden @lg/pr-detail:inline">
+              {embedded ? 'Close preview' : 'Back to PRs'}
+            </span>
+          </Button>
+          <ProjectIcon
+            repository={workspace.repositories.find((repo) => repo.id === repositoryId)}
+            className="size-4"
+          />
+          <h1 className="studio-titlebar-heading min-w-0 flex-1" title={detail?.pull.title}>
+            <span className="studio-titlebar-project">
+              {repository?.name ?? detail?.pull.repositoryUrl.split('/').slice(-2).join('/')}
+            </span>
+            <span className="studio-titlebar-divider">/</span>
+            <span className="studio-titlebar-task">
+              {detail ? `#${number} · ${detail.pull.title}` : `PR #${number}`}
+            </span>
+          </h1>
+          <Button
+            size="icon"
+            className="size-8"
+            variant="ghost"
+            aria-label="Refresh details"
+            disabled={!connected || busy}
+            onClick={refresh}
+          >
+            <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />
+          </Button>
+          {detail && repository && (
+            <StartPullTask
+              repositoryId={repositoryId}
+              pull={detail.pull}
+              initialObjective={objective}
+              stackAction={stackAction}
+              open={starting}
+              onOpenChange={(open) => {
+                setStarting(open)
+                setObjective(undefined)
+                setStackAction(undefined)
+              }}
+            />
+          )}
+          {detail && (
+            <PullActions
+              repositoryId={repositoryId}
+              detail={detail}
+              onDone={changed}
+              onStartTask={
+                repository
+                  ? () => {
+                      setObjective(undefined)
+                      setStarting(true)
+                    }
+                  : undefined
+              }
+            />
+          )}
+        </header>
+      </HeaderContent>
       <div
-        className="min-h-0 max-h-[60%] shrink-0 overflow-y-auto overscroll-contain"
+        className="min-h-0 max-h-[calc((100%-var(--studio-header-height,52px))/2)] shrink-0 overflow-y-auto overscroll-contain"
         aria-label="Pull request controls"
       >
-        <HeaderContent enabled={!embedded}>
-          <header className="studio-task-thread-header studio-pull-header">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onBack}
-              aria-label={embedded ? 'Close preview' : 'Back to PRs'}
-              className="shrink-0 px-2"
-            >
-              <ArrowLeft className="size-4" />
-              <span className="hidden @lg/pr-detail:inline">
-                {embedded ? 'Close preview' : 'Back to PRs'}
-              </span>
-            </Button>
-            <ProjectIcon
-              repository={workspace.repositories.find((repo) => repo.id === repositoryId)}
-              className="size-4"
-            />
-            <h1 className="studio-titlebar-heading min-w-0 flex-1" title={detail?.pull.title}>
-              <span className="studio-titlebar-project">
-                {repository?.name ?? detail?.pull.repositoryUrl.split('/').slice(-2).join('/')}
-              </span>
-              <span className="studio-titlebar-divider">/</span>
-              <span className="studio-titlebar-task">
-                {detail ? `#${number} · ${detail.pull.title}` : `PR #${number}`}
-              </span>
-            </h1>
-            <Button
-              size="icon"
-              className="size-8"
-              variant="ghost"
-              aria-label="Refresh details"
-              disabled={!connected || busy}
-              onClick={refresh}
-            >
-              <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />
-            </Button>
-            {detail && repository && (
-              <StartPullTask
-                repositoryId={repositoryId}
-                pull={detail.pull}
-                initialObjective={objective}
-                stackAction={stackAction}
-                open={starting}
-                onOpenChange={(open) => {
-                  setStarting(open)
-                  setObjective(undefined)
-                  setStackAction(undefined)
-                }}
-              />
-            )}
-            {detail && (
-              <PullActions
-                repositoryId={repositoryId}
-                detail={detail}
-                onDone={changed}
-                onStartTask={
-                  repository
-                    ? () => {
-                        setObjective(undefined)
-                        setStarting(true)
-                      }
-                    : undefined
-                }
-              />
-            )}
-          </header>
-        </HeaderContent>
         {!detail && (
           <p
             role={error ? 'alert' : 'status'}
@@ -232,10 +279,10 @@ function PullDetailContent({
                   {detail.pull.headSha.slice(0, 8)}
                 </span>
                 <span className="ml-auto inline-flex shrink-0 gap-2 font-mono tabular-nums">
-                  <span className="text-emerald-400">
+                  <span className="text-emerald-700 dark:text-emerald-400">
                     +{detail.pull.additions?.toLocaleString() ?? '—'}
                   </span>
-                  <span className="text-red-400">
+                  <span className="text-red-700 dark:text-red-400">
                     −{detail.pull.deletions?.toLocaleString() ?? '—'}
                   </span>
                 </span>
@@ -334,7 +381,10 @@ function PullDetailContent({
               </p>
             )}
             {(detail.stale || detail.refreshError || !connected) && (
-              <p role="status" className="mb-4 text-xs text-amber-400 [overflow-wrap:anywhere]">
+              <p
+                role="status"
+                className="mb-4 text-xs text-amber-700 dark:text-amber-400 [overflow-wrap:anywhere]"
+              >
                 {!connected
                   ? 'Offline · showing last loaded details.'
                   : detail.refreshError
@@ -349,7 +399,7 @@ function PullDetailContent({
               <p
                 key={warning}
                 role="alert"
-                className="mb-4 rounded-md border border-amber-400/20 px-3 py-2 text-xs text-amber-400 [overflow-wrap:anywhere]"
+                className="mb-4 rounded-md border border-amber-400/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 [overflow-wrap:anywhere]"
               >
                 {warning}
               </p>
@@ -517,11 +567,12 @@ function PullDetailContent({
               aria-labelledby="pr-tab-checks"
               hidden={tab !== 'checks'}
             >
-              {tab === 'checks' && repository && (
+              {checksOpened && repository && (
                 <PullPipelineRuns
                   key={detail.pull.headSha}
                   repositoryId={repositoryId}
                   sha={detail.pull.headSha}
+                  active={tab === 'checks'}
                 />
               )}
               <PullStatus detail={detail} />
@@ -538,6 +589,7 @@ function PullDetailContent({
                   key={`${repositoryId}:${detail.pull.connectionId ?? ''}:${detail.pull.url}`}
                   detail={detail}
                   embedded={embedded}
+                  initialFragment={initialFragment}
                   repositoryId={repositoryId}
                   onPosted={changed}
                   onSteer={(value) => {

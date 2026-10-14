@@ -1,5 +1,7 @@
 import { PullMarkdownEditor } from '../detail/markdown-editor'
 import { useApplicationState } from '@dovo/studio-core/state'
+import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
+const commentDraftCache = createPullStateCache<string>(50)
 import { MoreHorizontal } from 'lucide-react'
 import { useRef } from 'react'
 import {
@@ -570,7 +572,13 @@ function PullActionDialog({
 
 export function PullCommentComposer({ repositoryId, detail, onDone }: PullActionContext) {
   const { request, connected } = useWorkspace()
-  const [body, setBody] = useApplicationState('')
+  const draftKey = usePullStateKey(
+    repositoryId,
+    detail.pull.number,
+    detail.pull.connectionId,
+    detail.pull.url,
+  )
+  const [body, setBody] = useRetainedPullState(commentDraftCache, draftKey, '')
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [notice, setNotice] = useApplicationState('')

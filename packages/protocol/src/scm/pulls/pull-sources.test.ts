@@ -1,8 +1,11 @@
 import { expect, it } from 'vite-plus/test'
 import type { Repository } from '../../workspace'
+import type { PullSummary } from './pulls'
 import {
   assignRemoteSources,
   forgePullIdentity,
+  publicPullSummaries,
+  pullRepositoryKey,
   selectPullSources,
   uniquePulls,
 } from './pull-sources'
@@ -13,6 +16,47 @@ const repository: Repository = {
   branch: 'main',
   gitIdentity: 'github.com/team/app',
 }
+it('never carries account relationships when displaying another reader’s saved public rows', () => {
+  const pull: PullSummary = {
+    number: 1,
+    title: 'Fix',
+    url: 'https://github.com/team/app/pull/1',
+    state: 'open',
+    draft: false,
+    author: 'work',
+    updatedAt: '',
+    head: 'branch',
+    base: 'main',
+    labels: [],
+    viewerIsAuthor: true,
+    viewerIsAssigned: true,
+    viewerIsInvolved: true,
+    viewerReviewRequested: true,
+  }
+  expect(publicPullSummaries([pull])[0]).toMatchObject({
+    title: 'Fix',
+    viewerIsAuthor: undefined,
+    viewerIsAssigned: undefined,
+    viewerIsInvolved: undefined,
+    viewerReviewRequested: undefined,
+  })
+  expect(pull.viewerIsAuthor).toBe(true)
+})
+it('does not group a stale checkout identity but keeps an explicit forge target', () => {
+  expect(
+    pullRepositoryKey({ ...repository, gitIdentityError: 'Checkout unavailable' }, 'local'),
+  ).toBe('local')
+  expect(
+    pullRepositoryKey(
+      {
+        ...repository,
+        gitIdentityError: 'Checkout unavailable',
+        pullIdentity: 'forge.example/team/app',
+      },
+      'local',
+    ),
+  ).toBe('forge.example/team/app')
+})
 const source = (key: string, connected = true, repo = repository) => ({
   key,
   connected,

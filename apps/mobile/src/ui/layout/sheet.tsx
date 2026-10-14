@@ -1,7 +1,16 @@
 import { SafeModal } from './safe-modal'
 import { NativeIcon, NativeMenuButton } from '../controls/native-icon'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  type ReactNode,
+  type Ref,
+} from 'react'
 import {
   BottomSheet,
   Button,
@@ -28,11 +37,20 @@ import { IconButton } from '../controls/icon-button'
 import type { IconName } from '../controls/icon'
 import { useTheme } from '../theme'
 const SheetContext = createContext(false)
+const SheetNavigationContext = createContext<(navigate: () => void) => void>((navigate) =>
+  navigate(),
+)
+export type SheetHandle = { dismiss: (after?: () => void) => void }
+/** Navigate only after the containing native presentations have finished dismissing. */
+export function useSheetNavigation() {
+  return useContext(SheetNavigationContext)
+}
 export function useInsideSheet() {
   return useContext(SheetContext)
 }
 export function Sheet({
   title,
+  ref,
   children,
   onClose,
   busy = false,
@@ -41,6 +59,7 @@ export function Sheet({
   headerAction,
 }: {
   title: string
+  ref?: Ref<SheetHandle>
   children: ReactNode
   onClose: () => void
   busy?: boolean
@@ -53,6 +72,9 @@ export function Sheet({
   const [presented, setPresented] = useApplicationState(true)
   const [keyboard, setKeyboard] = useApplicationState(false)
   const closed = useRef(false)
+  const dismissing = useRef(false)
+  const afterDismiss = useRef<(() => void) | undefined>(undefined)
+  const parentNavigate = useSheetNavigation()
   const closeCallback = useRef(onClose)
   closeCallback.current = onClose
   useEffect(() => {
@@ -69,13 +91,28 @@ export function Sheet({
     if (closed.current) return
     closed.current = true
     closeCallback.current()
+    afterDismiss.current?.()
   }, [])
-  const close = () => {
-    if (busy || closed.current) return
+  const dismiss = (after?: () => void) => {
+    if (closed.current || dismissing.current) return
+    dismissing.current = true
+    afterDismiss.current = after
     Keyboard.dismiss()
     setPresented(false)
     if (Platform.OS !== 'ios') finishClose()
   }
+  useImperativeHandle(ref, () => ({ dismiss }))
+  const close = () => {
+    if (!busy) dismiss()
+  }
+  const navigate = (action: () => void) => {
+    if (!busy) dismiss(() => parentNavigate(action))
+  }
+  const content = (
+    <SheetContext.Provider value>
+      <SheetNavigationContext.Provider value={navigate}>{children}</SheetNavigationContext.Provider>
+    </SheetContext.Provider>
+  )
   if (Platform.OS === 'ios')
     return (
       <Host
@@ -123,7 +160,7 @@ export function Sheet({
                           },
                         ]}
                       >
-                        <SheetContext.Provider value>{children}</SheetContext.Provider>
+                        {content}
                       </ScrollView>
                     ) : (
                       <View
@@ -131,7 +168,7 @@ export function Sheet({
                           flex: 1,
                         }}
                       >
-                        <SheetContext.Provider value>{children}</SheetContext.Provider>
+                        {content}
                       </View>
                     )}
                     {footer && <View style={styles.sheetFooter}>{footer}</View>}
@@ -163,7 +200,7 @@ export function Sheet({
                   <Button
                     testID="Close"
                     role="close"
-                    onPress={close}
+                    onPress={() => close()}
                     modifiers={[disabled(busy || !presented), accessibilityLabel('Close')]}
                   >
                     <NativeIcon name="close" color={colors.text} />
@@ -176,7 +213,7 @@ export function Sheet({
       </Host>
     )
   return (
-    <SafeModal visible={presented} animationType="slide" onRequestClose={close}>
+    <SafeModal visible={presented} animationType="slide" onRequestClose={() => close()}>
       <View style={styles.screen}>
         <KeyboardAvoidingView style={styles.screen} behavior="height">
           <View
@@ -209,7 +246,7 @@ export function Sheet({
                 disabled={busy || !!headerAction.disabled}
               />
             )}
-            <Action label="Close" secondary disabled={busy} onPress={close} />
+            <Action label="Close" secondary disabled={busy} onPress={() => close()} />
           </View>
           {scrollable ? (
             <ScrollView
@@ -222,7 +259,7 @@ export function Sheet({
                 },
               ]}
             >
-              <SheetContext.Provider value>{children}</SheetContext.Provider>
+              {content}
             </ScrollView>
           ) : (
             <View
@@ -230,7 +267,7 @@ export function Sheet({
                 flex: 1,
               }}
             >
-              <SheetContext.Provider value>{children}</SheetContext.Provider>
+              {content}
             </View>
           )}
           {footer && <View style={styles.sheetFooter}>{footer}</View>}

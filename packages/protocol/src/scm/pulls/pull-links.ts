@@ -57,7 +57,7 @@ export function githubPullTarget(input: string) {
   try {
     const url = new URL(input)
     const match = url.pathname.match(
-      /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/(?:files|commits|checks))?\/?$/,
+      /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/(files|commits|checks))?\/?$/,
     )
     if (
       !['http:', 'https:'].includes(url.protocol) ||
@@ -71,10 +71,16 @@ export function githubPullTarget(input: string) {
     const number = Number(match[3])
     if (!Number.isSafeInteger(number)) return null
     const repositoryUrl = `https://github.com/${match[1]}/${match[2]}`
+    const canonicalUrl = `${repositoryUrl}/pull/${number}`
+    const tab: 'overview' | 'changes' | 'checks' =
+      match[4] === 'checks' ? 'checks' : match[4] ? 'changes' : 'overview'
     return {
       number,
       identity: gitRemoteIdentity(repositoryUrl),
-      url: `${repositoryUrl}/pull/${number}`,
+      url: canonicalUrl,
+      navigationUrl: `${canonicalUrl}${match[4] ? `/${match[4]}` : ''}${url.search}${url.hash}`,
+      tab,
+      fragment: url.hash,
     }
   } catch {
     return null

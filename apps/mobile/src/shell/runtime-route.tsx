@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react'
 import { ActivityIndicator, View } from 'react-native'
-import { useRuntime } from '../runtime/connection/provider'
+import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { Action } from '../ui/controls/action'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
@@ -8,30 +8,39 @@ import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { useNavigation } from './navigation'
 import { backToCollection } from './source-route'
-import { useRouteComputer } from './use-route-computer'
 
 /** A route never mounts requests or mutations against a different computer's matching IDs. */
-export function RuntimeRoute({
-  runtimeId,
-  repositoryId,
-  jiraSourceId,
-  title,
-  backTo,
-  children,
-}: {
+type RuntimeRouteProps = {
   runtimeId: string
   repositoryId?: string
   jiraSourceId?: string
   title: string
   backTo: '/issues' | '/pulls' | '/settings/automations'
   children: ReactNode
-}) {
+}
+export function RuntimeRoute(props: RuntimeRouteProps) {
+  const { overviews } = useRuntime()
+  return overviews.some((entry) => entry.profile.id === props.runtimeId) ? (
+    <RuntimeScope runtimeId={props.runtimeId}>
+      <RuntimeRouteContent {...props} />
+    </RuntimeScope>
+  ) : (
+    <RuntimeRouteContent {...props} />
+  )
+}
+function RuntimeRouteContent({
+  runtimeId,
+  repositoryId,
+  jiraSourceId,
+  title,
+  backTo,
+  children,
+}: RuntimeRouteProps) {
   const { colors, styles } = useTheme()
 
-  const { ready, activeId, profiles, snapshot, refresh, connected } = useRuntime()
+  const { ready, activeId, profiles, snapshot, refresh, refreshRuntime, connected } = useRuntime()
   const { focused, navigate } = useNavigation()
   const { busy, error, act } = useAction()
-  const switching = useRouteComputer(runtimeId)
   const owner = profiles.find((profile) => profile.id === runtimeId)
   const project = snapshot?.workspace.repositories.find(
     (repository) => repository.id === repositoryId,
@@ -75,17 +84,12 @@ export function RuntimeRoute({
           </>
         ) : activeId !== runtimeId ? (
           <>
-            <Text style={styles.title}>Opening on {owner.name}…</Text>
-            {switching.error ? (
-              <>
-                <Text accessibilityRole="alert" style={styles.error}>
-                  {switching.error}
-                </Text>
-                <Action label="Try again" disabled={!focused} onPress={switching.retry} />
-              </>
-            ) : (
-              <ActivityIndicator color={colors.accent} />
-            )}
+            <Text style={styles.title}>Loading saved connection…</Text>
+            <Action
+              label="Refresh connection"
+              disabled={busy || !focused}
+              onPress={() => act(() => refreshRuntime(owner))}
+            />
           </>
         ) : (
           <>

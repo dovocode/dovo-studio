@@ -3,12 +3,12 @@ import { cn } from './lib/utils'
 
 export function pullRequestIconTone(state?: string, draft?: boolean) {
   return state === 'merged'
-    ? 'text-violet-400'
+    ? 'text-violet-600 dark:text-violet-400'
     : state === 'closed'
-      ? 'text-red-400'
+      ? 'text-red-600 dark:text-red-400'
       : draft || state !== 'open'
         ? 'text-muted-foreground'
-        : 'text-emerald-400'
+        : 'text-emerald-600 dark:text-emerald-400'
 }
 
 export function PullRequestIcon({

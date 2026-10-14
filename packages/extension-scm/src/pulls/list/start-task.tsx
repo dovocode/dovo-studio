@@ -18,7 +18,7 @@ export function StartPullTask({
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, activeRuntimeId, runtimeRegistry, switchRuntime } = useWorkspace()
   const host = useStudioHost()
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
@@ -42,6 +42,8 @@ export function StartPullTask({
         },
         pullTaskResponse,
       )
+      if (activeRuntimeId && activeRuntimeId !== runtimeRegistry.activeId)
+        await switchRuntime(activeRuntimeId)
       host.navigate({ viewId: 'tasks', entityId: result.id })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))

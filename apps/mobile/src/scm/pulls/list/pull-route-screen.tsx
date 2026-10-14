@@ -17,6 +17,9 @@ export function PullRouteScreen() {
     runtimeId: string
     repositoryId: string
     number: string
+    tab?: string
+    fragment?: string
+    navigationUrl?: string
   }>()
   const number = pullRouteNumber(params.number)
   const back = () => backToCollection('/pulls')
@@ -32,6 +35,13 @@ export function PullRouteScreen() {
           key={JSON.stringify([params.runtimeId, params.repositoryId, number])}
           repositoryId={params.repositoryId}
           number={number}
+          initialTab={
+            params.tab === 'changes' || params.tab === 'checks' || params.tab === 'overview'
+              ? params.tab
+              : undefined
+          }
+          initialFragment={params.fragment ?? ''}
+          initialNavigationUrl={params.navigationUrl}
           onBack={back}
         />
       ) : (

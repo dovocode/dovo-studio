@@ -1,6 +1,11 @@
 import { useCallback, useState } from 'react'
 import { Alert, Pressable, View } from 'react-native'
 import { taskWaitingSchema, type taskWaitingRequestSchema } from '@dovo/protocol'
+import { clientScopeKey } from '@dovo/client-runtime'
+import { router } from 'expo-router'
+import { githubPullTarget } from '@dovo/protocol'
+import { issueHref, jiraIssueHref, pipelineHref, pullHref } from '../../shell/source-route'
+import { useSheetNavigation } from '../../ui/layout/sheet'
 import { useTaskWaiting } from '@dovo/studio-core'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from '../../ui/content/text'
@@ -8,36 +13,91 @@ import { Icon } from '../../ui/controls/icon'
 import { openAppLink } from '../../ui/content/open-link'
 import { useTheme } from '../../ui/theme'
 
-export function TaskWaitingPanel({ taskId }: { taskId: string }) {
-  const { call, connected } = useRuntime()
+export function TaskWaitingPanel({
+  taskId,
+  onPull,
+}: {
+  taskId: string
+  onPull?: (url: string) => void
+}) {
+  const { call, connected, connection, activeId, snapshot } = useRuntime()
   const { styles, colors } = useTheme()
   const [linkError, setLinkError] = useState('')
-  const open = (url: string) => {
+  const navigateAfterSheet = useSheetNavigation()
+  const open = (
+    url: string,
+    dependency?: { kind: 'pull' | 'pipeline'; repositoryId: string; target: string },
+  ) => {
     setLinkError('')
-    void openAppLink(url).catch((cause) => setLinkError(String(cause)))
+    const pull = githubPullTarget(url)
+    if (pull && onPull) {
+      onPull(url)
+      return
+    }
+    const work = snapshot?.workspace.tasks.find((task) => task.id === taskId)?.workItem
+    if (activeId && dependency?.kind === 'pipeline') {
+      navigateAfterSheet(() =>
+        router.push(pipelineHref(activeId, dependency.repositoryId, dependency.target, url)),
+      )
+    } else if (activeId && pull) {
+      const repository = snapshot?.workspace.repositories.find(
+        (repo) =>
+          !repo.kind &&
+          ((!repo.gitIdentityError && repo.gitIdentity === pull.identity) ||
+            repo.pullIdentity === pull.identity),
+      )
+      navigateAfterSheet(() =>
+        router.push(pullHref(activeId, repository?.id ?? pull.url, pull.number, pull)),
+      )
+    } else if (activeId && work?.url === url) {
+      const task = snapshot?.workspace.tasks.find((task) => task.id === taskId)
+      if (!task) return
+      const href =
+        work.kind === 'pipeline'
+          ? pipelineHref(activeId, task.repositoryId, work.id, url)
+          : work.jiraSourceId
+            ? jiraIssueHref(activeId, work.jiraSourceId, work.id, url)
+            : issueHref(activeId, task.repositoryId, work.id, url)
+      navigateAfterSheet(() => router.push(href))
+    } else
+      navigateAfterSheet(() => {
+        void openAppLink(url).catch((cause) => setLinkError(String(cause)))
+      })
   }
   const read = useCallback(
     (input: typeof taskWaitingRequestSchema.Type) =>
       call('/api/tasks/waiting', input, taskWaitingSchema),
     [call],
   )
-  const { data, error, busy, refresh } = useTaskWaiting(taskId, connected, read)
+  const { data, error, busy, refresh } = useTaskWaiting(
+    taskId,
+    connected,
+    read,
+    JSON.stringify([clientScopeKey(connection), taskId]),
+  )
   const watchingUrls = new Set(data?.dependencies.map((item) => item.url))
   const related = data?.related?.filter((item) => !watchingUrls.has(item.url)) ?? []
-  if (!error && !linkError && !data?.dependencies.length && !related.length) return null
+  if (connected && !error && !linkError && !data?.dependencies.length && !related.length)
+    return null
   return (
     <View
       accessibilityLabel="Related items and watchers"
       style={{
         paddingHorizontal: 12,
         paddingVertical: 6,
-        gap: 6,
+        gap: 4,
         flexDirection: 'row',
         flexWrap: 'wrap',
         alignItems: 'center',
       }}
     >
-      {!connected && <Text style={styles.muted}>Connect the runtime to manage waiting items.</Text>}
+      {!connected && (
+        <Text style={styles.muted}>
+          {data
+            ? 'Offline · showing last loaded waiting items. Connect this computer to refresh or stop watching.'
+            : 'Offline · connect this computer to load waiting items.'}
+        </Text>
+      )}
       {linkError && (
         <Text accessibilityRole="alert" style={{ color: colors.error }}>
           {linkError}
@@ -91,14 +151,14 @@ export function TaskWaitingPanel({ taskId }: { taskId: string }) {
           <Pressable
             accessibilityRole="link"
             accessibilityLabel={`Open ${item.label}${item.pausedReason ? `, ${item.pausedReason}` : ''}`}
-            onPress={() => open(item.url)}
+            onPress={() => open(item.url, item)}
             style={{
               flexShrink: 1,
-              paddingLeft: 12,
+              paddingLeft: 10,
               paddingVertical: 8,
               flexDirection: 'row',
               alignItems: 'center',
-              gap: 6,
+              gap: 4,
             }}
           >
             <Icon name="preview" size={16} color={colors.muted} />
@@ -138,7 +198,11 @@ export function TaskWaitingPanel({ taskId }: { taskId: string }) {
               Paused
             </Text>
           )}
-          {item.error && <Text style={{ color: colors.error }}>{item.error}</Text>}
+          {item.error && (
+            <Text numberOfLines={2} style={{ color: colors.error, flexShrink: 1 }}>
+              {item.error}
+            </Text>
+          )}
         </View>
       ))}
       <Pressable

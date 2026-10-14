@@ -3,6 +3,7 @@ import { SlidersHorizontal, X, List, Columns3 } from 'lucide-react'
 import { hasJiraIssueFilters, type ForgeIssue, type JiraIssueFilters } from '@dovo/protocol'
 import { Button, Input, Popover, ChoicePicker } from '@dovo/studio-ui'
 import type { WorkSource } from './work-sources'
+import { workRemoteKey, matchesWorkSource } from './work-source-identity'
 
 export function JiraToolbar({
   state,
@@ -143,7 +144,7 @@ export function JiraToolbar({
               <ChoicePicker aria-label="Jira source" value={source} onValueChange={onSource}>
                 <option value="">All sources</option>
                 {sources.map((entry) => (
-                  <option key={entry.key} value={entry.key}>
+                  <option key={entry.key} value={workRemoteKey(entry)}>
                     {entry.name} · {entry.runtimeName}
                   </option>
                 ))}
@@ -289,7 +290,9 @@ export function JiraToolbar({
             onFilters({ ...filters, assignee: undefined }),
           )}
         {source &&
-          chip(sources.find((entry) => entry.key === source)?.name ?? 'Source', () => onSource(''))}
+          chip(sources.find((entry) => matchesWorkSource(entry, source))?.name ?? 'Source', () =>
+            onSource(''),
+          )}
         {!['open', 'all', 'closed'].includes(state) &&
           chip(`Status: ${state}`, () => onState('open'))}
         {state === 'all' && !filters.statusCategory && chip('All statuses', () => onState('open'))}

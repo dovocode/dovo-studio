@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useRef } from 'react'
-import { type RepositorySource, useWorkspace } from '@dovo/studio-core'
+import { type RepositorySource } from '@dovo/studio-core'
 import {
   Button,
   Dialog,
@@ -31,7 +31,6 @@ export function SourcePicker<T extends SourceChoice>({
   onSelect: (source: T) => void
   onClose: () => void
 }) {
-  const { activeRuntimeId, switchRuntime } = useWorkspace()
   const [search, setSearch] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
@@ -72,11 +71,7 @@ export function SourcePicker<T extends SourceChoice>({
                 pending.current = true
                 setBusy(true)
                 setError('')
-                void (
-                  source.runtimeId === activeRuntimeId
-                    ? Promise.resolve()
-                    : switchRuntime(source.runtimeId)
-                )
+                void Promise.resolve()
                   .then(() => onSelect(source))
                   .catch((error) => setError(String(error)))
                   .finally(() => {

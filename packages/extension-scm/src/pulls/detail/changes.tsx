@@ -6,7 +6,7 @@ import {
 } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
 import { OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppPreferences, whitespaceOnlyPatch } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -19,6 +19,8 @@ import { Button, Checkbox } from '@dovo/studio-ui'
 import { PullPatch, emptyPullLineDraft, type PullLineDraft } from './patch'
 import { DeferredPullFile } from './deferred-file'
 import { PullComments } from './comments'
+import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
+const lineDraftCache = createPullStateCache<ReadonlyMap<string, PullLineDraft>>(30)
 export function PullChanges({
   detail,
   active = true,
@@ -26,8 +28,10 @@ export function PullChanges({
   onSteer,
   onPosted,
   embedded = false,
+  initialFragment = '',
 }: {
   embedded?: boolean
+  initialFragment?: string
   detail: PullDetail
   active?: boolean
   repositoryId: string
@@ -84,16 +88,43 @@ export function PullChanges({
     [treeOpen, setTreeOpen] = useApplicationState(true)
   const cards = useRef(new Map<string, HTMLElement>())
   const [heights] = useState(() => new Map<string, number>())
-  // Comment ranges and destinations live here, before any file leaves the render window.
-  const [drafts, setDrafts] = useApplicationState<ReadonlyMap<string, PullLineDraft>>(new Map())
+  const draftKey = usePullStateKey(
+    repositoryId,
+    detail.pull.number,
+    detail.pull.connectionId,
+    detail.pull.url,
+  )
+  // Full drafts outlive disconnects, detail navigation, and the render window.
+  const [drafts, setDrafts] = useRetainedPullState(lineDraftCache, draftKey, new Map())
   const updateDraft = (path: string, update: (draft: PullLineDraft) => PullLineDraft) =>
-    setDrafts((current) =>
-      new Map(current).set(path, update(current.get(path) ?? emptyPullLineDraft)),
-    )
+    setDrafts((current) => {
+      const next = new Map(current)
+      const draft = update(current.get(path) ?? emptyPullLineDraft)
+      next.delete(path)
+      if (draft.selection) next.set(path, draft)
+      while (next.size > 20) {
+        const oldest = next.keys().next().value
+        if (oldest === undefined) break
+        next.delete(oldest)
+      }
+      return next
+    })
   const selectFile = (path: string) => {
     setSelected(path)
     cards.current.get(path)?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }
+  useEffect(() => {
+    if (!initialFragment) return
+    const comment = detail.comments.find(
+      (comment) =>
+        comment.kind === 'inline' &&
+        (comment.url.endsWith(initialFragment) || `#${comment.id}` === initialFragment),
+    )
+    const file = files.find(
+      (file) => file.path === comment?.path || file.previousPath === comment?.path,
+    )
+    if (file) selectFile(file.path)
+  }, [initialFragment, detail.comments, files])
   const selectedFile = files.find((file) => file.path === selected) ?? files[0]
   if (!files.length)
     return <p className="p-4 text-xs text-muted-foreground">No changed files returned.</p>
@@ -169,10 +200,12 @@ export function PullChanges({
                     </span>
                     <span className="text-xs">
                       {file.additions !== null && (
-                        <span className="text-green-400">+{file.additions}</span>
+                        <span className="text-green-700 dark:text-green-400">
+                          +{file.additions}
+                        </span>
                       )}{' '}
                       {file.deletions !== null && (
-                        <span className="text-red-400">−{file.deletions}</span>
+                        <span className="text-red-700 dark:text-red-400">−{file.deletions}</span>
                       )}
                     </span>
                     <label className="flex items-center gap-1 text-xs">
@@ -209,6 +242,7 @@ export function PullChanges({
                       file={file}
                       draft={drafts.get(file.path)}
                       onDraft={(update) => updateDraft(file.path, update)}
+                      commentDisabled={!connected}
                       headSha={detail.pull.headSha}
                       split={split}
                       provider={detail.pull.provider}

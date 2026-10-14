@@ -1,43 +1,71 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
 import { githubPullTarget, taskPullLinks, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { Text } from '../../ui/content/text'
 import { PullRequestIcon } from '../../ui/content/pull-request-icon'
 import { openAppLink } from '../../ui/content/open-link'
 import { useTheme } from '../../ui/theme'
 import { PullDetail } from '../../scm/pulls/detail/pull-detail'
 
-export function TaskLinkedPullSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskLinkedPullSheet({
+  task,
+  initialUrl,
+  onClose,
+}: {
+  task: Task
+  initialUrl?: string
+  onClose: () => void
+}) {
   const { snapshot } = useRuntime()
   const { colors, styles } = useTheme()
-  const [selected, setSelected] = useState<{ repositoryId: string; number: number } | null>(null)
   const [error, setError] = useState('')
   const links = taskPullLinks(task)
-  const open = (url: string) => {
+  const sheet = useRef<SheetHandle>(null)
+  const destination = (url: string) => {
     const target = githubPullTarget(url)
     const repository =
       target &&
       snapshot?.workspace.repositories.find(
         (repo) =>
           !repo.kind &&
-          !repo.gitIdentityError &&
-          (repo.gitIdentity === target.identity || repo.pullIdentity === target.identity),
+          ((!repo.gitIdentityError && repo.gitIdentity === target.identity) ||
+            repo.pullIdentity === target.identity),
       )
-    if (target) setSelected({ repositoryId: repository?.id ?? target.url, number: target.number })
+    return target
+      ? {
+          repositoryId: repository?.id ?? target.url,
+          number: target.number,
+          tab: target.tab,
+          fragment: target.fragment,
+          navigationUrl: target.navigationUrl,
+        }
+      : null
+  }
+  const [selected, setSelected] = useState(() => (initialUrl ? destination(initialUrl) : null))
+  const open = (url: string) => {
+    const target = destination(url)
+    if (target) setSelected(target)
     else {
       setError('')
-      void openAppLink(url).catch((cause) => setError(String(cause)))
+      sheet.current?.dismiss(() => {
+        void openAppLink(url).catch((cause) => setError(String(cause)))
+      })
     }
   }
   return (
-    <Sheet title="Linked pull requests" scrollable={!selected} onClose={onClose}>
+    <Sheet ref={sheet} title="Linked pull requests" scrollable={!selected} onClose={onClose}>
       {selected ? (
         <PullDetail
           key={`${selected.repositoryId}:${selected.number}`}
           repositoryId={selected.repositoryId}
           number={selected.number}
+          initialTab={selected.tab}
+          initialFragment={selected.fragment}
+          initialNavigationUrl={selected.navigationUrl}
+          backLabel="Back to linked PRs"
+          embedded
           onBack={() => setSelected(null)}
         />
       ) : (

@@ -4,6 +4,7 @@ import { Effect, Schema, Semaphore } from 'effect'
 import {
   assignRemoteSources,
   pullRepositoryKey,
+  publicPullSummaries,
   mutableArray,
   mutableStruct,
   pullPageSchema,
@@ -53,6 +54,8 @@ export function usePulls(state: string, repositoryId = '') {
   const remoteState = state === 'merged' ? 'closed' : state
   useEffect(() => {
     const current = ++generation.current
+    const previousPages = pagesRef.current
+    const sameState = lastState.current === remoteState
     const sweepKeys = new Set(sources.map((source) => JSON.stringify([source.scope, remoteState])))
     for (const key of fullSweepAt.current.keys())
       if (!sweepKeys.has(key)) fullSweepAt.current.delete(key)
@@ -66,7 +69,7 @@ export function usePulls(state: string, repositoryId = '') {
       Object.fromEntries(
         Object.entries(previous).filter(
           ([key, page]) =>
-            lastState.current === remoteState &&
+            sameState &&
             sources.some((source) => source.key === key && source.scope === page.source.scope),
         ),
       ),
@@ -86,10 +89,22 @@ export function usePulls(state: string, repositoryId = '') {
     for (const source of sources) {
       if (pagesRef.current[source.key]) continue
       const remote = pullRepositoryKey(source.repository, source.key)
-      const carried = Object.values(pagesRef.current).find(
+      const carried = Object.values(previousPages).find(
         (page) => pullRepositoryKey(page.source.repository, page.source.key) === remote,
       )
-      if (carried) update(source, { ...carried, stale: true }, undefined)
+      if (carried && sameState)
+        update(
+          source,
+          {
+            ...carried,
+            pulls: publicPullSummaries(carried.pulls),
+            page: 1,
+            firstPageIds: undefined,
+            hasMore: false,
+            stale: true,
+          },
+          undefined,
+        )
     }
     const hydrated = Effect.runSync(
       Effect.cached(

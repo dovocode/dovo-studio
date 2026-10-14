@@ -9,7 +9,7 @@ import {
   forgeIssuePageSchema,
   forgePipelinePageSchema,
 } from '@dovo/studio-core'
-import { useIssueSources, type WorkSource } from './work-sources'
+import { useIssueSources, matchesWorkSource, type WorkSource } from './work-sources'
 import {
   appendWorkPage,
   cachedWorkIssuePageSchema,
@@ -37,7 +37,7 @@ export function useWorkSources(
     [issueSources, mode, sourceKind],
   )
   const visibleSources = useMemo(
-    () => sources.filter((source) => !sourceKey || source.key === sourceKey),
+    () => sources.filter((source) => matchesWorkSource(source, sourceKey)),
     [sources, sourceKey],
   )
   const [stored, setStored, pagesRef] = useApplicationState<Record<string, WorkSourcePage>>({})

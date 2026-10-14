@@ -7,14 +7,14 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const ui = `${root}/packages/studio-ui/src`
 const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export const useWorkspace=()=>({activeRuntimeId:window.currentRuntime,connected:true,switchRuntime:async id=>{if(window.delaySwitch)await new Promise(resolve=>window.releaseSwitch=resolve);window.currentRuntime=id},request:async()=>({})});export const decodeWorkTarget=()=>undefined;export const repositorySourceKey=(a,b)=>a+b;export const issueLabel=id=>id;export const forgeLabels={};export const matchesWorkItem=(item,query)=>JSON.stringify(item).toLowerCase().includes(query.toLowerCase());export const formatDateTime=value=>value;`,
+  '@dovo/studio-core': `export const useStudioHost=()=>({navigate:()=>{}});export const WorkspaceRuntimeScope=({children})=>children;export const useWorkspace=()=>({activeRuntimeId:window.currentRuntime,runtimes:[],connected:true,switchRuntime:async id=>{if(window.delaySwitch)await new Promise(resolve=>window.releaseSwitch=resolve);window.currentRuntime=id},request:async()=>({})});export const decodeWorkTarget=()=>undefined;export const repositorySourceKey=(a,b)=>a+b;export const issueLabel=id=>id;export const forgeLabels={};export const matchesWorkItem=(item,query)=>JSON.stringify(item).toLowerCase().includes(query.toLowerCase());export const formatDateTime=value=>value;`,
   '@dovo/studio-ui':
     ['button', 'input', 'dialog']
       .map((name) => `export * from '${ui}/components/ui/${name}.tsx';`)
       .join('\n') +
-    `export * from '${ui}/choice-picker.tsx';export * from '${ui}/page-header.tsx';export * as Popover from '@radix-ui/react-popover';import {useState,useEffect} from 'react';export const useCompactLayout=()=>{const [compact,setCompact]=useState(innerWidth<1024);useEffect(()=>{const update=()=>setCompact(innerWidth<1024);addEventListener('resize',update);return()=>removeEventListener('resize',update)},[]);return compact};`,
+    `export * from '${ui}/choice-picker.tsx';export * from '${ui}/page-header.tsx';export * from '${ui}/sidebar-header.tsx';export * as Popover from '@radix-ui/react-popover';import {useState,useEffect} from 'react';export const useCompactLayout=()=>{const [compact,setCompact]=useState(innerWidth<1024);useEffect(()=>{const update=()=>setCompact(innerWidth<1024);addEventListener('resize',update);return()=>removeEventListener('resize',update)},[]);return compact};`,
   './use-work-sources': `export const useWorkSources=(mode,query,kind,key,state,filters)=>{window.lastQuery={state,filters};const source=window.source;const items=window.issues.filter(item=>(state==='all'||state==='open'&&item.state!=='Released'||state==='closed'&&item.state==='Released'||item.state===state)&&(!filters?.priority||item.priority===filters.priority)&&(!filters?.label||item.labels.includes(filters.label))&&(!filters?.assignee||filters.assignee==='all'||filters.assignee==='unassigned'&&!item.assignees.length||filters.assignee==='mine'&&item.assignees.includes('me')));return {sources:[source],pages:[{source,items,options:{issues:true},next:'30'}],busy:false,refresh:()=>{},more:async()=>{window.moreCount++}}};`,
-  './work-sources': `export const jiraSourceKey=(a,b)=>a+b;`,
+  './work-sources': `export const workRemoteKey=source=>source.jira?JSON.stringify(['jira',new URL(source.jira.site).origin,source.jira.project]):source.key;export const matchesWorkSource=(source,key)=>!key||source.key===key||workRemoteKey(source)===key;export const jiraSourceKey=(a,b)=>a+b;export const useIssueSources=()=>[window.source];`,
   '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,
   './pipeline-detail': `export const PipelineState=()=>null;`,
   './content': `export const WorkContent=({initialSelected,onBack})=><div><h2>Preview {initialSelected}</h2><button onClick={onBack}>Close preview</button></div>;`,
@@ -23,7 +23,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {JiraView} from '${root}/packages/extension-scm/src/work/work-view.tsx';window.currentRuntime='remote';window.delaySwitch=false;window.moreCount=0;window.source={key:'remote-team',scope:'remote-team',name:'Team',runtimeId:'remote',runtimeName:'Mac',connected:true,jira:{id:'team',project:'TEAM'},input:{jiraSourceId:'team'}};window.issues=[{id:'TEAM-1',title:'Fix login',state:'In progress',priority:'High',type:'Bug',assignees:[],labels:['all'],url:'https://team.atlassian.net/browse/TEAM-1',updatedAt:''},{id:'TEAM-2',title:'Ship feature',state:'Released',priority:'Low',type:'Story',assignees:['me'],labels:[],url:'https://team.atlassian.net/browse/TEAM-2',updatedAt:''}];createRoot(document.getElementById('app')).render(<JiraView/>);`,
+    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {JiraView} from '${root}/packages/extension-scm/src/work/work-view.tsx';window.currentRuntime='remote';window.delaySwitch=false;window.moreCount=0;window.source={key:'remote-team',scope:'remote-team',name:'Team',runtimeId:'remote',runtimeName:'Mac',connected:true,jira:{id:'team',site:'https://team.atlassian.net',project:'TEAM'},input:{jiraSourceId:'team'}};window.issues=[{id:'TEAM-1',title:'Fix login',state:'In progress',priority:'High',type:'Bug',assignees:[],labels:['all'],url:'https://team.atlassian.net/browse/TEAM-1',updatedAt:''},{id:'TEAM-2',title:'Ship feature',state:'Released',priority:'Low',type:'Story',assignees:['me'],labels:[],url:'https://team.atlassian.net/browse/TEAM-2',updatedAt:''}];createRoot(document.getElementById('app')).render(<JiraView/>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -101,8 +101,10 @@ try {
   })
   await page.getByRole('button', { name: 'Remove Label: all filter', exact: true }).click()
   await page.getByRole('button', { name: /TEAM-1 · Fix login/ }).click()
+  await page.getByRole('heading', { name: 'Preview TEAM-1', exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.currentRuntime), 'local')
+  await page.getByRole('button', { name: 'Close preview', exact: true }).click()
   await page.getByRole('button', { name: 'My issues', exact: true }).click()
-  await page.evaluate(() => window.releaseSwitch())
   await page.getByText('No matching issues', { exact: true }).waitFor()
   assert.equal(await page.getByRole('heading', { name: 'Preview TEAM-1' }).count(), 0)
   await page.getByRole('button', { name: 'Load more · Team · Mac', exact: true }).click()
@@ -110,7 +112,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   assert.deepEqual(errors, [])
   console.log(
-    'Styled Jira workspace: board width, narrow preview/focus restoration, filter panel bounds, literal-all chip, stale runtime open cancellation and filtered pagination controls passed.',
+    'Styled Jira workspace: board width, narrow preview/focus restoration, filter panel bounds, literal-all chip, preview without changing the selected runtime and filtered pagination controls passed.',
   )
 } finally {
   await browser.close()

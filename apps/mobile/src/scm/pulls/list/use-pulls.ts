@@ -3,7 +3,9 @@ import { AppState } from 'react-native'
 import { Effect, Schema, Semaphore } from 'effect'
 import { startPolling, clientTaskScope } from '@dovo/client-runtime'
 import {
-  selectPullSources,
+  assignRemoteSources,
+  pullRepositoryKey,
+  publicPullSummaries,
   mutableArray,
   mutableStruct,
   pullPageSchema,
@@ -21,6 +23,7 @@ import { useNavigation } from '../../../shell/navigation'
 import { acknowledgePullList, pullListRevision } from './pull-list-invalidation'
 type Page = PullPage & {
   sourceKey: string
+  remoteKey: string
   sourceIdentity: string
   runtimeId: string
   runtimeName: string
@@ -39,11 +42,17 @@ const cacheKey = (repository: Repository, state: string) =>
   JSON.stringify(['pulls', 'list', repository.id, repository.path, state, repository.forge])
 export function usePulls(repositoryId: string, state: string) {
   const { focused: enabled } = useNavigation()
-  const { readRuntimeEffect: request, overviews, cacheForRuntime } = useRuntime()
+  const { readRuntimeEffect: request, overviews, cacheForRuntime, activeId } = useRuntime()
   const allSources = collectionSources(overviews).filter(
     (source) => !repositoryId || source.key === repositoryId,
   )
-  const sources = selectPullSources(allSources)
+  const owners = useRef(new Map<string, string>())
+  const assigned = assignRemoteSources(
+    allSources.map((source) => ({ ...source, runtimeId: source.profile.id })),
+    { previous: owners.current, preferredRuntimeId: activeId },
+  )
+  owners.current = assigned.owners
+  const sources = assigned.selected
   const key = collectionSourceIdentity(sources)
   const sourcesRef = useRef(sources)
   sourcesRef.current = sources
@@ -60,18 +69,6 @@ export function usePulls(repositoryId: string, state: string) {
   useEffect(() => {
     const current = ++generation.current
     const repositories = sourcesRef.current
-    const currentSources = new Map(repositories.map((entry) => [entry.key, entry]))
-    setPages((previous) =>
-      sourceState.current !== remoteState
-        ? {}
-        : Object.fromEntries(
-            Object.entries(previous).filter(([id, page]) => {
-              const entry = currentSources.get(id)
-              return entry && page.sourceIdentity === projectContentIdentity(entry)
-            }),
-          ),
-    )
-    sourceState.current = remoteState
     const semaphore = Effect.runSync(Semaphore.make(1))
     const commands = clientTaskScope()
     const update = (id: string, page: Page) => {
@@ -79,6 +76,7 @@ export function usePulls(repositoryId: string, state: string) {
     }
     const metadata = (entry: (typeof repositories)[number]) => ({
       sourceKey: entry.key,
+      remoteKey: pullRepositoryKey(entry.repository, entry.key),
       sourceIdentity: projectContentIdentity(entry),
       runtimeId: entry.profile.id,
       runtimeName: entry.computerName,
@@ -86,6 +84,34 @@ export function usePulls(repositoryId: string, state: string) {
       repositoryId: entry.repository.id,
       name: entry.repository.name,
     })
+    setPages((previous) => {
+      if (sourceState.current !== remoteState) return {}
+      const retained: Record<string, Page> = {}
+      for (const entry of repositories) {
+        const saved = previous[entry.key]
+        if (saved?.sourceIdentity === projectContentIdentity(entry)) {
+          retained[entry.key] = { ...saved, ...metadata(entry) }
+          continue
+        }
+        const remote = pullRepositoryKey(entry.repository, entry.key)
+        const carried = Object.values(previous).find(
+          (page) => page.remoteKey === remote && page.sourceKey !== entry.key,
+        )
+        if (carried)
+          retained[entry.key] = {
+            ...carried,
+            ...metadata(entry),
+            pulls: publicPullSummaries(carried.pulls),
+            stale: true,
+            page: 1,
+            firstPageIds: undefined,
+            hasMore: false,
+            error: undefined,
+          }
+      }
+      return retained
+    })
+    sourceState.current = remoteState
     const save = (entry: (typeof repositories)[number], page: Page) =>
       Schema.decodeUnknownEffect(cachedPullPageSchema)(page).pipe(
         Effect.flatMap((value) =>

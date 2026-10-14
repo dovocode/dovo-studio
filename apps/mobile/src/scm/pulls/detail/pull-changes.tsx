@@ -1,9 +1,15 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
+import { useRuntime } from '../../../runtime/connection/provider'
+import {
+  createDetailDrafts,
+  integrationDraftKey,
+  useDetailDraft,
+} from '../../../runtime/state/detail-drafts'
+
 import { pullFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
 import { useFileReview } from '../../review/use-file-review'
 import { MobileOrganizeReview } from '../../review/organize-review'
 import { MobileFileReview } from '../../review/file-review'
-import { useApplicationState } from '../../../runtime/state/application-state'
 import { View, useWindowDimensions } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import { pullFilePatch, type PullDetail } from '@dovo/protocol'
@@ -12,6 +18,11 @@ import { useTheme } from '../../../ui/theme'
 import { DiffView } from '../../../tasks/preview/diff-view'
 import { PullComments } from './pull-comments'
 import type { PullActionTarget } from '../list/pull-actions'
+const changeDrafts = createDetailDrafts<{
+  selected: string
+  related: boolean
+  expanded: string[]
+}>()
 export function PullChanges({
   detail,
   active = true,
@@ -19,6 +30,9 @@ export function PullChanges({
   onOpen,
   onAction,
   onLineComment,
+  initialPath,
+  fragment,
+  onAnchor,
 }: {
   detail: PullDetail
   active?: boolean
@@ -26,6 +40,9 @@ export function PullChanges({
   onOpen: (url: string) => void
   onAction?: (target: PullActionTarget) => void
   onLineComment?: (path: string) => void
+  initialPath?: string
+  fragment?: string
+  onAnchor?: (node: View) => void
 }) {
   const { colors, styles } = useTheme()
 
@@ -39,7 +56,27 @@ export function PullChanges({
     JSON.stringify([...fingerprints]),
     active,
   )
-  const [related, setRelated] = useApplicationState(true)
+  const { connection, snapshot } = useRuntime()
+  const { draft, setField } = useDetailDraft(
+    changeDrafts,
+    integrationDraftKey(
+      connection,
+      snapshot,
+      repositoryId,
+      undefined,
+      'pull-changes',
+      detail.pull.repositoryUrl,
+      detail.pull.number,
+    ),
+    () => ({ selected: initialPath ?? detail.files[0]?.path ?? '', related: true, expanded: [] }),
+  )
+  const { selected, related } = draft
+  const expanded = new Set(draft.expanded)
+  const setRelated = (value: boolean) => setField('related', value)
+  const setSelected = (value: string) => setField('selected', value)
+  useEffect(() => {
+    if (initialPath) setSelected(initialPath)
+  }, [initialPath])
   const files = useMemo(
     () =>
       orderReviewFiles(
@@ -54,9 +91,8 @@ export function PullChanges({
       ),
     [detail.files, review.progress, fingerprints, related],
   )
-  const [selected, setSelected] = useApplicationState(detail.files[0]?.path ?? '')
-  const [expanded, setExpanded] = useApplicationState(new Set<string>())
-  const file = files.find((file) => file.path === selected) ?? files[0]
+  const file =
+    files.find((file) => file.path === selected || file.previousPath === selected) ?? files[0]
   if (!file) return <Text style={styles.muted}>No changed files returned.</Text>
   const reason = file.attributes?.generated
     ? 'Generated file'
@@ -118,12 +154,12 @@ export function PullChanges({
             secondary
             label={collapsed ? 'Show changes' : 'Hide changes'}
             onPress={() =>
-              setExpanded((previous) => {
-                const next = new Set(previous)
+              (() => {
+                const next = new Set(expanded)
                 if (collapsed) next.add(file.path)
                 else next.delete(file.path)
-                return next
-              })
+                setField('expanded', [...next])
+              })()
             }
           />
         </>
@@ -165,6 +201,8 @@ export function PullChanges({
           (c) => c.kind === 'inline' && (c.path === file.path || c.path === file.previousPath),
         )}
         onOpen={onOpen}
+        fragment={fragment}
+        onAnchor={onAnchor}
         onAction={onAction}
         capabilities={detail.capabilities}
         fileBaseURL={detail.fileBaseUrl}

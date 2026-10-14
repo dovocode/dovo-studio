@@ -22,14 +22,13 @@ export type WorkSource = Omit<RepositorySource, 'repository'> & {
 }
 export const jiraSourceKey = (runtimeId: string, sourceId: string) =>
   JSON.stringify([runtimeId, 'jira', sourceId])
-/** The same Jira project on several computers is one source; its reader can change. */
-export const jiraRemoteKey = (jira: Pick<JiraSource, 'site' | 'project'>) =>
-  JSON.stringify(['jira', new URL(jira.site).origin, jira.project])
+export { jiraRemoteKey, workRemoteKey, matchesWorkSource } from './work-source-identity'
+import { jiraRemoteKey } from './work-source-identity'
 
 /** Issue trackers and code repositories have separate identities and lifecycles. Like pull
  * requests, each remote and each Jira project is read through one computer: this computer when
  * it has the source, otherwise the least loaded connected computer, kept until it disconnects. */
-export function useIssueSources(includeJira: boolean): WorkSource[] {
+export function useIssueSources(includeJira: boolean, deduplicate = true): WorkSource[] {
   const allRepositories = useRepositorySources()
   const owners = useRef(new Map<string, string>())
   const {
@@ -78,6 +77,7 @@ export function useIssueSources(includeJira: boolean): WorkSource[] {
     const repositories = assignRemoteSources(allRepositories, {
       previous: owners.current,
       preferredRuntimeId: activeRuntimeId,
+      ...(!deduplicate ? { remote: (source: RepositorySource) => source.key } : {}),
     })
     const trackers = assignRemoteSources(
       jira.map((entry) => ({
@@ -88,7 +88,7 @@ export function useIssueSources(includeJira: boolean): WorkSource[] {
       {
         previous: owners.current,
         preferredRuntimeId: activeRuntimeId,
-        remote: (entry) => jiraRemoteKey(entry.jira),
+        remote: (entry) => (deduplicate ? jiraRemoteKey(entry.jira) : entry.key),
       },
     )
     owners.current = new Map([...repositories.owners, ...trackers.owners])
@@ -128,6 +128,7 @@ export function useIssueSources(includeJira: boolean): WorkSource[] {
     ]
   }, [
     descriptors,
+    deduplicate,
     allRepositories,
     activeRuntimeId,
     readRuntime,

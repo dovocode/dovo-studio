@@ -55,7 +55,7 @@ export function SidebarHeaderLayout({
       collapsed,
       collapsible,
       setCollapsed: onCollapsedChange,
-      inline: !compact && (sidebars > 0 || collapsed),
+      inline: !compact && sidebars > 0,
       compact,
       target,
       setTarget,
@@ -68,6 +68,7 @@ export function SidebarHeaderLayout({
       <div
         className="studio-header-layout"
         data-inline-header={value.inline}
+        data-compact={compact}
         data-sidebar-collapsed={collapsed}
       >
         {children}
