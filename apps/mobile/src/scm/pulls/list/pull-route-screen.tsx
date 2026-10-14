@@ -1,3 +1,4 @@
+import { githubPullTarget } from '@dovo/protocol'
 import { useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
 import { RuntimeRoute } from '../../../shell/runtime-route'
@@ -22,7 +23,7 @@ export function PullRouteScreen() {
   return (
     <RuntimeRoute
       runtimeId={params.runtimeId}
-      repositoryId={params.repositoryId}
+      repositoryId={githubPullTarget(params.repositoryId) ? undefined : params.repositoryId}
       title={number ? `PR #${number}` : 'Pull request'}
       backTo="/pulls"
     >

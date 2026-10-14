@@ -177,3 +177,26 @@ it('restores saved sends from the journal without borrowing another thread or ac
   )
   expect(mergePendingMessages(task, [], [{ ...saved[0]!, state: 'saved' }])).toEqual([])
 })
+
+it('keeps an in-flight steering handoff in chat across devices, then restores failed delivery to the queue', () => {
+  const steering = {
+    id: 'steer',
+    role: 'user' as const,
+    text: 'Change direction',
+    createdAt: '',
+    steering: true,
+  }
+  const later = { id: 'later', role: 'user' as const, text: 'After this', createdAt: '' }
+  const task = { id: 'task', status: 'running' as const, messages: [], queue: [steering, later] }
+  expect(visiblePendingMessages(task, [])).toEqual([
+    { taskId: 'task', message: steering, state: 'sending', destination: 'thread' },
+  ])
+  expect(pendingMessageQueue(task, null)).toEqual([later])
+  const delivered = { ...task, messages: [steering] }
+  expect(visiblePendingMessages(delivered, [])).toEqual([])
+  expect(pendingMessageQueue(delivered, null)).toEqual([later])
+  const failed = { ...task, queue: [{ ...steering, steering: undefined }, later] }
+  expect(visiblePendingMessages(failed, [])).toEqual([])
+  expect(pendingMessageQueue(failed, null)).toEqual(failed.queue)
+  expect(pendingMessageQueue({ ...task, status: 'cancelled' }, null)).toEqual(task.queue)
+})

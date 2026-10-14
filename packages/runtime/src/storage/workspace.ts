@@ -779,6 +779,12 @@ export class WorkspaceStore {
         .filter((task) => !task.example)
         .map((task) => {
           const previous = previousTasks.get(task.id)
+          if (task.archived) {
+            const settledAt = previous?.archived
+              ? (previous.settledAt ?? new Date().toISOString())
+              : new Date().toISOString()
+            if (task.settledAt !== settledAt) task = { ...task, settledAt }
+          } else if (task.settledAt !== undefined) task = { ...task, settledAt: undefined }
           task = versionReviewedFiles(task, previous)
           const childPermissionChanged =
             task.delegation &&
@@ -1379,6 +1385,8 @@ export class WorkspaceStore {
             'files',
             'pinned',
             'archived',
+            'settleBehavior',
+            'archiveAfterSettledDays',
             'snoozedUntil',
             'linkedPullRequests',
             'ignoredPullRequestUrls',

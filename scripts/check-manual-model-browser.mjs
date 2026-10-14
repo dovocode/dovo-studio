@@ -28,6 +28,10 @@ const mocks = {
   `,
   '../../dialogs/harness-dialog': 'export const HarnessDialog=()=>null;',
   '@dovo/studio-ui': `
+export const SidebarHeader=()=>null;
+export {PullRequestIcon,pullRequestIconTone} from '${new URL('../packages/studio-ui/src/pull-request-icon.tsx', import.meta.url).pathname}';
+import {useState as useSidebarState} from 'react';export const useLeftSidebar=initial=>useSidebarState(initial);export const useNavigationSidebar=()=>null;export const HeaderContent=({children})=>children;
+
     export {FileTypeIcon} from '../studio-ui/src/file-tree';
     export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';
     export const cn=(...values)=>values.filter(Boolean).join(' ');
@@ -53,6 +57,7 @@ const mocks = {
     'export const TaskContextMenu=({children})=><div>{children}</div>;',
   './detail/resizable-sidebar':
     'export const ResizableSidebar=({children,className})=><div className={className}>{children}</div>;',
+  './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
   './detail/task-header': `export const TaskHeader=({task})=><header data-thread-header={task.id}>{task.title}</header>;`,
   '../chat/thread/chat-thread': `export const ChatThread=({task})=><div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',

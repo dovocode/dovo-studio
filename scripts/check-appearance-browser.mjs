@@ -53,6 +53,8 @@ createRoot(document.getElementById('app')).render(<App/>);`,
   jsx: 'automatic',
   alias: {
     react: root + '/packages/studio-ui/node_modules/react',
+    '@dovo/protocol/browser-viewer': root + '/packages/protocol/src/generated/browser-viewer.ts',
+    '@dovo/protocol': root + '/packages/protocol/src/index.ts',
   },
   nodePaths: [
     root + '/packages/studio-ui/node_modules',
@@ -145,11 +147,10 @@ try {
   )
   assert.equal(await page.getByRole('radio', { name: 'Dovo', exact: true }).isChecked(), true)
   assert.equal(
-    await page
-      .locator('.studio-titlebar-brand img')
-      .evaluate((img) => img.complete && img.naturalWidth === 96),
-    true,
+    await page.locator('.studio-titlebar-brand img, .studio-titlebar-brand svg').count(),
+    0,
   )
+  assert.equal(await page.locator('.studio-titlebar-name').textContent(), 'Dovo Studio')
   const ids = await page.evaluate(() => window.paletteIds)
   for (const id of ids) {
     const palette = await page.evaluate((id) => window.palettes[id], id)
@@ -340,7 +341,7 @@ try {
     await page.screenshot({ path: process.env.DOVO_APPEARANCE_SCREENSHOT })
   assert.deepEqual(errors, [])
   console.log(
-    'Appearance: all 28 palette/mode combinations, markdown/diff syntax, font persistence, bundled Nerd glyphs, terminal continuity, system mode, persistence, keyboard selection, logo and narrow layout passed.',
+    'Appearance: all 28 palette/mode combinations, markdown/diff syntax, font persistence, bundled Nerd glyphs, terminal continuity, system mode, persistence, keyboard selection, text-only titlebar and narrow layout passed.',
   )
 } finally {
   await browser.close()

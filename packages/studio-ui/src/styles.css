@@ -226,6 +226,90 @@ textarea {
   background: var(--sidebar);
   user-select: none;
 }
+.studio-header-layout {
+  display: contents;
+}
+.studio-window-header-slot,
+.studio-window-header-content {
+  min-width: 0;
+  flex: 1;
+}
+.studio-window-header-slot:empty {
+  display: none;
+}
+.studio-titlebar-identity:has(.studio-window-header-content) > .studio-titlebar-section {
+  display: none;
+}
+.studio-window-header-content > header {
+  border-bottom: 0;
+  background: inherit;
+  padding-inline: 0;
+}
+.studio-header-layout[data-inline-header='true']
+  :is(.studio-page-header, .studio-task-thread-header) {
+  -webkit-app-region: drag;
+}
+.studio-header-layout
+  :is(.studio-page-header, .studio-task-thread-header)
+  :is(button, a, input, select) {
+  -webkit-app-region: no-drag;
+}
+.studio-header-layout[data-inline-header='true']
+  .studio:is([data-platform='win32'], [data-platform='linux'])
+  :is(.studio-task-thread-header, .studio-page-header:not(nav .studio-page-header)) {
+  padding-right: max(
+    12px,
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 144px)) + 12px)
+  );
+}
+.studio-titlebar[data-sidebar-brand='true'] {
+  justify-content: flex-start;
+  padding-inline: 16px;
+  background: inherit;
+}
+.studio[data-platform='darwin'] .studio-titlebar[data-sidebar-brand='true'] {
+  padding-left: 51px;
+}
+.studio[data-platform='darwin'][data-thread-window='true']
+  .studio-titlebar[data-sidebar-brand='true'] {
+  padding-left: 96px;
+}
+.studio-header-layout[data-inline-header='true'] .studio-navigation[aria-label='Main navigation'] {
+  position: relative;
+  padding-top: calc(var(--studio-header-height, 52px) + 8px);
+  border-right: 0;
+}
+.studio-header-layout[data-inline-header='true']
+  .studio-navigation[aria-label='Main navigation']::after {
+  content: '';
+  position: absolute;
+  top: var(--studio-header-height, 52px);
+  bottom: 0;
+  right: 0;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+.studio-header-layout[data-sidebar-collapsed='true']
+  .studio[data-platform='darwin']
+  :is(.studio-task-thread-header, .studio-page-header) {
+  padding-left: 51px;
+}
+.studio-header-layout[data-inline-header='true']
+  [aria-label='Settings sections']
+  > .studio-titlebar {
+  margin: -20px -12px 0;
+}
+.studio-pull-header .studio-titlebar-task {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container pr-detail (max-width: 480px) {
+  .studio-pull-header :is(.studio-titlebar-project, .studio-titlebar-divider) {
+    display: none;
+  }
+}
 .studio-titlebar[data-platform] {
   -webkit-app-region: drag;
 }
@@ -249,6 +333,7 @@ textarea {
   font-size: 12px;
 }
 .studio-titlebar-brand {
+  min-width: 0;
   display: flex;
   flex: none;
   align-items: center;
@@ -259,39 +344,14 @@ textarea {
 .studio-titlebar-brand > svg {
   color: var(--muted-foreground);
 }
-.studio-task-sidebar-header,
-.studio-task-thread-header,
-.studio-task-rail-header {
-  height: var(--studio-header-height, 52px);
-  min-height: var(--studio-header-height, 52px);
-  border-bottom: 1px solid var(--border);
-  -webkit-app-region: drag;
-  user-select: none;
-}
-.studio-task-sidebar-header,
 .studio-task-thread-header {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.studio-task-sidebar-header {
-  padding: 0 16px;
-  font-size: 12px;
-  font-weight: 550;
-}
-.studio-task-sidebar-header svg {
-  flex: none;
-  color: var(--muted-foreground);
-}
-.studio[data-platform='darwin'] .studio-task-sidebar-header {
-  padding-left: 51px;
-}
-.studio[data-platform='darwin'] .studio-task-thread-header[data-sidebar='false'] {
-  padding-left: 60px;
-}
-.studio[data-platform='darwin'][data-thread-window='true']
-  :is(.studio-task-sidebar-header, .studio-task-thread-header[data-sidebar='false']) {
-  padding-left: 96px;
+  height: var(--studio-header-height, 52px);
+  min-height: var(--studio-header-height, 52px);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
 }
 .studio-task-thread-header {
   min-width: 0;
@@ -301,22 +361,15 @@ textarea {
 .studio-task-thread-header :is(button, a) {
   -webkit-app-region: no-drag;
 }
-.studio:is([data-platform='win32'], [data-platform='linux']) .studio-task-thread-header {
-  padding-right: max(
-    12px,
-    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 144px)) + 12px)
-  );
-}
-.studio-task-rail-header {
-  width: calc(100% + 10px);
-  margin: -8px -5px 8px;
-}
 .studio-titlebar-identity > svg {
   flex: none;
   color: var(--muted-foreground);
 }
 .studio-titlebar-name {
-  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
   font-weight: 550;
   letter-spacing: -0.02em;
 }
@@ -743,8 +796,8 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 550;
   line-height: 20px;
   letter-spacing: -0.025em;
 }
@@ -890,4 +943,121 @@ a:focus-visible {
   outline-offset: 4px;
   border-radius: 0.75rem;
   transition: outline-color 1.2s ease-out;
+}
+
+/* Keep task navigation and its project panel a step darker than the conversation. */
+:root:not([data-theme='light']) .studio-task-sidebar,
+:root:not([data-theme='light']) [aria-label='Settings sections'],
+:root:not([data-theme='light']) [aria-label='Pull request sidebar'],
+:root:not([data-theme='light'])
+  .studio-header-layout[data-inline-header='true']
+  .studio-navigation[aria-label='Main navigation'],
+:root:not([data-theme='light']) [aria-label='Thread project'] {
+  background: color-mix(in srgb, var(--sidebar) 65%, #000);
+}
+
+/* Project controls follow the flat, grouped card used in the thread design. */
+.studio-project-panel {
+  gap: 4px;
+  background: var(--background);
+}
+.studio-project-card {
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--background) 85%, var(--foreground) 3%);
+  color: color-mix(in srgb, var(--foreground) 82%, var(--background));
+}
+.studio-project-section {
+  padding: 12px 16px;
+}
+.studio-project-actions {
+  display: flex;
+  flex-direction: column;
+}
+.studio-project-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 40px;
+  height: auto;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  white-space: nowrap;
+  color: inherit;
+}
+.studio-project-row > svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+button.studio-project-row:hover,
+a.studio-project-row:hover {
+  background: var(--accent);
+}
+.studio-project-computer {
+  padding-bottom: 10px;
+}
+.studio-project-split-row {
+  display: flex;
+  align-items: center;
+}
+.studio-project-chevron {
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted-foreground);
+}
+.studio-project-chevron svg {
+  width: 16px;
+  height: 16px;
+}
+.studio-project-branch-chevron {
+  box-sizing: content-box;
+  border-left: 1px solid var(--border);
+  padding-left: 12px;
+}
+.studio-project-pull {
+  margin: 2px 0 6px;
+  text-decoration: none;
+}
+.studio-project-pull > .studio-project-row {
+  align-items: flex-start;
+}
+.studio-project-row > svg:not([class*='text-']) {
+  color: var(--muted-foreground);
+}
+.studio-project-diff {
+  margin-left: auto;
+}
+.studio-project-diff > span {
+  font-size: 12px;
+}
+
+/* Keep side panels scrollable without displaying native scrollbars. */
+:is(.studio-side-panel, .studio-task-sidebar, .studio-project-panel),
+:is(.studio-side-panel, .studio-task-sidebar, .studio-project-panel) * {
+  scrollbar-width: none;
+}
+:is(.studio-side-panel, .studio-task-sidebar, .studio-project-panel)::-webkit-scrollbar,
+:is(.studio-side-panel, .studio-task-sidebar, .studio-project-panel) *::-webkit-scrollbar {
+  display: none;
+}
+
+/* Secondary thread-card rows recede while project colours and status accents stay vivid. */
+.studio-thread-card-context {
+  color: color-mix(in srgb, var(--foreground) 38%, var(--sidebar));
 }

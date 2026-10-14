@@ -11,11 +11,19 @@ export type PendingMessage = {
 }
 
 export function visiblePendingMessages(
-  task: Pick<Task, 'id' | 'messages' | 'queue'>,
+  task: Pick<Task, 'id' | 'messages' | 'queue'> & Partial<Pick<Task, 'status'>>,
   pending: readonly PendingMessage[],
 ) {
   const byId = new Map<string, PendingMessage>()
   for (const item of pending) if (visiblePendingMessage(task, item)) byId.set(item.message.id, item)
+  for (const message of task.queue ?? []) {
+    if (
+      message.steering &&
+      task.status === 'running' &&
+      !task.messages.some((item) => item.id === message.id)
+    )
+      byId.set(message.id, { taskId: task.id, message, state: 'sending', destination: 'thread' })
+  }
   return [...byId.values()]
 }
 
@@ -88,12 +96,14 @@ export function pendingMessageDestination(
     : 'thread'
 }
 export function pendingMessageQueue(
-  task: Pick<Task, 'id' | 'messages' | 'queue'>,
+  task: Pick<Task, 'id' | 'messages' | 'queue'> & Partial<Pick<Task, 'status'>>,
   pending: PendingMessage | readonly PendingMessage[] | null,
 ): NonNullable<Task['queue']> {
   // History events can arrive before the next queue snapshot during a steering handoff.
   const delivered = new Set(task.messages.map((message) => message.id))
-  const queue = (task.queue ?? []).filter((message) => !delivered.has(message.id))
+  const queue = (task.queue ?? []).filter(
+    (message) => !delivered.has(message.id) && !(message.steering && task.status === 'running'),
+  )
   const visible = visiblePendingMessages(
     task,
     pending === null ? [] : Array.isArray(pending) ? pending : [pending],

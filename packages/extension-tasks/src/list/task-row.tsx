@@ -1,7 +1,14 @@
+import { WorkingSubagents } from './working-subagents'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { pullStackLabel } from '@dovo/protocol'
 import { taskPullLinks } from '../detail/task-pull-links'
-import { AgentAvatar, ProjectIcon, useModelLabel } from '@dovo/studio-ui'
+import {
+  pullRequestIconTone,
+  PullRequestIcon,
+  AgentAvatar,
+  ProjectIcon,
+  useModelLabel,
+} from '@dovo/studio-ui'
 import { acpHarnessName, resolveTaskAgent, formatDateTime } from '@dovo/studio-core'
 import { TaskLifecycleActions } from '../detail/task-lifecycle-actions'
 import { hasUnreadTaskActivity } from '@dovo/protocol'
@@ -23,7 +30,6 @@ import {
   CircleDashed,
   FolderGit2,
   GitBranch,
-  GitPullRequest,
   Layers,
   Pin,
 } from 'lucide-react'
@@ -32,7 +38,7 @@ import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
 import type { TaskOwner } from './task-collection'
 import { useTaskNow } from './task-clock'
-import { subagentMetadata, type SubagentListItem } from '@dovo/protocol'
+import { type SubagentListItem } from '@dovo/protocol'
 const statusIcons: Record<string, LucideIcon> = {
   Working: CircleDashed,
   Done: CircleCheck,
@@ -148,7 +154,7 @@ function TaskRowView({
           >
             <span
               className={cn(
-                'flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground',
+                'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
@@ -165,7 +171,9 @@ function TaskRowView({
                 className={cn(
                   'flex shrink-0 items-center gap-1 text-xs',
                   !offline && presentation.state === 'Working' && 'text-sky-400',
-                  !offline && presentation.state === 'Done' && 'text-emerald-400',
+                  !offline &&
+                    ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
+                    'text-emerald-400',
                   !offline && presentation.state === 'Failed' && 'text-destructive',
                 )}
               >
@@ -183,19 +191,36 @@ function TaskRowView({
             >
               {task.title}
             </span>
-            <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
+            <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
               <GitBranch className="size-3 shrink-0" />
               <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
               {!!linkedPulls.length && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground"
+                  className="inline-flex shrink-0 items-center gap-0.5"
                   aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
                   title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
                 >
                   {stack ? (
-                    <Layers className="size-3" aria-label={pullStackLabel(stack)} />
+                    <Layers
+                      className={cn(
+                        'size-3',
+                        pullRequestIconTone(task.pullStatus?.state, task.pullStatus?.draft),
+                      )}
+                      aria-label={pullStackLabel(stack)}
+                    />
                   ) : (
-                    <GitPullRequest className="size-3" />
+                    <PullRequestIcon
+                      state={
+                        task.pullStatus?.url === linkedPulls[0]?.url
+                          ? task.pullStatus.state
+                          : undefined
+                      }
+                      draft={
+                        task.pullStatus?.url === linkedPulls[0]?.url
+                          ? task.pullStatus.draft
+                          : undefined
+                      }
+                    />
                   )}
                   {linkedPulls[0]!.number}
                   {stack && (
@@ -251,7 +276,11 @@ function TaskRowView({
             <p>{statusDetail}</p>
             {linkedPulls.map((pull) => (
               <p key={pull.url} className="flex items-center gap-2">
-                <GitPullRequest size={14} className="shrink-0 text-violet-400" />
+                <PullRequestIcon
+                  size={14}
+                  state={task.pullStatus?.url === pull.url ? task.pullStatus.state : undefined}
+                  draft={task.pullStatus?.url === pull.url ? task.pullStatus.draft : undefined}
+                />
                 <span>
                   #{pull.number} · {pull.title}
                 </span>
@@ -291,64 +320,3 @@ function TaskRowView({
 // Rows receive stable owner facts and keep their own clock, so streaming another task or a
 // list re-render leaves untouched rows out of work.
 export const TaskRow = memo(TaskRowView)
-
-const WorkingSubagents = memo(function WorkingSubagents({
-  subagents,
-  online,
-  disabled,
-  selectedChildId,
-  onOpenSubagent,
-}: {
-  subagents: readonly SubagentListItem[]
-  online: boolean
-  disabled: boolean
-  selectedChildId?: string
-  onOpenSubagent: (id: string) => void
-}) {
-  if (!subagents.length) return null
-  return (
-    <div className="mb-2 flex flex-wrap gap-1 px-2.5" aria-label="Working subagents">
-      {subagents.map((agent, index) => {
-        const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
-        const label = `${agent.name} · ${agent.provider}`
-        const detail = [
-          label,
-          online ? 'Working' : 'Last seen working',
-          subagentMetadata(agent),
-          agent.activity,
-        ]
-          .filter(Boolean)
-          .join(' · ')
-        const className = cn(
-          'inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[0.625rem] text-muted-foreground',
-          childId === selectedChildId && 'border-primary/50 bg-accent text-foreground',
-        )
-        return childId ? (
-          <button
-            key={`${agent.provider}:${agent.id}:${index}`}
-            type="button"
-            className={cn(className, 'hover:bg-accent/60')}
-            aria-label={`Open subagent ${detail}`}
-            aria-current={childId === selectedChildId ? 'true' : undefined}
-            title={detail}
-            disabled={disabled}
-            onClick={() => onOpenSubagent(childId)}
-          >
-            <span className="size-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
-            <span className="truncate">{label}</span>
-          </button>
-        ) : (
-          <span
-            key={`${agent.provider}:${agent.id}:${index}`}
-            className={className}
-            title={detail}
-            aria-label={detail}
-          >
-            <span className="size-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
-            <span className="truncate">{label}</span>
-          </span>
-        )
-      })}
-    </div>
-  )
-})

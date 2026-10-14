@@ -51,6 +51,7 @@ export function settingValueLabel(value: unknown): string {
 export function settingBaseLabel(field: SettingField) {
   if (field.group === 'taskBehavior') {
     if (field.key === 'inactiveDays') return '3 days · Dovo default'
+    if (field.key === 'archiveAfterSettledDays') return '7 days · Dovo default'
     if (
       field.key === 'continueAfterRestart' ||
       field.key === 'settleMerged' ||

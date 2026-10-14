@@ -855,7 +855,17 @@ export class Tasks {
       const paused = this.store.taskSummary(id).queuePaused ?? false
       if (
         !fromQueue &&
-        !this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds))
+        !this.queue.add(
+          id,
+          messageId,
+          text,
+          this.attachments.metadata(id, attachmentIds),
+          undefined,
+          false,
+          false,
+          undefined,
+          true,
+        )
       )
         return null
       const token = Symbol()
@@ -864,7 +874,9 @@ export class Tasks {
         ...task,
         queuePaused: nativeSteer ? task.queuePaused : true,
         queue: [
-          ...(task.queue ?? []).filter((message) => message.id === messageId),
+          ...(task.queue ?? [])
+            .filter((message) => message.id === messageId)
+            .map((message) => ({ ...message, steering: true })),
           ...(task.queue ?? []).filter((message) => message.id !== messageId),
         ],
       }))
@@ -922,7 +934,20 @@ export class Tasks {
           Effect.as({ ok: true }),
           Effect.ensuring(
             Effect.sync(() => {
-              if (this.steering.get(id) === token) this.steering.delete(id)
+              if (this.steering.get(id) === token) {
+                this.steering.delete(id)
+                if (
+                  this.store
+                    .taskSummary(id)
+                    .queue?.some((message) => message.id === messageId && message.steering)
+                )
+                  this.store.updateTask(id, (task) => ({
+                    ...task,
+                    queue: task.queue?.map((message) =>
+                      message.id === messageId ? { ...message, steering: undefined } : message,
+                    ),
+                  }))
+              }
             }),
           ),
         )
@@ -1515,6 +1540,7 @@ export class Tasks {
       (t) => ({
         ...t,
         status: run.shutdownUnconfirmed ? 'cancelled' : t.status,
+        queue: t.queue?.map((message) => ({ ...message, steering: undefined })),
         queuePaused: true,
         restartRecovery: undefined,
       }),

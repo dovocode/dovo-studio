@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { HeaderContent } from './sidebar-header'
 
 /** Keep page identity separate from variable-height filters and content. */
 export function PageHeader({
@@ -13,13 +14,15 @@ export function PageHeader({
   children?: ReactNode
 }) {
   return (
-    <header className="studio-page-header border-b">
-      {leading}
-      <div className="studio-page-heading">
-        <h1>{title}</h1>
-        {description && <p className="studio-page-description">{description}</p>}
-      </div>
-      {children && <div className="studio-page-actions">{children}</div>}
-    </header>
+    <HeaderContent>
+      <header className="studio-page-header border-b">
+        {leading}
+        <div className="studio-page-heading">
+          <h1>{title}</h1>
+          {description && <p className="studio-page-description">{description}</p>}
+        </div>
+        {children && <div className="studio-page-actions">{children}</div>}
+      </header>
+    </HeaderContent>
   )
 }

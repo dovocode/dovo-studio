@@ -1,5 +1,5 @@
 import { randomUUID } from '@dovo/protocol'
-import { PageHeader } from '@dovo/studio-ui'
+import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { ArrowRight, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
@@ -48,6 +48,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
     refreshRuntimes,
   } = useWorkspace()
   const [selected, setSelected] = useApplicationState<Selection | null>(null)
+  const [sidebarVisible] = useLeftSidebar()
   const [search, setSearch] = useApplicationState('')
   const [error, setError] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
@@ -216,45 +217,47 @@ export default function JobsView({ entityId }: StudioViewProps) {
   }, [pending, activeRuntimeId, connection, setWorkspace, runtimes])
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col">
-      <PageHeader
-        title="Automations"
-        description={
-          <>
-            {rows.length} automation{rows.length === 1 ? '' : 's'} across your computers
-          </>
-        }
-      >
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={busy || refreshing}
-          onClick={() => {
-            setRefreshing(true)
-            void refreshRuntimes()
-              .catch((cause) => setError(String(cause)))
-              .finally(() => setRefreshing(false))
-          }}
+      {!selected && (
+        <PageHeader
+          title="Automations"
+          description={
+            <>
+              {rows.length} automation{rows.length === 1 ? '' : 's'} across your computers
+            </>
+          }
         >
-          <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} /> Refresh
-        </Button>
-        <Button
-          size="sm"
-          disabled={busy || !entries.some((entry) => entry.connected)}
-          onClick={() => {
-            setOwner(
-              entries.find((entry) => entry.profile.id === activeRuntimeId && entry.connected)
-                ?.profile.id ??
-                entries.find((entry) => entry.connected)?.profile.id ??
-                '',
-            )
-            setName('')
-            setError('')
-            setCreating(true)
-          }}
-        >
-          <Plus className="size-3.5" /> New automation
-        </Button>
-      </PageHeader>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy || refreshing}
+            onClick={() => {
+              setRefreshing(true)
+              void refreshRuntimes()
+                .catch((cause) => setError(String(cause)))
+                .finally(() => setRefreshing(false))
+            }}
+          >
+            <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} /> Refresh
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy || !entries.some((entry) => entry.connected)}
+            onClick={() => {
+              setOwner(
+                entries.find((entry) => entry.profile.id === activeRuntimeId && entry.connected)
+                  ?.profile.id ??
+                  entries.find((entry) => entry.connected)?.profile.id ??
+                  '',
+              )
+              setName('')
+              setError('')
+              setCreating(true)
+            }}
+          >
+            <Plus className="size-3.5" /> New automation
+          </Button>
+        </PageHeader>
+      )}
       {!selected && error && (
         <p role="alert" className="px-4 py-2 text-xs text-destructive">
           {error}
@@ -262,11 +265,13 @@ export default function JobsView({ entityId }: StudioViewProps) {
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
         <div
+          style={selected && !sidebarVisible ? { display: 'none' } : undefined}
           className={cn(
-            'min-h-0 min-w-0 flex-col',
+            'studio-side-panel min-h-0 min-w-0 flex-col',
             selected ? 'hidden w-72 shrink-0 border-r lg:flex' : 'flex flex-1',
           )}
         >
+          <SidebarHeader enabled={!!selected} />
           <div className="p-3">
             <Input
               aria-label="Search automations"
@@ -365,12 +370,18 @@ export default function JobsView({ entityId }: StudioViewProps) {
                 />
               )
             ) : (
-              <EmptyState
-                icon={<Workflow />}
-                title="Automation unavailable"
-                description="This automation or its computer is no longer available."
-                action={<Button onClick={back}>Back to automations</Button>}
-              />
+              <section className="flex h-full min-h-0 flex-col">
+                <PageHeader title="Automation unavailable">
+                  <Button variant="ghost" size="sm" onClick={back}>
+                    Back to automations
+                  </Button>
+                </PageHeader>
+                <EmptyState
+                  icon={<Workflow />}
+                  title="Automation unavailable"
+                  description="This automation or its computer is no longer available."
+                />
+              </section>
             )}
           </div>
         )}

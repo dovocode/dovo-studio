@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
+  githubPullTarget,
+  pullLineCommentSchema,
   initializeScopedSettings,
   mergeSharedSettings,
   sharedProjectIconEntry,
@@ -371,6 +373,33 @@ export function scmRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         const repo = s.store.get().repositories.find((r) => r.id === input.repositoryId)
+        if (!repo && githubPullTarget(input.repositoryId)) {
+          const target = githubPullTarget(input.repositoryId)
+          if (!target) throw new HttpError(400, 'Invalid PR target')
+          const pulls = s.pulls.urlTarget(target.url)
+          if (input.taskId || input.number !== target.number)
+            throw new HttpError(400, 'PR target does not match its URL')
+          if (path === '/api/scm/pulls/detail')
+            return yield* s.pullCache.detailEffect(
+              target.url,
+              target.number,
+              decode(
+                withDefault(Schema.Boolean, () => false),
+                input.refresh,
+              ),
+            )
+          if (path === '/api/scm/pulls/action') {
+            const result = yield* serviceResult(pulls.act(decode(pullActionSchema, input)))
+            s.pullCache.invalidate(target.url, target.number)
+            return result
+          }
+          if (path === '/api/scm/pulls/comment') {
+            const result = yield* serviceResult(pulls.comment(decode(pullLineCommentSchema, input)))
+            s.pullCache.invalidate(target.url, target.number)
+            return result
+          }
+          throw new HttpError(400, 'Connect this project to use local Git actions')
+        }
         if (!repo) throw new HttpError(404, 'Repository not found')
         if (input.taskId && s.store.taskSummary(input.taskId).repositoryId !== repo.id)
           throw new HttpError(400, 'Task repository does not match')

@@ -42,6 +42,7 @@ export class TaskQueue {
     review = false,
     resumePaused = false,
     subagentResultId?: string,
+    steering = false,
   ) {
     if (this.accepted(id, messageId, text, attachments)) return false
     const task = this.store.taskSummary(id)
@@ -73,6 +74,7 @@ export class TaskQueue {
             ...(review ? { review: true } : {}),
             ...(subagentResultId ? { subagentResultId } : {}),
             createdAt,
+            ...(steering ? { steering: true } : {}),
           },
         ],
       }),

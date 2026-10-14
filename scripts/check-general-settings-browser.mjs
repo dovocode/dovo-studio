@@ -14,11 +14,13 @@ export {useRemoteBrowserProfiles} from '${root}/packages/studio-core/src/browser
 export const providers={codex:{name:'Codex'},claude:{name:'Claude Code'},opencode:{name:'OpenCode'},acp:{name:'ACP'},cursor:{name:'Cursor'},copilot:{name:'GitHub Copilot'},hermes:{name:'Hermes'},grok:{name:'Grok Build'},muse:{name:'Muse'}};
 export const formatDateTime=value=>new Date(value).toLocaleString();
 export const taskSortOptions=[{id:'priority',name:'Priority'},{id:'activity',name:'Last activity'}];
-export const useStudioHost=()=>({appInfo:{version:'0.0.7',channel:'stable'},browser:()=>{},updates:window.updates,taskLauncher:{configure:async shortcut=>({})},navigate:target=>window.changeView(target.viewId)});
+export const useStudioHost=()=>({appInfo:{version:'0.0.7',channel:window.headerScreenshots?'nightly':'stable'},browser:()=>{},updates:window.updates,taskLauncher:{configure:async shortcut=>({})},navigate:target=>window.changeView(target.viewId)});
 const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;
 export const WorkspaceScope=({profile,children})=>{const source=window.sources.find(source=>source.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,...source,snapshot:source.snapshot,workspace:source.snapshot.workspace}}>{children}</Scope.Provider>};`
 const ui = `
+export * from '${root}/packages/studio-ui/src/sidebar-header.tsx';
 export * from '${root}/packages/studio-ui/src/components/ui/dialog.tsx';
+export * from '${root}/packages/studio-ui/src/components/ui/tooltip.tsx';
 export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';
 export * from '${root}/packages/studio-ui/src/components/ui/select.tsx';
 export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';
@@ -50,6 +52,9 @@ const built = await build({
 import {builtInAgentPresets,defaultTaskHarness} from '@dovo/protocol';
 import {SettingsTargetProvider,useConfirmSettingsNavigation} from '@dovo/studio-core';
 import {SettingsNav} from '${root}/packages/studio-shell/src/settings-nav.tsx';
+import {SidebarHeaderLayout,HeaderFallback} from '${root}/packages/studio-ui/src/sidebar-header.tsx';
+import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';
+import {TooltipProvider} from '@dovo/studio-ui';
 import General from '${root}/packages/studio-shell/src/app-settings/general.tsx';
 import Conversation from '${root}/packages/studio-shell/src/app-settings/conversation.tsx';
 import About from '${root}/packages/studio-shell/src/app-settings/about.tsx';
@@ -64,7 +69,7 @@ import Agents from '${root}/packages/extension-agents/src/view.tsx';
 import TaskDefaults from '${root}/packages/extension-runtime/src/task-defaults-view.tsx';
 window.repo={id:'project',name:'Dovo',gitIdentity:'github.com/team/dovo',path:'/repo',branch:'main'};
 const global={taskDefaults:{setupCommand:'pnpm install'},resources:{skills:[],mcpServers:[]},taskBehavior:{quotaResume:true}};
-window.sources=[{profile:{id:'computer',name:'MacBook Pro',connection:{address:'http://computer.local',token:'test-token'}},name:'MacBook Pro',scope:'computer',connected:true,snapshot:{scopedAgentsSupported:true,taskBehaviorSupported:true,defaults:{scopedSettings:{environment:{},shared:[{key:'global',updatedAt:1,changeId:'global',value:global}]}},workspace:{agents:[],tasks:[],planLimits:[],repositories:[window.repo]}}}];
+window.sources=[{profile:{id:'computer',name:'MacBook Pro',connection:{address:'http://computer.local',token:'test-token'}},name:'MacBook Pro',scope:'computer',connected:true,snapshot:{scopedAgentsSupported:true,taskBehaviorSupported:true,threadBehaviorSupported:true,defaults:{scopedSettings:{environment:{},shared:[{key:'global',updatedAt:1,changeId:'global',value:global}]}},workspace:{agents:[],tasks:[],planLimits:[],repositories:[window.repo]}}}];
 window.documents={global};window.writes=[];
 window.request=async(path,input)=>{
  if(path==='/api/previews/browser/profiles/read')return {profiles:[{id:'default',name:'Default'}]};
@@ -92,8 +97,8 @@ const views=[
  {id:'agents',title:'Agents',order:2,settingsSection:'agents',keywords:'codex claude models providers profiles'},
  {id:'task-defaults',title:'Task defaults',order:3,settingsSection:'coding',keywords:'inherit permissions setup lifecycle'},
 ];
-function Content(){const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=id=>{if(id!==view&&confirm())setView(id)};return <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/>{Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</div>}
-createRoot(document.getElementById('app')).render(<SettingsTargetProvider><Content/></SettingsTargetProvider>);`,
+function Content(){const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=id=>{if(id!==view&&confirm())setView(id)};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/>{Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</div>}
+createRoot(document.getElementById('app')).render(<SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -145,6 +150,11 @@ try {
   const cssFiles = (await readdir(assetDir)).filter((file) => file.endsWith('.css'))
   for (const file of cssFiles)
     await page.addStyleTag({ content: await readFile(assetDir + '/' + file, 'utf8') })
+  if (process.env.DOVO_BROWSER_STYLE_PATH)
+    await page.addStyleTag({ content: await readFile(process.env.DOVO_BROWSER_STYLE_PATH, 'utf8') })
+  await page.evaluate((value) => {
+    window.headerScreenshots = value
+  }, !!process.env.DOVO_HEADER_SCREENSHOTS)
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('heading', { name: 'General', exact: true }).waitFor()
   assert.equal(
@@ -162,6 +172,17 @@ try {
       })
     }
   }
+  if (process.env.DOVO_HEADER_SCREENSHOTS) {
+    const brand = await page.locator('.studio-titlebar').boundingBox()
+    const heading = await page.locator('.studio-page-header').first().boundingBox()
+    assert.equal(brand.y, heading.y, 'Settings and sidebar branding share one row')
+  }
+  if (process.env.DOVO_HEADER_SCREENSHOTS)
+    await page.screenshot({ path: '/tmp/dovo-shared-header-settings-desktop.png' })
+  assert.equal(
+    await page.locator('.studio-titlebar-brand img, .studio-titlebar-brand svg').count(),
+    0,
+  )
   await screenshot('general-dark')
   await page.evaluate(async () => {
     document.documentElement.dataset.theme = 'light'
@@ -211,11 +232,17 @@ try {
   await page.getByRole('combobox', { name: 'Auto-resume limited tasks', exact: true }).waitFor()
   await screenshot('task-defaults-dark')
   await choose('Auto-resume limited tasks', 'Off')
+  await choose('Auto-archive settled tasks', 'On')
+  await page
+    .getByRole('spinbutton', { name: 'Days in Settled before archiving', exact: true })
+    .fill('12')
   await page.getByRole('button', { name: 'Save lifecycle settings', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'Lifecycle settings saved.' }).waitFor()
   let writes = await page.evaluate(() => window.writes)
   assert.equal(writes.at(-1).scope, 'global')
   assert.equal(writes.at(-1).after.taskBehavior.quotaResume, false)
+  assert.equal(writes.at(-1).after.taskBehavior.autoArchiveSettled, true)
+  assert.equal(writes.at(-1).after.taskBehavior.archiveAfterSettledDays, 12)
   assert.deepEqual(writes.at(-1).after.resources, { skills: [], mcpServers: [] })
   await choose('Settings project', 'Dovo')
   await choose('Settings computer', 'MacBook Pro')

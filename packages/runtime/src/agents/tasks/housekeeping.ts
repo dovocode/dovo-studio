@@ -221,36 +221,99 @@ export class Housekeeping {
   }
   async archiveInactive(now = Date.now()) {
     const { autoArchiveDays } = this.s.preferences.get()
-    const eligibleIds = () =>
-      inactiveTaskIds(
-        this.s.store.get().tasks,
-        this.s.preferences.get().autoArchiveDays,
-        now,
-        (task) => taskIsBusy(this.s, task.id),
-      )
-    const archived: string[] = []
-    for (const id of eligibleIds())
+    const settledArchiveDays = (
+      task: TaskSummary,
+      policies = new Map<string, number | undefined>(),
+    ) => {
+      if (task.archiveAfterSettledDays !== undefined) return task.archiveAfterSettledDays
+      if (policies.has(task.repositoryId)) return policies.get(task.repositoryId)
+      const policy = this.s.store.projectSettings(task.repositoryId).taskBehavior
+      const days =
+        policy?.autoArchiveSettled === undefined
+          ? undefined
+          : policy.autoArchiveSettled
+            ? (policy.archiveAfterSettledDays ?? 7)
+            : 0
+      policies.set(task.repositoryId, days)
+      return days
+    }
+    // Older settled tasks have no transition timestamp. Start their clock when this policy first applies.
+    const policies = new Map<string, number | undefined>()
+    for (const task of this.s.store.get().tasks)
       if (
-        await archiveTask(
-          this.s,
-          id,
-          `Archived after ${autoArchiveDays} days without activity`,
-          now,
-          () => eligibleIds().includes(id),
-        )
+        task.archived &&
+        !task.archivedAt &&
+        !task.settledAt &&
+        (settledArchiveDays(task, policies) ?? 0) > 0
       )
+        this.s.store.updateTask(task.id, (current) => ({ ...current }))
+    const eligibleIds = () => {
+      const tasks = this.s.store.get().tasks
+      const policies = new Map<string, number | undefined>()
+      const inherited = new Set(
+        inactiveTaskIds(tasks, this.s.preferences.get().autoArchiveDays, now, (task) =>
+          taskIsBusy(this.s, task.id),
+        ),
+      )
+      return tasks
+        .filter((task) => {
+          const days = settledArchiveDays(task, policies)
+          if (days === undefined) return inherited.has(task.id)
+          if (
+            !days ||
+            !task.archived ||
+            !task.settledAt ||
+            task.archivedAt ||
+            task.delegation ||
+            task.example
+          )
+            return false
+          const settledAt = Date.parse(task.settledAt)
+          if (!Number.isFinite(settledAt) || now - settledAt < days * day) return false
+          const ids = taskFamilyIds(tasks, task.id)
+          return tasks.every(
+            (member) =>
+              !ids.has(member.id) ||
+              (!member.pinned &&
+                member.status !== 'running' &&
+                !member.waitingForFeedback &&
+                !member.draft.trim() &&
+                !member.draftAttachments?.length &&
+                !member.queue?.length &&
+                !member.scheduledMessages?.length &&
+                !member.quotaContinuation &&
+                !taskIsBusy(this.s, member.id)),
+          )
+        })
+        .map((task) => task.id)
+    }
+    const archived: string[] = []
+    for (const id of eligibleIds()) {
+      const task = this.s.store.taskSummary(id)
+      const days = settledArchiveDays(task)
+      const reason =
+        days === undefined
+          ? `Archived after ${autoArchiveDays} days without activity`
+          : `Archived after ${days} days in Settled`
+      if (await archiveTask(this.s, id, reason, now, () => eligibleIds().includes(id)))
         archived.push(id)
+    }
     return archived
   }
   async settleInactive(now = Date.now()) {
     const settled: string[] = []
     for (const task of this.s.store.get().tasks) {
-      const policy = this.s.store.projectSettings(task.repositoryId).taskBehavior
+      const policy = {
+        ...this.s.store.projectSettings(task.repositoryId).taskBehavior,
+        ...task.settleBehavior,
+      }
       if (!policy?.settleInactive || task.archived) continue
       const eligible = () => {
         const current = this.s.store.get().tasks.find((member) => member.id === task.id)
-        const currentPolicy =
-          current && this.s.store.projectSettings(current.repositoryId).taskBehavior
+        const currentPolicy = current && {
+          ...this.s.store.projectSettings(current.repositoryId).taskBehavior,
+          ...current.settleBehavior,
+        }
         return (
           !!current &&
           !current.archived &&

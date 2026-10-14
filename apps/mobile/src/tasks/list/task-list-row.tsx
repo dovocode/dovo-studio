@@ -122,7 +122,7 @@ function TaskListRowView({
     ? colors.accent
     : failed
       ? colors.error
-      : done
+      : done || state === 'Finished' || state === 'Settled'
         ? colors.success
         : working
           ? colors.accent

@@ -1,3 +1,4 @@
+import { PullRequestIcon } from '../../../ui/content/pull-request-icon'
 import { runtimeComputerName } from '@dovo/protocol'
 import { CreatePull } from '../list/create-pull'
 import { pullHeadBranch, pullStackLabel } from '@dovo/protocol'
@@ -50,6 +51,7 @@ export function PullDetail({
   const { colors, styles } = useTheme()
 
   const { connected, snapshot, profile, readCache } = useRuntime()
+  const repository = snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)
   const body = useRef<ScrollView>(null)
   const { detail, error, setError, busy, refreshing, refresh, invalidate } = usePullDetail(
     repositoryId,
@@ -87,9 +89,9 @@ export function PullDetail({
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title={`PR #${number}`}
+        title={detail ? `#${number} · ${detail.pull.title}` : `PR #${number}`}
         subtitle={[
-          snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)?.name,
+          repository?.name ?? detail?.pull.repositoryUrl.split('/').slice(-2).join('/'),
           runtimeComputerName({ profile, snapshot }),
         ]
           .filter(Boolean)
@@ -104,7 +106,7 @@ export function PullDetail({
               onStartTask={taskCreation.start}
               prBranchAvailable={!!detail.pull.headCloneUrl}
               refreshDisabled={!connected || refreshing}
-              taskDisabled={!connected || taskCreation.busy}
+              taskDisabled={!repository || !connected || taskCreation.busy}
               actions={actions?.secondary ?? []}
               onAction={openAction}
               actionDisabled={actionDisabled}
@@ -219,6 +221,7 @@ export function PullDetail({
                   {detail.pull.title}
                 </Text>
                 <View style={styles.row}>
+                  <PullRequestIcon state={detail.pull.state} draft={detail.pull.draft} />
                   <Signal signal={pullState(detail.pull)} emphasis />
                   <Text style={styles.muted}>·</Text>
                   <Text
@@ -235,7 +238,7 @@ export function PullDetail({
                 <Text selectable style={styles.muted}>
                   {detail.pull.head} → {detail.pull.base}
                 </Text>
-                {(detail.stack || detail.pull.state === 'open') && (
+                {repository && (detail.stack || detail.pull.state === 'open') && (
                   <View style={[styles.card, { gap: 10 }]}>
                     <View style={styles.row}>
                       <Icon name="stack" size={16} color={colors.accent} />
@@ -415,17 +418,19 @@ export function PullDetail({
                 display: tab === 'checks' ? 'flex' : 'none',
               }}
             >
-              <Action
-                secondary
-                label="View pipeline runs for this commit"
-                disabled={!profile || !detail.pull.headSha}
-                onPress={() => {
-                  if (profile && detail.pull.headSha)
-                    router.push(
-                      pipelineRunsHref(profile.id, repositoryId, detail.pull.headSha, number),
-                    )
-                }}
-              />
+              {repository && (
+                <Action
+                  secondary
+                  label="View pipeline runs for this commit"
+                  disabled={!profile || !detail.pull.headSha}
+                  onPress={() => {
+                    if (profile && detail.pull.headSha)
+                      router.push(
+                        pipelineRunsHref(profile.id, repositoryId, detail.pull.headSha, number),
+                      )
+                  }}
+                />
+              )}
               <PullStatus detail={detail} onOpen={open} />
             </View>
             <View

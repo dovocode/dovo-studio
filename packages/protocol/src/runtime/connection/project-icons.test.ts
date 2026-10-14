@@ -60,3 +60,24 @@ it('migrates existing overrides once and preserves shared resets', () => {
     }),
   ).toBeUndefined()
 })
+
+it('keeps stale folder identities, unavailable checkouts and forks out of icon sharing', () => {
+  for (const local of [
+    { ...repository, kind: 'folder' as const },
+    { ...repository, gitIdentityError: 'Checkout unavailable' },
+  ]) {
+    expect(
+      sharedProjectIconEntry(runtime, local, icon, { updatedAt: 1, changeId: 'one' }),
+    ).toBeUndefined()
+    expect(migrateProjectIcons(runtime, [local], { updatedAt: 1, changeId: 'one' })).toBeUndefined()
+  }
+  const entry = sharedProjectIconEntry(runtime, repository, icon, { updatedAt: 1, changeId: 'one' })
+  const after = { ...runtime, scopedSettings: { environment: {}, shared: entry ? [entry] : [] } }
+  expect(
+    sharedProjectIcon(after, {
+      ...repository,
+      gitIdentity: 'github.com/fork/app',
+      iconOverride: undefined,
+    }),
+  ).toBeUndefined()
+})

@@ -130,6 +130,13 @@ export const taskBehaviorSchema = mutableStruct({
       Schema.check(Schema.isBetween({ minimum: 1, maximum: 365 })),
     ),
   ),
+  autoArchiveSettled: Schema.optional(Schema.Boolean),
+  archiveAfterSettledDays: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 1, maximum: 365 })),
+    ),
+  ),
   continueAfterRestart: Schema.optional(Schema.Boolean),
 })
 export type TaskBehavior = Schema.Schema.Type<typeof taskBehaviorSchema>
@@ -318,6 +325,7 @@ export const queuedMessageSchema = mutableStruct({
   ...{
     role: Schema.Literal('user'),
     createdAt: Schema.String,
+    steering: Schema.optional(Schema.Boolean),
   },
 })
 export const linkedCheckoutSchema = mutableStruct({
@@ -595,6 +603,7 @@ export const taskSchema = mutableStruct({
       ),
       url: maxValue(Schema.String, 2000),
       state: maxValue(Schema.String, 40),
+      draft: Schema.optional(Schema.Boolean),
       // 'passed', 'failed' or 'pending'; absent when the pull request has no checks.
       checks: Schema.optional(maxValue(Schema.String, 20)),
       failedChecks: Schema.optional(maxValue(mutableArray(maxValue(Schema.String, 200)), 20)),
@@ -681,6 +690,23 @@ export const taskSchema = mutableStruct({
   ),
   pinned: Schema.optional(Schema.Boolean),
   autoSettled: Schema.optional(Schema.Boolean),
+  /** Per-thread overrides; omitted fields inherit the project/runtime policy. */
+  settleBehavior: Schema.optional(
+    mutableStruct({
+      settleMerged: taskBehaviorSchema.fields.settleMerged,
+      settleClosed: taskBehaviorSchema.fields.settleClosed,
+      settleInactive: taskBehaviorSchema.fields.settleInactive,
+      inactiveDays: taskBehaviorSchema.fields.inactiveDays,
+    }),
+  ),
+  archiveAfterSettledDays: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 0, maximum: 365 })),
+    ),
+  ),
+  /** Runtime-owned clock; reopening clears it, settling starts a fresh period. */
+  settledAt: Schema.optional(isoDateTime(Schema.String)),
   /** Runtime-owned idle lifecycle: finished work with active feedback watches. */
   waitingForFeedback: Schema.optional(Schema.Boolean),
   // Legacy archived flag means Settled; archivedAt hides the thread from normal lists.
@@ -785,16 +811,16 @@ export function projectIcon(repository: Repository | undefined) {
   return repository?.iconOverride ?? repository?.discoveredIcon
 }
 const projectColors = [
-  '#6d28d9',
-  '#1d4ed8',
-  '#0f766e',
-  '#be123c',
   '#7c3aed',
-  '#0369a1',
-  '#a21caf',
-  '#b45309',
-  '#047857',
-  '#9f1239',
+  '#2563eb',
+  '#008577',
+  '#e11d48',
+  '#9333ea',
+  '#007dbc',
+  '#c026d3',
+  '#b85c00',
+  '#00865b',
+  '#d81b60',
 ] as const
 /** Git identity keeps the same project colour across independently added checkouts. */
 export function projectIconColor(repository: Repository | undefined) {

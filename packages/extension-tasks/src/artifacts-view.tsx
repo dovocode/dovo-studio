@@ -7,7 +7,7 @@ import {
   type RuntimeProfile,
 } from '@dovo/protocol'
 import { useWorkspace, WorkspaceScope } from '@dovo/studio-core'
-import { Button, EmptyState, Input, cn } from '@dovo/studio-ui'
+import { Button, EmptyState, Input, PageHeader, cn } from '@dovo/studio-ui'
 import { ArrowUpRight, Layers, LoaderCircle, RotateCw, Search } from 'lucide-react'
 import { ArtifactSnapshot } from './chat/artifact-snapshot'
 import { ArtifactLibraryActions } from './chat/artifact-library-actions'
@@ -90,28 +90,22 @@ export default function ArtifactsView() {
   const filtered = !!query || state !== 'all' || format !== 'all'
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="All artifacts">
+      <PageHeader
+        title="Your artifacts"
+        description="A home for the things you create with your agents."
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setReload((value) => value + 1)}
+          disabled={loading}
+        >
+          <RotateCw className={cn('size-3.5', loading && 'animate-spin')} />
+          Refresh
+        </Button>
+      </PageHeader>
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto flex min-h-full max-w-6xl flex-col px-5 py-8 sm:px-8 sm:py-10">
-          <header className="mb-7 flex items-start justify-between gap-4">
-            <div>
-              <div className="mb-3 flex size-11 items-center justify-center rounded-xl border bg-card">
-                <Layers className="size-5 text-muted-foreground" />
-              </div>
-              <h1 className="text-2xl font-semibold tracking-tight">Your artifacts</h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                A home for the things you create with your agents.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setReload((value) => value + 1)}
-              disabled={loading}
-            >
-              <RotateCw className={cn('size-3.5', loading && 'animate-spin')} />
-              Refresh
-            </Button>
-          </header>
           <div className="mb-5 flex flex-wrap items-center gap-3">
             <div className="relative min-w-48 flex-1">
               <Search

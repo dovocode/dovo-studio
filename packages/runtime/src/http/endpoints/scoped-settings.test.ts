@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { startRuntime } from '../../index'
 import {
+  projectIconChoices,
   decode,
   defaultTaskHarness,
   builtInAgentPresets,
@@ -577,7 +578,13 @@ it('inherits lifecycle policy across all four scopes and resets individual overr
     expect(
       (
         await f.save('global', {
-          taskBehavior: { quotaResume: true, quotaSnooze: true, inactiveDays: 3 },
+          taskBehavior: {
+            quotaResume: true,
+            quotaSnooze: true,
+            inactiveDays: 3,
+            autoArchiveSettled: true,
+            archiveAfterSettledDays: 7,
+          },
           taskDefaults: { submodules: 'recursive' },
         })
       ).status,
@@ -586,12 +593,22 @@ it('inherits lifecycle policy across all four scopes and resets individual overr
       (await f.save('environment', { taskBehavior: { quotaResume: false, settleInactive: true } }))
         .status,
     ).toBe(200)
-    expect((await f.save('project', { taskBehavior: { inactiveDays: 7 } })).status).toBe(200)
+    expect(
+      (await f.save('project', { taskBehavior: { inactiveDays: 7, archiveAfterSettledDays: 14 } }))
+        .status,
+    ).toBe(200)
     expect(
       (await f.save('environment-project', { taskBehavior: { quotaResume: true } })).status,
     ).toBe(200)
     expect(f.runtime.services.store.projectSettings('project')).toMatchObject({
-      taskBehavior: { quotaResume: true, quotaSnooze: true, inactiveDays: 7, settleInactive: true },
+      taskBehavior: {
+        quotaResume: true,
+        quotaSnooze: true,
+        inactiveDays: 7,
+        settleInactive: true,
+        autoArchiveSettled: true,
+        archiveAfterSettledDays: 14,
+      },
       taskDefaults: { submodules: 'recursive' },
     })
     expect((await f.save('environment-project', { taskBehavior: {} })).status).toBe(200)
@@ -601,6 +618,12 @@ it('inherits lifecycle policy across all four scopes and resets individual overr
     expect(f.runtime.services.store.taskDefaults('project').submodules).toBe('recursive')
     expect((await f.save('global', { taskBehavior: { inactiveDays: 0 } })).status).toBe(400)
     expect((await f.save('global', { taskBehavior: { inactiveDays: 366 } })).status).toBe(400)
+    expect((await f.save('global', { taskBehavior: { archiveAfterSettledDays: 0 } })).status).toBe(
+      400,
+    )
+    expect(
+      (await f.save('global', { taskBehavior: { archiveAfterSettledDays: 366 } })).status,
+    ).toBe(400)
   } finally {
     await f.close()
   }
@@ -634,6 +657,26 @@ it('shares uploaded project icons and resets across different runtime repository
       (repo) => repo.id === 'other-project',
     )?.iconOverride
     expect(icon).toMatch(/^data:image\/png;base64,/)
+    const preset = projectIconChoices.find(
+      (choice) => choice.label === 'Rocket' && choice.kind === 'emoji',
+    )
+    expect(preset).toBeDefined()
+    expect(
+      (await a.icon({ repositoryId: 'project', data: preset?.data.split(',')[1] })).status,
+    ).toBe(200)
+    const selected = a.runtime.services.defaults.get().scopedSettings?.shared
+    await b.call('settings/sync', { shared: selected })
+    const picked = await Effect.runPromise(
+      runtimeSnapshot(b.runtime.services, { id: 'owner', owner: true }),
+    )
+    expect(
+      picked.workspace.repositories.find((repo) => repo.id === 'other-project')?.iconOverride,
+    ).toBe(
+      a.runtime.services.defaults
+        .get()
+        .scopedSettings?.shared.find((entry) => entry.key === 'project:github.com/team/project')
+        ?.value.projectIcon,
+    )
     // Keep an old local upload to verify that a shared reset suppresses it.
     b.runtime.services.store.update((workspace) => ({
       ...workspace,

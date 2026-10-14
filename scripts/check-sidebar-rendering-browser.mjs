@@ -9,7 +9,8 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   '@dovo/studio-core': `export * from '${root}packages/studio-core/src/index.ts';export const useStudioHost=()=>window.host;`,
-  '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',
+  '@dovo/extension-scm/projects':
+    'export const ProjectsMenu=()=>null;export const ProjectSettings=()=>null;',
   './section-order-dialog':
     'export const SectionOrderDialog=()=>{window.counts.list++;return null};',
   '@dovo/studio-ui/runtime-icon':
@@ -84,7 +85,7 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Too
     {
       name: 'sidebar-rendering-fixtures',
       setup(builder) {
-        builder.onLoad({ filter: /\/task-row\.tsx$/ }, ({ path }) => ({
+        builder.onLoad({ filter: /\/working-subagents\.tsx$/ }, ({ path }) => ({
           contents: readFileSync(path, 'utf8').replace(
             'if (!subagents.length) return null',
             'window.counts.pills++; if (!subagents.length) return null',

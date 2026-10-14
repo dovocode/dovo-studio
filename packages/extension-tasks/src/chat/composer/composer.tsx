@@ -453,8 +453,8 @@ export function Composer({
                   className="h-8 gap-1.5 px-2 text-[0.6875rem]"
                   title={
                     other === 'steer'
-                      ? 'Send guidance to the active turn; other harnesses interrupt and resume'
-                      : 'Send after the current turn finishes'
+                      ? 'Steer agent (Alt+Enter): send guidance to the active turn; other harnesses interrupt and resume'
+                      : 'Queue follow-up (Alt+Enter): send after the current turn finishes'
                   }
                   aria-label={other === 'steer' ? 'Steer agent' : 'Queue follow-up'}
                   disabled={
@@ -617,6 +617,7 @@ export function Composer({
           </div>
         )}
         <ComposerEditor
+          onAlternativeSubmit={task.status === 'running' ? () => void send(other) : undefined}
           controller={composerDraft.controller}
           messages={task.messages}
           taskId={task.id}
@@ -641,7 +642,9 @@ export function Composer({
             task.archived
               ? 'Reopen this task to continue'
               : task.status === 'running'
-                ? 'Queue a follow-up while the agent works…'
+                ? steerFirst
+                  ? 'Steer the agent while it works…'
+                  : 'Queue a follow-up while the agent works…'
                 : firstMessage
                   ? 'What would you like to build or fix?'
                   : 'Ask a follow-up or describe a change…'
@@ -673,8 +676,12 @@ export function Composer({
           />
         )}
         <p className="mx-auto mt-1 hidden max-w-[var(--chat-max)] text-right text-[0.625rem] text-muted-foreground/70">
-          {task.status === 'running' ? 'Enter to queue' : 'Enter to send'} · Shift + Enter for a new
-          line
+          {task.status === 'running'
+            ? steerFirst
+              ? 'Enter to steer · Alt+Enter to queue'
+              : 'Enter to queue · Alt+Enter to steer'
+            : 'Enter to send'}{' '}
+          · Shift + Enter for a new line
         </p>
       </div>
     </div>

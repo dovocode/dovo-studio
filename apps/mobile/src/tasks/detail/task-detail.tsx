@@ -1,5 +1,9 @@
 import { CodeReviewCard } from '../../scm/review/code-review-card'
-import { TaskWaitingPanel } from './task-waiting-panel'
+import { TaskProjectSheet } from './task-project-sheet'
+import { TaskLinkedPullSheet } from './task-linked-pull-sheet'
+import { TaskThreadBehavior } from './task-thread-behavior'
+import { chooseSnoozeDuration } from './use-task-lifecycle'
+import { generatedTitleSchema, taskPullLinks, workspacePatchResultSchema } from '@dovo/protocol'
 import { checkpointFileCount, runtimeComputerName } from '@dovo/protocol'
 import { conversationPageSchema, readConversationHistory, runtimeRequest } from '@dovo/protocol'
 import {
@@ -51,7 +55,6 @@ import { ScreenHeader, type HeaderAction } from '../../ui/layout/screen-header'
 import { Composer } from '../composer/composer'
 import { TaskReview, type FileEditDraft } from './task-review'
 import { TerminalPane } from '../../terminal/terminal-pane'
-import { TaskSource } from './task-source'
 import { useTaskViewed } from './use-task-viewed'
 import { copyText } from '../../ui/content/clipboard'
 import { PreparationProgress } from '../conversation/components/preparation-progress'
@@ -460,6 +463,10 @@ function TaskDetailContent({
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [renaming, setRenaming] = useApplicationState(false)
   const [artifactsOpen, setArtifactsOpen] = useState(false)
+  const [projectInfo, setProjectInfo] = useState(false)
+  const [linkedPulls, setLinkedPulls] = useState(false)
+  const [threadBehavior, setThreadBehavior] = useState(false)
+  const pulls = taskPullLinks(task)
   const lifecycle = useTaskLifecycle(task, undefined, onBack)
   const newSession = useAction()
   useEffect(() => {
@@ -480,6 +487,7 @@ function TaskDetailContent({
     >
       <ScreenHeader
         title={task.title}
+        titleMenu={!startup?.temporary}
         titleContent={
           startup?.temporary ? undefined : (
             <View
@@ -570,6 +578,27 @@ function TaskDetailContent({
                   worktreeActions,
                   moveActions,
                   [
+                    {
+                      label: 'Project information',
+                      icon: 'info',
+                      selected: projectInfo,
+                      onPress: () => {
+                        Keyboard.dismiss()
+                        setProjectInfo((value) => !value)
+                      },
+                    },
+                    ...(pulls.length
+                      ? [
+                          {
+                            label: 'Linked PRs',
+                            icon: 'pulls' as const,
+                            onPress: () => {
+                              Keyboard.dismiss()
+                              setLinkedPulls(true)
+                            },
+                          },
+                        ]
+                      : []),
                     ...(snapshot?.artifactsEnabled
                       ? [
                           {
@@ -595,6 +624,63 @@ function TaskDetailContent({
                       overflow: true,
                       disabled: !connected,
                       onPress: () => setRenaming(true),
+                    },
+                    {
+                      label: 'Regenerate title',
+                      icon: 'refresh',
+                      overflow: true,
+                      disabled: !connected || newSession.busy || task.status === 'running',
+                      onPress: () =>
+                        newSession.act(() =>
+                          callEffect(
+                            '/api/tasks/title',
+                            { taskId: task.id },
+                            generatedTitleSchema,
+                          ).pipe(
+                            Effect.flatMap((generated) =>
+                              callEffect(
+                                '/api/workspace',
+                                {
+                                  collection: 'tasks',
+                                  id: task.id,
+                                  changes: {
+                                    title: { before: task.title, after: generated.title },
+                                  },
+                                },
+                                workspacePatchResultSchema,
+                                'PATCH',
+                              ),
+                            ),
+                          ),
+                        ),
+                    },
+                    {
+                      label: lifecycle.unread ? 'Mark read' : 'Mark unread',
+                      icon: 'unread',
+                      overflow: true,
+                      disabled: !lifecycle.readStateEnabled || lifecycle.busy,
+                      onPress: lifecycle.toggleRead,
+                    },
+                    {
+                      label: task.snoozedUntil ? 'Unsnooze' : 'Snooze',
+                      icon: 'snooze',
+                      overflow: true,
+                      disabled: !lifecycle.enabled || lifecycle.busy || !!task.archivedAt,
+                      onPress: () =>
+                        task.snoozedUntil
+                          ? lifecycle.snooze(null)
+                          : chooseSnoozeDuration('Snooze thread', (hours) =>
+                              lifecycle.snooze(
+                                new Date(Date.now() + hours * 3600000).toISOString(),
+                              ),
+                            ),
+                    },
+                    {
+                      label: 'Auto-settle & auto-archive',
+                      icon: 'archive',
+                      overflow: true,
+                      disabled: !connected,
+                      onPress: () => setThreadBehavior(true),
                     },
                     {
                       label: task.pinned ? 'Unpin task' : 'Pin task',
@@ -655,15 +741,6 @@ function TaskDetailContent({
                 )
         }
       />
-      {task.workItem && (
-        <View
-          style={{
-            paddingHorizontal: 16,
-          }}
-        >
-          <TaskSource task={task} />
-        </View>
-      )}
       {/* Offline and reconnect state lives in the floating pill above the composer. */}
       {viewed.error && (
         <View
@@ -764,9 +841,6 @@ function TaskDetailContent({
                     />
                     {quota.error && <Text style={{ color: colors.error }}>{quota.error}</Text>}
                   </View>
-                )}
-                {!startup?.temporary && (
-                  <TaskWaitingPanel key={`${activeId}:${task.id}`} taskId={task.id} />
                 )}
                 <TaskQuestions taskId={task.id} questionId={questionId} />
                 {(budget.tokenExceeded || budget.timeExceeded) && (
@@ -910,6 +984,41 @@ function TaskDetailContent({
           key={`${activeId}:${task.id}`}
           taskId={task.id}
           onClose={() => setArtifactsOpen(false)}
+        />
+      )}
+      {projectInfo && (
+        <TaskProjectSheet
+          key={`${activeId}:${task.id}`}
+          task={task}
+          scripts={projectActions}
+          branchActions={[...branchActions, ...worktreeActions, ...moveActions]}
+          onClose={() => setProjectInfo(false)}
+          onAgents={() => {
+            setProjectInfo(false)
+            setPane('agents')
+          }}
+          onChanges={() => {
+            setProjectInfo(false)
+            setPane('diff')
+          }}
+          onPulls={() => {
+            setProjectInfo(false)
+            setLinkedPulls(true)
+          }}
+        />
+      )}
+      {linkedPulls && (
+        <TaskLinkedPullSheet
+          key={`${activeId}:${task.id}`}
+          task={task}
+          onClose={() => setLinkedPulls(false)}
+        />
+      )}
+      {threadBehavior && (
+        <TaskThreadBehavior
+          key={`${activeId}:${task.id}`}
+          task={task}
+          onClose={() => setThreadBehavior(false)}
         />
       )}
       {linkingProjects && (

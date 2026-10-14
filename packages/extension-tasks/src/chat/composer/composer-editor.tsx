@@ -21,6 +21,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   submittedText,
   placeholder,
   messages = [],
+  onAlternativeSubmit,
 }: {
   controller: ReturnType<typeof createComposerDraft>
   taskId: string
@@ -35,6 +36,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   submitBusy: boolean
   submittedText: string | null
   messages?: readonly { role: string; text: string }[]
+  onAlternativeSubmit?: () => void
   placeholder: string
 }) {
   const draft = useSyncExternalStore(
@@ -78,6 +80,21 @@ export const ComposerEditor = memo(function ComposerEditor({
         readOnly={submitBusy}
         onKeyDown={(event) => {
           mentions.onKeyDown(event)
+          if (
+            !event.defaultPrevented &&
+            !submitBusy &&
+            !event.nativeEvent.isComposing &&
+            event.key === 'Enter' &&
+            event.altKey &&
+            !event.shiftKey &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            onAlternativeSubmit
+          ) {
+            event.preventDefault()
+            onAlternativeSubmit()
+            return
+          }
           if (
             event.defaultPrevented ||
             submitBusy ||

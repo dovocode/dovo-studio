@@ -6,13 +6,14 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,set]=useState(initial);const ref=useRef(value);ref.current=value;return [value,set,ref]}`
 const controls = `
+export const SidebarHeader=()=>null;
 export const Button=({children,onClick,disabled,...props})=><button disabled={disabled} onClick={onClick} {...props}>{children}</button>;
 export const Toggle=({label,checked,onChange})=><button role="switch" aria-label={label} aria-checked={checked} onClick={()=>onChange(!checked)}/>;
 export const Switch=({accessibilityLabel,value,onValueChange})=><Toggle label={accessibilityLabel} checked={value} onChange={onValueChange}/>;
 export const Input=props=><input {...props}/>;
 export const ChoicePicker=({children,value,onValueChange,...props})=><select value={value} onChange={e=>onValueChange(e.target.value)} {...props}>{children}</select>;
 export const cn=(...values)=>values.filter(Boolean).join(' ');
-export const AgentAvatar=()=>null;export const ProjectIcon=()=>null;export const useModelLabel=()=>'';
+export {pullRequestIconTone,PullRequestIcon} from '${root}/packages/studio-ui/src/pull-request-icon.tsx';export const AgentAvatar=()=>null;export const ProjectIcon=()=>null;export const useModelLabel=()=>'';
 export const MessageResponse=({children})=><div>{children}</div>;
 export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=Tooltip;export const TooltipContent=()=>null;
 export const PageHeader=({title})=><h1>{title}</h1>;

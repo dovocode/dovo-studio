@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { Schema } from 'effect'
 import {
   forgeRepositorySchema,
+  githubPullTarget,
   pullLineCommentSchema,
   type ForgeRepositoryPage,
   type PullAction,
@@ -30,6 +31,39 @@ export class ForgePullRequests {
     private store: WorkspaceStore,
   ) {
     this.github = new PullRequests(git)
+  }
+  /** URL targets use the runtime's GitHub login without creating a local project. */
+  urlTarget(url: string) {
+    const target = githubPullTarget(url)
+    if (!target) throw new HttpError(400, 'Enter a GitHub pull request URL')
+    const repository = new URL(target.url).pathname.split('/').slice(1, 3).join('/')
+    const connection = this.connections
+      .list()
+      .find(
+        (connection) =>
+          connection.provider === 'github' && new URL(connection.baseUrl).hostname === 'github.com',
+      )
+    const key = `url:${repository}`
+    const pulls = connection
+      ? this.githubTarget(
+          connection.id,
+          connection.revision,
+          'github.com',
+          repository,
+          connection.cliProfile,
+        )
+      : (this.githubTargets.get(key) ??
+        new PullRequests(this.git, { host: 'github.com', repository }))
+    if (!connection) {
+      if (this.githubTargets.size >= 100) this.githubTargets.clear()
+      this.githubTargets.set(key, pulls)
+    }
+    return {
+      identity: (refresh: boolean) => pulls.identity(homedir(), refresh),
+      detail: (number: number) => pulls.detail(homedir(), number),
+      act: (input: PullAction) => pulls.act(homedir(), input),
+      comment: (input: typeof pullLineCommentSchema.Type) => pulls.comment(homedir(), input),
+    }
   }
   private async binding(cwd: string) {
     const exact = this.store.get().repositories.find((repo) => repo.path === cwd)
@@ -189,6 +223,8 @@ export class ForgePullRequests {
     return binding ? this.adapter(binding.connectionId, binding.repository, cwd) : undefined
   }
   async identity(cwd: string, refresh = false) {
+    if (githubPullTarget(cwd))
+      return JSON.stringify([cwd, await this.urlTarget(cwd).identity(refresh)])
     const binding = await this.binding(cwd)
     if (binding) {
       const connection = await this.connections.reconcileCli(binding.connectionId, cwd)
@@ -232,6 +268,7 @@ export class ForgePullRequests {
     return detail
   }
   async detail(cwd: string, number: number) {
+    if (githubPullTarget(cwd)) return this.urlTarget(cwd).detail(number)
     return pullAttributes(this.git, cwd, await this.readDetail(cwd, number))
   }
   private async readDetail(cwd: string, number: number) {

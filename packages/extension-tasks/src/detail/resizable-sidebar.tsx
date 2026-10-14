@@ -65,7 +65,7 @@ export function ResizableSidebar({
       ref={(node) => {
         element.current = node
       }}
-      className={cn('relative min-w-0', resizable && 'shrink-0', className)}
+      className={cn('studio-side-panel relative min-w-0', resizable && 'shrink-0', className)}
       style={{
         ...props.style,
         ...(resizable

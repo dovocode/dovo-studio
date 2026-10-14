@@ -123,10 +123,13 @@ const mocks = {
       </>;
     };
   `,
-  './use-task-lifecycle': `export const useTaskLifecycle=()=>({enabled:true,error:'',busy:false});`,
+  './use-task-lifecycle': `export const useTaskLifecycle=()=>({enabled:true,error:'',busy:false});export const chooseSnoozeDuration=async()=>3600000;`,
+  './task-project-sheet': `import {TaskWaitingPanel} from '${root}apps/mobile/src/tasks/detail/task-waiting-panel';export const TaskProjectSheet=({task,onClose})=><section><TaskWaitingPanel task={task}/><button onClick={onClose}>Close project information</button></section>;`,
   './use-task-viewed': `export const useTaskViewed=()=>({error:false});`,
 }
 for (const [path, names] of Object.entries({
+  './task-linked-pull-sheet': ['TaskLinkedPullSheet'],
+  './task-thread-behavior': ['TaskThreadBehavior'],
   './task-agents': ['TaskAgents'],
   '../preview/browser-pane': ['BrowserPane', 'DevicesPane'],
   '../composer/message-queue': ['MessageQueue'],
@@ -340,7 +343,9 @@ try {
       false,
     )
   })
+  await page.getByRole('button', { name: 'Project information', exact: true }).click()
   await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Close project information', exact: true }).click()
   await page.getByText('First prompt', { exact: true }).waitFor()
   assert.equal(await input.evaluate((element) => element === window.originalInput), true)
   await input.fill('Follow-up')

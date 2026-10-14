@@ -1070,6 +1070,9 @@ it('retains unconfirmed native steering in a paused queue and does not automatic
   await waitForTask(() => expect(ready).toBe(true))
   await s.tasks.steer(task.id, 'live', 'New direction')
   expect(s.store.task(task.id).error).toContain('not confirmed')
+  expect(
+    s.store.task(task.id).queue?.find((message) => message.id === 'live')?.steering,
+  ).toBeUndefined()
   await s.tasks.steer(task.id, 'live', 'New direction')
   release()
   await execution.done
@@ -1147,6 +1150,9 @@ it.each(['pause', 'stop'] as const)(
     await s.tasks.send(task.id, 'later', 'Do this later')
     const steering = s.tasks.steer(task.id, 'live', 'New direction')
     await waitForTask(() => expect(steer).toHaveBeenCalledTimes(1))
+    expect(s.store.task(task.id).queue?.find((message) => message.id === 'live')?.steering).toBe(
+      true,
+    )
     if (action === 'stop') s.tasks.cancel(task.id)
     else s.tasks.queue.change(task.id, 'pause')
     accept()

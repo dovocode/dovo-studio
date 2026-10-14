@@ -42,6 +42,7 @@
     "test:composer-unification:browser": "pnpm --filter @dovo/desktop build && node scripts/check-composer-unification-browser.mjs && node scripts/check-composer-layout-browser.mjs",
     "test:mobile-startup-thread:browser": "node scripts/check-mobile-startup-thread-browser.mjs && node scripts/check-mobile-draft-transition-browser.mjs",
     "test:mobile-thread-folder:browser": "node scripts/check-mobile-thread-folder-browser.mjs",
+    "test:task-project-panel:browser": "node scripts/check-task-project-panel-browser.mjs",
     "test:task-waiting:browser": "node scripts/check-task-waiting-browser.mjs",
     "test:desktop-runtime-connections": "node scripts/check-desktop-runtime-connections.mjs",
     "test:thread-popout:browser": "node scripts/check-thread-popout-browser.mjs",
@@ -59,7 +60,7 @@
     "test:section-thread:browser": "node scripts/check-section-thread-browser.mjs",
     "test:manual-model:browser": "pnpm --filter @dovo/desktop build && node scripts/check-manual-model-browser.mjs",
     "test:pull-links:browser": "node scripts/check-pull-links-browser.mjs && node scripts/check-thread-pull-links-browser.mjs",
-    "test:computer-updates:browser": "node scripts/check-computer-updates-browser.mjs",
+    "test:computer-updates:browser": "node scripts/check-computer-updates-browser.mjs && node scripts/check-update-button-browser.mjs",
     "test:runtime-icons:browser": "node scripts/check-runtime-icons-browser.mjs",
     "test:runtime-settings:browser": "node scripts/check-runtime-settings-browser.mjs",
     "test:general-settings:browser": "pnpm --filter @dovo/web build && node scripts/check-general-settings-browser.mjs",
@@ -118,7 +119,9 @@
     "test:browser": "node scripts/run-browser-suites.mjs",
     "test:code-review:browser": "node scripts/check-code-review-browser.mjs && node scripts/check-mobile-review-browser.mjs && node scripts/check-mobile-review-report-browser.mjs",
     "test:attachment-images:browser": "node scripts/check-attachment-images-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs",
-    "test:file-drop:browser": "node scripts/check-composer-send-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs"
+    "test:file-drop:browser": "node scripts/check-composer-send-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs",
+    "test:native-project-panels:browser": "node scripts/check-native-project-panels-browser.mjs",
+    "test:shared-pages:browser": "node scripts/check-shared-pages-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

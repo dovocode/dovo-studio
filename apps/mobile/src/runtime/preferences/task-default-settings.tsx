@@ -592,6 +592,7 @@ function TaskDefaultSettingsForm({
                 ['settleMerged', 'Auto-settle merged tasks'],
                 ['settleClosed', 'Auto-settle closed tasks'],
                 ['settleInactive', 'Auto-settle inactive tasks'],
+                ['autoArchiveSettled', 'Auto-archive settled tasks'],
                 ['continueAfterRestart', 'Continue after restarts'],
               ] as const
             ).map(([key, label]) => (
@@ -599,7 +600,9 @@ function TaskDefaultSettingsForm({
                 <Choice
                   label={label}
                   value={behavior[key] === undefined ? 'inherit' : behavior[key] ? 'on' : 'off'}
-                  disabled={disabled}
+                  disabled={
+                    disabled || (key === 'autoArchiveSettled' && !snapshot?.threadBehaviorSupported)
+                  }
                   items={[
                     {
                       id: 'inherit',
@@ -678,6 +681,55 @@ function TaskDefaultSettingsForm({
               disabled={disabled}
               onReset={() => {
                 setBehavior({ ...behavior, inactiveDays: undefined })
+                setSaved(false)
+              }}
+            />
+            <Text style={styles.muted}>
+              Archive only after a task stays in Settled for this period. Reopening resets the
+              clock.
+            </Text>
+            <Field
+              label="Days in Settled before archiving"
+              value={
+                behavior.archiveAfterSettledDays === undefined
+                  ? ''
+                  : String(behavior.archiveAfterSettledDays)
+              }
+              placeholder={`Inherit (${inheritedBehavior.archiveAfterSettledDays ?? 7})`}
+              editable={!disabled && !!snapshot?.threadBehaviorSupported}
+              keyboardType="number-pad"
+              onChangeText={(value) => {
+                if (!value) {
+                  setBehavior({ ...behavior, archiveAfterSettledDays: undefined })
+                  setSaved(false)
+                } else if (
+                  Number.isInteger(Number(value)) &&
+                  Number(value) >= 1 &&
+                  Number(value) <= 365
+                ) {
+                  setBehavior({ ...behavior, archiveAfterSettledDays: Number(value) })
+                  setSaved(false)
+                }
+              }}
+            />
+            <SettingSource
+              {...taskBehaviorOrigin(
+                snapshot?.defaults,
+                repository,
+                scope,
+                behavior,
+                'archiveAfterSettledDays',
+              )}
+              setting={{
+                field: { group: 'taskBehavior', key: 'archiveAfterSettledDays' },
+                repository,
+                scope,
+                value: behavior.archiveAfterSettledDays,
+              }}
+              label="Days in Settled before archiving"
+              disabled={disabled}
+              onReset={() => {
+                setBehavior({ ...behavior, archiveAfterSettledDays: undefined })
                 setSaved(false)
               }}
             />

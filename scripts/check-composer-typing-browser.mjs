@@ -9,15 +9,15 @@ import { useRef, useSyncExternalStore } from 'react';
 import { ComposerEditor } from './src/chat/composer/composer-editor.tsx';
 import { createComposerDraft } from './src/chat/composer/composer-draft.ts';
 const controller = createComposerDraft('', () => {}, console.error);
-window.parentRenders = 0;
+window.parentRenders = 0; window.defaults=0;window.alternatives=0;
 window.latencies = [];
 document.addEventListener('input', () => { const start = performance.now(); requestAnimationFrame(() => window.latencies.push(performance.now()-start)); });
 function Composer() {
   const hasText = useSyncExternalStore(controller.subscribe, () => !!controller.text.trim());
   window.parentRenders++;
   const input = useRef(null);
-  return <><ComposerEditor controller={controller} taskId="test" messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
-    <button disabled={!hasText}>Send</button>{Array.from({length:500},(_,i)=><span key={i}>Control {i}</span>)}</>;
+  return <form onSubmit={event=>{event.preventDefault();window.defaults++}}><ComposerEditor onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message" />
+    <button type="submit" disabled={!hasText}>Send</button>{Array.from({length:500},(_,i)=><span key={i}>Control {i}</span>)}</form>;
 }
 createRoot(document.getElementById('app')).render(<Composer/>);
 window.controller = controller;
@@ -100,6 +100,20 @@ try {
   await input.press('ArrowUp')
   if ((await input.inputValue()) !== 'Edited recalled message')
     throw new Error('History replaced an edited message')
+  await input.fill('Keyboard guidance')
+  await input.press('Enter')
+  await input.press('Alt+Enter')
+  const counts = await page.evaluate(() => ({
+    defaults: window.defaults,
+    alternatives: window.alternatives,
+  }))
+  if (counts.defaults !== 1 || counts.alternatives !== 1) throw new Error(JSON.stringify(counts))
+  await input.press('Shift+Enter')
+  if (!(await input.inputValue()).includes('\n'))
+    throw new Error('Shift+Enter did not insert a line')
+  console.log(
+    'Enter submits the default and Alt+Enter submits the alternative without a duplicate submission.',
+  )
   console.log(
     `Typed ${text.length} characters without losing text; composer parent rendered twice; input-to-frame p95 ${p95.toFixed(1)}ms.`,
   )

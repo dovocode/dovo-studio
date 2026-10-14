@@ -26,6 +26,8 @@ export const useWorkspace = () => store;
 export const useWorkspaceSelector = select => select(store);
 export const sameWorkspaceFields = () => false;`,
   '@dovo/studio-ui': `
+export const SidebarHeader=()=>null;
+
 import React from 'react';
 export * as ContextMenu from '@radix-ui/react-context-menu';
 export const Button = ({variant,size,children,...props}) => React.createElement('button',props,children);

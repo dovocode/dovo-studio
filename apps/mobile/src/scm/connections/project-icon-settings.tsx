@@ -1,19 +1,29 @@
 import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
-import { Image, View } from 'react-native'
+import { Image, Pressable, View } from 'react-native'
 import { Schema } from 'effect'
-import { projectIcon, projectIconColor, projectIconInitials, type Repository } from '@dovo/protocol'
+import {
+  projectIcon,
+  projectIconColor,
+  projectIconInitials,
+  projectIconChoices,
+  sharedProjectKey,
+  type Repository,
+} from '@dovo/protocol'
+import { useState } from 'react'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { SettingsAction as Action } from '../../screens/settings-controls'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
+import { Sheet } from '../../ui/layout/sheet'
 
 export function ProjectIconSettings({ repository }: { repository: Repository }) {
   const { styles } = useTheme()
 
   const { call, refresh, connected } = useRuntime()
   const { busy, error, act } = useAction()
+  const [picker, setPicker] = useState(false)
   const save = (data?: string) =>
     act(async () => {
       await call(
@@ -22,6 +32,7 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
         Schema.Struct({ ok: Schema.Literal(true) }),
       )
       await refresh()
+      setPicker(false)
     })
   const choose = () =>
     act(async () => {
@@ -64,12 +75,18 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
         <Text style={[styles.text, { flex: 1 }]}>Project icon</Text>
       </View>
       <Text style={styles.muted}>
-        {repository.gitIdentity
-          ? 'Custom images sync across paired computers for this Git project.'
+        {sharedProjectKey(repository)
+          ? 'Icons sync across paired computers with the same Git remote.'
           : 'This project’s icon stays on this computer.'}
       </Text>
       <View style={styles.row}>
         <Action secondary label="Choose image" disabled={!connected || busy} onPress={choose} />
+        <Action
+          secondary
+          label="Icon or emoji"
+          disabled={!connected || busy}
+          onPress={() => setPicker(true)}
+        />
         {repository.iconOverride && (
           <Action
             secondary
@@ -79,6 +96,41 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
           />
         )}
       </View>
+      {picker && (
+        <Sheet title="Choose project icon" busy={busy} onClose={() => setPicker(false)}>
+          {(['icon', 'emoji'] as const).map((kind) => (
+            <View key={kind} style={{ gap: 8, marginBottom: 16 }}>
+              <Text style={styles.text}>{kind === 'icon' ? 'Icons' : 'Emoji'}</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {projectIconChoices
+                  .filter((choice) => choice.kind === kind)
+                  .map((choice) => (
+                    <Pressable
+                      key={choice.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${kind === 'icon' ? 'Icon' : 'Emoji'}: ${choice.label}`}
+                      disabled={!connected || busy}
+                      onPress={() => save(choice.data.split(',')[1])}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Image source={{ uri: choice.data }} style={{ width: 32, height: 32 }} />
+                    </Pressable>
+                  ))}
+              </View>
+            </View>
+          ))}
+          {!!error && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          )}
+        </Sheet>
+      )}
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

@@ -13,6 +13,15 @@ export const taskWaitingRequestSchema = mutableStruct({
   ),
 })
 export const taskWaitingSchema = mutableStruct({
+  related: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        label: Schema.String,
+        project: Schema.String,
+        url: Schema.String,
+      }),
+    ),
+  ),
   dependencies: mutableArray(
     mutableStruct({
       kind: Schema.Literals(['pull', 'pipeline']),

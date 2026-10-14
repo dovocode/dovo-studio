@@ -1,3 +1,4 @@
+import { PullRequestIcon } from '../ui/content/pull-request-icon'
 import { uniquePulls } from '@dovo/protocol'
 import { AddPullsToThread } from '../scm/pulls/list/add-to-thread'
 import type { PullSummary } from '@dovo/protocol'
@@ -17,7 +18,7 @@ import {
   pullReview,
   forgeLabels,
 } from '@dovo/protocol'
-import { Signal, pullSignalColor } from '../scm/pulls/detail/pull-status'
+import { Signal } from '../scm/pulls/detail/pull-status'
 import { PullTabs } from '../scm/pulls/detail/pull-tabs'
 import { Sheet } from '../ui/layout/sheet'
 import { useDeferredValue, useMemo, useRef } from 'react'
@@ -387,11 +388,7 @@ function PullsContent({
                 },
               ]}
             >
-              <Icon
-                name={p.stack ? 'stack' : 'pulls'}
-                size={14}
-                color={pullSignalColor(pullState(p), colors)}
-              />
+              <PullRequestIcon state={p.state} draft={p.draft} size={16} />
               <Text
                 numberOfLines={1}
                 style={[

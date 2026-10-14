@@ -18,6 +18,7 @@ export type TaskOwner = Pick<TaskSource, 'runtimeId' | 'address' | 'name' | 'onl
   repositories: Workspace['repositories']
   runtimeIcon: RuntimeSnapshot['runtimeIcon']
   acpInstallations: RuntimeSnapshot['acpInstallations']
+  threadBehaviorSupported?: boolean
   worktreeDeletionOverrideSupported: boolean
 }
 export type TaskEntry = {
@@ -120,6 +121,7 @@ export function retainTaskOwner(previous: TaskOwner | undefined, source: TaskSou
       previous && JSON.stringify(previous.acpInstallations) === JSON.stringify(acpInstallations)
         ? previous.acpInstallations
         : acpInstallations,
+    threadBehaviorSupported: source.snapshot?.threadBehaviorSupported === true,
     worktreeDeletionOverrideSupported: source.snapshot?.worktreeDeletionOverrideSupported === true,
   }
   return previous &&

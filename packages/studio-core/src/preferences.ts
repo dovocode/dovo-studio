@@ -5,6 +5,7 @@ import { Schema } from 'effect'
 import { fontFamilySchema, terminalFontSizeSchema } from './fonts'
 import { studioThemeIds, studioSyntaxTheme, studioThemes } from './themes'
 import {
+  repositoryOpenTargetSchema,
   modelPreferencesSchema,
   agentPresetSchema,
   decodeResult,
@@ -17,6 +18,7 @@ import {
 /** Preferences for this app window only (like Codex and T3 Code "General" and "Appearance").
  * They never sync to computers; each device keeps its own. */
 const schema = mutableStruct({
+  preferredRepositoryOpenTarget: Schema.optional(repositoryOpenTargetSchema),
   sharedScopedSettings: sharedSettingsSchema,
   globalModelPreferencesUpdatedAt: Schema.Number,
   globalModelPreferences: Schema.NullOr(modelPreferencesSchema),

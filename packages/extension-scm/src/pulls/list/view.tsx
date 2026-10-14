@@ -20,6 +20,8 @@ import {
   DialogTitle,
   DialogDescription,
   PageHeader,
+  SidebarHeader,
+  useLeftSidebar,
   ChoicePicker,
 } from '@dovo/studio-ui'
 import { usePulls } from './use-pulls'
@@ -29,6 +31,7 @@ import { CreatePull } from './create'
 import { ForgeConnections } from '../../connections/forge-connections'
 import { SourcePicker } from '../../connections/source-picker'
 export default function PullRequestsView({ entityId }: { entityId?: string }) {
+  const [sidebarVisible] = useLeftSidebar()
   const { activeRuntimeId, switchRuntime } = useWorkspace()
   const [repositoryId, setRepository] = useApplicationState(
       entityId && !githubPullTarget(entityId)
@@ -53,6 +56,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
       source: RepositorySource
       number: number
     } | null>(null)
+  const [urlSelection, setUrlSelection] = useApplicationState<string | null>(null)
   const [marked, setMarked] = useApplicationState<string[]>([])
   const [adding, setAdding] = useApplicationState<PullSummary[] | null>(null)
   const selectionAnchor = useRef<string | null>(null)
@@ -75,6 +79,7 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
     setOpenError('')
     try {
       if (source.runtimeId !== activeRuntimeId) await switchRuntime(source.runtimeId)
+      setUrlSelection(null)
       setSelected({
         source,
         number,
@@ -136,9 +141,17 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
     if (!target) return
     const source = sources.find(
       (source) =>
-        source.runtimeId === activeRuntimeId && source.repository.gitIdentity === target.identity,
+        source.runtimeId === activeRuntimeId &&
+        (source.repository.gitIdentity === target.identity ||
+          source.repository.pullIdentity === target.identity),
     )
-    if (!source) return
+    if (!source) {
+      handledLink.current = entityId
+      setSelected(null)
+      setUrlSelection(target.url)
+      return
+    }
+    setUrlSelection(null)
     handledLink.current = entityId
     setOpenError('')
     setSelected({ source, number: target.number })
@@ -185,9 +198,11 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
       )}
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <nav
+          style={sidebarVisible || (!selected && !urlSelection) ? undefined : { display: 'none' }}
           aria-label="Pull request sidebar"
           className={`@container/pr-list min-h-0 min-w-0 flex-col overflow-hidden ${selected ? 'hidden w-full shrink-0 border-r md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
         >
+          <SidebarHeader enabled={!!selected} />
           <div
             className="min-h-0 max-h-[60%] shrink-0 overflow-y-auto overscroll-contain"
             aria-label="Pull request filters"
@@ -537,7 +552,15 @@ export default function PullRequestsView({ entityId }: { entityId?: string }) {
             ))}
           </div>
         </nav>
-        {selected && selectedSource && activeRuntimeId === selectedSource.runtimeId ? (
+        {urlSelection && githubPullTarget(urlSelection) ? (
+          <PullDetail
+            key={JSON.stringify([activeRuntimeId, urlSelection])}
+            repositoryId={urlSelection}
+            number={githubPullTarget(urlSelection)?.number ?? 0}
+            onBack={() => setUrlSelection(null)}
+            onChanged={() => {}}
+          />
+        ) : selected && selectedSource && activeRuntimeId === selectedSource.runtimeId ? (
           <PullDetail
             key={JSON.stringify([
               selectedSource.scope,

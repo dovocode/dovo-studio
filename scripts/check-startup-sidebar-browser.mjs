@@ -18,6 +18,8 @@ const mocks = {
     export const updateAppPreferences=changes=>Object.assign(window.preferences, changes);
   `,
   '@dovo/studio-ui': `
+export const SidebarHeader=()=>null;
+
     export const Button=({children,onClick,disabled})=><button disabled={disabled} onClick={onClick}>{children}</button>;
     export const Input=props=><input {...props}/>;
     export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;

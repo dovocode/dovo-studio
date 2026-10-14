@@ -6,13 +6,13 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const uiDir = root + '/packages/studio-ui/src'
 const controls =
-  ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog']
+  ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog', 'tooltip']
     .map((name) => `export * from '${uiDir}/components/ui/${name}.tsx';`)
     .join('') +
-  `export const OrganizeReview=()=>null;export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
+  `export {ProjectIcon} from '${uiDir}/project-icon.tsx';export * from '${uiDir}/sidebar-header.tsx';export const OrganizeReview=()=>null;export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
 const mocks = {
   '@dovo/studio-ui': controls,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
+  '@dovo/studio-core': `export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
   '../workspace/context': 'export const useWorkspace=()=>window.store;',
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
@@ -28,7 +28,7 @@ const built = await build({
   stdin: {
     loader: 'tsx',
     resolveDir: root,
-    contents: `import {pullFileFingerprint} from '@dovo/protocol';import {createRoot} from 'react-dom/client';import {PullDetail} from '${root}/packages/extension-scm/src/pulls/detail/detail.tsx';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';
+    contents: `import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';import {SidebarHeaderLayout,HeaderFallback,TooltipProvider} from '@dovo/studio-ui';import {pullFileFingerprint} from '@dovo/protocol';import {createRoot} from 'react-dom/client';import {PullDetail} from '${root}/packages/extension-scm/src/pulls/detail/detail.tsx';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';
 const pull={number:7,title:'Improve pull request reviews',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'dominic',updatedAt:'2026-10-04',head:'feature',base:'main',labels:['feature'],checksState:'SUCCESS',reviewDecision:'REVIEW_REQUIRED',additions:24,deletions:8,commentCount:3,viewerIsAuthor:true,viewerIsAssigned:true,viewerIsInvolved:true,viewerReviewRequested:true};
 window.pulls=[pull,{...pull,number:8,url:'https://github.com/team/project/pull/8',title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,url:'https://github.com/team/project/pull/9',title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
 window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project'}};
@@ -45,7 +45,7 @@ window.store.request = async (path, input, ...rest) => {
   if (path.endsWith('/set')) { const file = files.find(file => file.path === input.path); if (!file || file.fingerprint !== input.fingerprint || file.version !== input.version) throw new Error('File changed'); Object.assign(file,{viewed:input.viewed,version:file.version+1}); }
   return {files:files.map(file=>({...file})), groups:[{label:'src',basis:'folder',paths:files.map(file=>file.path)}]};
 };
-const rootView=createRoot(document.getElementById('app'));window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);rootView.render(<div className="studio dark flex h-screen"><View/></div>);`,
+const rootView=createRoot(document.getElementById('app'));window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);rootView.render(<TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio dark" data-platform="darwin"><HeaderFallback><TitleBar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div className="studio-body"><nav className="studio-navigation" aria-label="Main navigation"/><main className="studio-main"><View/></main></div></div></SidebarHeaderLayout></TooltipProvider>);`,
   },
   bundle: true,
   write: false,
@@ -83,6 +83,8 @@ try {
   const assets = root + '/apps/desktop/dist/assets'
   for (const file of (await readdir(assets)).filter((file) => file.endsWith('.css')))
     await page.addStyleTag({ content: await readFile(assets + '/' + file, 'utf8') })
+  if (process.env.DOVO_BROWSER_STYLE_PATH)
+    await page.addStyleTag({ content: await readFile(process.env.DOVO_BROWSER_STYLE_PATH, 'utf8') })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const list = page.getByRole('navigation', { name: 'Pull request sidebar' })
   const row = (title) => list.getByRole('button').filter({ hasText: title }).first()
@@ -110,7 +112,7 @@ try {
     'Refresh pull requests',
     'Create pull request',
   ])
-    assert.equal(await list.getByRole('button', { name, exact: true }).isVisible(), true)
+    await page.getByRole('button', { name, exact: true }).waitFor({ state: 'visible' })
   await fullWidthList()
   await noOverflow()
   assert.equal(
@@ -163,12 +165,17 @@ try {
   await page.getByText('Please add a test', { exact: true }).waitFor()
   const detail = page.locator('[aria-label="Pull request details"]')
   const content = detail.locator('[aria-label="Pull request content"]')
-  const heading = detail.getByRole('heading', { name: 'Improve pull request reviews', exact: true })
+  const heading = detail.getByRole('heading', { name: /Improve pull request reviews/ })
   assert.equal(await list.evaluate((element) => element.clientWidth <= 416), true)
   await detail
     .locator('[aria-label="Pull request status"]')
     .getByText('No merge conflicts', { exact: true })
     .waitFor()
+  assert.equal(
+    (await detail.locator('.studio-pull-header').boundingBox()).y,
+    (await page.locator('.studio-titlebar').boundingBox()).y,
+    'PR and sidebar branding share one row',
+  )
   await page.screenshot({ path: '/tmp/dovo-pull-overview.png' })
   await detail.getByRole('button', { name: 'Reviews 1', exact: true }).click()
   assert.equal(await detail.getByText('Please add a test', { exact: true }).isVisible(), false)

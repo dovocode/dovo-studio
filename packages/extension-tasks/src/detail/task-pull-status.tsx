@@ -1,15 +1,19 @@
 import { useState } from 'react'
-import { GitPullRequest, Layers, Wrench } from 'lucide-react'
+import { Layers, Wrench, CircleCheck, CircleX, CircleDashed, GitMerge } from 'lucide-react'
 import { randomUUID, fixChecksPrompt, pullStatusLabel, pullStackLabel } from '@dovo/protocol'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
-import { Button, cn } from '@dovo/studio-ui'
+import { PullRequestIcon, pullRequestIconTone, Button, cn } from '@dovo/studio-ui'
 
 /** The task's pull request at a glance, with a one-click fix request when checks fail. */
 export function TaskPullStatus({
   task,
   onPullLink,
+  panel = false,
+  title,
 }: {
   task: Task
+  panel?: boolean
+  title?: string
   onPullLink?: (url: string) => boolean
 }) {
   const { request, connected } = useWorkspace()
@@ -39,7 +43,13 @@ export function TaskPullStatus({
       .finally(() => setBusy(false))
   }
   return (
-    <span className="inline-flex min-w-0 items-center gap-1">
+    <span
+      className={
+        panel
+          ? 'studio-project-pull flex min-w-0 items-start'
+          : 'inline-flex min-w-0 items-center gap-1'
+      }
+    >
       <a
         href={status.url}
         onClick={(event) => {
@@ -50,17 +60,47 @@ export function TaskPullStatus({
         title={
           status.failedChecks?.length ? `Failing: ${status.failedChecks.join(', ')}` : status.url
         }
-        className={cn('inline-flex min-w-0 items-center gap-1 truncate hover:underline', tone)}
+        className={cn(
+          panel
+            ? 'studio-project-row min-w-0 flex-1 items-start'
+            : 'inline-flex min-w-0 items-center gap-1 truncate hover:underline',
+          !panel && tone,
+        )}
       >
         {status.stack ? (
-          <Layers size={12} className="shrink-0" />
+          <Layers
+            size={panel ? 18 : 12}
+            className={cn('shrink-0', pullRequestIconTone(status.state, status.draft))}
+          />
         ) : (
-          <GitPullRequest size={10} className="shrink-0" />
+          <PullRequestIcon size={panel ? 18 : 10} state={status.state} draft={status.draft} />
         )}
-        <span className="truncate">
-          {pullStatusLabel(status)}
-          {status.stack ? ` · ${pullStackLabel(status.stack)}` : ''}
-        </span>
+        {panel ? (
+          <span className="min-w-0 flex-1" title={title}>
+            <span className="block truncate">{title || `Pull request #${status.number}`}</span>
+            <span
+              className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground"
+              aria-label={pullStatusLabel(status)}
+            >
+              #{status.number}
+              {status.state === 'merged' ? (
+                <GitMerge size={15} className={tone} />
+              ) : status.checks === 'passed' ? (
+                <CircleCheck size={15} className={tone} />
+              ) : status.checks === 'failed' || status.state === 'closed' ? (
+                <CircleX size={15} className={tone} />
+              ) : status.checks === 'pending' ? (
+                <CircleDashed size={15} className={tone} />
+              ) : null}
+              {status.stack && <span>{pullStackLabel(status.stack)}</span>}
+            </span>
+          </span>
+        ) : (
+          <span className="truncate">
+            {pullStatusLabel(status)}
+            {status.stack ? ` · ${pullStackLabel(status.stack)}` : ''}
+          </span>
+        )}
       </a>
       {failing && task.status !== 'running' && (
         <Button

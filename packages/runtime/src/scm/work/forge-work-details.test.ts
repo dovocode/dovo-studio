@@ -477,3 +477,34 @@ it('keeps previously cached minimal pipeline details valid', () => {
   expect(detail.run.workflow).toBeUndefined()
   expect(detail.jobs[0]?.steps).toBeUndefined()
 })
+it('reads GitHub dependencies at the run commit and preserves detail when source is unavailable', async () => {
+  const json = vi.fn<WorkHttp['json']>().mockImplementation(async (path) => {
+    if (path.includes('/contents/'))
+      return {
+        encoding: 'base64',
+        content: Buffer.from('jobs:\n  build: {name: Build}\n  publish: {needs: build}').toString(
+          'base64',
+        ),
+      }
+    if (path.includes('/jobs?')) return { jobs: [gitJob] }
+    return { ...gitRun, path: '.github/workflows/ci.yml' }
+  })
+  const provider = new GitForgeWork({ json }, 'github', 'me/app')
+  const detail = decode(forgePipelineDetailSchema, await provider.pipeline('42'))
+  expect(detail.graph).toEqual([
+    { id: 'build', name: 'Build', needs: [], jobIds: ['43'] },
+    { id: 'publish', name: 'publish', needs: ['build'], jobIds: [] },
+  ])
+  expect(json.mock.calls.at(-1)?.[0]).toBe(
+    `repos/me/app/contents/.github/workflows/ci.yml?ref=${gitRun.head_sha}`,
+  )
+  json.mockImplementation(async (path) => {
+    if (path.includes('/contents/')) throw new Error('Access denied')
+    return path.includes('/jobs?')
+      ? { jobs: [gitJob] }
+      : { ...gitRun, path: '.github/workflows/ci.yml' }
+  })
+  const unavailable = await provider.pipeline('42')
+  expect(unavailable.graphNotice).toContain('Access denied')
+  expect(unavailable.jobs).toHaveLength(1)
+})

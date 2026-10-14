@@ -103,6 +103,7 @@ export const snapshotSchema = mutableStruct({
   workspaceReconciliationSupported: Schema.optional(Schema.Boolean),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
+  threadBehaviorSupported: Schema.optional(Schema.Boolean),
   taskBehaviorSupported: Schema.optional(Schema.Boolean),
   /** Present on scoped replicas; only these threads contain authoritative history. */
   detailTaskIds: Schema.optional(mutableArray(Schema.String)),

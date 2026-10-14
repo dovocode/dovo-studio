@@ -72,3 +72,15 @@ export { RepositoryOpenItems } from './repository-open-items'
 export { FileReviewControls, ReviewFiles, type ReviewListFile } from './review/file-review'
 
 export { OrganizeReview } from './review/organize-review'
+
+export {
+  SidebarHeaderLayout,
+  SidebarHeader,
+  HeaderFallback,
+  HeaderMainSlot,
+  HeaderContent,
+} from './sidebar-header'
+
+export { useNavigationSidebar, useLeftSidebar } from './sidebar-header'
+
+export { PullRequestIcon, pullRequestIconTone } from './pull-request-icon'

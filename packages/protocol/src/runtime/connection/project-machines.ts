@@ -55,8 +55,9 @@ export function projectMachineGroups<
   const groups = new Map<string, { key: string; name: string; entries: T[] }>()
   for (const entry of entries) {
     const key =
-      (groupMatching ? entry.repository.gitIdentity : undefined) ??
-      JSON.stringify([entry.runtimeId, entry.repository.id])
+      (groupMatching && sharedProjectKey(entry.repository)
+        ? entry.repository.gitIdentity
+        : undefined) ?? JSON.stringify([entry.runtimeId, entry.repository.id])
     const group = groups.get(key) ?? { key, name: entry.repository.name, entries: [] }
     group.entries.push(entry)
     groups.set(key, group)
@@ -68,7 +69,9 @@ export function projectMachineGroups<
       name: [...new Set(group.entries.map((entry) => entry.repository.name))].sort(
         (a, b) => a.length - b.length || a.localeCompare(b),
       )[0],
-      identity: group.entries[0].repository.gitIdentity,
+      identity: sharedProjectKey(group.entries[0].repository)
+        ? group.entries[0].repository.gitIdentity
+        : undefined,
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key))
 }

@@ -26,6 +26,7 @@ const same = (a: PullStatus | undefined, b: PullStatus) =>
   !!a &&
   a.number === b.number &&
   a.state === b.state &&
+  a.draft === b.draft &&
   a.checks === b.checks &&
   JSON.stringify(a.failedChecks ?? []) === JSON.stringify(b.failedChecks ?? []) &&
   JSON.stringify(a.stack) === JSON.stringify(b.stack)
@@ -126,7 +127,10 @@ export class TaskPullWatcher {
   }
   constructor(private s: WatcherServices) {}
   private shouldSettle(task: TaskSummary, state?: string) {
-    const policy = this.s.store.projectSettings(task.repositoryId).taskBehavior
+    const policy = {
+      ...this.s.store.projectSettings(task.repositoryId).taskBehavior,
+      ...task.settleBehavior,
+    }
     const fallback = this.s.preferences.get().settleOnPullClose
     return state === 'merged'
       ? (policy?.settleMerged ?? fallback)
@@ -206,6 +210,7 @@ export class TaskPullWatcher {
             number,
             url: summary.url,
             state: 'open',
+            draft: summary.draft,
             ...(checks ? { checks } : {}),
             checkedAt: new Date().toISOString(),
           }
@@ -253,6 +258,7 @@ export class TaskPullWatcher {
             number,
             url: detail.pull.url,
             state: detail.pull.state,
+            draft: detail.pull.draft,
             ...(overall ? { checks: overall } : {}),
             ...(failed.length
               ? { failedChecks: failed.slice(0, 20).map((check) => check.name) }

@@ -14,7 +14,7 @@ import {
   resolveTaskAgent,
   canChangeTaskCheckout,
   type Task,
-  visiblePendingMessages,
+  visiblePendingMessage,
   mergePendingMessages,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
@@ -188,7 +188,7 @@ export function useConversationActions(task: Task) {
   useEffect(() => {
     setLocalPending((items) => {
       const next = items.filter(
-        (item) => item.scope !== pendingScope || !!visiblePendingMessages(task, [item]).length,
+        (item) => item.scope !== pendingScope || !!visiblePendingMessage(task, item),
       )
       return next.length === items.length ? items : next
     })

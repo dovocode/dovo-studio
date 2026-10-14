@@ -4,6 +4,7 @@ import {
   MessageCircleQuestion,
   Files,
   FileCode2,
+  GitPullRequest,
   Shapes,
   Globe,
   Smartphone,
@@ -16,11 +17,13 @@ export function TaskTools({
   surface,
   onSelect,
   hasDiff,
+  hasLinkedPulls = false,
   artifactsEnabled = false,
 }: {
   surface: TaskSurface
   onSelect: (surface: TaskSurface) => void
   hasDiff: boolean
+  hasLinkedPulls?: boolean
   artifactsEnabled?: boolean
 }) {
   return (
@@ -34,6 +37,7 @@ export function TaskTools({
           ['projects', 'Linked projects', FolderSymlink],
           ...(artifactsEnabled ? [['artifacts', 'Artifacts', Shapes] as const] : []),
           ...(hasDiff ? [['changes', 'Diff', FileCode2] as const] : []),
+          ...(hasLinkedPulls ? [['linked-pulls', 'Linked PRs', GitPullRequest] as const] : []),
           ['agents', 'Agents', Bot],
           ['side-chats', 'Side chats', MessageCircleQuestion],
           ['browser', 'Browsers', Globe],

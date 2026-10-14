@@ -31,6 +31,7 @@ export function PullPatch({
   reviewContext = false,
   onComment,
   provider = 'github',
+  allowAgent = true,
   allowInlineComment = true,
   allowInlineRange = true,
   headSha = '',
@@ -51,13 +52,15 @@ export function PullPatch({
     baseline: { headSha: string; path: string; patch: string },
   ) => Promise<void>
   provider?: ForgeProvider
+  allowAgent?: boolean
   allowInlineComment?: boolean
   allowInlineRange?: boolean
   headSha?: string
   draft?: PullLineDraft
   onDraft?: (update: (draft: PullLineDraft) => PullLineDraft) => void
 }) {
-  const { selection, destination } = draft
+  const { selection } = draft
+  const destination = allowAgent ? draft.destination : 'github'
   const setSelection = (next: PullLineSelection | null) =>
     onDraft?.((current) => ({ ...current, selection: next }))
   const setDestination = (next: PullLineDraft['destination']) =>
@@ -241,7 +244,7 @@ export function PullPatch({
                     setDestination(selection === 'github' ? 'github' : 'agent')
                   }
                 >
-                  <option value="agent">Agent task</option>
+                  {allowAgent && <option value="agent">Agent task</option>}
                   {allowInlineComment && <option value="github">{forgeLabels[provider]} PR</option>}
                 </ChoicePicker>
               </LineCommentForm>

@@ -23,7 +23,14 @@ import {
   type StudioHostApi,
   type StudioNavigation,
 } from '@dovo/studio-core'
-import { Button, ErrorBoundary, TooltipProvider, useCompactLayout } from '@dovo/studio-ui'
+import {
+  Button,
+  ErrorBoundary,
+  TooltipProvider,
+  SidebarHeaderLayout,
+  HeaderFallback,
+  useCompactLayout,
+} from '@dovo/studio-ui'
 import { SettingsNav } from './settings-nav'
 import { useConfirmSettingsNavigation } from '@dovo/studio-core'
 import { appSettingsExtension } from './app-extension'
@@ -144,7 +151,6 @@ function WorkbenchContent({
   taskLauncher,
   windowColors,
 }: WorkbenchProps) {
-  const compact = useCompactLayout()
   const { showIssues, showJira } = useAppPreferences()
   useAppearance(windowColors)
   const [update, setUpdate] = useState<DesktopUpdateState>({ status: 'idle' })
@@ -207,6 +213,25 @@ function WorkbenchContent({
     },
     [updateTarget, confirmSettingsNavigation],
   )
+  const compact = useCompactLayout()
+  const [collapsedSections, setCollapsedSections] = useApplicationState<Record<string, boolean>>({})
+  const sidebarCollapsed =
+    collapsedSections[target.viewId] ?? ((compact && target.viewId === 'tasks') || !!threadWindow)
+  const setSidebarCollapsed = useCallback(
+    (next: boolean | ((previous: boolean) => boolean)) => {
+      setCollapsedSections((previous) => ({
+        ...previous,
+        [target.viewId]:
+          typeof next === 'function'
+            ? next(
+                previous[target.viewId] ??
+                  ((compact && target.viewId === 'tasks') || !!threadWindow),
+              )
+            : next,
+      }))
+    },
+    [setCollapsedSections, target.viewId, compact, threadWindow],
+  )
   const navigateSection = (viewId: string) =>
     navigate({
       viewId,
@@ -238,8 +263,13 @@ function WorkbenchContent({
     },
     [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
   )
-  const pullSources = useRef({ runtimes, activeId: runtimeRegistry.activeId, openNotification })
-  pullSources.current = { runtimes, activeId: runtimeRegistry.activeId, openNotification }
+  const pullSources = useRef({
+    runtimes,
+    activeId: runtimeRegistry.activeId,
+    openNotification,
+    navigate,
+  })
+  pullSources.current = { runtimes, activeId: runtimeRegistry.activeId, openNotification, navigate }
   const openPullLink = useCallback((url: string) => {
     const pull = githubPullTarget(url)
     if (!pull) return false
@@ -251,11 +281,18 @@ function WorkbenchContent({
       )
       .find((entry) =>
         entry.snapshot?.workspace.repositories.some(
-          (repo) => !repo.kind && repo.gitIdentity === pull.identity,
+          (repo) =>
+            !repo.kind &&
+            !repo.gitIdentityError &&
+            (repo.gitIdentity === pull.identity || repo.pullIdentity === pull.identity),
         ),
       )
-    if (!source) return false
-    current.openNotification({ runtimeId: source.profile.id, viewId: 'pulls', entityId: pull.url })
+    const runtimeId = source?.profile.id ?? current.activeId ?? current.runtimes[0]?.profile.id
+    if (!runtimeId) {
+      current.navigate({ viewId: 'pulls', entityId: pull.url })
+      return true
+    }
+    current.openNotification({ runtimeId, viewId: 'pulls', entityId: pull.url })
     return true
   }, [])
   const taskNotice = useTaskNotifications(
@@ -371,7 +408,6 @@ function WorkbenchContent({
   }, [palette])
   const settingsViews = catalog.views.filter((view) => view.navigationGroup === 'settings')
   const inSettings = settingsViews.some((view) => view.id === target.viewId)
-  const taskChrome = target.viewId === 'tasks' && !compact
   const View = views.get(target.viewId)
   const navigationCommands = catalog.views
     .filter(
@@ -384,101 +420,114 @@ function WorkbenchContent({
     }))
   return (
     <StudioHostProvider api={api}>
-      <div
-        className="studio dark"
-        data-platform={desktopPlatform}
-        data-thread-window={!!threadWindow}
-      >
-        {taskNotice.notice && (
-          <div
-            role="status"
-            className="fixed bottom-5 right-5 z-50 flex max-w-sm items-center gap-3 rounded-lg border bg-card p-3 text-sm shadow-lg"
-          >
-            <button
-              className="text-left"
-              onClick={() => {
-                if (taskNotice.notice) openNotification(taskNotice.notice.target)
-                taskNotice.dismiss()
-              }}
-            >
-              {taskNotice.notice.title}
-            </button>
-            <button aria-label="Dismiss notification" onClick={taskNotice.dismiss}>
-              ×
-            </button>
-          </div>
-        )}
-        {!taskChrome && (
+      <SidebarHeaderLayout
+        collapsible={inSettings || ['tasks', 'pulls', 'jobs'].includes(target.viewId)}
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
+        brand={
           <TitleBar
+            sidebar
             platform={desktopPlatform}
-            section={
-              inSettings
-                ? 'Settings'
-                : catalog.views.find((view) => view.id === target.viewId)?.title
-            }
-            online={runtimes.filter((runtime) => runtime.connected).length}
-            devices={runtimeRegistry.profiles.length}
-            onDevices={() =>
-              navigate({
-                viewId: 'runtime',
-              })
-            }
+            online={0}
+            devices={0}
+            onDevices={() => navigate({ viewId: 'runtime' })}
             onSearch={() => setPalette(true)}
           />
-        )}
-        {connected && snapshot?.defaults?.configured === false && target.viewId !== 'agents' && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-2">
-            <p className="text-xs text-muted-foreground">
-              Make this workspace yours: choose default models for tasks and titles.
+        }
+      >
+        <div
+          className="studio dark"
+          data-platform={desktopPlatform}
+          data-thread-window={!!threadWindow}
+        >
+          {taskNotice.notice && (
+            <div
+              role="status"
+              className="fixed bottom-5 right-5 z-50 flex max-w-sm items-center gap-3 rounded-lg border bg-card p-3 text-sm shadow-lg"
+            >
+              <button
+                className="text-left"
+                onClick={() => {
+                  if (taskNotice.notice) openNotification(taskNotice.notice.target)
+                  taskNotice.dismiss()
+                }}
+              >
+                {taskNotice.notice.title}
+              </button>
+              <button aria-label="Dismiss notification" onClick={taskNotice.dismiss}>
+                ×
+              </button>
+            </div>
+          )}
+          <HeaderFallback>
+            <TitleBar
+              platform={desktopPlatform}
+              section={
+                inSettings
+                  ? 'Settings'
+                  : catalog.views.find((view) => view.id === target.viewId)?.title
+              }
+              online={runtimes.filter((runtime) => runtime.connected).length}
+              devices={runtimeRegistry.profiles.length}
+              onDevices={() =>
+                navigate({
+                  viewId: 'runtime',
+                })
+              }
+              onSearch={() => setPalette(true)}
+            />
+          </HeaderFallback>
+          {connected && snapshot?.defaults?.configured === false && target.viewId !== 'agents' && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-2">
+              <p className="text-xs text-muted-foreground">
+                Make this workspace yours: choose default models for tasks and titles.
+              </p>
+              <Button size="sm" onClick={() => navigate({ viewId: 'agents' })}>
+                Set up defaults
+              </Button>
+            </div>
+          )}
+          {(storageError || syncError || switchError) && (
+            <p
+              role="alert"
+              className="flex items-center gap-3 border-b bg-destructive/10 px-4 py-2 text-xs text-destructive"
+            >
+              <span className="min-w-0 flex-1">{storageError || switchError || syncError}</span>
+              {pendingSync && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={switching}
+                    onClick={() => {
+                      setSwitching(true)
+                      setSwitchError('')
+                      void retrySync()
+                        .catch((error) =>
+                          setSwitchError(error instanceof Error ? error.message : String(error)),
+                        )
+                        .finally(() => setSwitching(false))
+                    }}
+                  >
+                    Retry sync
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      navigate({
+                        viewId: 'runtime',
+                      })
+                    }
+                  >
+                    Resolve edits
+                  </Button>
+                </>
+              )}
             </p>
-            <Button size="sm" onClick={() => navigate({ viewId: 'agents' })}>
-              Set up defaults
-            </Button>
-          </div>
-        )}
-        {(storageError || syncError || switchError) && (
-          <p
-            role="alert"
-            className="flex items-center gap-3 border-b bg-destructive/10 px-4 py-2 text-xs text-destructive"
-          >
-            <span className="min-w-0 flex-1">{storageError || switchError || syncError}</span>
-            {pendingSync && (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={switching}
-                  onClick={() => {
-                    setSwitching(true)
-                    setSwitchError('')
-                    void retrySync()
-                      .catch((error) =>
-                        setSwitchError(error instanceof Error ? error.message : String(error)),
-                      )
-                      .finally(() => setSwitching(false))
-                  }}
-                >
-                  Retry sync
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    navigate({
-                      viewId: 'runtime',
-                    })
-                  }
-                >
-                  Resolve edits
-                </Button>
-              </>
-            )}
-          </p>
-        )}
-        <div className="studio-body">
-          {!threadWindow && (
+          )}
+          <div className="studio-body">
             <ActivityBar
-              taskHeader={taskChrome}
               update={update}
               onUpdate={updates ? () => void updates.install() : undefined}
               onCheckUpdates={updates ? () => void updates.check() : undefined}
@@ -492,75 +541,78 @@ function WorkbenchContent({
                       : true,
               )}
               activeId={target.viewId}
-              onSelect={navigateSection}
+              onSelect={(viewId) => {
+                setCollapsedSections((previous) => ({ ...previous, [viewId]: false }))
+                navigateSection(viewId)
+              }}
             />
-          )}
-          <main
-            className="studio-main"
-            tabIndex={-1}
-            onClick={(event) => {
-              if (
-                event.defaultPrevented ||
-                event.button !== 0 ||
-                event.metaKey ||
-                event.ctrlKey ||
-                event.shiftKey ||
-                event.altKey
-              )
-                return
-              const anchor =
-                event.target instanceof Element ? event.target.closest('a[href]') : null
-              if (!(anchor instanceof HTMLAnchorElement) || anchor.dataset.dovoExternal) return
-              if (openPullLink(anchor.href)) event.preventDefault()
-            }}
-          >
-            {/* Settings get a grouped sidebar with search; other views use the full area. */}
-            <div
-              className={`flex min-h-0 min-w-0 flex-1 ${inSettings ? 'flex-col md:flex-row' : ''}`}
+            <main
+              className="studio-main"
+              tabIndex={-1}
+              onClick={(event) => {
+                if (
+                  event.defaultPrevented ||
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return
+                const anchor =
+                  event.target instanceof Element ? event.target.closest('a[href]') : null
+                if (!(anchor instanceof HTMLAnchorElement) || anchor.dataset.dovoExternal) return
+                if (openPullLink(anchor.href)) event.preventDefault()
+              }}
             >
-              {inSettings && (
-                <SettingsNav
-                  views={settingsViews}
-                  activeId={target.viewId}
-                  onSelect={navigateSection}
-                />
-              )}
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                <ErrorBoundary key={target.viewId}>
-                  <Suspense
-                    fallback={
-                      <p className="p-6 text-xs text-muted-foreground">Loading extension…</p>
-                    }
-                  >
-                    {ready && View ? (
-                      <View entityId={target.entityId} />
-                    ) : !ready ? (
-                      <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
-                    ) : (
-                      <div className="p-6 text-xs text-muted-foreground">
-                        This view is unavailable. Select another view from the sidebar.
-                      </div>
-                    )}
-                  </Suspense>
-                </ErrorBoundary>
+              {/* Settings get a grouped sidebar with search; other views use the full area. */}
+              <div
+                className={`flex min-h-0 min-w-0 flex-1 ${inSettings ? 'flex-col md:flex-row' : ''}`}
+              >
+                {inSettings && (
+                  <SettingsNav
+                    views={settingsViews}
+                    activeId={target.viewId}
+                    onSelect={navigateSection}
+                  />
+                )}
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <ErrorBoundary key={target.viewId}>
+                    <Suspense
+                      fallback={
+                        <p className="p-6 text-xs text-muted-foreground">Loading extension…</p>
+                      }
+                    >
+                      {ready && View ? (
+                        <View entityId={target.entityId} />
+                      ) : !ready ? (
+                        <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
+                      ) : (
+                        <div className="p-6 text-xs text-muted-foreground">
+                          This view is unavailable. Select another view from the sidebar.
+                        </div>
+                      )}
+                    </Suspense>
+                  </ErrorBoundary>
+                </div>
               </div>
-            </div>
-          </main>
+            </main>
+          </div>
+          {taskLauncher && <TaskLauncher bridge={taskLauncher} />}
+          <CommandPalette
+            open={palette}
+            onOpenChange={setPalette}
+            commands={[
+              ...new Map(
+                [...navigationCommands, ...commands.current.values()].map((command) => [
+                  command.id,
+                  command,
+                ]),
+              ).values(),
+            ]}
+          />
         </div>
-        {taskLauncher && <TaskLauncher bridge={taskLauncher} />}
-        <CommandPalette
-          open={palette}
-          onOpenChange={setPalette}
-          commands={[
-            ...new Map(
-              [...navigationCommands, ...commands.current.values()].map((command) => [
-                command.id,
-                command,
-              ]),
-            ).values(),
-          ]}
-        />
-      </div>
+      </SidebarHeaderLayout>
     </StudioHostProvider>
   )
 }

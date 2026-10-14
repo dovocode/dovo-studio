@@ -201,6 +201,7 @@ export function runtimeSnapshot(
       workspaceReconciliationSupported: true,
       settingsScopesSupported: true,
       taskBehaviorSupported: true,
+      threadBehaviorSupported: true,
       worktreeDeletionOverrideSupported: true,
       artifactsEnabled: preferences.enableArtifacts,
       codeReviewsEnabled: preferences.enableCodeReviews,

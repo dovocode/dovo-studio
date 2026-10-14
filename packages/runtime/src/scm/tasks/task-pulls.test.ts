@@ -178,6 +178,22 @@ async function smartFixture(state: 'closed' | 'merged' = 'closed') {
   return { s, task, list, detail, watcher: new TaskPullWatcher(s) }
 }
 
+it('preserves draft state through list and detail refreshes', async () => {
+  const f = await smartFixture()
+  f.list.mockResolvedValue({
+    pulls: [{ ...pull('open', null), draft: true }],
+    hasMore: false,
+    page: 1,
+  })
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).pullStatus).toMatchObject({ state: 'open', draft: true })
+  const detail = await f.s.pullCache.status('/repo', 7)
+  f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+  f.detail.mockResolvedValue({ ...detail, pull: { ...detail.pull, state: 'open', draft: false } })
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).pullStatus).toMatchObject({ state: 'open', draft: false })
+})
+
 it.each([
   ['settle', 'pr'],
   ['settle', 'pipeline'],

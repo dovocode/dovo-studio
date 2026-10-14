@@ -65,7 +65,9 @@ export function scopeEditorValue(
   return settingsAtScope(scopeEditorDefaults(runtime), repository, scope)
 }
 export function sharedProjectKey(repository: Repository | undefined) {
-  return repository?.gitIdentity ? `project:${repository.gitIdentity}` : undefined
+  return repository?.gitIdentity && !repository.kind && !repository.gitIdentityError
+    ? `project:${repository.gitIdentity}`
+    : undefined
 }
 const newerEntry = (entry: SharedSettingsEntry, current: SharedSettingsEntry | undefined) =>
   !current ||

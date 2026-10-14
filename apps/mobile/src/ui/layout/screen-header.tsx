@@ -29,6 +29,7 @@ export type HeaderAction = {
 export function ScreenHeader({
   title: screenTitle,
   titleContent,
+  titleMenu = false,
   subtitle,
   leading,
   actions,
@@ -40,6 +41,7 @@ export function ScreenHeader({
 }: {
   title: string
   titleContent?: ReactNode
+  titleMenu?: boolean
   subtitle?: string
   leading?: ReactNode
   actions?: ReactNode
@@ -55,6 +57,23 @@ export function ScreenHeader({
   const navigation = useContext(NavigationContext)
   const inSheet = useInsideSheet()
   const [menu, setMenu] = useApplicationState(false)
+  const heading = titleMenu ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Thread actions"
+      onPress={() => setMenu(true)}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+    >
+      {titleContent ?? (
+        <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>
+          {title}
+        </Text>
+      )}
+      <Icon name="down" size={14} color={colors.muted} />
+    </Pressable>
+  ) : (
+    titleContent
+  )
   // Sheets have their own close button; the page's back arrow belongs to the page header only.
   const back = useContext(ScreenBackContext) ?? null
   if (Platform.OS === 'ios' && !inSheet) {
@@ -71,7 +90,7 @@ export function ScreenHeader({
         <Stack.Screen
           options={{
             title,
-            ...(titleContent ? { headerTitle: () => titleContent } : {}),
+            ...(heading ? { headerTitle: () => heading } : {}),
             headerShown: true,
             headerBackVisible: !onBack,
             headerBackImageSource: iconAssets.back,
@@ -145,6 +164,13 @@ export function ScreenHeader({
             {subtitle}
           </Text>
         )}
+        {menu && (
+          <HeaderActionSheet
+            title={screenTitle}
+            buttons={buttons ?? []}
+            onClose={() => setMenu(false)}
+          />
+        )}
       </>
     )
   }
@@ -163,13 +189,13 @@ export function ScreenHeader({
     >
       {leading ?? (back && !inSheet && <IconButton label="Back" icon="back" onPress={back} />)}
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        {titleContent ?? (
+        {heading ?? (
           <>
             <Text
               testID={testID}
               accessibilityRole="header"
-              numberOfLines={2}
-              style={{ color: colors.text, fontSize: 22, fontWeight: '700', letterSpacing: -0.5 }}
+              numberOfLines={1}
+              style={{ color: colors.text, fontSize: 16, fontWeight: '600', letterSpacing: -0.3 }}
             >
               {title}
             </Text>
@@ -200,48 +226,67 @@ export function ScreenHeader({
         </View>
       )}
       {menu && (
-        <Sheet title={title} onClose={() => setMenu(false)}>
-          {buttons
-            ?.filter((button) => button.overflow)
-            .map((button) => (
-              <Pressable
-                key={button.label}
-                accessibilityRole="button"
-                accessibilityLabel={button.label}
-                accessibilityState={{ disabled: button.disabled, selected: button.selected }}
-                disabled={button.disabled}
-                onPress={() => {
-                  setMenu(false)
-                  button.onPress()
-                }}
-                style={({ pressed }) => ({
-                  minHeight: 52,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 14,
-                  opacity: button.disabled ? 0.4 : pressed ? 0.6 : 1,
-                })}
-              >
-                <Icon
-                  name={button.icon}
-                  size={20}
-                  color={button.selected ? colors.accent : colors.text}
-                />
-                <Text
-                  style={{
-                    color: button.selected ? colors.accent : colors.text,
-                    fontSize: 17,
-                    lineHeight: 22,
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  {button.label}
-                </Text>
-              </Pressable>
-            ))}
-        </Sheet>
+        <HeaderActionSheet
+          title={screenTitle}
+          buttons={buttons ?? []}
+          onClose={() => setMenu(false)}
+        />
       )}
     </View>
+  )
+}
+
+function HeaderActionSheet({
+  title,
+  buttons,
+  onClose,
+}: {
+  title: string
+  buttons: HeaderAction[]
+  onClose: () => void
+}) {
+  const { colors } = useTheme()
+  return (
+    <Sheet title={title} onClose={onClose}>
+      {buttons
+        ?.filter((button) => button.overflow)
+        .map((button) => (
+          <Pressable
+            key={button.label}
+            accessibilityRole="button"
+            accessibilityLabel={button.label}
+            accessibilityState={{ disabled: button.disabled, selected: button.selected }}
+            disabled={button.disabled}
+            onPress={() => {
+              onClose()
+              button.onPress()
+            }}
+            style={({ pressed }) => ({
+              minHeight: 52,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 14,
+              opacity: button.disabled ? 0.4 : pressed ? 0.6 : 1,
+            })}
+          >
+            <Icon
+              name={button.icon}
+              size={20}
+              color={button.selected ? colors.accent : colors.text}
+            />
+            <Text
+              style={{
+                color: button.selected ? colors.accent : colors.text,
+                fontSize: 17,
+                lineHeight: 22,
+                flex: 1,
+                minWidth: 0,
+              }}
+            >
+              {button.label}
+            </Text>
+          </Pressable>
+        ))}
+    </Sheet>
   )
 }

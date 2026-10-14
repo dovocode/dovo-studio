@@ -1,4 +1,9 @@
-import { pullFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
+import {
+  githubPullTarget,
+  pullFileFingerprint,
+  reviewFileState,
+  orderReviewFiles,
+} from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
 import { OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
 import { useMemo, useRef, useState } from 'react'
@@ -207,6 +212,7 @@ export function PullChanges({
                       headSha={detail.pull.headSha}
                       split={split}
                       provider={detail.pull.provider}
+                      allowAgent={!githubPullTarget(repositoryId)}
                       allowInlineComment={
                         detail.capabilities?.actions.includes('inline-comment') ?? true
                       }

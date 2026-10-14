@@ -11,6 +11,7 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
+import { PullRequestIcon } from '../../ui/content/pull-request-icon'
 import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
@@ -38,7 +39,7 @@ function PrimaryPullStatus({ task }: { task: Task }) {
         <Pressable
           accessibilityRole="link"
           accessibilityLabel={`${pullStatusLabel(status)}. Opens the pull request.`}
-          onPress={() => void openAppLink(status.url).catch(() => undefined)}
+          onPress={() => act(() => openAppLink(status.url))}
           style={({ pressed }) => ({
             flex: 1,
             flexDirection: 'row',
@@ -47,7 +48,7 @@ function PrimaryPullStatus({ task }: { task: Task }) {
             opacity: pressed ? 0.55 : 1,
           })}
         >
-          <Icon name={status.stack ? 'stack' : 'pulls'} size={14} color={color} />
+          <PullRequestIcon state={status.state} draft={status.draft} size={16} />
           <Text numberOfLines={1} style={{ color, fontSize: 13, flexShrink: 1 }}>
             {pullStatusLabel(status)}
             {status.stack ? ` · ${pullStackLabel(status.stack)}` : ''}

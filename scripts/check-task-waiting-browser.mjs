@@ -9,7 +9,7 @@ const browser = await chromium.launch({ headless: true })
 try {
   for (const mobile of [false, true]) {
     const mocks = {
-      '@dovo/studio-core': `export {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting.ts';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openExternalLink:url=>window.opened=url});`,
+      '@dovo/studio-core': `export {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting.ts';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openPullLink:url=>{if(url.includes('/pull/')){window.opened=url;window.internal=true;return true}return false},openExternalLink:url=>{window.opened=url;window.internal=false}});`,
       '@dovo/studio-ui':
         'export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;',
       '../../runtime/connection/provider': 'export const useRuntime=()=>window.store;',
@@ -93,7 +93,7 @@ try {
         if (window.fail) throw new Error('Connection failed')
         if (input.unlink)
           window.items = window.items.filter((item) => item.target !== input.unlink.target)
-        return { dependencies: window.items }
+        return { dependencies: window.items, related: window.related }
       }
       window.store = { connected: true, request, call: request }
     })
@@ -106,6 +106,7 @@ try {
     })
     await link.click()
     assert.equal(await page.evaluate(() => window.opened), 'https://github.com/team/project/pull/7')
+    if (!mobile) assert.equal(await page.evaluate(() => window.internal), true)
     page.once('dialog', (dialog) => dialog.dismiss())
     await page.getByRole('button', { name: 'Stop watching PR #7', exact: true }).click()
     assert.equal(await page.evaluate(() => window.calls.some((call) => call.unlink)), false)
@@ -197,6 +198,31 @@ try {
     await page.getByRole('button', { name: 'Stop watching Pipeline run 9', exact: true }).click()
     await page.waitForFunction(() => document.getElementById('app').textContent === '')
     assert.equal(await page.evaluate(() => window.calls.at(-1).taskId), 'second')
+    // A related item remains a link after monitoring ends, with no stop control.
+    await page.evaluate(() => {
+      window.related = [
+        {
+          label: 'Pipeline run 9',
+          project: 'Other',
+          url: 'https://github.com/other/repo/actions/runs/9',
+        },
+      ]
+    })
+    await page.clock.fastForward(15000)
+    await page
+      .getByRole('link', {
+        name: mobile ? 'Open Pipeline run 9' : 'Other · Pipeline run 9',
+        exact: true,
+      })
+      .click()
+    assert.equal(
+      await page.evaluate(() => window.opened),
+      'https://github.com/other/repo/actions/runs/9',
+    )
+    assert.equal(
+      await page.getByRole('button', { name: 'Stop watching Pipeline run 9', exact: true }).count(),
+      0,
+    )
     assert.deepEqual(errors, [])
     await page.close()
     console.log(

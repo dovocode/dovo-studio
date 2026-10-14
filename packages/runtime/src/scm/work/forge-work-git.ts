@@ -11,7 +11,8 @@ import type {
   ForgeWorkOptions,
 } from '@dovo/protocol'
 import type { ForgeWorkProvider, WorkHttp } from './forge-work-types.js'
-import { HttpError } from '../../errors.js'
+import { HttpError, errorMessage } from '../../errors.js'
+import { workflowGraph } from './workflow-graph.js'
 import { pipelineTime } from './forge-work-details.js'
 const user = mutableStruct({
   login: Schema.String,
@@ -457,25 +458,48 @@ export class GitForgeWork implements ForgeWorkProvider {
             }),
             data,
           ).jobs
+    const normalized = jobs.map((v) => ({
+      id: String(v.id),
+      name: v.name,
+      status: v.conclusion || v.status,
+      url: v.html_url || current.html_url,
+      runner: v.runner_name || undefined,
+      startedAt: pipelineTime(v.started_at),
+      completedAt: pipelineTime(v.completed_at),
+      steps: v.steps?.map((step) => ({
+        id: String(step.number),
+        number: step.number,
+        name: step.name,
+        status: step.conclusion || step.status,
+        startedAt: pipelineTime(step.started_at),
+        completedAt: pipelineTime(step.completed_at),
+      })),
+    }))
+    let graph: ReturnType<typeof workflowGraph> | undefined
+    let graphNotice: string | undefined
+    if (this.provider === 'github' && current.path && current.head_sha) {
+      try {
+        const path = current.path.split('@')[0]
+        if (!path.startsWith('.github/workflows/') || path.split('/').includes('..'))
+          throw new Error('Workflow path is unavailable')
+        const file = decode(
+          mutableStruct({ encoding: Schema.String, content: Schema.String }),
+          await this.get(
+            `contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(current.head_sha)}`,
+          ),
+        )
+        if (file.encoding !== 'base64' || file.content.length > 1_500_000)
+          throw new Error('Workflow source is unavailable or too large')
+        graph = workflowGraph(Buffer.from(file.content, 'base64').toString('utf8'), normalized)
+      } catch (error) {
+        graphNotice = `Dependencies unavailable: ${errorMessage(error)}`
+      }
+    }
     return {
       run: this.normalizeRun(current),
-      jobs: jobs.map((v) => ({
-        id: String(v.id),
-        name: v.name,
-        status: v.conclusion || v.status,
-        url: v.html_url || current.html_url,
-        runner: v.runner_name || undefined,
-        startedAt: pipelineTime(v.started_at),
-        completedAt: pipelineTime(v.completed_at),
-        steps: v.steps?.map((step) => ({
-          id: String(step.number),
-          number: step.number,
-          name: step.name,
-          status: step.conclusion || step.status,
-          startedAt: pipelineTime(step.started_at),
-          completedAt: pipelineTime(step.completed_at),
-        })),
-      })),
+      jobs: normalized,
+      graph,
+      graphNotice,
       next: jobs.length === 50 && this.provider !== 'forgejo' ? String(page + 1) : undefined,
     }
   }

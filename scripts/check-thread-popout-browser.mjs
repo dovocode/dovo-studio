@@ -155,7 +155,7 @@ try {
     savedBeforePopout,
   )
   await localPopout.close()
-  assert.equal(await detached.getByRole('navigation', { name: 'Main navigation' }).count(), 0)
+  assert.equal(await detached.getByRole('navigation', { name: 'Main navigation' }).count(), 1)
   assert.equal(await main.getByRole('navigation', { name: 'Main navigation' }).count(), 1)
   assert.equal(
     await detached.evaluate(() => JSON.parse(localStorage.getItem('desktop.registry')).activeId),

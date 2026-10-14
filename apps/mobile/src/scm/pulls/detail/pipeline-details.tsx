@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
 import { useForegroundInterval } from '../../../runtime/state/app-active'
 import { useApplicationState } from '../../../runtime/state/application-state'
-import { Pressable, View } from 'react-native'
+import { Pressable, ScrollView, View } from 'react-native'
 import {
+  pipelineGraphColumns,
+  type ForgePipelineDetail,
   pipelineDuration,
   pipelineSignal,
   type ForgePipeline,
@@ -220,7 +222,9 @@ function PipelineJob({
   job,
   onOpen,
   now,
+  selected = false,
 }: {
+  selected?: boolean
   job: ForgePipelineJob
   onOpen: (url: string) => void
   now: number
@@ -230,8 +234,8 @@ function PipelineJob({
   const failed = pipelineSignal(job.status).tone === 'danger' || !!job.errors?.length
   const [expanded, setExpanded] = useApplicationState(failed)
   useEffect(() => {
-    if (failed) setExpanded(true)
-  }, [failed])
+    if (failed || selected) setExpanded(true)
+  }, [failed, selected])
   const duration = pipelineDuration(job, now)
   return (
     <View
@@ -355,15 +359,22 @@ function PipelineJob({
   )
 }
 export function PipelineJobs({
+  graph,
+  graphNotice,
   jobs,
   hasMore,
   onOpen,
 }: {
+  graph?: ForgePipelineDetail['graph']
+  graphNotice?: string
   jobs: ForgePipelineJob[]
   hasMore: boolean
   onOpen: (url: string) => void
 }) {
-  const { styles } = useTheme()
+  const { styles, colors } = useTheme()
+  const [selected, setSelected] = useApplicationState<string | null>(null)
+  const selectedJob = jobs.find((job) => job.id === selected)
+  const columns = pipelineGraphColumns(graph, jobs)
 
   const now = usePipelineNow(
     jobs.some(
@@ -397,6 +408,64 @@ export function PipelineJobs({
         {hasMore ? ' loaded' : ''}
         {failures ? ` · ${failures} failed` : ''}
       </Text>
+      {!!columns.length && (
+        <View accessibilityLabel="Pipeline graph" style={{ gap: 10 }}>
+          <Text style={styles.text}>Workflow</Text>
+          {graphNotice && <Text style={styles.muted}>{graphNotice}</Text>}
+          {!graph && <Text style={styles.muted}>Jobs · dependencies not provided</Text>}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 16, paddingVertical: 8 }}
+          >
+            {columns.map((column, index) => (
+              <View key={index} style={{ width: 220, gap: 12 }}>
+                {column.map((node) => (
+                  <View key={node.id} style={[styles.card, { gap: 8 }]}>
+                    <Text style={[styles.text, { fontWeight: '600' }]}>{node.name}</Text>
+                    {!!node.needs.length && (
+                      <Text style={styles.muted}>After {node.needs.join(', ')}</Text>
+                    )}
+                    {node.jobIds.map((id) => {
+                      const job = jobs.find((job) => job.id === id)
+                      return (
+                        job && (
+                          <Pressable
+                            key={id}
+                            accessibilityRole="button"
+                            accessibilityLabel={`View job ${job.name}`}
+                            onPress={() => setSelected(id)}
+                            style={{
+                              padding: 8,
+                              gap: 4,
+                              backgroundColor: colors.elevated,
+                              borderRadius: 8,
+                            }}
+                          >
+                            <Text style={styles.text}>{job.name}</Text>
+                            <WorkSignal status={job.status} />
+                            <Text style={styles.muted}>{pipelineDuration(job, now)}</Text>
+                          </Pressable>
+                        )
+                      )
+                    })}
+                    {!node.jobIds.length && <Text style={styles.muted}>Not reported</Text>}
+                  </View>
+                ))}
+              </View>
+            ))}
+          </ScrollView>
+          {selectedJob && (
+            <PipelineJob
+              key={`selected:${selectedJob.id}`}
+              job={selectedJob}
+              selected
+              onOpen={onOpen}
+              now={now}
+            />
+          )}
+        </View>
+      )}
       {!jobs.length && <Text style={styles.muted}>No jobs have been returned for this run.</Text>}
       {[...jobs]
         .sort(

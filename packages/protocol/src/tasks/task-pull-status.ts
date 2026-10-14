@@ -46,6 +46,7 @@ export type TaskPullStatus = NonNullable<Task['pullStatus']>
 export function pullStatusLabel(status: TaskPullStatus) {
   if (status.state === 'merged') return `PR #${status.number} merged`
   if (status.state === 'closed') return `PR #${status.number} closed`
+  if (status.draft) return `PR #${status.number} draft`
   if (status.checks === 'failed')
     return `PR #${status.number} · ${status.failedChecks?.length ? `${status.failedChecks.length} failing` : 'checks failing'}`
   if (status.checks === 'pending') return `PR #${status.number} · checks running`

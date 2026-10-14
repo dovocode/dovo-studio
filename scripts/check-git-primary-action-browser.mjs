@@ -11,7 +11,7 @@ const built = await build({
       import {useState} from 'react';import {createRoot} from 'react-dom/client';
       import {createTask} from '@dovo/studio-core';
       import {TaskBranchMenu} from '../extension-tasks/src/detail/task-branch-menu';
-      import {TaskHeader} from '../extension-tasks/src/detail/task-header';
+      import {TaskProjectPanel} from '../extension-tasks/src/detail/task-project-panel';
       const initial=createTask({title:'Task',objective:'',agentId:'',repositoryId:'repo',execution:'local'});
       window.reads=[];window.writes=[];window.opens=[];window.folderOpener=undefined;window.installed=['finder','vscode'];window.holdDetection=false;window.failDetection=false;
       function App(){
@@ -19,7 +19,7 @@ const built = await build({
         window.switchRuntime=folderOpener=>{window.folderOpener=folderOpener;window.installed=[folderOpener,'vscode'].filter(Boolean);setRevision(value=>value+1)};
         window.rerender=()=>setRevision(value=>value+1);
         window.switchTask=()=>setTask({...initial,id:'second'});
-        window.store={workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'feature'}]},snapshot:{folderOpener:window.folderOpener,questions:[],approvals:[],terminals:[]},connected:true,runtimes:[],activeRuntimeId:'local',
+        window.store={workspace:{tasks:[task],agents:[],repositories:[{id:'repo',name:'Project',path:'/repo',branch:'feature'}]},snapshot:{folderOpener:window.folderOpener,questions:[],approvals:[],terminals:[]},connected:true,runtimes:[],activeRuntimeId:'local',
           request:async(path,input)=>{
             if(path==='/api/scm/action-state')return new Promise(resolve=>window.reads.push({resolve,input,revision}));
             if(path==='/api/scm/open-targets'){if(window.failDetection)throw new Error('Detection unavailable');if(window.holdDetection)await new Promise(resolve=>window.releaseDetection=resolve);return {targets:window.installed}}
@@ -29,7 +29,7 @@ const built = await build({
             if(path==='/api/tasks/commit')return {commit:'123456789'};
             return {ok:true};
           }};
-        return <><TaskHeader task={task} onSidebar={()=>{}} surface="chat" onSurface={()=>{}} compact={false} sidebarVisible={true} hasDiff={false} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}}/><div data-testid="branch"><TaskBranchMenu task={{...task,checkoutBranch:"feature"}} label="Branch actions"/></div></>;
+        return <><TaskProjectPanel task={task} onSurface={()=>{}} onClose={()=>{}}/><div data-testid="branch"><TaskBranchMenu task={{...task,checkoutBranch:"feature"}} label="Branch actions"/></div></>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -40,9 +40,10 @@ const built = await build({
       setup(builder) {
         const mocks = {
           '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-          '@dovo/studio-core': `export * from '@dovo/protocol';export {createTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});export const useRuntimeReleaseCheck=()=>({releases:[]});export const runtimeUpdate=()=>({available:false});`,
-          '@dovo/studio-ui': `export {RepositoryOpenItems} from '../studio-ui/src/repository-open-items';export {Button} from '../studio-ui/src/components/ui/button';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const cn=(...values)=>values.filter(Boolean).join(' ');export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;export const ProjectIcon=()=>null;export const Dialog=({children})=><div>{children}</div>;export const DialogContent=Dialog,DialogTitle=Dialog,DialogDescription=Dialog;`,
+          '@dovo/studio-core': `export * from '@dovo/protocol';export {createTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});export const useAppPreferences=()=>({});export const updateAppPreferences=()=>{};export const useRuntimeReleaseCheck=()=>({releases:[]});export const runtimeUpdate=()=>({available:false});`,
+          '@dovo/studio-ui': `export {RepositoryOpenItems} from '../studio-ui/src/repository-open-items';export {Button} from '../studio-ui/src/components/ui/button';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const cn=(...values)=>values.filter(Boolean).join(' ');export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileTypeIcon=()=>null;export const ProjectIcon=()=>null;export const Dialog=({children})=><div>{children}</div>;export const DialogContent=Dialog,DialogTitle=Dialog,DialogDescription=Dialog;`,
           '@dovo/extension-scm/repository-actions': 'export const RepositoryActions=()=>null;',
+          './task-waiting-panel': 'export const TaskWaitingPanel=()=>null;',
           './task-actions': 'export const TaskActions=()=>null;',
           './task-branch-menu': 'export const TaskBranchMenu=()=>null;',
           './task-pull-status': 'export const TaskPullStatus=()=>null;',
@@ -142,7 +143,7 @@ try {
   await page.evaluate(() =>
     Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true }),
   )
-  const open = page.getByRole('button', { name: 'Open', exact: true })
+  const open = page.getByRole('button', { name: 'Open in…', exact: true })
   const branch = page.getByTestId('branch').getByRole('button').first()
   for (const folderOpener of ['explorer', 'finder', 'file-manager']) {
     await page.evaluate((folderOpener) => window.switchRuntime(folderOpener), folderOpener)

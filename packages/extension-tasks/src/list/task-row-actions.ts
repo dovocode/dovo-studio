@@ -11,7 +11,15 @@ import type { TaskSource } from './task-collection'
 export type TaskRowChanges = Partial<
   Pick<
     Task,
-    'title' | 'pinned' | 'archived' | 'snoozedUntil' | 'agentId' | 'agentOverrides' | 'harness'
+    | 'settleBehavior'
+    | 'archiveAfterSettledDays'
+    | 'title'
+    | 'pinned'
+    | 'archived'
+    | 'snoozedUntil'
+    | 'agentId'
+    | 'agentOverrides'
+    | 'harness'
   >
 >
 

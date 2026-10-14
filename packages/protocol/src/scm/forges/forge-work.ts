@@ -208,7 +208,16 @@ export const forgePipelineJobSchema = mutableStruct({
   ...pipelineTiming,
 })
 export type ForgePipelineJob = Schema.Schema.Type<typeof forgePipelineJobSchema>
+export const forgePipelineGraphNodeSchema = mutableStruct({
+  id: Schema.String,
+  name: Schema.String,
+  needs: mutableArray(Schema.String),
+  jobIds: mutableArray(Schema.String),
+})
+export type ForgePipelineGraphNode = Schema.Schema.Type<typeof forgePipelineGraphNodeSchema>
 export const forgePipelineDetailSchema = mutableStruct({
+  graph: Schema.optional(mutableArray(forgePipelineGraphNodeSchema)),
+  graphNotice: Schema.optional(Schema.String),
   run: forgePipelineSchema,
   jobs: mutableArray(forgePipelineJobSchema),
   next: Schema.optional(Schema.String),

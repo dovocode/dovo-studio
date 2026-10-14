@@ -48,6 +48,11 @@ const fields = [
     'Settle idle tasks after the selected period. Pins, drafts and pending work are protected.',
   ],
   [
+    'autoArchiveSettled',
+    'Auto-archive settled tasks',
+    'Archive tasks after they remain in Settled for the selected period. Reopening resets the clock; pins, drafts and pending work are protected.',
+  ],
+  [
     'continueAfterRestart',
     'Continue tasks after restarts',
     'Resume interrupted turns after a runtime update, crash or computer restart.',
@@ -200,6 +205,7 @@ export function TaskBehaviorSettings({
               }
             >
               <Select
+                disabled={key === 'autoArchiveSettled' && !snapshot?.threadBehaviorSupported}
                 value={draft[key] === undefined ? 'inherit' : draft[key] ? 'on' : 'off'}
                 onValueChange={(value) =>
                   change({ ...draft, [key]: value === 'inherit' ? undefined : value === 'on' })
@@ -256,6 +262,50 @@ export function TaskBehaviorSettings({
                   Number(value) <= 365
                 )
                   change({ ...draft, inactiveDays: Number(value) })
+              }}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Days in Settled before archiving"
+            description={`Effective: ${draft.archiveAfterSettledDays ?? inherited?.archiveAfterSettledDays ?? 7} days. Applies when auto-archive is on.`}
+            source={
+              <SettingSource
+                label="Days in Settled before archiving"
+                setting={{
+                  field: { group: 'taskBehavior', key: 'archiveAfterSettledDays' },
+                  repository,
+                  scope,
+                  value: draft.archiveAfterSettledDays,
+                }}
+                origin={taskBehaviorOrigin(
+                  snapshot?.defaults,
+                  repository,
+                  scope,
+                  draft,
+                  'archiveAfterSettledDays',
+                )}
+                onReset={() => change({ ...draft, archiveAfterSettledDays: undefined })}
+              />
+            }
+          >
+            <Input
+              disabled={!snapshot?.threadBehaviorSupported}
+              aria-label="Days in Settled before archiving"
+              type="number"
+              min={1}
+              max={365}
+              className="w-24"
+              placeholder={String(inherited?.archiveAfterSettledDays ?? 7)}
+              value={draft.archiveAfterSettledDays ?? ''}
+              onChange={(event) => {
+                const value = event.target.value
+                if (!value) change({ ...draft, archiveAfterSettledDays: undefined })
+                else if (
+                  Number.isInteger(Number(value)) &&
+                  Number(value) >= 1 &&
+                  Number(value) <= 365
+                )
+                  change({ ...draft, archiveAfterSettledDays: Number(value) })
               }}
             />
           </SettingRow>

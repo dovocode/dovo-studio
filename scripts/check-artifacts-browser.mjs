@@ -35,6 +35,7 @@ const mocks = {
 import React from 'react';import {Button} from '${uiRoot}components/ui/button.tsx';
 export {Button};export {cn} from '${uiRoot}lib/utils.ts';
 export {Input} from '${uiRoot}components/ui/input.tsx';
+export {PageHeader} from '${uiRoot}page-header.tsx';
 export {Dialog,DialogContent,DialogDescription,DialogTitle} from '${uiRoot}components/ui/dialog.tsx';
 export {EmptyState} from '${uiRoot}components/empty-state.tsx';
 export {MessageResponse} from '${uiRoot}components/ai-elements/message.tsx';

@@ -23,7 +23,9 @@ const item =
 export function TaskProjectActions({
   task,
   onTerminal,
+  panel = false,
 }: {
+  panel?: boolean
   task: Task
   onTerminal: (terminalId: string) => void
 }) {
@@ -56,14 +58,16 @@ export function TaskProjectActions({
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
           <Button
-            variant="outline"
+            variant={panel ? 'ghost' : 'outline'}
             size="sm"
-            className="h-7 gap-1 px-2 text-[0.6875rem]"
+            className={panel ? 'studio-project-row w-full' : 'h-7 gap-1 px-2 text-[0.6875rem]'}
             title={error || 'Project actions'}
             aria-label="Project actions"
           >
             <Plus className="size-3.5" />
-            <span className="hidden lg:inline">Add action</span>
+            <span className={panel ? '' : 'hidden lg:inline'}>
+              {actions.length ? 'Project scripts' : 'Add project script'}
+            </span>
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>

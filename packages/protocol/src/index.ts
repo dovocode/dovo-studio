@@ -231,3 +231,7 @@ export * from './scm/task-review-session.js'
 export * from './runtime/connection/desktop-sync.js'
 
 export * from './runtime/connection/workspace-mutations.js'
+export { projectIconChoices } from './generated/project-icon-choices.js'
+export { taskPullLinks } from './tasks/task-pull-links.js'
+
+export { pipelineGraphColumns } from './scm/work/pipeline-graph.js'

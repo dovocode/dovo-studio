@@ -214,3 +214,21 @@ it('uses the latest shared default and respects a synced reset instead of a stal
   expect(projectDefaultServer(entries)).toBeUndefined()
   expect(preferredProjectEntry(entries, 'remote')?.runtimeId).toBe('remote')
 })
+
+it('does not group folders or unavailable checkouts using stale Git identities', () => {
+  const repository = {
+    id: 'repo',
+    name: 'App',
+    path: '/app',
+    branch: 'main',
+    gitIdentity: 'github.com/team/app',
+  }
+  const groups = projectMachineGroups([
+    { runtimeId: 'one', repository },
+    { runtimeId: 'two', repository: { ...repository, kind: 'folder' as const } },
+    { runtimeId: 'three', repository: { ...repository, gitIdentityError: 'Checkout unavailable' } },
+    { runtimeId: 'four', repository: { ...repository, gitIdentity: 'github.com/fork/app' } },
+  ])
+  expect(groups).toHaveLength(4)
+  expect(groups.filter((group) => group.identity)).toHaveLength(2)
+})

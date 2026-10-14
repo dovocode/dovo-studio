@@ -4,7 +4,7 @@ import { chromium } from './browser/harness.mjs'
 import assert from 'node:assert/strict'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState} from 'react';export const useApplicationState=useState;`
-const controls = `export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as ContextMenu from '@radix-ui/react-context-menu';export const Button=({children,onClick,disabled,...props})=><button disabled={disabled} onClick={onClick} {...props}>{children}</button>;export const Input=props=><input {...props}/>;export const ChoicePicker=({children,value,onValueChange,...props})=><select value={value} onChange={e=>onValueChange(e.target.value)} {...props}>{children}</select>;export const Badge=({children})=><span>{children}</span>;export const PageHeader=({title,children})=><header><h1>{title}</h1>{children}</header>;export const Dialog=({children})=><div role="dialog">{children}</div>;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;export const DialogHeader=DialogContent;export const Text=({children})=><div>{children}</div>;export const View=Text;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const SearchField=({label,value,onChangeText,...props})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)} {...props}/>;export const FlatList=({data,renderItem,ListEmptyComponent})=><div>{data.length?data.map((item,i)=><div key={i}>{renderItem({item})}</div>):ListEmptyComponent}</div>;export const Pressable=({children,onPress,disabled,accessibilityRole})=><button disabled={disabled} onClick={onPress}>{children}</button>;export const Sheet=({title,children})=><section><h2>{title}</h2>{children}</section>;export const SafeModal=()=>null;export const Keyboard={dismiss:()=>{}};export const colors={};export const useTheme=()=>({styles:{},colors,mode:'dark'});export const Alert={alert:(...args)=>window.alerts.push(args)};export const Linking={openURL:async url=>window.external.push(url)};`
+const controls = `export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as ContextMenu from '@radix-ui/react-context-menu';export const Button=({children,onClick,disabled,...props})=><button disabled={disabled} onClick={onClick} {...props}>{children}</button>;export const Input=props=><input {...props}/>;export const ChoicePicker=({children,value,onValueChange,...props})=><select value={value} onChange={e=>onValueChange(e.target.value)} {...props}>{children}</select>;export const Badge=({children})=><span>{children}</span>;export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true];export const PageHeader=({title,children})=><header><h1>{title}</h1>{children}</header>;export const Dialog=({children})=><div role="dialog">{children}</div>;export const DialogContent=({children})=><div>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;export const DialogHeader=DialogContent;export const Text=({children})=><div>{children}</div>;export const View=Text;export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const SearchField=({label,value,onChangeText,...props})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)} {...props}/>;export const FlatList=({data,renderItem,ListEmptyComponent})=><div>{data.length?data.map((item,i)=><div key={i}>{renderItem({item})}</div>):ListEmptyComponent}</div>;export const Pressable=({children,onPress,disabled,accessibilityRole})=><button disabled={disabled} onClick={onPress}>{children}</button>;export const Sheet=({title,children})=><section><h2>{title}</h2>{children}</section>;export const SafeModal=()=>null;export const Keyboard={dismiss:()=>{}};export const colors={};export const useTheme=()=>({styles:{},colors,mode:'dark'});export const Alert={alert:(...args)=>window.alerts.push(args)};export const Linking={openURL:async url=>window.external.push(url)};`
 const setup = `const pull=number=>({number,title:'PR '+number,url:'https://github.com/team/project/pull/'+number,state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-03',head:'branch'+number,base:'main',labels:[]});window.pulls=[pull(1),pull(2),pull(3)];const source={key:'source',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project',gitIdentity:'github.com/team/project'}};const remote={profile:{id:'linux',name:'Linux',connection:{address:'http://linux.local',token:'paired'}},connected:true,snapshot:{workspace:{repositories:[{id:'other',name:'Other project'}],tasks:[{id:'remote-thread',title:'Foreign thread',repositoryId:'other'}]}}};window.sources=[source];window.writes=[];window.alerts=[];window.external=[];window.routes=[];window.store={activeRuntimeId:'mac',profile:{id:'mac'},workspace:{repositories:[source.repository],tasks:[]},runtimes:[remote],overviews:[remote,{profile:{id:'mac'},snapshot:{workspace:{repositories:[source.repository]}}}],switchRuntime:async()=>{},readRuntime:async(profile,path,input)=>{window.writes.push({profile,path,input});return {ok:true}},refreshRuntime:async()=>{}};`
 const browser = await chromium.launch()
 async function bundle(contents, mobile = false) {
@@ -111,7 +111,18 @@ try {
   })
   await linkedPage.getByText('Native PR detail 42', { exact: true }).waitFor()
   await linkedPage.close()
-  console.log('Desktop: URL navigation opens PRs not present in the loaded list.')
+  const foreign = await browser.newPage()
+  await foreign.setContent('<div id="app"></div>')
+  await foreign.addScriptTag({
+    content: await bundle(
+      `import {createRoot} from 'react-dom/client';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';${setup}createRoot(document.getElementById('app')).render(<View entityId="https://github.com/unlinked/project/pull/123/files#note"/>);`,
+    ),
+  })
+  await foreign.getByText('Native PR detail 123', { exact: true }).waitFor()
+  await foreign.close()
+  console.log(
+    'Desktop: URL navigation opens linked and unlinked PRs not present in the loaded list.',
+  )
   const mobile = await browser.newPage()
   mobile.setDefaultTimeout(8000)
   await mobile.setContent('<div id="app"></div>')
@@ -136,6 +147,14 @@ try {
   assert.equal(route.params.runtimeId, 'mac')
   assert.equal(route.params.repositoryId, 'repo')
   assert.equal(route.params.number, '7')
+  assert.equal(await mobile.evaluate(() => window.alerts.length), 0)
+  await mobile.evaluate(() =>
+    window.openAppLink('https://github.com/unlinked/project/pull/123/files#note'),
+  )
+  assert.equal(
+    await mobile.evaluate(() => window.routes.at(-1).params.repositoryId),
+    'https://github.com/unlinked/project/pull/123',
+  )
   assert.equal(await mobile.evaluate(() => window.alerts.length), 0)
   await mobile.evaluate(() => window.openAppLink('https://github.com/team/project/pull/7', true))
   assert.equal(await mobile.evaluate(() => window.external.length), 1)

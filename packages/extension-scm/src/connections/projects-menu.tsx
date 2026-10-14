@@ -43,8 +43,7 @@ export function ProjectsMenu({
   disabled?: boolean
 }) {
   const preferences = useAppPreferences()
-  const { workspace, connection, activeRuntimeId, runtimes, connected, switchRuntime } =
-    useWorkspace()
+  const { workspace, activeRuntimeId, runtimes, connected, switchRuntime } = useWorkspace()
   const [adding, setAdding] = useApplicationState<{
     runtimeId: string | null
   } | null>(null)
@@ -392,26 +391,36 @@ export function ProjectsMenu({
             <DialogTitle>{managed?.name}</DialogTitle>
             <DialogDescription className="break-all">{managed?.path}</DialogDescription>
           </DialogHeader>
-          {managed && (
-            <>
-              <ProjectIconSettings repository={managed} />
-              <TaskDefaultSettings
-                key={`defaults-${activeRuntimeId}:${managed.id}`}
-                repository={managed}
-              />
-              {!managed.kind && (
-                <RepositoryCheckouts key={`${activeRuntimeId}:${managed.id}`} repo={managed} />
-              )}
-              {!managed.kind && (
-                <ProjectForgeBinding
-                  key={`forge-${connection?.address}-${managed.id}`}
-                  repo={managed}
-                />
-              )}
-            </>
-          )}
+          {managed && <ProjectSettings repository={managed} />}
         </DialogContent>
       </Dialog>
+    </>
+  )
+}
+
+/** The same project controls are available from the project picker and a thread. */
+export function ProjectSettings({
+  repository,
+}: {
+  repository: import('@dovo/protocol').Repository
+}) {
+  const { activeRuntimeId, connection } = useWorkspace()
+  return (
+    <>
+      <ProjectIconSettings repository={repository} />
+      <TaskDefaultSettings
+        key={`defaults-${activeRuntimeId}:${repository.id}`}
+        repository={repository}
+      />
+      {!repository.kind && (
+        <RepositoryCheckouts key={`${activeRuntimeId}:${repository.id}`} repo={repository} />
+      )}
+      {!repository.kind && (
+        <ProjectForgeBinding
+          key={`forge-${connection?.address}-${repository.id}`}
+          repo={repository}
+        />
+      )}
     </>
   )
 }

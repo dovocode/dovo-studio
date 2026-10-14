@@ -14,9 +14,9 @@ import {
   useAppPreferences,
 } from '@dovo/studio-core'
 import { compareTasks, isSnoozed } from '@dovo/studio-core'
-import { ChoicePicker } from '@dovo/studio-ui'
+import { SidebarHeader, ChoicePicker } from '@dovo/studio-ui'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
-import { Plus, Search, ChevronDown, Layers2 } from 'lucide-react'
+import { Plus, Search, ChevronDown } from 'lucide-react'
 import {
   useCallback,
   useDeferredValue,
@@ -53,7 +53,7 @@ const selectionActions = [
   { id: 'delete', label: 'Delete' },
 ] as const
 export function TaskList({
-  titleHeader = false,
+  hidePillsForKey,
   projectId,
   onProjectChange,
   selectedId,
@@ -70,7 +70,7 @@ export function TaskList({
   busy,
   error,
 }: {
-  titleHeader?: boolean
+  hidePillsForKey?: string
   projectId: string
   onProjectChange: (id: string) => void
   selectedId: string
@@ -92,7 +92,6 @@ export function TaskList({
   error: string
 }) {
   const host = useStudioHost()
-  const { appInfo } = host
   const store = useTaskActionStore()
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
   const selecting = selected.size > 0
@@ -717,20 +716,10 @@ export function TaskList({
   }, [selectedCount, blockedKey, runBulk])
   return (
     <aside
-      className="flex h-full w-full min-w-0 flex-col border-r bg-sidebar"
+      className="studio-task-sidebar flex h-full w-full min-w-0 flex-col border-r bg-sidebar"
       aria-label="Task sidebar"
     >
-      {titleHeader && (
-        <header className="studio-task-sidebar-header">
-          <Layers2 size={15} strokeWidth={1.6} aria-hidden="true" />
-          <span>Dovo Studio</span>
-          {appInfo && appInfo.channel !== 'stable' && (
-            <span className="rounded border px-1.5 text-[10px] text-muted-foreground">
-              {appInfo.channel === 'nightly' ? 'Nightly' : 'Dev'}
-            </span>
-          )}
-        </header>
-      )}
+      <SidebarHeader />
       <div className="shrink-0 space-y-1.5 px-2 pt-3 pb-1">
         <div className="flex items-center gap-1">
           <div className="relative min-w-0 flex-1 text-sm">
@@ -824,7 +813,11 @@ export function TaskList({
                   owner={
                     owners.get(entry.source.runtimeId) ?? retainTaskOwner(undefined, entry.source)
                   }
-                  subagents={subagentsByKey.get(entry.key) ?? noSubagents}
+                  subagents={
+                    entry.key === hidePillsForKey
+                      ? noSubagents
+                      : (subagentsByKey.get(entry.key) ?? noSubagents)
+                  }
                   needsInput={!!facts?.input.has(entry.task.id)}
                   terminals={facts?.terminals.get(entry.task.id) ?? 0}
                   selected={entry.key === selectedId}

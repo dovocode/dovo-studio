@@ -1,7 +1,7 @@
 import { Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
 import { useEffect } from 'react'
-import { ArrowRightLeft, Check, Copy, GitBranch } from 'lucide-react'
+import { ArrowRightLeft, Check, Copy, GitBranch, ChevronDown } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { canChangeTaskCheckout, type RepositoryOpenTarget } from '@dovo/protocol'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
@@ -20,7 +20,15 @@ const item =
 
 /** The header's branch label, with quick actions: copy the branch name, or open the task's
  * checkout in an installed editor or file manager on the computer that runs it. */
-export function TaskBranchMenu({ task, label }: { task: Task; label: string }) {
+export function TaskBranchMenu({
+  task,
+  label,
+  panel = false,
+}: {
+  task: Task
+  label: string
+  panel?: boolean
+}) {
   const { request, connected } = useWorkspace()
   const host = useStudioHost()
   const [creating, setCreating] = useApplicationState(false)
@@ -88,14 +96,21 @@ export function TaskBranchMenu({ task, label }: { task: Task; label: string }) {
         <button
           type="button"
           title={branch ? `${branch} · Copy or open` : label}
-          className="inline-flex max-w-56 items-center gap-1 truncate rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:inline-flex"
+          className={
+            panel
+              ? 'studio-project-row w-full'
+              : 'inline-flex max-w-56 items-center gap-1 truncate rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:inline-flex'
+          }
         >
           {notice === 'Copied' ? (
             <Check size={10} className="shrink-0 text-emerald-400" />
           ) : (
-            <GitBranch size={10} className="shrink-0" />
+            <GitBranch size={panel ? 18 : 10} className="shrink-0" />
           )}
-          <span className="truncate">{notice && notice !== 'Copied' ? notice : label}</span>
+          <span className={panel ? 'min-w-0 flex-1 truncate text-left' : 'truncate'}>
+            {notice && notice !== 'Copied' ? notice : label}
+          </span>
+          {panel && <ChevronDown className="studio-project-branch-chevron" size={16} />}
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>

@@ -36,6 +36,48 @@ export async function taskWaiting(
   const project = (id: string) =>
     s.store.get().repositories.find((entry) => entry.id === id)?.name ?? 'Unavailable project'
   return {
+    related: [
+      ...new Map(
+        [
+          ...pulls.watches.map((watch) => ({
+            label: `PR #${watch.number}`,
+            project: project(watch.repositoryId),
+            url: watch.url,
+          })),
+          ...pipelines.watches.map((watch) => ({
+            label: `Pipeline run ${watch.runId}`,
+            project: project(watch.repositoryId),
+            url: watch.url,
+          })),
+          ...(task.pullRequest
+            ? [
+                {
+                  label: `PR #${task.pullRequest.number}`,
+                  project: project(task.repositoryId),
+                  url: task.pullRequest.url,
+                },
+              ]
+            : []),
+          ...(task.linkedPullRequests ?? []).map((pull) => ({
+            label: `PR #${pull.number}`,
+            project: project(task.repositoryId),
+            url: pull.url,
+          })),
+          ...(task.workItem
+            ? [
+                {
+                  label:
+                    task.workItem.kind === 'pipeline'
+                      ? `Pipeline run ${task.workItem.id}`
+                      : task.workItem.title,
+                  project: project(task.repositoryId),
+                  url: task.workItem.url,
+                },
+              ]
+            : []),
+        ].map((item) => [item.url, item]),
+      ).values(),
+    ],
     dependencies: [
       ...pulls.watches
         .filter((watch) => watch.status === 'watching')

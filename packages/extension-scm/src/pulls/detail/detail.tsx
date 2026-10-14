@@ -13,7 +13,7 @@ import {
   forgeLabels,
   formatDateTime,
 } from '@dovo/studio-core'
-import { Button, Badge, MessageResponse } from '@dovo/studio-ui'
+import { HeaderContent, Button, Badge, MessageResponse, ProjectIcon } from '@dovo/studio-ui'
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -68,6 +68,7 @@ function PullDetailContent({
   embedded = false,
 }: PullDetailProps) {
   const { connected, workspace } = useWorkspace()
+  const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
   const { detail, error, busy, refresh, invalidate } = usePullDetail(repositoryId, number)
   const changed = () => {
     invalidate()
@@ -95,7 +96,7 @@ function PullDetailContent({
     setTab(value)
     if (value === 'changes') setChangesOpened(true)
   }
-  const stackControls = detail && (
+  const stackControls = detail && repository && (
     <PullStack
       detail={detail}
       connected={connected}
@@ -116,49 +117,74 @@ function PullDetailContent({
         className="min-h-0 max-h-[60%] shrink-0 overflow-y-auto overscroll-contain"
         aria-label="Pull request controls"
       >
-        <div className="flex min-h-13 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
-          <Button size="sm" variant="ghost" onClick={onBack}>
-            <ArrowLeft className="size-4" /> {embedded ? 'Close preview' : 'Back to PRs'}
-          </Button>
-          <span className="mr-auto min-w-0 flex-1 truncate text-xs text-muted-foreground">
-            {workspace.repositories.find((repo) => repo.id === repositoryId)?.name}
-          </span>
-          <Button
-            size="icon"
-            className="size-8"
-            variant="ghost"
-            aria-label="Refresh details"
-            disabled={!connected || busy}
-            onClick={refresh}
-          >
-            <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />
-          </Button>
-          {detail && (
-            <StartPullTask
-              repositoryId={repositoryId}
-              pull={detail.pull}
-              initialObjective={objective}
-              stackAction={stackAction}
-              open={starting}
-              onOpenChange={(open) => {
-                setStarting(open)
-                setObjective(undefined)
-                setStackAction(undefined)
-              }}
+        <HeaderContent enabled={!embedded}>
+          <header className="studio-task-thread-header studio-pull-header">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onBack}
+              aria-label={embedded ? 'Close preview' : 'Back to PRs'}
+              className="shrink-0 px-2"
+            >
+              <ArrowLeft className="size-4" />
+              <span className="hidden @lg/pr-detail:inline">
+                {embedded ? 'Close preview' : 'Back to PRs'}
+              </span>
+            </Button>
+            <ProjectIcon
+              repository={workspace.repositories.find((repo) => repo.id === repositoryId)}
+              className="size-4"
             />
-          )}
-          {detail && (
-            <PullActions
-              repositoryId={repositoryId}
-              detail={detail}
-              onDone={changed}
-              onStartTask={() => {
-                setObjective(undefined)
-                setStarting(true)
-              }}
-            />
-          )}
-        </div>
+            <h1 className="studio-titlebar-heading min-w-0 flex-1" title={detail?.pull.title}>
+              <span className="studio-titlebar-project">
+                {repository?.name ?? detail?.pull.repositoryUrl.split('/').slice(-2).join('/')}
+              </span>
+              <span className="studio-titlebar-divider">/</span>
+              <span className="studio-titlebar-task">
+                {detail ? `#${number} · ${detail.pull.title}` : `PR #${number}`}
+              </span>
+            </h1>
+            <Button
+              size="icon"
+              className="size-8"
+              variant="ghost"
+              aria-label="Refresh details"
+              disabled={!connected || busy}
+              onClick={refresh}
+            >
+              <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />
+            </Button>
+            {detail && repository && (
+              <StartPullTask
+                repositoryId={repositoryId}
+                pull={detail.pull}
+                initialObjective={objective}
+                stackAction={stackAction}
+                open={starting}
+                onOpenChange={(open) => {
+                  setStarting(open)
+                  setObjective(undefined)
+                  setStackAction(undefined)
+                }}
+              />
+            )}
+            {detail && (
+              <PullActions
+                repositoryId={repositoryId}
+                detail={detail}
+                onDone={changed}
+                onStartTask={
+                  repository
+                    ? () => {
+                        setObjective(undefined)
+                        setStarting(true)
+                      }
+                    : undefined
+                }
+              />
+            )}
+          </header>
+        </HeaderContent>
         {!detail && (
           <p
             role={error ? 'alert' : 'status'}
@@ -188,12 +214,6 @@ function PullDetailContent({
                   <ArrowUpRight className="size-3.5" />
                 </a>
               </div>
-              <h2
-                className="line-clamp-3 break-words text-lg font-semibold leading-snug"
-                title={detail.pull.title}
-              >
-                {detail.pull.title}
-              </h2>
               <div className="flex min-w-0 flex-wrap items-center gap-2 text-[0.6875rem] text-muted-foreground">
                 <span
                   className="inline-flex min-w-0 max-w-full items-center gap-1.5"
@@ -497,7 +517,7 @@ function PullDetailContent({
               aria-labelledby="pr-tab-checks"
               hidden={tab !== 'checks'}
             >
-              {tab === 'checks' && (
+              {tab === 'checks' && repository && (
                 <PullPipelineRuns
                   key={detail.pull.headSha}
                   repositoryId={repositoryId}
@@ -521,6 +541,8 @@ function PullDetailContent({
                   repositoryId={repositoryId}
                   onPosted={changed}
                   onSteer={(value) => {
+                    if (!repository)
+                      throw new Error('Connect this project before starting an agent task.')
                     setObjective(value)
                     setStarting(true)
                   }}
@@ -528,7 +550,7 @@ function PullDetailContent({
               )}
             </section>
           </div>
-          {creatingStack && (
+          {creatingStack && repository && (
             <CreatePull
               initialRepositoryId={repositoryId}
               initialParent={detail.pull}

@@ -372,3 +372,52 @@ it('retains cached same-head discussions and checks when optional provider reads
   ])
   expect(detail.warnings).toContain('Unavailable sections are showing the last cached data.')
 })
+it('opens unlinked GitHub PRs using URL targets without adding a project, with cached reads and guarded actions', async () => {
+  const { services, request } = await setup()
+  const first = decode(
+    pullDetailSchema,
+    (await request('pulls/detail', { repositoryId: 'repo', number: 7 })).data,
+  )
+  const url = 'https://github.com/foreign/project/pull/7'
+  const detail = {
+    ...first,
+    pull: {
+      ...first.pull,
+      url,
+      repositoryUrl: 'https://github.com/foreign/project',
+      provider: 'github' as const,
+    },
+  }
+  const read = vi.fn().mockResolvedValue(detail)
+  const act = vi.fn().mockResolvedValue({ ok: true })
+  vi.spyOn(services.pulls, 'urlTarget').mockReturnValue({
+    identity: async () => 'account',
+    detail: read,
+    act,
+    comment: async () => ({ url }),
+  })
+  const before = services.store.get().repositories
+  expect((await request('pulls/detail', { repositoryId: url, number: 7 })).status).toBe(200)
+  expect((await request('pulls/detail', { repositoryId: url, number: 7 })).status).toBe(200)
+  expect(read).toHaveBeenCalledTimes(1)
+  expect((await request('pulls/detail', { repositoryId: url, number: 8 })).status).toBe(400)
+  expect(
+    (await request('pulls/detail', { repositoryId: url, number: 7, taskId: 'task' })).status,
+  ).toBe(400)
+  expect((await request('pulls/task', { repositoryId: url, number: 7 })).status).toBe(400)
+  expect(
+    (
+      await request('pulls/action', {
+        repositoryId: url,
+        number: 7,
+        action: 'comment',
+        headSha: detail.pull.headSha,
+        body: 'Hello',
+      })
+    ).status,
+  ).toBe(200)
+  expect(act).toHaveBeenCalledTimes(1)
+  await request('pulls/detail', { repositoryId: url, number: 7, refresh: true })
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(services.store.get().repositories).toEqual(before)
+})

@@ -1,3 +1,4 @@
+import { PipelineGraph } from './pipeline-graph'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import {
@@ -35,6 +36,7 @@ export function PipelineDetail({
 }) {
   const { run, jobs } = detail
   const [now, setNow] = useApplicationState(Date.now)
+  const [selectedJob, setSelectedJob] = useApplicationState<string | null>(null)
   const active = pipelineSignal(run.status).phase === 'active'
   useEffect(() => {
     if (!active) return
@@ -107,6 +109,18 @@ export function PipelineDetail({
         </p>
       )}
       <PipelineErrors errors={run.errors} />
+      <PipelineGraph
+        detail={detail}
+        now={now}
+        onSelect={(id) => {
+          setSelectedJob(id)
+          requestAnimationFrame(() =>
+            document
+              .getElementById(`pipeline-job-${id}`)
+              ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
+          )
+        }}
+      />
       <section aria-label="Pipeline jobs" className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="text-sm font-medium">
@@ -119,7 +133,7 @@ export function PipelineDetail({
         </div>
         <div className="divide-y overflow-hidden rounded-lg border">
           {orderedJobs.map((job) => (
-            <PipelineJob key={job.id} job={job} now={now} />
+            <PipelineJob key={job.id} job={job} now={now} selected={selectedJob === job.id} />
           ))}
           {!jobs.length && (
             <p className="p-4 text-sm text-muted-foreground">
@@ -164,15 +178,23 @@ export function PipelineDetail({
     </article>
   )
 }
-function PipelineJob({ job, now }: { job: ForgePipelineJob; now: number }) {
+function PipelineJob({
+  job,
+  now,
+  selected,
+}: {
+  job: ForgePipelineJob
+  now: number
+  selected: boolean
+}) {
   const failed = pipelineSignal(job.status).tone === 'danger' || !!job.errors?.length
   const [expanded, setExpanded] = useApplicationState(failed)
   useEffect(() => {
-    if (failed) setExpanded(true)
-  }, [failed])
+    if (failed || selected) setExpanded(true)
+  }, [failed, selected])
   const duration = pipelineDuration(job, now)
   return (
-    <section aria-label={`Job ${job.name}`}>
+    <section id={`pipeline-job-${job.id}`} aria-label={`Job ${job.name}`}>
       <button
         type="button"
         aria-expanded={expanded}

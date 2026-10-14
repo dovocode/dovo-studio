@@ -8,6 +8,7 @@ import { fixture } from '../../testing/fixture'
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
@@ -295,4 +296,116 @@ it('waits for an already-started backup step when polling is cancelled during sh
 it('keeps threads waiting for feedback out of inactive settlement and archiving', () => {
   const waiting = { ...task('waiting'), waitingForFeedback: true }
   expect(inactiveTaskIds([waiting].map(summarizeTask), 14, now, () => false)).toEqual([])
+})
+
+it('archives only after the configured settled period and resets its clock on reopening', async () => {
+  const { s, housekeeping } = await archiveFixture()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(now)
+  s.preferences.save({ ...s.preferences.get(), autoArchiveDays: 7 })
+  s.store.patch({
+    collection: 'tasks',
+    id: 'parent',
+    changes: {
+      archived: { before: null, after: true },
+      archiveAfterSettledDays: { before: null, after: 7 },
+    },
+  })
+  expect(s.store.task('parent').settledAt).toBe(new Date(now).toISOString())
+  expect(await housekeeping.archiveInactive(now + 6 * 86_400_000)).toEqual([])
+  s.store.updateTask('parent', (task) => ({ ...task, archived: false }))
+  expect(s.store.task('parent').settledAt).toBeUndefined()
+  expect(await housekeeping.archiveInactive(now + 8 * 86_400_000)).toEqual([])
+  vi.setSystemTime(now + 8 * 86_400_000)
+  s.store.updateTask('parent', (task) => ({ ...task, archived: true }))
+  expect(await housekeeping.archiveInactive(now + 14 * 86_400_000)).toEqual([])
+  expect(await housekeeping.archiveInactive(now + 15 * 86_400_000)).toEqual(['parent'])
+  expect(s.store.get().tasks.every((task) => task.archivedAt)).toBe(true)
+})
+
+it('protects pinned descendants and pending drafts and honors never auto-archive', async () => {
+  const { s, housekeeping } = await archiveFixture()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(now)
+  s.store.updateTask('parent', (task) => ({ ...task, archived: true, archiveAfterSettledDays: 1 }))
+  const later = now + 2 * 86_400_000
+  s.store.updateTask('nested', (task) => ({ ...task, pinned: true }))
+  expect(await housekeeping.archiveInactive(later)).toEqual([])
+  s.store.updateTask('nested', (task) => ({ ...task, pinned: false, draft: 'Keep this' }))
+  expect(await housekeeping.archiveInactive(later)).toEqual([])
+  s.store.updateTask('nested', (task) => ({ ...task, draft: '' }))
+  s.store.updateTask('parent', (task) => ({ ...task, archiveAfterSettledDays: 0 }))
+  expect(await housekeeping.archiveInactive(later)).toEqual([])
+  s.store.updateTask('parent', (task) => ({ ...task, archiveAfterSettledDays: 1 }))
+  expect(await housekeeping.archiveInactive(later)).toEqual(['parent'])
+})
+
+it('honors thread auto-settle overrides over project defaults', async () => {
+  const { s, housekeeping } = await archiveFixture()
+  s.defaults.save(
+    {
+      ...s.defaults.get(),
+      scopedSettings: { environment: { taskBehavior: { settleInactive: true } }, shared: [] },
+    },
+    false,
+  )
+  s.store.patch({
+    collection: 'tasks',
+    id: 'parent',
+    changes: {
+      settleBehavior: { before: null, after: { settleInactive: false } },
+    },
+  })
+  expect(await housekeeping.settleInactive(now)).toEqual([])
+  s.store.patch({
+    collection: 'tasks',
+    id: 'parent',
+    changes: {
+      settleBehavior: {
+        before: { settleInactive: false },
+        after: { settleInactive: true, inactiveDays: 14 },
+      },
+    },
+  })
+  expect(await housekeeping.settleInactive(now)).toEqual(['parent'])
+})
+
+it('inherits settled auto-archive settings, honors project and thread overrides, and protects active tasks', async () => {
+  const { s, housekeeping } = await archiveFixture()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(now)
+  s.defaults.save(
+    {
+      ...s.defaults.get(),
+      scopedSettings: {
+        environment: { taskBehavior: { autoArchiveSettled: true, archiveAfterSettledDays: 3 } },
+        shared: [],
+      },
+    },
+    false,
+  )
+  // Old inactivity must not archive a task that has not entered Settled.
+  expect(await housekeeping.archiveInactive(now)).toEqual([])
+  s.store.updateTask('parent', (task) => ({ ...task, archived: true }))
+  expect(await housekeeping.archiveInactive(now + 2 * 86_400_000)).toEqual([])
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repo) =>
+      repo.id === 'repo' ? { ...repo, taskBehavior: { autoArchiveSettled: false } } : repo,
+    ),
+  }))
+  expect(await housekeeping.archiveInactive(now + 4 * 86_400_000)).toEqual([])
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repo) =>
+      repo.id === 'repo'
+        ? { ...repo, taskBehavior: { autoArchiveSettled: true, archiveAfterSettledDays: 5 } }
+        : repo,
+    ),
+  }))
+  expect(await housekeeping.archiveInactive(now + 4 * 86_400_000)).toEqual([])
+  s.store.updateTask('parent', (task) => ({ ...task, archiveAfterSettledDays: 0 }))
+  expect(await housekeeping.archiveInactive(now + 6 * 86_400_000)).toEqual([])
+  s.store.updateTask('parent', (task) => ({ ...task, archiveAfterSettledDays: undefined }))
+  expect(await housekeeping.archiveInactive(now + 6 * 86_400_000)).toEqual(['parent'])
 })

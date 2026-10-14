@@ -41,6 +41,9 @@ import {
 } from '@dovo/studio-core'
 import {
   Button,
+  HeaderContent,
+  useLeftSidebar,
+  useNavigationSidebar,
   IconButton,
   ResizableHandle,
   ResizablePanel,
@@ -54,6 +57,9 @@ import {
   cn,
 } from '@dovo/studio-ui'
 import { TaskList } from './list/task-list'
+import { TaskProjectPanel } from './detail/task-project-panel'
+import { TaskLinkedPullPanel } from './detail/task-linked-pull-panel'
+import { taskPullLinks } from './detail/task-pull-links'
 import { TaskHeader, type TaskSurface } from './detail/task-header'
 import { TaskConversation } from './detail/task-conversation'
 import { ReviewPane } from './review/review-pane'
@@ -158,7 +164,12 @@ export default function TasksView({ entityId }: StudioViewProps) {
     return () => stops.forEach((stop) => stop())
   }, [store.connection, storedTask?.id, splitTask?.id])
   const [listOpen, setListOpen] = useApplicationState(false)
-  const [sidebar, setSidebar] = useApplicationState(!host.threadWindow)
+  const [sidebar, setSidebar] = useLeftSidebar(!host.threadWindow)
+  const navigationSidebar = useNavigationSidebar()
+  useEffect(() => {
+    if (compact && navigationSidebar?.setCollapsed) setListOpen(!navigationSidebar.collapsed)
+  }, [compact, navigationSidebar?.collapsed, navigationSidebar?.setCollapsed])
+  const [projectPanelKey, setProjectPanelKey] = useApplicationState('')
   const [codeReference, setCodeReference] = useState<CodeReference | null>(null)
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{
@@ -226,6 +237,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const [terminalFocus, setTerminalFocus] = useApplicationState('')
   const panes = useRef<Record<TaskSurface, HTMLDivElement | null>>({
     'pull-preview': null,
+    'linked-pulls': null,
     chat: null,
     changes: null,
     files: null,
@@ -240,8 +252,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const lastFocus = useRef<Partial<Record<TaskSurface, HTMLElement>>>({})
   const focusNext = useRef<TaskSurface | null>(null)
   const selectSurface = useCommittedCallback((next: TaskSurface, moveFocus = false) => {
+    if (next !== 'chat') setProjectPanelKey('')
     for (const id of [
       'pull-preview',
+      'linked-pulls',
       'chat',
       'changes',
       'files',
@@ -277,7 +291,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     }
   })
   const [pullPreviews, setPullPreviews] = useApplicationState<
-    Record<string, { repositoryId: string; number: number }>
+    Record<string, { repositoryId: string; number: number; returnTo?: 'chat' | 'linked-pulls' }>
   >({})
   const openArtifact = (reference: ArtifactReference) => {
     const key = taskCollectionKey(activeRuntimeId, reference.taskId)
@@ -288,7 +302,11 @@ export default function TasksView({ entityId }: StudioViewProps) {
       setThreadSurfaces((current) => ({ ...current, [key]: 'artifacts' }))
     } else selectSurface('artifacts', compact)
   }
-  const openPullPreview = (target: Task, url: string) => {
+  const openPullPreview = (
+    target: Task,
+    url: string,
+    returnTo: 'chat' | 'linked-pulls' = 'chat',
+  ) => {
     const preview = threadPullPreview(
       githubPullTarget(url)?.url ?? url,
       target,
@@ -296,7 +314,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     )
     if (!preview) return host.openPullLink?.(url) ?? false
     const key = taskCollectionKey(activeRuntimeId, target.id)
-    setPullPreviews((current) => ({ ...current, [key]: preview }))
+    setPullPreviews((current) => ({ ...current, [key]: { ...preview, returnTo } }))
     if (target.id !== task?.id) {
       setSelectedId(target.id)
       setSplitId(task?.id ?? '')
@@ -474,6 +492,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     setDeselected(false)
     setChoosingProject(false)
     setListOpen(false)
+    if (compact) setSidebar(false)
     setPendingCreate(null)
     setBusy(false)
     host.navigate({
@@ -509,6 +528,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
         entityId: entry.task.id,
       })
       setListOpen(false)
+      if (compact) setSidebar(false)
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -523,7 +543,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
   }, [entityId])
   const deselectTask = () => {
     setDraftVersion((version) => version + 1)
-    setSidebar(true)
+    setSidebar(!compact)
     setDeselected(true)
     setSelectedId('')
     host.navigate({
@@ -539,7 +559,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     setListOpen(false)
     setChoosingProject(false)
     setError('')
-    setSidebar(true)
+    setSidebar(!compact)
     setDraftVersion((version) => version + 1)
     host.navigate({ viewId: 'tasks' })
   })
@@ -739,32 +759,43 @@ export default function TasksView({ entityId }: StudioViewProps) {
     : (temporaryEntry?.key ?? '')
   const renderThread = (currentTask: Task, workspaceControls?: ReactNode, temporary = false) => {
     const task = storedTask?.id === currentTask.id ? storedTask : currentTask
+    const projectPanelOpen = projectPanelKey === taskCollectionKey(activeRuntimeId, task.id)
     return (
       <div
         key={taskCollectionKey(activeRuntimeId, task.id)}
         className="flex h-full min-h-0 flex-col"
       >
         {temporary ? (
-          <header className="studio-task-thread-header">
-            New task
-            {compact && <Button onClick={() => setListOpen(true)}>Browse tasks</Button>}
-          </header>
+          <HeaderContent>
+            <header className="studio-task-thread-header">New task</header>
+          </HeaderContent>
         ) : (
           <TaskHeader
             onPullLink={(url) => openPullPreview(task, url)}
             task={task}
+            projectPanelOpen={projectPanelOpen}
+            onProjectPanel={() => {
+              if (!projectPanelOpen) selectSurface('chat', true)
+              setProjectPanelKey(
+                projectPanelOpen ? '' : taskCollectionKey(activeRuntimeId, task.id),
+              )
+            }}
+            onCreate={() =>
+              void startTask(taskCollectionKey(activeRuntimeId, task.repositoryId), true)
+            }
+            onDeselect={deselectTask}
             surface={surface}
             onSurface={(next) => {
+              setProjectPanelKey('')
               if (next === 'terminal') setTerminalFocus('')
               selectSurface(next)
             }}
             compact={compact}
             sidebarVisible={sidebar}
-            onSidebar={() => (compact ? setListOpen(true) : setSidebar((value) => !value))}
-            onTerminal={showTerminal}
             hasDiff={hasDiff}
             toolsExpanded={toolsExpanded}
             onTools={() => {
+              setProjectPanelKey('')
               if (toolsExpanded) {
                 lastToolSurface.current = surface
                 selectSurface('chat', true)
@@ -776,7 +807,9 @@ export default function TasksView({ entityId }: StudioViewProps) {
             onBottomTerminal={toggleBottomTerminal}
           />
         )}
-        {!temporary && <TaskWaitingPanel key={`${activeRuntimeId}:${task.id}`} taskId={task.id} />}
+        {!temporary && !projectPanelOpen && (
+          <TaskWaitingPanel key={`${activeRuntimeId}:${task.id}`} taskId={task.id} />
+        )}
         <div ref={workspacePane} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <div
             ref={(element) => {
@@ -867,6 +900,32 @@ export default function TasksView({ entityId }: StudioViewProps) {
               )}
             </ResizablePanelGroup>
           </div>
+          {!temporary && projectPanelOpen && (
+            <ResizableSidebar
+              preference="toolsSidebarWidth"
+              side="right"
+              label="project panel"
+              maxFraction={0.45}
+              maxWidth={520}
+              resizable={!compact}
+              className={cn(
+                'min-h-0 shrink-0 bg-background',
+                compact && 'absolute inset-y-0 right-0 z-30 w-[min(360px,100%)] shadow-xl',
+              )}
+            >
+              <TaskProjectPanel
+                key={taskCollectionKey(activeRuntimeId, task.id)}
+                task={task}
+                onPullLink={(url) => openPullPreview(task, url)}
+                onTerminal={showTerminal}
+                onClose={() => setProjectPanelKey('')}
+                onSurface={(next) => {
+                  setProjectPanelKey('')
+                  selectSurface(next)
+                }}
+              />
+            </ResizableSidebar>
+          )}
           <ResizableSidebar
             key={fileViewer || surface === 'artifacts' ? 'viewer' : 'tools'}
             preference={
@@ -935,6 +994,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
             )}
             {!compact &&
               surface !== 'pull-preview' &&
+              surface !== 'linked-pulls' &&
               surface !== 'browser' &&
               surface !== 'devices' &&
               surface !== 'changes' &&
@@ -951,6 +1011,22 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   </Button>
                 </div>
               )}
+            {surface === 'linked-pulls' && (
+              <div
+                ref={(element) => {
+                  panes.current['linked-pulls'] = element
+                }}
+                tabIndex={-1}
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                <TaskLinkedPullPanel
+                  key={threadKey}
+                  task={task}
+                  onPullLink={(url) => openPullPreview(task, url, 'linked-pulls')}
+                  onClose={() => selectSurface('chat', true)}
+                />
+              </div>
+            )}
             {surface === 'pull-preview' && pullPreviews[threadKey] && (
               <div
                 ref={(element) => {
@@ -964,7 +1040,15 @@ export default function TasksView({ entityId }: StudioViewProps) {
                   repositoryId={pullPreviews[threadKey]!.repositoryId}
                   number={pullPreviews[threadKey]!.number}
                   embedded
-                  onBack={() => selectSurface('chat', true)}
+                  onBack={() =>
+                    selectSurface(
+                      pullPreviews[threadKey]?.returnTo === 'linked-pulls' &&
+                        taskPullLinks(task).length
+                        ? 'linked-pulls'
+                        : 'chat',
+                      true,
+                    )
+                  }
                   onChanged={() => {}}
                 />
               </div>
@@ -1135,6 +1219,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
               surface={surface}
               onSelect={(next) => selectSurface(next === surface ? 'chat' : next)}
               hasDiff={hasDiff}
+              hasLinkedPulls={taskPullLinks(task).length > 0}
               artifactsEnabled={!!snapshot?.artifactsEnabled}
             />
           )}
@@ -1152,13 +1237,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
           label="thread sidebar"
           maxFraction={0.45}
           maxWidth={640}
-          resizable={(sidebar || !task) && !compact}
-          className={cn('min-h-0', (!(sidebar || !task) || compact) && 'hidden')}
+          resizable={sidebar && !compact}
+          className={cn('min-h-0', (!sidebar || compact) && 'hidden')}
         >
-          {(sidebar || !task) && !compact && (
+          {sidebar && !compact && (
             <div className="h-full min-w-0">
               <TaskList
-                titleHeader
+                hidePillsForKey={projectPanelKey ? projectPanelKey : undefined}
                 projectId={projectId}
                 onProjectChange={setProjectId}
                 selectedId={selectedKey}
@@ -1271,14 +1356,29 @@ export default function TasksView({ entityId }: StudioViewProps) {
           )}
         </ResizablePanelGroup>
       </div>
-      <Dialog open={compact && listOpen} onOpenChange={setListOpen}>
-        <DialogContent className="flex h-[80dvh] max-w-sm flex-col p-0">
+      <Dialog
+        modal={false}
+        open={compact && listOpen}
+        onOpenChange={(open) => {
+          setListOpen(open)
+          if (compact) setSidebar(open)
+        }}
+      >
+        <DialogContent
+          className="left-auto right-2 flex h-[80dvh] max-w-[min(24rem,calc(100vw-68px))] translate-x-0 flex-col p-0"
+          onInteractOutside={(event) => {
+            const target = event.detail.originalEvent.target
+            if (target instanceof Element && target.closest('[aria-label="Main navigation"]'))
+              event.preventDefault()
+          }}
+        >
           <DialogTitle className="px-4 pt-4">Tasks</DialogTitle>
           <DialogDescription className="sr-only">Select or create a task.</DialogDescription>
           <TaskList
             projectId={projectId}
             onProjectChange={setProjectId}
             selectedId={selectedKey}
+            hidePillsForKey={projectPanelKey ? projectPanelKey : undefined}
             sources={sources}
             temporaryEntry={temporaryEntry}
             activeRuntimeId={activeRuntimeId}

@@ -6,7 +6,7 @@ import {
 } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { settingsScopeLabels } from '@dovo/protocol'
-import { ChoicePicker, Input } from '@dovo/studio-ui'
+import { useLeftSidebar, SidebarHeader, ChoicePicker, Input } from '@dovo/studio-ui'
 import {
   Archive,
   Brain,
@@ -104,11 +104,14 @@ export function SettingsNav({
   })
   const project = repository?.name ?? (target.projectId ? 'Unavailable project' : 'All projects')
   const computer = target.environmentId ? (source?.name ?? 'Unavailable computer') : 'All computers'
+  const [sidebarVisible] = useLeftSidebar()
   return (
     <nav
+      style={sidebarVisible ? undefined : { display: 'none' }}
       aria-label="Settings sections"
-      className="flex shrink-0 flex-col border-b bg-sidebar/60 px-4 py-3 md:w-52 md:gap-5 md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-5 lg:w-64"
+      className="studio-side-panel flex shrink-0 flex-col border-b bg-sidebar/60 px-4 py-3 md:w-52 md:gap-5 md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-5 lg:w-64"
     >
+      <SidebarHeader />
       <div className="md:hidden">
         <ChoicePicker aria-label="Settings section" value={activeId} onValueChange={select}>
           {headings.flatMap(([section]) =>

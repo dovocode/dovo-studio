@@ -844,7 +844,13 @@ function WorkItemContent({
               }}
               disabled={mutationDisabled}
             />
-            <PipelineJobs jobs={pipeline.jobs} hasMore={!!pipeline.next} onOpen={open} />
+            <PipelineJobs
+              graph={pipeline.graph}
+              graphNotice={pipeline.graphNotice}
+              jobs={pipeline.jobs}
+              hasMore={!!pipeline.next}
+              onOpen={open}
+            />
             <PipelineRunDetails run={pipeline.run} />
             {!!options?.pipelineNotice && (
               <Text style={styles.muted}>{options.pipelineNotice}</Text>

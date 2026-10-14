@@ -1,5 +1,6 @@
 import { createTwoFilesPatch, parsePatch } from 'diff'
 import {
+  githubPullTarget,
   decode,
   featureReviewSchema,
   featureReviewGroups,
@@ -91,19 +92,26 @@ export class FileReviews {
     let sourceIdentity: string[] = []
     if (context.kind === 'pull') {
       const repo = s.store.get().repositories.find((repo) => repo.id === context.repositoryId)
-      if (!repo || repo.kind) throw new HttpError(404, 'Git project not found')
-      const detail = await s.pullCache.detail(repo.path, context.number)
+      const target = !repo ? githubPullTarget(context.repositoryId) : null
+      if (repo?.kind || (!repo && !target)) throw new HttpError(404, 'Git project not found')
+      if (target && context.number !== target.number)
+        throw new HttpError(400, 'PR target does not match its URL')
+      const detail = repo
+        ? await s.pullCache.detail(repo.path, context.number)
+        : await s.pullCache.detail(context.repositoryId, context.number)
       if (detail.warnings.some((warning) => warning.startsWith('Files:')))
         throw new HttpError(503, 'PR files are unavailable. Refresh the PR to try again.')
-      pullSource = { cwd: repo.path, detail }
-      moduleSources = () =>
-        s.git.reviewGoModules(
-          repo.path,
-          detail.files,
-          detail.pull.baseSha,
-          detail.pull.headSha,
-          true,
-        )
+      if (repo) pullSource = { cwd: repo.path, detail }
+      moduleSources = repo
+        ? () =>
+            s.git.reviewGoModules(
+              repo.path,
+              detail.files,
+              detail.pull.baseSha,
+              detail.pull.headSha,
+              true,
+            )
+        : undefined
       scope = pullReviewScope(detail)
       files = pullReviewFiles(detail)
       // Only whole added/deleted hunks provide reliable source when local Git objects are absent.
