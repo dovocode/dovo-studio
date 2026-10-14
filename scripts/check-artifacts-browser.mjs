@@ -1009,7 +1009,9 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     await row('Alpha notes').click()
     await owners.getByRole('heading', { name: 'Host A is offline', exact: true }).waitFor()
     await owners.evaluate(() => window.showLibrary(false))
+    await owners.getByLabel('Search artifacts').waitFor({ state: 'detached' })
     await owners.evaluate(() => window.showLibrary(true))
+    await owners.waitForFunction(() => window.ownerCalls.length === 4)
     assert.equal(await owners.getByLabel('Search artifacts').inputValue(), 'Alpha')
     assert.equal(
       await owners.getByRole('heading', { level: 1 }).textContent(),
