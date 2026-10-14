@@ -537,7 +537,7 @@ describe('authenticated runtime', () => {
       ).status,
     ).toBe(401)
   })
-  it('merges independent fields and rejects conflicting stale writes', async () => {
+  it('merges independent fields and preserves conflicting stale writes with runtime values winning', async () => {
     const f = await fixture()
     cleanups.push(f.cleanup)
     const runtime = await startRuntime({
@@ -569,7 +569,7 @@ describe('authenticated runtime', () => {
       },
     })
     expect(store.get().agents[0].name).toBe('Renamed')
-    expect(() =>
+    expect(
       store.patch({
         collection: 'agents',
         id: 'agent',
@@ -580,7 +580,13 @@ describe('authenticated runtime', () => {
           },
         },
       }),
-    ).toThrow('Another client changed name')
+    ).toEqual({ reconciled: true })
+    expect(store.recoveredEdits()).toEqual([
+      expect.objectContaining({
+        patch: expect.objectContaining({ changes: { name: { before: 'Test', after: 'Stale' } } }),
+        host: { name: 'Renamed' },
+      }),
+    ])
     expect(store.get().agents[0].name).toBe('Renamed')
   })
 })
@@ -711,7 +717,7 @@ it.each(['draft', 'done'] as const)(
   },
 )
 
-it('keeps HTTP model-switch conflicts in the editor and permits the next edit', async () => {
+it('reconciles HTTP model-switch conflicts, preserves the superseded edit, and permits the next edit', async () => {
   const token = randomBytes(32).toString('base64url')
   const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
   cleanups.push(() => runtime.close())
@@ -762,13 +768,22 @@ it('keeps HTTP model-switch conflicts in the editor and permits the next edit', 
       'PATCH',
     )
   await Effect.runPromise(edit('', 'model-one'))
-  const conflict = await Effect.runPromise(Effect.result(edit('', 'model-two')))
-  expect(conflict).toMatchObject({
-    _tag: 'Failure',
-    failure: { status: 409, mutationRejected: true },
-  })
+  const conflict = await Effect.runPromise(edit('', 'model-two'))
+  expect(conflict).toMatchObject({ outcome: 'reconciled', reconciled: true })
   expect(queue.status(connection)).toEqual({ pending: 0, error: null })
   expect(runtime.services.store.task(task.id).harness?.model).toBe('model-one')
+  expect(runtime.services.store.recoveredEdits()).toEqual([
+    expect.objectContaining({
+      patch: expect.objectContaining({
+        id: task.id,
+        changes: expect.objectContaining({
+          harness: expect.objectContaining({
+            after: expect.objectContaining({ model: 'model-two' }),
+          }),
+        }),
+      }),
+    }),
+  ])
   await Effect.runPromise(edit('model-one', 'model-two'))
   expect(queue.status(connection)).toEqual({ pending: 0, error: null })
   expect(runtime.services.store.task(task.id).harness?.model).toBe('model-two')

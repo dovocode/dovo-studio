@@ -1,6 +1,8 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
   startRuntimeSync,
+  applySnapshotDelta,
+  type RuntimeSnapshot,
   type DesktopSyncEvent,
   type DesktopSyncSubscription,
 } from '@dovo/protocol'
@@ -45,7 +47,15 @@ it('shares a real HTTP runtime stream, unions thread histories, and keeps the po
   const main: DesktopSyncEvent[] = [],
     popout: DesktopSyncEvent[] = []
   manager.subscribe('main', input('author'), (event) => main.push(event))
-  manager.subscribe('popout', input('reviewer'), (event) => popout.push(event))
+  let popoutSnapshot: RuntimeSnapshot | undefined
+  manager.subscribe('popout', input('reviewer'), (event) => {
+    popout.push(event)
+    if (event.type === 'snapshot') popoutSnapshot = event.snapshot
+    else if (event.type === 'delta') {
+      if (!popoutSnapshot) throw new Error('Delta arrived before baseline')
+      popoutSnapshot = applySnapshotDelta(popoutSnapshot, event.delta)
+    }
+  })
   await vi.waitFor(() =>
     expect(main.some((event) => event.type === 'status' && event.online)).toBe(true),
   )
@@ -67,29 +77,20 @@ it('shares a real HTTP runtime stream, unions thread histories, and keeps the po
     draft: 'Changed through runtime',
   }))
   await vi.waitFor(() =>
-    expect(
-      popout.some(
-        (event) =>
-          event.type === 'snapshot' &&
-          event.snapshot.workspace.tasks.find((task) => task.id === 'reviewer')?.draft ===
-            'Changed through runtime',
-      ),
-    ).toBe(true),
+    expect(popoutSnapshot?.workspace.tasks.find((task) => task.id === 'reviewer')?.draft).toBe(
+      'Changed through runtime',
+    ),
   )
+  expect(popout.some((event) => event.type === 'delta')).toBe(true)
   manager.unsubscribe('main')
   runtime.services.store.updateTask('reviewer', (task) => ({
     ...task,
     draft: 'Still connected after main closes',
   }))
   await vi.waitFor(() =>
-    expect(
-      popout.some(
-        (event) =>
-          event.type === 'snapshot' &&
-          event.snapshot.workspace.tasks.find((task) => task.id === 'reviewer')?.draft ===
-            'Still connected after main closes',
-      ),
-    ).toBe(true),
+    expect(popoutSnapshot?.workspace.tasks.find((task) => task.id === 'reviewer')?.draft).toBe(
+      'Still connected after main closes',
+    ),
   )
   runtime.services.activity.add('tool', 'reviewer', 'Shared activity', {
     toolId: 'shared',

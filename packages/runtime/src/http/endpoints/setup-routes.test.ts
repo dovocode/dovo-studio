@@ -221,7 +221,12 @@ it('persists project overrides, inherits runtime settings, and leaves existing t
     setupCommand: '',
   })
   expect(task.worktreeBaseBranch).toBeUndefined()
-  expect((await patch(null, {})).status).toBe(409)
+  const stale = await patch(null, {})
+  expect(stale.status).toBe(200)
+  expect(await stale.json()).toMatchObject({ outcome: 'reconciled', reconciled: true })
+  expect(runtime.services.store.taskDefaults('project').harness?.model).toBe('project-model')
+  // An empty stale override adds no conflicting intent to recover.
+  expect(runtime.services.store.recoveredEdits()).toEqual([])
   expect((await patch(overrides, {})).status).toBe(200)
   expect(runtime.services.store.task(task.id).harness?.model).toBe('project-model')
   expect(runtime.services.store.taskDefaults('project')).toMatchObject({
