@@ -100,6 +100,7 @@ export const snapshotSchema = mutableStruct({
   artifactsEnabled: Schema.optional(Schema.Boolean),
   codeReviewsEnabled: Schema.optional(Schema.Boolean),
   scopedAgentsSupported: Schema.optional(Schema.Boolean),
+  workspaceReconciliationSupported: Schema.optional(Schema.Boolean),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
   taskBehaviorSupported: Schema.optional(Schema.Boolean),
@@ -225,7 +226,24 @@ export type RuntimeConnection = Schema.Schema.Type<typeof connectionSchema>
 export const workspacePatchResultSchema = mutableStruct({
   revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   runtimeInstanceId: Schema.optional(Schema.String),
+  reconciled: Schema.optional(Schema.Boolean),
+  outcome: Schema.optional(Schema.Literals(['applied', 'reconciled', 'rejected', 'acknowledged'])),
+  reason: Schema.optional(Schema.String),
+  recoveryId: Schema.optional(Schema.String),
 })
+export const workspaceRecoverySchema = mutableStruct({
+  id: Schema.String,
+  createdAt: Schema.String,
+  patch: patchSchema,
+  host: Schema.Unknown,
+  reason: Schema.optional(Schema.String),
+})
+export const workspaceRecoveriesSchema = mutableStruct({
+  edits: mutableArray(workspaceRecoverySchema),
+  warnings: Schema.optional(mutableArray(Schema.String)),
+  nextCursor: Schema.optional(Schema.String),
+})
+export type WorkspaceRecovery = Schema.Schema.Type<typeof workspaceRecoverySchema>
 export type WorkspacePatchResult = Schema.Schema.Type<typeof workspacePatchResultSchema>
 export type RuntimeSnapshot = Schema.Schema.Type<typeof snapshotSchema>
 export type WorkspacePatch = Schema.Schema.Type<typeof patchSchema>

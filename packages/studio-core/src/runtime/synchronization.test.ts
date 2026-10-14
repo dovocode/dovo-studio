@@ -1,4 +1,4 @@
-import { decode, RuntimeRequestError } from '@dovo/protocol'
+import { decode, RuntimeRequestError, WorkspaceStorageError } from '@dovo/protocol'
 import { expect, it, vi } from 'vite-plus/test'
 import { WorkspaceSynchronization, type WorkspaceOutbox } from './synchronization'
 import type { WorkspaceOutboxChange } from './synchronization'
@@ -188,7 +188,7 @@ it('automatically replays restored edits when the host is reachable', async () =
   expect(send).not.toHaveBeenCalled()
   restored.clearNetworkError()
   await vi.waitFor(() => expect(restored.hasPending()).toBe(false))
-  expect(send).toHaveBeenCalledWith(connection, patch)
+  expect(send).toHaveBeenCalledWith(connection, patch, expect.any(String))
   expect(saved).toBeNull()
 })
 const hostWorkspace = {
@@ -445,7 +445,7 @@ it('clears only a deleted item’s edits and retains unrelated pending edits', a
   const result = await sync.resolve(conflict, 'host', host, sync.checkpoint())
   expect(result.agents.map((agent) => agent.id)).toEqual(['other'])
   await sync.flush()
-  expect(send).toHaveBeenCalledExactlyOnceWith(connection, other)
+  expect(send).toHaveBeenCalledExactlyOnceWith(connection, other, 'other')
 })
 it('retains an uncertain acknowledgement when clearing the durable outbox fails', async () => {
   const persist = vi
@@ -544,7 +544,7 @@ it('keeps newer edits durable when they arrive during an explicit discard', asyn
   expect(saved.outbox?.patches).toEqual([newer])
   expect([...pending.values()]).toEqual([newer])
   await sync.retry()
-  expect(send).toHaveBeenCalledExactlyOnceWith(connection, newer)
+  expect(send).toHaveBeenCalledExactlyOnceWith(connection, newer, expect.any(String))
   expect(pending.size).toBe(0)
 })
 
@@ -672,4 +672,103 @@ it('rejects pre-acknowledgement stream revisions but accepts a restarted runtime
   expect(sync.acceptsRevision(1)).toBe(true)
   sync.bind(connection)
   expect(sync.acceptsRevision(1, 'first-runtime')).toBe(true)
+})
+it('retires a rejected workspace edit without blocking the next independent edit', async () => {
+  const errors: (string | null)[] = []
+  const send = vi
+    .fn<(connection: RuntimeConnection, patch: WorkspacePatch, id: string) => Promise<unknown>>()
+    .mockRejectedValueOnce(
+      new RuntimeRequestError({
+        kind: 'response',
+        status: 409,
+        mutationRejected: true,
+        message: 'Stop the active turn before changing task settings',
+      }),
+    )
+    .mockResolvedValue({ revision: 2, runtimeInstanceId: 'runtime' })
+  const sync = new WorkspaceSynchronization((error) => errors.push(error), send)
+  const next = { ...patch, id: 'other' }
+  sync.bind(connection)
+  sync.enqueue([patch, next])
+  await sync.flush()
+  expect(send.mock.calls.map((call) => call[1])).toEqual([patch, next])
+  expect(sync.hasPending()).toBe(false)
+  expect(sync.accepts(sync.checkpoint())).toBe(true)
+  expect(errors.at(-1)).toBe('Stop the active turn before changing task settings')
+})
+it('keeps the same edit identity across a lost response and a restored outbox', async () => {
+  const send = vi
+    .fn<(connection: RuntimeConnection, patch: WorkspacePatch, id: string) => Promise<unknown>>()
+    .mockRejectedValueOnce(
+      new RuntimeRequestError({ kind: 'connection', message: 'Lost response' }),
+    )
+    .mockResolvedValue({ revision: 2, runtimeInstanceId: 'runtime' })
+  const restored: WorkspaceOutbox = {
+    version: 1,
+    workspace: editedWorkspace,
+    patches: [patch],
+    ids: ['durable-id'],
+  }
+  const first = new WorkspaceSynchronization(() => {}, send)
+  first.bind(connection, restored)
+  await expect(first.flush()).rejects.toThrow('Lost response')
+  const second = new WorkspaceSynchronization(() => {}, send)
+  second.bind(connection, restored)
+  await second.flush()
+  expect(send.mock.calls.map((call) => call[2])).toEqual(['durable-id', 'durable-id'])
+})
+it('projects host updates while an independent local edit is queued', () => {
+  const sync = new WorkspaceSynchronization(() => {})
+  sync.bind(connection)
+  sync.enqueue([patch], editedWorkspace)
+  const host = {
+    ...editedWorkspace,
+    agents: editedWorkspace.agents.map((agent) => ({
+      ...agent,
+      name: 'Before',
+      instructions: 'Updated on the runtime',
+    })),
+  }
+  const projected = sync.project(host)
+  expect(projected.agents[0]).toMatchObject({
+    name: 'After',
+    instructions: 'Updated on the runtime',
+  })
+  expect(projected.tasks).toBe(host.tasks)
+  expect(host.agents[0].name).toBe('Before')
+})
+
+it('automatically resumes after a temporary recovery-storage failure', async () => {
+  let fail = true
+  const send = vi.fn<() => Promise<unknown>>(async () => {
+    if (fail) throw new WorkspaceStorageError('Recovery disk unavailable')
+    return { revision: 2, runtimeInstanceId: 'runtime' }
+  })
+  const sync = new WorkspaceSynchronization(() => {}, send)
+  sync.bind(connection)
+  sync.enqueue([patch])
+  await expect(sync.flush()).rejects.toThrow('Recovery disk unavailable')
+  fail = false
+  sync.clearNetworkError()
+  await vi.waitFor(() => expect(sync.hasPending()).toBe(false))
+  expect(send).toHaveBeenCalledTimes(2)
+})
+it('rebuilds the durability gate when storage becomes writable again', async () => {
+  let fail = true
+  const persist = vi.fn<Persist>(async () => {
+    if (fail) throw new Error('Disk full')
+  })
+  const send = vi.fn<() => Promise<unknown>>(async () => ({
+    revision: 2,
+    runtimeInstanceId: 'runtime',
+  }))
+  const sync = new WorkspaceSynchronization(() => {}, send, persist)
+  sync.bind(connection)
+  sync.enqueue([patch], editedWorkspace)
+  await expect(sync.flush()).rejects.toThrow('Disk full')
+  expect(send).not.toHaveBeenCalled()
+  fail = false
+  sync.clearNetworkError()
+  await vi.waitFor(() => expect(sync.hasPending()).toBe(false))
+  expect(send).toHaveBeenCalledOnce()
 })

@@ -1,8 +1,10 @@
+import { workspaceRecoveriesSchema } from '@dovo/protocol'
 import { mutationOutboxSchema, type MutationStorage } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import {
   createRuntimeReadCache,
   readCacheIndex,
+  readCacheBytes,
   boundReadCacheIndex,
   type CacheStorage,
   type RuntimeConnection,
@@ -67,7 +69,7 @@ const storage: CacheStorage = {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('entries', 'readwrite')
       const entries = tx.objectStore('entries')
-      const keys = entries.getAllKeys()
+      const keys = entries.getAllKeys(IDBKeyRange.bound(prefix, prefix + '\uffff'))
       keys.onsuccess = () => {
         for (const key of keys.result)
           if (typeof key === 'string' && key.startsWith(prefix)) entries.delete(key)
@@ -90,7 +92,7 @@ const storage: CacheStorage = {
         const commit = () => {
           const next = [
             ...migrated.filter((item) => item.key !== key),
-            { key, bytes: new TextEncoder().encode(value).byteLength },
+            { key, bytes: readCacheBytes(value) },
           ]
           const kept = boundReadCacheIndex(next, limit, maxBytes)
           entries.put(value, prefix + key)
@@ -110,7 +112,7 @@ const storage: CacheStorage = {
             const content: unknown = stored.result
             migrated[index] = {
               key: item,
-              bytes: typeof content === 'string' ? new TextEncoder().encode(content).byteLength : 0,
+              bytes: typeof content === 'string' ? readCacheBytes(content) : 0,
             }
             if (!--remaining) commit()
           }
@@ -291,7 +293,61 @@ export const browserReadCache = (connection: RuntimeConnection) =>
     return bytesToHex(sha256(utf8ToBytes(value)))
   })
 
+/** Recovery records are independent rows: appending one edit never rewrites old edits. */
+async function migrateRecoveryEntries(
+  connection: RuntimeConnection,
+  edit?: import('@dovo/protocol').WorkspaceRecovery,
+) {
+  const key = outboxKey(connection).replace('workspace-outbox', 'workspace-recoveries')
+  const prefix = key + '.edit.'
+  const db = await open()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('entries', 'readwrite')
+    const entries = tx.objectStore('entries')
+    let failure: unknown
+    const legacy = entries.get(key)
+    legacy.onsuccess = () => {
+      try {
+        const raw: unknown = legacy.result
+        if (raw !== undefined) {
+          if (typeof raw !== 'string') throw new Error('Invalid recovery document')
+          for (const item of decode(workspaceRecoveriesSchema, JSON.parse(raw)).edits)
+            entries.put(JSON.stringify(item), prefix + item.id)
+          entries.delete(key)
+        }
+        if (edit) {
+          const previous = entries.get(prefix + edit.id)
+          previous.onsuccess = () => {
+            if (previous.result === undefined) entries.put(JSON.stringify(edit), prefix + edit.id)
+          }
+        }
+      } catch (error) {
+        failure = error
+        tx.abort()
+      }
+    }
+    tx.oncomplete = () => resolve()
+    tx.onerror = tx.onabort = () =>
+      reject(failure ?? tx.error ?? new Error('Recovery write interrupted'))
+  })
+  return prefix
+}
 export const browserMutationStorage: MutationStorage = {
+  async recoverWorkspaceEdit(connection, edit) {
+    await migrateRecoveryEntries(connection, edit)
+  },
+  async workspaceRecoveries(connection) {
+    const prefix = await migrateRecoveryEntries(connection)
+    const rows = await transaction('readonly', (entries) =>
+      entries.getAll(IDBKeyRange.bound(prefix, prefix + '\uffff')),
+    )
+    return decode(workspaceRecoveriesSchema, {
+      edits: rows.map((row: unknown) => {
+        if (typeof row !== 'string') throw new Error('Invalid recovered edit')
+        return JSON.parse(row)
+      }),
+    }).edits
+  },
   id: () => bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
   async read(connection) {
     const raw = await storage.getItem(

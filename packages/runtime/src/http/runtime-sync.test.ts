@@ -6,6 +6,7 @@ import {
   artifactReferences,
   decode,
   syncFrameSchema,
+  workspaceRecoveriesSchema,
   type SyncFrame,
 } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
@@ -379,7 +380,7 @@ it('deduplicates authenticated HTTP mutations after lost acknowledgements withou
   runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Newer desktop edit' }))
   const retried = await request()
   expect(retried.status).toBe(200)
-  expect(await retried.json()).toEqual(response)
+  expect(await retried.json()).toEqual({ ...response, revision: runtime.services.store.version() })
   expect(runtime.services.store.task('task').title).toBe('Newer desktop edit')
 })
 
@@ -585,4 +586,161 @@ it('shares activity preparation across clients, skips unrelated updates and rele
   next.socket.send(JSON.stringify({ type: 'watch', scopes: ['task'] }))
   expect((await next.wait('activity')).order).toEqual(['command'])
   expect(list).toHaveBeenCalledTimes(2)
+})
+it('automatically reconciles stale patches and protects the durable recovery endpoint', async () => {
+  const { runtime, address } = await setup()
+  const response = await fetch(`${address}/api/workspace`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      collection: 'tasks',
+      id: 'task',
+      changes: {
+        title: { before: 'Outdated', after: 'Local title' },
+        draft: { before: '', after: 'Independent draft' },
+      },
+    }),
+  })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ reconciled: true })
+  expect(runtime.services.store.task('task')).toMatchObject({
+    title: 'Task',
+    draft: 'Independent draft',
+  })
+  expect((await fetch(`${address}/api/workspace/recovered-edits`)).status).toBe(401)
+  const recovered = await fetch(`${address}/api/workspace/recovered-edits`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  expect(recovered.status).toBe(200)
+  expect(await recovered.json()).toMatchObject({
+    edits: [{ patch: { changes: { title: { after: 'Local title' } } } }],
+  })
+})
+it('settles rejected edits durably and lets the next independent HTTP edit proceed', async () => {
+  const { runtime, address } = await setup()
+  runtime.services.store.updateTask('task', (task) => ({ ...task, status: 'running' }))
+  const patch = {
+    collection: 'tasks',
+    id: 'task',
+    changes: {
+      title: { before: 'Task', after: 'Local title' },
+      agentId: { before: '', after: 'local-agent' },
+    },
+  }
+  const request = (input: unknown, id: string) =>
+    fetch(`${address}/api/workspace`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Dovo-Mutation-Id': id,
+      },
+      body: JSON.stringify(input),
+    })
+  const rejected = await request(patch, 'rejected')
+  expect(rejected.status).toBe(200)
+  expect(await rejected.json()).toMatchObject({
+    outcome: 'rejected',
+    reason: 'Stop the active turn before changing task settings',
+    recoveryId: expect.any(String),
+  })
+  expect(runtime.services.store.task('task').title).toBe('Task')
+  expect(runtime.services.store.recoveredEdits()).toHaveLength(1)
+  expect(runtime.services.store.recoveredEdits()[0].patch).toEqual(patch)
+  const next = await request(
+    {
+      collection: 'tasks',
+      id: 'task',
+      changes: { title: { before: 'Task', after: 'Independent title' } },
+    },
+    'next',
+  )
+  expect(next.status).toBe(200)
+  expect(runtime.services.store.task('task').title).toBe('Independent title')
+  const again = await request(patch, 'rejected')
+  expect(await again.json()).toMatchObject({ outcome: 'rejected' })
+  expect(runtime.services.store.recoveredEdits()).toHaveLength(1)
+})
+it('acknowledges retries after value reversal and deletion without repeating the operation', async () => {
+  const { runtime, address } = await setup()
+  const input = {
+    collection: 'tasks',
+    id: 'task',
+    changes: { title: { before: 'Task', after: 'B' } },
+  }
+  const request = () =>
+    fetch(`${address}/api/workspace`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Dovo-Mutation-Id': 'aba',
+      },
+      body: JSON.stringify(input),
+    })
+  expect((await request()).status).toBe(200)
+  runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Task' }))
+  expect((await request()).status).toBe(200)
+  expect(runtime.services.store.task('task').title).toBe('Task')
+  runtime.services.store.update((workspace) => ({ ...workspace, tasks: [] }))
+  expect((await request()).status).toBe(200)
+  expect(runtime.services.store.get().tasks).toEqual([])
+})
+it('archives conflicts even when another field makes the complete edit invalid', async () => {
+  const { runtime, address } = await setup()
+  const input = {
+    collection: 'tasks',
+    id: 'task',
+    changes: {
+      title: { before: 'Outdated', after: 'Local' },
+      pinned: { before: null, after: 'not-a-boolean' },
+    },
+  }
+  const response = await fetch(`${address}/api/workspace`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'X-Dovo-Mutation-Id': 'invalid-compound',
+    },
+    body: JSON.stringify(input),
+  })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ outcome: 'rejected' })
+  expect(runtime.services.store.recoveredEdits()[0].patch).toEqual(input)
+  expect(runtime.services.store.task('task').title).toBe('Task')
+})
+
+it('exposes older recovery pages and rejects invalid cursors', async () => {
+  const { runtime, address } = await setup()
+  for (let index = 0; index < 102; index++)
+    runtime.services.store.preserveEdit(
+      {
+        collection: 'tasks',
+        id: 'task',
+        changes: { title: { before: 'Before', after: String(index) } },
+      },
+      null,
+    )
+  const headers = { Authorization: `Bearer ${token}` }
+  const first = decode(
+    workspaceRecoveriesSchema,
+    await (await fetch(`${address}/api/workspace/recovered-edits`, { headers })).json(),
+  )
+  expect(first.edits).toHaveLength(100)
+  expect(first.nextCursor).toBeDefined()
+  const second = decode(
+    workspaceRecoveriesSchema,
+    await (
+      await fetch(`${address}/api/workspace/recovered-edits?cursor=${first.nextCursor}`, {
+        headers,
+      })
+    ).json(),
+  )
+  expect(second.edits).toHaveLength(2)
+  expect(second.nextCursor).toBeUndefined()
+  expect(new Set([...first.edits, ...second.edits].map((edit) => edit.id)).size).toBe(102)
+  expect(
+    (await fetch(`${address}/api/workspace/recovered-edits?cursor=NaN`, { headers })).status,
+  ).toBe(400)
 })

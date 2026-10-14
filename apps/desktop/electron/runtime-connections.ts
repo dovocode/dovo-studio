@@ -6,6 +6,7 @@ import {
   runtimeRequest,
   snapshotSchema,
   getRuntimeSnapshotTag,
+  snapshotDelta,
   type DesktopSyncSubscription,
   type DesktopSyncEvent,
   type RuntimeConnection,
@@ -13,7 +14,11 @@ import {
   type RuntimeSyncStatus,
 } from '@dovo/protocol'
 
-type Subscriber = { input: DesktopSyncSubscription; publish: (event: DesktopSyncEvent) => void }
+type Subscriber = {
+  input: DesktopSyncSubscription
+  publish: (event: DesktopSyncEvent) => void
+  sequence?: number
+}
 type Pool = {
   connection: RuntimeConnection
   subscribers: Map<string, Subscriber>
@@ -22,6 +27,8 @@ type Pool = {
   live?: ReturnType<typeof startRuntimeSync>
   status: RuntimeSyncStatus
   snapshot?: RuntimeSnapshot
+  epoch: string
+  sequence: number
   activities: Map<string, Extract<DesktopSyncEvent, { type: 'activity' }>>
   timer?: ReturnType<typeof setTimeout>
   request?: AbortController
@@ -76,11 +83,13 @@ export class RuntimeConnections {
         activities: new Map(),
         stopped: false,
         reachable: false,
+        epoch: crypto.randomUUID(),
+        sequence: 0,
       }
       this.pools.set(poolKey, pool)
     }
-    const subscriber = { input, publish }
     const old = pool.subscribers.get(id)
+    const subscriber: Subscriber = { input, publish, sequence: old?.sequence }
     pool.subscribers.set(id, subscriber)
     this.subscriptions.set(id, pool)
     this.watch(pool)
@@ -89,12 +98,7 @@ export class RuntimeConnections {
       pool.live = this.start(pool.connection, {
         onSnapshot: (snapshot) => {
           owner.reachable = true
-          owner.snapshot = snapshot
-          this.broadcast(owner, {
-            type: 'snapshot',
-            snapshot,
-            tag: getRuntimeSnapshotTag(snapshot),
-          })
+          this.publishSnapshot(owner, snapshot)
         },
         onStatus: (status) => {
           owner.status = status
@@ -107,12 +111,14 @@ export class RuntimeConnections {
       this.poll(pool)
     }
     publish({ type: 'status', status: pool.status, online: pool.live.online() })
-    if (pool.reachable && pool.snapshot && this.covers(pool.snapshot, input.tasks))
-      publish({
-        type: 'snapshot',
-        snapshot: pool.snapshot,
-        tag: getRuntimeSnapshotTag(pool.snapshot),
-      })
+    if (
+      pool.reachable &&
+      pool.snapshot &&
+      this.covers(pool.snapshot, input.tasks) &&
+      (subscriber.sequence !== pool.sequence ||
+        (old && JSON.stringify(old.input.tasks) !== JSON.stringify(input.tasks)))
+    )
+      this.baseline(pool, subscriber)
     for (const scope of input.scopes) {
       const cached = pool.activities.get(scope)
       if (cached) publish(cached)
@@ -121,6 +127,43 @@ export class RuntimeConnections {
   }
   private covers(snapshot: RuntimeSnapshot, tasks: string[]) {
     return !snapshot.detailTaskIds || tasks.every((id) => snapshot.detailTaskIds?.includes(id))
+  }
+  private baseline(pool: Pool, subscriber: Subscriber) {
+    if (!pool.snapshot || !this.covers(pool.snapshot, subscriber.input.tasks)) return
+    subscriber.publish({
+      type: 'snapshot',
+      snapshot: pool.snapshot,
+      epoch: pool.epoch,
+      sequence: pool.sequence,
+      tag: getRuntimeSnapshotTag(pool.snapshot),
+    })
+    subscriber.sequence = pool.sequence
+  }
+  private publishSnapshot(pool: Pool, snapshot: RuntimeSnapshot) {
+    const previous = pool.snapshot
+    if (previous === snapshot) return
+    const restarted = previous && previous.runtimeInstanceId !== snapshot.runtimeInstanceId
+    if (restarted) {
+      pool.epoch = crypto.randomUUID()
+      for (const subscriber of pool.subscribers.values()) subscriber.sequence = undefined
+    }
+    const base = pool.sequence++
+    pool.snapshot = snapshot
+    const delta = previous && !restarted ? snapshotDelta(previous, snapshot, true, true) : undefined
+    for (const subscriber of pool.subscribers.values()) {
+      if (!this.covers(snapshot, subscriber.input.tasks)) continue
+      if (delta && subscriber.sequence === base) {
+        subscriber.publish({
+          type: 'delta',
+          delta,
+          epoch: pool.epoch,
+          base,
+          sequence: pool.sequence,
+          tag: getRuntimeSnapshotTag(snapshot),
+        })
+        subscriber.sequence = pool.sequence
+      } else this.baseline(pool, subscriber)
+    }
   }
   private broadcast(pool: Pool, event: DesktopSyncEvent) {
     if (pool.stopped) return
@@ -187,8 +230,7 @@ export class RuntimeConnections {
         )
           return
         pool.reachable = true
-        pool.snapshot = snapshot
-        this.broadcast(pool, { type: 'snapshot', snapshot, tag: getRuntimeSnapshotTag(snapshot) })
+        this.publishSnapshot(pool, snapshot)
       })
       .catch(async (error: unknown) => {
         failed = true
@@ -230,6 +272,8 @@ export class RuntimeConnections {
   refresh(id: string, retry: boolean) {
     const pool = this.subscriptions.get(id)
     if (!pool) return
+    const subscriber = pool.subscribers.get(id)
+    if (subscriber && pool.reachable) this.baseline(pool, subscriber)
     if (retry) pool.live?.retry()
     else pool.live?.refresh()
     this.poll(pool)

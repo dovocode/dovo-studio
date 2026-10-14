@@ -38,6 +38,47 @@ export const subagentSchema = mutableStruct({
   finishedAt: Schema.optional(Schema.String),
 })
 export type Subagent = Schema.Schema.Type<typeof subagentSchema>
+/** Sidebar pills never retain or compare an agent's potentially large prompt/result. */
+export type SubagentListItem = Pick<
+  Subagent,
+  'id' | 'taskId' | 'source' | 'name' | 'provider' | 'model' | 'reasoning' | 'tokens' | 'activity'
+>
+const listFields = [
+  'id',
+  'taskId',
+  'source',
+  'name',
+  'provider',
+  'model',
+  'reasoning',
+  'tokens',
+  'activity',
+] as const
+export function projectSubagentList(
+  agents: readonly SubagentListItem[],
+  previous: readonly SubagentListItem[] = [],
+): readonly SubagentListItem[] {
+  if (
+    previous.length === agents.length &&
+    agents.every((agent, index) =>
+      listFields.every((key) => Object.is(agent[key], previous[index]![key])),
+    )
+  )
+    return previous
+  return agents.map(
+    ({ id, taskId, source, name, provider, model, reasoning, tokens, activity }) => ({
+      id,
+      taskId,
+      source,
+      name,
+      provider,
+      model,
+      reasoning,
+      tokens,
+      activity,
+    }),
+  )
+}
 export function nativeAgentWorking(agent: Subagent) {
   return (
     agent.source !== 'dovo' &&
@@ -64,7 +105,7 @@ export function subagentElapsed(agent: Subagent, now: number) {
       ? `${Math.floor(seconds / 60)}m`
       : `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
 }
-export function subagentMetadata(agent: Subagent) {
+export function subagentMetadata(agent: Pick<Subagent, 'model' | 'reasoning' | 'tokens'>) {
   return [
     agent.model ? modelDisplayName(agent.model) : undefined,
     agent.reasoning,

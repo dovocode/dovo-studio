@@ -30,6 +30,28 @@ export interface CacheStorage {
   ): Promise<void>
 }
 export const READ_CACHE_MAX_BYTES = 32 * 1024 * 1024
+const byteEncoder = new TextEncoder()
+const byteBuffer = new Uint8Array(16 * 1024)
+/** Count large cached payloads without allocating a second full UTF-8 copy. */
+export function readCacheBytes(value: string) {
+  let bytes = 0
+  for (let start = 0; start < value.length;) {
+    let end = Math.min(start + 4096, value.length)
+    // Keep a surrogate pair in one chunk; native TextEncoder handles malformed text.
+    const last = value.charCodeAt(end - 1),
+      next = value.charCodeAt(end)
+    if (end < value.length && last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff)
+      end--
+    const chunk = value.slice(start, end)
+    bytes +=
+      typeof byteEncoder.encodeInto === 'function'
+        ? byteEncoder.encodeInto(chunk, byteBuffer).written
+        : byteEncoder.encode(chunk).byteLength
+    start = end
+  }
+  return bytes
+}
+
 const indexEntry = mutableStruct({
   key: Schema.String,
   bytes: Schema.Number.pipe(
@@ -194,6 +216,11 @@ export function createRuntimeReadCache(
             catch: (cause) => new ReadCacheError({ cause }),
           })
           if (key === 'snapshot') {
+            // Snapshots are pinned for offline startup, but must still have a byte ceiling.
+            if (readCacheBytes(encoded) > READ_CACHE_MAX_BYTES) {
+              yield* storageEffect(() => storage.removeItem(prefix + key))
+              return
+            }
             yield* storageEffect(() => storage.setItem(prefix + key, encoded))
             return
           }
@@ -211,14 +238,14 @@ export function createRuntimeReadCache(
               ? storageEffect(() => storage.getItem(prefix + item)).pipe(
                   Effect.map((value) => ({
                     key: item,
-                    bytes: value === null ? 0 : new TextEncoder().encode(value).byteLength,
+                    bytes: value === null ? 0 : readCacheBytes(value),
                   })),
                 )
               : Effect.succeed(item),
           )
           const entries = [
             ...previous.filter((item) => item.key !== key),
-            { key, bytes: new TextEncoder().encode(encoded).byteLength },
+            { key, bytes: readCacheBytes(encoded) },
           ]
           const kept = boundReadCacheIndex(entries, 100, READ_CACHE_MAX_BYTES)
           yield* Effect.forEach(

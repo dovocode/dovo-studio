@@ -1,5 +1,7 @@
 import { LinuxSetupGuide } from './linux-setup-guide'
 import {
+  workspaceRecoveriesSchema,
+  type WorkspaceRecovery,
   runtimeSyncStatus,
   retryRuntimeSync,
   PAIRING_PROTOCOL_VERSION,
@@ -24,11 +26,6 @@ import {
   Input,
   cn,
 } from '@dovo/studio-ui'
-function conflictValue(value: unknown) {
-  const text =
-    value === null ? '(empty)' : typeof value === 'string' ? value : JSON.stringify(value)
-  return text && text.length > 500 ? `${text.slice(0, 500)}…` : text || '(empty)'
-}
 export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile) => void }) {
   const {
     connect,
@@ -36,15 +33,18 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
     runtimeRegistry,
     runtimes,
     refreshRuntime,
+    readRuntime,
     forgetRuntime,
     retrySync,
     discardAndReload,
     pendingSync,
-    syncConflicts,
-    resolveSyncConflict,
     mutationStatus,
     discardMutations,
   } = useWorkspace()
+  const [recoveryCursor, setRecoveryCursor] = useApplicationState<string | undefined>(undefined)
+  const [recoveryOwner, setRecoveryOwner] = useApplicationState<RuntimeProfile | null>(null)
+  const [recoveryWarnings, setRecoveryWarnings] = useApplicationState<string[]>([])
+  const [recoveries, setRecoveries] = useApplicationState<WorkspaceRecovery[] | null>(null)
   const [address, setAddress] = useApplicationState(''),
     [name, setName] = useApplicationState('My computer'),
     [code, setCode] = useApplicationState(''),
@@ -200,58 +200,11 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
               {runtimeRegistry.profiles.find((entry) => entry.id === runtimeRegistry.activeId)
                 ?.name ?? 'this computer'}{' '}
               stay on this device until they sync. Saved edits resume automatically after
-              reconnecting. Review any competing edits below.
+              reconnecting. Conflicting edits resolve automatically and remain available in
+              Recovered edits.
             </p>
           </div>
-          {syncConflicts.map((conflict) => (
-            <div
-              key={JSON.stringify([conflict.patchId, conflict.field])}
-              className="space-y-2 rounded-md border bg-card p-3"
-            >
-              <h4 className="text-xs font-medium">
-                {conflict.name}
-                {conflict.field
-                  ? ` · ${conflict.field.replace(/([A-Z])/g, ' $1').toLowerCase()}`
-                  : ''}
-              </h4>
-              {conflict.field === null ? (
-                <p className="text-xs text-muted-foreground">
-                  This item no longer matches the host. Using the host version clears only this
-                  item’s saved edits.
-                </p>
-              ) : (
-                <dl className="space-y-1 text-xs">
-                  <dt className="text-muted-foreground">Your edit</dt>
-                  <dd className="whitespace-pre-wrap break-words">
-                    {conflictValue(conflict.local)}
-                  </dd>
-                  <dt className="text-muted-foreground">Host value</dt>
-                  <dd className="whitespace-pre-wrap break-words">
-                    {conflictValue(conflict.host)}
-                  </dd>
-                </dl>
-              )}
-              <div className="flex gap-2">
-                {conflict.field !== null && (
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => void act(() => resolveSyncConflict(conflict, 'local'))}
-                  >
-                    Keep my edit
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void act(() => resolveSyncConflict(conflict, 'host'))}
-                >
-                  Use host value
-                </Button>
-              </div>
-            </div>
-          ))}
+
           <div className="flex gap-2">
             <Button size="sm" disabled={busy} onClick={() => void act(retrySync)}>
               Retry sync
@@ -325,6 +278,30 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
                     }}
                   >
                     Update address
+                  </Button>
+                )}
+                {entry.connected && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy || !entry.connected}
+                    onClick={() =>
+                      void act(async () => {
+                        const value = await readRuntime(
+                          entry.profile,
+                          '/api/workspace/recovered-edits',
+                          undefined,
+                          workspaceRecoveriesSchema,
+                          'GET',
+                        )
+                        setRecoveries(value.edits)
+                        setRecoveryCursor(value.nextCursor)
+                        setRecoveryOwner(entry.profile)
+                        setRecoveryWarnings(value.warnings ?? [])
+                      })
+                    }
+                  >
+                    Recovered edits
                   </Button>
                 )}
                 <Button
@@ -556,6 +533,62 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={recoveries !== null}
+        onOpenChange={(open) => {
+          if (!open) setRecoveries(null)
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Recovered edits</DialogTitle>
+          <DialogDescription>
+            Conflicting edits are saved here while the runtime value stays in use. Select and copy
+            an edit to recover it.
+          </DialogDescription>
+          {recoveryWarnings.map((warning) => (
+            <p key={warning} role="status">
+              {warning}
+            </p>
+          ))}
+          <div className="max-h-96 overflow-auto space-y-3">
+            {recoveries?.length === 0 && <p>No recovered edits.</p>}
+            {recoveries?.map((edit) => (
+              <details key={edit.id}>
+                <summary>
+                  {edit.createdAt} · {edit.patch.collection}/{edit.patch.id}
+                </summary>
+                <pre className="whitespace-pre-wrap break-all text-xs select-text">
+                  {JSON.stringify(edit, null, 2)}
+                </pre>
+              </details>
+            ))}
+          </div>
+          {recoveryCursor && recoveryOwner && (
+            <Button
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  const value = await readRuntime(
+                    recoveryOwner,
+                    '/api/workspace/recovered-edits?cursor=' + encodeURIComponent(recoveryCursor),
+                    undefined,
+                    workspaceRecoveriesSchema,
+                    'GET',
+                  )
+                  setRecoveries((previous) => [
+                    ...new Map(
+                      [...(previous ?? []), ...value.edits].map((edit) => [edit.id, edit]),
+                    ).values(),
+                  ])
+                  setRecoveryCursor(value.nextCursor)
+                })
+              }
+            >
+              Load older edits
+            </Button>
+          )}
         </DialogContent>
       </Dialog>
     </article>

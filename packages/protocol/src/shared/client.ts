@@ -14,6 +14,7 @@ export class RuntimeRequestError extends Data.TaggedError('RuntimeRequestError')
   readonly issues?: readonly { path: string; code: string; message: string }[]
   readonly status?: number
   readonly mutationRejected?: true
+  readonly mutationRetired?: true
 }> {}
 
 const snapshotTags = new WeakMap<object, string>()
@@ -207,6 +208,7 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
             Schema.Struct({
               error: Schema.String,
               mutationRejected: Schema.optional(Schema.Literal(true)),
+              mutationRetired: Schema.optional(Schema.Literal(true)),
               issues: Schema.optional(
                 Schema.Array(
                   Schema.Struct({
@@ -224,6 +226,7 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
               kind: 'response',
               issues: error.success ? error.data.issues : undefined,
               mutationRejected: error.success ? error.data.mutationRejected : undefined,
+              mutationRetired: error.success ? error.data.mutationRetired : undefined,
               status: response.status,
               message: error.success
                 ? error.data.error

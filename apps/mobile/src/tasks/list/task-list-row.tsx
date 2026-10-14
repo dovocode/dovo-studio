@@ -5,7 +5,7 @@ import {
   hasUnreadTaskActivity,
   pullStackLabel,
   subagentMetadata,
-  type Subagent,
+  type SubagentListItem,
 } from '@dovo/protocol'
 import {
   Archive,
@@ -81,7 +81,7 @@ function TaskListRowView({
   /** Which computer ran a task is noise when only one computer is saved. */
   showDevice?: boolean
   row: RuntimeTask
-  subagents: readonly Subagent[]
+  subagents: readonly SubagentListItem[]
   owner: TaskListOwner
   now: number
   testID: string
@@ -291,65 +291,14 @@ function TaskListRowView({
           </View>
         )}
       </View>
-      {!!subagents.length && (
-        <View
-          accessibilityLabel="Working subagents"
-          style={{
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            gap: 6,
-            paddingHorizontal: 12,
-            paddingBottom: 10,
-          }}
-        >
-          {subagents.map((agent, index) => {
-            const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
-            const label = `${agent.name} · ${agent.provider}`
-            const detail = [
-              label,
-              row.online ? 'Working' : 'Last seen working',
-              subagentMetadata(agent),
-              agent.activity,
-            ]
-              .filter(Boolean)
-              .join(' · ')
-            const pillStyle = {
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: colors.border,
-              paddingHorizontal: 8,
-              paddingVertical: 4,
-              maxWidth: '100%' as const,
-            }
-            return childId ? (
-              <Pressable
-                key={`${agent.provider}:${agent.id}:${index}`}
-                accessibilityRole="button"
-                accessibilityLabel={`Open subagent ${detail}`}
-                accessibilityState={{ disabled }}
-                disabled={disabled}
-                onPress={() => onOpenSubagent(childId)}
-                onLongPress={car ? undefined : onSelect}
-                style={pillStyle}
-              >
-                <Text numberOfLines={1} style={{ fontSize: 11, color: colors.accent }}>
-                  {label}
-                </Text>
-              </Pressable>
-            ) : (
-              <View
-                key={`${agent.provider}:${agent.id}:${index}`}
-                accessibilityLabel={detail}
-                style={pillStyle}
-              >
-                <Text numberOfLines={1} style={{ fontSize: 11, color: colors.muted }}>
-                  {label}
-                </Text>
-              </View>
-            )
-          })}
-        </View>
-      )}
+      <WorkingSubagents
+        subagents={subagents}
+        online={row.online}
+        disabled={disabled}
+        car={car}
+        onSelect={onSelect}
+        onOpenSubagent={onOpenSubagent}
+      />
       {!!actions.error && (
         <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 8 }]}>
           {actions.error}
@@ -389,3 +338,81 @@ function TaskListRowView({
 
 /** Streaming another task leaves this row and its owner subscriptions unchanged. */
 export const TaskListRow = memo(TaskListRowView)
+
+const WorkingSubagents = memo(function WorkingSubagents({
+  subagents,
+  online,
+  disabled,
+  car,
+  onSelect,
+  onOpenSubagent,
+}: {
+  subagents: readonly SubagentListItem[]
+  online: boolean
+  disabled: boolean
+  car: boolean
+  onSelect: () => void
+  onOpenSubagent: (id: string) => void
+}) {
+  const { colors } = useTheme()
+  if (!subagents.length) return null
+  return (
+    <View
+      accessibilityLabel="Working subagents"
+      style={{
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingBottom: 10,
+      }}
+    >
+      {subagents.map((agent, index) => {
+        const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
+        const label = `${agent.name} · ${agent.provider}`
+        const detail = [
+          label,
+          online ? 'Working' : 'Last seen working',
+          subagentMetadata(agent),
+          agent.activity,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+        const pillStyle = {
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: colors.border,
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          maxWidth: '100%' as const,
+        }
+        return childId ? (
+          <Pressable
+            key={`${agent.provider}:${agent.id}:${index}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Open subagent ${detail}`}
+            accessibilityState={{ disabled }}
+            disabled={disabled}
+            onPress={() => onOpenSubagent(childId)}
+            onLongPress={car ? undefined : onSelect}
+            style={pillStyle}
+          >
+            <Text numberOfLines={1} style={{ fontSize: 11, color: colors.accent }}>
+              {label}
+            </Text>
+          </Pressable>
+        ) : (
+          <View
+            key={`${agent.provider}:${agent.id}:${index}`}
+            accessibilityLabel={detail}
+            style={pillStyle}
+          >
+            <Text numberOfLines={1} style={{ fontSize: 11, color: colors.muted }}>
+              {label}
+            </Text>
+          </View>
+        )
+      })}
+    </View>
+  )
+})

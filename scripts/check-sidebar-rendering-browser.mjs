@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
 import { chromium } from './browser/harness.mjs'
 
 // Real sidebar, rows, context menus, studio-ui and workspace value provider. Only the host,
@@ -24,7 +25,7 @@ import {TaskList} from './src/list/task-list.tsx';
 import {ApplicationStateProvider} from '@dovo/studio-core/state';
 import {TooltipProvider} from '@dovo/studio-ui';
 import {WorkspaceValueProvider,useWorkspace,useWorkspaceSelector} from '@dovo/studio-core';
-window.counts={list:0,rows:0,broad:0,selected:0};
+window.counts={list:0,rows:0,broad:0,selected:0,pills:0};
 const now=Date.now();
 const iso=offset=>new Date(now-offset).toISOString();
 const base={repositoryId:'repo',agentId:'',draft:'',files:[],example:false};
@@ -83,6 +84,13 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Too
     {
       name: 'sidebar-rendering-fixtures',
       setup(builder) {
+        builder.onLoad({ filter: /\/task-row\.tsx$/ }, ({ path }) => ({
+          contents: readFileSync(path, 'utf8').replace(
+            'if (!subagents.length) return null',
+            'window.counts.pills++; if (!subagents.length) return null',
+          ),
+          loader: 'tsx',
+        }))
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
           Object.hasOwn(mocks, path) ? { path, namespace: 'fixture' } : undefined,
         )
@@ -166,6 +174,60 @@ try {
   assert.ok(
     streaming.rows <= 35,
     `${streaming.rows} row renders for 30 frames of one thread (${initial} rows mounted)`,
+  )
+
+  // Large child payloads do not repaint the parent's pills. Visible activity still updates.
+  await page.evaluate(() => {
+    window.counts.pills = 0
+    for (let frame = 0; frame < 30; frame++) {
+      window.publish(
+        window.tasks.map((task) =>
+          task.id === 'parent'
+            ? {
+                ...task,
+                subagents: task.subagents.map((agent) => ({
+                  ...agent,
+                  updatedAt: String(frame),
+                  prompt: 'Prompt '.repeat(10000),
+                  result: 'Result '.repeat(10000),
+                })),
+              }
+            : task.id === 'child'
+              ? {
+                  ...task,
+                  messages: [{ id: 'child-stream', role: 'assistant', text: 'chunk ' + frame }],
+                }
+              : task,
+        ),
+      )
+    }
+  })
+  assert.equal(
+    await page.evaluate(() => window.counts.pills),
+    0,
+    'transcript-only child updates repainted sidebar pills',
+  )
+  await page.evaluate(() =>
+    window.publish(
+      window.tasks.map((task) =>
+        task.id === 'parent'
+          ? {
+              ...task,
+              subagents: task.subagents.map((agent) => ({
+                ...agent,
+                activity: 'Running targeted tests',
+                tokens: 42,
+              })),
+            }
+          : task,
+      ),
+    ),
+  )
+  await page.getByRole('button', { name: /Open subagent.*Running targeted tests/ }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.counts.pills),
+    1,
+    'visible child activity should repaint only its parent pills',
   )
 
   // The running row owns its one-second clock; the list itself does not re-render.
@@ -318,7 +380,7 @@ try {
   assert.ok(retained <= 2, `${retained} removed tasks survived garbage collection`)
   assert.deepEqual(errors, [])
   console.log(
-    `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; selector isolation, latest-entry commands, subagent navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
+    `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero pill renders for 30 large child-payload updates and one render for visible activity; selector isolation, latest-entry commands, subagent navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
   )
 } finally {
   await browser.close()

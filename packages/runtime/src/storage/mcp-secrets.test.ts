@@ -75,6 +75,48 @@ it('persists projection identity and preserves secrets through optimistic worksp
     }
     store.patch(changed)
     expect(() => store.patch(changed)).not.toThrow()
+    const stale = {
+      collection: 'agents' as const,
+      id: 'agent',
+      changes: {
+        resources: {
+          before,
+          after: {
+            ...before,
+            skills: [
+              { name: 'local', content: 'local', description: 'Local skill', enabled: true },
+            ],
+          },
+        },
+      },
+    }
+    // The old reference was removed. It must not block an unrelated safe field merge.
+    expect(() => store.patch(stale)).not.toThrow()
+    expect(store.get().agents[0].resources?.mcpServers).toEqual([])
+    store.patch({
+      collection: 'agents',
+      id: 'agent',
+      changes: {
+        resources: {
+          before,
+          after: {
+            ...before,
+            mcpServers: [
+              {
+                name: 'local',
+                enabled: true,
+                transport: 'stdio',
+                command: 'test',
+                envValues: { TOKEN: 'recovery-secret' },
+              },
+            ],
+          },
+        },
+      },
+    })
+    expect(store.recoveredEdits()).toHaveLength(1)
+    expect(JSON.stringify(store.recoveredEdits())).not.toContain('recovery-secret')
+    expect(JSON.stringify(store.recoveredEdits())).not.toContain('private-key')
     expect(new WorkspaceStore(db).publicWorkspace()).toEqual(store.publicWorkspace())
   } finally {
     db.close()

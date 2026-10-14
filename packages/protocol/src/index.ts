@@ -5,6 +5,7 @@ export * from './conversation/workflow/turn-summary.js'
 export * from './conversation/timeline.js'
 export * from './conversation/workflow/plan-limits.js'
 export * from './runtime/connection/runtime.js'
+export * from './runtime/connection/workspace-reconciliation.js'
 export * from './runtime/connection/windows-runtime.js'
 export * from './runtime/connection/server-update.js'
 export {
@@ -228,3 +229,5 @@ export * from './scm/task-review.js'
 export * from './scm/task-review-session.js'
 
 export * from './runtime/connection/desktop-sync.js'
+
+export * from './runtime/connection/workspace-mutations.js'

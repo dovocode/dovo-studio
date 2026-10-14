@@ -1,7 +1,12 @@
 import { mutableStruct } from '../../shared/schema.js'
 import { expect, it } from 'vite-plus/test'
 import { Schema } from 'effect'
-import { createRuntimeReadCache, type CacheStorage } from './read-cache.js'
+import {
+  createRuntimeReadCache,
+  READ_CACHE_MAX_BYTES,
+  readCacheBytes,
+  type CacheStorage,
+} from './read-cache.js'
 function fixture() {
   const values = new Map<string, string>()
   const storage: CacheStorage = {
@@ -252,3 +257,19 @@ it('evicts by UTF-8 bytes, refreshes rewritten entries and migrates legacy index
   )
   await client.close()
 })
+
+it('bounds pinned snapshots without deleting pending mutation or recovery data', async () => {
+  const { cache, values } = fixture()
+  const client = cache('http://first')
+  values.set('dovo.workspace-outbox.v1.pending', 'user edit')
+  await client.write('snapshot', { text: 'small' })
+  await client.write('snapshot', { text: 'x'.repeat(READ_CACHE_MAX_BYTES) })
+  expect(await client.read('snapshot', Schema.Unknown)).toBeNull()
+  expect(values.get('dovo.workspace-outbox.v1.pending')).toBe('user edit')
+})
+it.each(['', 'ASCII', 'é€😀', 'x'.repeat(4095) + '😀suffix', '\ud800', '\udfff'])(
+  'counts UTF-8 bytes with bounded scratch memory (%#)',
+  (value) => {
+    expect(readCacheBytes(value)).toBe(new TextEncoder().encode(value).byteLength)
+  },
+)

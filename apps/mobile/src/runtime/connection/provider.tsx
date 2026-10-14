@@ -345,8 +345,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       )
         ? entryRef.current[profile.id]
         : initialOverview(profile)
+      const next = update(previous)
       const entry = retainOverviewSnapshot(previous, {
-        ...update(previous),
+        ...next,
+        snapshot:
+          next.snapshot && !mutations.acceptsWorkspaceSnapshot(profile.connection, next.snapshot)
+            ? previous.snapshot
+            : next.snapshot,
         profile: saved,
       })
       // Keep the exact latest contact time for offline transitions and persistence.
@@ -368,7 +373,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           cacheDirty.current.add(profile.id)
       }
     },
-    [],
+    [mutations],
   )
   const persistEntryEffect = useCallback(
     (id: string) =>
@@ -517,6 +522,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const refreshProfileEffect = useCallback(
     (profile: RuntimeProfile) =>
       Effect.suspend(() => {
+        const workspaceCheckpoint = mutations.workspaceRefreshCheckpoint(profile.connection)
         const version = (sequence.current.get(profile.id) ?? 0) + 1
         sequence.current.set(profile.id, version)
         return runtimeRequestEffect(
@@ -530,7 +536,16 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         ).pipe(
           Effect.tap((snapshot) =>
             Effect.sync(() => {
-              if (sequence.current.get(profile.id) === version)
+              if (
+                sequence.current.get(profile.id) === version &&
+                mutations.acceptsWorkspaceSnapshot(profile.connection, snapshot) &&
+                !(
+                  entryRef.current[profile.id]?.snapshot?.runtimeInstanceId ===
+                    snapshot.runtimeInstanceId &&
+                  (entryRef.current[profile.id]?.snapshot?.revision ?? -1) > snapshot.revision
+                )
+              ) {
+                mutations.workspaceRefreshed(profile.connection, workspaceCheckpoint, snapshot)
                 updateEntry(profile, (previous) => ({
                   ...previous,
                   snapshot,
@@ -539,6 +554,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
                   error: null,
                   unauthorized: false,
                 }))
+              }
             }),
           ),
           Effect.tapError((error) =>
@@ -560,6 +576,32 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }),
     [updateEntry, mutations],
   )
+  const workspaceRefreshWorker = useRef<ReturnType<typeof startPolling> | null>(null)
+  useEffect(() => {
+    if (!ready || !appActive) return
+    const worker = startPolling(
+      Effect.suspend(() =>
+        Effect.forEach(
+          registry.profiles,
+          (owner) =>
+            mutations.requiresWorkspaceRefresh(owner.connection) &&
+            !entryRef.current[owner.id]?.unauthorized
+              ? refreshProfileEffect(owner)
+              : Effect.void,
+          { concurrency: 4, discard: true },
+        ),
+      ),
+      { interval: 1000, backoff: 10000, onError: () => {} },
+    )
+    workspaceRefreshWorker.current = worker
+    return () => {
+      workspaceRefreshWorker.current = null
+      void worker.stop()
+    }
+  }, [ready, appActive, registry.profiles, mutations, refreshProfileEffect])
+  useEffect(() => {
+    workspaceRefreshWorker.current?.refresh()
+  }, [mutationVersion])
   const refreshProfile = useCallback(
     (profile: RuntimeProfile) => runClientEffect(refreshProfileEffect(profile)),
     [refreshProfileEffect],
@@ -1005,9 +1047,21 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       },
       onWake: () => wakeFallback(),
       onSnapshot: (snapshot) => {
-        if (stopped) return
+        if (
+          stopped ||
+          !mutations.acceptsWorkspaceSnapshot(profile.connection, snapshot) ||
+          (entryRef.current[profile.id]?.snapshot?.runtimeInstanceId ===
+            snapshot.runtimeInstanceId &&
+            (entryRef.current[profile.id]?.snapshot?.revision ?? -1) > snapshot.revision)
+        )
+          return
         void runClientEffect(mutations.recoverEffect(profile.connection)).catch(() => undefined)
         sequence.current.set(profile.id, (sequence.current.get(profile.id) ?? 0) + 1)
+        mutations.workspaceRefreshed(
+          profile.connection,
+          mutations.workspaceRefreshCheckpoint(profile.connection),
+          snapshot,
+        )
         updateEntry(profile, (previous) => ({
           ...previous,
           snapshot,

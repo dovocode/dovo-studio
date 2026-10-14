@@ -1,6 +1,10 @@
 import { RuntimeIconSettings } from '../runtime/connection/runtime-icon-settings'
 import { runtimeIconName } from '../ui/content/runtime-icon'
-import { runtimeComputerName } from '@dovo/protocol'
+import {
+  workspaceRecoveriesSchema,
+  type WorkspaceRecovery,
+  runtimeComputerName,
+} from '@dovo/protocol'
 import { DeviceHostSettings } from './device-host-settings'
 import { ComputerUpdates } from './computer-updates'
 import { TaskDefaultSettings } from '../runtime/preferences/task-default-settings'
@@ -313,7 +317,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
     ])
   }
   const [panel, setPanel] = useApplicationState<
-    'commands' | 'computer-use' | 'activity' | 'device-hosts' | null
+    'commands' | 'computer-use' | 'activity' | 'device-hosts' | 'recovered-edits' | null
   >(null)
   if (!profile) return null
   return (
@@ -351,6 +355,8 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
               onBusyChange={setDeviceHostsBusy}
               onDirtyChange={setDeviceHostsDirty}
             />
+          ) : panel === 'recovered-edits' ? (
+            <RecoveredEdits />
           ) : panel === 'activity' ? (
             <ActivityLog />
           ) : (
@@ -406,6 +412,14 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
               disabled={!connected}
               onPress={() => setPanel('computer-use')}
             />
+            {connected && (
+              <SettingsRow
+                title="Recovered edits"
+                icon="tasks"
+                disabled={!connected}
+                onPress={() => setPanel('recovered-edits')}
+              />
+            )}
             <SettingsRow
               title="Activity log"
               icon="tasks"
@@ -484,5 +498,76 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
         </>
       )}
     </Sheet>
+  )
+}
+
+function RecoveredEdits() {
+  const { read } = useRuntime()
+  const { styles } = useTheme()
+  const [edits, setEdits] = useApplicationState<WorkspaceRecovery[]>([])
+  const [cursor, setCursor] = useApplicationState<string | undefined>(undefined)
+  const [loading, setLoading] = useApplicationState(false)
+  const [error, setError] = useApplicationState('')
+  const [warnings, setWarnings] = useApplicationState<string[]>([])
+  useEffect(() => {
+    let stopped = false
+    void read('/api/workspace/recovered-edits', undefined, workspaceRecoveriesSchema, 'GET')
+      .then((value) => {
+        if (!stopped) {
+          setEdits(value.edits)
+          setWarnings(value.warnings ?? [])
+          setCursor(value.nextCursor)
+        }
+      })
+      .catch((error) => {
+        if (!stopped) setError(error instanceof Error ? error.message : String(error))
+      })
+    return () => {
+      stopped = true
+    }
+  }, [read])
+  return (
+    <View style={{ gap: 12 }}>
+      <Text style={styles.text}>
+        Conflicting edits are saved here while the runtime value stays in use. Select and copy an
+        edit to recover it.
+      </Text>
+      {warnings.map((warning) => (
+        <Text key={warning} style={styles.text}>
+          {warning}
+        </Text>
+      ))}
+      {!!error && <Text style={styles.text}>{error}</Text>}
+      {edits.length === 0
+        ? !error && <Text style={styles.text}>No recovered edits.</Text>
+        : edits.map((edit) => (
+            <Text selectable key={edit.id} style={styles.text}>
+              {JSON.stringify(edit, null, 2)}
+            </Text>
+          ))}
+      {cursor && (
+        <Action
+          label="Load older edits"
+          disabled={loading}
+          onPress={() => {
+            setLoading(true)
+            void read(
+              '/api/workspace/recovered-edits?cursor=' + encodeURIComponent(cursor),
+              undefined,
+              workspaceRecoveriesSchema,
+              'GET',
+            )
+              .then((value) => {
+                setEdits((previous) => [
+                  ...new Map([...previous, ...value.edits].map((edit) => [edit.id, edit])).values(),
+                ])
+                setCursor(value.nextCursor)
+              })
+              .catch((error) => setError(error instanceof Error ? error.message : String(error)))
+              .finally(() => setLoading(false))
+          }}
+        />
+      )}
+    </View>
   )
 }

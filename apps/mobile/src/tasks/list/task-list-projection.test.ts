@@ -5,8 +5,47 @@ import {
   snapshotSchema,
   taskSchema,
   type RuntimeOverview,
+  type Subagent,
 } from '@dovo/protocol'
 import { taskListProjection } from './task-list-projection'
+
+it('retains mobile pill data across native agent payload updates but refreshes visible activity', () => {
+  const source = overview()
+  const snapshot = source.snapshot!
+  const native: Subagent = {
+    id: 'native',
+    provider: 'codex',
+    name: 'Native agent',
+    status: 'working' as const,
+    sessionLive: true,
+    startedAt: '',
+    updatedAt: '',
+    activity: 'Reading',
+  }
+  const publish = (record: Subagent) => ({
+    ...source,
+    snapshot: {
+      ...snapshot,
+      workspace: {
+        ...snapshot.workspace,
+        tasks: snapshot.workspace.tasks.map((task) =>
+          task.id === 'running' ? { ...task, subagents: [record] } : task,
+        ),
+      },
+    },
+  })
+  const key = JSON.stringify([source.profile.id, 'running'])
+  const initial = taskListProjection([publish(native)], now)
+  const payload = { ...native, updatedAt: 'later', result: 'large result'.repeat(10000) }
+  const next = taskListProjection([publish(payload)], now, initial)
+  expect(next.get(key)?.subagents).toBe(initial.get(key)?.subagents)
+  expect(next.get(key)?.subagents[0]).not.toHaveProperty('result')
+  const visible = taskListProjection([publish({ ...payload, activity: 'Testing' })], now, next)
+  expect(visible.get(key)?.subagents).not.toBe(next.get(key)?.subagents)
+  expect(visible.get(key)?.subagents[0]?.activity).toBe('Testing')
+  const finished = taskListProjection([publish({ ...native, status: 'completed' })], now, visible)
+  expect(finished.get(key)?.subagents).toEqual([])
+})
 
 const task = (id: string) =>
   decode(taskSchema, {

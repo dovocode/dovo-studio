@@ -1,7 +1,28 @@
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
+import {
+  reconcileWorkspaceEdit,
+  sameWorkspaceEditValue,
+  workspaceDraftConsumed,
+} from './workspace-reconciliation.js'
+import { runtimeSnapshotPath } from './live-sync.js'
 import { Effect, Schema, Semaphore } from 'effect'
-import { decode, mutableArray, mutableStruct } from '../../shared/schema.js'
+import { decode, decodeResult, mutableArray, mutableStruct } from '../../shared/schema.js'
 import { runtimeRequestEffect, RuntimeRequestError } from '../../shared/client.js'
-import type { RuntimeConnection } from './runtime.js'
+import {
+  snapshotSchema,
+  patchSchema,
+  workspaceRecoveriesSchema,
+  workspaceRecoverySchema,
+  workspacePatchResultSchema,
+  type WorkspaceRecovery,
+  type RuntimeConnection,
+} from './runtime.js'
+import {
+  WorkspaceStorageError,
+  workspacePatchRejection,
+  workspacePatchRejected,
+} from './workspace-mutations.js'
 import type { Task } from '../../workspace.js'
 import { savedPendingMessages } from '../../conversation/workflow/pending-message.js'
 
@@ -43,10 +64,16 @@ export type MutationStorage = {
   /** Explicit discard must also work when the journal cannot be decoded. */
   clear: (connection: RuntimeConnection) => Promise<void>
   id: () => string
+  recoverWorkspaceEdit?: (connection: RuntimeConnection, edit: WorkspaceRecovery) => Promise<void>
+  workspaceRecoveries?: (connection: RuntimeConnection) => Promise<WorkspaceRecovery[]>
 }
 type State = {
+  workspaceAcknowledgement?: { version: number; revision: number; instanceId?: string }
+  workspaceVersion: number
+  refreshedWorkspaceVersion: number
   supported?: boolean
   acknowledgements?: boolean
+  workspaceMutations?: boolean
   pending: MutationOutbox
   /** Presentation handoff only; these commands have already left the durable journal. */
   confirmedMessages: MutationOutbox
@@ -60,14 +87,18 @@ const transient = (error: unknown) =>
   (error.kind === 'connection' ||
     error.kind === 'timeout' ||
     [502, 503, 504].includes(error.status ?? 0))
+const transientMutation = (item: { path: string }, error: unknown) =>
+  transient(error) ||
+  (item.path === '/api/workspace' &&
+    error instanceof RuntimeRequestError &&
+    [500, 426].includes(error.status ?? 0))
 // Workspace validation happens before the patch commits. New runtimes explicitly
 // identify rejected edits; older runtimes return 400 for invalid input.
 const rejectedPatch = (item: { path: string; method: string }, error: unknown) =>
-  item.path === '/api/workspace' &&
-  item.method === 'PATCH' &&
-  error instanceof RuntimeRequestError &&
-  (error.status === 400 ||
-    (error.mutationRejected === true && [403, 404, 409, 422].includes(error.status ?? 0)))
+  item.path === '/api/workspace' && item.method === 'PATCH' && workspacePatchRejected(error)
+const settledFailure = (item: { path: string; method: string }, error: unknown) =>
+  rejectedPatch(item, error) ||
+  (error instanceof RuntimeRequestError && error.mutationRetired === true)
 const operation = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({
     try: run,
@@ -88,6 +119,8 @@ export class RuntimeMutations {
     let state = this.states.get(key)
     if (!state) {
       state = {
+        workspaceVersion: 0,
+        refreshedWorkspaceVersion: 0,
         pending: [],
         confirmedMessages: [],
         error: null,
@@ -100,6 +133,44 @@ export class RuntimeMutations {
   status(connection: RuntimeConnection) {
     const state = this.state(connection)
     return { pending: state.pending.length, error: state.error }
+  }
+  workspaceRefreshCheckpoint(connection: RuntimeConnection) {
+    const state = this.state(connection)
+    return state.workspaceVersion
+  }
+  requiresWorkspaceRefresh(connection: RuntimeConnection) {
+    const state = this.state(connection)
+    return state.workspaceVersion > state.refreshedWorkspaceVersion
+  }
+  acceptsWorkspaceSnapshot(
+    connection: RuntimeConnection,
+    snapshot: { revision: number; runtimeInstanceId?: string },
+  ) {
+    const ack = this.state(connection).workspaceAcknowledgement
+    return (
+      !ack || snapshot.runtimeInstanceId !== ack.instanceId || snapshot.revision >= ack.revision
+    )
+  }
+  workspaceRefreshed(
+    connection: RuntimeConnection,
+    checkpoint: number,
+    snapshot?: { revision: number; runtimeInstanceId?: string },
+  ) {
+    if (snapshot && !this.acceptsWorkspaceSnapshot(connection, snapshot)) return false
+    const state = this.state(connection)
+    state.refreshedWorkspaceVersion = Math.max(state.refreshedWorkspaceVersion, checkpoint)
+    return true
+  }
+  private workspaceCommitted(state: State, value: unknown) {
+    state.workspaceVersion++
+    const result = decodeResult(workspacePatchResultSchema, value)
+    if (result.success)
+      state.workspaceAcknowledgement = {
+        version: state.workspaceVersion,
+        revision: result.data.revision,
+        instanceId: result.data.runtimeInstanceId,
+      }
+    this.changed()
   }
   pendingMessages(connection: RuntimeConnection, task: Task) {
     const state = this.state(connection)
@@ -143,6 +214,7 @@ export class RuntimeMutations {
           mutableStruct({
             version: Schema.Literal(1),
             acknowledgements: Schema.optional(Schema.Boolean),
+            workspaceMutations: Schema.optional(Schema.Literal(1)),
           }),
           'GET',
         ),
@@ -153,6 +225,7 @@ export class RuntimeMutations {
         return yield* Effect.fail(result.failure)
       }
       state.acknowledgements = result.success.acknowledgements
+      state.workspaceMutations = result.success.workspaceMutations === 1
       return (state.supported = true)
     })
   }
@@ -186,7 +259,213 @@ export class RuntimeMutations {
       Effect.uninterruptible,
     )
   }
+  private preserveWorkspaceEffect(
+    connection: RuntimeConnection,
+    input: unknown,
+    host: unknown,
+    reason?: string,
+  ) {
+    const patch = decodeResult(patchSchema, input)
+    if (!patch.success) return Effect.void
+    const recover = this.storage.recoverWorkspaceEdit
+    if (!recover)
+      return Effect.fail(new Error('Cannot retire this edit without durable recovery storage.'))
+    const id = bytesToHex(sha256(utf8ToBytes(JSON.stringify({ patch: patch.data, host }))))
+    return operation(() =>
+      recover(connection, {
+        id,
+        createdAt: new Date().toISOString(),
+        patch: patch.data,
+        host,
+        reason,
+      }),
+    ).pipe(Effect.mapError((error) => new WorkspaceStorageError(error.message, { cause: error })))
+  }
+  /** Desktop's workspace outbox and mobile's command journal use the same sender
+   * and outcome handling, without copying an edit into a second durable journal. */
+  workspaceEffect(connection: RuntimeConnection, input: unknown, id: string) {
+    const state = this.state(connection)
+    return this.supports(connection, state, true).pipe(
+      Effect.flatMap((supported) =>
+        supported
+          ? this.sendRaw(connection, { id, path: '/api/workspace', method: 'PATCH', input })
+          : Effect.fail(
+              new RuntimeRequestError({
+                kind: 'response',
+                status: 426,
+                message:
+                  'Update this runtime to sync saved workspace edits safely. Your edits remain queued.',
+              }),
+            ),
+      ),
+      Effect.catch((error) => {
+        if (
+          error instanceof RuntimeRequestError &&
+          (error.mutationRetired ||
+            (!state.workspaceMutations &&
+              error.status === 409 &&
+              error.message.startsWith('This action was already acknowledged.')))
+        )
+          return this.legacyWorkspaceEffect(connection, input, id, false)
+        if (
+          !state.workspaceMutations &&
+          error instanceof RuntimeRequestError &&
+          error.status === 409 &&
+          /Another client changed|already exists|not found|restarted while applying|previous attempt failed/.test(
+            error.message,
+          )
+        )
+          return this.legacyWorkspaceEffect(
+            connection,
+            input,
+            id,
+            !/restarted while applying|previous attempt failed/.test(error.message),
+          )
+        if (workspacePatchRejected(error) && !state.workspaceMutations)
+          return this.preserveWorkspaceEffect(connection, input, null, error.message).pipe(
+            Effect.andThen(Effect.fail(error)),
+          )
+        return Effect.fail(error)
+      }),
+      Effect.tap((value) => Effect.sync(() => this.workspaceCommitted(state, value))),
+      Effect.flatMap((value) => {
+        const error = workspacePatchRejection(value)
+        return error ? Effect.fail(error) : Effect.succeed(value)
+      }),
+    )
+  }
+  private legacyWorkspaceEffect(
+    connection: RuntimeConnection,
+    input: unknown,
+    id: string,
+    mayApply: boolean,
+  ) {
+    return Effect.gen({ self: this }, function* () {
+      const snapshot = yield* runtimeRequestEffect(
+        connection,
+        connection.address,
+        runtimeSnapshotPath(connection),
+        undefined,
+        snapshotSchema,
+        'GET',
+      )
+      const patch = decode(patchSchema, input)
+      const entity = snapshot.workspace[patch.collection].find((item) => item.id === patch.id)
+      const host = entity ? decode(Schema.Record(Schema.String, Schema.Unknown), entity) : null
+      const changes: typeof patch.changes = {}
+      let conflicted = !host || patch.create !== undefined || !mayApply
+      if (host && patch.create === undefined && mayApply)
+        for (const [key, change] of Object.entries(patch.changes)) {
+          const merged =
+            key === 'draft' && workspaceDraftConsumed(host, change.before)
+              ? { value: change.after, conflicted: false }
+              : reconcileWorkspaceEdit(change.before, change.after, host[key] ?? null)
+          conflicted ||= merged.conflicted
+          if (!sameWorkspaceEditValue(host[key] ?? null, merged.value ?? null))
+            changes[key] = { before: host[key] ?? null, after: merged.value ?? null }
+        }
+      if (conflicted)
+        yield* this.preserveWorkspaceEffect(
+          connection,
+          input,
+          entity ?? null,
+          'The runtime retained competing or uncertain values from an older edit.',
+        )
+      if (Object.keys(changes).length) {
+        const rebased = { collection: patch.collection, id: patch.id, changes }
+        // One retry identity per original operation, even if the host changes again.
+        // A changed payload must collide with the receipt rather than repeat a write.
+        const retryId = bytesToHex(sha256(utf8ToBytes(JSON.stringify({ id, workspaceRetry: 1 }))))
+        const response = yield* this.sendRaw(connection, {
+          id: retryId,
+          path: '/api/workspace',
+          method: 'PATCH',
+          input: rebased,
+        }).pipe(
+          Effect.catch((error) =>
+            error instanceof RuntimeRequestError &&
+            error.status === 409 &&
+            error.message === 'This action ID already belongs to another request.'
+              ? this.preserveWorkspaceEffect(
+                  connection,
+                  input,
+                  entity ?? null,
+                  'An older retry may already have applied. The runtime retained its current state.',
+                ).pipe(
+                  Effect.as({
+                    revision: snapshot.revision,
+                    runtimeInstanceId: snapshot.runtimeInstanceId,
+                    reconciled: true,
+                  }),
+                )
+              : workspacePatchRejected(error)
+                ? this.preserveWorkspaceEffect(
+                    connection,
+                    input,
+                    entity ?? null,
+                    error.message,
+                  ).pipe(Effect.andThen(Effect.fail(error)))
+                : Effect.fail(error),
+          ),
+        )
+        const result = decode(workspacePatchResultSchema, response)
+        return { ...result, reconciled: true }
+      }
+      return {
+        revision: snapshot.revision,
+        runtimeInstanceId: snapshot.runtimeInstanceId,
+        reconciled: true,
+        outcome: 'reconciled' as const,
+      }
+    })
+  }
+  private workspaceRecoveriesEffect(connection: RuntimeConnection) {
+    return Effect.gen({ self: this }, function* () {
+      const read = this.storage.workspaceRecoveries
+      const localResult = yield* Effect.result(
+        read ? operation(() => read(connection)) : Effect.succeed([]),
+      )
+      const local = localResult._tag === 'Success' ? localResult.success : []
+      const remote = yield* Effect.result(
+        runtimeRequestEffect(
+          connection,
+          connection.address,
+          '/api/workspace/recovered-edits',
+          undefined,
+          workspaceRecoveriesSchema,
+          'GET',
+        ),
+      )
+      if (
+        remote._tag === 'Failure' &&
+        !local.length &&
+        !(remote.failure instanceof RuntimeRequestError && remote.failure.status === 404)
+      )
+        return yield* Effect.fail(remote.failure)
+      const edits = new Map(
+        (remote._tag === 'Success' ? remote.success.edits : []).map((edit) => [edit.id, edit]),
+      )
+      for (const edit of local)
+        edits.set(edit.id, decode(workspaceRecoverySchema, redactRecovery(edit)))
+      return {
+        edits: [...edits.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        nextCursor: remote._tag === 'Success' ? remote.success.nextCursor : undefined,
+        warnings:
+          localResult._tag === 'Failure'
+            ? ['Local recovered edits could not be read. They remain preserved on this device.']
+            : [],
+      }
+    })
+  }
+  acknowledgeWorkspaceEffect(connection: RuntimeConnection, id: string) {
+    return this.acknowledge(connection, this.state(connection), id)
+  }
   private send(connection: RuntimeConnection, item: MutationOutbox[number]) {
+    return item.path === '/api/workspace' && item.method === 'PATCH'
+      ? this.workspaceEffect(connection, item.input, item.id)
+      : this.sendRaw(connection, item)
+  }
+  private sendRaw(connection: RuntimeConnection, item: MutationOutbox[number]) {
     return runtimeRequestEffect(
       connection,
       connection.address,
@@ -212,36 +491,57 @@ export class RuntimeMutations {
       Effect.catch(() => Effect.void),
     )
   }
-  private drain(connection: RuntimeConnection, state: State, retry = false, stopBefore?: string) {
+  private drain(
+    connection: RuntimeConnection,
+    state: State,
+    retry = false,
+    stopBefore?: string,
+    allowBlockedCommands = false,
+  ) {
     return Effect.gen({ self: this }, function* () {
       if (!state.pending.length) return
-      while (state.pending.length && state.pending[0]?.id !== stopBefore) {
-        const item = state.pending[0]!
+      let blockedError: Error | undefined
+      const skipped = new Set<string>()
+      while (state.pending.length) {
+        const item = state.pending.find(
+          (entry) => !skipped.has(entry.id) && (!blockedError || entry.path === '/api/workspace'),
+        )
+        if (!item || item.id === stopBefore) break
         // A saved workspace validation failure can safely be resolved from its receipt,
         // including journals created by older clients that retained rejected edits.
-        if (item.blocked && !retry && !(item.path === '/api/workspace' && item.method === 'PATCH'))
-          return yield* Effect.fail(
-            new Error(
-              state.error ?? 'A saved action needs review. Retry or discard pending actions.',
-            ),
+        if (
+          item.blocked &&
+          !retry &&
+          !(item.path === '/api/workspace' && item.method === 'PATCH')
+        ) {
+          blockedError = new Error(
+            state.error ?? 'A saved action needs review. Retry or discard pending actions.',
           )
+          skipped.add(item.id)
+          continue
+        }
         const result = yield* Effect.result(this.send(connection, item))
         if (result._tag === 'Failure') {
-          if (rejectedPatch(item, result.failure)) {
+          if (settledFailure(item, result.failure)) {
             yield* this.save(connection, state, (pending) =>
               pending.filter((entry) => entry.id !== item.id),
             )
             yield* this.acknowledge(connection, state, item.id)
             continue
           }
-          state.error = transient(result.failure)
+          state.error = transientMutation(item, result.failure)
             ? `Saved actions will sync when this computer is reachable. ${result.failure.message}`
             : result.failure.message
-          if (!transient(result.failure))
+          if (!transientMutation(item, result.failure))
             yield* this.save(connection, state, (pending) =>
               pending.map((entry) => (entry.id === item.id ? { ...entry, blocked: true } : entry)),
             )
           this.changed()
+          if (!transientMutation(item, result.failure) && item.path !== '/api/workspace') {
+            blockedError = result.failure
+            skipped.add(item.id)
+            continue
+          }
           return yield* Effect.fail(result.failure)
         }
         this.retainMessage(state, item)
@@ -250,6 +550,7 @@ export class RuntimeMutations {
         )
         yield* this.acknowledge(connection, state, item.id)
       }
+      if (blockedError && !allowBlockedCommands) return yield* Effect.fail(blockedError)
       if (!state.pending.length) {
         state.error = null
         this.changed()
@@ -270,9 +571,19 @@ export class RuntimeMutations {
             return
           }
           // An explicit retry after upgrading a legacy host must recheck its receipts.
-          if (!(yield* this.supports(connection, state, retry)))
+          if (
+            !(yield* this.supports(
+              connection,
+              state,
+              retry || state.pending.some((item) => item.path === '/api/workspace'),
+            ))
+          )
             return yield* Effect.fail(
-              new Error('Update this runtime before recovering saved actions.'),
+              new RuntimeRequestError({
+                kind: 'response',
+                status: 426,
+                message: 'Update this runtime before recovering saved actions.',
+              }),
             )
           yield* this.drain(connection, state, retry)
         }),
@@ -319,6 +630,10 @@ export class RuntimeMutations {
     schema: T,
     method = 'POST',
   ) {
+    if (method === 'GET' && path === '/api/workspace/recovered-edits')
+      return this.workspaceRecoveriesEffect(connection).pipe(
+        Effect.map((value) => decode(schema, value)),
+      )
     if (!recoverableMutation(path, method))
       return runtimeRequestEffect(connection, connection.address, path, input, schema, method)
     const state = this.state(connection)
@@ -338,7 +653,7 @@ export class RuntimeMutations {
                 (entry) =>
                   !entry.blocked || entry.path !== '/api/workspace' || entry.method !== 'PATCH',
               )
-              yield* this.drain(connection, state, false, next?.id)
+              yield* this.drain(connection, state, false, next?.id, path === '/api/workspace')
             }
           }
           // A UI retry of the same unresolved command keeps its identity, including after restart.
@@ -350,7 +665,7 @@ export class RuntimeMutations {
           )
           const created = !item
           if (!item) {
-            if (state.pending.some((entry) => entry.blocked))
+            if (state.pending.some((entry) => entry.blocked) && path !== '/api/workspace')
               return yield* Effect.fail(
                 new Error(
                   'A saved action needs review. Retry or discard pending actions before sending another.',
@@ -366,10 +681,10 @@ export class RuntimeMutations {
           let sent = false
           const result = yield* Effect.result(
             Effect.gen({ self: this }, function* () {
-              if (!(yield* this.supports(connection, state))) {
+              if (!(yield* this.supports(connection, state, path === '/api/workspace'))) {
                 // This new command has never reached the host. Legacy hosts can execute it
                 // normally; previously saved commands still require receipt support.
-                if (created && state.pending.length === 1) {
+                if (created && state.pending.length === 1 && path !== '/api/workspace') {
                   sent = true
                   return yield* runtimeRequestEffect(
                     connection,
@@ -381,16 +696,20 @@ export class RuntimeMutations {
                   )
                 }
                 return yield* Effect.fail(
-                  new Error('Update this runtime before recovering saved actions.'),
+                  new RuntimeRequestError({
+                    kind: 'response',
+                    status: 426,
+                    message: 'Update this runtime before recovering saved actions.',
+                  }),
                 )
               }
-              yield* this.drain(connection, state, false, command.id)
+              yield* this.drain(connection, state, false, command.id, path === '/api/workspace')
               sent = true
               return yield* this.send(connection, command)
             }),
           )
           if (result._tag === 'Failure') {
-            state.error = transient(result.failure)
+            state.error = transientMutation(command, result.failure)
               ? `Action saved for reconnect. ${result.failure.message}`
               : result.failure.message
             const rejectedLegacyCommand =
@@ -398,10 +717,10 @@ export class RuntimeMutations {
               state.supported === false &&
               result.failure instanceof RuntimeRequestError &&
               result.failure.status !== undefined &&
-              !transient(result.failure)
-            const rejectedEdit = sent && rejectedPatch(command, result.failure)
+              !transientMutation(command, result.failure)
+            const rejectedEdit = sent && settledFailure(command, result.failure)
             if (
-              (!transient(result.failure) && !sent && created) ||
+              (!transientMutation(command, result.failure) && !sent && created) ||
               rejectedLegacyCommand ||
               rejectedEdit
             )
@@ -409,7 +728,12 @@ export class RuntimeMutations {
                 pending.filter((entry) => entry.id !== command.id),
               )
             if (rejectedEdit) yield* this.acknowledge(connection, state, command.id)
-            if (!transient(result.failure) && sent && !rejectedLegacyCommand && !rejectedEdit)
+            if (
+              !transientMutation(command, result.failure) &&
+              sent &&
+              !rejectedLegacyCommand &&
+              !rejectedEdit
+            )
               yield* this.save(connection, state, (pending) =>
                 pending.map((entry) =>
                   entry.id === command.id ? { ...entry, blocked: true } : entry,
@@ -419,7 +743,7 @@ export class RuntimeMutations {
             // A send is accepted into this client's durable queue. Clear its composer now,
             // rather than resurrecting its text when reconnect later delivers it.
             if (
-              transient(result.failure) &&
+              transientMutation(command, result.failure) &&
               ['/api/tasks/message', '/api/tasks/steer'].includes(path)
             )
               return yield* Effect.try({
@@ -437,7 +761,7 @@ export class RuntimeMutations {
             pending.filter((entry) => entry.id !== command.id),
           )
           yield* this.acknowledge(connection, state, command.id)
-          state.error = null
+          if (!state.pending.some((entry) => entry.blocked)) state.error = null
           this.changed()
           return value
         }),
@@ -446,10 +770,25 @@ export class RuntimeMutations {
         Effect.tapError((error) =>
           Effect.sync(() => {
             state.error =
-              !state.pending.length && rejectedPatch({ path, method }, error) ? null : error.message
+              !state.pending.length && settledFailure({ path, method }, error)
+                ? null
+                : error.message
             this.changed()
           }),
         ),
       )
   }
+}
+
+function redactRecovery(value: unknown, sensitive = false): unknown {
+  if (sensitive && typeof value === 'string') return '[redacted]'
+  if (Array.isArray(value)) return value.map((item) => redactRecovery(item, sensitive))
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        redactRecovery(item, sensitive || key === 'envValues' || key === 'headerValues'),
+      ]),
+    )
+  return value
 }

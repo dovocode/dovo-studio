@@ -40,8 +40,8 @@ import {
 } from './task-collection'
 import { taskActionClient, useTaskActionStore } from './task-row-actions'
 import { useCommittedCallback } from '../detail/use-committed-callback'
-import { indexTaskSubagents, type Subagent } from '@dovo/protocol'
-const noSubagents: readonly Subagent[] = []
+import { indexTaskSubagents, projectSubagentList, type SubagentListItem } from '@dovo/protocol'
+const noSubagents: readonly SubagentListItem[] = []
 // Below this, every open row renders; above it, rows mount near the viewport.
 const windowedRowCount = 80
 const selectionActions = [
@@ -52,10 +52,6 @@ const selectionActions = [
   { id: 'unread', label: 'Mark as unread' },
   { id: 'delete', label: 'Delete' },
 ] as const
-const sameSubagents = (previous: readonly Subagent[], next: readonly Subagent[]) =>
-  previous.length === next.length &&
-  (previous.every((agent, index) => agent === next[index]) ||
-    JSON.stringify(previous) === JSON.stringify(next))
 export function TaskList({
   titleHeader = false,
   projectId,
@@ -119,14 +115,11 @@ export function TaskList({
   )
   // Snapshots rebuild every list; rows keep the previous value while their content is equal.
   const retainSubagents = useMemo(() => {
-    let previous = new Map<string, readonly Subagent[]>()
-    return (next: Map<string, readonly Subagent[]>) => {
+    let previous = new Map<string, readonly SubagentListItem[]>()
+    return (next: Map<string, readonly SubagentListItem[]>) => {
       for (const [key, agents] of next) {
         const old = previous.get(key)
-        next.set(
-          key,
-          !agents.length ? noSubagents : old && sameSubagents(old, agents) ? old : agents,
-        )
+        next.set(key, !agents.length ? noSubagents : projectSubagentList(agents, old))
       }
       previous = next
       return next

@@ -198,6 +198,7 @@ export function runtimeSnapshot(
           : canUpdateServer(),
       defaults: decode(runtimeDefaultsSchema, s.store.publicValue(s.defaults.get())),
       scopedAgentsSupported: true,
+      workspaceReconciliationSupported: true,
       settingsScopesSupported: true,
       taskBehaviorSupported: true,
       worktreeDeletionOverrideSupported: true,

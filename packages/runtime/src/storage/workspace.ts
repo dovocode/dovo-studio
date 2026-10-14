@@ -53,6 +53,13 @@ import {
 } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 import { isDeepStrictEqual } from 'node:util'
+import { createHash } from 'node:crypto'
+import {
+  reconcileWorkspaceEdit,
+  workspaceDraftConsumed,
+  workspaceRecoverySchema,
+  type WorkspaceRecovery,
+} from '@dovo/protocol'
 const rowSchema = mutableStruct({
   value: Schema.String,
 })
@@ -967,6 +974,17 @@ export class WorkspaceStore {
         this.db.prepare('DELETE FROM task_submissions WHERE task_id = ?').run(id)
         this.db.prepare('DELETE FROM question_responses WHERE task_id = ?').run(id)
       }
+      for (const collection of ['tasks', 'agents', 'repositories', 'automations'] as const) {
+        const retained = new Set(next[collection].map((item) => item.id))
+        for (const item of this.workspace[collection])
+          if (!retained.has(item.id))
+            this.db
+              .prepare('INSERT OR IGNORE INTO documents (id,value) VALUES (?,?)')
+              .run(
+                `workspace-deleted:${collection}:${item.id}`,
+                JSON.stringify({ deletedAt: new Date().toISOString() }),
+              )
+      }
       this.documents.write(next, this.workspace, this.rewriteDocuments)
       this.onUpdate?.({ before: this.workspace, after: next, histories: changes })
     })()
@@ -1142,9 +1160,68 @@ export class WorkspaceStore {
       )
   }
   patch(patch: WorkspacePatch) {
+    const outcome = { reconciled: false }
+    this.transaction(() => this.applyPatch(patch, outcome))
+    return outcome
+  }
+  recoveredEdits(): WorkspaceRecovery[] {
+    return this.recoveredEditsPage().edits
+  }
+  recoveredEditsPage(cursor?: string) {
+    const rows = this.db
+      .prepare(
+        "SELECT rowid AS cursor,value FROM documents WHERE id >= 'workspace-recovery:' AND id < 'workspace-recovery;' AND rowid < ? ORDER BY rowid DESC LIMIT 101",
+      )
+      .all(cursor === undefined ? Number.MAX_SAFE_INTEGER : Number(cursor))
+    const edits = rows.slice(0, 100).map((row) => {
+      const stored = decode(rowSchema, row)
+      return decode(workspaceRecoverySchema, this.publicValue(JSON.parse(stored.value)))
+    })
+    const last = rows[99]
+    const nextCursor =
+      rows.length > 100 && last
+        ? String(decode(mutableStruct({ cursor: Schema.Number }), last).cursor)
+        : undefined
+    return { edits, nextCursor }
+  }
+  preserveEdit(patch: WorkspacePatch, host: unknown, reason?: string) {
+    const id = createHash('sha256').update(JSON.stringify({ patch, host })).digest('hex')
+    const edit: WorkspaceRecovery = { id, createdAt: new Date().toISOString(), patch, host, reason }
+    this.db
+      .prepare('INSERT OR IGNORE INTO documents (id, value) VALUES (?, ?)')
+      .run(`workspace-recovery:${id}`, JSON.stringify(edit))
+    return id
+  }
+  previewPatch(patch: WorkspacePatch): WorkspacePatch {
+    const entity = this.workspace[patch.collection].find((item) => item.id === patch.id)
+    if (!entity) return patch
+    if (patch.create !== undefined)
+      return { collection: patch.collection, id: patch.id, changes: {} }
+    const current = decode(
+      Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
+      this.publicValue(entity),
+    )
+    return {
+      ...patch,
+      changes: Object.fromEntries(
+        Object.entries(patch.changes).map(([key, change]) => [
+          key,
+          {
+            before: current[key] ?? null,
+            after: reconcileWorkspaceEdit(
+              change.before ?? null,
+              change.after ?? null,
+              current[key] ?? null,
+            ).value,
+          },
+        ]),
+      ),
+    }
+  }
+  private applyPatch(patch: WorkspacePatch, outcome: { reconciled: boolean }) {
     patch = decode(patchSchema, {
       ...patch,
-      create: this.restoreSecrets(patch.create),
+      create: this.secrets.restore(patch.create, this.workspace, true),
       changes: Object.fromEntries(
         Object.entries(patch.changes).map(([key, change]) => [
           key,
@@ -1152,7 +1229,7 @@ export class WorkspaceStore {
             // A lost-response retry may refer to a secret that was already replaced.
             // Keep missing before references for conflict checking; never persist them.
             before: this.secrets.restore(change.before, this.workspace, true),
-            after: this.restoreSecrets(change.after),
+            after: this.secrets.restore(change.after, this.workspace, true),
           },
         ]),
       ),
@@ -1211,7 +1288,10 @@ export class WorkspaceStore {
           record.consumedMessageIds !== undefined)
       )
         throw new HttpError(400, 'New tasks must be drafts')
-      const parsed = decode(workspaceSchema.fields[patch.collection].schema.value, record)
+      const parsed = decode(
+        workspaceSchema.fields[patch.collection].schema.value,
+        entity ? record : this.restoreSecrets(record),
+      )
       if (patch.collection === 'tasks') this.validateProjectTask(decode(taskSchema, parsed))
       if (patch.collection === 'repositories' && 'kind' in record && record.kind === 'scratch')
         throw new HttpError(400, 'The scratch workspace is managed by Dovo')
@@ -1221,7 +1301,18 @@ export class WorkspaceStore {
           const retry = versionReviewedFiles(decode(taskSchema, parsed), existing)
           if (isDeepStrictEqual(existing, retry)) return
         } else if (isDeepStrictEqual(entity, parsed)) return
-        throw new HttpError(409, 'This item already exists. Refresh to load the latest version.')
+        this.preserveEdit(patch, entity)
+        outcome.reconciled = true
+        return
+      }
+      if (
+        this.db
+          .prepare('SELECT 1 FROM documents WHERE id=?')
+          .get(`workspace-deleted:${patch.collection}:${patch.id}`)
+      ) {
+        this.preserveEdit(patch, null, 'This item was deleted on the runtime.')
+        outcome.reconciled = true
+        return
       }
       this.update((w) => ({
         ...w,
@@ -1229,7 +1320,11 @@ export class WorkspaceStore {
       }))
       return
     }
-    if (!entity) throw new HttpError(404, 'Item not found')
+    if (!entity) {
+      this.preserveEdit(patch, null)
+      outcome.reconciled = true
+      return
+    }
     if (
       patch.collection === 'tasks' &&
       'pullRequest' in entity &&
@@ -1299,12 +1394,28 @@ export class WorkspaceStore {
           ])
         : null
     let changed = false
+    const recovered: WorkspacePatch['changes'] = {}
+    const applied: WorkspacePatch['changes'] = {}
+    const recoveryHost: Record<string, unknown> = {}
     for (const [key, change] of Object.entries(patch.changes)) {
       if (key === 'id' || (allowed && !allowed.has(key)))
         throw new HttpError(400, `Cannot edit ${key}`)
-      // A response can be lost after committing. Retrying that value is a no-op;
-      // divergent values still need to satisfy the original optimistic precondition.
+      // A response can be lost after committing. Retrying that value is a no-op.
       if (isDeepStrictEqual(current[key] ?? null, change.after ?? null)) continue
+      // Sending consumes the old draft outside workspace PATCH. Typing the next
+      // message before its clear arrives remains an ordinary edit.
+      const consumedDraft =
+        key === 'draft' && !!summary && workspaceDraftConsumed(summary, change.before)
+      const merged = consumedDraft
+        ? { value: change.after, conflicted: false }
+        : reconcileWorkspaceEdit(change.before ?? null, change.after ?? null, current[key] ?? null)
+      if (!consumedDraft && !isDeepStrictEqual(current[key] ?? null, change.before ?? null))
+        outcome.reconciled = true
+      if (merged.conflicted) {
+        recovered[key] = change
+        recoveryHost[key] = current[key] ?? null
+      }
+      if (isDeepStrictEqual(current[key] ?? null, merged.value ?? null)) continue
       if (
         patch.collection === 'tasks' &&
         (key === 'execution' ||
@@ -1340,22 +1451,6 @@ export class WorkspaceStore {
         ].includes(key)
       )
         throw new HttpError(409, 'Stop the active turn before changing task settings')
-      // Sending consumes the draft outside workspace PATCH. A client may type its next
-      // message before that clear reaches its snapshot; this is not a competing edit.
-      const previousDraft = typeof change.before === 'string' ? change.before.trim() : ''
-      const consumedDraft =
-        key === 'draft' &&
-        current.draft === '' &&
-        previousDraft !== '' &&
-        !!summary &&
-        [summary.history.latestUserText, summary.queue?.at(-1)?.text].some(
-          (text) => text?.trim() === previousDraft,
-        )
-      if (!consumedDraft && !isDeepStrictEqual(current[key] ?? null, change.before ?? null))
-        throw new HttpError(
-          409,
-          `Another client changed ${key}. Reconnect to load the latest version.`,
-        )
       if (patch.collection === 'tasks' && key === 'messages') {
         const old = decode(mutableArray(Schema.Unknown), current.messages),
           next = decode(
@@ -1369,7 +1464,7 @@ export class WorkspaceStore {
                 [Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))],
               ),
             ),
-            change.after,
+            merged.value,
           )
         if (
           next.length < old.length ||
@@ -1378,9 +1473,14 @@ export class WorkspaceStore {
         )
           throw new HttpError(400, 'Only new user messages may be appended')
       }
-      current[key] = change.after ?? undefined
+      merged.value = this.restoreSecrets(merged.value)
+      applied[key] = { before: current[key] ?? null, after: merged.value ?? null }
+      current[key] = merged.value ?? undefined
       changed = true
     }
+    if (Object.keys(recovered).length)
+      this.preserveEdit({ ...patch, changes: recovered }, recoveryHost)
+    patch = { ...patch, changes: applied }
     if (
       patch.collection === 'tasks' &&
       changed &&

@@ -1,3 +1,4 @@
+import { patchWorkspace } from './endpoints/workspace-patch.js'
 import { agentBrowserRequestSchema } from '../previews/agent-browser.js'
 import { taskWaitingRequestSchema } from '@dovo/protocol'
 import { McpError } from '@modelcontextprotocol/sdk/types.js'
@@ -54,12 +55,11 @@ import { jobsRoute } from './endpoints/jobs-routes.js'
 import { scmRoute } from './endpoints/scm-routes.js'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
-import { patchSchema, workspaceSchema, taskMetadataSchema } from '@dovo/protocol'
+import { workspaceSchema } from '@dovo/protocol'
 import { RuntimeServices } from '../services.js'
 import { HttpError, type RuntimeFailure } from '../errors.js'
 import { body } from './support/body.js'
 import { hashSecret, equalSecret } from '../auth/devices.js'
-import { validateAutomation } from '../jobs/validation.js'
 import { clearLastCrash } from '../storage/last-crash.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 // Unauthenticated routes read at most what they need before any credential is checked.
@@ -318,7 +318,7 @@ export function route(
         return yield* serviceResult({ app: s.mcpApps.read(taskId, id) })
       }
       if (method === 'GET' && path === '/api/mutations/status')
-        return { version: 1, acknowledgements: true }
+        return { version: 1, acknowledgements: true, workspaceMutations: 1 }
       if (method === 'POST' && path === '/api/mutations/acknowledge') {
         const { ids } = decode(
           mutableStruct({ ids: maxValue(mutableArray(idSchema), 100) }),
@@ -327,7 +327,11 @@ export function route(
         s.mutations.acknowledge(device.id, ids)
         return { ok: true }
       }
-      if (!receipted && request.headers['x-dovo-mutation-id'] !== undefined) {
+      if (
+        !receipted &&
+        request.headers['x-dovo-mutation-id'] !== undefined &&
+        !(method === 'PATCH' && path === '/api/workspace')
+      ) {
         if (!recoverableMutation(path, method))
           throw new HttpError(400, 'This action does not support mutation recovery.')
         const id = decode(idSchema, request.headers['x-dovo-mutation-id'])
@@ -906,58 +910,19 @@ export function route(
         return yield* serviceResult({ ok: true })
       }
       if (method === 'PATCH' && path === '/api/workspace') {
-        const patch = decode(patchSchema, yield* serviceResult(body(request)))
-        if (patch.collection === 'repositories' && patch.id === SCRATCH_PROJECT_ID) {
-          if (!patch.create || Object.keys(patch.changes).length)
-            throw new HttpError(400, 'The scratch workspace is managed by Dovo')
-          yield* serviceResult(s.scratch.ensure())
-          return { revision: s.store.version(), runtimeInstanceId: s.instanceId }
-        }
-        if (patch.collection === 'tasks') {
-          const candidate =
-            patch.create && typeof patch.create === 'object' && 'repositoryId' in patch.create
-              ? patch.create.repositoryId
-              : patch.changes.repositoryId?.after
-          if (candidate === SCRATCH_PROJECT_ID) yield* serviceResult(s.scratch.ensure())
-        }
+        const input = yield* serviceResult(body(request))
+        const header = request.headers['x-dovo-mutation-id']
+        const id = header === undefined ? undefined : decode(idSchema, header)
+        return yield* serviceResult(patchWorkspace(s, input, device.id, id))
+      }
+      if (method === 'GET' && path === '/api/workspace/recovered-edits') {
+        const cursor = url.searchParams.get('cursor') ?? undefined
         if (
-          patch.collection === 'automations' &&
-          (patch.changes.enabled?.after === true ||
-            s.store.get().automations.find((f) => f.id === patch.id)?.enabled)
-        ) {
-          const current = s.store.get().automations.find((f) => f.id === patch.id)
-          if (current) {
-            const next = {
-              ...current,
-              ...Object.fromEntries(
-                Object.entries(patch.changes).map(([key, value]) => [
-                  key,
-                  value.after ?? undefined,
-                ]),
-              ),
-            }
-            validateAutomation(
-              decode(workspaceSchema.fields.automations.schema.value, next),
-              s.store.get(),
-            )
-          }
-        }
-        if (patch.collection === 'tasks') {
-          const current = s.store.get().tasks.find((task) => task.id === patch.id)
-          const next = decode(taskMetadataSchema, {
-            ...(patch.create ?? current),
-            ...Object.fromEntries(
-              Object.entries(patch.changes).map(([key, value]) => [key, value.after ?? undefined]),
-            ),
-          })
-          s.tasks.requireCheckoutReferencesAvailable(next)
-        }
-        s.store.patch(patch)
-        if (patch.collection === 'repositories') s.approvals.applyWebRules()
-        return yield* serviceResult({
-          revision: s.store.version(),
-          runtimeInstanceId: s.instanceId,
-        })
+          cursor !== undefined &&
+          (!/^[1-9][0-9]*$/.test(cursor) || !Number.isSafeInteger(Number(cursor)))
+        )
+          throw new HttpError(400, 'Invalid recovery cursor')
+        return yield* serviceResult(s.store.recoveredEditsPage(cursor))
       }
       if (method === 'POST' && path === '/api/pair/code') {
         owner()

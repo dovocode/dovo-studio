@@ -230,6 +230,7 @@ export function WorkspaceProvider({
     address: string
     token: string
     tag: string
+    version: number
   } | null>(null)
   const caches = useRef(
     new Map<
@@ -293,8 +294,11 @@ export function WorkspaceProvider({
   const [syncVersion, setSyncVersion] = useApplicationState(0)
   const [synchronization] = useState(
     () =>
-      new WorkspaceSynchronization(setSyncError, undefined, writeWorkspaceOutbox, () =>
-        setSyncVersion((version) => version + 1),
+      new WorkspaceSynchronization(
+        setSyncError,
+        (target, patch, id) => mutations.workspaceEffect(target, patch, id),
+        writeWorkspaceOutbox,
+        () => setSyncVersion((version) => version + 1),
       ),
   )
   const beforeReplace = useCallback(
@@ -366,18 +370,22 @@ export function WorkspaceProvider({
         previous &&
         previous.tag === tag &&
         previous.address === target.address &&
-        previous.token === target.token
+        previous.token === target.token &&
+        previous.version === synchronization.projectionVersion()
       )
         return
-      install(value.workspace)
+      install(synchronization.project(value.workspace))
+      synchronization.refreshed(value.runtimeInstanceId)
+      mutations.workspaceRefreshed(target, mutations.workspaceRefreshCheckpoint(target), value)
       if (tag)
         installedSnapshot.current = {
           address: target.address,
           token: target.token,
           tag,
+          version: synchronization.projectionVersion(),
         }
     },
-    [install],
+    [install, synchronization, mutations],
   )
   // False once the saved registry could not be read: writing would replace every saved
   // computer with the empty fallback the session started from.
@@ -572,13 +580,28 @@ export function WorkspaceProvider({
         ),
       )
     }).pipe(Effect.uninterruptible)
-    const polling = startPolling(persist, { interval: 5000, immediate: false, onError: () => {} })
+    const polling = startPolling(
+      persist.pipe(
+        Effect.andThen(
+          Effect.suspend(() =>
+            document.visibilityState === 'visible' && synchronization.needsStorageRetry()
+              ? synchronization.retryEffect()
+              : Effect.void,
+          ),
+        ),
+      ),
+      {
+        interval: 5000,
+        immediate: false,
+        onError: (error) => setSyncError(error.message),
+      },
+    )
     window.addEventListener('pagehide', polling.refresh)
     return () => {
       window.removeEventListener('pagehide', polling.refresh)
       void polling.stop().then(() => runClientEffect(persist))
     }
-  }, [cacheFor])
+  }, [cacheFor, synchronization])
   const flush = useCallback(() => synchronization.flush(), [synchronization])
   const setWorkspace = useCallback<Dispatch<SetStateAction<Workspace>>>(
     (update) => {
@@ -629,7 +652,7 @@ export function WorkspaceProvider({
             ? null
             : 'This runtime is offline. Showing its last saved workspace.',
       )
-      if (online) synchronization.clearNetworkError()
+      if (online) synchronization.clearNetworkError(value?.workspaceReconciliationSupported)
       if (persist)
         void saveRegistry((saved) => upsertRuntime(saved, profile)).catch(() => {
           /* Storage error remains visible. */
@@ -1125,12 +1148,37 @@ export function WorkspaceProvider({
         setSnapshot(value, profile.connection)
         setConnected(true)
         void runClientEffect(mutations.recoverEffect(profile.connection)).catch(() => undefined)
-        synchronization.clearNetworkError()
-        if (synchronization.accepts(checkpoint)) installSnapshot(profile.connection, value)
+        synchronization.clearNetworkError(value.workspaceReconciliationSupported)
+        if (synchronization.isCurrent(checkpoint)) installSnapshot(profile.connection, value)
       }
     },
     [assertProfile, readRuntime, synchronization, updateOverview, installSnapshot, mutations],
   )
+  const reconciliationReads = useRef(new Set<string>())
+  useEffect(() => {
+    const target = connectionRef.current
+    const profile = registryRef.current.profiles.find(
+      (item) => item.id === registryRef.current.activeId,
+    )
+    if (!target || !profile) return
+    const host = snapshotRef.current
+    if (
+      host &&
+      snapshotConnection.current &&
+      snapshotConnection.current.address === target.address &&
+      snapshotConnection.current.token === target.token &&
+      synchronization.hasSnapshot(host.revision, host.runtimeInstanceId)
+    )
+      installSnapshot(target, host)
+    const dirty = synchronization.requiresRefresh() || mutations.requiresWorkspaceRefresh(target)
+    if (!dirty || synchronization.isSending()) return
+    const key = JSON.stringify([target.address, target.token])
+    if (reconciliationReads.current.has(key)) return
+    reconciliationReads.current.add(key)
+    void refreshRuntime(profile)
+      .catch(() => undefined)
+      .finally(() => reconciliationReads.current.delete(key))
+  }, [syncVersion, mutationVersion, refreshRuntime, installSnapshot, synchronization, mutations])
   const resolveSyncConflict = useCallback<WorkspaceContextValue['resolveSyncConflict']>(
     async (conflict, choice) => {
       const target = connectionRef.current
@@ -1197,8 +1245,8 @@ export function WorkspaceProvider({
                 setConnected(value.connected)
                 if (value.connected && value.snapshot) {
                   setSnapshot(value.snapshot, profile.connection)
-                  synchronization.clearNetworkError()
-                  if (synchronization.accepts(checkpoint))
+                  synchronization.clearNetworkError(value.snapshot.workspaceReconciliationSupported)
+                  if (synchronization.isCurrent(checkpoint))
                     installSnapshot(profile.connection, value.snapshot)
                 } else setSyncError(value.error)
               }
@@ -1600,8 +1648,8 @@ export function WorkspaceProvider({
         setSnapshot(value, connection)
         setConnected(true)
         void runClientEffect(mutations.recoverEffect(connection)).catch(() => undefined)
-        synchronization.clearNetworkError()
-        if (synchronization.accepts(checkpoint)) installSnapshot(connection, value)
+        synchronization.clearNetworkError(value.workspaceReconciliationSupported)
+        if (synchronization.isCurrent(checkpoint)) installSnapshot(connection, value)
         const profile = registryRef.current.profiles.find(
           (entry) => entry.id === id && entry.connection.token === connection.token,
         )
@@ -1655,8 +1703,8 @@ export function WorkspaceProvider({
           setSnapshot(value, connection)
           setConnected(true)
           void runClientEffect(mutations.recoverEffect(connection)).catch(() => undefined)
-          synchronization.clearNetworkError()
-          if (synchronization.accepts(checkpoint)) installSnapshot(connection, value)
+          synchronization.clearNetworkError(value.workspaceReconciliationSupported)
+          if (synchronization.isCurrent(checkpoint)) installSnapshot(connection, value)
           const profile = registryRef.current.profiles.find(
             (entry) => entry.id === id && entry.connection.token === connection.token,
           )
@@ -2000,7 +2048,7 @@ export function WorkspaceProvider({
       refreshRuntime,
       retrySync,
       discardAndReload,
-      syncConflicts: snapshot ? synchronization.conflicts(snapshot.workspace) : [],
+      syncConflicts: [],
       resolveSyncConflict,
       pendingMessages,
       mutationStatus,

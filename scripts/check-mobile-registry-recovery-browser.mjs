@@ -10,13 +10,33 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';
 import {memo} from 'react';
-import {runtimeProfile} from '@dovo/protocol';
+import {runtimeProfile,workspacePatchResultSchema} from '@dovo/protocol';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {RuntimeProvider,useRuntime,useRuntimeSelector} from './apps/mobile/src/runtime/connection/provider.tsx';
 window.readFails=true;window.writes=[];window.requests=[];
 const profiles=['one','two'].map(name=>runtimeProfile({address:'http://'+name+'.lan:8787',token:'test-private-token-at-least-32-characters-'+name},name));
 window.saved=JSON.stringify({version:1,activeId:profiles[0].id,profiles});
-window.fetch=async(url)=>{window.requests.push(String(url));return Response.json({revision:1,owner:false,workspace:{version:1,runtimeAddress:'',agents:[],tasks:[],repositories:[],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]})};
+window.servers={};window.patchOffline=false;window.patchCalls=[];
+window.fetch=async(url,init={})=>{
+  window.requests.push(String(url));const parsed=new URL(url);
+  if(parsed.pathname==='/api/mutations/status')return Response.json({version:1,workspaceMutations:1});
+  const server=window.servers[parsed.host]??= {revision:1,runtimeInstanceId:'runtime-'+parsed.host,owner:false,workspaceReconciliationSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],tasks:[],repositories:[{id:'repo',name:'Runtime name',path:'/before',branch:'main'}],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]};
+  if(parsed.pathname==='/api/workspace'){
+    if(window.patchOffline)throw Error('Offline');
+    window.patchCalls.push(parsed.host);
+    server.revision++;
+    server.workspace.repositories[0]={...server.workspace.repositories[0],path:window.patchPath??'/local'};
+    return Response.json({revision:server.revision,runtimeInstanceId:server.runtimeInstanceId,reconciled:true});
+  }
+  if(window.streamDuringRead && parsed.pathname==='/api/snapshot' && parsed.host==='one.lan:8787'){
+    const previous=structuredClone(server);
+    window.streamDuringRead=false;
+    window.streams[parsed.origin]?.onSnapshot(structuredClone(server));
+    return Response.json(previous);
+  }
+  return Response.json(window.staleSnapshots ? {...server,revision:server.revision-1,workspace:{...server.workspace,repositories:[{...server.workspace.repositories[0],path:'/stale'}]}} : server);
+};
+window.offlineEdit=owner=>window.runtime.readRuntime(owner,'/api/workspace',{collection:'repositories',id:'repo',changes:{name:{before:'Old name',after:'Local name'},path:{before:'/before',after:'/local'}}},workspacePatchResultSchema,'PATCH');
 function Probe(){window.runtime=useRuntime();return <div>{window.runtime.ready?'Ready':'Loading'}</div>}
 // Every published runtime value reaches broad readers; a stable action selector stays quiet.
 window.renders={broad:0,selected:0};
@@ -47,11 +67,11 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
   [
     {
       path: '@dovo/protocol',
-      contents: `export * from '${root}packages/protocol/src/index.ts';export const startRuntimeSync=()=>({online:()=>false,refresh:()=>{},stop:()=>{}});`,
+      contents: `export * from '${root}packages/protocol/src/index.ts';export const startRuntimeSync=(connection,callbacks)=>{window.streams??={};window.streams[connection.address]=callbacks;return {online:()=>false,refresh:()=>{},stop:()=>{delete window.streams[connection.address]}}};`,
     },
     {
       path: 'react-native',
-      contents: `export const AppState={currentState:'background',addEventListener:()=>({remove:()=>{}})};`,
+      contents: `export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
     },
     {
       path: 'expo-network',
@@ -117,6 +137,108 @@ try {
   )
   await page.evaluate(() => window.connectThird())
   assert.equal(await page.evaluate(() => JSON.parse(window.saved).profiles.length), 3)
+  await page.evaluate(async () => {
+    window.patchOffline = true
+    const owner = window.runtime.profiles.find((profile) => profile.name === 'one')
+    await window.offlineEdit(owner).catch(() => {})
+  })
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.runtime.mutationStatus(
+          window.runtime.profiles.find((profile) => profile.name === 'one'),
+        ).pending,
+    ),
+    1,
+  )
+  await page.evaluate(async () => {
+    window.patchOffline = false
+    await window.runtime.refreshRuntime(
+      window.runtime.profiles.find((profile) => profile.name === 'one'),
+    )
+  })
+  await page.waitForFunction(() => {
+    const owner = window.runtime.profiles.find((profile) => profile.name === 'one')
+    const entry = window.runtime.overviews.find((entry) => entry.profile.id === owner.id)
+    return (
+      entry?.snapshot?.workspace.repositories[0]?.path === '/local' &&
+      window.runtime.mutationStatus(owner).pending === 0
+    )
+  })
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.runtime.overviews.find((entry) => entry.profile.name === 'one').snapshot.workspace
+          .repositories[0].name,
+    ),
+    'Runtime name',
+  )
+  assert.deepEqual(await page.evaluate(() => window.patchCalls), ['one.lan:8787'])
+  const beforeStaleRead = await page.evaluate(
+    () =>
+      window.requests.filter((url) => url.includes('one.lan') && url.includes('/api/snapshot'))
+        .length,
+  )
+  await page.evaluate(async () => {
+    window.staleSnapshots = true
+    window.patchPath = '/next-local'
+    await window.offlineEdit(window.runtime.profiles.find((profile) => profile.name === 'one'))
+  })
+  await page.waitForFunction(
+    (before) =>
+      window.requests.filter((url) => url.includes('one.lan') && url.includes('/api/snapshot'))
+        .length >=
+      before + 2,
+    beforeStaleRead,
+  )
+  await page.evaluate(() => window.runtime.refreshAll(false))
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.runtime.overviews.find((entry) => entry.profile.name === 'one').snapshot.workspace
+          .repositories[0].path,
+    ),
+    '/local',
+    'A stale response must not replace the last accepted workspace',
+  )
+  await page.evaluate(() => {
+    window.staleSnapshots = false
+  })
+  await page.waitForFunction(
+    () =>
+      window.runtime.overviews.find((entry) => entry.profile.name === 'one').snapshot.workspace
+        .repositories[0].path === '/next-local',
+  )
+  assert.ok(
+    (await page.evaluate(
+      (before) =>
+        window.requests.filter((url) => url.includes('one.lan') && url.includes('/api/snapshot'))
+          .length - before,
+      beforeStaleRead,
+    )) < 10,
+    'Acknowledgement recovery must use paced reads',
+  )
+  await page.evaluate(async () => {
+    const owner = window.runtime.profiles.find((profile) => profile.name === 'one')
+    await window.runtime.selectRuntime(owner.id)
+  })
+  await page.waitForFunction(() => !!window.streams['http://one.lan:8787'])
+  const readsBefore = await page.evaluate(() => window.requests.length)
+  await page.evaluate(async () => {
+    window.streamDuringRead = true
+    const owner = window.runtime.profiles.find((profile) => profile.name === 'one')
+    await window.offlineEdit(owner)
+  })
+  await page.waitForFunction(
+    () =>
+      !window.streamDuringRead &&
+      window.runtime.snapshot?.revision === window.servers['one.lan:8787'].revision,
+  )
+  const readsAfter = await page.evaluate(() => window.requests.length)
+  assert.ok(
+    readsAfter - readsBefore < 10,
+    'A streamed acknowledgement must not repeatedly trigger HTTP refreshes',
+  )
   const renders = await page.evaluate(() => window.renders)
   assert.ok(renders.broad > 3, `broad runtime reader rendered ${renders.broad} times`)
   assert.equal(renders.selected, 1, 'an action selector re-rendered for runtime state changes')

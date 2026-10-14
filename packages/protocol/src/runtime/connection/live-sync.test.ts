@@ -7,6 +7,7 @@ import {
   runtimeSnapshotPath,
 } from './live-sync.js'
 import type { RuntimeSnapshot } from './runtime.js'
+import { snapshotDelta } from './sync.js'
 import { snapshotSchema } from './runtime.js'
 import { decode } from '../../shared/schema.js'
 const stopped: Array<() => void> = []
@@ -530,6 +531,45 @@ it('uses the desktop connection owner for snapshots, activity, watches and retry
   expect(runtimeSyncOnline(connection, 'author')).toBe(true)
   receive?.({ type: 'activity', scope: 'author', events: [] })
   expect(activity).toHaveBeenCalledWith([])
+  const baseline = decode(snapshotSchema, {
+    revision: 1,
+    owner: false,
+    workspace: {
+      version: 1,
+      runtimeAddress: '',
+      agents: [],
+      repositories: [],
+      automations: [],
+      tasks: [],
+    },
+    approvals: [],
+    questions: [],
+    terminals: [],
+    runs: [],
+    devices: [],
+    pendingDevices: [],
+  })
+  receive?.({ type: 'snapshot', snapshot: baseline, epoch: 'epoch', sequence: 1 })
+  const next = { ...baseline, revision: 2 }
+  receive?.({
+    type: 'delta',
+    delta: snapshotDelta(baseline, next, true, true),
+    epoch: 'epoch',
+    base: 1,
+    sequence: 2,
+  })
+  expect(snapshot.mock.calls.at(-1)?.[0].revision).toBe(2)
+  expect(snapshot.mock.calls.at(-1)?.[0].workspace.agents).toBe(baseline.workspace.agents)
+  receive?.({
+    type: 'delta',
+    delta: snapshotDelta(baseline, next, true, true),
+    epoch: 'epoch',
+    base: 7,
+    sequence: 8,
+  })
+  expect(refresh).toHaveBeenLastCalledWith(expect.any(String), false)
+  expect(snapshot).toHaveBeenCalledTimes(2)
+  refresh.mockClear()
   receive?.({ type: 'error', message: 'Runtime offline' })
   expect(live.online()).toBe(false)
   expect(error).toHaveBeenCalledWith('Runtime offline')

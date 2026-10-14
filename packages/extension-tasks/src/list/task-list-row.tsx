@@ -1,4 +1,4 @@
-import type { Subagent } from '@dovo/protocol'
+import type { SubagentListItem } from '@dovo/protocol'
 import type { Task } from '@dovo/studio-core'
 import {
   memo,
@@ -89,7 +89,7 @@ function TaskListRowView({
   entryKey: string
   task: Task
   owner: TaskOwner
-  subagents: readonly Subagent[]
+  subagents: readonly SubagentListItem[]
   needsInput: boolean
   terminals: number
   selected: boolean

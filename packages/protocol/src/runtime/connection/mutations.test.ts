@@ -1,6 +1,6 @@
 import { decode } from '../../shared/schema.js'
 import { taskSchema } from '../../workspace.js'
-import { responses } from './runtime.js'
+import { responses, workspaceRecoveriesSchema, workspacePatchResultSchema } from './runtime.js'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Effect, Schema } from 'effect'
 import { RuntimeMutations, type MutationOutbox, type MutationStorage } from './mutations.js'
@@ -13,7 +13,15 @@ afterEach(() => vi.unstubAllGlobals())
 function fixture(initial: MutationOutbox = [], changed: () => void = () => {}) {
   let stored: MutationOutbox = structuredClone(initial)
   let count = 0
+  const recovered: import('./runtime.js').WorkspaceRecovery[] = []
   const storage = {
+    recoverWorkspaceEdit: async (
+      _connection: typeof connection,
+      edit: import('./runtime.js').WorkspaceRecovery,
+    ) => {
+      if (!recovered.some((item) => item.id === edit.id)) recovered.push(edit)
+    },
+    workspaceRecoveries: async () => recovered,
     id: () => `operation-${++count}`,
     read: async () => structuredClone(stored),
     clear: async () => {
@@ -32,6 +40,7 @@ function fixture(initial: MutationOutbox = [], changed: () => void = () => {}) {
     restart: () => new RuntimeMutations(storage),
     stored: () => stored,
     storage,
+    recovered: () => recovered,
   }
 }
 it('recovers body interruption and retires receipts only after durable journal removal', async () => {
@@ -762,4 +771,456 @@ it('resolves an old rejected edit before sending a different new model selection
   ).toBe('Success')
   expect(sent).toEqual(['old', 'operation-1'])
   expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+})
+it('requests an authoritative refresh after reconnect replays a reconciled workspace edit', async () => {
+  const f = fixture([{ id: 'saved-edit', path: '/api/workspace', method: 'PATCH', input: {} }])
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) =>
+      urlPath(url).endsWith('/status')
+        ? Response.json({ version: 1 })
+        : Response.json({ revision: 4, runtimeInstanceId: 'runtime', reconciled: true }),
+    ),
+  )
+  const before = f.queue.workspaceRefreshCheckpoint(connection)
+  await Effect.runPromise(f.queue.recoverEffect(connection))
+  expect(f.stored()).toEqual([])
+  expect(f.queue.requiresWorkspaceRefresh(connection)).toBe(true)
+  f.queue.workspaceRefreshed(connection, before)
+  expect(f.queue.requiresWorkspaceRefresh(connection)).toBe(true)
+  f.queue.workspaceRefreshed(connection, f.queue.workspaceRefreshCheckpoint(connection))
+  expect(f.queue.requiresWorkspaceRefresh(connection)).toBe(false)
+  expect(f.queue.requiresWorkspaceRefresh({ ...connection, token: 'other-device' })).toBe(false)
+})
+it('refreshes successful direct patches even when callers omit reconciliation metadata', async () => {
+  const f = fixture()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) =>
+      urlPath(url).endsWith('/status')
+        ? Response.json({ version: 1 })
+        : Response.json({ ok: true, reconciled: true }),
+    ),
+  )
+  await Effect.runPromise(f.queue.requestEffect(connection, '/api/workspace', {}, ok, 'PATCH'))
+  expect(f.queue.requiresWorkspaceRefresh(connection)).toBe(true)
+  const first = f.queue.workspaceRefreshCheckpoint(connection)
+  await Effect.runPromise(
+    f.queue.requestEffect(connection, '/api/workspace', { next: true }, ok, 'PATCH'),
+  )
+  f.queue.workspaceRefreshed(connection, first)
+  expect(f.queue.requiresWorkspaceRefresh(connection)).toBe(true)
+})
+it('refreshes committed workspace edits even if a subsequent unrelated command is blocked', async () => {
+  const f = fixture([
+    { id: 'edit', path: '/api/workspace', method: 'PATCH', input: {} },
+    { id: 'command', path: '/api/tasks/lifecycle', method: 'POST', input: {}, blocked: true },
+  ])
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) =>
+      urlPath(url).endsWith('/status')
+        ? Response.json({ version: 1 })
+        : Response.json({ revision: 2, reconciled: true }),
+    ),
+  )
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Failure')
+  expect(f.stored().map((item) => item.id)).toEqual(['command'])
+  expect(f.queue.requiresWorkspaceRefresh(connection)).toBe(true)
+})
+
+it('automatically merges a legacy stale edit and durably preserves competing intent', async () => {
+  const f = fixture()
+  const host = decode(taskSchema, {
+    id: 'task',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    status: 'draft',
+    createdAt: '2026-10-13T00:00:00Z',
+    messages: [],
+    files: [],
+    example: false,
+    title: 'Runtime title',
+    draft: '',
+  })
+  const writes: unknown[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      const path = urlPath(url)
+      if (path.includes('/api/mutations/status')) return Response.json({ version: 1 })
+      if (path.includes('/api/snapshot'))
+        return Response.json({
+          revision: 4,
+          runtimeInstanceId: 'runtime',
+          owner: false,
+          workspace: {
+            version: 1,
+            runtimeAddress: '',
+            agents: [],
+            repositories: [],
+            automations: [],
+            tasks: [host],
+          },
+          approvals: [],
+          questions: [],
+          terminals: [],
+          runs: [],
+          devices: [],
+          pendingDevices: [],
+        })
+      if (typeof init?.body !== 'string') throw new Error('Expected JSON body')
+      writes.push(JSON.parse(init.body))
+      if (writes.length === 1)
+        return Response.json({ error: 'Another client changed title' }, { status: 409 })
+      return Response.json({ revision: 5, runtimeInstanceId: 'runtime' })
+    }),
+  )
+  const result = await run(
+    f.queue.workspaceEffect(
+      connection,
+      {
+        collection: 'tasks',
+        id: 'task',
+        changes: {
+          title: { before: 'Old title', after: 'Local title' },
+          draft: { before: '', after: 'Independent draft' },
+        },
+      },
+      'stable',
+    ),
+  )
+  expect(result._tag).toBe('Success')
+  expect(writes[1]).toEqual({
+    collection: 'tasks',
+    id: 'task',
+    changes: { draft: { before: '', after: 'Independent draft' } },
+  })
+  expect(f.recovered()).toHaveLength(1)
+  expect(f.recovered()[0]?.patch.changes.title?.after).toBe('Local title')
+})
+
+it('settles a modern rejected workspace edit and proceeds with the next independent edit', async () => {
+  const f = fixture([
+    {
+      id: 'rejected',
+      path: '/api/workspace',
+      method: 'PATCH',
+      input: { collection: 'tasks', id: 'task', changes: {} },
+    },
+    {
+      id: 'next',
+      path: '/api/workspace',
+      method: 'PATCH',
+      input: { collection: 'tasks', id: 'other', changes: {} },
+    },
+  ])
+  const ids: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (urlPath(url).endsWith('/status'))
+        return Response.json({ version: 1, workspaceMutations: 1 })
+      const id = new Headers(init?.headers).get('X-Dovo-Mutation-Id')!
+      ids.push(id)
+      return Response.json({
+        revision: 3,
+        runtimeInstanceId: 'runtime',
+        outcome: id === 'rejected' ? 'rejected' : 'applied',
+        reason: id === 'rejected' ? 'Task is active' : undefined,
+      })
+    }),
+  )
+  await run(f.queue.recoverEffect(connection))
+  expect(ids).toEqual(['rejected', 'next'])
+  expect(f.stored()).toEqual([])
+})
+
+it('does not let a stale streamed snapshot clear the acknowledged workspace refresh', async () => {
+  const f = fixture()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) =>
+      Response.json(
+        urlPath(url).endsWith('/status')
+          ? { version: 1, workspaceMutations: 1 }
+          : { revision: 8, runtimeInstanceId: 'runtime', outcome: 'applied' },
+      ),
+    ),
+  )
+  await Effect.runPromise(
+    f.queue.workspaceEffect(connection, { collection: 'agents', id: 'agent', changes: {} }, 'edit'),
+  )
+  const checkpoint = f.queue.workspaceRefreshCheckpoint(connection)
+  f.queue.workspaceRefreshed(connection, checkpoint, { revision: 7, runtimeInstanceId: 'runtime' })
+  expect(f.queue.requiresWorkspaceRefresh(connection)).toBe(true)
+  f.queue.workspaceRefreshed(connection, checkpoint, { revision: 8, runtimeInstanceId: 'runtime' })
+  expect(f.queue.requiresWorkspaceRefresh(connection)).toBe(false)
+})
+
+it('keeps workspace edits queued without receipts and recovers automatically after upgrade', async () => {
+  const f = fixture([
+    {
+      id: 'edit',
+      path: '/api/workspace',
+      method: 'PATCH',
+      input: { collection: 'agents', id: 'agent', changes: {} },
+    },
+  ])
+  let upgraded = false
+  let writes = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status'))
+        return upgraded
+          ? Response.json({ version: 1, workspaceMutations: 1 })
+          : Response.json({ error: 'Not found' }, { status: 404 })
+      writes++
+      return Response.json({ revision: 2, runtimeInstanceId: 'runtime', outcome: 'applied' })
+    }),
+  )
+  await run(f.queue.recoverEffect(connection))
+  expect(writes).toBe(0)
+  expect(f.stored()).toHaveLength(1)
+  upgraded = true
+  await run(f.queue.recoverEffect(connection))
+  expect(writes).toBe(1)
+  expect(f.stored()).toEqual([])
+})
+
+it('never mints another legacy retry identity after a lost response and changed host', async () => {
+  const f = fixture()
+  let agent = {
+    id: 'agent',
+    name: 'Runtime name',
+    instructions: '',
+    provider: 'codex',
+    model: '',
+    permission: 'ask',
+    endpoint: '',
+  }
+  let loseResponse = true
+  const retryIds: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      const path = urlPath(url)
+      if (path.endsWith('/status')) return Response.json({ version: 1 })
+      if (path.includes('/api/snapshot'))
+        return Response.json({
+          revision: 4,
+          runtimeInstanceId: 'runtime',
+          owner: false,
+          workspace: {
+            version: 1,
+            runtimeAddress: '',
+            agents: [agent],
+            repositories: [],
+            tasks: [],
+            automations: [],
+          },
+          approvals: [],
+          questions: [],
+          terminals: [],
+          runs: [],
+          devices: [],
+          pendingDevices: [],
+        })
+      const id = new Headers(init?.headers).get('X-Dovo-Mutation-Id')!
+      if (id === 'original')
+        return Response.json({ error: 'Another client changed name' }, { status: 409 })
+      retryIds.push(id)
+      if (loseResponse) {
+        agent = { ...agent, name: 'Before', instructions: 'New runtime instructions' }
+        throw new Error('Lost response after retry committed')
+      }
+      return Response.json(
+        { error: 'This action ID already belongs to another request.' },
+        { status: 409 },
+      )
+    }),
+  )
+  const patch = {
+    collection: 'agents',
+    id: 'agent',
+    changes: {
+      name: { before: 'Before', after: 'Local name' },
+      instructions: { before: '', after: 'Local instructions' },
+    },
+  }
+  expect((await run(f.queue.workspaceEffect(connection, patch, 'original')))._tag).toBe('Failure')
+  loseResponse = false
+  expect((await run(f.restart().workspaceEffect(connection, patch, 'original')))._tag).toBe(
+    'Success',
+  )
+  expect(retryIds.length).toBeGreaterThanOrEqual(2)
+  expect(new Set(retryIds).size).toBe(1)
+  expect(agent.name).toBe('Before')
+  expect(f.recovered().length).toBeGreaterThan(0)
+})
+
+it('retains a legacy rejected edit when durable recovery storage cannot be written', async () => {
+  const f = fixture([
+    {
+      id: 'edit',
+      path: '/api/workspace',
+      method: 'PATCH',
+      input: {
+        collection: 'agents',
+        id: 'agent',
+        changes: { name: { before: 'Before', after: 'Local' } },
+      },
+    },
+  ])
+  const queue = new RuntimeMutations({
+    ...f.storage,
+    recoverWorkspaceEdit: async () => {
+      throw new Error('Recovery disk full')
+    },
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) =>
+      urlPath(url).endsWith('/status')
+        ? Response.json({ version: 1 })
+        : Response.json({ error: 'Invalid edit' }, { status: 400 }),
+    ),
+  )
+  expect((await run(queue.recoverEffect(connection)))._tag).toBe('Failure')
+  expect(f.stored()).toHaveLength(1)
+})
+
+it('settles acknowledged workspace receipts from older runtimes without manual discard', async () => {
+  const f = fixture([
+    {
+      id: 'old',
+      path: '/api/workspace',
+      method: 'PATCH',
+      input: {
+        collection: 'agents',
+        id: 'gone',
+        changes: { name: { before: 'Before', after: 'Local' } },
+      },
+    },
+  ])
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      if (urlPath(url).includes('/api/snapshot'))
+        return Response.json({
+          revision: 4,
+          runtimeInstanceId: 'runtime',
+          owner: false,
+          workspace: {
+            version: 1,
+            runtimeAddress: '',
+            agents: [],
+            tasks: [],
+            repositories: [],
+            automations: [],
+          },
+          approvals: [],
+          questions: [],
+          terminals: [],
+          runs: [],
+          devices: [],
+          pendingDevices: [],
+        })
+      return Response.json(
+        {
+          error:
+            'This action was already acknowledged. Discard the stale saved action; it was not repeated.',
+        },
+        { status: 409 },
+      )
+    }),
+  )
+  expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
+  expect(f.stored()).toEqual([])
+  expect(f.recovered()).toHaveLength(1)
+})
+it('syncs independent workspace edits after a rejected command while preserving the command', async () => {
+  const f = fixture([
+    {
+      id: 'command',
+      path: '/api/tasks/lifecycle',
+      method: 'POST',
+      input: { id: 'gone', action: 'archive' },
+    },
+    {
+      id: 'workspace',
+      path: '/api/workspace',
+      method: 'PATCH',
+      input: { collection: 'agents', id: 'agent', changes: {} },
+    },
+  ])
+  const sent: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (urlPath(url).endsWith('/status'))
+        return Response.json({ version: 1, workspaceMutations: 1 })
+      const id = new Headers(init?.headers).get('X-Dovo-Mutation-Id')!
+      sent.push(id)
+      return id === 'command'
+        ? Response.json({ error: 'Item not found' }, { status: 404 })
+        : Response.json({ revision: 4, runtimeInstanceId: 'runtime', outcome: 'applied' })
+    }),
+  )
+  await run(f.queue.recoverEffect(connection))
+  expect(sent).toEqual(['command', 'workspace'])
+  expect(f.stored()).toEqual([expect.objectContaining({ id: 'command', blocked: true })])
+  expect(
+    (
+      await run(
+        f.queue.requestEffect(
+          connection,
+          '/api/workspace',
+          { collection: 'agents', id: 'other', changes: {} },
+          workspacePatchResultSchema,
+          'PATCH',
+        ),
+      )
+    )._tag,
+  ).toBe('Success')
+  expect(sent).toEqual(['command', 'workspace', 'operation-1'])
+  expect(f.stored()).toHaveLength(1)
+})
+it('reads server recoveries when the local recovery journal is corrupt and reports the missing source', async () => {
+  const f = fixture()
+  const queue = new RuntimeMutations({
+    ...f.storage,
+    workspaceRecoveries: async () => {
+      throw new Error('Corrupt local journal')
+    },
+  })
+  const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+    Response.json({
+      edits: [
+        {
+          id: 'remote',
+          createdAt: '2026-10-14',
+          patch: { collection: 'agents', id: 'agent', changes: {} },
+          host: null,
+        },
+      ],
+      nextCursor: '123',
+    }),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const value = await Effect.runPromise(
+    queue.requestEffect(
+      connection,
+      '/api/workspace/recovered-edits',
+      undefined,
+      workspaceRecoveriesSchema,
+      'GET',
+    ),
+  )
+  expect(value.edits.map((edit) => edit.id)).toEqual(['remote'])
+  expect(value.warnings).toHaveLength(1)
+  expect(value.nextCursor).toBe('123')
+  expect(fetch).toHaveBeenCalledOnce()
 })

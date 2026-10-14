@@ -95,6 +95,7 @@ export function createRuntimeServer(services: Services, internal = false) {
           ...(error instanceof HttpError && error.mutationRejected
             ? { mutationRejected: true }
             : {}),
+          ...(error instanceof HttpError && error.mutationRetired ? { mutationRetired: true } : {}),
           ...(error instanceof HttpError && error.issues ? { issues: error.issues } : {}),
           ...(error instanceof ValidationError ? { issues: safeValidationIssues(error) } : {}),
         })

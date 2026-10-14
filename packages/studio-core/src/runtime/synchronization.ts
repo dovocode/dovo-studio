@@ -14,8 +14,13 @@ import {
   minValue,
   patchSchema,
   workspaceSchema,
+  workspacePatchResultSchema,
+  workspacePatchRejection,
+  workspacePatchRejected,
+  projectWorkspaceEdits,
   runtimeRequestEffect,
   RuntimeRequestError,
+  WorkspaceStorageError,
   randomUUID,
   type RuntimeConnection,
   type Workspace,
@@ -26,6 +31,7 @@ type Checkpoint = { generation: number; version: number; idle: boolean }
 type Send = (
   connection: RuntimeConnection,
   patch: WorkspacePatch,
+  id: string,
 ) => Promise<unknown> | Effect.Effect<unknown, unknown>
 export const workspaceOutboxSchema = mutableStruct({
   version: Schema.Literal(1),
@@ -67,12 +73,15 @@ const failure = (cause: unknown) =>
 /** The runtime was unreachable or timed out. It may or may not have applied the patch, and
  * resending is safe either way: it treats an identical, already-applied patch as a no-op. */
 const transient = (error: SynchronizationError) =>
-  error.cause instanceof RuntimeRequestError &&
-  (error.cause.kind === 'connection' ||
-    error.cause.kind === 'timeout' ||
-    error.cause.status === 502 ||
-    error.cause.status === 503 ||
-    error.cause.status === 504)
+  error.cause instanceof WorkspaceStorageError ||
+  (error.cause instanceof RuntimeRequestError &&
+    (error.cause.kind === 'connection' ||
+      error.cause.kind === 'timeout' ||
+      error.cause.status === 426 ||
+      error.cause.status === 500 ||
+      error.cause.status === 502 ||
+      error.cause.status === 503 ||
+      error.cause.status === 504))
 const attempt = <A>(run: () => Promise<A> | Effect.Effect<A, unknown>) =>
   Effect.try({ try: run, catch: failure }).pipe(
     Effect.flatMap((value) =>
@@ -81,17 +90,16 @@ const attempt = <A>(run: () => Promise<A> | Effect.Effect<A, unknown>) =>
         : Effect.tryPromise({ try: () => value, catch: failure }),
     ),
   )
-const sendPatch: Send = (connection, patch) =>
+const sendPatch: Send = (connection, patch, id) =>
   runtimeRequestEffect(
     connection,
     connection.address,
     '/api/workspace',
     patch,
-    mutableStruct({
-      revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
-      runtimeInstanceId: Schema.optional(Schema.String),
-    }),
+    workspacePatchResultSchema,
     'PATCH',
+    undefined,
+    { mutationId: id },
   )
 
 /** Serializes this editor's writes; persistence merges stable patch IDs across tabs. */
@@ -114,6 +122,9 @@ export class WorkspaceSynchronization {
   private discarding: object | null = null
   private resolving: object | null = null
   private conflicted = false
+  private staleConflict = false
+  private storageFailed = false
+  private refreshNeeded = false
   private workspace: Workspace | null = null
   private durable: Effect.Effect<void, SynchronizationError> = Effect.void
   private readonly writer = Effect.runSync(Semaphore.make(1))
@@ -138,6 +149,9 @@ export class WorkspaceSynchronization {
     this.discarding = null
     this.resolving = null
     this.conflicted = false
+    this.staleConflict = false
+    this.storageFailed = false
+    this.refreshNeeded = false
     this.onChange()
   }
 
@@ -162,8 +176,9 @@ export class WorkspaceSynchronization {
     const persist = this.persist
     const written = this.writtenIds
     const capturedIds = [...ids]
-    // Each captured value is written once. Failed writes release the semaphore so
-    // an explicit retry can proceed, while the failed durability gate stays failed.
+    const generation = this.generation
+    // Each captured value is written once. Failed writes release the semaphore;
+    // storage recovery rebuilds the failed durability gate before sending.
     const work = Effect.runSync(
       Effect.cached(
         this.writer
@@ -172,7 +187,22 @@ export class WorkspaceSynchronization {
               const append = capturedIds.filter((id) => !written.has(id))
               return attempt(() =>
                 persist(connection, value, { append, remove, ...resolution }),
-              ).pipe(Effect.tap(() => Effect.sync(() => append.forEach((id) => written.add(id)))))
+              ).pipe(
+                Effect.mapError((error) =>
+                  failure(new WorkspaceStorageError(error.message, { cause: error.cause })),
+                ),
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    append.forEach((id) => written.add(id))
+                    if (generation === this.generation) this.storageFailed = false
+                  }),
+                ),
+                Effect.tapError(() =>
+                  Effect.sync(() => {
+                    if (generation === this.generation) this.storageFailed = true
+                  }),
+                ),
+              )
             }),
           )
           .pipe(Effect.uninterruptible),
@@ -199,7 +229,7 @@ export class WorkspaceSynchronization {
         Effect.catch((error) =>
           Effect.sync(() => {
             if (generation === this.generation) {
-              this.conflicted = true
+              this.storageFailed = true
               this.onError(
                 `Could not save pending changes. Keep this window open. ${error.message}`,
               )
@@ -252,12 +282,43 @@ export class WorkspaceSynchronization {
       return { checkpoint: this.checkpoint(), outbox }
     })
   }
-  clearNetworkError() {
+  requiresRefresh() {
+    return this.refreshNeeded
+  }
+  refreshed(instanceId?: string) {
+    this.refreshNeeded = false
+    if (instanceId && this.acknowledged?.instanceId !== instanceId) this.acknowledged = undefined
+  }
+  projectionVersion() {
+    return this.version
+  }
+  project(host: Workspace) {
+    return projectWorkspaceEdits(host, this.pending)
+  }
+  hasSnapshot(revision: number, instanceId?: string) {
+    return (
+      !this.acknowledged ||
+      ((!instanceId || instanceId === this.acknowledged.instanceId) &&
+        revision >= this.acknowledged.revision)
+    )
+  }
+  clearNetworkError(automaticReconciliation = false) {
+    if (this.storageFailed && this.pending.length && !this.isSending()) {
+      void runClientEffect(this.retryEffect()).catch(() => undefined)
+      return
+    }
+    if (automaticReconciliation && this.staleConflict) {
+      this.staleConflict = false
+      this.conflicted = false
+    }
     if (this.conflicted) return
     // The host answered a poll: resume edits that were held back by a transient failure.
     if (this.pending.length && !this.draining && this.connection)
       void runClientEffect(this.flushEffect()).catch(() => undefined)
     else this.onError(null)
+  }
+  needsStorageRetry() {
+    return this.storageFailed && this.pending.length > 0 && !this.isSending()
   }
   isSending() {
     return this.draining !== null || this.discarding !== null
@@ -434,7 +495,7 @@ export class WorkspaceSynchronization {
         Effect.tapError((error) =>
           Effect.sync(() => {
             if (generation === this.generation) {
-              this.conflicted = true
+              this.conflicted = !transient(error)
               this.onError(error.message)
             }
           }),
@@ -524,19 +585,38 @@ export class WorkspaceSynchronization {
       const work = Effect.runSync(
         Effect.cached(
           Effect.gen({ self: this }, function* () {
+            let rejection: string | null = null
             while (pending.length && generation === this.generation) {
               yield* this.durable
               if (generation !== this.generation) return
-              const response = yield* attempt(() => this.send(target, pending[0]))
+              const result = yield* Effect.result(
+                attempt(() => this.send(target, pending[0], pendingIds[0])),
+              )
+              if (
+                result._tag === 'Failure' &&
+                !workspacePatchRejected(result.failure.cause) &&
+                !(
+                  result.failure.cause instanceof RuntimeRequestError &&
+                  result.failure.cause.mutationRetired
+                )
+              )
+                return yield* Effect.fail(result.failure)
+              const response = result._tag === 'Success' ? result.success : undefined
+              const rejected =
+                result._tag === 'Failure' ? result.failure : workspacePatchRejection(response)
+              if (rejected) rejection = rejected.message
+              this.refreshNeeded = true
               if (generation !== this.generation) return
               const acknowledged = decodeResult(
                 mutableStruct({
                   revision: Schema.Number.pipe(Schema.check(Schema.isFinite())),
                   runtimeInstanceId: Schema.String,
+                  reconciled: Schema.optional(Schema.Boolean),
                 }),
                 response,
               )
               if (acknowledged.success) {
+                if (acknowledged.data.reconciled) this.refreshNeeded = true
                 const { runtimeInstanceId: instanceId, revision } = acknowledged.data
                 this.acknowledged = {
                   instanceId,
@@ -552,13 +632,14 @@ export class WorkspaceSynchronization {
                   Effect.sync(() => {
                     pending.shift()
                     pendingIds.shift()
+                    this.version++
                     this.onChange()
                   }),
                 ),
                 Effect.uninterruptible,
               )
             }
-            if (generation === this.generation) this.onError(null)
+            if (generation === this.generation) this.onError(rejection)
           }).pipe(
             Effect.tapError((error) =>
               Effect.sync(() => {
@@ -566,10 +647,19 @@ export class WorkspaceSynchronization {
                 // A dropped connection is not a conflict: keep the queue and retry on the
                 // next request or successful poll instead of blocking every action.
                 if (transient(error)) {
-                  this.onError(`Changes will sync when the runtime is reachable. ${error.message}`)
+                  if (error.cause instanceof WorkspaceStorageError) this.storageFailed = true
+                  this.onError(
+                    error.cause instanceof WorkspaceStorageError
+                      ? `Changes will sync when storage is writable. ${error.message}`
+                      : `Changes will sync when the runtime is reachable. ${error.message}`,
+                  )
                   return
                 }
                 this.conflicted = true
+                this.staleConflict =
+                  error.cause instanceof RuntimeRequestError &&
+                  error.cause.status === 409 &&
+                  /Another client changed|This item already exists/.test(error.message)
                 this.onError(error.message)
               }),
             ),
@@ -585,7 +675,10 @@ export class WorkspaceSynchronization {
             ),
             Effect.ensuring(
               Effect.sync(() => {
-                if (this.draining === work) this.draining = null
+                if (this.draining === work) {
+                  this.draining = null
+                  this.onChange()
+                }
               }),
             ),
           ),

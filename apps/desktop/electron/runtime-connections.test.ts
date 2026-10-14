@@ -86,7 +86,7 @@ it('shares one stream and fallback poller across main and popout; closing main p
   f.manager.unsubscribe('main')
   expect(f.stopped).toEqual([])
   f.options.get('http://paired.lan:8787')?.onSnapshot(f.snapshot(['reviewer']))
-  expect(popout.at(-1)?.type).toBe('snapshot')
+  expect(popout.at(-1)?.type).toBe('delta')
   f.manager.unsubscribe('popout')
   expect(f.stopped).toEqual(['http://paired.lan:8787'])
 })
@@ -210,4 +210,33 @@ it('ignores a late failed HTTP read after the shared stream becomes live', async
   f.manager.subscribe('popout', f.input('popout'), (event) => popout.push(event))
   expect(popout.some((event) => event.type === 'snapshot')).toBe(true)
   expect(popout.some((event) => event.type === 'error')).toBe(false)
+})
+it('sends versioned deltas, restores baselines on refresh and resets epochs after restart', async () => {
+  const f = fixture(),
+    events: DesktopSyncEvent[] = []
+  f.manager.subscribe('main', f.input('main'), (event) => events.push(event))
+  await vi.advanceTimersByTimeAsync(500)
+  const baseline = events.findLast((event) => event.type === 'snapshot')
+  expect(baseline?.type).toBe('snapshot')
+  const next = { ...f.snapshot(['thread']), revision: 2, runtimeInstanceId: 'first' }
+  f.options.get('http://paired.lan:8787')?.onSnapshot(next)
+  const restarted = events.at(-1)
+  expect(restarted?.type).toBe('snapshot')
+  f.options.get('http://paired.lan:8787')?.onSnapshot({ ...next, revision: 3 })
+  const delta = events.at(-1)
+  expect(delta).toMatchObject({
+    type: 'delta',
+    base: expect.any(Number),
+    sequence: expect.any(Number),
+  })
+  if (delta?.type !== 'delta') throw new Error('Expected delta')
+  expect(delta.sequence).toBe(delta.base + 1)
+  f.manager.refresh('main', false)
+  expect(events.at(-1)?.type).toBe('snapshot')
+  f.options.get('http://paired.lan:8787')?.onSnapshot({ ...next, runtimeInstanceId: 'second' })
+  const second = events.at(-1)
+  expect(second?.type).toBe('snapshot')
+  if (second?.type !== 'snapshot' || restarted?.type !== 'snapshot')
+    throw new Error('Expected restart baselines')
+  expect(second.epoch).not.toBe(restarted.epoch)
 })

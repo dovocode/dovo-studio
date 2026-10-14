@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { WorkspaceStore } from './workspace.js'
 import { expect, it, vi } from 'vite-plus/test'
 import { openDatabase } from './database.js'
 import { HttpError } from '../errors.js'
@@ -135,6 +137,103 @@ it('identifies rejected workspace edits across receipt recovery without marking 
     await expect(
       new MutationReceipts(db).execute('phone', 'uncertain', input, failed),
     ).rejects.not.toHaveProperty('mutationRejected')
+  } finally {
+    db.close()
+  }
+})
+it('commits workspace state and its receipt atomically, including live snapshot rollback', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      repositories: [{ id: 'repo', name: 'A', path: '/repo', branch: 'main' }],
+    }))
+    const receipts = new MutationReceipts(db)
+    const request = {
+      method: 'PATCH',
+      path: '/api/workspace',
+      input: {
+        collection: 'repositories' as const,
+        id: 'repo',
+        changes: { name: { before: 'A', after: 'B' } },
+      },
+    }
+    db.exec(
+      "CREATE TRIGGER fail_workspace_receipt BEFORE UPDATE ON mutation_receipts BEGIN SELECT RAISE(ABORT,'Injected receipt failure'); END",
+    )
+    const apply = () =>
+      store.transaction(() =>
+        receipts.executeWorkspace(
+          'phone',
+          'atomic',
+          request,
+          () => {
+            store.patch(request.input)
+            return { revision: store.version(), runtimeInstanceId: 'runtime', outcome: 'applied' }
+          },
+          () => {
+            throw new Error('Unexpected settlement')
+          },
+        ),
+      )
+    expect(apply).toThrow('Injected receipt failure')
+    expect(store.get().repositories[0].name).toBe('A')
+    expect(new WorkspaceStore(db).get().repositories[0].name).toBe('A')
+    expect(db.prepare('SELECT count(*) AS count FROM mutation_receipts').get()).toEqual({
+      count: 0,
+    })
+    db.exec('DROP TRIGGER fail_workspace_receipt')
+    apply()
+    store.patch({ ...request.input, changes: { name: { before: 'B', after: 'A' } } })
+    new MutationReceipts(db).acknowledge('phone', ['atomic'])
+    apply()
+    expect(store.get().repositories[0].name).toBe('A')
+    expect(store.recoveredEdits()).toEqual([])
+  } finally {
+    db.close()
+  }
+})
+it('settles an interrupted legacy workspace receipt without repeating its write', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const request = { method: 'PATCH', path: '/api/workspace', input: {} }
+    const receipts = new MutationReceipts(db)
+    db.prepare('INSERT INTO mutation_receipts VALUES (?,?,?,NULL)').run(
+      'phone',
+      'old',
+      createHash('sha256').update(JSON.stringify(request)).digest('hex'),
+    )
+    const run = vi.fn<() => { revision: number }>(() => ({ revision: 2 }))
+    const settle = vi.fn<() => { revision: number; reconciled: boolean }>(() => ({
+      revision: 1,
+      reconciled: true,
+    }))
+    expect(receipts.executeWorkspace('phone', 'old', request, run, settle)).toEqual({
+      revision: 1,
+      reconciled: true,
+    })
+    expect(run).not.toHaveBeenCalled()
+    expect(settle).toHaveBeenCalledExactlyOnceWith('interrupted', undefined)
+    receipts.executeWorkspace('phone', 'old', request, run, settle)
+    expect(settle).toHaveBeenCalledOnce()
+  } finally {
+    db.close()
+  }
+})
+
+it('does not rewrite already retired receipts during repeated acknowledgements', async () => {
+  const db = openDatabase(':memory:')
+  try {
+    const receipts = new MutationReceipts(db)
+    await receipts.execute('phone', 'operation', {}, async () => ({ large: 'x'.repeat(10000) }))
+    receipts.acknowledge('phone', ['operation', 'operation'])
+    const before = db.prepare('SELECT total_changes() AS count').get()
+    receipts.acknowledge('phone', ['operation'])
+    expect(db.prepare('SELECT total_changes() AS count').get()).toEqual(before)
+    expect(
+      JSON.stringify(db.prepare('SELECT result FROM mutation_receipts').get()).length,
+    ).toBeLessThan(100)
   } finally {
     db.close()
   }

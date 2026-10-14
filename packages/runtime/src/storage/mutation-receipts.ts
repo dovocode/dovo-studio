@@ -6,6 +6,8 @@ import {
   safeValidationMessage,
   safeValidationIssues,
   ValidationError,
+  type WorkspacePatchResult,
+  workspacePatchResultSchema,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { HttpError, errorMessage } from '../errors.js'
@@ -15,7 +17,11 @@ const receiptSchema = mutableStruct({
 })
 const outcomeSchema = Schema.Union([
   mutableStruct({ retired: Schema.Literal(true) }),
-  mutableStruct({ ok: Schema.Literal(true), value: Schema.Unknown }),
+  mutableStruct({
+    ok: Schema.Literal(true),
+    value: Schema.Unknown,
+    workspace: Schema.optional(Schema.Literal(true)),
+  }),
   mutableStruct({
     ok: Schema.Literal(false),
     status: Schema.Number,
@@ -39,9 +45,84 @@ export class MutationReceipts {
       'UPDATE mutation_receipts SET result=? WHERE device_id=? AND id=? AND result IS NOT NULL',
     )
     this.db.transaction(() => {
-      for (const id of ids)
-        if (!this.pending.has(JSON.stringify([deviceId, id])))
+      for (const id of new Set(ids))
+        if (!this.pending.has(JSON.stringify([deviceId, id]))) {
+          const row = this.db
+            .prepare('SELECT fingerprint,result FROM mutation_receipts WHERE device_id=? AND id=?')
+            .get(deviceId, id)
+          if (row) {
+            const receipt = decode(receiptSchema, row)
+            if (receipt.result) {
+              const outcome = decode(outcomeSchema, JSON.parse(receipt.result))
+              // Workspace outcomes are already small. Keep them so restored journals
+              // receive their original resolution instead of asking for manual discard.
+              if ('retired' in outcome || ('workspace' in outcome && outcome.workspace)) continue
+            }
+          }
           retire.run(JSON.stringify({ retired: true }), deviceId, id)
+        }
+    })()
+  }
+  /** The caller encloses this synchronous operation in WorkspaceStore.transaction,
+   * including the live snapshot rollback. No workspace commit can outlive its receipt. */
+  executeWorkspace(
+    deviceId: string,
+    id: string,
+    request: unknown,
+    run: () => WorkspacePatchResult,
+    settle: (
+      reason: 'acknowledged' | 'interrupted' | 'rejected',
+      error?: string,
+    ) => WorkspacePatchResult,
+  ): WorkspacePatchResult {
+    const fingerprint = createHash('sha256').update(JSON.stringify(request)).digest('hex')
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare('SELECT fingerprint,result FROM mutation_receipts WHERE device_id=? AND id=?')
+        .get(deviceId, id)
+      if (row) {
+        const previous = decode(receiptSchema, row)
+        if (previous.fingerprint !== fingerprint)
+          throw new HttpError(409, 'This action ID already belongs to another request.')
+        if (previous.result !== null) {
+          const result = decode(outcomeSchema, JSON.parse(previous.result))
+          if ('retired' in result) return settle('acknowledged')
+          if (result.ok) return decode(workspacePatchResultSchema, result.value)
+          if (![400, 403, 404, 409, 422].includes(result.status))
+            throw new HttpError(result.status, result.error)
+        }
+        // An older runtime could commit an edit without its receipt. Its current
+        // value wins that uncertainty; preserve the intent without executing it again.
+      } else
+        this.db
+          .prepare('INSERT INTO mutation_receipts VALUES (?,?,?,NULL)')
+          .run(deviceId, id, fingerprint)
+      let value: WorkspacePatchResult
+      if (row) {
+        const previous = decode(receiptSchema, row)
+        const result =
+          previous.result === null ? null : decode(outcomeSchema, JSON.parse(previous.result))
+        value = settle(
+          result === null ? 'interrupted' : 'rejected',
+          result && 'error' in result ? result.error : undefined,
+        )
+      } else {
+        try {
+          value = run()
+        } catch (error) {
+          const status =
+            error instanceof HttpError ? error.status : error instanceof ValidationError ? 400 : 500
+          if (![400, 403, 404, 409, 422].includes(status)) throw error
+          value = settle(
+            'rejected',
+            error instanceof ValidationError ? safeValidationMessage(error) : errorMessage(error),
+          )
+        }
+      }
+      this.db
+        .prepare('UPDATE mutation_receipts SET result=? WHERE device_id=? AND id=?')
+        .run(JSON.stringify({ ok: true, workspace: true, value }), deviceId, id)
+      return value
     })()
   }
   async execute(
@@ -65,10 +146,9 @@ export class MutationReceipts {
       if (previous.result !== null) {
         const result = decode(outcomeSchema, JSON.parse(previous.result))
         if ('retired' in result)
-          throw new HttpError(
-            409,
-            'This action was already acknowledged. Discard the stale saved action; it was not repeated.',
-          )
+          throw new HttpError(409, 'This action was already acknowledged; it was not repeated.', {
+            mutationRetired: true,
+          })
         if (!result.ok)
           throw new HttpError(result.status, result.error, {
             mutationRejected: result.mutationRejected,

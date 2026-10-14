@@ -1,4 +1,4 @@
-import { decode, defaultTaskHarness } from '@dovo/protocol'
+import { decode, workspaceSchema, defaultTaskHarness } from '@dovo/protocol'
 import { expect, it, vi } from 'vite-plus/test'
 import { taskHarnessSchema, type Task, type Workspace, type WorkspacePatch } from '@dovo/protocol'
 import { openDatabase } from './database'
@@ -478,7 +478,8 @@ it('safely replays an applied patch after losing its response without duplicatin
         },
       },
     })
-    expect(() => store.patch(patch)).toThrow('Another client changed name')
+    expect(store.patch(patch).reconciled).toBe(true)
+    expect(store.recoveredEdits()).toHaveLength(1)
     expect(store.get().repositories[0].name).toBe('Someone else')
     expect(() =>
       store.patch({
@@ -494,9 +495,9 @@ it('safely replays an applied patch after losing its response without duplicatin
           },
         },
       }),
-    ).toThrow('Another client changed branch')
+    ).not.toThrow()
     expect(store.get().repositories[0]).toMatchObject({
-      name: 'Someone else',
+      name: 'Unsaved',
       branch: 'main',
     })
   } finally {
@@ -538,7 +539,7 @@ it('recognizes an identical creation retry while rejecting changed entities and 
           title: 'Different',
         },
       }),
-    ).toThrow('already exists')
+    ).not.toThrow()
     expect(() =>
       store.patch({
         ...create,
@@ -863,11 +864,12 @@ it('accepts the next draft after sending consumed its baseline, but protects com
       })
     edit('  Already sent  ', 'Next message')
     expect(store.task(task.id).draft).toBe('Next message')
-    expect(() => edit('Already sent', 'Competing edit')).toThrow('Another client changed draft')
+    edit('Already sent', 'Competing edit')
+    expect(store.task(task.id).draft).toBe('Next message')
     edit('Next message', '')
-    expect(() => edit('Unsent elsewhere', 'Do not overwrite')).toThrow(
-      'Another client changed draft',
-    )
+    edit('Unsent elsewhere', 'Do not overwrite')
+    expect(store.task(task.id).draft).toBe('')
+    expect(store.recoveredEdits()).toHaveLength(2)
     store.update((w) => ({
       ...w,
       tasks: [{ ...task, queue: [{ id: 'queued', role: 'user', text: 'Queued', createdAt: '' }] }],
@@ -1143,6 +1145,123 @@ it('restores workspace caches and receipts after a failed enclosing transaction 
     expect(db.prepare('SELECT * FROM conversation_items').all()).toEqual(history)
     expect(db.prepare('SELECT value FROM documents WHERE id=?').get('workspace')).toEqual(document)
     expect(new WorkspaceStore(db).get()).toEqual(before)
+  } finally {
+    db.close()
+  }
+})
+it('deduplicates durable recovery, never resurrects removed entities and rolls back failed patches', () => {
+  const db = openDatabase(':memory:')
+  try {
+    let store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      repositories: [{ id: 'repo', name: 'Host', path: '/repo', branch: 'main' }],
+    }))
+    const patch: WorkspacePatch = {
+      collection: 'repositories',
+      id: 'repo',
+      changes: { name: { before: 'Base', after: 'Local' } },
+    }
+    expect(store.patch(patch).reconciled).toBe(true)
+    store.patch(patch)
+    expect(store.recoveredEdits()).toHaveLength(1)
+    store = new WorkspaceStore(db)
+    expect(store.recoveredEdits()[0].patch.changes.name.after).toBe('Local')
+    expect(() =>
+      store.patch({
+        ...patch,
+        changes: { ...patch.changes, path: { before: '/repo', after: 42 } },
+      }),
+    ).toThrow('path')
+    expect(store.recoveredEdits()).toHaveLength(1)
+    expect(store.get().repositories[0].path).toBe('/repo')
+    store.update((workspace) => ({ ...workspace, repositories: [] }))
+    expect(store.patch(patch).reconciled).toBe(true)
+    expect(store.get().repositories).toEqual([])
+    expect(store.recoveredEdits()).toHaveLength(2)
+  } finally {
+    db.close()
+  }
+})
+it('retains deletion history through restarts and rejects stale creation retries without resurrection', () => {
+  const db = openDatabase(':memory:')
+  try {
+    let store = new WorkspaceStore(db)
+    const create: WorkspacePatch = {
+      collection: 'repositories',
+      id: 'deleted',
+      create: { id: 'deleted', name: 'Project', path: '/repo', branch: 'main' },
+      changes: {},
+    }
+    store.patch(create)
+    store.update((workspace) => ({ ...workspace, repositories: [] }))
+    store = new WorkspaceStore(db)
+    expect(store.patch(create)).toEqual({ reconciled: true })
+    expect(store.get().repositories).toEqual([])
+    expect(store.recoveredEdits()[0]).toMatchObject({ patch: create, host: null })
+    const fresh = {
+      ...create,
+      id: 'fresh',
+      create: {
+        ...decode(workspaceSchema.fields.repositories.schema.value, create.create),
+        id: 'fresh',
+      },
+    }
+    store.patch(fresh)
+    expect(store.get().repositories.map((repo) => repo.id)).toEqual(['fresh'])
+  } finally {
+    db.close()
+  }
+})
+it('rolls back deletion history with an enclosing transaction', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      repositories: [{ id: 'repo', name: 'Project', path: '/repo', branch: 'main' }],
+    }))
+    expect(() =>
+      store.transaction(() => {
+        store.update((workspace) => ({ ...workspace, repositories: [] }))
+        throw new Error('Rollback')
+      }),
+    ).toThrow('Rollback')
+    expect(
+      db.prepare("SELECT 1 FROM documents WHERE id='workspace-deleted:repositories:repo'").get(),
+    ).toBeUndefined()
+  } finally {
+    db.close()
+  }
+})
+
+it('pages all retained recovery records without gaps when new edits arrive', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    for (let i = 0; i < 205; i++)
+      store.preserveEdit(
+        {
+          collection: 'agents',
+          id: 'agent',
+          changes: { name: { before: 'Before', after: String(i) } },
+        },
+        null,
+      )
+    const first = store.recoveredEditsPage()
+    expect(first.edits).toHaveLength(100)
+    store.preserveEdit(
+      { collection: 'agents', id: 'agent', changes: { name: { before: 'Before', after: 'new' } } },
+      null,
+    )
+    const second = store.recoveredEditsPage(first.nextCursor)
+    const third = store.recoveredEditsPage(second.nextCursor)
+    expect(second.edits).toHaveLength(100)
+    expect(third.edits).toHaveLength(5)
+    expect(third.nextCursor).toBeUndefined()
+    expect(
+      new Set([...first.edits, ...second.edits, ...third.edits].map((edit) => edit.id)).size,
+    ).toBe(205)
   } finally {
     db.close()
   }

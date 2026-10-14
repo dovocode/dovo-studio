@@ -167,6 +167,9 @@ export function startRuntimeSync(
       retry: () => bridge.refresh(id, true),
     }
     value.live = live
+    let bridgeSnapshot: RuntimeSnapshot | undefined
+    let bridgeEpoch: string | undefined
+    let bridgeSequence: number | undefined
     const unsubscribe = bridge.subscribe(input(), (event) => {
       if (stopped) return
       if (event.type === 'status') {
@@ -177,8 +180,30 @@ export function startRuntimeSync(
         online = false
         options.onError?.(event.message)
       } else if (event.type === 'snapshot') {
+        bridgeSnapshot = event.snapshot
+        bridgeEpoch = event.epoch
+        bridgeSequence = event.sequence
         if (event.tag) setRuntimeSnapshotTag(event.snapshot, event.tag)
         options.onSnapshot(event.snapshot)
+      } else if (event.type === 'delta') {
+        try {
+          if (
+            !bridgeSnapshot ||
+            bridgeEpoch !== event.epoch ||
+            bridgeSequence !== event.base ||
+            event.sequence !== event.base + 1
+          )
+            throw new Error('Desktop sync cursor does not match')
+          bridgeSnapshot = applySnapshotDelta(bridgeSnapshot, event.delta)
+          bridgeSequence = event.sequence
+          if (event.tag) setRuntimeSnapshotTag(bridgeSnapshot, event.tag)
+          options.onSnapshot(bridgeSnapshot)
+        } catch {
+          bridgeSnapshot = undefined
+          bridgeEpoch = undefined
+          bridgeSequence = undefined
+          bridge.refresh(id, false)
+        }
       } else if (event.type === 'connection') {
         options.onConnection?.(event.connection)
       } else {

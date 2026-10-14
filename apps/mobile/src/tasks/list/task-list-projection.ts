@@ -1,11 +1,12 @@
 import {
   aggregateRuntimeTasks,
   indexTaskSubagents,
+  projectSubagentList,
   type RuntimeOverview,
   type RuntimeProfile,
   type RuntimeSnapshot,
   type RuntimeTask,
-  type Subagent,
+  type SubagentListItem,
   type Repository,
   type Agent,
 } from '@dovo/protocol'
@@ -21,11 +22,11 @@ export type TaskListOwner = {
 export type TaskListRowData = {
   row: RuntimeTask
   owner: TaskListOwner
-  subagents: readonly Subagent[]
+  subagents: readonly SubagentListItem[]
 }
 const noAgents: readonly Agent[] = []
 const noInstallations: RuntimeSnapshot['acpInstallations'] = []
-const noSubagents: readonly Subagent[] = []
+const noSubagents: readonly SubagentListItem[] = []
 
 /** Retain unchanged row facts, dropping removed rows on every projection. */
 export function taskListProjection(
@@ -88,14 +89,7 @@ export function taskListProjection(
         ? prior.owner
         : nextOwner
     const nextChildren = children.get(next.runtimeId)?.(next.task, true) ?? noSubagents
-    const subagents =
-      prior &&
-      prior.subagents.length === nextChildren.length &&
-      prior.subagents.every((agent, index) => agent === nextChildren[index])
-        ? prior.subagents
-        : nextChildren.length
-          ? nextChildren
-          : noSubagents
+    const subagents = projectSubagentList(nextChildren, prior?.subagents ?? noSubagents)
     rows.set(
       row.key,
       prior && prior.row === row && prior.owner === owner && prior.subagents === subagents

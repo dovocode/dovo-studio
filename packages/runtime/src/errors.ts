@@ -6,6 +6,7 @@ export class HttpError extends Data.TaggedError('HttpError')<{
   readonly status: number
   readonly message: string
   readonly mutationRejected?: true
+  readonly mutationRetired?: true
   readonly issues?: readonly { path: string; code: string; message: string }[]
 }> {
   constructor(
@@ -13,6 +14,7 @@ export class HttpError extends Data.TaggedError('HttpError')<{
     message: string,
     details: {
       mutationRejected?: true
+      mutationRetired?: true
       issues?: readonly { path: string; code: string; message: string }[]
     } = {},
   ) {
