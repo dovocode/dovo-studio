@@ -109,6 +109,13 @@ Enable **Pipeline watcher (experimental)** in the computer’s runtime settings 
 mobile. This is independent of PR feedback watching and off by default. Writable agents then have
 `dovo_task pipeline_watch` beside `pull_request_watch` when both features are enabled.
 
+Agents are instructed to proactively watch relevant CI and release runs after pushing changes,
+opening or updating a PR, triggering or rerunning a pipeline, or fixing a failed check, without a
+separate monitoring request. They discover provider run IDs once, register those explicit runs, and
+register replacement runs after subsequent pushes or reruns. Requests not to monitor take
+precedence, and unrelated runs are excluded. Failed registration must be reported as inactive
+monitoring, rather than described as an installed watch.
+
 Use `action: watch` with `runIds` containing one or more provider run IDs. Add `repositoryId` to
 select an editable linked project; otherwise registration uses the primary project. Dovo uses the
 selected project’s configured forge and account. Run IDs are scoped by repository, so identical IDs

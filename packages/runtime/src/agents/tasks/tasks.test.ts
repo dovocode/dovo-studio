@@ -86,6 +86,16 @@ it('refreshes harness sessions when optional MCP features change and favors repl
   expect(runs[1]?.agent.instructions).toContain('instead of running your own polling loops')
   expect(runs[1]?.agent.instructions).toContain('Prefer normal replies and repository files')
   expect(runs[1]?.agent.instructions).toContain('dovo_task pipeline_watch')
+  expect(runs[1]?.agent.instructions).toContain('Proactively watch relevant CI and release runs')
+  expect(runs[1]?.agent.instructions).toContain(
+    'Register replacement runs after a new push or rerun',
+  )
+  expect(runs[1]?.agent.instructions).toContain(
+    'If registration fails, report that monitoring is not active',
+  )
+  expect(runs[1]?.agent.instructions).not.toContain(
+    'register merely because you triggered a pipeline',
+  )
   expect(runs[1]?.agent.instructions).toContain('Memory is available')
   expect(runs[1]?.agent.instructions).not.toContain('Notes must be explicitly read')
   await (

@@ -8,6 +8,10 @@ vi.mock('node:child_process', async (original) => ({
   ...(await original<typeof import('node:child_process')>()),
   execFile: Object.assign(vi.fn(), { [Symbol.for('nodejs.util.promisify.custom')]: commands.run }),
 }))
+vi.mock('node:fs/promises', async (original) => {
+  const files = await original<typeof import('node:fs/promises')>()
+  return { ...files, access: vi.fn<typeof files.access>().mockResolvedValue(undefined) }
+})
 import { openDatabase } from '../storage/database'
 import { DeviceHosts } from './device-hosts'
 import * as native from './simulator-native'
@@ -25,18 +29,13 @@ it.each(['abort', 'revoke', 'cleanup'] as const)(
     const controller = new AbortController()
     let revoked = false
     let release!: () => void
-    let entered!: () => void
     const gate = new Promise<void>((resolve) => {
       release = resolve
-    })
-    const discovering = new Promise<void>((resolve) => {
-      entered = resolve
     })
     vi.spyOn(native, 'emulatorEndpoint').mockResolvedValue({ address: 'localhost:8554', token: '' })
     commands.run.mockImplementation(async (_file, args) => {
       let stdout = ''
       if (args[0] === '-list-avds') {
-        entered()
         await gate
         stdout = 'test'
       } else if (args[0] === 'devices') stdout = 'emulator-5554 device'
@@ -55,7 +54,9 @@ it.each(['abort', 'revoke', 'cleanup'] as const)(
       )
       .catch((error: unknown) => error)
     try {
-      await discovering
+      await vi.waitFor(() =>
+        expect(commands.run.mock.calls.some(([, args]) => args[0] === '-list-avds')).toBe(true),
+      )
       if (mode === 'abort') controller.abort()
       else if (mode === 'revoke') revoked = true
       else await manager.closeTask('task')
