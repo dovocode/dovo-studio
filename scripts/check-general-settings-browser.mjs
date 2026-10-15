@@ -13,7 +13,7 @@ export * from '@dovo/protocol';
 export * from '${root}/packages/studio-core/src/themes.ts';
 export * from '${root}/packages/studio-core/src/fonts.ts';
 export {useRemoteBrowserProfiles} from '${root}/packages/studio-core/src/browser-profiles.ts';
-export const providers={codex:{name:'Codex'},claude:{name:'Claude Code'},opencode:{name:'OpenCode'},acp:{name:'ACP'},cursor:{name:'Cursor'},copilot:{name:'GitHub Copilot'},hermes:{name:'Hermes'},grok:{name:'Grok Build'},muse:{name:'Muse'}};
+export {providers} from '${root}/packages/studio-core/src/providers.ts';
 export const formatDateTime=value=>new Date(value).toLocaleString();
 export const taskSortOptions=[{id:'priority',name:'Priority'},{id:'activity',name:'Last activity'}];
 export const useStudioHost=()=>({appInfo:{version:'0.0.7',channel:window.headerScreenshots?'nightly':'stable'},browser:()=>{},updates:window.updates,taskLauncher:{configure:async shortcut=>({})},navigate:target=>window.changeView(target.viewId)});
@@ -221,7 +221,8 @@ try {
   await page.getByRole('heading', { name: 'Agents', exact: true, level: 1 }).waitFor()
   const profiles = page.getByRole('navigation', { name: 'Provider configurations' })
   await profiles.getByRole('button', { name: /Claude Code/ }).waitFor()
-  assert.equal(await profiles.getByRole('button').count(), 8, 'Providers are present before setup')
+  assert.equal(await profiles.getByRole('button').count(), 9, 'Providers are present before setup')
+  await profiles.getByRole('button', { name: /Mistral Vibe/ }).waitFor()
   await screenshot('agents-dark')
   await profiles.getByRole('button', { name: /Claude Code/ }).click()
   await page.getByLabel('Instructions', { exact: true }).fill('Always explain your changes.')
