@@ -612,7 +612,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       await view.getByRole('button', { name: 'View inline artifact source', exact: true }).click()
       await view
         .getByText(
-          '<button id="interactive" onclick="this.textContent=Number(this.textContent)||1">Interactive artifact</button>',
+          '```html\n<button id="interactive" onclick="this.textContent=Number(this.textContent)||1">Interactive artifact</button>\n```',
           { exact: true },
         )
         .waitFor()

@@ -51,7 +51,7 @@ const stubs = [
     path: './use-pulls',
     importer: root + 'packages/extension-scm/src/pulls/list/',
     contents:
-      'import {useWorkspace} from "@dovo/studio-core";export const usePulls=()=>{useWorkspace();return {sources:window.sources,pages:window.sources.filter(s=>s.pull).map(source=>({source,pulls:[source.pull]})),busy:false,connected:true,more:()=>{},refresh:()=>{}}};',
+      'import {useWorkspace} from "@dovo/studio-core";export const usePulls=()=>{useWorkspace();return {sources:window.sources,pages:window.sources.filter(s=>s.pull).map(source=>({source,reader:source,pulls:[source.pull]})),busy:false,connected:true,more:()=>{},refresh:()=>{}}};',
   },
   {
     path: '../detail/detail',
