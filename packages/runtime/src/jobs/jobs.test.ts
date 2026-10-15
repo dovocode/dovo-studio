@@ -48,7 +48,13 @@ it(
       run: async (run) => run.onText('Done'),
     })
     const id = runtime.services.jobs.start('flow', 'delivery-1')
-    await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
+    await waitForJob(() => {
+      const job = runtime.services.jobs.list()[0]
+      expect({ status: job.status, error: job.error }).toEqual({
+        status: 'waiting',
+        error: undefined,
+      })
+    })
     expect(runtime.services.jobs.list()[0].taskIds).toHaveLength(1)
     expect(
       runtime.services.activity
