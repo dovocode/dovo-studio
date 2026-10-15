@@ -97,8 +97,12 @@ async function bundle(contents) {
       {
         name: 'boundary-mocks',
         setup(b) {
-          b.onResolve({ filter: /.*/ }, ({ path }) => {
+          b.onResolve({ filter: /.*/ }, ({ path, importer }) => {
             if (mocks[path]) return { path, namespace: 'mock' }
+            if (/ui\/content\/pull-request-icon$/.test(path))
+              return { path: root + '/apps/mobile/src/ui/content/pull-request-icon.tsx' }
+            if (path === '../theme' && importer.endsWith('/ui/content/pull-request-icon.tsx'))
+              return { path: 'controls', namespace: 'mock' }
             if (/runtime\/state\/application-state$/.test(path))
               return { path: 'state', namespace: 'mock' }
             if (/runtime\/connection\/provider$/.test(path))
