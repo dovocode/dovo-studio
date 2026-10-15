@@ -10,6 +10,7 @@ const built = await bundleBrowser(
       loader: 'tsx',
       resolveDir: root,
       contents: `import {createRoot} from 'react-dom/client';
+import {flushSync} from 'react-dom';
 import {PullPipelineRuns} from '${root}/packages/extension-scm/src/pulls/detail/pipeline-runs.tsx';
 const run={id:'run-1',number:1,title:'PR build',url:'https://github.com/team/project/actions/runs/1',status:'success',sha:'commit',ref:'feature',workflow:'Build',updatedAt:'2026-10-14',createdAt:'2026-10-14',actor:'Dominic'};
 const job={id:'job-1',name:'Build job',status:'success',url:run.url+'/job/1',steps:[{id:'step-1',name:'Compile source',status:'success'}]};
@@ -21,7 +22,7 @@ if(path.endsWith('/pipelines/list'))return {items:[run]};
 if(path.endsWith('/pipelines/detail'))return {run,jobs:[job]};
 throw new Error('Unexpected request '+path);
 }};
-const app=createRoot(document.getElementById('app'));window.active=true;window.mount=()=>app.render(<div hidden={!window.active}><PullPipelineRuns repositoryId="repo" sha="commit" active={window.active}/></div>);window.remount=()=>{app.render(null);setTimeout(window.mount,0)};window.mount();`,
+const app=createRoot(document.getElementById('app'));window.active=true;window.mount=()=>flushSync(()=>app.render(<div hidden={!window.active}><PullPipelineRuns repositoryId="repo" sha="commit" active={window.active}/></div>));window.mount();`,
     },
     bundle: true,
     write: false,
@@ -92,6 +93,8 @@ try {
     window.active = false
     window.mount()
   })
+  // Commit the inactive render and effect cleanup before advancing polling timers.
+  assert.equal(await job.isVisible(), false, 'Checks must be hidden before advancing the clock')
   const readsWhileHidden = await page.evaluate(() => window.reads.length)
   await page.clock.runFor(31000)
   assert.equal(
