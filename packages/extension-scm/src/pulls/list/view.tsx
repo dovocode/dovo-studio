@@ -652,7 +652,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                     size="sm"
                     variant="outline"
                     className="max-w-full"
-                    disabled={busy || !page.source.connected}
+                    disabled={busy || !page.reader.connected}
                     onClick={() => void more(page.source.key)}
                   >
                     <span className="min-w-0 truncate">

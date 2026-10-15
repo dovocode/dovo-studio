@@ -1,3 +1,4 @@
+import { runCredentials, type RunCredentials } from './auth/run-credentials.js'
 import { permissionPolicyReadOnly } from '@dovo/protocol'
 import { resolveTaskAgent } from '@dovo/protocol'
 import { TaskReviews } from './scm/reviews/task-reviews.js'
@@ -79,7 +80,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         ? previewDevices(deviceId)
         : deviceHosts.list(taskId, selected.hostId, false, selected.id)
     },
-    driver: (taskId, device) => deviceHosts.driver(taskId, device),
+    driver: (taskId, device, authorize, signal) =>
+      deviceHosts.driver(taskId, device, authorize, signal),
   })
   const defaults = new RuntimeDefaults(db)
   const acpInstallations = new AcpInstallations(
@@ -263,6 +265,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   })
 
   return {
+    runCredentials: runCredentials(store),
     fileReviews,
     taskReviews,
     reviewMarks,
@@ -319,6 +322,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   }
 }
 export interface Services {
+  runCredentials: RunCredentials
   memory: Memory
   backups: RuntimeBackups
   pipelineWatch: PipelineWatch

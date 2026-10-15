@@ -71,7 +71,7 @@ it('authorizes task/device access, isolates tickets and releases input when a vi
     })
   expect((await sendInput('task', 'bad')).status).toBe(401)
   expect((await sendInput('task')).status).toBe(200)
-  expect(input).toHaveBeenCalledWith({ type: 'key', key: 'Home' })
+  expect(input).toHaveBeenCalledWith({ type: 'key', key: 'Home' }, expect.any(Function), undefined)
   const url = `ws://127.0.0.1:${runtime.port}/ws/simulator?ticket=${opened.ticket}`
   const socket = new WebSocket(url)
   await once(socket, 'open')
@@ -82,7 +82,13 @@ it('authorizes task/device access, isolates tickets and releases input when a vi
   )
   await expect(once(cross, 'open')).rejects.toThrow('401')
   socket.send(JSON.stringify({ type: 'key', key: 'Home' }))
-  await vi.waitFor(() => expect(input).toHaveBeenCalledWith({ type: 'key', key: 'Home' }))
+  await vi.waitFor(() =>
+    expect(input).toHaveBeenCalledWith(
+      { type: 'key', key: 'Home' },
+      expect.any(Function),
+      undefined,
+    ),
+  )
   const disconnected = once(socket, 'close')
   runtime.services.devices.revoke(deviceId)
   expect((await disconnected)[0]).toBe(1008)

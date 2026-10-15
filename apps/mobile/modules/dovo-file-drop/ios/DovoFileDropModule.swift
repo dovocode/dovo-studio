@@ -102,11 +102,11 @@ class DovoFileDropView: ExpoView, UIDropInteractionDelegate {
       }
     }
     group.notify(queue: .main) { [weak self] in
+      self?.receiving = false
       guard let self, self.window != nil else {
         for (_, file) in results { if let uri = file["uri"], let url = URL(string: uri) { do { try FileManager.default.removeItem(at: url) } catch { NSLog("Could not remove abandoned drop: %@", error.localizedDescription) } } }
         return
       }
-      self.receiving = false
       if !results.isEmpty { self.onFilesDropped(["files": results.sorted { $0.0 < $1.0 }.map { $0.1 }]) }
       if !errors.isEmpty { self.onDropError(["message": errors.joined(separator: "\n")]) }
     }

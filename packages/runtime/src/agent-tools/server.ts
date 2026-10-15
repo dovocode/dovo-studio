@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { terminalInputFrames } from '@dovo/client-runtime'
 import {
   decode,
@@ -22,7 +23,8 @@ import { screenshotPoint } from './screenshot-point.js'
 const taskId = process.env.DOVO_TASK_ID
 const address = process.env.DOVO_TASK_URL
 const token = process.env.DOVO_TASK_TOKEN
-if (!taskId || !address || !token)
+const credentialFile = process.env.DOVO_TASK_CREDENTIAL_FILE
+if (!taskId || !address || (!token && !credentialFile))
   throw new Error('Dovo task tools are missing their runtime scope')
 const parentRunId = process.env.DOVO_TASK_RUN_ID
 const task = taskId
@@ -67,11 +69,19 @@ const number = (value: unknown, name: string) => {
   return value
 }
 async function post(path: string, input: unknown): Promise<unknown> {
+  const current = credentialFile
+    ? decode(
+        mutableStruct({ token: Schema.String, runId: Schema.String }),
+        JSON.parse(readFileSync(credentialFile, 'utf8')),
+      )
+    : { token: credential, runId: parentRunId }
+  if (input && typeof input === 'object' && 'parentRunId' in input)
+    input = { ...input, parentRunId: current.runId }
   const timeout = runtimeRequestTimeout(path, input)
   const response = await fetch(new URL(path, base), {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${credential}`,
+      Authorization: `Bearer ${current.token}`,
       'Content-Type': 'application/json',
       'X-Dovo-Agent-Access': '1',
     },

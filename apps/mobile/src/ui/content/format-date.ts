@@ -34,5 +34,3 @@ export const formatShortDateTime = (value: string | number | Date) =>
     { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' },
     value,
   )
-export const formatTime = (value: string | number | Date) =>
-  format('time', { hour: 'numeric', minute: '2-digit' }, value)

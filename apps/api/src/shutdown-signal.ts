@@ -1,15 +1,21 @@
 import type { EventEmitter } from 'node:events'
 
 /** Own shutdown before asynchronous initialization, including IPC disconnect during startup. */
-export function shutdownSignal(target: Pick<EventEmitter, 'on' | 'removeListener'>) {
+export function shutdownSignal(
+  target: Pick<EventEmitter, 'on' | 'removeListener'>,
+  forceExit: (code: number) => void = (code) => process.exit(code),
+) {
   const controller = new AbortController()
-  const events = ['SIGINT', 'SIGTERM', 'disconnect'] as const
-  const stop = () => controller.abort()
-  for (const event of events) target.on(event, stop)
+  const handlers = {
+    SIGINT: () => (controller.signal.aborted ? forceExit(130) : controller.abort()),
+    SIGTERM: () => (controller.signal.aborted ? forceExit(143) : controller.abort()),
+    disconnect: () => controller.abort(),
+  }
+  for (const [event, stop] of Object.entries(handlers)) target.on(event, stop)
   return {
     signal: controller.signal,
     dispose() {
-      for (const event of events) target.removeListener(event, stop)
+      for (const [event, stop] of Object.entries(handlers)) target.removeListener(event, stop)
     },
   }
 }

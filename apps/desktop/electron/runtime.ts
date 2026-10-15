@@ -6,7 +6,7 @@ interface DesktopRuntime {
   readonly host: ExtensionHost
 }
 
-export class DesktopRuntimeTag extends Context.Service<DesktopRuntimeTag, DesktopRuntime>()(
+class DesktopRuntimeTag extends Context.Service<DesktopRuntimeTag, DesktopRuntime>()(
   'DovoDesktopRuntime',
 ) {}
 
@@ -16,7 +16,7 @@ const desktopRuntime = (): DesktopRuntime => {
   return { host }
 }
 
-export const desktopRuntimeLayer = Layer.succeed(DesktopRuntimeTag, desktopRuntime())
+const desktopRuntimeLayer = Layer.succeed(DesktopRuntimeTag, desktopRuntime())
 
 export function runDesktop<A, E>(program: Effect.Effect<A, E, DesktopRuntimeTag>): Promise<A> {
   return Effect.runPromise(program.pipe(Effect.provide(desktopRuntimeLayer)))

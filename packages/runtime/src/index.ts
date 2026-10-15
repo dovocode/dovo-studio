@@ -58,8 +58,9 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         try: () => createServices(db, options.ownerToken),
         catch: (cause) => new RuntimeStartupError({ operation: 'service initialization', cause }),
       })
-      // Scope runs every finalizer even if one fails. Register in dependency order so
-      // dependants stop first and SQLite remains available through the final flush.
+      // Scope runs every finalizer even if one fails. This list is shutdown order;
+      // register it backwards because Effect releases in last-in-first-out order.
+      // Dependants stop first and SQLite remains available through the final flush.
       let titlesClosing: Promise<void> | undefined
       let tasksClosing: Promise<void> | undefined
       const closeTitles = () => (titlesClosing ??= services.titles.dispose())
@@ -77,12 +78,13 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         closeTitles,
         closeTasks,
         () => services.agents.dispose(),
+        () => services.runCredentials.dispose(),
         () => services.mcpApps.dispose(),
         () => services.backups.settle(),
         () => services.attachments.dispose(),
+        () => services.liveActivities.flush(),
         () => services.liveActivities.dispose(),
         () => services.pushNotifications.dispose(),
-        () => services.liveActivities.flush(),
         () => services.deviceHosts.dispose(),
         () => services.deviceHostUploads.dispose(),
         () => services.simulators.dispose(),
@@ -93,7 +95,8 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.pullCache.dispose(),
         () => disposeRuntimeSync(services),
       ]
-      for (const close of finalizers) yield* Effect.addFinalizer(() => release(close))
+      for (const close of [...finalizers].reverse())
+        yield* Effect.addFinalizer(() => release(close))
       // In-memory runtimes are ephemeral (tests and packaging smoke checks).
       if (db.name !== ':memory:') services.browsers.prepare()
       const http = yield* Effect.acquireRelease(
@@ -113,10 +116,29 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                   release(() => (http.server.listening ? http.close() : http.closeSockets())),
                 ),
                 Effect.exit(release(() => network?.close())),
-                Effect.exit(release(() => services.jobs.shutdown())),
-                Effect.exit(release(() => services.acpInstallations.dispose())),
-                Effect.exit(release(closeTitles)),
-                Effect.exit(release(closeTasks)),
+                Effect.exit(
+                  Effect.gen(function* () {
+                    const schedulers = yield* Effect.all(
+                      [
+                        () => housekeeping.dispose(),
+                        () => taskPulls.dispose(),
+                        () => services.pullRequestWatch.dispose(),
+                        () => services.pipelineWatch.dispose(),
+                      ].map((close) => Effect.exit(release(close))),
+                      { concurrency: 'unbounded' },
+                    )
+                    const workers = yield* Effect.all(
+                      [
+                        () => services.jobs.shutdown(),
+                        () => services.acpInstallations.dispose(),
+                        closeTitles,
+                        closeTasks,
+                      ].map((close) => Effect.exit(release(close))),
+                      { concurrency: 'unbounded' },
+                    )
+                    for (const result of [...schedulers, ...workers]) yield* result
+                  }),
+                ),
               ],
               { concurrency: 'unbounded' },
             )

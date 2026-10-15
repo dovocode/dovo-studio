@@ -6,7 +6,12 @@ export class VerifiedReaders {
   >()
   private readonly selections = new Map<
     string,
-    { owners: Map<string, string>; readerIdentities: Map<string, string> }
+    {
+      owners: Map<string, string>
+      readerIdentities: Map<string, string>
+      /** Navigation and cached pages retain the source selected before handoff. */
+      origins: Map<string, string>
+    }
   >()
   constructor(private readonly limit = 200) {}
 
@@ -32,6 +37,12 @@ export class VerifiedReaders {
         'This source is now signed in with a different account. Choose its source again.',
       )
     }
+    if (previous && previous.destination !== value.destination) {
+      previous.available = false
+      throw new Error(
+        'This source repository changed. Refresh its project or choose its source again.',
+      )
+    }
     this.identities.delete(key)
     this.identities.set(key, { ...value, available: true })
     this.trim(this.identities)
@@ -51,9 +62,11 @@ export class VerifiedReaders {
     const value = this.selections.get(key) ?? {
       owners: new Map<string, string>(),
       readerIdentities: new Map<string, string>(),
+      origins: new Map<string, string>(),
     }
     this.trim(value.owners)
     this.trim(value.readerIdentities)
+    this.trim(value.origins)
     this.selections.delete(key)
     this.selections.set(key, value)
     this.trim(this.selections)

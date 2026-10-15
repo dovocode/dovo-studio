@@ -13,9 +13,7 @@ import {
   type ConversationPage,
   type Task,
   type TaskSearchResult,
-  type Workspace,
 } from '@dovo/protocol'
-const storedValuesSchema = mutableArray(Schema.String)
 const valuesSchema = mutableArray(mutableStruct({ value: Schema.String }))
 const ordinalSchema = Schema.UndefinedOr(mutableStruct({ ordinal: Schema.Number }))
 const countSchema = mutableStruct({ items: Schema.Number, indexed: Schema.Number })
@@ -149,40 +147,6 @@ export class Conversations {
       assistant_id = excluded.assistant_id, search_text = excluded.search_text
       WHERE ordinal IS NOT excluded.ordinal OR assistant_id IS NOT excluded.assistant_id
         OR search_text IS NOT excluded.search_text`)
-  }
-  hydrate(
-    workspace: Workspace,
-    counts: Record<string, { messages: number; turns: number }>,
-  ): Workspace {
-    const messageRows = this.db
-      .prepare(
-        "SELECT value FROM conversation_items WHERE task_id = ? AND kind = 'message' ORDER BY ordinal",
-      )
-      .pluck()
-    const turnRows = this.db
-      .prepare(
-        "SELECT value FROM conversation_items WHERE task_id = ? AND kind = 'turn' ORDER BY ordinal",
-      )
-      .pluck()
-    return {
-      ...workspace,
-      tasks: workspace.tasks.map((task) => {
-        const expected = counts[task.id]
-        const messages = decode(storedValuesSchema, messageRows.all(task.id))
-        const turns = decode(storedValuesSchema, turnRows.all(task.id))
-        if (!expected || messages.length !== expected.messages || turns.length !== expected.turns)
-          throw new Error(
-            `History for ${task.id} is incomplete. Restore the runtime database from a backup before continuing.`,
-          )
-        return {
-          ...task,
-          messages: messages.map((value) => decode(messageSchema, JSON.parse(value))),
-          ...(task.turns !== undefined
-            ? { turns: turns.map((value) => decode(turnSchema, JSON.parse(value))) }
-            : {}),
-        }
-      }),
-    }
   }
   record(tasks: readonly Task[], previous: ReadonlyMap<string, Task>, seed: boolean) {
     if (seed) {

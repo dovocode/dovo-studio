@@ -195,14 +195,12 @@ export function WorkContent({
           }
         }
         if (!current() || !readConnected || document.visibilityState !== 'visible') return
-        const expectedReaderIdentity = reader
-          ? await Effect.runPromise(verifySourceReader(reader))
-          : undefined
+        const readGuard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
         if (!current()) return
         const readRequest = reader?.request ?? request
         const readTarget = {
           ...(reader ? sourceIdentityInput(reader) : target),
-          expectedReaderIdentity,
+          ...readGuard,
         }
         const refresh = force
         force = false
@@ -424,14 +422,12 @@ export function WorkContent({
     pending.current = true
     setBusy(true)
     try {
-      const expectedReaderIdentity = reader
-        ? await Effect.runPromise(verifySourceReader(reader))
-        : undefined
+      const readGuard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
       if (!current()) return
       const readRequest = reader?.request ?? request
       const readTarget = {
         ...(reader ? sourceIdentityInput(reader) : target),
-        expectedReaderIdentity,
+        ...readGuard,
       }
       if (issue?.next) {
         const data = await readRequest(

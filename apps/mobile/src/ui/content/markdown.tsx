@@ -1,5 +1,6 @@
 import { TaskVisualization } from './task-visualization'
 import { markdownImages, type MarkdownImagePart } from './markdown-images'
+import { markdownCodeStyle } from './markdown-code-style'
 import { ServerImage } from './server-image'
 import { Text } from './text'
 import { useLinkOrigin } from './link-origin'
@@ -27,7 +28,7 @@ const MermaidDiagram = lazy(() =>
   import('./mermaid-diagram').then((module) => ({ default: module.MermaidDiagram })),
 )
 const monospace = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
-function createMarkdownStyles({ colors, styles }: MobileTheme) {
+function createMarkdownStyles({ colors, styles, code }: MobileTheme) {
   const heading = {
     color: colors.text,
     fontWeight: '700',
@@ -104,8 +105,7 @@ function createMarkdownStyles({ colors, styles }: MobileTheme) {
       borderColor: colors.border,
     },
     codeBlock: {
-      color: colors.text,
-      backgroundColor: colors.surface,
+      ...markdownCodeStyle({ colors, code }),
       borderColor: colors.border,
       borderWidth: 1,
       fontFamily: monospace,
@@ -115,18 +115,6 @@ function createMarkdownStyles({ colors, styles }: MobileTheme) {
       borderRadius: 12,
       marginTop: 4,
       marginBottom: 14,
-      syntaxColors: {
-        keyword: colors.syntaxKeyword,
-        string: colors.success,
-        number: colors.warning,
-        constant: colors.warning,
-        comment: colors.muted,
-        function: colors.syntaxFunction,
-        type: colors.warning,
-        property: colors.text,
-        tag: colors.syntaxKeyword,
-        attribute: colors.warning,
-      },
     },
     link: {
       color: colors.accent,

@@ -69,7 +69,7 @@ export async function prepareRuntime(root, target) {
     await rm(stage, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
 }
-export async function preparedRuntime(root) {
+async function preparedRuntime(root) {
   const directory = process.env.DOVO_PREPARED_RUNTIME
   if (!directory || !isAbsolute(directory))
     throw new Error('DOVO_PREPARED_RUNTIME must be an absolute path')

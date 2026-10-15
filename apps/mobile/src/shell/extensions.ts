@@ -10,7 +10,7 @@ type NativeContribution = {
     default: ComponentType
   }>
 }
-export const contributions: NativeContribution[] = [
+const contributions: NativeContribution[] = [
   {
     id: 'tasks',
     title: 'Tasks',

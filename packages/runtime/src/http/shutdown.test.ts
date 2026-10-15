@@ -125,6 +125,75 @@ it('releases remaining resources and SQLite when one service cleanup fails', asy
   expect(runtime.services.db.open).toBe(false)
 })
 
+it('stops admission while watchers drain before disposing task services', async () => {
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  let enter = () => {}
+  let release = () => {}
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const dispose = runtime.services.pullRequestWatch.dispose.bind(runtime.services.pullRequestWatch)
+  vi.spyOn(runtime.services.pullRequestWatch, 'dispose').mockImplementationOnce(async () => {
+    enter()
+    await released
+    await dispose()
+  })
+  const closing = runtime.close()
+  try {
+    await entered
+    await expect(fetch(`http://127.0.0.1:${runtime.port}/health`)).rejects.toThrow('fetch failed')
+    expect(runtime.services.db.open).toBe(true)
+  } finally {
+    release()
+    await closing
+  }
+  expect(runtime.services.db.open).toBe(false)
+})
+
+it('stops watchers before task services and flushes notifications before disposing them', async () => {
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  const order: string[] = []
+  const services = runtime.services
+  const watch = services.pullRequestWatch.dispose.bind(services.pullRequestWatch)
+  const pipelines = services.pipelineWatch.dispose.bind(services.pipelineWatch)
+  const tasks = services.tasks.dispose.bind(services.tasks)
+  const flush = services.liveActivities.flush.bind(services.liveActivities)
+  const dispose = services.liveActivities.dispose.bind(services.liveActivities)
+  vi.spyOn(services.pullRequestWatch, 'dispose').mockImplementation(async () => {
+    await watch()
+    order.push('watch')
+  })
+  vi.spyOn(services.pipelineWatch, 'dispose').mockImplementation(async () => {
+    await pipelines()
+    order.push('pipelines')
+  })
+  vi.spyOn(services.tasks, 'dispose').mockImplementation(async () => {
+    order.push('tasks')
+    await tasks()
+  })
+  vi.spyOn(services.liveActivities, 'flush').mockImplementation(async () => {
+    order.push('flush')
+    await flush()
+  })
+  vi.spyOn(services.liveActivities, 'dispose').mockImplementation(async () => {
+    order.push('dispose')
+    await dispose()
+  })
+  try {
+    await runtime.close()
+    expect(order.indexOf('watch')).toBeLessThan(order.indexOf('tasks'))
+    expect(order.indexOf('pipelines')).toBeLessThan(order.indexOf('tasks'))
+    expect(order.indexOf('flush')).toBeLessThan(order.indexOf('dispose'))
+    expect(services.db.open).toBe(false)
+  } finally {
+    vi.restoreAllMocks()
+    await runtime.close()
+  }
+})
+
 it.each([false, true])(
   'aborts a title worker while its accepted HTTP request drains (external=%s)',
   async (external) => {

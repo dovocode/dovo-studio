@@ -1,3 +1,9 @@
+import { isRunToken } from '../auth/run-credentials.js'
+import {
+  authorizeRunEndpoint,
+  authorizeRunRoute,
+  authenticateRuntimeOperation,
+} from '../auth/run-authorization.js'
 import { patchWorkspace } from './endpoints/workspace-patch.js'
 import { agentBrowserRequestSchema } from '../previews/agent-browser.js'
 import { taskWaitingRequestSchema } from '@dovo/protocol'
@@ -79,6 +85,23 @@ export function route(
       const method = request.method,
         path = url.pathname
       const token = request.headers.authorization?.replace(/^Bearer /, '') ?? ''
+      if (isRunToken(token)) authorizeRunEndpoint(s, token, method, path)
+      const run = isRunToken(token)
+        ? authorizeRunRoute(
+            s,
+            token,
+            method,
+            path,
+            yield* serviceResult(
+              body(
+                request,
+                ['/api/artifacts/create', '/api/artifacts/update'].includes(path)
+                  ? ARTIFACT_MAX_BYTES * 6 + 4096
+                  : undefined,
+              ),
+            ),
+          )
+        : undefined
       if (method === 'GET' && path === '/health')
         return yield* serviceResult({
           ok: true,
@@ -167,8 +190,8 @@ export function route(
           ),
         )
       }
-      const device = s.devices.authenticate(token)
-      const agentDeviceAccess = request.headers['x-dovo-agent-access'] === '1'
+      const device = run ? { id: `run:${run.runId}`, owner: false } : s.devices.authenticate(token)
+      const agentDeviceAccess = !!run || request.headers['x-dovo-agent-access'] === '1'
       if (
         path === '/api/device-hosts' ||
         path.startsWith('/api/device-hosts/') ||
@@ -190,13 +213,13 @@ export function route(
           ),
         )
       if (method === 'POST' && path === '/api/pipeline-watch') {
-        if (!device.owner)
+        if (!device.owner && !run)
           throw new HttpError(403, 'Pipeline watches are controlled by the thread’s agent')
         const input = decode(pipelineWatchRequestSchema, yield* serviceResult(body(request, 8192)))
         return yield* serviceResult(s.pipelineWatch.command(input))
       }
       if (method === 'POST' && path === '/api/pull-request-watch') {
-        if (!device.owner)
+        if (!device.owner && !run)
           throw new HttpError(403, 'PR watches are controlled by the thread’s agent')
         const input = decode(
           pullRequestWatchRequestSchema,
@@ -205,7 +228,7 @@ export function route(
         return yield* serviceResult(s.pullRequestWatch.command(input))
       }
       if (method === 'POST' && path.startsWith('/api/subagents/')) {
-        if (!device.owner)
+        if (!device.owner && !run)
           throw new HttpError(403, 'Child agents are controlled by the parent agent')
         const raw = yield* serviceResult(body(request))
         if (path === '/api/subagents/spawn')
@@ -274,7 +297,8 @@ export function route(
           )
         }
         if (path === '/api/artifacts/create' || path === '/api/artifacts/update') {
-          if (!device.owner) throw new HttpError(403, 'Artifacts are created by the thread’s agent')
+          if (!device.owner && !run)
+            throw new HttpError(403, 'Artifacts are created by the thread’s agent')
           // JSON can escape each content byte as six characters; metadata stays small.
           const value = yield* serviceResult(body(request, ARTIFACT_MAX_BYTES * 6 + 4096))
           const input = path.endsWith('/create')
@@ -405,7 +429,7 @@ export function route(
         )
       }
       if (method === 'POST' && path.startsWith('/api/memory/'))
-        return yield* memoryRoute(request, path, device.owner)
+        return yield* memoryRoute(request, path, device.owner || !!run)
       if (method === 'GET' && path === '/api/notifications/status')
         return yield* serviceResult(s.pushNotifications.status(device.id))
       if (method === 'POST' && path === '/api/notifications/register')
@@ -457,7 +481,16 @@ export function route(
         s.store.taskSummary(taskId)
         if (agentDeviceAccess) s.deviceHosts.assertAgentDevice(id, hostId)
         const result = yield* serviceResult(
-          s.simulators.open(taskId, s.deviceHosts.deviceId(id, hostId)),
+          s.simulators.open(
+            taskId,
+            s.deviceHosts.deviceId(id, hostId),
+            undefined,
+            () => {
+              authenticateRuntimeOperation(s, token)
+              if (agentDeviceAccess) s.deviceHosts.assertAgentDevice(id, hostId)
+            },
+            run?.signal,
+          ),
         )
         return yield* serviceResult({
           id: result.id,
@@ -498,12 +531,17 @@ export function route(
         if (s.simulators.taskId(id) !== taskId)
           throw new HttpError(403, 'Simulator preview belongs to another task')
         yield* serviceResult(
-          s.simulators.input(id, input, () => {
-            s.devices.authenticate(token)
-            s.store.taskSummary(taskId)
-            if (s.simulators.taskId(id) !== taskId)
-              throw new HttpError(403, 'Simulator preview belongs to another task')
-          }),
+          s.simulators.input(
+            id,
+            input,
+            () => {
+              authenticateRuntimeOperation(s, token)
+              s.store.taskSummary(taskId)
+              if (s.simulators.taskId(id) !== taskId)
+                throw new HttpError(403, 'Simulator preview belongs to another task')
+            },
+            run?.signal,
+          ),
         )
         return yield* serviceResult({ ok: true })
       }
@@ -526,7 +564,7 @@ export function route(
         s.store.taskSummary(taskId)
         return yield* serviceResult(
           s.browsers.agentCommand(taskId, command, () => {
-            s.devices.authenticate(token)
+            authenticateRuntimeOperation(s, token)
             s.store.taskSummary(taskId)
           }),
         )
@@ -575,7 +613,13 @@ export function route(
       if (method === 'POST' && path === '/api/previews/action') {
         const input = decode(previewActionSchema, yield* serviceResult(body(request)))
         s.store.taskSummary(input.taskId)
-        return yield* serviceResult(s.deviceHosts.action(input, agentDeviceAccess))
+        return yield* serviceResult(
+          s.deviceHosts.action(input, agentDeviceAccess, run?.signal, () => {
+            if (run) authorizeRunRoute(s, token, method, path, input)
+            else authenticateRuntimeOperation(s, token)
+            s.store.taskSummary(input.taskId)
+          }),
+        )
       }
       if (method === 'POST' && path === '/api/attachments/upload')
         return yield* serviceResult(s.attachments.upload(yield* serviceResult(body(request))))

@@ -10,11 +10,10 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { useApplicationState } from '../runtime/state/application-state'
-import { Switch } from '../ui/controls/switch'
 import { Text } from '../ui/content/text'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { SettingsPage, useSettingsTheme } from './settings-theme'
-import { SettingsGroup, SettingsRow } from './settings-group'
+import { SettingsGroup, SettingsRow, SettingsSwitchRow } from './settings-group'
 import { SettingsAction as Action, SettingsChoice as Choice } from './settings-controls'
 import { DeviceHostEditor, type DeviceHostDraft } from './device-host-editor'
 import {
@@ -171,20 +170,17 @@ export function DeviceHostSettings({
         title="Device Hub"
         footer="Enable device discovery and controls on this runtime. Turning it off keeps saved hosts and leaves devices running."
       >
-        <View style={styles.row}>
-          <Text style={[styles.text, { flex: 1 }]}>Enable Device Hub</Text>
-          <Switch
-            accessibilityLabel="Enable Device Hub"
-            value={settings?.enabled === true}
-            disabled={disabled || !settings}
-            onValueChange={(enabled) =>
-              run(async (current) => {
-                const fresh = await freshSettings(current)
-                await update({ ...deviceHostSettingsInput(fresh), enabled }, current, true)
-              })
-            }
-          />
-        </View>
+        <SettingsSwitchRow
+          label="Enable Device Hub"
+          value={settings?.enabled === true}
+          disabled={disabled || !settings}
+          onValueChange={(enabled) =>
+            run(async (current) => {
+              const fresh = await freshSettings(current)
+              await update({ ...deviceHostSettingsInput(fresh), enabled }, current, true)
+            })
+          }
+        />
       </SettingsGroup>
       {settings?.enabled === true &&
         (draft ? (

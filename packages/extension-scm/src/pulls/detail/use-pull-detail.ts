@@ -109,9 +109,12 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
           }),
         )
       if (identity && !stopped) urlIdentity.current = identity.readerIdentity
-      const expectedReaderIdentity = reader
+      const readGuard = reader
         ? yield* verifySourceReader(reader)
-        : identity?.readerIdentity
+        : {
+            expectedReaderIdentity: identity?.readerIdentity,
+            expectedDestination: identity?.destination,
+          }
       yield* (reader?.requestEffect ?? request)(
         '/api/scm/pulls/detail',
         {
@@ -119,7 +122,7 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
           number,
           connectionId,
           refresh,
-          expectedReaderIdentity,
+          ...readGuard,
         },
         pullDetailSchema,
       ).pipe(

@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import type { McpServer } from '@dovo/protocol'
 import { processEnvironment } from '../../process.js'
 function mcpEnvironment(mapping: Record<string, string>) {
@@ -87,4 +90,20 @@ export function acpMcpServers(servers: McpServer[]) {
             headers: Object.entries(mcpHeaders(server)).map(([name, value]) => ({ name, value })),
           },
     )
+}
+
+/** Claude CLI --mcp-config accepts JSON file paths. The SDK otherwise serializes
+ * mcpServers (including env and headers) directly into process arguments. */
+export function claudeMcpConfigFile(servers: McpServer[]) {
+  const config = claudeMcpServers(servers)
+  if (!Object.keys(config).length) return { path: undefined, dispose: () => {} }
+  const directory = mkdtempSync(join(tmpdir(), 'dovo-claude-mcp-'))
+  const path = join(directory, 'mcp.json')
+  try {
+    writeFileSync(path, JSON.stringify({ mcpServers: config }), { mode: 0o600, flag: 'wx' })
+  } catch (error) {
+    rmSync(directory, { recursive: true, force: true })
+    throw error
+  }
+  return { path, dispose: () => rmSync(directory, { recursive: true, force: true }) }
 }

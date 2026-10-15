@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 const fs = require('node:fs'),
   http = require('node:http'),
@@ -248,7 +249,7 @@ app.on('browser-window-created', (_event, window) => {
  const createPull=async()=>{button('Create PR').click();await wait(()=>document.querySelector('[role="dialog"] [aria-label="Find project"]'));[...document.querySelectorAll('[role="dialog"] button')].find(item=>item.innerText.includes('Work fixture')).click();await wait(()=>document.querySelector('[role="dialog"] [aria-label="Create PR project"]'))};
  const field=label=>document.querySelector('[aria-label="'+label+'"]')||[...document.querySelectorAll('label')].find(e=>e.childNodes[0]?.textContent.trim()===label)?.querySelector('input,textarea');
  const input=(label,value)=>{const element=field(label);if(!element)throw new Error('No field '+label);Object.getOwnPropertyDescriptor(element.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(element,value);element.dispatchEvent(new Event('input',{bubbles:true}))};
- await wait(()=>document.body.innerText.includes('Workspace synced'));
+ await wait(()=>(${workspaceReady.toString()})());
  const c=await window.dovo.runtimeConnection();const call=async(path,body,method='POST')=>{const r=await fetch(c.address+path,{method,headers:{Authorization:'Bearer '+c.token,'Content-Type':'application/json'},body:JSON.stringify(body)});const value=await r.json();if(!r.ok)throw new Error(JSON.stringify(value));return value};
  const snapshot=async()=>{const response=await fetch(c.address+'/api/snapshot',{headers:{Authorization:'Bearer '+c.token}});if(!response.ok)throw new Error('Snapshot failed');return response.json()};
  const commands=await call('/api/commands/read',{});await call('/api/commands/save',{...commands.settings,acli:${JSON.stringify(aclicli)}});

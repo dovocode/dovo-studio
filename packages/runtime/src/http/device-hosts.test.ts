@@ -189,7 +189,11 @@ it('proxies frames and input to an existing paired runtime and closes its remote
     }),
   )
   await driver.input({ type: 'text', text: 'hello' })
-  expect(input).toHaveBeenCalledWith({ type: 'text', text: 'hello' })
+  expect(input).toHaveBeenCalledWith(
+    { type: 'text', text: 'hello' },
+    expect.any(Function),
+    expect.any(AbortSignal),
+  )
   detach()
   await driver.release()
   await driver.close()
@@ -292,6 +296,8 @@ it('routes runtime A discovery/actions/previews to paired runtime B without crea
   ).toBe(200)
   expect(action).toHaveBeenCalledWith(
     expect.objectContaining({ id: 'ios:device', taskId: expect.stringContaining('device-host:') }),
+    expect.any(AbortSignal),
+    expect.any(Function),
   )
   const opened = await (
     await call('/api/previews/simulator/open', {
@@ -310,7 +316,11 @@ it('routes runtime A discovery/actions/previews to paired runtime B without crea
       })
     ).status,
   ).toBe(200)
-  expect(input).toHaveBeenCalledWith({ type: 'text', text: 'cross runtime' })
+  expect(input).toHaveBeenCalledWith(
+    { type: 'text', text: 'cross runtime' },
+    expect.any(Function),
+    expect.any(AbortSignal),
+  )
   expect(remote.services.store.get().tasks).toEqual([])
   expect(openTunnel).toHaveBeenCalledOnce()
   expect((await call('/api/device-hosts/remove', { id: 'b' })).status).toBe(200)
@@ -537,6 +547,72 @@ it.skipIf(process.platform === 'win32')(
       await runtime.close()
       vi.unstubAllEnvs()
       await rm(root, { recursive: true, force: true })
+    }
+  },
+)
+
+it.each(['action', 'open'] as const)(
+  'cancels destination %s discovery when the source disconnects',
+  async (operation) => {
+    const runtime = await startRuntime({
+      databasePath: ':memory:',
+      ownerToken: 'owner-test-token',
+      port: 0,
+    })
+    cleanups.push(() => runtime.close())
+    runtime.services.deviceHosts.settings.save({ enabled: true, hosts: [] })
+    runtime.services.devices.add('Source runtime', 'source-token')
+    let entered!: (signal: AbortSignal) => void
+    const started = new Promise<AbortSignal>((resolve) => {
+      entered = resolve
+    })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const dispatch = vi.fn<() => void>()
+    if (operation === 'action')
+      vi.spyOn(discovery, 'previewDeviceAction').mockImplementation(
+        async (_input, signal, authorize) => {
+          if (!signal) throw new Error('Expected source cancellation signal')
+          entered(signal)
+          await gate
+          authorize?.()
+          dispatch()
+          return { ok: true }
+        },
+      )
+    else
+      vi.spyOn(runtime.services.hostSimulators, 'open').mockImplementation(
+        async (_task, _device, _owner, authorize, signal) => {
+          if (!signal) throw new Error('Expected source cancellation signal')
+          entered(signal)
+          await gate
+          authorize?.()
+          dispatch()
+          throw new Error('Unexpected simulator dispatch')
+        },
+      )
+    const controller = new AbortController()
+    const pending = fetch(`http://127.0.0.1:${runtime.port}/api/device-host/${operation}`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { Authorization: 'Bearer source-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: 'foreign', id: 'ios:device', action: 'shutdown' }),
+    }).catch((error: unknown) => error)
+    try {
+      const signal = await started
+      const aborted = new Promise<void>((resolve) =>
+        signal.addEventListener('abort', () => resolve(), { once: true }),
+      )
+      controller.abort()
+      await aborted
+      release()
+      await pending
+      expect(dispatch).not.toHaveBeenCalled()
+    } finally {
+      release()
+      await pending
     }
   },
 )

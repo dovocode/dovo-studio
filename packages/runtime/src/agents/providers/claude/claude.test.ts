@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { decode, resourceSettingsSchema } from '@dovo/protocol'
 import { taskToolsServer } from '../../../agent-tools/config.js'
 import * as warmProcesses from '../../execution/warm-processes.js'
@@ -172,6 +173,13 @@ it('keeps a streaming Claude connection across turns', async () => {
       },
     })
     await claudeAdapter.run(boundRun('first-run'))
+    const launched = mocks.query.mock.calls.at(-1)?.[0].options
+    expect(launched?.mcpServers).toBeUndefined()
+    const configPath = launched?.extraArgs?.['mcp-config']
+    if (typeof configPath !== 'string') throw new Error('Expected a private MCP config path')
+    expect(readFileSync(configPath, 'utf8')).toContain('DOVO_TASK_TOKEN')
+    expect(JSON.stringify(launched?.extraArgs)).not.toContain('token')
+
     // A completed reply must not wait for optional metadata or receive it late.
     resolveAccount({ subscriptionType: 'test' })
     await metadata
@@ -202,6 +210,7 @@ it('keeps a streaming Claude connection across turns', async () => {
       claudeAdapter.run({ ...boundRun('third-run'), sessionId: 'session', prompt: 'third' }),
     ).rejects.toThrow('dovo_task: connection failed')
     expect(prompts).toEqual(['first', 'second'])
+    expect(existsSync(configPath)).toBe(false)
   } finally {
     await claudeAdapter.dispose?.()
     pressure.mockRestore()

@@ -105,10 +105,6 @@ export class TaskHistories {
     this.entries.delete(id)
     this.bytes -= entry.bytes
   }
-  clear() {
-    this.entries.clear()
-    this.bytes = 0
-  }
   /** Retained histories, for tests and diagnostics. */
   retained() {
     return { tasks: [...this.entries.keys()], bytes: this.bytes }

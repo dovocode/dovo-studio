@@ -8,10 +8,18 @@ import { decode, mutableStruct, type PreviewDevice } from '@dovo/protocol'
 import { androidTool } from './devices.js'
 import { HttpError } from '../errors.js'
 const exec = promisify(execFile)
-const run = async (file: string, args: string[]) =>
-  (
-    await exec(file, args, { timeout: 30000, maxBuffer: 12 * 1024 * 1024, windowsHide: true })
+const run = async (file: string, args: string[], signal?: AbortSignal, authorize?: () => void) => {
+  authorize?.()
+  signal?.throwIfAborted()
+  return (
+    await exec(file, args, {
+      signal,
+      timeout: 30000,
+      maxBuffer: 12 * 1024 * 1024,
+      windowsHide: true,
+    })
   ).stdout.trim()
+}
 export function androidLaunchComponent(output: string) {
   const component = output
     .split('\n')
@@ -24,10 +32,15 @@ export function androidLaunchComponent(output: string) {
     )
   return component
 }
-export async function deviceApps(device: PreviewDevice) {
+export async function deviceApps(
+  device: PreviewDevice,
+  signal?: AbortSignal,
+  authorize?: () => void,
+) {
+  const command = (file: string, args: string[]) => run(file, args, signal, authorize)
   if (device.state !== 'booted') throw new HttpError(409, 'Start or connect this device first.')
   if (device.platform === 'android') {
-    const packages = await run(await androidTool('adb'), [
+    const packages = await command(await androidTool('adb'), [
       '-s',
       device.runtime,
       'shell',
@@ -47,7 +60,7 @@ export async function deviceApps(device: PreviewDevice) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-device-apps-'))
   try {
     const file = join(directory, 'apps.plist')
-    await writeFile(file, await run('xcrun', ['simctl', 'listapps', device.id.slice(4)]))
+    await writeFile(file, await command('xcrun', ['simctl', 'listapps', device.id.slice(4)]))
     const apps = decode(
       Schema.Record(
         Schema.String,
@@ -56,7 +69,7 @@ export async function deviceApps(device: PreviewDevice) {
           CFBundleName: Schema.optional(Schema.String),
         }),
       ),
-      JSON.parse(await run('plutil', ['-convert', 'json', '-o', '-', file])),
+      JSON.parse(await command('plutil', ['-convert', 'json', '-o', '-', file])),
     )
     return Object.entries(apps)
       .map(([bundleId, info]) => ({
@@ -68,12 +81,19 @@ export async function deviceApps(device: PreviewDevice) {
     await rm(directory, { recursive: true, force: true })
   }
 }
-export async function launchDeviceApp(device: PreviewDevice, bundleId: string, relaunch: boolean) {
+export async function launchDeviceApp(
+  device: PreviewDevice,
+  bundleId: string,
+  relaunch: boolean,
+  signal?: AbortSignal,
+  authorize?: () => void,
+) {
+  const command = (file: string, args: string[]) => run(file, args, signal, authorize)
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(bundleId))
     throw new HttpError(400, 'Choose a valid app identifier.')
   if (device.state !== 'booted') throw new HttpError(409, 'Start or connect this device first.')
   if (device.platform === 'ios') {
-    await run('xcrun', [
+    await command('xcrun', [
       'simctl',
       'launch',
       ...(relaunch ? ['--terminate-running-process'] : []),
@@ -84,7 +104,7 @@ export async function launchDeviceApp(device: PreviewDevice, bundleId: string, r
     const adb = await androidTool('adb'),
       target = ['-s', device.runtime, 'shell']
     const component = androidLaunchComponent(
-      await run(adb, [
+      await command(adb, [
         ...target,
         'cmd',
         'package',
@@ -95,8 +115,8 @@ export async function launchDeviceApp(device: PreviewDevice, bundleId: string, r
         bundleId,
       ]),
     )
-    if (relaunch) await run(adb, [...target, 'am', 'force-stop', bundleId])
-    const output = await run(adb, [...target, 'am', 'start', '-n', `'${component}'`])
+    if (relaunch) await command(adb, [...target, 'am', 'force-stop', bundleId])
+    const output = await command(adb, [...target, 'am', 'start', '-n', `'${component}'`])
     if (/^Error:/m.test(output))
       throw new HttpError(
         409,

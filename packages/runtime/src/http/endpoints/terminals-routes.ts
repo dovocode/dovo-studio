@@ -1,3 +1,5 @@
+import { isRunToken } from '../../auth/run-credentials.js'
+import { authenticateRuntimeOperation } from '../../auth/run-authorization.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
 import { mutableStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
@@ -62,7 +64,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         if (!repo || task.example) throw new HttpError(400, 'Select a real task with a repository')
         const checkout = terminalCheckout(s.store, taskId, checkoutId)
         const authorize = () => {
-          s.devices.authenticate(token)
+          authenticateRuntimeOperation(s, token)
           if (!isDeepStrictEqual(checkout, terminalCheckout(s.store, taskId, checkoutId)))
             throw new HttpError(409, 'The working directory changed. Reopen the terminal.')
         }
@@ -100,7 +102,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         if (!repo || task.example) throw new HttpError(400, 'Select a real task with a repository')
         const checkout = terminalCheckout(s.store, taskId, checkoutId)
         const authorize = () => {
-          s.devices.authenticate(token)
+          authenticateRuntimeOperation(s, token)
           if (!isDeepStrictEqual(checkout, terminalCheckout(s.store, taskId, checkoutId)))
             throw new HttpError(409, 'The working directory changed. Reopen the terminal.')
         }
@@ -175,6 +177,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
             },
           ),
         )
+        if (isRunToken(token)) s.runCredentials.addTerminal(token, terminal.id)
         return terminal
       }
       if (method === 'POST' && path === '/api/terminals/close') {

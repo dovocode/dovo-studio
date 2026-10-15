@@ -26,7 +26,7 @@ import { installNative } from './device-host-install.js'
 import { stageDeviceArtifact } from './device-artifact-staging.js'
 import { HttpError } from '../errors.js'
 import type { NativeSimulator } from './simulator-native.js'
-export function remoteDeviceId(hostId: string, id: string) {
+function remoteDeviceId(hostId: string, id: string) {
   return `remote:${hostId}:${id}`
 }
 export function splitDeviceId(id: string, hostId?: string) {
@@ -200,24 +200,66 @@ export class DeviceHosts {
     if (hostId) result.host = this.host(hostId, agent).name
     return result
   }
-  async action(input: Schema.Schema.Type<typeof previewActionSchema>, agent = false) {
-    this.assertEnabled()
+  async action(
+    input: Schema.Schema.Type<typeof previewActionSchema>,
+    agent = false,
+    signal?: AbortSignal,
+    authorize?: () => void,
+  ) {
     const selected = splitDeviceId(input.id, input.hostId)
-    if (!selected.hostId) return previewDeviceAction(input)
+    const epoch = this.epoch
+    const taskEpoch = this.taskEpochs.get(input.taskId)
+    const hostEpoch = selected.hostId ? this.hostEpochs.get(selected.hostId) : undefined
+    const host = selected.hostId ? this.host(selected.hostId, agent) : undefined
+    const assertCurrent = () => {
+      authorize?.()
+      signal?.throwIfAborted()
+      this.assertEnabled()
+      if (
+        this.disposed ||
+        this.epoch !== epoch ||
+        this.taskEpochs.get(input.taskId) !== taskEpoch ||
+        (host &&
+          (this.hostEpochs.get(host.id) !== hostEpoch ||
+            !sameHostAccess(this.host(host.id, agent), host)))
+      )
+        throw new HttpError(409, 'Device action was cancelled by cleanup')
+    }
+    assertCurrent()
+    if (!host) return previewDeviceAction(input, signal, assertCurrent)
     return decode(
       previewResultSchema,
-      await this.client.request(this.host(selected.hostId, agent), '/api/device-host/action', {
-        ...input,
-        id: selected.id,
-        hostId: undefined,
-      }),
+      await this.client.request(
+        host,
+        '/api/device-host/action',
+        {
+          ...input,
+          id: selected.id,
+          hostId: undefined,
+        },
+        signal,
+        assertCurrent,
+      ),
     )
   }
-  async driver(taskId: string, device: PreviewDevice): Promise<NativeSimulator | undefined> {
+  async driver(
+    taskId: string,
+    device: PreviewDevice,
+    authorize?: () => void,
+    signal?: AbortSignal,
+  ): Promise<NativeSimulator | undefined> {
     this.assertEnabled()
+    authorize?.()
+    signal?.throwIfAborted()
     const selected = splitDeviceId(device.id, device.hostId)
     if (!selected.hostId) return undefined
-    return this.client.driver(this.host(selected.hostId), taskId, { ...device, id: selected.id })
+    return this.client.driver(
+      this.host(selected.hostId),
+      taskId,
+      { ...device, id: selected.id },
+      authorize,
+      signal,
+    )
   }
   async test(value: unknown): Promise<DeviceHostTestResult> {
     const candidate = decode(deviceHostSchema, value)
@@ -284,6 +326,7 @@ export class DeviceHosts {
     checkoutRoot: string,
     agent = false,
     signal?: AbortSignal,
+    authorize?: () => void,
   ) {
     this.assertEnabled()
     const selected = splitDeviceId(input.id, input.hostId)
@@ -298,6 +341,7 @@ export class DeviceHosts {
     if (signal?.aborted) abort()
     this.installs.set(operationId, { taskId: input.taskId, hostId: selected.hostId, controller })
     const assertCurrent = () => {
+      authorize?.()
       if (
         controller.signal.aborted ||
         this.disposed ||
@@ -311,6 +355,7 @@ export class DeviceHosts {
         throw new HttpError(409, 'Device host changed during app installation')
     }
     try {
+      assertCurrent()
       const artifact = await stageDeviceArtifact(input.artifactPath, checkoutRoot)
       try {
         assertCurrent()
@@ -323,6 +368,7 @@ export class DeviceHosts {
             '/api/device-host/upload',
             { taskId: input.taskId, extension: artifact.extension },
             controller.signal,
+            assertCurrent,
           ),
         )
         try {
@@ -342,6 +388,7 @@ export class DeviceHosts {
               '/api/device-host/install',
               { taskId: input.taskId, id: selected.id, uploadId: upload.id },
               controller.signal,
+              assertCurrent,
             ),
           )
         } finally {
@@ -354,10 +401,13 @@ export class DeviceHosts {
             current.hosts.some((saved) => saved.id === host.id && sameHostAccess(saved, host))
           ) {
             try {
-              await this.client.request(host, '/api/device-host/upload/remove', {
-                taskId: input.taskId,
-                id: upload.id,
-              })
+              await this.client.request(
+                host,
+                '/api/device-host/upload/remove',
+                { taskId: input.taskId, id: upload.id },
+                controller.signal,
+                assertCurrent,
+              )
             } catch (error) {
               console.warn(
                 'Remote artifact cleanup failed',
@@ -383,6 +433,7 @@ export class DeviceHosts {
     input: Schema.Schema.Type<typeof deviceHostForwardSchema>,
     agent = false,
     signal?: AbortSignal,
+    authorize?: () => void,
   ) {
     this.assertEnabled()
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
@@ -403,6 +454,7 @@ export class DeviceHosts {
     signal?.addEventListener('abort', abort, { once: true })
     if (signal?.aborted) abort()
     const assertCurrent = () => {
+      authorize?.()
       this.assertEnabled()
       if (
         controller.signal.aborted ||
@@ -426,6 +478,7 @@ export class DeviceHosts {
           '/api/device-host/ready',
           { taskId: input.taskId },
           controller.signal,
+          assertCurrent,
         )
       } catch (error) {
         // Earlier Device Hub runtimes expose discovery but not the lightweight readiness endpoint.
@@ -436,6 +489,7 @@ export class DeviceHosts {
           '/api/device-host/devices',
           { taskId: input.taskId },
           controller.signal,
+          assertCurrent,
         )
       }
       assertCurrent()
@@ -446,6 +500,7 @@ export class DeviceHosts {
         true,
       ))
       await readyReverseForward(child)
+      assertCurrent()
       if (input.exposeToNetwork)
         await this.client.request(
           host,
@@ -455,6 +510,7 @@ export class DeviceHosts {
             port: input.remotePort,
           },
           controller.signal,
+          assertCurrent,
         )
       assertCurrent()
       if (child.exitCode !== null || child.signalCode !== null)

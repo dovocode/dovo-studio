@@ -14,6 +14,8 @@ const legacyConnectionKey = 'dovo.connection.v1'
 let observed: RuntimeRegistry | undefined
 const eventKey = 'dovo.runtimes.changed'
 export function subscribeRuntimeRegistry(listener: () => void) {
+  const bridge = decodeResult(bridgeSchema, window)
+  if (bridge.success) return bridge.data.dovo.subscribeRuntimeRegistry(listener)
   const receive = (event: StorageEvent) => {
     if (event.key === eventKey) listener()
   }
@@ -49,12 +51,12 @@ export function mergeRuntimeRegistry(
   )
     throw new Error('Pairing changed in another window. Reload before editing connections.')
   const activeId = next.activeId !== before.activeId ? next.activeId : current.activeId
-  return {
+  return decode(runtimeRegistrySchema, {
     ...current,
     profiles: [...profiles.values()],
     activeId: profiles.has(activeId ?? '') ? activeId : null,
     ...(pendingChanged ? { pendingPairings: next.pendingPairings } : {}),
-  }
+  })
 }
 export const emptyRegistry = (): RuntimeRegistry => ({
   version: 1,
@@ -72,42 +74,50 @@ export function decodeRuntimeRegistry(
     runtimeProfile(decode(connectionSchema, JSON.parse(legacy))),
   )
 }
+export interface RuntimeRegistryBridge {
+  readRuntimeRegistry: () => Promise<string | null>
+  writeRuntimeRegistry: (value: string, before: string) => Promise<string>
+  subscribeRuntimeRegistry: (listener: () => void) => () => void
+}
 const bridgeSchema = mutableStruct({
-  dovo: mutableStruct({
-    readRuntimeRegistry: Schema.Unknown.pipe(
-      Schema.refine(
-        (value): value is (...args: unknown[]) => unknown => typeof value === 'function',
-      ),
+  dovo: Schema.Unknown.pipe(
+    Schema.refine(
+      (value): value is RuntimeRegistryBridge =>
+        typeof value === 'object' &&
+        value !== null &&
+        'readRuntimeRegistry' in value &&
+        typeof value.readRuntimeRegistry === 'function' &&
+        'writeRuntimeRegistry' in value &&
+        typeof value.writeRuntimeRegistry === 'function' &&
+        'subscribeRuntimeRegistry' in value &&
+        typeof value.subscribeRuntimeRegistry === 'function',
     ),
-    writeRuntimeRegistry: Schema.Unknown.pipe(
-      Schema.refine(
-        (value): value is (...args: unknown[]) => unknown => typeof value === 'function',
-      ),
-    ),
-  }),
+  ),
 })
 export async function readRuntimeRegistry(): Promise<RuntimeRegistry> {
   const bridge = decodeResult(bridgeSchema, window)
   const encrypted: unknown = bridge.success ? await bridge.data.dovo.readRuntimeRegistry() : null
   if (encrypted !== null && typeof encrypted !== 'string')
     throw new Error('Invalid saved runtime registry')
-  const value = decodeRuntimeRegistry(
+  let value = decodeRuntimeRegistry(
     encrypted ??
       (bridge.success
         ? localStorage.getItem(registryKey)
         : await readWorkspaceDocument(registryKey)),
     localStorage.getItem(legacyConnectionKey),
   )
-  if (bridge.success && encrypted === null) await writeRuntimeRegistry(value)
+  if (bridge.success && encrypted === null) {
+    // Migration is a change from an empty encrypted store, not from a previous read.
+    value = await persistEncryptedRegistry(bridge.data.dovo, value, emptyRegistry())
+  }
   observed = value
   return value
 }
 export async function writeRuntimeRegistry(value: RuntimeRegistry): Promise<RuntimeRegistry> {
-  const encoded = JSON.stringify(decode(runtimeRegistrySchema, value))
+  value = decode(runtimeRegistrySchema, value)
   const bridge = decodeResult(bridgeSchema, window)
   if (bridge.success) {
-    await bridge.data.dovo.writeRuntimeRegistry(encoded)
-    localStorage.removeItem(registryKey)
+    value = await persistEncryptedRegistry(bridge.data.dovo, value, observed ?? emptyRegistry())
   } else {
     const before = observed ?? emptyRegistry()
     const saved = await updateWorkspaceDocument(registryKey, (raw) =>
@@ -125,4 +135,16 @@ export async function writeRuntimeRegistry(value: RuntimeRegistry): Promise<Runt
   localStorage.removeItem(legacyConnectionKey)
   observed = value
   return value
+}
+
+async function persistEncryptedRegistry(
+  bridge: RuntimeRegistryBridge,
+  value: RuntimeRegistry,
+  before: RuntimeRegistry,
+): Promise<RuntimeRegistry> {
+  const saved = await bridge.writeRuntimeRegistry(JSON.stringify(value), JSON.stringify(before))
+  const committed = decode(runtimeRegistrySchema, JSON.parse(saved))
+  localStorage.removeItem(registryKey)
+  localStorage.removeItem(legacyConnectionKey)
+  return committed
 }

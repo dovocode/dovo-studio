@@ -1,3 +1,5 @@
+import { readFileSync, existsSync } from 'node:fs'
+import { Schema } from 'effect'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
   decode,
@@ -271,3 +273,50 @@ it('expires obsolete approvals on widening without stopping a native child or gr
   expect(s.store.taskSummary(task.id).subagents?.[0].status).toBe('working')
   expect(await interactions.approve('Stale callback', 'pwd', signal)).toBe('deny')
 })
+
+it.each(['stop', 'read-only'] as const)(
+  'revokes an idle native-child grant synchronously on %s while shutdown is held',
+  async (mode) => {
+    const { s, task, owner, stop } = await setup()
+    const file = owner.agent.resources?.mcpServers.find((server) => server.name === 'dovo_task')
+      ?.envValues?.DOVO_TASK_CREDENTIAL_FILE
+    if (!file) throw new Error('Expected run credential file')
+    const { token } = decode(
+      Schema.Struct({ token: Schema.String }),
+      JSON.parse(readFileSync(file, 'utf8')),
+    )
+    const grant = s.runCredentials.authenticate(token)
+    expect(s.store.taskSummary(task.id).activeRunId).toBeUndefined()
+    expect(s.store.taskSummary(task.id).subagents?.[0].status).toBe('working')
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const shutdown = stop.getMockImplementation()!
+    stop.mockImplementation(async (id) => {
+      await gate
+      await shutdown(id)
+    })
+    let stopping: Promise<void> | undefined
+    try {
+      if (mode === 'stop')
+        stopping = s.tasks.stopAgents(task.id, taskFamilyRunToken(s.store.get().tasks, task.id))
+      else
+        s.store.updateTask(task.id, (current) => ({
+          ...current,
+          harness: { ...current.harness!, permission: 'read-only' },
+        }))
+      expect(() => s.runCredentials.authenticate(token)).toThrow('expired or revoked')
+      expect(grant.signal.aborted).toBe(true)
+      expect(existsSync(file)).toBe(false)
+      await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce())
+      expect(s.store.taskSummary(task.id).subagents?.[0].status).toBe('working')
+    } finally {
+      release()
+      await stopping
+      await vi.waitFor(() =>
+        expect(s.store.taskSummary(task.id).subagents?.[0].status).toBe('stopped'),
+      )
+    }
+  },
+)

@@ -1083,12 +1083,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         interval: 1000,
         // An unreachable host is not hammered every second; foregrounding still retries at once.
         backoff: 10000,
-        onError: (error) =>
-          updateEntry(profile, (previous) => ({
-            ...previous,
-            connected: false,
-            error: error.message,
-          })),
+        // refreshProfileEffect owns error publication and rejects failures superseded
+        // by a newer request or streamed snapshot. Do not publish them again here.
+        onError: () => {},
       },
     )
     wakeFallback = polling.refresh
@@ -1213,10 +1210,15 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   } = useMobilePreferences()
   const [settingsSyncError, setSettingsSyncError] = useApplicationState('')
   const settingsRequests = useRef(new Set<string>())
-  const failedSettingsRequests = useRef(new Map<string, string>())
+  const failedSettingsRequests = useRef(new Map<string, { fingerprint: string; error: string }>())
   const presetRequests = useRef(new Set<string>())
-  const failedPresetRequests = useRef(new Map<string, string>())
+  const failedPresetRequests = useRef(new Map<string, { fingerprint: string; error: string }>())
   useEffect(() => {
+    const publishError = () =>
+      setPresetSyncError(Array.from(failedPresetRequests.current.values()).at(-1)?.error ?? '')
+    for (const id of failedPresetRequests.current.keys())
+      if (!overviews.some((entry) => entry.profile.id === id))
+        failedPresetRequests.current.delete(id)
     for (const entry of overviews) {
       if (!entry.connected || !entry.snapshot) {
         failedPresetRequests.current.delete(entry.profile.id)
@@ -1238,10 +1240,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         modelPreferences,
         globalModelPreferencesUpdatedAt,
       ])
+      if (!presets.length && !retired.length && !modelPreferences) {
+        failedPresetRequests.current.delete(entry.profile.id)
+        continue
+      }
       if (
-        (!presets.length && !retired.length && !modelPreferences) ||
         presetRequests.current.has(entry.profile.id) ||
-        failedPresetRequests.current.get(entry.profile.id) === fingerprint
+        failedPresetRequests.current.get(entry.profile.id)?.fingerprint === fingerprint
       )
         continue
       presetRequests.current.add(entry.profile.id)
@@ -1257,15 +1262,26 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         responses.ok,
       )
         .then(() => {
-          setPresetSyncError('')
+          failedPresetRequests.current.delete(entry.profile.id)
+          publishError()
           return refreshProfile(entry.profile)
         })
         .catch((error: unknown) => {
-          failedPresetRequests.current.set(entry.profile.id, fingerprint)
-          setPresetSyncError(error instanceof Error ? error.message : String(error))
+          if (
+            current.current.profiles.some((profile) =>
+              sameRuntimeConnection(profile.connection, entry.profile.connection),
+            ) &&
+            entryRef.current[entry.profile.id]?.connected
+          )
+            failedPresetRequests.current.set(entry.profile.id, {
+              fingerprint,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          publishError()
         })
         .finally(() => presetRequests.current.delete(entry.profile.id))
     }
+    publishError()
   }, [
     globalAgentPresets,
     retiredGlobalAgentPresets,
@@ -1276,6 +1292,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     refreshProfile,
   ])
   useEffect(() => {
+    const publishError = () =>
+      setSettingsSyncError(Array.from(failedSettingsRequests.current.values()).at(-1)?.error ?? '')
+    for (const id of failedSettingsRequests.current.keys())
+      if (!overviews.some((entry) => entry.profile.id === id))
+        failedSettingsRequests.current.delete(id)
     const shared = mergeSharedSettings(
       sharedScopedSettings,
       ...overviews
@@ -1296,13 +1317,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       )
       if (!pending.length) {
         failedSettingsRequests.current.delete(entry.profile.id)
-        if (!failedSettingsRequests.current.size) setSettingsSyncError('')
         continue
       }
       const fingerprint = JSON.stringify(pending)
       if (
         settingsRequests.current.has(entry.profile.id) ||
-        failedSettingsRequests.current.get(entry.profile.id) === fingerprint
+        failedSettingsRequests.current.get(entry.profile.id)?.fingerprint === fingerprint
       )
         continue
       settingsRequests.current.add(entry.profile.id)
@@ -1314,7 +1334,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       )
         .then((result) => {
           failedSettingsRequests.current.delete(entry.profile.id)
-          if (!failedSettingsRequests.current.size) setSettingsSyncError('')
+          publishError()
           updateMobilePreferences({
             sharedScopedSettings: mergeSharedSettings(
               readMobilePreferences().sharedScopedSettings,
@@ -1325,11 +1345,21 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           return refreshProfile(entry.profile)
         })
         .catch((error: unknown) => {
-          failedSettingsRequests.current.set(entry.profile.id, fingerprint)
-          setSettingsSyncError(error instanceof Error ? error.message : String(error))
+          if (
+            current.current.profiles.some((profile) =>
+              sameRuntimeConnection(profile.connection, entry.profile.connection),
+            ) &&
+            entryRef.current[entry.profile.id]?.connected
+          )
+            failedSettingsRequests.current.set(entry.profile.id, {
+              fingerprint,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          publishError()
         })
         .finally(() => settingsRequests.current.delete(entry.profile.id))
     }
+    publishError()
   }, [sharedScopedSettings, overviews, readRuntime, refreshProfile])
   const pendingMessages = useCallback(
     (task: Task) => (connection ? mutations.pendingMessages(connection, task) : []),

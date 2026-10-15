@@ -7,6 +7,7 @@ import type { DraftSelection } from './dictation-draft'
 /** Streaming updates and caret notifications must not update the native text view's props. */
 export const ComposerField = memo(function ComposerField({
   showOptions,
+  trailingControlCount,
   onSelectionChange,
   value = '',
   revision,
@@ -17,6 +18,7 @@ export const ComposerField = memo(function ComposerField({
   'value' | 'onChangeText' | 'onFocus' | 'onBlur' | 'editable' | 'placeholder'
 > & {
   showOptions: boolean
+  trailingControlCount: number
   revision: string
   onSelectionChange: (selection: DraftSelection) => void
 }) {
@@ -77,7 +79,7 @@ export const ComposerField = memo(function ComposerField({
           minHeight: 44,
           borderWidth: 0,
           paddingLeft: showOptions ? 12 : 44,
-          paddingRight: showOptions ? 12 : 88,
+          paddingRight: showOptions ? 12 : trailingControlCount * 44,
           lineHeight: 22,
           paddingTop: 11,
           paddingBottom: 11,

@@ -110,7 +110,6 @@ const result = await build({
       import {TaskDefaultSettings as DesktopDefaults} from '${ui}src/task-default-settings';
       import {AgentEditor as DesktopAgent} from '${root}packages/extension-agents/src/agent-editor';
       import {ComposerHarnessControls} from '${root}packages/extension-tasks/src/chat/composer/composer-harness-controls';
-      import {Setup as NativeSetup} from '${mobile}agents/setup';
       import {AgentEditor as NativeAgent} from '${mobile}agents/agent-editor';
       import {TaskLauncherControls as NativeLauncher} from '${mobile}tasks/creation/task-launcher-controls';
       import {HarnessSettings as NativeHarness} from '${mobile}tasks/detail/harness-settings';
@@ -128,8 +127,6 @@ const result = await build({
         const inherited={taskDefaults:window.fixture.inherited??{}};
         const request=async(path,input)=>{
           window.requests.push({path,input});
-          if(path==='/api/agents/setup/read')return {defaults:{...snapshot.defaults,permission:initial.permission,approvalPolicy:initial.approvalPolicy,sandboxMode:initial.sandboxMode,...(window.fixture.scopedDefaults?{scopedSettings:{environment:{taskDefaults:{harness:initial,permission:initial.permission,approvalPolicy:initial.approvalPolicy,sandboxMode:initial.sandboxMode}},shared:[]}}:{})},titles:{agentId:'',model:'model',reasoning:''}};
-          if(path==='/api/agents/setup/save'){window.saved.push(input.after);return input.after}
           if(path==='/api/agents/settings/read')return {value:scopeValue,inherited};
           if(path==='/api/agents/settings/save'){scopeValue=input.after;window.saved.push(input.after);return {value:input.after,inherited}}
           if(path==='/api/agents/models')return {models:[],reasoning:[]};
@@ -144,7 +141,6 @@ const result = await build({
         const kind=window.fixture.kind;
         return <WorkspaceContext.Provider value={workspace}><RuntimeContext.Provider value={runtime}>
           <main style={{maxWidth:kind.startsWith('native')?390:800,padding:20}}>
-            {kind==='native-setup'&&<NativeSetup/>}
             {kind==='composer-harness'&&<ComposerHarnessControls task={storedTask} disabled={disabled}/>}
             {kind==='composer'&&<ComposerSettingsControls value={value} disabled={disabled} agents={[initial]} selectedAgent={window.fixture.custom?initial:undefined} onChange={change} onSelectAgent={async()=>true} onConfigure={()=>{}}/>}
             {kind==='fields'&&<HarnessFields value={value} onChange={change}/>}
@@ -344,61 +340,65 @@ try {
   )
   await oldComposerHarness.close()
 
+  // Preserve setup's save/provider-switch/old-runtime coverage on the shipped defaults form.
   for (const providerSwitch of [false, true]) {
     const page = await pageFor({
-      kind: 'native-setup',
-      scopedDefaults: true,
-      policy: providerSwitch ? { approvalPolicy: 'untrusted', sandboxMode: 'workspace-write' } : {},
+      kind: 'native-defaults',
+      defaults: {
+        harness: {
+          provider: 'codex',
+          model: 'model',
+          permission: 'read-only',
+          endpoint: '',
+          instructions: '',
+        },
+        ...(providerSwitch ? { approvalPolicy: 'untrusted', sandboxMode: 'workspace-write' } : {}),
+      },
     })
-    await page.getByRole('button', { name: 'Edit defaults', exact: true }).click()
     await expandAdvanced(page)
     await page.getByRole('button', { name: 'Approval policy', exact: true }).waitFor()
-    if (providerSwitch) await nativeChoice(page, 'Provider', 'Claude')
+    if (providerSwitch) await nativeChoice(page, 'Harness', 'Claude Code')
     else {
       await nativeChoice(page, 'Approval policy', 'On request')
       await nativeChoice(page, 'Sandbox', 'Workspace write')
     }
-    await page.getByRole('button', { name: 'Next: title model', exact: true }).click()
-    await page.getByRole('button', { name: 'Save setup', exact: true }).click()
+    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
     await page.waitForFunction(() => window.saved.length === 1)
     if (providerSwitch)
       assert.deepEqual(
         await page.evaluate(() => [
-          window.saved[0].defaults.harness.provider,
-          window.saved[0].defaults.permission,
-          window.saved[0].defaults.approvalPolicy ?? null,
-          window.saved[0].defaults.sandboxMode ?? null,
+          window.saved[0].taskDefaults.harness.provider,
+          window.saved[0].taskDefaults.permission,
+          window.saved[0].taskDefaults.approvalPolicy ?? null,
+          window.saved[0].taskDefaults.sandboxMode ?? null,
         ]),
         ['claude', 'read-only', null, null],
       )
     else
       assert.deepEqual(
         await page.evaluate(() => [
-          window.saved[0].defaults.harness.approvalPolicy,
-          window.saved[0].defaults.harness.sandboxMode,
-          window.saved[0].defaults.approvalPolicy,
-          window.saved[0].defaults.sandboxMode,
+          window.saved[0].taskDefaults.approvalPolicy,
+          window.saved[0].taskDefaults.sandboxMode,
         ]),
-        ['on-request', 'workspace-write', 'on-request', 'workspace-write'],
+        ['on-request', 'workspace-write'],
       )
     await page.close()
   }
-  const oldSetup = await pageFor({
-    kind: 'native-setup',
+  const oldDefaults = await pageFor({
+    kind: 'native-defaults',
     supported: undefined,
-    policy: { sandboxMode: 'read-only' },
+    defaults: { sandboxMode: 'read-only' },
   })
-  await oldSetup.getByRole('button', { name: 'Edit defaults', exact: true }).click()
-  await expandAdvanced(oldSetup)
+  await expandAdvanced(oldDefaults)
   assert.equal(
-    await oldSetup.getByRole('button', { name: 'Sandbox', exact: true }).isDisabled(),
+    await oldDefaults.getByRole('button', { name: 'Sandbox', exact: true }).isDisabled(),
     true,
   )
   assert.equal(
-    await oldSetup.getByRole('button', { name: 'Next: title model', exact: true }).isDisabled(),
+    await oldDefaults.getByRole('button', { name: 'Save defaults', exact: true }).isDisabled(),
     true,
   )
-  await oldSetup.close()
+  await oldDefaults.close()
   for (const kind of ['fields', 'desktop-agent']) {
     const page = await pageFor({ kind })
     await desktopChoice(page, 'Approval policy', 'Untrusted commands')

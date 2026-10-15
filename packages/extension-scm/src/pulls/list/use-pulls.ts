@@ -18,7 +18,11 @@ import {
   chooseSourceReader,
 } from '../../connections/source-readers'
 import { refreshPageCount, refreshPullPage, type CachedPullPage } from './collection-pages'
-type Page = CachedPullPage & { source: RepositorySource; error?: string }
+type PullSource = RepositorySource & {
+  reader: RepositorySource & { readerIdentity?: string }
+  destination?: string
+}
+type Page = CachedPullPage & { source: RepositorySource; reader: RepositorySource; error?: string }
 const cachedPullPageSchema = mutableStruct({
   ...pullPageSchema.fields,
   firstPageIds: Schema.optional(mutableArray(Schema.String)),
@@ -32,6 +36,25 @@ const cacheKey = (source: RepositorySource, state: string) =>
     state,
     source.repository.forge,
   ])
+const readPage = (source: PullSource, input: { state: string; page: number; refresh?: boolean }) =>
+  Effect.gen(function* () {
+    const readGuard = yield* verifySourceReader(source.reader)
+    const response = yield* source.reader.requestEffect(
+      '/api/scm/pulls/overview',
+      {
+        ...input,
+        repositoryId: source.reader.repository.id,
+        ...readGuard,
+      },
+      pullPageSchema,
+    )
+    if (source.reader.key === source.key) return response
+    return {
+      ...response,
+      destination: source.destination,
+      pulls: response.pulls.map((pull) => ({ ...pull, destination: source.destination })),
+    }
+  })
 export function usePulls(state: string, repositoryId = '') {
   const allSources = useRepositorySources()
   const origin = allSources.find((source) => source.key === repositoryId)
@@ -47,12 +70,20 @@ export function usePulls(state: string, repositoryId = '') {
       ),
     [allSources, repositoryId],
   )
-  const { sources, unavailable } = useSourceReaders(
-    eligible,
-    `pulls:${repositoryId}`,
-    undefined,
-    true,
-    origin,
+  const {
+    sources: readers,
+    origins,
+    destinations,
+    unavailable,
+  } = useSourceReaders(eligible, `pulls:${repositoryId}`, undefined, true, origin)
+  const sources: PullSource[] = useMemo(
+    () =>
+      readers.flatMap((reader) => {
+        const remote = pullRepositoryKey(reader.repository, reader.key)
+        const source = origins.get(remote)
+        return source ? [{ ...source, reader, destination: destinations.get(remote) }] : []
+      }),
+    [readers, origins, destinations],
   )
   const [stored, setStored, pagesRef] = useApplicationState<Record<string, Page>>({})
   const [busy, setBusy] = useApplicationState(false)
@@ -72,9 +103,12 @@ export function usePulls(state: string, repositoryId = '') {
       if (!sweepKeys.has(key)) fullSweepAt.current.delete(key)
     const semaphore = Effect.runSync(Semaphore.make(1))
     const commands = clientTaskScope()
-    const update = (source: RepositorySource, page: CachedPullPage, error?: string) => {
+    const update = (source: PullSource, page: CachedPullPage, error?: string) => {
       if (current !== generation.current) return
-      setStored((previous) => ({ ...previous, [source.key]: { ...page, source, error } }))
+      setStored((previous) => ({
+        ...previous,
+        [source.key]: { ...page, source, reader: source.reader, error },
+      }))
     }
     setStored((previous) =>
       Object.fromEntries(
@@ -87,7 +121,7 @@ export function usePulls(state: string, repositoryId = '') {
       ),
     )
     lastState.current = remoteState
-    const save = (source: RepositorySource, page: CachedPullPage) =>
+    const save = (source: PullSource, page: CachedPullPage) =>
       source.readCache
         .writeEffect(cacheKey(source, remoteState), page)
         .pipe(
@@ -158,14 +192,13 @@ export function usePulls(state: string, repositoryId = '') {
       const refresh = force
       force = false
       setBusy(
-        sources.some((source) => source.connected) &&
+        sources.some((source) => source.reader.connected) &&
           (refresh || !sources.some((source) => !!pagesRef.current[source.key])),
       )
       yield* Effect.forEach(
-        sources.filter((source) => source.connected),
+        sources.filter((source) => source.reader.connected),
         (source) =>
           Effect.gen(function* () {
-            const expectedReaderIdentity = yield* verifySourceReader(source)
             const previous = pagesRef.current[source.key]
             const sweepKey = JSON.stringify([source.scope, remoteState])
             const lastSweep = fullSweepAt.current.get(sweepKey) ?? Date.now()
@@ -174,17 +207,11 @@ export function usePulls(state: string, repositoryId = '') {
             const count = refreshPageCount(previous, refresh, lastSweep, Date.now())
             let page: CachedPullPage = { pulls: [], page: 0, hasMore: true }
             for (let number = 1; number <= count && page.hasMore; number++) {
-              const response = yield* source.requestEffect(
-                '/api/scm/pulls/overview',
-                {
-                  repositoryId: source.repository.id,
-                  expectedReaderIdentity,
-                  state: remoteState,
-                  page: number,
-                  refresh,
-                },
-                pullPageSchema,
-              )
+              const response = yield* readPage(source, {
+                state: remoteState,
+                page: number,
+                refresh,
+              })
               if (number === 1)
                 page =
                   count === 1
@@ -238,7 +265,7 @@ export function usePulls(state: string, repositoryId = '') {
       Effect.gen(function* () {
         const previous = pagesRef.current[key]
         const source = sources.find((source) => source.key === key)
-        if (!previous || !source?.connected) return
+        if (!previous || !source?.reader.connected) return
         if (previous.error) {
           force = true
           polling.refresh()
@@ -246,17 +273,7 @@ export function usePulls(state: string, repositoryId = '') {
         }
         setBusy(true)
         yield* Effect.gen(function* () {
-          const expectedReaderIdentity = yield* verifySourceReader(source)
-          const next = yield* source.requestEffect(
-            '/api/scm/pulls/overview',
-            {
-              repositoryId: source.repository.id,
-              state: remoteState,
-              page: previous.page + 1,
-              expectedReaderIdentity,
-            },
-            pullPageSchema,
-          )
+          const next = yield* readPage(source, { state: remoteState, page: previous.page + 1 })
           const page = {
             ...next,
             firstPageIds: previous.firstPageIds,
@@ -299,7 +316,7 @@ export function usePulls(state: string, repositoryId = '') {
   const selectedPages = sources.flatMap((source) => {
     const page = stored[source.key]
     return page && page.source.scope === source.scope && lastState.current === remoteState
-      ? [{ ...page, source }]
+      ? [{ ...page, source, reader: source.reader }]
       : []
   })
   const pages = [
@@ -314,6 +331,7 @@ export function usePulls(state: string, repositoryId = '') {
         ...page,
         stale: true,
         source: { ...page.source, connected: false },
+        reader: { ...page.reader, connected: false },
         error:
           'The original reader is unavailable. A different or unverified account cannot take over. Choose a project source explicitly to continue.',
       })),
@@ -322,7 +340,7 @@ export function usePulls(state: string, repositoryId = '') {
     sources: allSources,
     pages,
     busy,
-    connected: sources.some((source) => source.connected),
+    connected: sources.some((source) => source.reader.connected),
     chooseReader: async (key: string) => {
       const source = allSources.find((source) => source.key === key)
       if (!source?.connected) return

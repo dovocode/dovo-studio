@@ -93,6 +93,7 @@ const defaults: MobilePreferences = {
 const key = 'dovo.mobile-preferences.v1'
 let current = defaults
 let loaded = false
+let loading: Promise<void> | undefined
 // Edits that arrive before the saved record is read. Applied on top of it so a
 // fast toggle cannot be overwritten, or itself overwrite the rest of the record.
 let edits: Partial<MobilePreferences> | undefined
@@ -104,7 +105,7 @@ const enqueuePersist = () => {
   persistQueue = persistQueue
     .catch(() => undefined)
     .then(() => AsyncStorage.setItem(key, JSON.stringify(current)))
-    .catch(() => undefined)
+    .catch(() => console.warn('Could not save mobile preferences'))
 }
 function restoredPreferences(raw: string | null): MobilePreferences {
   const saved: unknown = raw ? JSON.parse(raw) : {}
@@ -118,27 +119,36 @@ function restoredPreferences(raw: string | null): MobilePreferences {
   return result.success ? result.data : defaults
 }
 
-/** Resolves once saved preferences are read, so cold-start choices (launch tab, sort) apply. */
-export const preferencesReady = AsyncStorage.getItem(key)
-  .then((raw) => {
-    const restored = restoredPreferences(raw)
-    current = edits
-      ? {
-          ...restored,
-          ...edits,
-          sharedScopedSettings: mergeSharedSettings(
-            restored.sharedScopedSettings,
-            edits.sharedScopedSettings ?? [],
-          ),
-        }
-      : restored
-  })
-  .catch(() => undefined)
-  .finally(() => {
-    loaded = true
-    if (edits) enqueuePersist()
-    publish()
-  })
+/** Failed reads preserve pending edits and can be retried without overwriting unread settings. */
+export function loadMobilePreferences(): Promise<void> {
+  if (loaded) return Promise.resolve()
+  if (loading) return loading
+  loading = AsyncStorage.getItem(key)
+    .then((raw) => {
+      const restored = restoredPreferences(raw)
+      current = edits
+        ? {
+            ...restored,
+            ...edits,
+            sharedScopedSettings: mergeSharedSettings(
+              restored.sharedScopedSettings,
+              edits.sharedScopedSettings ?? [],
+            ),
+          }
+        : restored
+      loaded = true
+      if (edits) enqueuePersist()
+    })
+    .catch(() => console.warn('Could not load mobile preferences; saved settings were preserved'))
+    .finally(() => {
+      loading = undefined
+      publish()
+    })
+  return loading
+}
+
+/** Resolves after the initial read attempt; defaults remain usable if storage is unavailable. */
+export const preferencesReady = loadMobilePreferences()
 
 export const readMobilePreferences = () => current
 export function updateMobilePreferences(changes: Partial<MobilePreferences>) {
@@ -146,6 +156,7 @@ export function updateMobilePreferences(changes: Partial<MobilePreferences>) {
   current = { ...current, ...changes }
   publish()
   if (loaded) enqueuePersist()
+  else void loadMobilePreferences()
 }
 const subscribe = (listener: () => void) => {
   listeners.add(listener)

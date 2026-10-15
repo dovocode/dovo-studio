@@ -22,7 +22,7 @@ export type WorkSource = Omit<RepositorySource, 'repository'> & {
 }
 export const jiraSourceKey = (runtimeId: string, sourceId: string) =>
   JSON.stringify([runtimeId, 'jira', sourceId])
-export { jiraRemoteKey, workRemoteKey, matchesWorkSource } from './work-source-identity'
+export { workRemoteKey, matchesWorkSource } from './work-source-identity'
 import { workRemoteKey } from './work-source-identity'
 import { useSourceReaders } from '../connections/source-readers'
 

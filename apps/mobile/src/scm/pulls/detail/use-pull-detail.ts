@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Effect } from 'effect'
 import { startPolling, runClientEffect } from '@dovo/client-runtime'
-import { useSourceReader } from '../../source-reader'
+import { usePullReader } from './use-pull-reader'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { pullDetailSchema, type PullDetail as Detail } from '@dovo/protocol'
@@ -11,11 +11,12 @@ import { useNavigation } from '../../../shell/navigation'
 export function usePullDetail(repositoryId: string, number: number, connectionId?: string) {
   const { focused } = useNavigation()
   const { connected, snapshot, readCache } = useRuntime()
-  const { readEffect: request, acceptCurrentAccount: acceptReader } = useSourceReader(
-    repositoryId,
-    undefined,
-    connectionId,
-  )
+  const {
+    readDetail: request,
+    readConnected,
+    routed,
+    acceptCurrentAccount: acceptReader,
+  } = usePullReader(repositoryId, number, connectionId, focused)
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)
   const cacheKey = JSON.stringify([
     'pulls',
@@ -26,7 +27,7 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
     repository?.forge,
     connectionId,
   ])
-  const [state, setState] = useApplicationState({
+  const [state, setState, stateRef] = useApplicationState({
     scope: cacheKey,
     detail: null as Detail | null,
     error: '',
@@ -69,15 +70,23 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
     setState((current) => ({ ...current, busy: false, refreshing: false }))
     const load = Effect.gen(function* () {
       yield* hydrated
-      if (!connected || !focused || AppState.currentState !== 'active') return
+      if (!readConnected || !focused || AppState.currentState !== 'active') return
       const refresh = force
       force = false
       setState((current) => ({ ...current, busy: true, refreshing: refresh }))
-      yield* request(
-        '/api/scm/pulls/detail',
-        { repositoryId, number, refresh, connectionId },
-        pullDetailSchema,
-      ).pipe(
+      yield* request(refresh).pipe(
+        Effect.map((value) =>
+          routed
+            ? {
+                ...value,
+                pull: {
+                  ...value.pull,
+                  connectionId:
+                    value.pull.connectionId ?? stateRef.current.detail?.pull.connectionId,
+                },
+              }
+            : value,
+        ),
         Effect.tap((value) =>
           Effect.sync(() => {
             if (!stopped) setState((current) => ({ ...current, detail: value, error: '' }))
@@ -114,9 +123,9 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
       stopped = true
       void polling.stop()
     }
-  }, [repositoryId, number, cacheKey, connected, request, readCache, state.revision, focused])
+  }, [repositoryId, number, cacheKey, readConnected, request, readCache, state.revision, focused])
   const refresh = () => {
-    if (!connected || !focused) return
+    if (!readConnected || !focused) return
     forceNext.current = true
     setState((current) => ({ ...current, refreshing: true, revision: current.revision + 1 }))
   }
@@ -138,6 +147,7 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
     refresh()
   }
   return {
+    readConnected,
     detail: state.scope === cacheKey ? state.detail : null,
     error: state.error,
     setError,

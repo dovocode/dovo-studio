@@ -12,9 +12,10 @@ import { Schema } from 'effect'
 import { previewUrl, type PreviewDevice, type previewActionSchema } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 const exec = promisify(execFile)
-const run = async (file: string, args: string[]) =>
+const run = async (file: string, args: string[], signal?: AbortSignal) =>
   (
     await exec(file, args, {
+      signal,
       windowsHide: true,
       timeout: 30000,
       maxBuffer: 12 * 1024 * 1024,
@@ -391,21 +392,35 @@ export async function previewDevices(deviceId?: string) {
   }
 }
 const pending = new Set<string>()
-export async function previewDeviceAction(input: Schema.Schema.Type<typeof previewActionSchema>) {
+export async function previewDeviceAction(
+  input: Schema.Schema.Type<typeof previewActionSchema>,
+  signal?: AbortSignal,
+  authorize?: () => void,
+) {
+  const assertCurrent = () => {
+    authorize?.()
+    signal?.throwIfAborted()
+  }
+  const command = (file: string, args: string[]) => {
+    assertCurrent()
+    return run(file, args, signal)
+  }
+  assertCurrent()
   if (pending.has(input.id))
     throw new HttpError(409, 'This device already has an operation in progress.')
   pending.add(input.id)
   try {
     const device = (await previewDevices()).devices.find((d) => d.id === input.id)
+    assertCurrent()
     if (!device) throw new HttpError(404, 'Device is no longer available. Refresh the device list.')
     if (['devicehub', 'accessibility', 'screen-recording'].includes(input.action)) {
       if (process.platform !== 'darwin' || device.platform !== 'ios')
         throw new HttpError(409, 'Device Hub requires Xcode 27 on a Mac.')
       if (input.action === 'devicehub') {
-        const tool = await run('xcrun', ['--find', 'devicectl'])
-        await run('open', ['-a', resolve(tool, '../../../../Applications/DeviceHub.app')])
+        const tool = await command('xcrun', ['--find', 'devicectl'])
+        await command('open', ['-a', resolve(tool, '../../../../Applications/DeviceHub.app')])
       } else
-        await run('open', [
+        await command('open', [
           input.action === 'accessibility'
             ? 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
             : 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
@@ -420,15 +435,22 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
       ['apps', 'launch', 'relaunch'].includes(input.action) &&
       !(device.kind === 'physical' && device.platform === 'ios')
     ) {
-      if (input.action === 'apps') return { ok: true as const, apps: await deviceApps(device) }
+      if (input.action === 'apps')
+        return { ok: true as const, apps: await deviceApps(device, signal, assertCurrent) }
       if (!input.bundleId) throw new HttpError(400, 'Select an app to launch.')
-      return launchDeviceApp(device, input.bundleId, input.action === 'relaunch')
+      return launchDeviceApp(
+        device,
+        input.bundleId,
+        input.action === 'relaunch',
+        signal,
+        assertCurrent,
+      )
     }
     if (device.kind === 'physical' && device.platform === 'ios') {
       const native = ['devicectl', 'device']
       const target = ['--device', device.runtime, '--timeout', '15']
       if (input.action === 'apps') {
-        const output = await run('xcrun', [
+        const output = await command('xcrun', [
           ...native,
           'info',
           'apps',
@@ -462,7 +484,7 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
       if (['launch', 'relaunch', 'open'].includes(input.action)) {
         if (input.action !== 'open' && !input.bundleId)
           throw new HttpError(400, 'Select an app to launch.')
-        await run('xcrun', [
+        await command('xcrun', [
           ...native,
           'process',
           'launch',
@@ -476,7 +498,7 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
         }
       }
       if (['portrait', 'landscape'].includes(input.action)) {
-        await run('xcrun', [
+        await command('xcrun', [
           ...native,
           'orientation',
           'set',
@@ -488,7 +510,14 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
         }
       }
       if (['light', 'dark'].includes(input.action)) {
-        await run('xcrun', [...native, 'settings', 'appearance', ...target, '--mode', input.action])
+        await command('xcrun', [
+          ...native,
+          'settings',
+          'appearance',
+          ...target,
+          '--mode',
+          input.action,
+        ])
         return {
           ok: true as const,
         }
@@ -498,7 +527,7 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
       const directory = await mkdtemp(join(tmpdir(), 'dovo-phone-'))
       try {
         const file = join(directory, 'screen.png')
-        await run('xcrun', [
+        await command('xcrun', [
           'devicectl',
           'device',
           'capture',
@@ -533,15 +562,15 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
     if (input.action !== 'boot' && device.state !== 'booted')
       throw new HttpError(409, 'Start the device and wait until it is ready.')
     if (device.platform === 'ios') {
-      if (input.action === 'boot') await run('xcrun', ['simctl', 'boot', id])
-      if (input.action === 'shutdown') await run('xcrun', ['simctl', 'shutdown', id])
+      if (input.action === 'boot') await command('xcrun', ['simctl', 'boot', id])
+      if (input.action === 'shutdown') await command('xcrun', ['simctl', 'shutdown', id])
       if (input.action === 'open')
-        await run('xcrun', ['simctl', 'openurl', id, previewUrl(input.url ?? '')])
+        await command('xcrun', ['simctl', 'openurl', id, previewUrl(input.url ?? '')])
       if (input.action === 'screenshot') {
         const dir = await mkdtemp(join(tmpdir(), 'dovo-preview-'))
         try {
           const file = join(dir, 'screen.png')
-          await run('xcrun', ['simctl', 'io', id, 'screenshot', file])
+          await command('xcrun', ['simctl', 'io', id, 'screenshot', file])
           return {
             ok: true as const,
             image: `data:image/png;base64,${(await readFile(file)).toString('base64')}`,
@@ -557,6 +586,7 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
       const adb = await androidTool('adb')
       if (input.action === 'boot') {
         const emulator = await androidTool('emulator')
+        assertCurrent()
         await new Promise<void>((resolve, reject) => {
           // Headless like `simctl boot`: the preview streams into Dovo, so no Mac window or
           // audio. Quick Boot snapshots still apply. Without a window the emulator falls back to
@@ -598,7 +628,7 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
           })
         })
       }
-      if (input.action === 'shutdown') await run(adb, ['-s', device.runtime, 'emu', 'kill'])
+      if (input.action === 'shutdown') await command(adb, ['-s', device.runtime, 'emu', 'kill'])
       if (input.action === 'open') {
         const url = new URL(previewUrl(input.url ?? ''))
         if (
@@ -607,7 +637,7 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
         )
           url.hostname = '10.0.2.2'
         // adb shell joins arguments into a remote shell command. Quote the URL there too.
-        await run(adb, [
+        await command(adb, [
           '-s',
           device.runtime,
           'shell',
@@ -620,8 +650,10 @@ export async function previewDeviceAction(input: Schema.Schema.Type<typeof previ
         ])
       }
       if (input.action === 'screenshot') {
+        assertCurrent()
         const { stdout } = await exec(adb, ['-s', device.runtime, 'exec-out', 'screencap', '-p'], {
           windowsHide: true,
+          signal,
           encoding: 'buffer',
           timeout: 30000,
           maxBuffer: 12 * 1024 * 1024,

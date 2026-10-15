@@ -75,7 +75,8 @@ export function ScreenHeader({
     titleContent
   )
   // Sheets have their own close button; the page's back arrow belongs to the page header only.
-  const back = useContext(ScreenBackContext) ?? null
+  const contextBack = useContext(ScreenBackContext)
+  const back = onBack ?? contextBack
   if (Platform.OS === 'ios' && !inSheet) {
     // PRs and pipelines keep their content mounted; only the visible collection owns the bar.
     if (navigation && !navigation.focused) return null

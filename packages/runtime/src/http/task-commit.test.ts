@@ -86,12 +86,10 @@ it('does not commit or push when message generation fails', async () => {
   expect(push).not.toHaveBeenCalled()
 })
 it('commits and pushes without a review approval', async () => {
-  const { runtime, git, push, commit } = await setup()
-  const approval = vi.spyOn(runtime.services.taskReviews, 'isApproved').mockResolvedValue(false)
+  const { git, push, commit } = await setup()
   expect((await commit({ message: 'Unreviewed changes', push: true })).status).toBe(200)
   expect(git('log', '-1', '--format=%s')).toBe('Unreviewed changes')
   expect(push).toHaveBeenCalledOnce()
-  expect(approval).not.toHaveBeenCalled()
 })
 it('refuses a commit if a turn starts while the message is being generated', async () => {
   const { runtime, git, generate, push, commit } = await setup()

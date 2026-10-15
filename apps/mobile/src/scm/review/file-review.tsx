@@ -98,7 +98,15 @@ export function MobileFileReview({
           />
           <Text style={{ color: colors.text, fontSize: 14 }}>{busy ? 'Saving…' : 'Viewed'}</Text>
         </View>
-        <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            maxWidth: '100%',
+            gap: 16,
+            alignItems: 'center',
+          }}
+        >
           <Action
             secondary
             label="Previous file"

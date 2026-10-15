@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -17,7 +18,7 @@ app.on('browser-window-created', (_event, window) => {
       const result = await window.webContents.executeJavaScript(`(async () => {
         const wait = async check => { for(let i=0;i<150;i++){if(check())return;await new Promise(r=>setTimeout(r,100))}throw new Error('Settings timeout: '+document.body.innerText.slice(-800)) };
         const button = label => [...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')===label||b.innerText.trim()===label);
-        await wait(()=>document.body.innerText.includes('Workspace synced'));
+        await wait(()=>(${workspaceReady.toString()})());
         const navigation=document.querySelector('[aria-label="Extensions"]');
         if(navigation.querySelector('[aria-label="Agents"]')||navigation.querySelector('[aria-label="Devices & runtime"]'))throw new Error('Settings pages in main navigation');
         button('Settings').click();await wait(()=>button('Configure'));

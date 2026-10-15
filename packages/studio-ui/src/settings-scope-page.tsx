@@ -46,8 +46,8 @@ export function SettingsScopePage({
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader title={title} description={description} />
-      <div className="shrink-0 border-b bg-card/40" aria-label="Settings target">
-        <div className={`mx-auto ${width} space-y-2.5 px-4 py-3 sm:px-6`}>
+      <div className="shrink-0 border-b bg-card/40 px-4 py-3 sm:px-6" aria-label="Settings target">
+        <div className={`mx-auto ${width} space-y-2.5`}>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-xs">
             <Layers className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="font-medium">Apply to</span>

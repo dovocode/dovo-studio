@@ -35,6 +35,7 @@ export function useAutomation(automationId: string) {
           repositoryId: node.data.repositoryId,
           origin: flow.id,
           execution: node.data.execution,
+          linkedCheckouts: node.data.linkedCheckouts,
         }),
       )
     setWorkspace((current) => ({

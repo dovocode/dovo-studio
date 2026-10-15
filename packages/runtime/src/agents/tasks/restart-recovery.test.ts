@@ -14,7 +14,12 @@ afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close()
   vi.restoreAllMocks()
 })
-async function seed(enabled: boolean, changes: Partial<Task> = {}, uncertain = false) {
+async function seed(
+  enabled: boolean,
+  changes: Partial<Task> = {},
+  uncertain = false,
+  projectOverride?: boolean,
+) {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const options = {
@@ -26,6 +31,14 @@ async function seed(enabled: boolean, changes: Partial<Task> = {}, uncertain = f
   cleanups.push(runtime.close)
   runtime.services.store.update(() => f.workspace)
   runtime.services.preferences.save({ autoContinueAfterRestart: enabled })
+  if (projectOverride !== undefined)
+    runtime.services.store.update((workspace) => ({
+      ...workspace,
+      repositories: workspace.repositories.map((repository) => ({
+        ...repository,
+        taskBehavior: { continueAfterRestart: projectOverride },
+      })),
+    }))
   const task = runtime.services.tasks.create({
     title: 'Interrupted',
     repositoryId: 'repo',
@@ -55,6 +68,25 @@ function adapter(run: AgentAdapter['run']) {
     run,
   })
 }
+it.each([false, true])(
+  'honors project restart override %s over the opposite global preference',
+  async (project) => {
+    const { options, id } = await seed(!project, {}, false, project)
+    const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Continued'))
+    adapter(run)
+    const runtime = await startRuntime(options)
+    cleanups.push(runtime.close)
+    await waitForRecovery(() => {
+      const task = runtime.services.store.task(id)
+      expect({ status: task.status, automatic: task.restartRecovery?.automatic }).toEqual(
+        project
+          ? { status: 'review', automatic: undefined }
+          : { status: 'failed', automatic: false },
+      )
+    })
+    expect(run).toHaveBeenCalledTimes(project ? 1 : 0)
+  },
+)
 it.each([false, true])(
   'settles orphan draft and interrupted children before parent restart recovery (automatic=%s)',
   async (enabled) => {

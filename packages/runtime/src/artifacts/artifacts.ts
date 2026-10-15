@@ -62,7 +62,15 @@ export class Artifacts {
       const id = decode(stored, row).value
       const task = tasks.get(id)
       if (task) this.recordState(task)
-      else {
+      // Failed metadata hydration is recoverable, not a deletion. The workspace's durable
+      // deletion marker also covers a restart between committing deletion and artifact cleanup.
+      else if (
+        db
+          .prepare(
+            'SELECT 1 FROM documents WHERE id=? AND NOT EXISTS (SELECT 1 FROM workspace_tasks WHERE task_id=?)',
+          )
+          .get(`workspace-deleted:tasks:${id}`, id)
+      ) {
         this.remove(id)
         db.prepare('DELETE FROM artifact_states WHERE task_id=?').run(id)
       }
@@ -135,10 +143,13 @@ export class Artifacts {
       return 0
     return this.db.transaction(() => {
       let removed = 0
+      const tasks = new Set(this.store.get().tasks.map((task) => task.id))
       for (const raw of this.db
         .prepare('SELECT task_id AS taskId,state,since FROM artifact_states')
         .all()) {
         const row = decode(lifecycle, raw)
+        // Keep the original deadline while metadata is unavailable; repair resumes retention.
+        if (!tasks.has(row.taskId)) continue
         const deadline = artifactDeletionAt(
           row.since,
           row.state === 'archived'

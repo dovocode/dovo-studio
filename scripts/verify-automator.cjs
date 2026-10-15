@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 process.env.DOVO_PORT = '0'
 process.env.DOVO_HOST = '127.0.0.1'
@@ -38,7 +39,7 @@ app.on('browser-window-created', (_event, window) =>
       window.waitForAutomation=async check=>{for(let i=0;i<150;i++){if(await check())return;await new Promise(r=>setTimeout(r,100))}throw new Error('Automator timeout writes='+window.automationNodeWrites+': '+check.toString()+' '+document.body.innerText.slice(-900))};
       const wait=window.waitForAutomation;
       const button=window.automationButton=label=>[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')===label||b.innerText.trim()===label);
-      await wait(()=>document.body.innerText.includes('Workspace synced'));
+      await wait(()=>(${workspaceReady.toString()})());
       const connection=await window.dovo.runtimeConnection();
       window.automationCall=async(path,body,method='POST')=>{const r=await fetch(connection.address+path,{method,headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const result=await r.json();if(!r.ok)throw new Error(JSON.stringify(result));return result};
       const call=window.automationCall;

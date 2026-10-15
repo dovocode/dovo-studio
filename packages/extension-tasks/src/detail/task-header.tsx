@@ -125,7 +125,7 @@ export function TaskHeader({
       <button
         type="button"
         aria-label="Thread actions"
-        className="inline-flex min-w-0 items-center gap-1 text-left"
+        className="inline-flex max-w-full min-w-0 items-center gap-1 text-left"
       >
         <span className="truncate">{task.title}</span>
         <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
@@ -186,13 +186,13 @@ export function TaskHeader({
       )}
       <header
         className={cn(
-          'min-h-9 shrink-0 items-center gap-2 border-b px-2.5 py-1',
+          '@container min-h-9 shrink-0 flex-wrap items-center gap-2 border-b px-2.5 py-1',
           compact ? 'flex' : 'hidden',
         )}
       >
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-full @min-[30rem]:basis-0">
           <div className="text-xs">{titleMenu}</div>
-          <div className="flex min-w-0 items-center gap-2 text-[0.625rem] text-muted-foreground">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.625rem] text-muted-foreground">
             <span
               className={cn(
                 'truncate',
@@ -293,12 +293,12 @@ export function TaskHeader({
             )}
           </div>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex min-w-0 max-w-full items-center gap-1">
           {compact && !projectPanelOpen && (
             <div
               role="group"
               aria-label="Task workspace"
-              className="flex items-center rounded-md border border-border/70 bg-muted/20 p-0.5"
+              className="flex min-w-0 items-center overflow-x-auto rounded-md border border-border/70 bg-muted/20 p-0.5"
             >
               {(
                 [

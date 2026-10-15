@@ -18,7 +18,7 @@ import { Icon, type IconName } from '../../../ui/controls/icon'
 import { ThreadMarkdown } from './thread-markdown'
 import { useTheme } from '../../../ui/theme'
 import { activityIdentity, pendingActivity, type TaskToolEvent } from '../state/tool-events'
-export const activityIcon = (kind: ReturnType<typeof toolPresentation>['kind']): IconName =>
+const activityIcon = (kind: ReturnType<typeof toolPresentation>['kind']): IconName =>
   kind === 'computer'
     ? 'device'
     : kind === 'command'
@@ -32,7 +32,7 @@ export const activityIcon = (kind: ReturnType<typeof toolPresentation>['kind']):
             : kind === 'reasoning'
               ? 'chat'
               : 'settings'
-export const activityStatus = (status: string) =>
+const activityStatus = (status: string) =>
   ['failed', 'error'].includes(status)
     ? 'Failed'
     : status === 'cancelled'
@@ -40,7 +40,7 @@ export const activityStatus = (status: string) =>
       : status === 'interrupted'
         ? 'Interrupted'
         : ''
-export function MobileDiffText({ text, colors }: { text: string; colors: { text: string } }) {
+function MobileDiffText({ text, colors }: { text: string; colors: { text: string } }) {
   return (
     <>
       {text.split('\n').map((line, index) => (

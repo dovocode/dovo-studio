@@ -15,8 +15,6 @@ import type {
   WorkspaceSummary,
   ConversationPage,
 } from '@dovo/protocol'
-const overviewTasks = new WeakMap<Task, Task>()
-const overviewWorkspaces = new WeakMap<Workspace, Workspace>()
 const pagedTasks = new WeakMap<Task, Task>()
 function pagedTask(task: Task): Task {
   const cached = pagedTasks.get(task)
@@ -49,29 +47,19 @@ function pagedTask(task: Task): Task {
 }
 const scopedTasks = new WeakMap<Task, Task>()
 const scopedWorkspaces = new WeakMap<Workspace, Map<string, Workspace>>()
-function summaryTask(task: Task, overview: boolean): Task {
-  const cache = overview ? overviewTasks : scopedTasks
-  const cached = cache.get(task)
+function summaryTask(task: Task): Task {
+  const cached = scopedTasks.get(task)
   if (cached) return cached
   const summary = {
     ...task,
     messages: [],
     sideChats: task.sideChats?.map((chat) => ({ ...chat, messages: [] })),
     files: task.files.map(({ path, viewed }) => ({ path, viewed, before: '', after: '' })),
-    ...(overview ? { draftAttachments: undefined } : {}),
     forkedFrom: task.forkedFrom ? { ...task.forkedFrom, snapshot: undefined } : undefined,
     turns: task.turns?.map((turn) => ({ ...turn, checkpoint: undefined })),
   }
-  cache.set(task, summary)
+  scopedTasks.set(task, summary)
   return summary
-}
-/** Fleet lists need task identity and state, not every conversation and file snapshot. */
-export function overviewWorkspace(workspace: Workspace): Workspace {
-  const cached = overviewWorkspaces.get(workspace)
-  if (cached) return cached
-  const result = { ...workspace, tasks: workspace.tasks.map((task) => summaryTask(task, true)) }
-  overviewWorkspaces.set(workspace, result)
-  return result
 }
 /** Keep editable drafts and task metadata, but send history only for subscribed threads. */
 export function scopedWorkspace(
@@ -91,7 +79,7 @@ export function scopedWorkspace(
   const result = {
     ...workspace,
     tasks: workspace.tasks.map((task) =>
-      details.has(task.id) ? (paged ? pagedTask(task) : task) : summaryTask(task, false),
+      details.has(task.id) ? (paged ? pagedTask(task) : task) : summaryTask(task),
     ),
   }
   // Device metadata remains filtered separately; only identical workspace projections share a hash.

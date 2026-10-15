@@ -176,10 +176,10 @@ export function WorkspaceProvider({
   )
   const [settingsSyncError, setSettingsSyncError] = useApplicationState('')
   const settingsRequests = useRef(new Set<string>())
-  const failedSettingsRequests = useRef(new Map<string, string>())
+  const failedSettingsRequests = useRef(new Map<string, { fingerprint: string; error: string }>())
   const [settingsRetry, setSettingsRetry] = useState(0)
   const presetRequests = useRef(new Set<string>())
-  const failedPresetRequests = useRef(new Map<string, string>())
+  const failedPresetRequests = useRef(new Map<string, { fingerprint: string; error: string }>())
   const [presetSyncError, setPresetSyncError] = useApplicationState<string | null>(null)
   const localOwnerToken = useRef<string | null>(null)
   const [snapshot, setSnapshotState, snapshotRef] = useApplicationState<RuntimeSnapshot | null>(
@@ -1882,6 +1882,11 @@ export function WorkspaceProvider({
     [runtimeRegistry.profiles, overviews, previews],
   )
   useEffect(() => {
+    const publishError = () =>
+      setPresetSyncError(Array.from(failedPresetRequests.current.values()).at(-1)?.error ?? null)
+    for (const id of failedPresetRequests.current.keys())
+      if (!visibleRuntimes.some((entry) => entry.profile.id === id))
+        failedPresetRequests.current.delete(id)
     for (const entry of visibleRuntimes) {
       if (!entry.connected || !entry.snapshot) {
         failedPresetRequests.current.delete(entry.profile.id)
@@ -1903,10 +1908,13 @@ export function WorkspaceProvider({
         modelPreferences,
         globalModelPreferencesUpdatedAt,
       ])
+      if (!presets.length && !retired.length && !modelPreferences) {
+        failedPresetRequests.current.delete(entry.profile.id)
+        continue
+      }
       if (
-        (!presets.length && !retired.length && !modelPreferences) ||
         presetRequests.current.has(entry.profile.id) ||
-        failedPresetRequests.current.get(entry.profile.id) === fingerprint
+        failedPresetRequests.current.get(entry.profile.id)?.fingerprint === fingerprint
       )
         continue
       presetRequests.current.add(entry.profile.id)
@@ -1922,17 +1930,26 @@ export function WorkspaceProvider({
         responses.ok,
       )
         .then(() => {
-          if (!failedPresetRequests.current.size) setPresetSyncError(null)
+          failedPresetRequests.current.delete(entry.profile.id)
+          publishError()
           return refreshRuntime(entry.profile)
         })
         .catch((error: unknown) => {
-          failedPresetRequests.current.set(entry.profile.id, fingerprint)
-          setPresetSyncError(
-            `${runtimeComputerName(entry)}: ${error instanceof Error ? error.message : String(error)}`,
+          if (
+            registryRef.current.profiles.some((profile) =>
+              sameRuntimeConnection(profile.connection, entry.profile.connection),
+            ) &&
+            overviewsRef.current[entry.profile.id]?.connected
           )
+            failedPresetRequests.current.set(entry.profile.id, {
+              fingerprint,
+              error: `${runtimeComputerName(entry)}: ${error instanceof Error ? error.message : String(error)}`,
+            })
+          publishError()
         })
         .finally(() => presetRequests.current.delete(entry.profile.id))
     }
+    publishError()
   }, [
     globalAgentPresets,
     retiredGlobalAgentPresets,
@@ -1943,6 +1960,11 @@ export function WorkspaceProvider({
     refreshRuntime,
   ])
   useEffect(() => {
+    const publishError = () =>
+      setSettingsSyncError(Array.from(failedSettingsRequests.current.values()).at(-1)?.error ?? '')
+    for (const id of failedSettingsRequests.current.keys())
+      if (!visibleRuntimes.some((entry) => entry.profile.id === id))
+        failedSettingsRequests.current.delete(id)
     const shared = mergeSharedSettings(
       sharedScopedSettings,
       ...visibleRuntimes
@@ -1963,13 +1985,12 @@ export function WorkspaceProvider({
       )
       if (!pending.length) {
         failedSettingsRequests.current.delete(entry.profile.id)
-        if (!failedSettingsRequests.current.size) setSettingsSyncError('')
         continue
       }
       const fingerprint = JSON.stringify(pending)
       if (
         settingsRequests.current.has(entry.profile.id) ||
-        failedSettingsRequests.current.get(entry.profile.id) === fingerprint
+        failedSettingsRequests.current.get(entry.profile.id)?.fingerprint === fingerprint
       )
         continue
       settingsRequests.current.add(entry.profile.id)
@@ -1981,7 +2002,7 @@ export function WorkspaceProvider({
       )
         .then((result) => {
           failedSettingsRequests.current.delete(entry.profile.id)
-          if (!failedSettingsRequests.current.size) setSettingsSyncError('')
+          publishError()
           updateAppPreferences({
             sharedScopedSettings: mergeSharedSettings(
               readAppPreferences().sharedScopedSettings,
@@ -1992,11 +2013,21 @@ export function WorkspaceProvider({
           return refreshRuntime(entry.profile)
         })
         .catch((error: unknown) => {
-          failedSettingsRequests.current.set(entry.profile.id, fingerprint)
-          setSettingsSyncError(error instanceof Error ? error.message : String(error))
+          if (
+            registryRef.current.profiles.some((profile) =>
+              sameRuntimeConnection(profile.connection, entry.profile.connection),
+            ) &&
+            overviewsRef.current[entry.profile.id]?.connected
+          )
+            failedSettingsRequests.current.set(entry.profile.id, {
+              fingerprint,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          publishError()
         })
         .finally(() => settingsRequests.current.delete(entry.profile.id))
     }
+    publishError()
   }, [sharedScopedSettings, visibleRuntimes, readRuntime, refreshRuntime, settingsRetry])
   const readCache = useMemo(
     () =>

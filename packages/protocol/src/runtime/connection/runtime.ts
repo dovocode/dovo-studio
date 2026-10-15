@@ -451,8 +451,6 @@ export const runtimePreferencesSchema = mutableStruct({
   ).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'dovo/'))),
 })
 
-export const runtimeRestartSchema = mutableStruct({ id: Schema.String })
-
 /** Tidies a typed branch prefix (`feature` → `feature/`) and reports whether Git accepts it. */
 export function normalizeBranchPrefix(input: string) {
   const trimmed = input.trim()

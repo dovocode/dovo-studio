@@ -240,6 +240,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
           <Button
             size="sm"
             variant="ghost"
+            aria-label="Refresh"
             disabled={busy || refreshing}
             onClick={() => {
               setRefreshing(true)
@@ -248,7 +249,8 @@ export default function JobsView({ entityId }: StudioViewProps) {
                 .finally(() => setRefreshing(false))
             }}
           >
-            <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} /> Refresh
+            <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} />
+            <span className="sr-only sm:not-sr-only">Refresh</span>
           </Button>
           <Button
             size="sm"

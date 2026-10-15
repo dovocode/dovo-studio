@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = require('node:fs')
 const { join, resolve } = require('node:path')
@@ -49,7 +50,7 @@ app.on('browser-window-created', (_event, window) => {
       console.log('Device smoke: renderer loaded')
       await window.webContents.executeJavaScript(helperScript)
       const local = await window.webContents.executeJavaScript(`(async()=>{
-        await deviceSmoke.wait(()=>document.body.innerText.includes('Workspace synced'));
+        await deviceSmoke.wait(()=>(${workspaceReady.toString()})());
         return window.dovo.runtimeConnection();
       })()`)
       console.log('Device smoke: local runtime connected')

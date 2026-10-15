@@ -55,6 +55,8 @@ const summaryChecks = (state: string | null | undefined) => {
  * show merge and check state, and can archive themselves once merged (Settings, optional). */
 export class TaskPullWatcher {
   private poller?: ReturnType<typeof startPolling>
+  private stopping = false
+  private pending = new Set<Promise<void>>()
   private attach(
     task: TaskSummary,
     pull: Omit<NonNullable<TaskSummary['linkedPullRequests']>[number], 'repositoryUrl'> & {
@@ -139,6 +141,7 @@ export class TaskPullWatcher {
         : (policy?.settleMerged ?? fallback) || (policy?.settleClosed ?? fallback)
   }
   start() {
+    if (this.stopping || this.poller) return
     this.poller = startPolling(
       Effect.tryPromise(() => this.refresh()),
       {
@@ -150,9 +153,22 @@ export class TaskPullWatcher {
     )
   }
   async dispose() {
-    await this.poller?.stop()
+    this.stopping = true
+    // Interrupting the polling fiber does not cancel its underlying refresh promise.
+    const results = await Promise.allSettled([this.poller?.stop(), ...this.pending])
+    for (const result of results) if (result.status === 'rejected') throw result.reason
   }
   async refresh() {
+    if (this.stopping) return
+    const work = this.refreshTasks()
+    this.pending.add(work)
+    try {
+      await work
+    } finally {
+      this.pending.delete(work)
+    }
+  }
+  private async refreshTasks() {
     const workspace = this.s.store.get()
     const openPulls = new Map<string, Awaited<ReturnType<Services['pullCache']['list']>>>()
     const confirmations = new Map<string, Awaited<ReturnType<Services['pullCache']['status']>>>()

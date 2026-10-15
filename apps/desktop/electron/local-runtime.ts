@@ -1,10 +1,10 @@
 import { readListenAddress, writeListenAddress } from '@dovo/api/listen-address'
 import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { runtimeRequest, RUNTIME_PROTOCOL_VERSION, mutableStruct } from '@dovo/protocol'
-import { homedir } from 'node:os'
+import { homedir, uptime } from 'node:os'
 import { ensureBackgroundRuntime, stopBackgroundRuntimeForUpdate } from './background-runtime.js'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, dialog } from 'electron'
 import { Effect, Exit, Scope, Schema, Semaphore } from 'effect'
@@ -61,7 +61,10 @@ const existingRuntime = (requireCompatible = true) =>
     const saved = yield* Effect.try({
       try: () => {
         try {
-          return readConnection(join(desktopRuntimeDirectory(), 'runtime-connection.json'))
+          const path = join(desktopRuntimeDirectory(), 'runtime-connection.json')
+          // Discovery from an earlier boot can name an unrelated process with a reused PID.
+          if (statSync(path).mtimeMs < Date.now() - uptime() * 1000) return undefined
+          return readConnection(path)
         } catch (error) {
           if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
           throw error

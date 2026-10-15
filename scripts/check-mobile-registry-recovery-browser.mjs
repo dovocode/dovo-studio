@@ -28,6 +28,10 @@ window.fetch=async(url,init={})=>{
     server.workspace.repositories[0]={...server.workspace.repositories[0],path:window.patchPath??'/local'};
     return Response.json({revision:server.revision,runtimeInstanceId:server.runtimeInstanceId,reconciled:true});
   }
+  if(window.holdSnapshotFailure && parsed.pathname==='/api/snapshot' && parsed.host==='one.lan:8787'){
+    window.holdSnapshotFailure=false;
+    return new Promise(resolve=>{window.failHeldSnapshot=()=>resolve(Response.json({error:'Old HTTP poll failed'},{status:400}));});
+  }
   if(window.streamDuringRead && parsed.pathname==='/api/snapshot' && parsed.host==='one.lan:8787'){
     const previous=structuredClone(server);
     window.streamDuringRead=false;
@@ -67,15 +71,19 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
   [
     {
       path: '@dovo/protocol',
-      contents: `export * from '${root}packages/protocol/src/index.ts';export const startRuntimeSync=(connection,callbacks)=>{window.streams??={};window.streams[connection.address]=callbacks;return {online:()=>false,refresh:()=>{},stop:()=>{delete window.streams[connection.address]}}};`,
+      contents: `export * from '${root}packages/protocol/src/index.ts';export const startRuntimeSync=(connection,callbacks)=>{window.streams??={};window.streams[connection.address]=callbacks;return {online:()=>false,refresh:()=>{window.liveRefreshes=(window.liveRefreshes??0)+1},stop:()=>{delete window.streams[connection.address]}}};`,
+    },
+    {
+      path: '@dovo/client-runtime',
+      contents: `export * from '${root}packages/client-runtime/src/index.ts';import {startPolling as poll} from '${root}packages/client-runtime/src/index.ts';export const startPolling=(work,options)=>poll(work,{...options,onError:error=>{options.onError(error);(window.pollFailures??=[]).push(error.message)}});`,
     },
     {
       path: 'react-native',
-      contents: `export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
+      contents: `const listeners=new Set();export const AppState={currentState:'active',addEventListener:(event,listener)=>{listeners.add(listener);return {remove:()=>listeners.delete(listener)}}};window.appStateChanged=state=>{AppState.currentState=state;for(const listener of listeners)listener(state)};`,
     },
     {
       path: 'expo-network',
-      contents: `export const addNetworkStateListener=()=>({remove:()=>{}});export const getNetworkStateAsync=async()=>({isConnected:true});export const NetworkStateType={CELLULAR:'cellular'};`,
+      contents: `const listeners=new Set();export const addNetworkStateListener=listener=>{listeners.add(listener);return {remove:()=>listeners.delete(listener)}};window.networkChanged=state=>{for(const listener of listeners)listener(state)};export const getNetworkStateAsync=async()=>({isConnected:true});export const NetworkStateType={CELLULAR:'cellular'};`,
     },
     {
       path: 'expo-secure-store',
@@ -239,12 +247,95 @@ try {
     readsAfter - readsBefore < 10,
     'A streamed acknowledgement must not repeatedly trigger HTTP refreshes',
   )
+  // An HTTP fallback started before a streamed runtime restart must not mark the
+  // accepted replacement offline when that older HTTP request eventually fails.
+  await page.evaluate(() => {
+    window.holdSnapshotFailure = true
+    window.networkChanged({ isConnected: true })
+  })
+  await page.waitForFunction(() => typeof window.failHeldSnapshot === 'function')
+  await page.evaluate(() => {
+    const server = window.servers['one.lan:8787']
+    server.runtimeInstanceId = 'restarted-runtime'
+    server.revision = 1
+    window.streams['http://one.lan:8787'].onSnapshot(structuredClone(server))
+  })
+  await page.waitForFunction(
+    () => window.runtime.snapshot?.runtimeInstanceId === 'restarted-runtime',
+  )
+  const failuresBefore = await page.evaluate(() => window.pollFailures?.length ?? 0)
+  await page.evaluate(() => window.failHeldSnapshot())
+  // Observe the real polling worker finishing its error callback before inspecting state.
+  await page.waitForFunction((before) => window.pollFailures?.length > before, failuresBefore)
+  assert.deepEqual(
+    await page.evaluate(() => {
+      const entry = window.runtime.overviews.find((entry) => entry.profile.name === 'one')
+      return {
+        connected: entry.connected,
+        error: entry.error,
+        runtimeInstanceId: entry.snapshot.runtimeInstanceId,
+      }
+    }),
+    { connected: true, error: null, runtimeInstanceId: 'restarted-runtime' },
+    'A superseded HTTP failure must not overwrite the live connection state',
+  )
+  // A failure of the current request still marks the runtime offline.
+  await page.evaluate(() => {
+    delete window.failHeldSnapshot
+    window.holdSnapshotFailure = true
+    window.streams['http://one.lan:8787'].onWake()
+  })
+  await page.waitForFunction(() => typeof window.failHeldSnapshot === 'function')
+  await page.evaluate(() => window.failHeldSnapshot())
+  await page.waitForFunction(() =>
+    window.runtime.overviews.some(
+      (entry) =>
+        entry.profile.name === 'one' &&
+        !entry.connected &&
+        entry.error?.includes('Old HTTP poll failed'),
+    ),
+  )
+  await page.evaluate(() => {
+    window.streams['http://one.lan:8787'].onSnapshot(
+      structuredClone(window.servers['one.lan:8787']),
+    )
+  })
+  await page.waitForFunction(() =>
+    window.runtime.overviews.some(
+      (entry) => entry.profile.name === 'one' && entry.connected && entry.error === null,
+    ),
+  )
+  assert.ok(
+    await page.evaluate(() => window.liveRefreshes > 0),
+    'A network change refreshes the stream',
+  )
+  // Backgrounding tears down the old stream. A late callback from that stream
+  // cannot overwrite the foreground connection, even after the runtime restarts.
+  await page.evaluate(() => {
+    window.oldStream = window.streams['http://one.lan:8787']
+    window.appStateChanged('background')
+  })
+  await page.waitForFunction(() => !window.streams['http://one.lan:8787'])
+  await page.evaluate(() => {
+    window.servers['one.lan:8787'].runtimeInstanceId = 'foreground-runtime'
+    window.appStateChanged('active')
+  })
+  await page.waitForFunction(() => !!window.streams['http://one.lan:8787'])
+  await page.evaluate(() => {
+    const snapshot = structuredClone(window.servers['one.lan:8787'])
+    window.streams['http://one.lan:8787'].onSnapshot(snapshot)
+    window.oldStream.onSnapshot({ ...snapshot, runtimeInstanceId: 'stopped-stream' })
+  })
+  await page.waitForFunction(
+    () => window.runtime.snapshot?.runtimeInstanceId === 'foreground-runtime',
+  )
+  assert.equal(await page.evaluate(() => window.runtime.connected), true)
   const renders = await page.evaluate(() => window.renders)
   assert.ok(renders.broad > 3, `broad runtime reader rendered ${renders.broad} times`)
   assert.equal(renders.selected, 1, 'an action selector re-rendered for runtime state changes')
   assert.deepEqual(errors, [])
   console.log(
-    `Mobile registry recovery: failed credential reads preserve pairings, block writes, and recover on explicit retry; ${renders.broad} broad renders, ${renders.selected} selector render.`,
+    `Mobile registry recovery: credential-store recovery, stale/current HTTP failures, streamed restarts, network wakeups and foreground recovery passed; ${renders.broad} broad renders, ${renders.selected} selector render.`,
   )
 } finally {
   await browser.close()

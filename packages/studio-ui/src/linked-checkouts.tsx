@@ -87,6 +87,10 @@ function LinkedCheckoutFields({
   const [worktrees, setWorktrees] = useState<Array<{ path: string; branch: string }>>([])
   const [error, setError] = useState('')
   const generation = useRef(0)
+  const latest = useRef({ link, onChange })
+  useLayoutEffect(() => {
+    latest.current = { link, onChange }
+  }, [link, onChange])
   useLayoutEffect(() => {
     generation.current++
     return () => {
@@ -118,8 +122,8 @@ function LinkedCheckoutFields({
       setWorktrees(result.worktrees)
       if (!result.worktrees.length) setError('No existing worktrees. Choose New worktree instead.')
       else
-        onChange({
-          ...link,
+        latest.current.onChange({
+          ...latest.current.link,
           execution: 'worktree',
           existingWorktreePath: result.worktrees[0].path,
           branch: undefined,

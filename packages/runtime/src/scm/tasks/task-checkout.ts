@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { GitService } from '../git/git.js'
 import { HttpError } from '../../errors.js'
-export { worktreesRoot, taskWorktreeKeys, isTaskWorktree } from './task-worktree-keys.js'
+export { taskWorktreeKeys, isTaskWorktree } from './task-worktree-keys.js'
 import { taskWorktreeKeys, isTaskWorktree, worktreesRoot } from './task-worktree-keys.js'
 export class TaskCheckout {
   readonly linked: LinkedCheckouts

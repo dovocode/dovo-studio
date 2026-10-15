@@ -1,11 +1,26 @@
-import { decode, threadWindowTargetSchema } from '@dovo/protocol'
+import { decode, runtimeRegistrySchema, threadWindowTargetSchema } from '@dovo/protocol'
 import { desktopRuntimeDirectory } from './runtime-data-directory.js'
-import { readFile, writeFile, rename } from 'node:fs/promises'
+import { readFile, writeFile, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ipcMain, safeStorage, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { randomUUID } from 'node:crypto'
+import {
+  decodeRuntimeRegistry,
+  mergeRuntimeRegistry,
+} from '../../../packages/studio-core/src/workspace/runtime-registry.js'
 import { pathToFileURL } from 'node:url'
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 export function registerConnectionStorage(rendererPath: string) {
+  let writes: Promise<unknown> = Promise.resolve()
+  const readers = new Set<Electron.WebContents>()
+  const read = async () => {
+    try {
+      return safeStorage.decryptString(await readFile(path()))
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
+      throw error
+    }
+  }
   const trustedFrame = (event: IpcMainEvent | IpcMainInvokeEvent, allowLauncher = false) => {
     if (event.senderFrame !== event.sender.mainFrame)
       throw new Error('Untrusted connection storage request')
@@ -61,22 +76,41 @@ export function registerConnectionStorage(rendererPath: string) {
   })
   ipcMain.handle('runtime:registry-read', async (event) => {
     trusted(event)
-    try {
-      return safeStorage.decryptString(await readFile(path()))
-    } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
-      throw error
-    }
+    readers.add(event.sender)
+    await writes
+    return read()
   })
-  ipcMain.handle('runtime:registry-write', async (event, encoded: unknown) => {
+  ipcMain.handle('runtime:registry-write', async (event, encoded: unknown, previous: unknown) => {
     trusted(event)
-    if (typeof encoded !== 'string' || encoded.length > 1024 * 1024)
-      throw new Error('Invalid runtime registry')
-    JSON.parse(encoded)
-    const target = path()
-    await writeFile(target + '.tmp', safeStorage.encryptString(encoded), {
-      mode: 0o600,
+    const parse = (value: unknown) => {
+      if (typeof value !== 'string' || value.length > 1024 * 1024)
+        throw new Error('Invalid runtime registry')
+      return decode(runtimeRegistrySchema, JSON.parse(value))
+    }
+    const next = parse(encoded)
+    const before = parse(previous)
+    const save = writes.then(async () => {
+      const current = decodeRuntimeRegistry(await read(), null)
+      const committed = JSON.stringify(mergeRuntimeRegistry(current, before, next))
+      const target = path()
+      const temporary = `${target}.${randomUUID()}.tmp`
+      try {
+        await writeFile(temporary, safeStorage.encryptString(committed), {
+          mode: 0o600,
+          flag: 'wx',
+        })
+        await rename(temporary, target)
+      } finally {
+        await rm(temporary, { force: true })
+      }
+      for (const reader of readers) {
+        if (reader.isDestroyed()) readers.delete(reader)
+        else if (reader !== event.sender) reader.send('runtime:registry-changed')
+      }
+      return committed
     })
-    await rename(target + '.tmp', target)
+    // A rejected save must not poison subsequent reads or writes.
+    writes = save.catch(() => {})
+    return save
   })
 }

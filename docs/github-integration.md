@@ -48,6 +48,22 @@ for the PR screens and actions; cached data stays available until the reset.
 
 ## Projects on multiple computers
 
+If the original runtime goes offline, PR lists and open PR details can continue reading through
+another connected runtime with the same registered remote repository and verified GitHub account.
+Project filters still include matching checkouts on other computers. An unknown or different account
+cannot take over automatically; saved content remains visible when no verified reader is available.
+Desktop and web retain the last verified source identity in their device cache so this handoff can
+also work after reopening while the original runtime is offline.
+
+Reading through another computer does not move comments, edits, merges, task creation or drafts to
+it. Those actions retain the original runtime and destination and remain unavailable while that
+runtime is offline. GitHub credentials stay on each runtime.
+
+Each routed read, including later pages, verifies the reader's freshly discovered account and
+destination. If a saved source is rebound to another repository without changing its source scope,
+automatic recovery stops rather than relabeling that repository's data as the original project.
+Refresh the project's binding or explicitly choose its source to accept the new binding.
+
 The combined PR list, the issue views and computer summaries read each remote repository through one
 connected computer, including when several checkouts or worktrees point at it. The computer this
 client is connected to reads the remotes it has; other remotes spread across the connected computers

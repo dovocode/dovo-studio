@@ -330,36 +330,3 @@ export const usageLimitsReadSchema = mutableStruct({
     }),
   ),
 })
-
-/** Account allowance is distinct from the composer's context-window meter. */
-export function composerPlanLimit(
-  task: { turns?: readonly { provider: string; usageAccount?: { id: string } }[] },
-  limits: readonly PlanLimit[],
-  connected: boolean,
-  now = Date.now(),
-) {
-  const turn = task.turns?.at(-1)
-  if (!turn?.usageAccount) return undefined
-  const windows = limits.filter(
-    (limit) =>
-      limit.provider === turn.provider &&
-      limit.account?.id === turn.usageAccount?.id &&
-      (!limit.bucketId || limit.bucketId === limit.provider),
-  )
-  const fresh = windows.filter((limit) => quotaReadingState(limit, connected, now) === 'fresh')
-  const limit = [...(fresh.length ? fresh : windows)].sort(
-    (a, b) => b.usedPercent - a.usedPercent,
-  )[0]
-  if (!limit) return undefined
-  const state = quotaReadingState(limit, connected, now)
-  const remaining = Math.round(Math.max(0, Math.min(100, 100 - limit.usedPercent)))
-  return {
-    limit,
-    state,
-    remaining,
-    label:
-      state === 'fresh'
-        ? `${limit.window}: ${remaining}% allowance left`
-        : `${limit.window}: ${state === 'awaiting' ? 'awaiting a fresh reading' : state + ' reading'}`,
-  }
-}

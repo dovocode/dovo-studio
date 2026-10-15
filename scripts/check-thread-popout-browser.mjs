@@ -9,23 +9,26 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {createRoot} from 'react-dom/client';
-import {decode,runtimeProfile,snapshotSchema,responses} from '@dovo/protocol';
+import {decode,runtimeProfile,snapshotSchema} from '@dovo/protocol';
 import {Workbench} from './packages/studio-shell/src/workbench.tsx';
 import {useWorkspace,useStudioHost} from '@dovo/studio-core';
-import {TaskActions} from './packages/extension-tasks/src/detail/task-actions.tsx';
+import {TaskContextMenu} from './packages/extension-tasks/src/detail/task-context-menu.tsx';
+import {mergeRuntimeRegistry} from './packages/studio-core/src/workspace/runtime-registry.ts';
 const profiles=[0,1].map(i=>runtimeProfile({address:'http://host'+i+'.lan:8787',token:'device-token-at-least-32-characters-'+i},'Computer '+i));
 if(!localStorage.getItem('desktop.registry'))localStorage.setItem('desktop.registry',JSON.stringify({version:1,activeId:profiles[0].id,profiles}));
-window.registryWrites=0;window.dovo={readRuntimeRegistry:async()=>localStorage.getItem('desktop.registry'),writeRuntimeRegistry:async value=>{window.registryWrites++;localStorage.setItem('desktop.registry',value)},runtimeConnection:async()=>profiles[0].connection};
+window.registryWrites=0;const registryListeners=new Set();
+window.addEventListener('storage',event=>{if(event.key==='desktop.registry')for(const listener of registryListeners)listener()});
+window.dovo={readRuntimeRegistry:async()=>localStorage.getItem('desktop.registry'),writeRuntimeRegistry:async(value,before)=>{window.registryWrites++;const saved=JSON.stringify(mergeRuntimeRegistry(JSON.parse(localStorage.getItem('desktop.registry')),JSON.parse(before),JSON.parse(value)));localStorage.setItem('desktop.registry',saved);for(const listener of registryListeners)listener();return saved},subscribeRuntimeRegistry:listener=>{registryListeners.add(listener);return()=>registryListeners.delete(listener)},runtimeConnection:async()=>profiles[0].connection};
 window.calls=[];window.popped=[];
 window.fetch=async(url,init={})=>{
  const parsed=new URL(url),path=parsed.pathname,input=init.body?JSON.parse(init.body):undefined;
  window.calls.push({host:parsed.host,path,input});
- if(path==='/api/snapshot')return Response.json(decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[],automations:[],tasks:[{id:'thread',title:'Thread on '+parsed.hostname,agentId:'',repositoryId:'',status:'draft',createdAt:'2026-10-12',messages:[],files:[],draft:'',example:false}]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]}));
+ if(path==='/api/snapshot')return Response.json(decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[],automations:[],tasks:[{id:'thread',title:'Thread on '+parsed.hostname,agentId:'',repositoryId:'',status:'draft',sessionId:'session',createdAt:'2026-10-12',messages:[],files:[],draft:'',example:false}]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]}));
  if(path==='/api/mutations/status')return Response.json({version:1});
  if(path==='/api/tasks/compact')return Response.json({ok:true,revision:1});
  throw new Error('Unexpected request '+url);
 };
-function Thread({entityId}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.send=()=>value.request('/api/tasks/compact',{id:'thread'},responses.ok);const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskActions task={task}/>}</>}
+function Thread({entityId}){const value=useWorkspace(),host=useStudioHost();window.store=value;const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskContextMenu dropdown task={task} owner={{runtimeId:value.activeRuntimeId,name:'Owner',online:value.connected,agents:[],repositories:[],worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Task actions</button></TaskContextMenu>}</>}
 const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Thread})}]}];
 const target=location.hash?{runtimeId:profiles[location.hash==='#local'?0:1].id,taskId:'thread',title:'Popped thread'}:undefined;
 createRoot(document.getElementById('app')).render(<Workbench extensions={extensions} threadWindow={target} popOutThread={async target=>{window.popped.push(target)}}/>);
@@ -100,9 +103,8 @@ createRoot(document.getElementById('app')).render(<Workbench extensions={extensi
       contents: 'export const TaskLauncher=()=>null;',
     },
     {
-      path: './task-lifecycle-actions',
-      importer: root + 'packages/extension-tasks/src/detail/',
-      contents: 'export const TaskLifecycleActions=()=>null;',
+      path: '@dovo/extension-scm/projects',
+      contents: 'export const ProjectSettings=()=>null;',
     },
   ],
 )
@@ -162,7 +164,7 @@ try {
     'http://host0.lan:8787',
   )
   await detached.getByRole('button', { name: 'Task actions', exact: true }).click()
-  await detached.getByRole('button', { name: 'Pop out thread', exact: true }).click()
+  await detached.getByRole('menuitem', { name: 'Pop out thread', exact: true }).click()
   assert.deepEqual(await detached.evaluate(() => window.popped), [
     { runtimeId: 'http://host1.lan:8787', taskId: 'thread', title: 'Thread on host1.lan' },
   ])
@@ -170,7 +172,11 @@ try {
   await main.evaluate(() => window.store.switchRuntime('http://host1.lan:8787'))
   await main.evaluate(() => window.store.switchRuntime('http://host0.lan:8787'))
   await detached.evaluate(() => window.store.switchRuntime('http://host1.lan:8787'))
-  await detached.evaluate(() => window.send())
+  await detached.getByRole('button', { name: 'Task actions', exact: true }).click()
+  await detached.getByRole('menuitem', { name: 'Compact agent context', exact: true }).click()
+  await detached.waitForFunction(() =>
+    window.calls.some((row) => row.path === '/api/tasks/compact'),
+  )
   assert.equal(
     await detached.evaluate(
       () => window.calls.find((row) => row.path === '/api/tasks/compact').host,

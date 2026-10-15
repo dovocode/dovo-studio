@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 process.env.DOVO_PORT = '0'
 process.env.DOVO_HOST = '127.0.0.1'
@@ -46,7 +47,7 @@ app.on('browser-window-created', (_event, window) => {
         const wait = async (check) => { for (let i=0;i<120;i++) {if(check())return; await new Promise(r=>setTimeout(r,100))}throw new Error('UI timeout: '+document.body.innerText.slice(-500))};
         const c = await window.dovo.runtimeConnection();
         const call = async (path, body, method='POST') => {const r=await fetch(c.address+path,{method,headers:{Authorization:'Bearer '+c.token,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});const value=await r.json();if(!r.ok)throw new Error(JSON.stringify(value));return value};
-        await wait(()=>document.body.innerText.includes('Workspace synced'));
+        await wait(()=>(${workspaceReady.toString()})());
         const button = label => [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === label || b.title === label || b.innerText.trim() === label);
         await wait(()=>button('Settings')); button('Settings').click(); await wait(()=>button('Devices & runtime')); button('Devices & runtime').click();
         await wait(()=>[...document.querySelectorAll('summary')].some(item=>item.innerText==='CLI commands & shell'));[...document.querySelectorAll('summary')].find(item=>item.innerText==='CLI commands & shell').click();await wait(()=>document.querySelector('[aria-label="Terminal shell"]'));

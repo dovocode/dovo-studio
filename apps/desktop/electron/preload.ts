@@ -146,8 +146,13 @@ contextBridge.exposeInMainWorld('dovo', {
   runtimeNetwork: (address: string, enabled?: boolean, port?: number): Promise<unknown> =>
     ipcRenderer.invoke('runtime:network', address, enabled, port),
   readRuntimeRegistry: (): Promise<string | null> => ipcRenderer.invoke('runtime:registry-read'),
-  writeRuntimeRegistry: (value: string): Promise<void> =>
-    ipcRenderer.invoke('runtime:registry-write', value),
+  writeRuntimeRegistry: (value: string, before: string): Promise<string> =>
+    ipcRenderer.invoke('runtime:registry-write', value, before),
+  subscribeRuntimeRegistry: (listener: () => void) => {
+    const handler = () => listener()
+    ipcRenderer.on('runtime:registry-changed', handler)
+    return () => ipcRenderer.removeListener('runtime:registry-changed', handler)
+  },
   readAppSettings: () => {
     const result: { value?: unknown; error?: string } = ipcRenderer.sendSync('app:settings-read')
     if (result.error) throw new Error(result.error)

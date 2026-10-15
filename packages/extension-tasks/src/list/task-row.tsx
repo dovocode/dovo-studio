@@ -184,8 +184,8 @@ function TaskRowView({
             </span>
             <span
               className={cn(
-                'block w-full truncate text-sm font-medium leading-5',
-                unread ? 'text-foreground' : 'text-foreground/40',
+                'block w-full truncate text-sm leading-5 text-foreground',
+                unread ? 'font-semibold' : 'font-medium',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}

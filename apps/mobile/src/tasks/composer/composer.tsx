@@ -28,7 +28,7 @@ import { Effect } from 'effect'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -93,6 +93,9 @@ export function Composer({
     [checkout, setCheckout] = useApplicationState(false)
   const selection = useRef<DraftSelection | undefined>(undefined)
   const [caret, setCaret] = useState(0)
+  const [toolbarWidth, setToolbarWidth] = useState(0)
+  const [moreActions, setMoreActions] = useState(false)
+  const actionsSheet = useRef<SheetHandle>(null)
   const focus = useCallback(() => setFocused(true), [setFocused])
   const blur = useCallback(() => setFocused(false), [setFocused])
   const select = useCallback(
@@ -243,6 +246,13 @@ export function Composer({
   // Car mode starts with speech; the regular composer is one tap away for a passenger.
   const [typing, setTyping] = useApplicationState(false)
   const showOptions = focused || hasInput || firstMessage
+  const hasSideQuestion = !!onAsk && task.messages.length > 0
+  const showFollowupActions =
+    showOptions && !dictation.active && task.status === 'running' && hasInput
+  const showFork = hasGit && !!task.repositoryId
+  // Measure the toolbar itself: split views and safe-area insets can reduce its width.
+  const overflowActions =
+    showFollowupActions && toolbarWidth < (5 + Number(hasSideQuestion) + Number(showFork)) * 44
   const canDictate = draft.ready && !busy && !task.archived && !attaching
   const listening = dictation.isRecording || dictation.isStarting
   const dictationStatus = dictation.isStarting
@@ -514,6 +524,7 @@ export function Composer({
                 onChangeText={type}
                 editable={draft.ready && !busy && !dictation.active && !task.archived}
                 showOptions={showOptions}
+                trailingControlCount={2 + Number(hasSideQuestion)}
               />
             </View>
             {focused && (
@@ -527,6 +538,7 @@ export function Composer({
           </View>
           <View
             testID="Composer toolbar"
+            onLayout={({ nativeEvent }) => setToolbarWidth(nativeEvent.layout.width)}
             pointerEvents="box-none"
             style={[
               {
@@ -649,7 +661,7 @@ export function Composer({
                     }
               }
             />
-            {onAsk && task.messages.length > 0 && (
+            {hasSideQuestion && !overflowActions && (
               <IconButton
                 variant="plain"
                 icon="chat"
@@ -658,7 +670,7 @@ export function Composer({
                 onPress={onAsk}
               />
             )}
-            {showOptions && !dictation.active && task.status === 'running' && hasInput && (
+            {showFollowupActions && (
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <IconButton
                   variant="plain"
@@ -667,14 +679,16 @@ export function Composer({
                   disabled={!canSend || busy}
                   onPress={() => send()}
                 />
-                <IconButton
-                  variant="plain"
-                  icon="steer"
-                  label="Steer agent"
-                  disabled={!canSend || busy}
-                  onPress={() => send('steer')}
-                />
-                {hasGit && task.repositoryId && (
+                {!overflowActions && (
+                  <IconButton
+                    variant="plain"
+                    icon="steer"
+                    label="Steer agent"
+                    disabled={!canSend || busy}
+                    onPress={() => send('steer')}
+                  />
+                )}
+                {showFork && !overflowActions && (
                   <IconButton
                     variant="plain"
                     icon="changes"
@@ -684,6 +698,14 @@ export function Composer({
                   />
                 )}
               </View>
+            )}
+            {overflowActions && (
+              <IconButton
+                variant="plain"
+                icon="more"
+                label="More message actions"
+                onPress={() => setMoreActions(true)}
+              />
             )}
             <IconButton
               variant="filled"
@@ -775,6 +797,36 @@ export function Composer({
             />
           )}
         </View>
+      )}
+      {moreActions && (
+        <Sheet ref={actionsSheet} title="Message actions" onClose={() => setMoreActions(false)}>
+          {hasSideQuestion && (
+            <Action
+              secondary
+              label="Ask a side question"
+              disabled={!connected}
+              onPress={() => actionsSheet.current?.dismiss(onAsk)}
+            />
+          )}
+          {showFollowupActions && (
+            <>
+              <Action
+                secondary
+                label="Steer agent"
+                disabled={!canSend || busy}
+                onPress={() => actionsSheet.current?.dismiss(() => send('steer'))}
+              />
+              {showFork && (
+                <Action
+                  secondary
+                  label="Fork"
+                  disabled={!canSend || busy}
+                  onPress={() => actionsSheet.current?.dismiss(startFork)}
+                />
+              )}
+            </>
+          )}
+        </Sheet>
       )}
       {checkout && checkoutEditable && hasGit && (
         <Sheet title="Checkout & branch" onClose={() => setCheckout(false)}>

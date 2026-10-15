@@ -1,10 +1,11 @@
+import { workspaceReady } from '../browser/workspace-ready.cjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir, homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { once } from 'node:events'
-import { Either, Schema } from 'effect'
+import { Result, Schema } from 'effect'
 const data = await mkdtemp(join(tmpdir(), 'dovo-packaged-check-'))
 const binary = resolve(
   process.argv[2] ?? 'release/mac-arm64/Dovo Studio.app/Contents/MacOS/Dovo Studio',
@@ -124,7 +125,7 @@ try {
         awaitPromise: true,
         returnByValue: true,
         expression: `(async()=>{
-          const connected=()=>document.body?.innerText.includes('Workspace synced');
+          const connected=()=>(${workspaceReady.toString()})();
           for(let i=0;i<100&&!connected();i++)await new Promise(r=>setTimeout(r,100));
           if(!connected())throw new Error('Packaged renderer did not sync: '+document.body?.innerText.slice(0,300));
           const c=await Promise.race([
@@ -142,7 +143,7 @@ try {
     }),
   )
   const raw = await result
-  const exception = Schema.decodeUnknownEither(
+  const exception = Schema.decodeUnknownResult(
     Schema.Struct({
       exceptionDetails: Schema.Struct({
         text: Schema.String,
@@ -150,10 +151,10 @@ try {
       }),
     }),
   )(raw)
-  if (Either.isRight(exception))
+  if (Result.isSuccess(exception))
     throw new Error(
-      exception.right.exceptionDetails.exception?.description ??
-        exception.right.exceptionDetails.text,
+      exception.success.exceptionDetails.exception?.description ??
+        exception.success.exceptionDetails.text,
     )
   const checked = Schema.decodeUnknownSync(
     Schema.Struct({

@@ -97,25 +97,33 @@ export class RemoteBrowsers {
     }
     return { chromium, executablePath }
   }
-  private async launch() {
+  private launch(): Promise<Browser> {
+    if (this.disposed) return Promise.reject(new HttpError(503, 'Runtime is shutting down'))
     if (!this.browser) {
-      const { chromium, executablePath } = await this.executable()
-      this.browser = chromium
-        .launch({
-          executablePath,
-          headless: true,
-          chromiumSandbox: true,
+      const pending = this.executable()
+        .then(({ chromium, executablePath }) => {
+          if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
+          return chromium.launch({
+            executablePath,
+            headless: true,
+            chromiumSandbox: true,
+          })
         })
-        .then((browser) => {
+        .then(async (browser) => {
+          if (this.disposed) {
+            await browser.close()
+            throw new HttpError(503, 'Runtime is shutting down')
+          }
           browser.once('disconnected', () => {
-            this.browser = undefined
+            if (this.browser === pending) this.browser = undefined
           })
           return browser
         })
         .catch((error) => {
-          this.browser = undefined
+          if (this.browser === pending) this.browser = undefined
           throw error
         })
+      this.browser = pending
     }
     return this.browser
   }
@@ -753,7 +761,9 @@ export class RemoteBrowsers {
       if (result.status === 'rejected')
         console.error('Could not close browser context', result.reason)
     await Promise.allSettled([...this.closingProfiles.values()])
-    if (this.browser) await (await this.browser).close()
+    // A startup failure is already reported to its caller and must not fail shutdown.
+    const browser = await this.browser?.catch(() => undefined)
+    if (browser) await browser.close()
     this.sessions.clear()
     this.owners.clear()
   }

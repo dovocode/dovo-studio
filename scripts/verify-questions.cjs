@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 process.env.DOVO_PORT = '0'
 process.env.DOVO_HOST = '127.0.0.1'
@@ -27,7 +28,7 @@ app.on('browser-window-created', (_event, window) =>
       window.show()
       const result = await window.webContents.executeJavaScript(`(async () => {
         const wait=async check=>{for(let i=0;i<200;i++){if(await check())return;await new Promise(r=>setTimeout(r,100))}throw new Error('Question workflow timeout: '+document.body.innerText.slice(-1800))};
-        await wait(()=>document.body.innerText.includes('Workspace synced'));
+        await wait(()=>(${workspaceReady.toString()})());
         const connection=await window.dovo.runtimeConnection();
         const call=async(path,body,method='POST')=>{const r=await fetch(connection.address+path,{method,headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},body:JSON.stringify(body)});const v=await r.json();if(!r.ok)throw new Error(JSON.stringify(v));return v};
         const snapshot=async()=>{const r=await fetch(connection.address+'/api/snapshot',{headers:{Authorization:'Bearer '+connection.token}});return r.json()};

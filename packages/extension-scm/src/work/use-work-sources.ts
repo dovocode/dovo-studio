@@ -9,7 +9,7 @@ import {
   forgeIssuePageSchema,
   forgePipelinePageSchema,
 } from '@dovo/studio-core'
-import { useIssueSources, matchesWorkSource, workRemoteKey, type WorkSource } from './work-sources'
+import { useIssueSources, matchesWorkSource, workRemoteKey } from './work-sources'
 import {
   useSourceReaders,
   verifySourceReader,
@@ -21,7 +21,9 @@ import {
   cachedWorkPipelinePageSchema,
   loadWorkSourcePage,
   workPageCacheValue,
+  workPageForOrigin,
   workSourceCacheKey,
+  type WorkListSource,
   type WorkSourcePage,
 } from './work-source-page'
 
@@ -47,14 +49,27 @@ export function useWorkSources(
     () => allSources.filter((source) => matchesWorkSource(source, filterRemote)),
     [allSources, filterRemote],
   )
-  const { sources: visibleSources, unavailable } = useSourceReaders(
+  const {
+    sources: readers,
+    origins,
+    destinations,
+    unavailable,
+  } = useSourceReaders(
     eligible,
     `work:${mode}:${sourceKind}:${sourceKey}`,
     workRemoteKey,
     true,
     origin,
   )
-  const sources = visibleSources
+  const sources: WorkListSource[] = useMemo(
+    () =>
+      readers.flatMap((reader) => {
+        const remote = workRemoteKey(reader)
+        const source = origins.get(remote)
+        return source ? [{ ...source, reader, destination: destinations.get(remote) }] : []
+      }),
+    [readers, origins, destinations],
+  )
   const [stored, setStored, pagesRef] = useApplicationState<Record<string, WorkSourcePage>>({})
   const generation = useRef(0)
   const moreRef = useRef<(key: string) => Promise<void>>(async () => {})
@@ -67,9 +82,12 @@ export function useWorkSources(
     const current = ++generation.current
     const semaphore = Effect.runSync(Semaphore.make(1))
     const commands = clientTaskScope()
-    const update = (source: WorkSource, page: Omit<WorkSourcePage, 'source'>) => {
+    const update = (source: WorkListSource, page: Omit<WorkSourcePage, 'source' | 'reader'>) => {
       if (current === generation.current)
-        setStored((previous) => ({ ...previous, [source.key]: { ...page, source } }))
+        setStored((previous) => ({
+          ...previous,
+          [source.key]: { ...page, source, reader: source.reader },
+        }))
     }
     setStored((previous) =>
       Object.fromEntries(
@@ -85,7 +103,7 @@ export function useWorkSources(
     const hydrated = Effect.runSync(
       Effect.cached(
         Effect.forEach(
-          visibleSources,
+          sources,
           (source) =>
             Effect.gen(function* () {
               if (pagesRef.current[source.key]) return
@@ -129,7 +147,7 @@ export function useWorkSources(
         ),
       ),
     )
-    setBusy(visibleSources.some((source) => source.connected))
+    setBusy(sources.some((source) => source.reader.connected))
     let force = forceNext.current
     forceNext.current = false
     const load = Effect.gen(function* () {
@@ -137,9 +155,9 @@ export function useWorkSources(
       if (document.visibilityState !== 'visible') return
       const refresh = force
       force = false
-      setBusy(visibleSources.some((source) => source.connected))
+      setBusy(sources.some((source) => source.reader.connected))
       yield* Effect.forEach(
-        visibleSources.filter((source) => source.connected),
+        sources.filter((source) => source.reader.connected),
         (source) =>
           Effect.gen(function* () {
             const previous = pagesRef.current[source.key]
@@ -178,6 +196,7 @@ export function useWorkSources(
                 update(source, {
                   ...(pagesRef.current[source.key] ?? { items: [] }),
                   stale: true,
+                  optionsFetchedAt: undefined,
                   error: error.message,
                 }),
               ),
@@ -199,18 +218,19 @@ export function useWorkSources(
     const more = (key: string) =>
       Effect.gen(function* () {
         const previous = pagesRef.current[key]
-        const source = visibleSources.find((source) => source.key === key)
-        if (!previous?.next || !source?.connected) return
+        const source = sources.find((source) => source.key === key)
+        if (!previous?.next || !source?.reader.connected) return
         setBusy(true)
         yield* Effect.gen(function* () {
-          const expectedReaderIdentity = yield* verifySourceReader(source)
+          const reader = source.reader
+          const readGuard = yield* verifySourceReader(reader)
           const response =
             mode === 'issues'
-              ? yield* source.requestEffect(
+              ? yield* reader.requestEffect(
                   '/api/scm/work/issues/list',
                   {
-                    ...source.input,
-                    expectedReaderIdentity,
+                    ...reader.input,
+                    ...readGuard,
                     state,
                     ...(source.jira && jiraFilters ? { jiraFilters } : {}),
                     query: previous.query,
@@ -218,19 +238,19 @@ export function useWorkSources(
                   },
                   forgeIssuePageSchema,
                 )
-              : yield* source.requestEffect(
+              : yield* reader.requestEffect(
                   '/api/scm/work/pipelines/list',
                   {
-                    ...source.input,
+                    ...reader.input,
                     cursor: previous.next,
-                    expectedReaderIdentity,
+                    ...readGuard,
                   },
                   forgePipelinePageSchema,
                 )
           if (current !== generation.current) return
           const page = {
             ...previous,
-            ...appendWorkPage(previous, response),
+            ...appendWorkPage(previous, workPageForOrigin(response, source)),
             loadedPages: (previous.loadedPages ?? 1) + 1,
             error: previous.error || response.refreshError,
           }
@@ -271,18 +291,19 @@ export function useWorkSources(
       void polling.stop()
       void commands.stop()
     }
-  }, [sources, visibleSources, unavailable, mode, revision, search, state, collection])
+  }, [sources, unavailable, mode, revision, search, state, collection])
   const refresh = () => {
     forceNext.current = true
     setRevision((value) => value + 1)
   }
-  const selectedPages = visibleSources.flatMap((source) => {
+  const selectedPages = sources.flatMap((source) => {
     const page = stored[source.key]
     return page && page.source.scope === source.scope && lastCollection.current === collection
       ? [
           {
             ...page,
             source,
+            reader: source.reader,
           },
         ]
       : []
@@ -298,6 +319,7 @@ export function useWorkSources(
         ...page,
         stale: true,
         source: { ...page.source, connected: false },
+        reader: { ...page.reader, connected: false },
         error:
           'The original source reader is unavailable. Choose an explicit source to use another account.',
       })),

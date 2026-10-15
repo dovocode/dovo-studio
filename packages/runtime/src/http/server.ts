@@ -1,3 +1,5 @@
+import { isRunToken } from '../auth/run-credentials.js'
+import { authorizeRunTerminal, authenticateRuntimeOperation } from '../auth/run-authorization.js'
 import { serveTaskFile } from './endpoints/task-files.js'
 import { assertForeignDeviceScope } from '../previews/device-hosts.js'
 import { attachRuntimeSync } from './support/runtime-sync.js'
@@ -63,7 +65,11 @@ export function createRuntimeServer(services: Services, internal = false) {
         } catch {
           throw new HttpError(400, 'Invalid request URL')
         }
-        if (request.method === 'GET' && url.pathname.startsWith('/api/tasks/files/shared/'))
+        if (
+          request.method === 'GET' &&
+          url.pathname.startsWith('/api/tasks/files/shared/') &&
+          !isRunToken(request.headers.authorization?.replace(/^Bearer /, '') ?? '')
+        )
           return serveTaskFile(services, response, url, request.headers.range)
         return runClientEffect(
           route(
@@ -312,7 +318,8 @@ export function createRuntimeServer(services: Services, internal = false) {
       }
       if (url.pathname !== '/ws/terminal') throw new HttpError(404, 'Not found')
       const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
-      services.devices.authenticate(ticket.token)
+      if (isRunToken(ticket.token)) authorizeRunTerminal(services, ticket.token, ticket.resourceId)
+      else services.devices.authenticate(ticket.token)
       services.terminals.get(ticket.resourceId)
       sockets.handleUpgrade(request, socket, head, (client) => {
         track(client, ticket.token)
@@ -326,7 +333,9 @@ export function createRuntimeServer(services: Services, internal = false) {
         })
         client.on('message', (raw) => {
           try {
-            services.devices.authenticate(ticket.token)
+            if (isRunToken(ticket.token))
+              authorizeRunTerminal(services, ticket.token, ticket.resourceId)
+            else services.devices.authenticate(ticket.token)
           } catch {
             client.close(1008, 'Device authentication required')
             return
@@ -371,7 +380,7 @@ export function createRuntimeServer(services: Services, internal = false) {
   const revocations = setInterval(() => {
     for (const [socket, token] of authenticated) {
       try {
-        services.devices.authenticate(token)
+        authenticateRuntimeOperation(services, token)
       } catch {
         socket.close(1008, 'Device revoked')
       }

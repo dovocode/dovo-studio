@@ -2,7 +2,7 @@ import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-po
 import { claudeLaunchFlags } from '../../configuration/launch-flags.js'
 import { claudeAuthenticated, claudeCommand } from '../../configuration/claude-command.js'
 import { decode } from '@dovo/protocol'
-import { claudeMcpServers } from '../../configuration/mcp-settings.js'
+import { claudeMcpConfigFile, claudeMcpServers } from '../../configuration/mcp-settings.js'
 import { claudeInput, claudeMessage } from './claude-input.js'
 import { Schema } from 'effect'
 import { claudeModels } from '../../catalogs/claude.js'
@@ -30,6 +30,7 @@ function claudeStream(
     sessionRequest?: boolean,
   ) => AgentRun | undefined,
   command: string,
+  mcpConfigPath?: string,
 ) {
   return query({
     prompt,
@@ -39,7 +40,10 @@ function claudeStream(
         ? { additionalDirectories: run.linkedDirectories.map((item) => item.path) }
         : {}),
       env: processEnvironment(run.agent.env),
-      extraArgs: claudeLaunchFlags(run.agent.args),
+      extraArgs: {
+        ...claudeLaunchFlags(run.agent.args),
+        ...(mcpConfigPath ? { 'mcp-config': mcpConfigPath } : {}),
+      },
       abortController: controller,
       ...(run.sessionId
         ? {
@@ -93,11 +97,7 @@ function claudeStream(
             strictMcpConfig: true,
             mcpServers: {},
           }
-        : run.agent.resources?.mcpServers.length
-          ? {
-              mcpServers: claudeMcpServers(run.agent.resources.mcpServers),
-            }
-          : {}),
+        : {}),
       // Coding sessions inherit Claude settings; text-only utilities stay isolated.
       settingSources: run.tools === 'none' ? [] : ['user', 'project', 'local'],
       includePartialMessages: true,
@@ -226,6 +226,7 @@ type WarmClaude = {
   command: string
   config: string
   mcpBinding: string
+  disposeMcpConfig: () => void
   taskId: string
   consumer: Promise<void>
   closed: boolean
@@ -273,6 +274,7 @@ export function createClaudeAdapter(): AgentAdapter {
         session.controller.abort()
       }
       await session.consumer.catch(() => {})
+      session.disposeMcpConfig()
       session.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
       if (closeError) throw closeError
     })()
@@ -352,7 +354,14 @@ export function createClaudeAdapter(): AgentAdapter {
             ),
         }
       }
-      const stream = claudeStream(run, controller, input, currentRun, command)
+      const configFile = claudeMcpConfigFile(run.agent.resources?.mcpServers ?? [])
+      let stream: ReturnType<typeof query>
+      try {
+        stream = claudeStream(run, controller, input, currentRun, command, configFile.path)
+      } catch (error) {
+        configFile.dispose()
+        throw error
+      }
       session = {
         stream,
         input,
@@ -361,6 +370,7 @@ export function createClaudeAdapter(): AgentAdapter {
         command,
         config,
         mcpBinding,
+        disposeMcpConfig: configFile.dispose,
         taskId: run.taskId,
         sessionId: run.sessionId,
         consumer: Promise.resolve(),
@@ -416,6 +426,7 @@ export function createClaudeAdapter(): AgentAdapter {
           active.delete(session)
           idle.delete(session.taskId)
           session.input.close()
+          session.disposeMcpConfig()
           try {
             stream.close()
           } catch (closeError) {
@@ -515,14 +526,19 @@ export function createClaudeAdapter(): AgentAdapter {
         once: true,
       })
       if (run.signal.aborted) abort()
-      const stream = claudeStream(
-        run,
-        controller,
-        run.attachments?.length ? claudeInput(run) : run.prompt,
-        () => run,
-        command,
+      const configFile = claudeMcpConfigFile(
+        run.tools === 'none' ? [] : (run.agent.resources?.mcpServers ?? []),
       )
+      let stream: ReturnType<typeof query> | undefined
       try {
+        stream = claudeStream(
+          run,
+          controller,
+          run.attachments?.length ? claudeInput(run) : run.prompt,
+          () => run,
+          command,
+          configFile.path,
+        )
         let compacted = false
         for await (const message of stream) {
           handleMessage(run, message, () => (compacted = true))
@@ -531,7 +547,11 @@ export function createClaudeAdapter(): AgentAdapter {
           throw new Error('Claude did not report a completed compaction')
       } finally {
         run.signal.removeEventListener('abort', abort)
-        stream.close()
+        try {
+          stream?.close()
+        } finally {
+          configFile.dispose()
+        }
       }
     },
     dispose: async () => {

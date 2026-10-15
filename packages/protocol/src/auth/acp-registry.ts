@@ -49,10 +49,3 @@ export const acpRegistryResponseSchema = mutableStruct({
   installations: mutableArray(acpInstallationSchema),
 })
 export type AcpRegistryResponse = Schema.Schema.Type<typeof acpRegistryResponseSchema>
-
-export const acpRegistryInstallSchema = mutableStruct({
-  registryId,
-})
-export const acpRegistryRemoveSchema = mutableStruct({
-  id: registryId,
-})

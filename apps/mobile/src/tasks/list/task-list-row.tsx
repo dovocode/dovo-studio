@@ -236,10 +236,9 @@ function TaskListRowView({
                 style={{
                   flex: 1,
                   color: colors.text,
-                  opacity: hasUnreadTaskActivity(task) ? 1 : 0.4,
                   fontSize: 17,
                   lineHeight: 22,
-                  fontWeight: '500',
+                  fontWeight: hasUnreadTaskActivity(task) ? '600' : '500',
                 }}
               >
                 {task.title}

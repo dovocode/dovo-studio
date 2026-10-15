@@ -21,6 +21,7 @@ export function taskToolsServer(
   memoryScopes: MemoryScope[] = [],
   deviceHubEnabled = false,
   sandboxMode?: SandboxMode,
+  credentialFile?: string,
 ): McpServer {
   const localHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const urlHost = localHost.includes(':') ? `[${localHost}]` : localHost
@@ -39,7 +40,9 @@ export function taskToolsServer(
       DOVO_TASK_ID: taskId,
       ...(parentRunId ? { DOVO_TASK_RUN_ID: parentRunId } : {}),
       DOVO_TASK_URL: `http://${urlHost}:${port}`,
-      DOVO_TASK_TOKEN: token,
+      ...(credentialFile
+        ? { DOVO_TASK_CREDENTIAL_FILE: credentialFile }
+        : { DOVO_TASK_TOKEN: token }),
       DOVO_TASK_READ_ONLY: readOnly || sandboxMode === 'read-only' ? '1' : '0',
       DOVO_TASK_TERMINALS_DISABLED: sandboxMode && sandboxMode !== 'danger-full-access' ? '1' : '0',
       DOVO_TASK_MEMORY_SCOPES: JSON.stringify(memoryScopes),

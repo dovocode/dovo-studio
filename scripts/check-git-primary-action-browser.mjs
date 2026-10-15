@@ -44,7 +44,6 @@ const built = await build({
           '@dovo/studio-ui': `export {RepositoryOpenItems} from '../studio-ui/src/repository-open-items';export {Button} from '../studio-ui/src/components/ui/button';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const cn=(...values)=>values.filter(Boolean).join(' ');export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileTypeIcon=()=>null;export const ProjectIcon=()=>null;export const Dialog=({children})=><div>{children}</div>;export const DialogContent=Dialog,DialogTitle=Dialog,DialogDescription=Dialog;`,
           '@dovo/extension-scm/repository-actions': 'export const RepositoryActions=()=>null;',
           './task-waiting-panel': 'export const TaskWaitingPanel=()=>null;',
-          './task-actions': 'export const TaskActions=()=>null;',
           './task-branch-menu': 'export const TaskBranchMenu=()=>null;',
           './task-pull-status': 'export const TaskPullStatus=()=>null;',
           './task-project-actions': 'export const TaskProjectActions=()=>null;',

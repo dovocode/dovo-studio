@@ -16,7 +16,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { persistRuntimeEnvironment } from './runtime-environment.js'
+import { persistRuntimeEnvironment, readRuntimeEnvironment } from './runtime-environment.js'
 import { readServerConfig, setupServer, writePrivateJson } from './server-config.js'
 import { processExists, serverStatus } from './server-manager.js'
 import { selectedEntrypoint, updateServer } from './server-update.js'
@@ -197,22 +197,32 @@ async function stopServiceRuntime(directory: string, record: ServiceRecord) {
 }
 export async function runService(directory: string) {
   const config = readServerConfig(directory)
+  const environmentPath = join(directory, 'runtime-environment.json')
   const child = spawn(process.execPath, [selectedEntrypoint(directory)], {
     stdio: 'inherit',
     env: {
       ...process.env,
+      ...readRuntimeEnvironment(environmentPath),
       DOVO_DATABASE_PATH: config.databasePath,
       DOVO_HOST: config.host,
       PORT: String(config.port),
-      DOVO_RUNTIME_ENV_FILE: join(directory, 'runtime-environment.json'),
+      DOVO_RUNTIME_ENV_FILE: environmentPath,
       ELECTRON_RUN_AS_NODE: undefined,
     },
   })
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => child.kill(signal))
-  process.exitCode = await new Promise<number>((resolve, reject) => {
-    child.once('error', reject)
-    child.once('exit', (code) => resolve(code ?? 1))
-  })
+  const terminate = () => child.kill('SIGTERM')
+  const interrupt = () => child.kill('SIGINT')
+  process.on('SIGTERM', terminate)
+  process.on('SIGINT', interrupt)
+  try {
+    process.exitCode = await new Promise<number>((resolve, reject) => {
+      child.once('error', reject)
+      child.once('exit', (code) => resolve(code ?? 1))
+    })
+  } finally {
+    process.removeListener('SIGTERM', terminate)
+    process.removeListener('SIGINT', interrupt)
+  }
 }
 export async function installService(
   directory: string,

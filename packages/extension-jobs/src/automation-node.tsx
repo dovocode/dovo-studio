@@ -21,7 +21,7 @@ export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
         <Icon size={14} />
         {data.kind}
       </div>
-      <div className="text-sm font-medium">{data.label}</div>
+      <div className="break-all text-sm font-medium">{data.label}</div>
       <p className="mt-2 truncate text-xs text-muted-foreground">
         {data.kind === 'trigger'
           ? data.trigger === 'schedule'

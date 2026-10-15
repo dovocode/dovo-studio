@@ -56,7 +56,11 @@ it('keeps the internal runtime serving while external ports change or fail', asy
     if (!address || typeof address === 'string') throw new Error('No occupied port')
     try {
       expect((await save(internal, true, address.port)).status).toBe(500)
+      expect(network.status().error).toBeDefined()
       expect((await owner(internal)).status).toBe(200)
+      expect((await owner(`http://127.0.0.1:${externalPort}`)).status).toBe(200)
+      expect((await save(internal, true, externalPort)).status).toBe(200)
+      expect(network.status()).toEqual({ enabled: true, host: '0.0.0.0', port: externalPort })
       expect((await owner(`http://127.0.0.1:${externalPort}`)).status).toBe(200)
     } finally {
       await new Promise<void>((resolve) => occupied.close(() => resolve()))

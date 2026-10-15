@@ -18,10 +18,10 @@ import {
   collectionSources,
   collectionSourceIdentity,
   projectContentIdentity,
+  type ProjectSource,
 } from '../../../runtime/state/collection-sources'
 import { useSourceIdentities, verifiedSourceRead } from '../../source-reader'
 import { mobileReaders } from '../../verified-reader'
-import type { Runtime } from '../../../runtime/connection/provider'
 import { useNavigation } from '../../../shell/navigation'
 import { acknowledgePullList, pullListRevision } from './pull-list-invalidation'
 type Page = PullPage & {
@@ -31,11 +31,13 @@ type Page = PullPage & {
   runtimeId: string
   runtimeName: string
   connected: boolean
+  readConnected: boolean
   repositoryId: string
   name: string
   error?: string
   firstPageIds?: string[]
 }
+type PullSource = ProjectSource & { reader: ProjectSource }
 const cachedPullPageSchema = mutableStruct({
   ...pullPageSchema.fields,
   firstPageIds: Schema.optional(mutableArray(Schema.String)),
@@ -46,8 +48,12 @@ const cacheKey = (repository: Repository, state: string) =>
 export function usePulls(repositoryId: string, state: string) {
   const { focused: enabled } = useNavigation()
   const { readRuntimeEffect: rawRead, overviews, cacheForRuntime, activeId } = useRuntime()
-  const allSources = collectionSources(overviews).filter(
-    (source) => !repositoryId || source.key === repositoryId,
+  const available = collectionSources(overviews)
+  const requested = available.find((source) => source.key === repositoryId)
+  const remote = requested && pullRepositoryKey(requested.repository, requested.key)
+  const allSources = available.filter(
+    (source) =>
+      !repositoryId || (remote && pullRepositoryKey(source.repository, source.key) === remote),
   )
   const identified = useSourceIdentities(
     allSources,
@@ -56,6 +62,28 @@ export function usePulls(repositoryId: string, state: string) {
     enabled,
   )
   const readers = mobileReaders.selection(JSON.stringify(['pulls', repositoryId]))
+  // A stable source key can be rebound to a different remote. Drop that old
+  // association before assigning readers so one origin cannot own both remotes.
+  for (const [remote, key] of readers.origins) {
+    const origin = available.find((source) => source.key === key)
+    if (origin && pullRepositoryKey(origin.repository, origin.key) !== remote) {
+      readers.origins.delete(remote)
+    }
+  }
+  // A project filter chooses the origin; replicas provide only its remote reads.
+  if (requested && remote && !readers.owners.has(remote)) {
+    readers.owners.set(remote, requested.key)
+    readers.origins.set(remote, requested.key)
+  }
+  for (const source of identified) {
+    const remote = pullRepositoryKey(source.repository, source.key)
+    if (
+      readers.origins.get(remote) === source.key &&
+      source.readerIdentity &&
+      !readers.readerIdentities.has(remote)
+    )
+      readers.readerIdentities.set(remote, source.readerIdentity)
+  }
   const assigned = assignRemoteSources(
     identified.map((source) => ({ ...source, runtimeId: source.profile.id })),
     {
@@ -67,38 +95,64 @@ export function usePulls(repositoryId: string, state: string) {
   )
   for (const [remote, owner] of assigned.owners) readers.owners.set(remote, owner)
   for (const source of assigned.selected) {
+    const remote = pullRepositoryKey(source.repository, source.key)
+    if (!readers.origins.has(remote)) readers.origins.set(remote, source.key)
     if (source.readerIdentity)
       readers.readerIdentities.set(
         pullRepositoryKey(source.repository, source.key),
         source.readerIdentity,
       )
   }
-  const allSourcesRef = useRef(allSources)
-  allSourcesRef.current = allSources
-  const request = useCallback<Runtime['readRuntimeEffect']>(
-    (profile, path, input, schema, method) => {
-      const repository =
-        typeof input === 'object' && input !== null && 'repositoryId' in input
-          ? input.repositoryId
-          : undefined
-      const source = allSourcesRef.current.find(
-        (entry) => entry.profile.id === profile.id && entry.repository.id === repository,
+  const request = useCallback(
+    (
+      source: PullSource,
+      input: { repositoryId: string; state: string; page: number; refresh?: boolean },
+    ) => {
+      const reader = source.reader
+      const originIdentity = mobileReaders.identity(projectContentIdentity(source))
+      if (source.key !== reader.key && !originIdentity)
+        return Effect.fail(
+          new Error('The original account is unavailable. Connect its runtime to continue.'),
+        )
+      return verifiedSourceRead(
+        (path, body, schema, method) => rawRead(reader.profile, path, body, schema, method),
+        projectContentIdentity(reader),
+        { repositoryId: reader.repository.id },
+        source.key !== reader.key ? originIdentity?.readerIdentity : undefined,
+      )(
+        '/api/scm/pulls/overview',
+        { ...input, repositoryId: reader.repository.id },
+        pullPageSchema,
+      ).pipe(
+        Effect.map((page) => {
+          if (source.key === reader.key) return page
+          const destination = originIdentity?.destination
+          return {
+            ...page,
+            destination,
+            pulls: page.pulls.map((pull) => ({ ...pull, destination })),
+          }
+        }),
       )
-      const read: Runtime['readEffect'] = (path, input, schema, method) =>
-        rawRead(profile, path, input, schema, method)
-      return source
-        ? verifiedSourceRead(read, projectContentIdentity(source), {
-            repositoryId: source.repository.id,
-          })(path, input, schema, method)
-        : read(path, input, schema, method)
     },
     [rawRead],
   )
-  const sources = assigned.selected
-  const key = collectionSourceIdentity(sources)
+  const sources: PullSource[] = assigned.selected.flatMap((reader) => {
+    const origin = allSources.find(
+      (source) =>
+        source.key === readers.origins.get(pullRepositoryKey(reader.repository, reader.key)) &&
+        pullRepositoryKey(source.repository, source.key) ===
+          pullRepositoryKey(reader.repository, reader.key),
+    )
+    return origin ? [{ ...origin, reader }] : []
+  })
+  const key = JSON.stringify([
+    collectionSourceIdentity(sources),
+    collectionSourceIdentity(sources.map((source) => source.reader)),
+  ])
   const sourcesRef = useRef(sources)
   sourcesRef.current = sources
-  const connected = sources.some((source) => source.connected)
+  const connected = sources.some((source) => source.reader.connected)
   const [pages, setPages, pagesRef] = useApplicationState<Record<string, Page>>({})
   const [busy, setBusy] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
@@ -123,6 +177,7 @@ export function usePulls(repositoryId: string, state: string) {
       runtimeId: entry.profile.id,
       runtimeName: entry.computerName,
       connected: entry.connected,
+      readConnected: entry.reader.connected,
       repositoryId: entry.repository.id,
       name: entry.repository.name,
     })
@@ -133,13 +188,14 @@ export function usePulls(repositoryId: string, state: string) {
           .filter(
             ([, page]) =>
               !repositories.some((source) => source.key === page.sourceKey) &&
-              readers.owners.get(page.remoteKey) === page.sourceKey,
+              readers.origins.get(page.remoteKey) === page.sourceKey,
           )
           .map(([key, page]) => [
             key,
             {
               ...page,
               connected: false,
+              readConnected: false,
               stale: true,
               error: 'The original account is unavailable. Choose a source to continue.',
             },
@@ -231,7 +287,7 @@ export function usePulls(repositoryId: string, state: string) {
       const forced = force
       force = false
       yield* Effect.forEach(
-        repositories.filter((entry) => entry.connected),
+        repositories.filter((entry) => entry.reader.connected),
         (entry) =>
           Effect.gen(function* () {
             const cache = cacheForRuntime(entry.profile)
@@ -247,17 +303,12 @@ export function usePulls(repositoryId: string, state: string) {
               (shouldSweepWorkPages(previous.page, lastSweep, Date.now()) ||
                 (previous.page > 1 && !previous.firstPageIds))
             if (sweeping) fullSweepAt.current.set(sweepKey, Date.now())
-            const response = yield* request(
-              entry.profile,
-              '/api/scm/pulls/overview',
-              {
-                repositoryId: entry.repository.id,
-                state: remoteState,
-                page: 1,
-                refresh: refresh || !!sweeping,
-              },
-              pullPageSchema,
-            )
+            const response = yield* request(entry, {
+              repositoryId: entry.repository.id,
+              state: remoteState,
+              page: 1,
+              refresh: refresh || !!sweeping,
+            })
             let page: Page = {
               ...response,
               ...metadata(entry),
@@ -287,17 +338,12 @@ export function usePulls(repositoryId: string, state: string) {
               sweeping && number <= previous.page && page.hasMore && !page.stale;
               number++
             ) {
-              const next = yield* request(
-                entry.profile,
-                '/api/scm/pulls/overview',
-                {
-                  repositoryId: entry.repository.id,
-                  state: remoteState,
-                  page: number,
-                  refresh: true,
-                },
-                pullPageSchema,
-              )
+              const next = yield* request(entry, {
+                repositoryId: entry.repository.id,
+                state: remoteState,
+                page: number,
+                refresh: true,
+              })
               page = {
                 ...next,
                 ...metadata(entry),
@@ -352,7 +398,7 @@ export function usePulls(repositoryId: string, state: string) {
       Effect.gen(function* () {
         const previous = pagesRef.current[id]
         const entry = repositories.find((item) => item.key === id)
-        if (!previous || !entry?.connected || !enabled) return
+        if (!previous || !entry?.reader.connected || !enabled) return
         if (previous.error) {
           force = true
           polling.refresh()
@@ -360,16 +406,11 @@ export function usePulls(repositoryId: string, state: string) {
         }
         setBusy(true)
         yield* Effect.gen(function* () {
-          const next = yield* request(
-            entry.profile,
-            '/api/scm/pulls/overview',
-            {
-              repositoryId: entry.repository.id,
-              state: remoteState,
-              page: previous.page + 1,
-            },
-            pullPageSchema,
-          )
+          const next = yield* request(entry, {
+            repositoryId: entry.repository.id,
+            state: remoteState,
+            page: previous.page + 1,
+          })
           const page = {
             ...previous,
             ...next,
@@ -422,11 +463,12 @@ export function usePulls(repositoryId: string, state: string) {
       ? []
       : Object.values(pages).flatMap((page) => {
           const entry = currentSources.get(page.sourceKey)
-          if (!entry && readers.owners.get(page.remoteKey) === page.sourceKey)
+          if (!entry && readers.origins.get(page.remoteKey) === page.sourceKey)
             return [
               {
                 ...page,
                 connected: false,
+                readConnected: false,
                 stale: true,
                 error: 'The original account is unavailable. Choose a source to continue.',
               },
@@ -438,6 +480,7 @@ export function usePulls(repositoryId: string, state: string) {
                   runtimeName: entry.computerName,
                   name: entry.repository.name,
                   connected: entry.connected,
+                  readConnected: entry.reader.connected,
                 },
               ]
             : []

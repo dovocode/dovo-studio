@@ -54,8 +54,10 @@ export class ExternalListener {
       port > 65535
     )
       throw new Error('Choose a LAN/VPN IPv4 bind address and a port between 1 and 65535')
-    if (enabled && this.active && this.current.host === host && this.current.port === port)
+    if (enabled && this.active && this.current.host === host && this.current.port === port) {
+      this.current = { enabled: true, host, port }
       return this.current
+    }
     if (!enabled) {
       const old = this.active
       this.active = null

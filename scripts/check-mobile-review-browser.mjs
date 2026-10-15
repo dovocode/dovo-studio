@@ -25,12 +25,17 @@ const built = await bundleBrowser(
     },
     {
       path: 'react-native',
-      contents: `import {forwardRef,useImperativeHandle} from 'react';export const View=({children,style})=><div style={style}>{children}</div>;export const ScrollView=View;export const Pressable=({children,accessibilityLabel,onPress,disabled,style})=><button style={style} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Switch=({value,onValueChange})=><input type="checkbox" checked={value} onChange={e=>onValueChange(e.target.checked)}/>;export const useWindowDimensions=()=>({width:360});export const FlatList=forwardRef(({data,renderItem,keyExtractor},ref)=>{useImperativeHandle(ref,()=>({scrollToIndex:input=>window.scrollTarget=input,scrollToOffset:()=>{}}));return <div>{data.map((item,index)=><div key={keyExtractor(item,index)}>{renderItem({item})}</div>)}</div>});`,
+      contents: `import {forwardRef,useImperativeHandle} from 'react';export const View=({children,style})=><div style={style}>{children}</div>;export const ScrollView=View;export const Pressable=({children,accessibilityLabel,onPress,disabled,style})=><button style={style} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Switch=({value,onValueChange})=><input type="checkbox" checked={value} onChange={e=>onValueChange(e.target.checked)}/>;export const Platform={OS:'ios'};export const useWindowDimensions=()=>({width:360,fontScale:window.diffFontScale??1});export const FlatList=forwardRef(({data,renderItem,keyExtractor,style},ref)=>{window.diffListWidth=style.width;useImperativeHandle(ref,()=>({scrollToIndex:input=>window.scrollTarget=input,scrollToOffset:()=>{}}));return <div>{data.map((item,index)=><div key={keyExtractor(item,index)}>{renderItem({item})}</div>)}</div>});`,
     },
     {
       path: '../../ui/content/text',
       importer: mobile,
       contents: `export const Text=({children,style})=><span style={{...style,...(typeof style?.lineHeight === "number" ? {lineHeight:style.lineHeight+"px"}: {})}}>{children}</span>;`,
+    },
+    {
+      path: '../../runtime/preferences/app-preferences',
+      importer: mobile,
+      contents: 'export const carZoom=1.3;export const useCarMode=()=>false;',
     },
     {
       path: '../../ui/theme',
@@ -60,6 +65,18 @@ try {
       await keyword.evaluate((element) => getComputedStyle(element).color),
       'rgb(0, 92, 197)',
     )
+  const originalWidth = await page.evaluate(() => window.diffListWidth)
+  await page.evaluate(() => {
+    window.diffFontScale = 2
+    window.renderDiff()
+  })
+  await page.waitForFunction((width) => window.diffListWidth === width * 2, originalWidth)
+  assert.equal(
+    await keywords
+      .first()
+      .evaluate((element) => getComputedStyle(element.parentElement).fontFamily),
+    'Menlo',
+  )
   await page.getByRole('checkbox').check()
   assert.equal(await page.getByRole('checkbox').isChecked(), true)
   assert.equal(await page.getByText('Check persistence', { exact: true }).isVisible(), true)
@@ -143,9 +160,46 @@ try {
       await keyword.evaluate((element) => getComputedStyle(element).color),
       'rgb(192, 45, 105)',
     )
+  // App and code appearance can be selected independently. Gutter labels belong to code.
+  for (const [appDark, background, gutter] of [
+    [true, '#fefdfa', '#777777'],
+    [false, '#16181c', '#bbbbbb'],
+  ]) {
+    await page.evaluate(
+      ({ appDark, background, gutter }) => {
+        window.diffDark = appDark
+        window.customCode.colors.background = background
+        window.customCode.colors.gutter = gutter
+        window.renderNativeDiff()
+      },
+      { appDark, background, gutter },
+    )
+    const expected = appDark ? 'rgb(119, 119, 119)' : 'rgb(187, 187, 187)'
+    const lineNumbers = page.getByRole('button', { name: /Comment on (old|new) line 1/ })
+    await page.waitForFunction(
+      (color) =>
+        [...document.querySelectorAll('button[aria-label^="Comment on"] span')].every(
+          (element) => getComputedStyle(element).color === color,
+        ),
+      expected,
+    )
+    assert.equal(await lineNumbers.count(), 2)
+    for (const line of await lineNumbers.all())
+      assert.equal(
+        await line.locator('span').evaluate((element) => getComputedStyle(element).color),
+        expected,
+      )
+  }
+  // MobileAppearance supplies a code palette even for the default app theme.
+  await page.evaluate(() => {
+    window.customCode.custom = false
+    window.renderNativeDiff()
+  })
+  assert.equal(await page.locator('[data-native-diff]').count(), 0)
+  assert.equal(await page.getByText('Wrap lines', { exact: true }).isVisible(), true)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile review diff: old/new syntax in both themes, wrapping, line comments, anchored annotations and finding navigation, iOS language fences and cross-language renames passed',
+    'Mobile review diff: syntax, independent app/code gutter themes, font scaling, wrapping, line comments, annotations, iOS language fences and cross-language renames passed',
   )
 } finally {
   await browser.close()

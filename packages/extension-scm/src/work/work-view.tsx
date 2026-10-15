@@ -113,7 +113,7 @@ function WorkView({
     mode,
     query,
     sourceKind,
-    isJira ? project : '',
+    project,
     isJira ? state : 'all',
     isJira ? jiraFilters : undefined,
   )
@@ -400,11 +400,11 @@ function WorkView({
               size="sm"
               variant="outline"
               aria-label="Refresh"
-              disabled={busy || !visibleSources.some((source) => source.connected)}
+              disabled={busy || !visiblePages.some((page) => page.reader.connected)}
               onClick={refresh}
             >
               <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
-              <span className={isJira ? 'sr-only sm:not-sr-only' : undefined}>Refresh</span>
+              <span className="sr-only sm:not-sr-only">Refresh</span>
             </Button>
             {mode === 'issues' && (
               <Button
@@ -415,7 +415,7 @@ function WorkView({
                 onClick={() => void chooseSource('settings')}
               >
                 <SlidersHorizontal className="size-3.5" />
-                <span className={isJira ? 'sr-only sm:not-sr-only' : undefined}>Sources</span>
+                <span className="sr-only sm:not-sr-only">Sources</span>
               </Button>
             )}
             <Button
@@ -685,7 +685,7 @@ function WorkView({
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={busy || !page.source.connected}
+                      disabled={busy || !page.reader.connected}
                       onClick={refresh}
                     >
                       Retry
@@ -866,7 +866,7 @@ function WorkView({
                   className="mt-2"
                   variant="outline"
                   size="sm"
-                  disabled={busy || !page.source.connected}
+                  disabled={busy || !page.reader.connected}
                   onClick={() => void more(page.source.key)}
                 >
                   Load more · {page.source.name} · {page.source.runtimeName}

@@ -1,9 +1,5 @@
 import type { Task } from '../../workspace.js'
 
-/** Added to the latest plan-mode message in the agent's prompt. The agent is asked, not forced:
- * access settings still decide what it may do. */
-export const PLAN_MODE_INSTRUCTION =
-  'Plan mode: explore the code and reply with a clear, numbered plan for this request. Do not edit files, commit, or run commands that change anything until I approve the plan.'
 export const IMPLEMENT_PLAN_PROMPT = 'The plan looks good. Implement it now.'
 
 /** The agent answered a plan-mode request and is waiting for approval. */

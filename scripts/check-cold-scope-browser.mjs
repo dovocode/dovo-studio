@@ -3,11 +3,11 @@ import { createServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { WebSocketServer } from 'ws'
-import { chromium } from '../../../../scripts/browser/harness.mjs'
+import { chromium } from './browser/harness.mjs'
 
 // Real local HTTP and WebSocket boundaries exercise the cold scope and route resolver
 // together. These fixtures never start a Dovo runtime or contact a provider.
-const root = fileURLToPath(new URL('../../../../', import.meta.url)).replace(/\/$/, '')
+const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const runtimeId = 'scope-cold-paired-runtime'
 const token = 'scope-cold-paired-device-token'
 const requests = []

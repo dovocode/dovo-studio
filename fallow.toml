@@ -1,15 +1,28 @@
 entry = [
   "packages/*/src/index.ts",
   "packages/**/*.test.ts",
-  "apps/*/src/**/*.{ts,tsx}",
+  "apps/**/*.test.{ts,tsx}",
+  # Actual process and framework roots; app modules are reached through their imports.
+  "apps/api/src/{index,cli,server-cli,dev}.ts",
+  "apps/desktop/src/main.tsx",
+  "apps/web/src/{client,router}.tsx",
+  "apps/web/src/routes/**/*.{ts,tsx}",
+  "apps/site/src/app/**/{page,layout,not-found,error,loading,route,sitemap,robots}.{ts,tsx}",
+  "apps/mobile/src/app/**/*.{ts,tsx}",
+  # Metro selects these iOS implementations instead of their unsuffixed counterparts.
+  "apps/mobile/src/**/*.ios.tsx",
   "apps/mobile/index.ts",
-  "apps/desktop/electron/**/*.ts",
+  "apps/desktop/electron/{main,preload}.ts",
   # Expo config plugins are referenced by path from app.config.ts, not imported.
   "apps/mobile/plugins/*.ts",
   # Composite GitHub Actions run this directly (.github/actions/setup-build).
   "scripts/ci/*.mjs",
   # Documented brand tooling (assets/brand/README.md).
   "scripts/generate-app-icons.mjs",
+  # Documented/child-process tools are executable roots, rather than importable APIs.
+  "scripts/capture-site-screenshots.mjs",
+  "scripts/generate-project-icon-choices.mjs",
+  "scripts/retry-browser.mjs",
   # scripts/build-mcp-apps.mjs bundles these into the MCP app host and sandbox documents.
   "packages/studio-ui/mcp-apps/host.tsx",
   "packages/studio-ui/mcp-apps/sandbox.ts",
@@ -44,6 +57,13 @@ ignoreDependencies = [
   "expo-clipboard",
   # expo-router's native tabs require this SDK-compatible autolinked peer.
   "expo-symbols",
+  # Runtime PDF assets use import.meta.resolve (including the worker filename).
+  "pdfjs-dist",
+  # Review parsers select a WASM filename dynamically via require.resolve.
+  "tree-sitter-wasms",
+  # Theme catalog fixture uses createRequire(studio-core/package.json), where fflate
+  # is declared; the script intentionally does not need a root dependency.
+  "fflate",
 ]
 
 [[framework]]
@@ -73,6 +93,10 @@ usedExports = [
     "default",
   ] },
   { pattern = "packages/extension-scm/src/connections/forge-settings.tsx", exports = [
+    "default",
+  ] },
+  # Native ExtensionHost contributions read these dynamically loaded module.default exports.
+  { pattern = "apps/mobile/src/screens/{tasks,artifacts,issues,pulls,repositories,settings}.tsx", exports = [
     "default",
   ] },
   # jira-view.tsx and pipelines-view.tsx re-export these as their lazy default exports.

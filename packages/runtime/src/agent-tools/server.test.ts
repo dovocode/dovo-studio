@@ -176,7 +176,11 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
       arguments: { id: 'ios:test', action: 'screenshot' },
     })
     expect(screenshot.content).toEqual([{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }])
-    expect(action).toHaveBeenCalledWith({ taskId: 'task', id: 'ios:test', action: 'screenshot' })
+    expect(action).toHaveBeenCalledWith(
+      { taskId: 'task', id: 'ios:test', action: 'screenshot' },
+      undefined,
+      expect.any(Function),
+    )
     const created = await client.callTool({
       name: 'artifact_create',
       arguments: {
@@ -802,91 +806,96 @@ it('does not advertise the PR watcher in read-only harnesses, even with the flag
   }
 })
 
-it('launches and receives a cross-harness child through the real task MCP server', async () => {
-  const f = await fixture()
-  const token = 'task-tools-owner-token-at-least-thirty-two-characters'
-  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
-  try {
-    const s = runtime.services
-    s.store.update(() => f.workspace)
-    vi.spyOn(s.agents, 'get').mockResolvedValue({
-      probe: vi.fn<AgentAdapter['probe']>(),
-      run: async (run) => {
-        if (run.agent.provider === 'claude') {
-          run.onText('Answer from Claude')
-          return
-        }
-        if (!run.taskId) throw new Error('Expected a parent task')
-        const configuration = taskToolsServer(
-          run.taskId,
-          runtime.port,
-          token,
-          '127.0.0.1',
-          false,
-          false,
-          s.store.task(run.taskId).activeRunId,
-        )
-        const client = new Client({ name: 'parent-tools-test', version: '1.0.0' })
-        const transport = new StdioClientTransport({
-          command: configuration.command,
-          args: configuration.args,
-          env: { ...configuration.envValues },
-          stderr: 'ignore',
-        })
-        try {
-          await client.connect(transport)
-          const spawned = await client.callTool({
-            name: 'subagent_spawn',
-            arguments: {
-              key: 'review',
-              name: 'Review',
-              prompt: 'Review current files',
-              provider: 'claude',
-              taskId: 'forged-parent',
-              parentRunId: 'forged-attempt',
-            },
-          })
-          const { id } = decode(
-            mutableStruct({ id: Schema.String }),
-            JSON.parse(decodeToolText(spawned)),
+it.each(['ask', 'read-only'] as const)(
+  'launches and receives a cross-harness child through run-scoped MCP (%s)',
+  async (permission) => {
+    const f = await fixture()
+    const token = 'task-tools-owner-token-at-least-thirty-two-characters'
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    try {
+      const s = runtime.services
+      s.store.update(() => ({
+        ...f.workspace,
+        agents: f.workspace.agents.map((agent) => ({ ...agent, permission })),
+      }))
+      vi.spyOn(s.agents, 'get').mockResolvedValue({
+        probe: vi.fn<AgentAdapter['probe']>(),
+        run: async (run) => {
+          if (run.agent.provider === 'claude') {
+            run.onText('Answer from Claude')
+            return
+          }
+          if (!run.taskId) throw new Error('Expected a parent task')
+          const configuration = run.agent.resources?.mcpServers.find(
+            (server) => server.name === 'dovo_task',
           )
-          expect(s.store.task(id).delegation?.parentTaskId).toBe(run.taskId)
-          const waited = await client.callTool({
-            name: 'subagent_wait',
-            arguments: { id, timeoutMs: 20000 },
+          if (!configuration) throw new Error('Expected the run-scoped task tools')
+          expect(configuration.envValues?.DOVO_TASK_TOKEN).toBeUndefined()
+          expect(configuration.envValues?.DOVO_TASK_CREDENTIAL_FILE).toBeTruthy()
+          const client = new Client({ name: 'parent-tools-test', version: '1.0.0' })
+          const transport = new StdioClientTransport({
+            command: configuration.command,
+            args: configuration.args,
+            env: { ...configuration.envValues },
+            stderr: 'ignore',
           })
-          expect(JSON.parse(decodeToolText(waited))).toMatchObject({
-            id,
-            running: false,
-            status: 'review',
-            result: 'Answer from Claude',
-          })
-          const list = await client.callTool({ name: 'subagent_list', arguments: {} })
-          expect(JSON.parse(decodeToolText(list))).toMatchObject({
-            agents: [{ id, status: 'review' }],
-          })
-          run.onText('Received the child answer')
-        } finally {
-          await client.close()
-          await transport.close()
-        }
-      },
-    })
-    const parent = s.tasks.create({
-      title: 'Parent',
-      repositoryId: 'repo',
-      agentId: 'agent',
-      objective: 'Delegate review',
-    })
-    await (
-      await s.tasks.start(parent.id)
-    ).done
-    expect(s.store.task(parent.id).status).toBe('review')
-  } finally {
-    await runtime.close()
-    await f.cleanup()
-  }
-}, 30000)
+          try {
+            await client.connect(transport)
+            const spawned = await client.callTool({
+              name: 'subagent_spawn',
+              arguments: {
+                key: 'review',
+                name: 'Review',
+                prompt: 'Review current files',
+                provider: 'claude',
+                taskId: 'forged-parent',
+                parentRunId: 'forged-attempt',
+              },
+            })
+            const { id } = decode(
+              mutableStruct({ id: Schema.String }),
+              JSON.parse(decodeToolText(spawned)),
+            )
+            expect(s.store.task(id).delegation?.parentTaskId).toBe(run.taskId)
+            expect(s.store.task(id).harness?.permission).toBe(permission)
+            const waited = await client.callTool({
+              name: 'subagent_wait',
+              arguments: { id, timeoutMs: 20000 },
+            })
+            expect(JSON.parse(decodeToolText(waited))).toMatchObject({
+              id,
+              running: false,
+              status: 'review',
+              result: 'Answer from Claude',
+            })
+            const list = await client.callTool({ name: 'subagent_list', arguments: {} })
+            expect(JSON.parse(decodeToolText(list))).toMatchObject({
+              agents: [{ id, status: 'review' }],
+            })
+            run.onText('Received the child answer')
+          } finally {
+            await client.close()
+            await transport.close()
+          }
+        },
+      })
+      const parent = s.tasks.create({
+        title: 'Parent',
+        repositoryId: 'repo',
+        agentId: 'agent',
+        objective: 'Delegate review',
+      })
+      await (
+        await s.tasks.start(parent.id)
+      ).done
+      expect(s.store.task(parent.id).status).toBe('review')
+    } finally {
+      await runtime.close()
+      await f.cleanup()
+    }
+  },
+  30000,
+)
 
 it('isolates agent commands from the user shell and closes only terminals opened by that tool session', async () => {
   const f = await fixture()

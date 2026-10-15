@@ -115,8 +115,17 @@ export function PullDetail({
   const body = useRef<ScrollView>(null)
   const content = useRef<View>(null)
   const navigateAfterSheet = useSheetNavigation()
-  const { detail, error, setError, busy, refreshing, refresh, invalidate, acceptCurrentAccount } =
-    usePullDetail(repositoryId, number, account)
+  const {
+    detail,
+    error,
+    setError,
+    busy,
+    refreshing,
+    refresh,
+    invalidate,
+    acceptCurrentAccount,
+    readConnected,
+  } = usePullDetail(repositoryId, number, account)
   const onPosted = () => {
     invalidate()
     invalidatePullList(readCache, repositoryId)
@@ -243,7 +252,7 @@ export function PullDetail({
               }
               onStartTask={taskCreation.start}
               prBranchAvailable={!!detail.pull.headCloneUrl}
-              refreshDisabled={!connected || refreshing}
+              refreshDisabled={!readConnected || refreshing}
               taskDisabled={!repository || !connected || taskCreation.busy}
               actions={actions?.secondary ?? []}
               onAction={openAction}
@@ -253,7 +262,7 @@ export function PullDetail({
             <Action
               secondary
               label="Refresh details"
-              disabled={!connected || busy}
+              disabled={!readConnected || busy}
               onPress={refresh}
             />
           )
@@ -282,7 +291,7 @@ export function PullDetail({
       )}
       {!detail && (
         <Text style={[styles.muted, styles.content]}>
-          {error || (connected ? 'Loading PR details…' : 'Connect to the runtime.')}
+          {error || (readConnected ? 'Loading PR details…' : 'Connect to the runtime.')}
         </Text>
       )}
       {detail && (
@@ -322,7 +331,7 @@ export function PullDetail({
             testID="PR detail content"
             contentContainerStyle={styles.content}
             refreshControl={
-              connected ? (
+              readConnected ? (
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={refresh}
@@ -345,11 +354,13 @@ export function PullDetail({
               )}
               {(detail.stale || detail.refreshError || !connected) && (
                 <Text style={styles.muted}>
-                  {!connected
-                    ? 'Offline · showing last loaded details.'
-                    : detail.refreshError
-                      ? `Refresh failed: ${detail.refreshError}`
-                      : 'Showing cached details · refreshing.'}
+                  {!connected && readConnected
+                    ? 'Reading from another runtime · actions require the original runtime.'
+                    : !connected
+                      ? 'Offline · showing last loaded details.'
+                      : detail.refreshError
+                        ? `Refresh failed: ${detail.refreshError}`
+                        : 'Showing cached details · refreshing.'}
                   {detail.cachedAt ? ` Last fetched ${formatTime(new Date(detail.cachedAt))}.` : ''}
                 </Text>
               )}

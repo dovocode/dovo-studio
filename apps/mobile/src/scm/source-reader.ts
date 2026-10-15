@@ -33,15 +33,25 @@ export function verifiedSourceRead(
   read: Runtime['readEffect'],
   key: string,
   input: SourceInput,
+  expectedReaderIdentity?: string,
 ): Runtime['readEffect'] {
   return (path, body, schema, method) =>
     Effect.gen(function* () {
       const identity = yield* discoverReader(read, key, input)
+      if (expectedReaderIdentity && identity?.readerIdentity !== expectedReaderIdentity)
+        return yield* Effect.fail(
+          new Error('The original account is unavailable. Connect its runtime to continue.'),
+        )
       return yield* read(
         path,
         {
           ...(typeof body === 'object' && body !== null ? body : {}),
-          ...(identity ? { expectedReaderIdentity: identity.readerIdentity } : {}),
+          ...(identity
+            ? {
+                expectedReaderIdentity: identity.readerIdentity,
+                expectedDestination: identity.destination,
+              }
+            : {}),
         },
         schema,
         method,

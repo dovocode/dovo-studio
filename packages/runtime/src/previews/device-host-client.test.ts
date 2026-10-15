@@ -271,3 +271,172 @@ it.each([
     }
   },
 )
+
+it.each(['abort', 'revoke'] as const)(
+  'does not dispatch HTTP after %s during tunnel acquisition and releases the lease',
+  async (mode) => {
+    let resolveTunnel!: (value: Awaited<ReturnType<typeof ssh.open>>) => void
+    const tunnel = new Promise<Awaited<ReturnType<typeof ssh.open>>>((resolve) => {
+      resolveTunnel = resolve
+    })
+    ssh.open.mockReturnValue(tunnel)
+    const client = new DeviceHostClient()
+    const controller = new AbortController()
+    let revoked = false
+    const authorize = () => {
+      if (revoked) throw new Error('Credential revoked')
+    }
+    const pending = client.request(
+      host,
+      '/api/device-host/install',
+      {},
+      controller.signal,
+      authorize,
+    )
+    const failure = pending.catch((error: unknown) => error)
+    try {
+      expect(ssh.open).toHaveBeenCalledOnce()
+      if (mode === 'abort') controller.abort()
+      else revoked = true
+      resolveTunnel({ child: new ChildProcess(), port: 1234, address: 'http://127.0.0.1:1234' })
+      expect(await failure).toMatchObject({
+        message: expect.stringContaining(mode === 'abort' ? 'aborted' : 'revoked'),
+      })
+      expect(http.requests).toHaveLength(0)
+      ssh.open.mockResolvedValue({
+        child: new ChildProcess(),
+        port: 1235,
+        address: 'http://127.0.0.1:1235',
+      })
+      const lease = await client.acquire({ ...host, token: 'replacement' })
+      lease.release()
+    } finally {
+      await client.dispose()
+    }
+  },
+)
+
+it.each(['abort', 'revoke'] as const)(
+  'does not send simulator input after %s during SSH reconnection',
+  async (mode) => {
+    const child = new ChildProcess()
+    ssh.open.mockResolvedValue({ child, port: 1234, address: 'http://127.0.0.1:1234' })
+    const client = new DeviceHostClient()
+    let resolveTunnel!: (value: Awaited<ReturnType<typeof ssh.open>>) => void
+    try {
+      const driver = await client.driver(host, 'task', {
+        id: 'ios:device',
+        name: 'iPhone',
+        platform: 'ios',
+        runtime: 'iOS',
+        state: 'booted',
+      })
+      child.emit('exit', 1)
+      ssh.open.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveTunnel = resolve
+          }),
+      )
+      const controller = new AbortController()
+      let revoked = false
+      const pending = driver
+        .input(
+          { type: 'text', text: 'forbidden' },
+          () => {
+            if (revoked) throw new Error('Credential revoked')
+          },
+          controller.signal,
+        )
+        .catch((error: unknown) => error)
+      expect(ssh.open).toHaveBeenCalledTimes(2)
+      if (mode === 'abort') controller.abort()
+      else revoked = true
+      resolveTunnel({ child: new ChildProcess(), port: 1235, address: 'http://127.0.0.1:1235' })
+      expect(await pending).toMatchObject({ message: expect.stringMatching(/aborted|revoked/) })
+      expect(http.requests.map((request) => request.path)).toEqual(['/api/device-host/open'])
+      await driver.close()
+    } finally {
+      await client.dispose()
+    }
+  },
+)
+
+it.each(['abort', 'revoke'] as const)(
+  'does not open a remote simulator after %s during SSH acquisition',
+  async (mode) => {
+    let resolveTunnel!: (value: Awaited<ReturnType<typeof ssh.open>>) => void
+    ssh.open.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveTunnel = resolve
+        }),
+    )
+    const client = new DeviceHostClient()
+    const controller = new AbortController()
+    let revoked = false
+    const pending = client
+      .driver(
+        host,
+        'task',
+        {
+          id: 'ios:device',
+          name: 'iPhone',
+          platform: 'ios',
+          runtime: 'iOS',
+          state: 'booted',
+        },
+        () => {
+          if (revoked) throw new Error('Credential revoked')
+        },
+        controller.signal,
+      )
+      .catch((error: unknown) => error)
+    try {
+      expect(ssh.open).toHaveBeenCalledOnce()
+      if (mode === 'abort') controller.abort()
+      else revoked = true
+      resolveTunnel({ child: new ChildProcess(), port: 1234, address: 'http://127.0.0.1:1234' })
+      expect(await pending).toMatchObject({ message: expect.stringMatching(/aborted|revoked/) })
+      expect(http.requests).toHaveLength(0)
+    } finally {
+      await client.dispose()
+    }
+  },
+)
+
+it('does not reopen a remote simulator after its viewer stops during SSH reconnection', async () => {
+  const child = new ChildProcess()
+  ssh.open.mockResolvedValue({ child, port: 1234, address: 'http://127.0.0.1:1234' })
+  const client = new DeviceHostClient()
+  try {
+    const driver = await client.driver(host, 'task', {
+      id: 'ios:device',
+      name: 'iPhone',
+      platform: 'ios',
+      runtime: 'iOS',
+      state: 'booted',
+    })
+    child.emit('exit', 1)
+    let resolveTunnel!: (value: Awaited<ReturnType<typeof ssh.open>>) => void
+    ssh.open.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveTunnel = resolve
+        }),
+    )
+    const errors = vi.fn<(error: Error) => void>()
+    const detach = driver.start(vi.fn<Parameters<typeof driver.start>[0]>(), errors)
+    expect(ssh.open).toHaveBeenCalledTimes(2)
+    detach()
+    resolveTunnel({ child: new ChildProcess(), port: 1235, address: 'http://127.0.0.1:1235' })
+    // Drain acquisition and attachment continuations before inspecting outbound HTTP.
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(http.requests.map((request) => request.path)).toEqual(['/api/device-host/open'])
+    expect(sockets).toHaveLength(0)
+    expect(errors).not.toHaveBeenCalled()
+    await driver.close()
+  } finally {
+    await client.dispose()
+  }
+})

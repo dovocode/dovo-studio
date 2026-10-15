@@ -457,9 +457,6 @@ export class RuntimeMutations {
       }
     })
   }
-  acknowledgeWorkspaceEffect(connection: RuntimeConnection, id: string) {
-    return this.acknowledge(connection, this.state(connection), id)
-  }
   private send(connection: RuntimeConnection, item: MutationOutbox[number]) {
     return item.path === '/api/workspace' && item.method === 'PATCH'
       ? this.workspaceEffect(connection, item.input, item.id)

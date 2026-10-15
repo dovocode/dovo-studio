@@ -12,7 +12,7 @@ import {
 import { Icon, type IconName } from '../../../ui/controls/icon'
 import { useTheme, type MobileColors } from '../../../ui/theme'
 import { Markdown } from '../../../ui/content/markdown'
-export function pullSignalColor(signal: PullSignal, colors: MobileColors) {
+function pullSignalColor(signal: PullSignal, colors: MobileColors) {
   return signal.tone === 'danger'
     ? colors.error
     : signal.tone === 'positive'

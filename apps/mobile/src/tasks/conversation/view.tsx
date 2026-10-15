@@ -456,6 +456,8 @@ function Message() {
         <View
           style={{
             flexDirection: 'row',
+            flexWrap: 'wrap',
+            maxWidth: '100%',
             alignItems: 'center',
             gap: 2,
             paddingHorizontal: user ? 8 : 0,
@@ -476,7 +478,15 @@ const renderConversationMessage = ({ item }: { item: string }) => (
   <ThreadPrimitive.Unstable_MessageById messageId={item} components={messageComponents} />
 )
 const messageKey = (id: string) => id
-export function Conversation({ onBrowse, setup }: { onBrowse?: () => void; setup?: ReactNode }) {
+export function Conversation({
+  onBrowse,
+  setup,
+  children,
+}: {
+  onBrowse?: () => void
+  setup?: ReactNode
+  children?: ReactNode
+}) {
   const { colors, styles } = useTheme()
 
   const history = useConversationSelector((value) => value.history)
@@ -668,6 +678,9 @@ export function Conversation({ onBrowse, setup }: { onBrowse?: () => void; setup
             {!car && <TaskActivity task={task} events={legacyEvents} error={activityError} />}
             <TaskApprovals taskId={task.id} />
             {!!task.error && <Text style={styles.error}>{task.error}</Text>}
+            {/* The inverted list's header follows the latest message. Expanded task panels
+                share its scroll space, leaving the composer outside the scroll view. */}
+            {children && <View style={{ marginHorizontal: -20, gap: 6 }}>{children}</View>}
           </View>
         }
       />

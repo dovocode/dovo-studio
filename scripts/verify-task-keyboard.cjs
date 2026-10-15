@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -27,7 +28,7 @@ app.on('browser-window-created', (_event, window) => {
         qa.results = [];
         qa.check = (name, condition) => {qa.results.push({name,pass:!!condition}); if(!condition)throw new Error(name)};
         qa.key = (key,options={}) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options}));
-        await qa.wait(()=>document.body.innerText.includes('Workspace synced'));
+        await qa.wait(()=>(${workspaceReady.toString()})());
         await qa.wait(()=>qa.button('Create task'));qa.button('Create task').click();
         await qa.wait(()=>document.querySelector('textarea[aria-label="Message task"]'));
         qa.composer=document.querySelector('textarea[aria-label="Message task"]');

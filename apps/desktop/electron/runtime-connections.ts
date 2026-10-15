@@ -29,6 +29,7 @@ type Pool = {
   snapshot?: RuntimeSnapshot
   epoch: string
   sequence: number
+  streamVersion: number
   activities: Map<string, Extract<DesktopSyncEvent, { type: 'activity' }>>
   timer?: ReturnType<typeof setTimeout>
   request?: AbortController
@@ -85,6 +86,7 @@ export class RuntimeConnections {
         reachable: false,
         epoch: crypto.randomUUID(),
         sequence: 0,
+        streamVersion: 0,
       }
       this.pools.set(poolKey, pool)
     }
@@ -97,6 +99,8 @@ export class RuntimeConnections {
       const owner = pool
       pool.live = this.start(pool.connection, {
         onSnapshot: (snapshot) => {
+          if (owner.stopped) return
+          owner.streamVersion++
           owner.reachable = true
           this.publishSnapshot(owner, snapshot)
         },
@@ -220,30 +224,33 @@ export class RuntimeConnections {
     const controller = new AbortController()
     pool.request = controller
     const tasks = JSON.stringify([...pool.tasks.keys()].sort())
+    const streamVersion = pool.streamVersion
+    const superseded = () =>
+      pool.stopped ||
+      controller.signal.aborted ||
+      streamVersion !== pool.streamVersion ||
+      pool.live?.online()
     let failed = false
     void this.request(pool.connection, runtimeSnapshotPath(pool.connection), controller.signal)
       .then((snapshot) => {
-        if (
-          pool.stopped ||
-          tasks !== JSON.stringify([...pool.tasks.keys()].sort()) ||
-          pool.live?.online()
-        )
-          return
+        if (superseded() || tasks !== JSON.stringify([...pool.tasks.keys()].sort())) return
         pool.reachable = true
         this.publishSnapshot(pool, snapshot)
       })
       .catch(async (error: unknown) => {
+        if (superseded()) return
         failed = true
-        if (pool.stopped || controller.signal.aborted || pool.live?.online()) return
         pool.reachable = false
         if (this.recover) {
           try {
             const latest = await this.recover(pool.connection)
-            if (latest && !pool.stopped) {
+            if (superseded()) return
+            if (latest) {
               this.broadcast(pool, { type: 'connection', connection: latest })
               return
             }
           } catch (recoveryError) {
+            if (superseded()) return
             this.broadcast(pool, {
               type: 'error',
               message:
@@ -254,7 +261,7 @@ export class RuntimeConnections {
             return
           }
         }
-        if (!pool.stopped)
+        if (!superseded())
           this.broadcast(pool, {
             type: 'error',
             message: error instanceof Error ? error.message : 'Cannot reach this runtime.',

@@ -2,7 +2,7 @@ import { Schema } from 'effect'
 import { mutableStruct, minValue, maxValue } from '@dovo/protocol'
 
 const text = maxValue(minValue(Schema.String, 1), 16000)
-export const agentBrowserCommandSchema = Schema.Union([
+const agentBrowserCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('evaluate'), script: text }),
   mutableStruct({ action: Schema.Literal('navigate'), url: maxValue(text, 4096) }),
   mutableStruct({ action: Schema.Literals(['snapshot', 'back', 'forward', 'reload', 'close']) }),

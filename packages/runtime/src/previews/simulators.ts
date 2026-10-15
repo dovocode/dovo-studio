@@ -43,7 +43,12 @@ export type SimulatorProvider = {
     deviceId: string,
     foreignOwner?: string,
   ): Promise<{ devices: PreviewDevice[] }>
-  driver(taskId: string, device: PreviewDevice): Promise<NativeSimulator | undefined>
+  driver(
+    taskId: string,
+    device: PreviewDevice,
+    authorize?: () => void,
+    signal?: AbortSignal,
+  ): Promise<NativeSimulator | undefined>
 }
 export class SimulatorPreviews {
   constructor(private provider?: SimulatorProvider) {}
@@ -74,7 +79,11 @@ export class SimulatorPreviews {
     taskId: string,
     deviceId: string,
     foreignOwner?: string,
+    authorize?: () => void,
+    signal?: AbortSignal,
   ): Promise<{ id: string; device: PreviewDevice }> {
+    authorize?.()
+    signal?.throwIfAborted()
     this.provider?.authorize?.()
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
     const epoch = this.epoch
@@ -85,6 +94,8 @@ export class SimulatorPreviews {
     const hostId = /^remote:([^:]+):/.exec(deviceId)?.[1]
     const hostEpoch = hostId ? this.hostEpochs.get(hostId) : undefined
     const assertCurrent = () => {
+      authorize?.()
+      signal?.throwIfAborted()
       this.provider?.authorize?.()
       if (
         this.disposed ||
@@ -104,7 +115,7 @@ export class SimulatorPreviews {
     if (existing?.[1].closing) {
       await existing[1].closing
       assertCurrent()
-      return this.open(taskId, deviceId, foreignOwner)
+      return this.open(taskId, deviceId, foreignOwner, authorize, signal)
     }
     if (existing) {
       const session = await existing[1].pending
@@ -146,7 +157,7 @@ export class SimulatorPreviews {
     if (concurrent?.[1].closing) {
       await concurrent[1].closing
       assertCurrent()
-      return this.open(taskId, deviceId, foreignOwner)
+      return this.open(taskId, deviceId, foreignOwner, authorize, signal)
     }
     if (concurrent) {
       const session = await concurrent[1].pending
@@ -157,22 +168,27 @@ export class SimulatorPreviews {
     if (this.sessions.size >= 4)
       throw new HttpError(409, 'Close an unused simulator preview first (maximum 4)')
     const id = randomUUID()
-    const pending = (async (): Promise<Session> => ({
-      device,
-      driver:
-        (await this.provider?.driver(taskId, device)) ??
-        (await (device.kind === 'physical'
+    const pending = (async (): Promise<Session> => {
+      let driver = await this.provider?.driver(taskId, device, assertCurrent, signal)
+      if (!driver) {
+        assertCurrent()
+        driver = await (device.kind === 'physical'
           ? device.platform === 'ios'
-            ? physicalDevice(device)
-            : physicalAndroid(device)
+            ? physicalDevice(device, assertCurrent, signal)
+            : physicalAndroid(device, assertCurrent, signal)
           : device.platform === 'ios'
-            ? iosSimulator(device)
-            : androidSimulator(device))),
-      listeners: new Set(),
-      closed: false,
-      queue: Promise.resolve(),
-      queued: 0,
-    }))()
+            ? iosSimulator(device, assertCurrent, signal)
+            : androidSimulator(device, assertCurrent, signal))
+      }
+      return {
+        device,
+        driver,
+        listeners: new Set(),
+        closed: false,
+        queue: Promise.resolve(),
+        queued: 0,
+      }
+    })()
     this.sessions.set(id, { taskId, deviceId, foreignOwner, pending })
     try {
       const session = await pending
@@ -251,7 +267,7 @@ export class SimulatorPreviews {
       }
     }
   }
-  async input(id: string, input: RemoteBrowserInput, authorize: () => void) {
+  async input(id: string, input: RemoteBrowserInput, authorize: () => void, signal?: AbortSignal) {
     this.provider?.authorize?.()
     const session = await this.get(id).pending
     if (session.closed) throw new HttpError(404, 'Simulator preview closed')
@@ -301,7 +317,8 @@ export class SimulatorPreviews {
       this.provider?.authorize?.()
       authorize()
       if (session.closed) throw new HttpError(404, 'Simulator preview closed')
-      await session.driver.input(command.input)
+      signal?.throwIfAborted()
+      await session.driver.input(command.input, authorize, signal)
     })
     command.promise = operation
     session.queue = operation

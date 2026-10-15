@@ -12,7 +12,12 @@ import { once } from 'node:events'
 import { Dicer } from '@fastify/busboy'
 import { Schema } from 'effect'
 import type { PreviewDevice } from '@dovo/protocol'
-import { asciiKey, specialKeys, type NativeSimulator } from './simulator-native.js'
+import {
+  asciiKey,
+  specialKeys,
+  nativePreparation,
+  type NativeSimulator,
+} from './simulator-native.js'
 import type { BrowserFrame } from './browser.js'
 import { HttpError } from '../errors.js'
 // sharp is a native image library that is only needed once a frame is decoded. Loading it
@@ -24,7 +29,8 @@ async function loadSharp() {
 }
 const exec = promisify(execFile)
 let building: Promise<string> | undefined
-async function helper() {
+async function helper(check: () => void, signal?: AbortSignal) {
+  check()
   if (process.env.DOVO_IOS_DEVICE_HELPER) return process.env.DOVO_IOS_DEVICE_HELPER
   building ??= (async () => {
     let source = fileURLToPath(new URL('./ios-device/', import.meta.url))
@@ -34,9 +40,12 @@ async function helper() {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
       source = fileURLToPath(new URL('../../native/ios-device/', import.meta.url))
     }
+    check()
     const hash = createHash('sha256')
-    for (const file of ['Cargo.toml', 'Cargo.lock', 'src/main.rs', 'src/media.rs'])
+    for (const file of ['Cargo.toml', 'Cargo.lock', 'src/main.rs', 'src/media.rs']) {
       hash.update(await readFile(join(source, file)))
+      check()
+    }
     const target = join(
       process.env.DOVO_DATA_ROOT ?? join(homedir(), '.dovo'),
       'helpers',
@@ -50,9 +59,11 @@ async function helper() {
     } catch (error) {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
     }
+    check()
     await mkdir(target, {
       recursive: true,
     })
+    check()
     await exec(
       'cargo',
       [
@@ -65,6 +76,7 @@ async function helper() {
         target,
       ],
       {
+        signal,
         timeout: 180000,
         maxBuffer: 4 * 1024 * 1024,
       },
@@ -141,60 +153,74 @@ async function stop(child: ChildProcess) {
     clearTimeout(kill)
   }
 }
-export async function physicalDevice(device: PreviewDevice): Promise<NativeSimulator> {
+export async function physicalDevice(
+  device: PreviewDevice,
+  authorize?: () => void,
+  signal?: AbortSignal,
+): Promise<NativeSimulator> {
+  const preparation = nativePreparation(authorize, signal)
+  preparation.check()
   if (process.platform !== 'darwin' || device.platform !== 'ios')
     throw new HttpError(
       409,
       'Physical iPhone control requires a trusted iPhone or iPad with Developer Mode connected to this Mac.',
     )
-  const executable = await helper()
+  const executable = await helper(preparation.check, signal)
+  preparation.check()
   const child = spawn(executable, [device.runtime], {
     stdio: ['pipe', 'pipe', 'pipe'],
   })
-  const decoder = spawn(
-    process.env.DOVO_FFMPEG || 'ffmpeg',
-    [
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-probesize',
-      '32',
-      '-analyzeduration',
-      '0',
-      // Frame threading buffers future frames; use one decoder thread for live input.
-      '-flags',
-      'low_delay',
-      '-threads',
-      '1',
-      '-filter_threads',
-      '1',
-      '-f',
-      'hevc',
-      '-i',
-      'pipe:0',
-      '-an',
-      '-vf',
-      'scale=960:1600:force_original_aspect_ratio=decrease:force_divisible_by=2',
-      '-c:v',
-      'mjpeg',
-      '-q:v',
-      '5',
-      '-threads',
-      '1',
-      '-fps_mode',
-      'passthrough',
-      '-flush_packets',
-      '1',
-      '-f',
-      'mpjpeg',
-      '-boundary_tag',
-      'dovo-frame',
-      'pipe:1',
-    ],
-    {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    },
-  )
+  let decoder: ChildProcess
+  try {
+    preparation.check()
+    decoder = spawn(
+      process.env.DOVO_FFMPEG || 'ffmpeg',
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-probesize',
+        '32',
+        '-analyzeduration',
+        '0',
+        // Frame threading buffers future frames; use one decoder thread for live input.
+        '-flags',
+        'low_delay',
+        '-threads',
+        '1',
+        '-filter_threads',
+        '1',
+        '-f',
+        'hevc',
+        '-i',
+        'pipe:0',
+        '-an',
+        '-vf',
+        'scale=960:1600:force_original_aspect_ratio=decrease:force_divisible_by=2',
+        '-c:v',
+        'mjpeg',
+        '-q:v',
+        '5',
+        '-threads',
+        '1',
+        '-fps_mode',
+        'passthrough',
+        '-flush_packets',
+        '1',
+        '-f',
+        'mpjpeg',
+        '-boundary_tag',
+        'dovo-frame',
+        'pipe:1',
+      ],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    )
+  } catch (error) {
+    await stop(child)
+    throw error
+  }
   let closed = false,
     failure: Error | undefined,
     lastFrame: BrowserFrame | undefined
@@ -294,75 +320,81 @@ export async function physicalDevice(device: PreviewDevice): Promise<NativeSimul
     })
   })
   decoder.stdout?.pipe(parser)
+  let startupTimer: ReturnType<typeof setTimeout> | undefined
   try {
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () =>
-          reject(
-            new Error(
-              nativeReady
-                ? 'The phone connected but did not send a screen frame. Wake and unlock it, then reconnect.'
-                : `Physical device did not become ready. Connect and unlock the phone, trust this Mac, and enable Developer Mode. ${nativeDiagnostics}`.trim(),
-            ),
-          ),
-        20000,
-      )
-      completeStartup = () => {
-        if (nativeReady && lastFrame) {
-          clearTimeout(timer)
-          resolve()
-        }
-      }
-      errorListener = (error) => {
-        clearTimeout(timer)
-        reject(error)
-      }
-      lines.on('line', (line) => {
-        if (!line.startsWith('{')) {
-          nativeDiagnostics = (nativeDiagnostics + line + '\n').slice(-2000)
-          return
-        }
-        let value: unknown
-        try {
-          value = JSON.parse(line)
-        } catch {
-          report(new Error('Invalid native device response'))
-          return
-        }
-        const parsed = decodeResult(eventSchema, value)
-        if (!parsed.success) {
-          report(new Error('Invalid native device response'))
-          return
-        }
-        const event = parsed.data
-        if (event.type === 'error') report(new Error(event.message))
-        else if (event.type === 'ready') {
-          if (event.device !== device.runtime) {
-            report(new Error('Physical device identity changed'))
-            return
+    await preparation.wait(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          const timer = (startupTimer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  nativeReady
+                    ? 'The phone connected but did not send a screen frame. Wake and unlock it, then reconnect.'
+                    : `Physical device did not become ready. Connect and unlock the phone, trust this Mac, and enable Developer Mode. ${nativeDiagnostics}`.trim(),
+                ),
+              ),
+            20000,
+          ))
+          completeStartup = () => {
+            if (nativeReady && lastFrame) {
+              clearTimeout(timer)
+              resolve()
+            }
           }
-          nativeReady = true
-          completeStartup()
-        } else {
-          const operation = pending.get(event.id)
-          if (operation) {
-            pending.delete(event.id)
-            clearTimeout(operation.timer)
-            operation.resolve()
+          errorListener = (error) => {
+            clearTimeout(timer)
+            reject(error)
           }
-        }
-      })
-      if (failure) {
-        clearTimeout(timer)
-        reject(failure)
-      }
-    })
+          lines.on('line', (line) => {
+            if (!line.startsWith('{')) {
+              nativeDiagnostics = (nativeDiagnostics + line + '\n').slice(-2000)
+              return
+            }
+            let value: unknown
+            try {
+              value = JSON.parse(line)
+            } catch {
+              report(new Error('Invalid native device response'))
+              return
+            }
+            const parsed = decodeResult(eventSchema, value)
+            if (!parsed.success) {
+              report(new Error('Invalid native device response'))
+              return
+            }
+            const event = parsed.data
+            if (event.type === 'error') report(new Error(event.message))
+            else if (event.type === 'ready') {
+              if (event.device !== device.runtime) {
+                report(new Error('Physical device identity changed'))
+                return
+              }
+              nativeReady = true
+              completeStartup()
+            } else {
+              const operation = pending.get(event.id)
+              if (operation) {
+                pending.delete(event.id)
+                clearTimeout(operation.timer)
+                operation.resolve()
+              }
+            }
+          })
+          if (failure) {
+            clearTimeout(timer)
+            reject(failure)
+          }
+        }),
+    )
   } catch (error) {
     closed = true
     await Promise.all([stop(child), stop(decoder)])
     lines.close()
     parser.destroy()
     throw error
+  } finally {
+    clearTimeout(startupTimer)
   }
   completeStartup = () => {}
   errorListener = undefined

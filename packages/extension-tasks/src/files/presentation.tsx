@@ -1,5 +1,4 @@
 import { parseDiffFromFile } from '@pierre/diffs'
-import { FileTypeIcon } from '@dovo/studio-ui'
 import type { ChangedFile } from '@dovo/studio-core'
 const statsCache = new WeakMap<
   ChangedFile,
@@ -31,9 +30,6 @@ export function fileStats(file: ChangedFile) {
   }
   statsCache.set(file, { path: file.path, before: file.before, after: file.after, stats })
   return stats
-}
-export function FileIcon({ path }: { path: string }) {
-  return <FileTypeIcon path={path} />
 }
 export function DiffAmounts({
   stats,

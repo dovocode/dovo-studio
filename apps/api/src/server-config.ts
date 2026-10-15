@@ -20,7 +20,7 @@ export function serverDirectory(value?: string) {
         : join(homedir(), '.dovo')),
   )
 }
-export function publicOrigin(value: string) {
+function publicOrigin(value: string) {
   const url = new URL(value)
   if (
     !['http:', 'https:'].includes(url.protocol) ||
@@ -36,7 +36,7 @@ export function publicOrigin(value: string) {
     )
   return url.origin
 }
-export function validateServerConfig(value: unknown, directory: string): ServerConfig {
+function validateServerConfig(value: unknown, directory: string): ServerConfig {
   if (
     !value ||
     typeof value !== 'object' ||

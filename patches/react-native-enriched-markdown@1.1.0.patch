@@ -156,3 +156,91 @@ index 7b25f715131795638f9997b3c466ffabb2e53c84..e5103d63372298f0cbe0e02b1a75de18
  
    if (type == ElementTypeImage) {
      element.accessibilityTraits =
+diff --git a/cpp/highlight/CodeBlockHighlighter.cpp b/cpp/highlight/CodeBlockHighlighter.cpp
+--- a/cpp/highlight/CodeBlockHighlighter.cpp
++++ b/cpp/highlight/CodeBlockHighlighter.cpp
+@@ -25,6 +25,7 @@
+ #include <cstring>
+ #include <memory>
+ #include <mutex>
++#include <regex>
+ #include <unordered_map>
+
+ namespace Markdown {
+@@ -119,6 +120,66 @@
+   return query;
+ }
+
++// The C query cursor returns structural matches; it does NOT evaluate #match?
++// or #eq?. Ignoring these makes TS's uppercase-only @type capture overwrite
++// every identifier (including function calls) in the inherited JS query.
++bool matchesPredicates(const TSQuery *query, const TSQueryMatch &match, const std::string &code) {
++  uint32_t count = 0;
++  const TSQueryPredicateStep *steps = ts_query_predicates_for_pattern(query, match.pattern_index, &count);
++  auto stringValue = [query](uint32_t id) {
++    uint32_t length = 0;
++    const char *value = ts_query_string_value_for_id(query, id, &length);
++    return std::string(value, length);
++  };
++  for (uint32_t start = 0; start < count;) {
++    uint32_t end = start;
++    while (end < count && steps[end].type != TSQueryPredicateStepTypeDone) ++end;
++    if (end == count || end == start || steps[start].type != TSQueryPredicateStepTypeString) return false;
++    const std::string operation = stringValue(steps[start].value_id);
++    // This renderer runs no locals query: identifiers have no local binding metadata.
++    // The builtin rules still have to satisfy their accompanying text predicate.
++    if (operation == "is-not?" && end - start == 2 &&
++        steps[start + 1].type == TSQueryPredicateStepTypeString &&
++        stringValue(steps[start + 1].value_id) == "local") {
++      start = end + 1;
++      continue;
++    }
++    // These are the text predicates used by the app's pinned grammar subset.
++    // Unsupported predicates must not become unconditional coloring rules.
++    if ((operation != "match?" && operation != "eq?") || end - start != 3 ||
++        steps[start + 1].type != TSQueryPredicateStepTypeCapture ||
++        steps[start + 2].type != TSQueryPredicateStepTypeString) return false;
++    const std::string expected = stringValue(steps[start + 2].value_id);
++    bool captured = false;
++    for (uint16_t i = 0; i < match.capture_count; ++i) {
++      const TSQueryCapture &capture = match.captures[i];
++      if (capture.index != steps[start + 1].value_id) continue;
++      captured = true;
++      const uint32_t from = ts_node_start_byte(capture.node);
++      const uint32_t to = ts_node_end_byte(capture.node);
++      if (to < from || to > code.size()) return false;
++      if (operation == "eq?") {
++        if (code.compare(from, to - from, expected) != 0) return false;
++      } else {
++        // Reuse the pinned query expressions instead of compiling per identifier.
++        static std::mutex mutex;
++        static std::unordered_map<std::string, std::regex> expressions;
++        std::lock_guard<std::mutex> lock(mutex);
++        try {
++          auto it = expressions.find(expected);
++          if (it == expressions.end()) it = expressions.emplace(expected, std::regex(expected)).first;
++          if (!std::regex_search(code.begin() + from, code.begin() + to, it->second)) return false;
++        } catch (const std::regex_error &) {
++          return false;
++        }
++      }
++    }
++    if (!captured) return false;
++    start = end + 1;
++  }
++  return true;
++}
++
+ // Precomputes, for every byte offset that starts a code point, the number of
+ // UTF-16 code units preceding it. Token boundaries always land on code-point
+ // boundaries, so mapping a byte offset is a single lookup. Astral code points
+@@ -230,6 +291,9 @@
+     TSQueryMatch match;
+     uint32_t captureIndex = 0;
+     while (ts_query_cursor_next_capture(cursor.get(), &match, &captureIndex)) {
++      if (!matchesPredicates(query, match, code)) {
++        continue;
++      }
+       const TSQueryCapture &capture = match.captures[captureIndex];
+       uint32_t nameLength = 0;
+       const char *name = ts_query_capture_name_for_id(query, capture.index, &nameLength);

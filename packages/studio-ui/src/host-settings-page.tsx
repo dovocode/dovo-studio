@@ -61,25 +61,32 @@ export function HostSettingsPage({
     <section className="flex min-h-0 flex-1 flex-col">
       <PageHeader title={title} description={description}>
         {source && (
-          <span className="text-[11px] text-muted-foreground">Saved on {source.name}</span>
-        )}
-        {sources.length > 1 && source && (
-          <ChoicePicker
-            aria-label="Computer"
-            className="h-8 min-w-48 rounded-md px-2 text-xs"
-            value={source.profile.id}
-            disabled={refreshing}
-            onValueChange={(value) => {
-              if (confirmNavigation()) setChosen(value)
-            }}
-          >
-            {sources.map((entry) => (
-              <option key={entry.profile.id} value={entry.profile.id}>
-                {entry.name}
-                {entry.connected ? '' : ' · Offline'}
-              </option>
-            ))}
-          </ChoicePicker>
+          <div className="flex w-80 min-w-0 max-w-full items-center gap-2">
+            <span
+              className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+              title={`Saved on ${source.name}`}
+            >
+              Saved on {source.name}
+            </span>
+            {sources.length > 1 && (
+              <ChoicePicker
+                aria-label="Computer"
+                className="h-8 w-48 min-w-0 max-w-[65%] rounded-md px-2 text-xs"
+                value={source.profile.id}
+                disabled={refreshing}
+                onValueChange={(value) => {
+                  if (confirmNavigation()) setChosen(value)
+                }}
+              >
+                {sources.map((entry) => (
+                  <option key={entry.profile.id} value={entry.profile.id}>
+                    {entry.name}
+                    {entry.connected ? '' : ' · Offline'}
+                  </option>
+                ))}
+              </ChoicePicker>
+            )}
+          </div>
         )}
       </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">

@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
-import { FlatList, ScrollView, Switch, View, Pressable, useWindowDimensions } from 'react-native'
+import {
+  FlatList,
+  ScrollView,
+  Switch,
+  View,
+  Pressable,
+  Platform,
+  useWindowDimensions,
+} from 'react-native'
 import { Text } from '../../ui/content/text'
 import { useTheme, type MobileColors } from '../../ui/theme'
 import type { ReviewDiffProps } from './diff-lines'
 import { highlightedDiffRows, type HighlightedDiffRow } from './diff-syntax'
+import { diffContentWidth } from './diff-layout'
+import { carZoom, useCarMode } from '../../runtime/preferences/app-preferences'
+
+const monospace = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
 
 function syntaxColor(kind: string | undefined, colors: MobileColors) {
   switch (kind) {
@@ -57,15 +69,22 @@ export function DiffView({
     : colors
   const addition = code?.colors.addition ?? colors.success
   const deletion = code?.colors.deletion ?? colors.error
-  const { width } = useWindowDimensions()
+  const { width, fontScale } = useWindowDimensions()
+  const car = useCarMode()
+  const textScale = fontScale * (car ? carZoom : 1)
   const [wrap, setWrap] = useState(false)
   const rows = useMemo(
     () => highlightedDiffRows(patch, path, previousPath),
     [patch, path, previousPath],
   )
   const contentWidth = useMemo(
-    () => rows.reduce((max, row) => Math.max(max, row.text.length * 8 + 92), width),
-    [rows, width],
+    () =>
+      diffContentWidth(
+        rows.map((row) => row.text),
+        width,
+        textScale,
+      ),
+    [rows, width, textScale],
   )
   const listRef = useRef<FlatList<HighlightedDiffRow>>(null)
   useEffect(() => {
@@ -107,10 +126,10 @@ export function DiffView({
         >
           <Text
             style={{
-              width: 68,
+              width: 68 * textScale,
 
-              color: colors.muted,
-              fontFamily: 'monospace',
+              color: codeColors.muted,
+              fontFamily: monospace,
               fontSize: 11,
               lineHeight: 22,
               textAlign: 'right',
@@ -125,7 +144,7 @@ export function DiffView({
           style={{
             flex: 1,
             color: item.kind === 'header' ? codeColors.muted : codeColors.text,
-            fontFamily: 'monospace',
+            fontFamily: monospace,
             fontSize: 13,
             lineHeight: 22,
           }}

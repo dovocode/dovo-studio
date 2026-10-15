@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 process.env.DOVO_PORT = '0'
 process.env.DOVO_HOST = '127.0.0.1'
@@ -23,7 +24,7 @@ app.on('browser-window-created', (_event, window) =>
       const wait=async check=>{for(let i=0;i<150;i++){if(await check())return;await new Promise(r=>setTimeout(r,100))}throw new Error('Timeout '+check.toString()+' '+document.body.innerText.slice(-1000))};
       const button=label=>[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')===label||b.innerText.trim()===label);
       const input=(label,value)=>{const el=[...document.querySelectorAll('input,textarea')].find(e=>e.getAttribute('aria-label')===label||e.closest('label')?.childNodes[0]?.textContent===label||e.id&&document.querySelector('label[for="'+e.id+'"]')?.innerText===label);if(!el)throw new Error('Missing input '+label);Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));};
-      await wait(()=>document.body.innerText.includes('Workspace synced'));
+      await wait(()=>(${workspaceReady.toString()})());
       const connection=await window.dovo.runtimeConnection();const call=async(url,body,method='POST')=>{const response=await fetch(connection.address+url,{method,headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const result=await response.json();if(!response.ok)throw new Error(JSON.stringify(result));return result};
       const snapshot=()=>call('/api/snapshot',null,'GET');
       for(const [collection,entity] of [['repositories',{id:'resource-repo',name:'Resource project',path:${JSON.stringify(data)},branch:'main'}],['agents',{id:'resource-agent',name:'Resource agent',provider:'codex',model:'',instructions:'',permission:'ask',endpoint:''}]])await call('/api/workspace',{collection,id:entity.id,create:entity,changes:{}},'PATCH');

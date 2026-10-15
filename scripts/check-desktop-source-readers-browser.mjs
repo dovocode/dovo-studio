@@ -5,14 +5,23 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const state = `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,set]=useState(initial);const ref=useRef(value);ref.current=value;return [value,next=>{ref.current=typeof next==='function'?next(ref.current):next;set(ref.current)},ref]}`
 const mocks = {
-  '@dovo/studio-core': `export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const useRepositorySources=()=>window.sources;export const useWorkspace=()=>window.store;export const formatDateTime=value=>String(value);`,
+  '@dovo/studio-core': `export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const useRepositorySources=()=>window.sources;import {createContext,useContext} from 'react';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)??window.store;export const useStudioHost=()=>({navigate:target=>window.navigation=target});export const repositorySourceKey=(id,repo)=>JSON.stringify([id,repo]);export const readAppPreferences=()=>({mergeMethod:'auto'});export const WorkspaceRuntimeScope=({runtimeId,children})=>{const source=window.sources.find(s=>s.runtimeId===runtimeId);return <Scope value={{...window.store,activeRuntimeId:runtimeId,connection:source.profile.connection,workspace:{repositories:[source.repository],tasks:[]},runtimeRegistry:{activeId:runtimeId},connected:source.connected,readCache:source.readCache,requestEffect:source.requestEffect,request:async(path,input)=>{window.writes.push({runtimeId,path,input});throw Error('Fixture write rejected')}}}><section data-owner={runtimeId}>{children}</section></Scope>};export const formatDateTime=value=>String(value);`,
   '@dovo/studio-core/state': state,
-  '@dovo/studio-ui': `export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const PageHeader=({title,leading,children})=><header><h1>{title}</h1>{leading}{children}</header>;export const Input=props=><input {...props}/>;export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Dialog=({children})=><div>{children}</div>;export const DialogContent=Dialog;export const DialogHeader=Dialog;export const DialogTitle=Dialog;export const DialogDescription=Dialog;export const MessageResponse=({children})=><div>{children}</div>;`,
-  './work-sources': `export {workRemoteKey} from '${root}packages/extension-scm/src/work/work-source-identity.ts';export const useIssueSources=()=>window.sources;`,
+  '@dovo/studio-ui': `export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as ContextMenu from '@radix-ui/react-context-menu';export const Badge=({children})=><span>{children}</span>;export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[false];export const useCompactLayout=()=>false;export const FormField=({children})=><label>{children}</label>;export const Checkbox=()=>null;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const PageHeader=({title,leading,children})=><header><h1>{title}</h1>{leading}{children}</header>;export const Input=props=><input {...props}/>;export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Dialog=({children})=><div>{children}</div>;export const DialogContent=Dialog;export const DialogHeader=Dialog;export const DialogTitle=Dialog;export const DialogDescription=Dialog;export const MessageResponse=({children})=><div>{children}</div>;`,
+  './row': `export const PullRow=({pull,onClick})=><button onClick={onClick}>Open {pull.title}</button>;`,
+  './create': `export const CreatePull=()=>null;`,
+  './add-to-thread': `export const AddPullsToThread=()=>null;`,
+  '../../connections/forge-connections': `export const ForgeConnections=()=>null;export const useForgeConnections=()=>({connections:[]});`,
+  '../detail/markdown-editor': `export const PullMarkdownEditor=({value,onChange,disabled})=><textarea aria-label="Comment draft" value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}/>;`,
+  '../detail/detail': `import {usePullDetail} from '${root}packages/extension-scm/src/pulls/detail/use-pull-detail.ts';import {PullActions,PullCommentComposer} from '${root}packages/extension-scm/src/pulls/list/actions.tsx';import {StartPullTask} from '${root}packages/extension-scm/src/pulls/list/start-task.tsx';export const PullDetail=({repositoryId,number})=>{const value=usePullDetail(repositoryId,number);window.rowDetail=value;return value.detail?<><PullActions repositoryId={repositoryId} detail={value.detail} onDone={()=>{}}/><PullCommentComposer repositoryId={repositoryId} detail={value.detail} onDone={()=>{}}/><StartPullTask repositoryId={repositoryId} pull={value.detail.pull}/></>:null;};`,
+  './work-sources': `export {workRemoteKey,matchesWorkSource} from '${root}packages/extension-scm/src/work/work-source-identity.ts';export const jiraSourceKey=(id,source)=>JSON.stringify([id,'jira',source]);export const useIssueSources=()=>window.sources;`,
   './work-form': `export const WorkForm=()=>null;`,
   './issue-detail': `import {IssueDetail as Real} from '${root}packages/extension-scm/src/work/issue-detail.tsx';export const IssueDetail=props=>{window.workDetail=props.detail;return <Real {...props}/>};`,
   './pipeline-detail': `import {PipelineDetail as Real} from '${root}packages/extension-scm/src/work/pipeline-detail.tsx';export {PipelineState} from '${root}packages/extension-scm/src/work/pipeline-detail.tsx';export const PipelineDetail=props=>{window.workDetail=props.detail;return <Real {...props}/>};`,
-  './work-task-links': `export const WorkTaskLinks=()=>null;`,
+  './use-work-sources': `import {useWorkSources as real} from '${root}packages/extension-scm/src/work/use-work-sources.ts';export const useWorkSources=(...args)=>{const result=real(...args);window.workResult=result;return result;};`,
+  './jira-toolbar': `export const JiraToolbar=()=>null;`,
+  '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,
+  '../connections/source-picker': `export const SourcePicker=()=>null;`,
 }
 const built = await build({
   stdin: {
@@ -20,19 +29,23 @@ const built = await build({
     loader: 'tsx',
     contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';import {decode,RuntimeRequestError} from '@dovo/protocol';
+import PullRequestsView from '${root}packages/extension-scm/src/pulls/list/view.tsx';
 import {WorkContent} from '${root}packages/extension-scm/src/work/content.tsx';
+import IssuesView,{PipelinesView} from '${root}packages/extension-scm/src/work/work-view.tsx';
 import {usePulls} from '${root}packages/extension-scm/src/pulls/list/use-pulls.ts';import {usePullDetail} from '${root}packages/extension-scm/src/pulls/detail/use-pull-detail.ts';
-window.reads=[];window.discoveryFailures={};window.cacheReads=[];window.accounts={a:'same-account',b:'same-account'};window.destinations={a:'dest-a',b:'dest-b'};window.active='a';window.legacy=false;
+window.reads=[];window.writes=[];window.discoveryFailures={};window.cacheReads=[];window.cacheWrites=[];window.accounts={a:'same-account',b:window.alternateAccount??'same-account'};window.destinations={a:'dest-a',b:'dest-b'};window.active='a';window.legacy=false;
 const saved=new Map();
-const source=id=>{const profile={id,name:id,connection:{address:'http://'+id,token:'paired-'+id}};const repository={id:'repo-'+id,name:'Project',path:'/repo',gitIdentity:'github.com/team/project',pullIdentity:'github.com/team/project',forge:{connectionId:'local-'+id,repository:'team/project'}};const cache={readEffect:(key,schema)=>Effect.sync(()=>{window.cacheReads.push({id,key});return saved.has(id+key)?{value:decode(schema,saved.get(id+key)),cachedAt:'2026-10-14'}:null}),writeEffect:(key,value)=>Effect.sync(()=>{saved.set(id+key,value)})};return {key:JSON.stringify([id,repository.id]),scope:JSON.stringify([id,profile.connection,repository.forge]),runtimeId:id,runtimeName:id,profile,repository,connected:true,readCache:cache,requestEffect:(path,input,schema)=>Effect.try({try:()=>{if(path==='/api/scm/source/identity'){if(window.discoveryFailures[id])throw new RuntimeRequestError({kind:'response',status:503,message:'Discovery unavailable'});if(window.legacy)throw new RuntimeRequestError({kind:'response',status:404,message:'Old runtime'});return decode(schema,{readerIdentity:window.accounts[id],destination:window.destinations[id]})}window.reads.push({id,path,input});if(input.expectedReaderIdentity&&input.expectedReaderIdentity!==window.accounts[id])throw new RuntimeRequestError({kind:'response',status:409,message:'Account changed'});if(path==='/api/scm/work/options')return decode(schema,{provider:'github',issues:true,pipelines:true,pipelineActions:[],destination:window.destinations[id]});
-if(path==='/api/scm/work/issues/detail')return decode(schema,{destination:window.destinations[id],issue:{id:'7',title:'Kept issue',body:'Description',state:'open',url:'https://github.com/team/project/issues/7',author:'Dominic',assignees:[],labels:[],updatedAt:'2026-10-14',revision:'same-revision',destination:window.destinations[id]},comments:[{id:input.cursor?'second':'first',body:'Page',author:'Dominic',createdAt:'2026-10-14'}],next:input.cursor?undefined:'page-2'});
-if(path==='/api/scm/work/pipelines/detail')return decode(schema,{destination:window.destinations[id],run:{id:'7',title:'Kept run',url:'https://github.com/team/project/actions/runs/7',ref:'main',sha:'same-sha',actor:'Dominic',status:'success',createdAt:'2026-10-14',updatedAt:'2026-10-14',destination:window.destinations[id]},jobs:[{id:input.cursor?'second':'first',name:'Job',status:'success',url:'https://github.com/team/project/actions/runs/7'}],next:input.cursor?undefined:'page-2'});
-if(path==='/api/scm/pulls/detail')return decode(schema,{destination:window.destinations[id],pull:{number:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],body:'Description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',additions:0,deletions:0,changedFiles:0,mergeable:true,reviewers:[],assignees:[],destination:window.destinations[id]},files:[],comments:[],checks:[],warnings:[]});return decode(schema,{pulls:[{number:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],viewerIsAuthor:true,destination:window.destinations[id]}],page:1,hasMore:false})},catch:e=>e})}};
-window.sources=['a','b'].map(source).map(s=>({...s,name:s.repository.name,input:{repositoryId:s.repository.id},request:(path,input,schema)=>Effect.runPromise(s.requestEffect(path,input,schema)),readCache:{...s.readCache,read:(key,schema)=>Effect.runPromise(s.readCache.readEffect(key,schema)),write:(key,value)=>Effect.runPromise(s.readCache.writeEffect(key,value))}}));window.store={activeRuntimeId:'a',workspace:{repositories:[window.sources[0].repository]},connected:true,requestEffect:window.sources[0].requestEffect,readCache:window.sources[0].readCache};
+const source=id=>{const profile={id,name:id,connection:{address:'http://'+id,token:'paired-'+id}};const repository={id:'repo-'+id,name:'Project',path:'/repo',gitIdentity:'github.com/team/project',pullIdentity:'github.com/team/project',forge:{connectionId:'local-'+id,repository:'team/project'}};const cache={readEffect:(key,schema)=>Effect.sync(()=>{window.cacheReads.push({id,key});if(window.savedOriginIdentity&&id==='a'&&JSON.parse(key)[0]==='forge')return {value:decode(schema,{readerIdentity:'same-account',destination:'dest-a'}),cachedAt:'2026-10-14'};return saved.has(id+key)?{value:decode(schema,saved.get(id+key)),cachedAt:'2026-10-14'}:null}),writeEffect:(key,value)=>Effect.sync(()=>{window.cacheWrites.push({id,key,value});saved.set(id+key,value)}),removeEffect:key=>Effect.sync(()=>{saved.delete(id+key)})};return {key:JSON.stringify([id,repository.id]),scope:JSON.stringify([id,profile.connection,repository.forge]),runtimeId:id,runtimeName:id,profile,repository,connected:!(window.offlineOrigin&&id==='a'),readCache:cache,requestEffect:(path,input,schema)=>Effect.try({try:()=>{if(path==='/api/scm/source/identity'){if(window.discoveryFailures[id])throw new RuntimeRequestError({kind:'response',status:503,message:'Discovery unavailable'});if(window.legacy)throw new RuntimeRequestError({kind:'response',status:404,message:'Old runtime'});return decode(schema,{readerIdentity:window.accounts[id],destination:window.destinations[id]})}window.reads.push({id,path,input});if(window.dispatchRace?.id===id){const field=window.dispatchRace.field;const expected=field==='destination'?input.expectedDestination:input.expectedReaderIdentity;const actual=(field==='destination'?window.destinations[id]:window.accounts[id])+'-changed';if(expected!==undefined&&expected!==actual)throw new RuntimeRequestError({kind:'response',status:409,message:'Source changed during dispatch'});}if(input.expectedDestination!==window.destinations[id])throw Error('Missing or wrong destination guard');if(input.expectedReaderIdentity&&input.expectedReaderIdentity!==window.accounts[id])throw new RuntimeRequestError({kind:'response',status:409,message:'Account changed'});if(path==='/api/scm/work/options')return decode(schema,{provider:'github',issues:true,pipelines:true,pipelineActions:['run','rerun'],destination:window.destinations[id]});
+if(path==='/api/scm/work/issues/list')return decode(schema,{items:[{id:input.cursor?'10':window.freshWorkRows?'9':'7',title:input.cursor?'Next issue':window.freshWorkRows?'New issue after handoff':'Listed issue',body:'Description',state:'open',url:'https://github.com/team/project/issues/'+(input.cursor?'10':window.freshWorkRows?'9':'7'),author:'Dominic',assignees:[],labels:[],updatedAt:'2026-10-14',revision:'same-revision',destination:window.destinations[id]}],next:input.cursor?undefined:'page-2'});
+if(path==='/api/scm/work/pipelines/list')return decode(schema,{items:[{id:input.cursor?'10':window.freshWorkRows?'9':'7',title:input.cursor?'Next run':window.freshWorkRows?'New run after handoff':'Listed run',url:'https://github.com/team/project/actions/runs/'+(input.cursor?'10':window.freshWorkRows?'9':'7'),ref:'main',sha:'same-sha',actor:'Dominic',status:'success',createdAt:'2026-10-14',updatedAt:'2026-10-14',destination:window.destinations[id]}],next:input.cursor?undefined:'page-2'});
+if(path==='/api/scm/work/issues/detail')return decode(schema,{destination:window.destinations[id],issue:{id:input.id,title:input.id==='9'?'New issue after handoff':'Kept issue',body:'Description',state:'open',url:'https://github.com/team/project/issues/'+input.id,author:'Dominic',assignees:[],labels:[],updatedAt:'2026-10-14',revision:'same-revision',destination:window.destinations[id]},comments:[{id:input.cursor?'second':'first',body:'Page',author:'Dominic',createdAt:'2026-10-14'}],next:input.cursor?undefined:'page-2'});
+if(path==='/api/scm/work/pipelines/detail')return decode(schema,{destination:window.destinations[id],run:{id:input.id,title:input.id==='9'?'New run after handoff':'Kept run',url:'https://github.com/team/project/actions/runs/'+input.id,ref:'main',sha:'same-sha',actor:'Dominic',status:'success',createdAt:'2026-10-14',updatedAt:'2026-10-14',destination:window.destinations[id]},jobs:[{id:input.cursor?'second':'first',name:'Job',status:'success',url:'https://github.com/team/project/actions/runs/7'}],next:input.cursor?undefined:'page-2'});
+if(path==='/api/scm/pulls/detail')return decode(schema,{destination:window.destinations[id],pull:{number:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],body:'Description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',additions:0,deletions:0,changedFiles:0,mergeable:true,reviewers:[],assignees:[],destination:window.destinations[id]},capabilities:{actions:['comment','merge'],mergeMethods:['squash'],reviewDecisions:[]},files:[],comments:[],checks:[],warnings:[]});return decode(schema,{pulls:[{number:input.page===2?8:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],viewerIsAuthor:true,destination:window.destinations[id]}],page:input.page,hasMore:input.page===1})},catch:e=>e})}};
+window.sources=['a','b'].map(source).map(s=>({...s,name:s.repository.name,input:{repositoryId:s.repository.id},request:(path,input,schema)=>Effect.runPromise(s.requestEffect(path,input,schema)),readCache:{...s.readCache,read:(key,schema)=>Effect.runPromise(s.readCache.readEffect(key,schema)),write:(key,value)=>Effect.runPromise(s.readCache.writeEffect(key,value))}}));window.store={activeRuntimeId:'a',runtimes:[],workspace:{repositories:[window.sources[0].repository],tasks:[]},runtimeRegistry:{activeId:'a'},connected:true,requestEffect:window.sources[0].requestEffect,readCache:window.sources[0].readCache};
 function View(){const [filter,setFilter]=useState(window.filter??'');window.setFilter=value=>{window.filter=value;setFilter(value)};const result=usePulls('open',filter);window.result=result;return <pre>{JSON.stringify(result.pages.map(p=>({owner:p.source.runtimeId,error:p.error,cached:p.stale,pulls:p.pulls})))}</pre>}
 function Detail(){const result=usePullDetail('repo-a',7);window.detailResult=result;return <pre>{JSON.stringify(result.detail)}</pre>}
 function Work(){return <WorkContent repositoryId="repo-a" repositoryName="Project" collectionHeader={null} initialSelected="7" mode={window.workMode} request={window.sources[0].request} connected={window.store.connected}/>}
-const app=createRoot(document.getElementById('app'));window.render=remount=>app.render(window.mode==='work'?<Work key={window.mount??0}/>:window.mode==='detail'?<Detail key={window.mount??0}/>:<View key={remount?window.mount=(window.mount??0)+1:window.mount??0}/>);window.render(false);
+const app=createRoot(document.getElementById('app'));window.render=remount=>app.render(window.mode==='work-rows'?(window.workMode==='issues'?<IssuesView/>:<PipelinesView/>):window.mode==='rows'?<PullRequestsView/>:window.mode==='work'?<Work key={window.mount??0}/>:window.mode==='detail'?<Detail key={window.mount??0}/>:<View key={remount?window.mount=(window.mount??0)+1:window.mount??0}/>);window.render(false);
 `,
   },
   bundle: true,
@@ -103,7 +116,7 @@ try {
     if (scenario === 'same') {
       await page.waitForFunction(
         () =>
-          window.result?.pages[0]?.source.runtimeId === 'b' &&
+          window.result?.pages[0]?.reader.runtimeId === 'b' &&
           !window.result.busy &&
           window.reads.length > 0,
       )
@@ -117,7 +130,7 @@ try {
       )
     } else {
       await page.waitForFunction(
-        () => window.result?.pages[0]?.source.connected === false && !window.result.busy,
+        () => window.result?.pages[0]?.reader.connected === false && !window.result.busy,
       )
       // Discovery must finish, so a previously cached alternate identity cannot hide an account switch.
       await page.evaluate(() => window.result.refresh())
@@ -132,6 +145,199 @@ try {
     assert.deepEqual(errors, [])
     await page.close()
   }
+  for (const alternateAccount of ['same-account', 'different-account']) {
+    const cold = await browser.newPage()
+    cold.setDefaultTimeout(8000)
+    await cold.setContent('<div id="app"></div>')
+    await cold.evaluate((account) => {
+      window.offlineOrigin = true
+      window.savedOriginIdentity = true
+      window.alternateAccount = account
+      window.filter = JSON.stringify(['a', 'repo-a'])
+    }, alternateAccount)
+    await cold.addScriptTag({ content: built.outputFiles[0].text })
+    if (alternateAccount === 'same-account') {
+      await cold.waitForFunction(
+        () => window.result?.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
+      )
+      assert.equal(
+        await cold.evaluate(() =>
+          window.reads.every(
+            (read) => read.id === 'b' && read.input.expectedReaderIdentity === 'same-account',
+          ),
+        ),
+        true,
+        'A cold offline view uses only a freshly verified same-account alternate',
+      )
+    } else {
+      await cold.waitForFunction(
+        () =>
+          window.cacheReads.some(
+            (read) => read.id === 'a' && JSON.parse(read.key)[0] === 'forge',
+          ) &&
+          window.result?.connected === false &&
+          !window.result.busy,
+      )
+      assert.deepEqual(
+        await cold.evaluate(() => window.reads),
+        [],
+        'Saved origin identity cannot authorize a different account',
+      )
+    }
+    await cold.close()
+  }
+  for (const cold of [false, true]) {
+    const rows = await browser.newPage()
+    rows.setDefaultTimeout(8000)
+    const errors = []
+    rows.on('pageerror', (error) => errors.push(error.message))
+    await rows.setContent('<div id="app"></div>')
+    await rows.evaluate((cold) => {
+      window.offlineOrigin = cold
+      window.savedOriginIdentity = cold
+      if (cold) window.filter = JSON.stringify(['a', 'repo-a'])
+    }, cold)
+    await rows.addScriptTag({ content: built.outputFiles[0].text })
+    await rows.waitForFunction(() => window.result?.pages[0]?.pulls.length && !window.result.busy)
+    if (!cold) {
+      await rows.evaluate(() => {
+        window.sources = window.sources.map((s) => ({ ...s, connected: s.runtimeId !== 'a' }))
+        window.render(false)
+      })
+      await rows.waitForFunction(
+        () => window.result?.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
+      )
+    }
+    assert.equal(await rows.evaluate(() => window.result.pages[0].source.runtimeId), 'a')
+    assert.equal(await rows.evaluate(() => window.result.pages[0].pulls[0].destination), 'dest-a')
+    assert.equal(
+      await rows.evaluate(() =>
+        window.cacheWrites
+          .filter((w) => JSON.parse(w.key)[0] === 'pulls')
+          .every((w) => w.id === 'a'),
+      ),
+      true,
+    )
+    await rows.evaluate(() => {
+      window.mode = 'rows'
+      window.render(false)
+    })
+    if (cold) await rows.getByLabel('PR repository').selectOption(JSON.stringify(['a', 'repo-a']))
+    await rows.getByRole('button', { name: 'Open Kept PR', exact: true }).click()
+    await rows.getByRole('textbox', { name: 'Comment draft' }).fill('Retain owner')
+    assert.deepEqual(await rows.evaluate(() => window.navigation.pullTarget.runtimeId), 'a')
+    assert.equal(await rows.locator('[data-owner="a"]').count(), 1)
+    assert.equal(await rows.evaluate(() => window.rowDetail.detail.destination), 'dest-a')
+    for (const name of ['Comment', 'PR actions', 'New task'])
+      assert.equal(await rows.getByRole('button', { name, exact: true }).isEnabled(), false)
+    assert.deepEqual(await rows.evaluate(() => window.writes), [])
+    // Reconnecting enables real action handlers, still scoped to A's destination.
+    await rows.evaluate(() => {
+      window.sources = window.sources.map((s) => ({ ...s, connected: true }))
+      window.render(false)
+    })
+    await rows.getByRole('button', { name: 'Comment', exact: true }).click()
+    await rows.waitForFunction(() => window.writes.length === 1)
+    assert.deepEqual(
+      await rows.evaluate(() =>
+        window.writes.map((w) => [w.runtimeId, w.input.repositoryId, w.input.expectedDestination]),
+      ),
+      [['a', 'repo-a', 'dest-a']],
+    )
+    assert.deepEqual(errors, [])
+    await rows.close()
+  }
+  for (const field of ['destination', 'account']) {
+    const race = await browser.newPage()
+    race.setDefaultTimeout(8000)
+    await race.setContent('<div id="app"></div>')
+    await race.addScriptTag({ content: built.outputFiles[0].text })
+    await race.waitForFunction(() => window.result?.pages[0]?.pulls.length && !window.result.busy)
+    await race.evaluate(() => {
+      window.sources = window.sources.map((s) => ({ ...s, connected: s.runtimeId !== 'a' }))
+      window.render(false)
+    })
+    await race.waitForFunction(
+      () => window.result.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
+    )
+    await race.evaluate((field) => {
+      window.cacheWrites = []
+      window.dispatchRace = { id: 'b', field }
+      window.result.more(window.result.pages[0].source.key)
+    }, field)
+    await race.waitForFunction(() =>
+      window.result.pages[0]?.error?.includes('Source changed during dispatch'),
+    )
+    assert.equal(await race.evaluate(() => window.result.pages[0].pulls.length), 1)
+    assert.deepEqual(
+      await race.evaluate(() => window.cacheWrites.filter((w) => JSON.parse(w.key)[0] === 'pulls')),
+      [],
+      'Rejected pagination must not publish to the origin cache',
+    )
+    await race.evaluate(() => {
+      window.dispatchRace = undefined
+      window.result.refresh()
+    })
+    await race.waitForFunction(() => !window.result.busy && !window.result.pages[0].error)
+    await race.evaluate(() => window.result.more(window.result.pages[0].source.key))
+    await race.waitForFunction(
+      () => window.result.pages[0]?.pulls.length === 2 && !window.result.busy,
+    )
+    assert.equal(
+      await race.evaluate(() =>
+        window.result.pages[0].pulls.every((p) => p.destination === 'dest-a'),
+      ),
+      true,
+    )
+    assert.equal(
+      await race.evaluate(() =>
+        window.reads
+          .filter((r) => r.id === 'b')
+          .every(
+            (r) =>
+              r.input.expectedDestination === 'dest-b' &&
+              r.input.expectedReaderIdentity === 'same-account',
+          ),
+      ),
+      true,
+    )
+    await race.close()
+  }
+  const rebound = await browser.newPage()
+  rebound.setDefaultTimeout(8000)
+  await rebound.setContent('<div id="app"></div>')
+  await rebound.addScriptTag({ content: built.outputFiles[0].text })
+  await rebound.waitForFunction(() => window.result?.pages[0]?.pulls.length && !window.result.busy)
+  await rebound.evaluate(() => {
+    window.sources = window.sources.map((s) => ({ ...s, connected: s.runtimeId !== 'a' }))
+    window.render(false)
+  })
+  await rebound.waitForFunction(
+    () => window.result.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
+  )
+  await rebound.evaluate(() => {
+    window.reads = []
+    window.cacheWrites = []
+    window.destinations.b = 'unrelated-repository'
+    window.result.refresh()
+  })
+  await rebound.waitForFunction(
+    () => !window.result.busy && window.result.pages[0]?.reader.connected === false,
+  )
+  assert.deepEqual(
+    await rebound.evaluate(() => window.reads),
+    [],
+    'A rebind before discovery must not read the unrelated repository',
+  )
+  assert.deepEqual(
+    await rebound.evaluate(() =>
+      window.cacheWrites.filter((w) => JSON.parse(w.key)[0] === 'pulls'),
+    ),
+    [],
+    'A rebound reader must not overwrite the origin cache',
+  )
+  assert.equal(await rebound.evaluate(() => window.result.pages[0].pulls[0].destination), 'dest-a')
+  await rebound.close()
   await check('same')
   await check('different')
   await check('unknown')
@@ -147,7 +353,7 @@ try {
     window.result.refresh()
   })
   await failedDiscovery.waitForFunction(
-    () => window.result?.pages[0]?.source.runtimeId === 'b' && !window.result.busy,
+    () => window.result?.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
   )
   assert.equal(
     await failedDiscovery.evaluate(() => window.reads.every((r) => r.id === 'b')),
@@ -159,7 +365,7 @@ try {
     window.result.refresh()
   })
   await failedDiscovery.waitForFunction(
-    () => window.result?.pages[0]?.source.connected === false && !window.result.busy,
+    () => window.result?.pages[0]?.reader.connected === false && !window.result.busy,
   )
   assert.equal(
     await failedDiscovery.evaluate(() => window.result.pages[0].pulls[0].title),
@@ -193,7 +399,7 @@ try {
     window.result.refresh()
   })
   await recovery.waitForFunction(
-    () => window.result?.pages[0]?.source.runtimeId === 'b' && !window.result.busy,
+    () => window.result?.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
   )
   await recovery.evaluate(async () => {
     const key = window.sources[0].key
@@ -297,6 +503,233 @@ try {
   )
   await detailPage.close()
   for (const mode of ['issues', 'pipelines']) {
+    const rows = await browser.newPage()
+    rows.setDefaultTimeout(8000)
+    const errors = []
+    rows.on('pageerror', (error) => errors.push(error.message))
+    await rows.setContent('<div id="app"></div>')
+    await rows.evaluate((mode) => {
+      window.mode = 'work-rows'
+      window.workMode = mode
+    }, mode)
+    await rows.addScriptTag({ content: built.outputFiles[0].text })
+    await rows.waitForFunction(
+      () => window.workResult?.pages[0]?.items.length && !window.workResult.busy,
+    )
+    await rows.evaluate(() => {
+      window.reads = []
+      window.cacheWrites = []
+      window.freshWorkRows = true
+      window.sources = window.sources.map((source) => ({
+        ...source,
+        connected: source.runtimeId !== 'a',
+      }))
+      window.render(false)
+    })
+    await rows.waitForFunction(
+      () => window.workResult?.pages[0]?.reader.runtimeId === 'b' && !window.workResult.busy,
+    )
+    await rows.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await rows.waitForFunction(
+      () => window.workResult.pages[0]?.items[0]?.id === '9' && !window.workResult.busy,
+    )
+    assert.equal(await rows.evaluate(() => window.workResult.pages[0].source.runtimeId), 'a')
+    assert.equal(
+      await rows.evaluate(() => window.workResult.pages[0].options.destination),
+      'dest-a',
+    )
+    assert.equal(
+      await rows.evaluate(() => window.workResult.pages[0].items[0].destination),
+      'dest-a',
+    )
+    assert.equal(
+      await rows
+        .getByRole('button', {
+          name: mode === 'issues' ? 'New issue' : 'Run pipeline',
+          exact: true,
+        })
+        .isDisabled(),
+      true,
+    )
+    for (const field of ['destination', 'account']) {
+      await rows.evaluate((field) => {
+        window.cacheWrites = []
+        window.dispatchRace = { id: 'b', field }
+        window.workResult.more(window.workResult.pages[0].source.key)
+      }, field)
+      await rows.waitForFunction(
+        () =>
+          window.workResult.pages[0]?.error?.includes('Source changed during dispatch') &&
+          !window.workResult.busy,
+      )
+      assert.equal(await rows.evaluate(() => window.workResult.pages[0].items.length), 1)
+      assert.deepEqual(
+        await rows.evaluate(() =>
+          window.cacheWrites.filter((write) => JSON.parse(write.key)[0] === 'work'),
+        ),
+        [],
+        'Rejected work pagination cannot overwrite the origin cache',
+      )
+      await rows.evaluate(() => {
+        window.dispatchRace = undefined
+        window.workResult.refresh()
+      })
+      await rows.waitForFunction(() => !window.workResult.busy && !window.workResult.pages[0].error)
+    }
+    await rows.getByRole('button', { name: /Load more/ }).click()
+    await rows.waitForFunction(
+      () => window.workResult.pages[0]?.items.length === 2 && !window.workResult.busy,
+    )
+    assert.equal(
+      await rows.evaluate(() =>
+        window.workResult.pages[0].items.every((item) => item.destination === 'dest-a'),
+      ),
+      true,
+    )
+    assert.equal(
+      await rows.evaluate(() =>
+        window.reads.every(
+          (read) =>
+            read.id === 'b' &&
+            read.input.expectedReaderIdentity === 'same-account' &&
+            read.input.expectedDestination === 'dest-b',
+        ),
+      ),
+      true,
+    )
+    assert.equal(
+      await rows.evaluate(() =>
+        window.cacheWrites
+          .filter((write) => JSON.parse(write.key)[0] === 'work')
+          .every((write) => write.id === 'a' && JSON.parse(write.key)[1].repositoryId === 'repo-a'),
+      ),
+      true,
+    )
+    await rows
+      .getByRole('button', {
+        name: mode === 'issues' ? /New issue after handoff/ : /New run after handoff/,
+      })
+      .click()
+    await rows.waitForFunction(() => window.workDetail?.destination === 'dest-a')
+    assert.equal(
+      await rows.locator('[data-owner="a"]').count(),
+      1,
+      'A newly opened row retains its original runtime scope',
+    )
+    const action = mode === 'issues' ? 'Issue actions' : 'Pipeline actions'
+    const task = mode === 'issues' ? 'Start task from issue' : 'Investigate run'
+    assert.equal(await rows.getByRole('button', { name: action, exact: true }).isDisabled(), true)
+    assert.equal(await rows.getByRole('button', { name: task, exact: true }).isDisabled(), true)
+    if (mode === 'issues')
+      assert.equal(
+        await rows.getByRole('button', { name: 'Edit issue', exact: true }).isDisabled(),
+        true,
+      )
+    assert.deepEqual(await rows.evaluate(() => window.writes), [])
+    await rows.evaluate(() => {
+      window.sources = window.sources.map((source) => ({ ...source, connected: true }))
+      window.render(false)
+    })
+    await rows.waitForFunction(
+      (action) => !document.querySelector('button[aria-label="' + action + '"]').disabled,
+      action,
+    )
+    await rows.waitForFunction(
+      (task) =>
+        [...document.querySelectorAll('button')].some(
+          (button) => button.textContent === task && !button.disabled,
+        ),
+      task,
+    )
+    assert.equal(await rows.getByRole('button', { name: task, exact: true }).isEnabled(), true)
+    await rows.getByRole('button', { name: task, exact: true }).click()
+    await rows.waitForFunction(() => window.writes.length === 1)
+    assert.deepEqual(
+      await rows.evaluate(() =>
+        window.writes.map((write) => [
+          write.runtimeId,
+          write.path,
+          write.input.repositoryId,
+          write.input.expectedDestination,
+        ]),
+      ),
+      [['a', '/api/scm/work/task', 'repo-a', 'dest-a']],
+    )
+    if (mode === 'pipelines') {
+      await rows.getByRole('button', { name: action, exact: true }).click()
+      await rows.getByRole('menuitem', { name: 'Rerun', exact: true }).click()
+      await rows.getByRole('button', { name: 'Confirm rerun', exact: true }).click()
+      await rows.waitForFunction(() => window.writes.length === 2)
+      assert.deepEqual(
+        await rows.evaluate(() =>
+          window.writes
+            .slice(1)
+            .map((write) => [
+              write.runtimeId,
+              write.path,
+              write.input.repositoryId,
+              write.input.expectedDestination,
+            ]),
+        ),
+        [['a', '/api/scm/work/pipelines/action', 'repo-a', 'dest-a']],
+      )
+    }
+    assert.deepEqual(errors, [])
+    await rows.close()
+  }
+  for (const mode of ['issues', 'pipelines']) {
+    const rebound = await browser.newPage()
+    rebound.setDefaultTimeout(8000)
+    const errors = []
+    rebound.on('pageerror', (error) => errors.push(error.message))
+    await rebound.setContent('<div id="app"></div>')
+    await rebound.evaluate((mode) => {
+      window.mode = 'work-rows'
+      window.workMode = mode
+    }, mode)
+    await rebound.addScriptTag({ content: built.outputFiles[0].text })
+    await rebound.waitForFunction(
+      () => window.workResult?.pages[0]?.items.length && !window.workResult.busy,
+    )
+    await rebound.evaluate(() => {
+      window.sources = window.sources.map((source) => ({
+        ...source,
+        connected: source.runtimeId !== 'a',
+      }))
+      window.render(false)
+    })
+    await rebound.waitForFunction(
+      () => window.workResult.pages[0]?.reader.runtimeId === 'b' && !window.workResult.busy,
+    )
+    await rebound.evaluate(() => {
+      window.reads = []
+      window.cacheWrites = []
+      window.destinations.b = 'unrelated-repository'
+      window.workResult.refresh()
+    })
+    await rebound.waitForFunction(
+      () => !window.workResult.busy && window.workResult.pages[0]?.reader.connected === false,
+    )
+    assert.deepEqual(
+      await rebound.evaluate(() => window.reads),
+      [],
+      'Work refresh rejects a reader rebind before provider access',
+    )
+    assert.deepEqual(
+      await rebound.evaluate(() =>
+        window.cacheWrites.filter((write) => JSON.parse(write.key)[0] === 'work'),
+      ),
+      [],
+      'A rebound work reader cannot overwrite the origin cache',
+    )
+    assert.equal(
+      await rebound.evaluate(() => window.workResult.pages[0].items[0].destination),
+      'dest-a',
+    )
+    assert.deepEqual(errors, [])
+    await rebound.close()
+  }
+  for (const mode of ['issues', 'pipelines']) {
     const workPage = await browser.newPage()
     const errors = []
     workPage.on('pageerror', (error) => errors.push(error.message))
@@ -373,7 +806,7 @@ try {
     await workPage.close()
   }
   console.log(
-    'Actual desktop PR readers: identity-verified same-account handoff, remount/global selection retention and readonly cached data without unknown/different-account handoff passed.',
+    'Desktop source readers passed: account/destination dispatch and pagination guards; warm/cold PR rows and newly refreshed issue/pipeline rows retain the origin and cache; offline comments/merge/tasks disabled and reconnect writes remain on the origin; same-account handoff, remount, discovery failure and account recovery. Transport and detail presentation mocked; actual list routing and action controls exercised.',
   )
 } finally {
   await browser.close()

@@ -4,7 +4,6 @@ import type {
   LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  ScrollView,
 } from 'react-native'
 import { createListScroll } from './list-scroll'
 
@@ -12,16 +11,8 @@ function restoreList<T>(list: FlatList<T>, offset: number) {
   list.scrollToOffset({ offset, animated: false })
 }
 
-function restoreView(view: ScrollView, offset: number) {
-  view.scrollTo({ y: offset, animated: false })
-}
-
 export function useListScroll<T>(saved: RefObject<number>, focused: boolean) {
   return useScrollRetention<FlatList<T>>(saved, focused, restoreList)
-}
-
-export function useScrollViewScroll(saved: RefObject<number>, focused: boolean) {
-  return useScrollRetention(saved, focused, restoreView)
 }
 
 function useScrollRetention<T>(

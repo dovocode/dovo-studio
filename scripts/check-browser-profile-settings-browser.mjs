@@ -1,4 +1,5 @@
 import { build } from 'esbuild'
+import assert from 'node:assert/strict'
 import { chromium } from './browser/harness.mjs'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync, mkdirSync } from 'node:fs'
@@ -68,7 +69,8 @@ try {
   page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  page.on('dialog', (dialog) => dialog.accept())
+  let cancelRemoval = false
+  page.on('dialog', (dialog) => (cancelRemoval ? dialog.dismiss() : dialog.accept()))
   await page.route('http://localhost/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
@@ -99,6 +101,18 @@ try {
   await remote.getByRole('textbox', { name: 'Name for Remote Work' }).fill('Remote Personal')
   await remote.getByRole('button', { name: 'Save', exact: true }).last().click()
   await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).waitFor()
+  await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).fill('Unsaved rename')
+  cancelRemoval = true
+  await remote.getByRole('button', { name: 'Remove', exact: true }).click()
+  assert.equal(
+    await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).inputValue(),
+    'Unsaved rename',
+  )
+  assert.equal(
+    await page.evaluate(() => window.calls.filter((c) => c.path.endsWith('/save')).length),
+    2,
+  )
+  cancelRemoval = false
   await remote.getByRole('button', { name: 'Remove', exact: true }).click()
   await page.waitForFunction(
     () => window.calls.filter((c) => c.path.endsWith('/save')).length === 3,

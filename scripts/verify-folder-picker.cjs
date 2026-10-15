@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 const fs = require('node:fs')
 const { execFileSync } = require('node:child_process')
@@ -20,7 +21,7 @@ app.once('will-quit', () => {
   app.exit(exitCode)
 })
 
-async function verifyFolders(config) {
+async function verifyFolders(config, workspaceReady) {
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   const wait = async (check, description) => {
     for (let index = 0; index < 150; index++) {
@@ -93,7 +94,7 @@ async function verifyFolders(config) {
     }
   }
 
-  await wait(() => document.body.innerText.includes('Workspace synced'), 'runtime')
+  await wait(workspaceReady, 'runtime')
   button('Tasks').click()
   await wait(() => button('Projects'), 'project menu')
   key(button('Projects'), 'ArrowDown')
@@ -366,7 +367,7 @@ app.on('browser-window-created', (_event, window) => {
         spacedPath: fs.realpathSync(path.join(folders, spacedName)),
       }
       const result = await window.webContents.executeJavaScript(
-        `(${verifyFolders.toString()})(${JSON.stringify(config)})`,
+        `(${verifyFolders.toString()})(${JSON.stringify(config)}, ${workspaceReady.toString()})`,
       )
       fs.writeFileSync(
         '/tmp/dovo-folder-picker.png',

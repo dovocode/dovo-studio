@@ -46,7 +46,7 @@ import {LinkedProjects} from '${root}/${mobile ? 'apps/mobile/src/tasks' : 'pack
 ${mobile ? '' : `import {TaskTools} from '${root}/packages/extension-tasks/src/detail/task-tools.tsx';import {HarnessDialog} from '${root}/packages/extension-tasks/src/dialogs/harness-dialog.tsx';`}
 const agent={...defaultTaskHarness('codex'),id:'writer',name:'Writer',model:'old-model',instructions:'Saved instructions',skills:['skill'],mcpServers:['server']};
 const initial={id:'thread',title:'Thread',repositoryId:'repo',status:'draft',agentId:agent.id,harness:null,messages:[],files:[],linkedCheckouts:[]};
-window.requests=[];window.fail=false;window.store={connected:true,workspace:{tasks:[initial],agents:[agent],repositories:[{id:'repo',name:'Main project',path:'/repo',branch:'main'},{id:'folder',name:'Reference folder',path:'/folder',branch:'',kind:'folder'}]},flush:async()=>{},request:async(path,input)=>{window.requests.push({path,input});if(window.fail)throw Error('Fixture save failed');if(path.endsWith('/choices'))return {worktrees:[{path:'/existing',branch:'feature'}]};return {ok:true}}};
+window.requests=[];window.fail=false;window.store={connected:true,workspace:{tasks:[initial],agents:[agent],repositories:[{id:'repo',name:'Main project',path:'/repo',branch:'main'},{id:'folder',name:'Reference folder',path:'/folder',branch:'',kind:'folder'}]},flush:async()=>{},request:async(path,input)=>{window.requests.push({path,input});if(window.fail)throw Error('Fixture save failed');if(path.endsWith('/choices')){if(window.holdChoices)await new Promise(resolve=>window.resolveChoices=resolve);return {worktrees:[{path:'/existing',branch:'feature'}]}};return {ok:true}}};
 function App(){const [task,setTask]=useState(initial),[surface,setSurface]=useState('chat'),[revision,setRevision]=useState(0),[configure,setConfigure]=useState(false);window.change=changes=>{Object.assign(window.store,changes);setRevision(value=>value+1)};window.task=changes=>setTask(old=>({...old,...changes}));window.store.setWorkspace=update=>{window.store.workspace=update(window.store.workspace);setTask(window.store.workspace.tasks[0])};return <div data-revision={revision}>
 ${mobile ? `<button onClick={()=>setSurface('projects')}>Linked projects</button>` : `<TaskTools surface={surface} onSelect={setSurface} hasDiff={false}/><button onClick={()=>setConfigure(true)}>Configure agent</button>{configure&&<HarnessDialog task={task} onClose={()=>setConfigure(false)}/>} `}
 {surface==='projects'&&<aside aria-label="Workspace tools"><LinkedProjects key={task.id} task={task}/></aside>}</div>}
@@ -100,6 +100,20 @@ createRoot(document.getElementById('app')).render(<App/>);
     const save = page.getByRole('button', { name: 'Save linked projects', exact: true })
     assert.equal(await save.isDisabled(), true)
     await page.getByRole('button', { name: 'Add checkout', exact: true }).click()
+    if (!mobile) {
+      await page.evaluate(() => {
+        window.holdChoices = true
+      })
+      await page.getByLabel('Linked checkout', { exact: true }).selectOption('existing')
+      await page.waitForFunction(() => !!window.resolveChoices)
+      await page.getByLabel('Linked project access', { exact: true }).selectOption('edit')
+      await page.evaluate(() => window.resolveChoices())
+      await page.getByLabel('Existing linked worktree', { exact: true }).waitFor()
+      assert.equal(
+        await page.getByLabel('Linked project access', { exact: true }).inputValue(),
+        'edit',
+      )
+    }
     await page.getByLabel('Linked project', { exact: true }).selectOption('folder')
     await page
       .getByLabel(mobile ? 'Access' : 'Linked project access', { exact: true })

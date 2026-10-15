@@ -517,7 +517,7 @@ export default function PullsScreen() {
                   <Action
                     secondary
                     label={`${page.error ? 'Retry' : 'Load more'} · ${page.name} · ${page.runtimeName}`}
-                    disabled={busy || !page.connected}
+                    disabled={busy || !page.readConnected}
                     onPress={() => void more(page.sourceKey)}
                   />
                 )}

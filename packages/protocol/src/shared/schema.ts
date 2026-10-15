@@ -80,18 +80,6 @@ export function maxValue<S extends Schema.Top & { readonly Type: Sized }>(
     ),
   )
 }
-export function lengthValue<S extends Schema.Top & { readonly Type: Sized }>(
-  schema: S,
-  length: number,
-) {
-  return schema.pipe(
-    Schema.check(
-      Schema.makeFilter((value) => size(value) === length, {
-        message: `Expected length ${length}`,
-      }),
-    ),
-  )
-}
 export function refine<S extends Schema.Top>(
   schema: S,
   predicate: (value: S['Type']) => boolean,

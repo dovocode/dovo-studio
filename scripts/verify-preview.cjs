@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -25,7 +26,7 @@ app.on('browser-window-created', (_event, window) =>
       const port = server.address().port
       await window.webContents.executeJavaScript(`(async()=>{
     const wait=async(f)=>{for(let i=0;i<150;i++){if(f())return;await new Promise(r=>setTimeout(r,100))}throw new Error('Timeout: '+document.body.innerText.slice(-500))};
-    await wait(()=>document.body.innerText.includes('Workspace synced'));
+    await wait(()=>(${workspaceReady.toString()})());
     const c=await window.dovo.runtimeConnection();
     const call=async(path,body)=>{const r=await fetch(c.address+path,{method:'PATCH',headers:{Authorization:'Bearer '+c.token,'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text())};
     await call('/api/workspace',{collection:'tasks',id:'preview-test',changes:{},create:{id:'preview-test',title:'Preview test',repositoryId:'',agentId:'',status:'draft',createdAt:new Date().toISOString(),messages:[],files:[],draft:'',example:false}});

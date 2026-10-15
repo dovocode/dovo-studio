@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Platform, ScrollView, View } from 'react-native'
-import { artifactResponseSchema, type Artifact, type ArtifactReference } from '@dovo/protocol'
+import {
+  artifactResponseSchema,
+  artifactSourceMarkdown,
+  type Artifact,
+  type ArtifactReference,
+} from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../theme'
 import { Text } from './text'
@@ -98,6 +103,8 @@ export function InlineArtifact({
               <ScrollView contentContainerStyle={{ padding: 16 }}>
                 {!source && artifact.format === 'markdown' ? (
                   <Markdown text={artifact.content} />
+                ) : artifact.content.length <= 1024 * 1024 ? (
+                  <Markdown text={artifactSourceMarkdown(artifact)} />
                 ) : (
                   <Text
                     selectable

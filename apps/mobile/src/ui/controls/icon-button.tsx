@@ -31,7 +31,7 @@ type IconButtonProps = {
 }
 
 /** Native buttons can share a Host when they form a toolbar. */
-export function NativeIconButton({
+function NativeIconButton({
   label,
   icon,
   onPress,

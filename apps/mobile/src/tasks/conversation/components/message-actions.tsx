@@ -220,7 +220,9 @@ export function MessageActions({
     ])
   }
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+    <View
+      style={{ flexDirection: 'row', flexWrap: 'wrap', maxWidth: '100%', alignItems: 'center' }}
+    >
       <ActionButton
         testID="Copy message"
         label={feedback === 'message' ? 'Copied' : 'Copy message'}
@@ -252,7 +254,7 @@ export function MessageActions({
           }
           style={({ pressed }) => ({
             width: 36,
-            height: 32,
+            minHeight: 32,
             alignItems: 'center',
             justifyContent: 'center',
             opacity: pressed || !connected ? 0.5 : 1,
@@ -272,7 +274,7 @@ export function MessageActions({
           onPress={chooseRetry}
           style={({ pressed }) => ({
             width: 36,
-            height: 32,
+            minHeight: 32,
             alignItems: 'center',
             justifyContent: 'center',
             opacity: pressed || !connected || retrying ? 0.5 : 1,
@@ -292,7 +294,7 @@ export function MessageActions({
           onPress={fork}
           style={({ pressed }) => ({
             width: 36,
-            height: 32,
+            minHeight: 32,
             alignItems: 'center',
             justifyContent: 'center',
             opacity: pressed || !connected || forking ? 0.5 : 1,
@@ -312,8 +314,10 @@ export function MessageActions({
           hitSlop={6}
           onPress={chooseCommand}
           style={({ pressed }) => ({
-            height: 32,
+            minHeight: 32,
             paddingHorizontal: 8,
+            paddingVertical: 6,
+            maxWidth: '100%',
             flexDirection: 'row',
             alignItems: 'center',
             gap: 4,
@@ -321,7 +325,7 @@ export function MessageActions({
           })}
         >
           <Icon name="terminal" size={13} color={colors.muted} />
-          <Text style={{ color: colors.muted, fontSize: 12 }}>Run</Text>
+          <Text style={{ color: colors.muted, fontSize: 12, flexShrink: 1 }}>Run</Text>
         </Pressable>
       )}
       {blocks.length > 0 && (
@@ -332,8 +336,10 @@ export function MessageActions({
           hitSlop={6}
           onPress={copyCode}
           style={({ pressed }) => ({
-            height: 32,
+            minHeight: 32,
             paddingHorizontal: 8,
+            paddingVertical: 6,
+            maxWidth: '100%',
             flexDirection: 'row',
             alignItems: 'center',
             gap: 4,
@@ -341,7 +347,7 @@ export function MessageActions({
           })}
         >
           <Icon name={feedback === 'code' ? 'check' : 'copy'} size={13} color={colors.muted} />
-          <Text style={{ color: colors.muted, fontSize: 12 }}>
+          <Text style={{ color: colors.muted, fontSize: 12, flexShrink: 1 }}>
             {feedback === 'code' ? 'Copied' : 'Copy code'}
           </Text>
         </Pressable>
@@ -371,7 +377,7 @@ function ActionButton(props: {
       onLongPress={props.onLongPress}
       style={({ pressed }) => ({
         width: 36,
-        height: 32,
+        minHeight: 32,
         alignItems: 'center',
         justifyContent: 'center',
         opacity: pressed ? 0.5 : 1,

@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 const fs = require('node:fs')
 const { execFileSync } = require('node:child_process')
@@ -20,7 +21,7 @@ app.on('browser-window-created', (_event, window) => {
     try {
       const result = await window.webContents.executeJavaScript(`(async()=>{
         const wait=async(check)=>{for(let i=0;i<250;i++){if(check())return;await new Promise(r=>setTimeout(r,100))}throw new Error('PR UI timeout: '+document.body.innerText.slice(-1800))};
-        await wait(()=>document.body.innerText.includes('Workspace synced'));
+        await wait(()=>(${workspaceReady.toString()})());
         const c=await window.dovo.runtimeConnection();
         const call=async(path,body,method='POST')=>{const response=await fetch(c.address+path,{method,headers:{Authorization:'Bearer '+c.token,'Content-Type':'application/json'},body:JSON.stringify(body)});const result=await response.json();if(!response.ok)throw new Error(JSON.stringify(result));return result};
         const config=await call('/api/commands/read',{});await call('/api/commands/save',{...config.settings,gh:${JSON.stringify(root + '/scripts/fixtures/github.cjs')}});

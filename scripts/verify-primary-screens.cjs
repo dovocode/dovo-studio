@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -54,7 +55,7 @@ app.on('browser-window-created', (_event, window) => {
         qa.pageFits = () => document.querySelector('.studio-main').scrollWidth<=document.querySelector('.studio-main').clientWidth+1;
         const connection = await window.dovo.runtimeConnection();
         qa.call = async (route,body,method='POST') => {const response=await fetch(connection.address+route,{method,headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});const value=await response.json();if(!response.ok)throw new Error(JSON.stringify(value));return value};
-        await qa.wait(()=>document.body.innerText.includes('Workspace synced'));
+        await qa.wait(()=>(${workspaceReady.toString()})());
         await qa.wait(()=>qa.button('Create task'));
         qa.check('Fresh workspace has useful empty task screen',!!qa.button('Create task'));
         const initial=await qa.call('/api/snapshot',undefined,'GET');

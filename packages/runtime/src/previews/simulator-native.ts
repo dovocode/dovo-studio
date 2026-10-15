@@ -24,9 +24,41 @@ async function loadSharp() {
 export interface NativeSimulator {
   screenPoints?: () => { width: number; height: number }
   start(frame: (frame: BrowserFrame) => void, error: (error: Error) => void): () => void
-  input(input: RemoteBrowserInput): Promise<void>
+  input(input: RemoteBrowserInput, authorize?: () => void, signal?: AbortSignal): Promise<void>
   release(): Promise<void>
   close(): Promise<void>
+}
+// Only startup owns this signal. Each wait removes its listener before returning control
+// to the session owner, which manages cancellation after construction.
+export function nativePreparation(authorize?: () => void, signal?: AbortSignal) {
+  const check = () => {
+    authorize?.()
+    signal?.throwIfAborted()
+  }
+  return {
+    check,
+    async wait<T>(operation: () => Promise<T>): Promise<T> {
+      check()
+      let abort: (() => void) | undefined
+      try {
+        const pending = operation()
+        const value = signal
+          ? await Promise.race([
+              pending,
+              new Promise<never>((_, reject) => {
+                abort = () => reject(signal.reason)
+                signal.addEventListener('abort', abort, { once: true })
+                if (signal.aborted) abort()
+              }),
+            ])
+          : await pending
+        check()
+        return value
+      } finally {
+        if (abort) signal?.removeEventListener('abort', abort)
+      }
+    },
+  }
 }
 const empty = mutableStruct({})
 const pixels = maxValue(
@@ -157,50 +189,65 @@ export function asciiKey(char: string):
     }
   return undefined
 }
-export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulator> {
+export async function iosSimulator(
+  device: PreviewDevice,
+  authorize?: () => void,
+  signal?: AbortSignal,
+): Promise<NativeSimulator> {
+  const preparation = nativePreparation(authorize, signal)
+  preparation.check()
   const udid = device.id.slice(4)
   const directory = await mkdtemp(join(tmpdir(), 'dovo-sim-'))
   const socket = join(directory, 'control.sock')
   let diagnostic = ''
-  const child = spawn(
-    process.env.DOVO_IDB_COMPANION || 'idb_companion',
-    ['--udid', udid, '--only', 'simulator', '--grpc-domain-sock', socket, '--log-level', 'info'],
-    {
-      stdio: ['ignore', 'ignore', 'pipe'],
-    },
-  )
-  child.stderr?.on('data', (chunk: Buffer) => {
-    diagnostic = (diagnostic + chunk.toString()).slice(-3000)
-  })
   let startupError: Error | undefined
-  child.on('error', (error) => {
-    startupError = error
-  })
-  // A missing or crashing companion fails now instead of after the 15 second ready timeout.
-  const exited = new Promise<never>((_, reject) => {
-    child.once('error', (error) => reject(error))
-    child.once('exit', (code, signal) =>
-      reject(new Error(`idb_companion exited (${signal ?? code}). ${diagnostic}`.trim())),
-    )
-  })
-  exited.catch(() => undefined)
-  const rpc = new SimulatorRpc(`unix:${socket}`, iosProtocol, 'idb.CompanionService')
+  let companion: ChildProcess | undefined
+  let connection: SimulatorRpc | undefined
   try {
-    await Promise.race([rpc.ready(), exited])
-    const description = await rpc.unary(
-      'describe',
-      'idb.Empty',
-      'idb.Description',
-      {},
-      mutableStruct({
-        targetDescription: mutableStruct({
-          udid: Schema.String,
-          screenDimensions: mutableStruct({
-            widthPoints: pixels,
-            heightPoints: pixels,
+    preparation.check()
+    const child = (companion = spawn(
+      process.env.DOVO_IDB_COMPANION || 'idb_companion',
+      ['--udid', udid, '--only', 'simulator', '--grpc-domain-sock', socket, '--log-level', 'info'],
+      {
+        stdio: ['ignore', 'ignore', 'pipe'],
+      },
+    ))
+    child.stderr?.on('data', (chunk: Buffer) => {
+      diagnostic = (diagnostic + chunk.toString()).slice(-3000)
+    })
+    child.on('error', (error) => {
+      startupError = error
+    })
+    // A missing or crashing companion fails now instead of after the 15 second ready timeout.
+    const exited = new Promise<never>((_, reject) => {
+      child.once('error', (error) => reject(error))
+      child.once('exit', (code, signal) =>
+        reject(new Error(`idb_companion exited (${signal ?? code}). ${diagnostic}`.trim())),
+      )
+    })
+    exited.catch(() => undefined)
+    const rpc = (connection = new SimulatorRpc(
+      `unix:${socket}`,
+      iosProtocol,
+      'idb.CompanionService',
+    ))
+    await preparation.wait(() => Promise.race([rpc.ready(), exited]))
+    const description = await preparation.wait(() =>
+      rpc.unary(
+        'describe',
+        'idb.Empty',
+        'idb.Description',
+        {},
+        mutableStruct({
+          targetDescription: mutableStruct({
+            udid: Schema.String,
+            screenDimensions: mutableStruct({
+              widthPoints: pixels,
+              heightPoints: pixels,
+            }),
           }),
         }),
-      }),
+      ),
     )
     if (description.targetDescription.udid !== udid) throw new Error('Simulator identity changed')
     const size = description.targetDescription.screenDimensions
@@ -441,25 +488,27 @@ export async function iosSimulator(device: PreviewDevice): Promise<NativeSimulat
       },
     }
   } catch (error) {
-    rpc.close()
-    await stopChild(child)
+    connection?.close()
+    if (companion) await stopChild(companion)
     await rm(directory, {
       recursive: true,
       force: true,
     })
+    preparation.check()
     throw new HttpError(
       503,
       `iOS live preview requires idb_companion and a booted simulator. ${startupError?.message ?? (error instanceof Error ? error.message : String(error))} ${diagnostic}`,
     )
   }
 }
-export async function emulatorEndpoint(device: PreviewDevice) {
+export async function emulatorEndpoint(device: PreviewDevice, check?: () => void) {
   const directories = [
     join(homedir(), 'Library/Caches/TemporaryItems/avd/running'),
     join(tmpdir(), 'avd/running'),
     join(process.env.XDG_RUNTIME_DIR || tmpdir(), 'avd/running'),
   ]
   for (const directory of new Set(directories)) {
+    check?.()
     let files: string[]
     try {
       files = await readdir(directory)
@@ -467,6 +516,7 @@ export async function emulatorEndpoint(device: PreviewDevice) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue
       throw error
     }
+    check?.()
     for (const file of files.filter((file) => /^pid_\d+\.ini$/.test(file))) {
       try {
         process.kill(Number(file.slice(4, -4)), 0)
@@ -479,6 +529,7 @@ export async function emulatorEndpoint(device: PreviewDevice) {
           return at > 0 ? [[line.slice(0, at).trim(), line.slice(at + 1).trim()]] : []
         }),
       )
+      check?.()
       if (data['avd.name'] !== device.name || `emulator-${data['port.serial']}` !== device.runtime)
         continue
       const port = Number(data['grpc.port'])
@@ -509,284 +560,297 @@ export function androidScreenSize(output: string) {
     height = Number(size[3])
   return width > 0 && height > 0 && width <= 8192 && height <= 8192 ? { width, height } : undefined
 }
-export async function androidSimulator(device: PreviewDevice): Promise<NativeSimulator> {
-  const endpoint = await emulatorEndpoint(device)
-  const signer = endpoint.keys
-    ? await emulatorKey(endpoint.keys.directory, endpoint.keys.active)
-    : undefined
-  const rpc = new SimulatorRpc(
-    endpoint.address,
-    androidProtocol,
-    'android.emulation.control.EmulatorController',
-    endpoint.token ?? signer?.token(),
-  )
+export async function androidSimulator(
+  device: PreviewDevice,
+  authorize?: () => void,
+  signal?: AbortSignal,
+): Promise<NativeSimulator> {
+  const preparation = nativePreparation(authorize, signal)
+  preparation.check()
+  let signer: Awaited<ReturnType<typeof emulatorKey>> | undefined
+  let connection: SimulatorRpc | undefined
   try {
-    await rpc.ready()
+    const endpoint = await emulatorEndpoint(device, preparation.check)
+    preparation.check()
+    signer = endpoint.keys
+      ? await emulatorKey(endpoint.keys.directory, endpoint.keys.active)
+      : undefined
+    preparation.check()
+    const rpc = (connection = new SimulatorRpc(
+      endpoint.address,
+      androidProtocol,
+      'android.emulation.control.EmulatorController',
+      endpoint.token ?? signer?.token(),
+    ))
+    await preparation.wait(() => rpc.ready())
+    // Signed tokens are short-lived; renew before each call.
+    const refreshToken = () => {
+      if (signer) rpc.metadata.set('authorization', `Bearer ${signer.token()}`)
+    }
+    const adb = await androidTool('adb')
+    preparation.check()
+    const execute = promisify(execFile)
+    // Touches use device pixels; the phone sees half of them, like points on iOS.
+    const screen = await execute(adb, ['-s', device.runtime, 'shell', 'wm', 'size'], {
+      signal,
+      windowsHide: true,
+      timeout: 10000,
+    })
+      .then(({ stdout }) => androidScreenSize(stdout))
+      .catch(() => undefined)
+    preparation.check()
+    let width = screen?.width ?? 0,
+      height = screen?.height ?? 0,
+      touching = false
+    const unary = (method: string, type: string, request: object) => {
+      refreshToken()
+      return rpc.unary(method, type, 'android.emulation.control.Empty', request, empty)
+    }
+    const keyCodes: Record<string, number> = {
+      Home: 3,
+      GoHome: 3,
+      GoBack: 4,
+      Enter: 66,
+      Backspace: 67,
+      Delete: 112,
+      Tab: 61,
+      Escape: 111,
+      Space: 62,
+      ArrowLeft: 21,
+      ArrowRight: 22,
+      ArrowUp: 19,
+      ArrowDown: 20,
+      End: 123,
+      PageUp: 92,
+      PageDown: 93,
+      Control: 113,
+      Meta: 117,
+      Shift: 59,
+      Alt: 57,
+    }
+    const key = async (name: string) => {
+      const codes = name
+        .split('+')
+        .map(
+          (part) =>
+            keyCodes[part] ??
+            (/^[a-z]$/i.test(part) ? part.toLowerCase().charCodeAt(0) - 68 : undefined),
+        )
+      if (codes.some((code) => code === undefined))
+        throw new Error('This emulator key is not supported')
+      // gRPC keyboard events require hw.keyboard=yes. Software input works for
+      // touch-only AVDs too; framebuffer and gesture streaming remain native gRPC.
+      await execute(
+        adb,
+        [
+          '-s',
+          device.runtime,
+          'shell',
+          'input',
+          codes.length > 1 ? 'keycombination' : 'keyevent',
+          ...codes.map(String),
+        ],
+        {
+          timeout: 10000,
+          windowsHide: true,
+          maxBuffer: 1024 * 1024,
+        },
+      )
+    }
+    const release = async () => {
+      if (!touching) return
+      touching = false
+      await unary('sendTouch', 'android.emulation.control.TouchEvent', {
+        touches: [
+          {
+            identifier: 0,
+            pressure: 0,
+          },
+        ],
+      })
+    }
+    let stop: (() => void) | undefined
+    const touch = (x: number, y: number, pressure: number) =>
+      unary('sendTouch', 'android.emulation.control.TouchEvent', {
+        touches: [
+          {
+            x: Math.round(Math.max(0, Math.min(width - 1, x))),
+            y: Math.round(Math.max(0, Math.min(height - 1, y))),
+            identifier: 0,
+            pressure,
+          },
+        ],
+      })
+    return {
+      start(publish, report) {
+        const schema = mutableStruct({
+          format: mutableStruct({
+            width: maxValue(
+              minValue(
+                Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+                  Schema.check(Schema.isInt()),
+                  Schema.check(
+                    Schema.isBetween({
+                      minimum: Number.MIN_SAFE_INTEGER,
+                      maximum: Number.MAX_SAFE_INTEGER,
+                    }),
+                  ),
+                ),
+                0,
+              ),
+              8192,
+            ),
+            height: maxValue(
+              minValue(
+                Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
+                  Schema.check(Schema.isInt()),
+                  Schema.check(
+                    Schema.isBetween({
+                      minimum: Number.MIN_SAFE_INTEGER,
+                      maximum: Number.MAX_SAFE_INTEGER,
+                    }),
+                  ),
+                ),
+                0,
+              ),
+              8192,
+            ),
+          }),
+          image: bytes,
+        })
+        refreshToken()
+        // Let the emulator scale frames (a 1080×2400 RGB frame is ~7.8 MB); the box fits both
+        // orientations because the emulator keeps the aspect ratio.
+        const stream = rpc.stream(
+          'streamScreenshot',
+          'android.emulation.control.ImageFormat',
+          'android.emulation.control.Image',
+          screen ? { format: 2, width: 1600, height: 1600 } : { format: 2 },
+          schema,
+        )
+        let stopped = false
+        const encoder = latest<Schema.Schema.Type<typeof schema>>(
+          async (value) => {
+            const w = value.format.width,
+              h = value.format.height
+            if (!w || !h || w * h * 3 !== value.image.length)
+              throw new Error('Invalid emulator framebuffer')
+            // protobuf already owns this immutable frame buffer. Avoid copying the full
+            // RGB framebuffer again for every encode (several MB per frame).
+            const pixels = Buffer.from(
+              value.image.buffer,
+              value.image.byteOffset,
+              value.image.byteLength,
+            )
+            const data = await (
+              await loadSharp()
+            )(pixels, {
+              raw: {
+                width: w,
+                height: h,
+                channels: 3,
+              },
+            })
+              .resize({
+                width: 960,
+                height: 1600,
+                fit: 'inside',
+                withoutEnlargement: true,
+              })
+              .jpeg({
+                quality: 75,
+              })
+              .toBuffer()
+            // Scaled frames keep the device's orientation; touch space follows it.
+            if (screen) {
+              const long = Math.max(screen.width, screen.height),
+                short = Math.min(screen.width, screen.height)
+              width = w > h ? long : short
+              height = w > h ? short : long
+            } else {
+              width = w
+              height = h
+            }
+            return {
+              type: 'frame',
+              data,
+              width: Math.round(width / 2),
+              height: Math.round(height / 2),
+            }
+          },
+          publish,
+          report,
+        )
+        stream.on('data', (value) => {
+          if (value.image.length) void encoder.push(value)
+        })
+        stream.on('error', (error) => {
+          if (!stopped) report(error)
+        })
+        stream.on('end', () => {
+          if (!stopped) report(new Error('Emulator stream ended'))
+        })
+        stop = () => {
+          stopped = true
+          encoder.stop()
+          stream.cancel()
+        }
+        return stop
+      },
+      async input(input) {
+        if (input.type === 'pointer') {
+          if (!width || !height || (input.phase === 'move' && !touching)) return
+          touching = input.phase !== 'up'
+          await touch(input.x * 2, input.y * 2, touching ? 1 : 0)
+        } else if (input.type === 'text') {
+          if (/^[\x20-\x7e]+$/.test(input.text) && !input.text.includes('%s')) {
+            // adb joins shell arguments. Quote explicitly; input's %s escape means a space.
+            const text = "'" + input.text.replaceAll(' ', '%s').replaceAll("'", "'\\''") + "'"
+            await execute(adb, ['-s', device.runtime, 'shell', 'input', 'text', text], {
+              windowsHide: true,
+              timeout: 10000,
+              maxBuffer: 1024 * 1024,
+            })
+          } else {
+            // Android's shell keyboard map cannot represent arbitrary Unicode.
+            await unary('setClipboard', 'android.emulation.control.ClipData', {
+              text: input.text,
+            })
+            await execute(adb, ['-s', device.runtime, 'shell', 'input', 'keyevent', '279'], {
+              windowsHide: true,
+              timeout: 10000,
+              maxBuffer: 1024 * 1024,
+            })
+          }
+        } else if (input.type === 'scroll') {
+          // A short swipe, like the iOS simulator; never while a finger is already down.
+          if (!width || !height || touching) return
+          const from = { x: input.x * 2, y: input.y * 2 }
+          const to = { x: from.x - input.deltaX * 2, y: from.y - input.deltaY * 2 }
+          await touch(from.x, from.y, 1)
+          for (let step = 1; step <= 4; step++) {
+            await new Promise((resolve) => setTimeout(resolve, 25))
+            await touch(
+              from.x + ((to.x - from.x) * step) / 4,
+              from.y + ((to.y - from.y) * step) / 4,
+              1,
+            )
+          }
+          await touch(to.x, to.y, 0)
+        } else if (input.type === 'back') await key('GoBack')
+        else if (input.type === 'key') await key(input.key)
+      },
+      release,
+      async close() {
+        stop?.()
+        await release().catch((error) => console.warn('Could not release simulator touch', error))
+        rpc.close()
+        await signer?.dispose()
+      },
+    }
   } catch (error) {
-    rpc.close()
+    connection?.close()
     await signer?.dispose()
     throw error
-  }
-  // Signed tokens are short-lived; renew before each call.
-  const authorize = () => {
-    if (signer) rpc.metadata.set('authorization', `Bearer ${signer.token()}`)
-  }
-  const adb = await androidTool('adb')
-  const execute = promisify(execFile)
-  // Touches use device pixels; the phone sees half of them, like points on iOS.
-  const screen = await execute(adb, ['-s', device.runtime, 'shell', 'wm', 'size'], {
-    windowsHide: true,
-    timeout: 10000,
-  })
-    .then(({ stdout }) => androidScreenSize(stdout))
-    .catch(() => undefined)
-  let width = screen?.width ?? 0,
-    height = screen?.height ?? 0,
-    touching = false
-  const unary = (method: string, type: string, request: object) => {
-    authorize()
-    return rpc.unary(method, type, 'android.emulation.control.Empty', request, empty)
-  }
-  const keyCodes: Record<string, number> = {
-    Home: 3,
-    GoHome: 3,
-    GoBack: 4,
-    Enter: 66,
-    Backspace: 67,
-    Delete: 112,
-    Tab: 61,
-    Escape: 111,
-    Space: 62,
-    ArrowLeft: 21,
-    ArrowRight: 22,
-    ArrowUp: 19,
-    ArrowDown: 20,
-    End: 123,
-    PageUp: 92,
-    PageDown: 93,
-    Control: 113,
-    Meta: 117,
-    Shift: 59,
-    Alt: 57,
-  }
-  const key = async (name: string) => {
-    const codes = name
-      .split('+')
-      .map(
-        (part) =>
-          keyCodes[part] ??
-          (/^[a-z]$/i.test(part) ? part.toLowerCase().charCodeAt(0) - 68 : undefined),
-      )
-    if (codes.some((code) => code === undefined))
-      throw new Error('This emulator key is not supported')
-    // gRPC keyboard events require hw.keyboard=yes. Software input works for
-    // touch-only AVDs too; framebuffer and gesture streaming remain native gRPC.
-    await execute(
-      adb,
-      [
-        '-s',
-        device.runtime,
-        'shell',
-        'input',
-        codes.length > 1 ? 'keycombination' : 'keyevent',
-        ...codes.map(String),
-      ],
-      {
-        timeout: 10000,
-        windowsHide: true,
-        maxBuffer: 1024 * 1024,
-      },
-    )
-  }
-  const release = async () => {
-    if (!touching) return
-    touching = false
-    await unary('sendTouch', 'android.emulation.control.TouchEvent', {
-      touches: [
-        {
-          identifier: 0,
-          pressure: 0,
-        },
-      ],
-    })
-  }
-  let stop: (() => void) | undefined
-  const touch = (x: number, y: number, pressure: number) =>
-    unary('sendTouch', 'android.emulation.control.TouchEvent', {
-      touches: [
-        {
-          x: Math.round(Math.max(0, Math.min(width - 1, x))),
-          y: Math.round(Math.max(0, Math.min(height - 1, y))),
-          identifier: 0,
-          pressure,
-        },
-      ],
-    })
-  return {
-    start(publish, report) {
-      const schema = mutableStruct({
-        format: mutableStruct({
-          width: maxValue(
-            minValue(
-              Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
-                Schema.check(Schema.isInt()),
-                Schema.check(
-                  Schema.isBetween({
-                    minimum: Number.MIN_SAFE_INTEGER,
-                    maximum: Number.MAX_SAFE_INTEGER,
-                  }),
-                ),
-              ),
-              0,
-            ),
-            8192,
-          ),
-          height: maxValue(
-            minValue(
-              Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
-                Schema.check(Schema.isInt()),
-                Schema.check(
-                  Schema.isBetween({
-                    minimum: Number.MIN_SAFE_INTEGER,
-                    maximum: Number.MAX_SAFE_INTEGER,
-                  }),
-                ),
-              ),
-              0,
-            ),
-            8192,
-          ),
-        }),
-        image: bytes,
-      })
-      authorize()
-      // Let the emulator scale frames (a 1080×2400 RGB frame is ~7.8 MB); the box fits both
-      // orientations because the emulator keeps the aspect ratio.
-      const stream = rpc.stream(
-        'streamScreenshot',
-        'android.emulation.control.ImageFormat',
-        'android.emulation.control.Image',
-        screen ? { format: 2, width: 1600, height: 1600 } : { format: 2 },
-        schema,
-      )
-      let stopped = false
-      const encoder = latest<Schema.Schema.Type<typeof schema>>(
-        async (value) => {
-          const w = value.format.width,
-            h = value.format.height
-          if (!w || !h || w * h * 3 !== value.image.length)
-            throw new Error('Invalid emulator framebuffer')
-          // protobuf already owns this immutable frame buffer. Avoid copying the full
-          // RGB framebuffer again for every encode (several MB per frame).
-          const pixels = Buffer.from(
-            value.image.buffer,
-            value.image.byteOffset,
-            value.image.byteLength,
-          )
-          const data = await (
-            await loadSharp()
-          )(pixels, {
-            raw: {
-              width: w,
-              height: h,
-              channels: 3,
-            },
-          })
-            .resize({
-              width: 960,
-              height: 1600,
-              fit: 'inside',
-              withoutEnlargement: true,
-            })
-            .jpeg({
-              quality: 75,
-            })
-            .toBuffer()
-          // Scaled frames keep the device's orientation; touch space follows it.
-          if (screen) {
-            const long = Math.max(screen.width, screen.height),
-              short = Math.min(screen.width, screen.height)
-            width = w > h ? long : short
-            height = w > h ? short : long
-          } else {
-            width = w
-            height = h
-          }
-          return {
-            type: 'frame',
-            data,
-            width: Math.round(width / 2),
-            height: Math.round(height / 2),
-          }
-        },
-        publish,
-        report,
-      )
-      stream.on('data', (value) => {
-        if (value.image.length) void encoder.push(value)
-      })
-      stream.on('error', (error) => {
-        if (!stopped) report(error)
-      })
-      stream.on('end', () => {
-        if (!stopped) report(new Error('Emulator stream ended'))
-      })
-      stop = () => {
-        stopped = true
-        encoder.stop()
-        stream.cancel()
-      }
-      return stop
-    },
-    async input(input) {
-      if (input.type === 'pointer') {
-        if (!width || !height || (input.phase === 'move' && !touching)) return
-        touching = input.phase !== 'up'
-        await touch(input.x * 2, input.y * 2, touching ? 1 : 0)
-      } else if (input.type === 'text') {
-        if (/^[\x20-\x7e]+$/.test(input.text) && !input.text.includes('%s')) {
-          // adb joins shell arguments. Quote explicitly; input's %s escape means a space.
-          const text = "'" + input.text.replaceAll(' ', '%s').replaceAll("'", "'\\''") + "'"
-          await execute(adb, ['-s', device.runtime, 'shell', 'input', 'text', text], {
-            windowsHide: true,
-            timeout: 10000,
-            maxBuffer: 1024 * 1024,
-          })
-        } else {
-          // Android's shell keyboard map cannot represent arbitrary Unicode.
-          await unary('setClipboard', 'android.emulation.control.ClipData', {
-            text: input.text,
-          })
-          await execute(adb, ['-s', device.runtime, 'shell', 'input', 'keyevent', '279'], {
-            windowsHide: true,
-            timeout: 10000,
-            maxBuffer: 1024 * 1024,
-          })
-        }
-      } else if (input.type === 'scroll') {
-        // A short swipe, like the iOS simulator; never while a finger is already down.
-        if (!width || !height || touching) return
-        const from = { x: input.x * 2, y: input.y * 2 }
-        const to = { x: from.x - input.deltaX * 2, y: from.y - input.deltaY * 2 }
-        await touch(from.x, from.y, 1)
-        for (let step = 1; step <= 4; step++) {
-          await new Promise((resolve) => setTimeout(resolve, 25))
-          await touch(
-            from.x + ((to.x - from.x) * step) / 4,
-            from.y + ((to.y - from.y) * step) / 4,
-            1,
-          )
-        }
-        await touch(to.x, to.y, 0)
-      } else if (input.type === 'back') await key('GoBack')
-      else if (input.type === 'key') await key(input.key)
-    },
-    release,
-    async close() {
-      stop?.()
-      await release().catch((error) => console.warn('Could not release simulator touch', error))
-      rpc.close()
-      await signer?.dispose()
-    },
   }
 }

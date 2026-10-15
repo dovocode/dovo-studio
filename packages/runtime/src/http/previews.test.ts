@@ -52,5 +52,9 @@ it('authenticates preview controls and requires a task on this runtime before in
     (await call('/api/previews/action', { taskId: 'task', id: 'ios:test', action: 'screenshot' }))
       .status,
   ).toBe(200)
-  expect(action).toHaveBeenCalledWith({ taskId: 'task', id: 'ios:test', action: 'screenshot' })
+  expect(action).toHaveBeenCalledWith(
+    { taskId: 'task', id: 'ios:test', action: 'screenshot' },
+    undefined,
+    expect.any(Function),
+  )
 })

@@ -22,6 +22,7 @@ export function createTask(
     | 'worktreeBaseBranch'
     | 'worktreeFromOrigin'
     | 'setupCommand'
+    | 'linkedCheckouts'
   > & {
     objective: string
     origin?: string
@@ -38,6 +39,7 @@ export function createTask(
     worktreeBaseBranch: input.worktreeBaseBranch,
     worktreeFromOrigin: input.worktreeFromOrigin,
     setupCommand: input.setupCommand,
+    linkedCheckouts: input.linkedCheckouts?.map((link) => ({ ...link })),
     status: 'draft',
     createdAt: new Date().toISOString(),
     messages: input.objective.trim()

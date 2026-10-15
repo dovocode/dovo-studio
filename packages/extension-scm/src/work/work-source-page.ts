@@ -23,12 +23,28 @@ export type WorkItemsPage = {
 }
 export type WorkSourcePage = WorkItemsPage & {
   source: WorkSource
+  reader: WorkSource
   loadedPages?: number
   optionsMode?: 'issues' | 'pipelines'
   optionsFetchedAt?: number
   query?: string
   options?: ForgeWorkOptions
   error?: string
+}
+
+export type WorkListSource = WorkSource & {
+  reader: WorkSource & { readerIdentity?: string }
+  destination?: string
+}
+
+/** Alternate computers provide reads, never the destination for actions or tasks. */
+export function workPageForOrigin(page: WorkItemsPage, source: WorkListSource): WorkItemsPage {
+  return source.reader.key === source.key
+    ? page
+    : {
+        ...page,
+        items: page.items.map((item) => ({ ...item, destination: source.destination })),
+      }
 }
 
 const loadedPages = Schema.optional(
@@ -83,7 +99,7 @@ export const workSourceCacheKey = (
 export function reusableOptions<T>(
   page:
     | {
-        source: { scope: string }
+        reader: { scope: string }
         optionsMode?: string
         optionsFetchedAt?: number
         options?: T
@@ -95,7 +111,8 @@ export function reusableOptions<T>(
   now = Date.now(),
 ): T | undefined {
   return !refresh &&
-    page?.source.scope === source.scope &&
+    page &&
+    page.reader.scope === source.scope &&
     page.optionsMode === mode &&
     page.optionsFetchedAt !== undefined &&
     now - page.optionsFetchedAt >= 0 &&
@@ -124,7 +141,7 @@ export function appendWorkPage(previous: WorkItemsPage, incoming: WorkItemsPage)
 
 /** Re-read the loaded depth, including an explicit refresh, with filters applied before paging. */
 export function loadWorkSourcePage(
-  source: WorkSource,
+  source: WorkListSource,
   mode: 'issues' | 'pipelines',
   search: string,
   state: string,
@@ -133,12 +150,13 @@ export function loadWorkSourcePage(
   jiraFilters?: JiraIssueFilters,
 ) {
   return Effect.gen(function* () {
-    const expectedReaderIdentity = yield* verifySourceReader(source)
+    const reader = source.reader
+    const readGuard = yield* verifySourceReader(reader)
     const options =
-      reusableOptions(previous, source, mode, refresh) ??
-      (yield* source.requestEffect(
+      reusableOptions(previous, reader, mode, refresh) ??
+      (yield* reader.requestEffect(
         '/api/scm/work/options',
-        { ...source.input, expectedReaderIdentity, area: mode },
+        { ...reader.input, ...readGuard, area: mode },
         forgeWorkOptionsSchema,
       ))
     const optionsFetchedAt =
@@ -160,12 +178,12 @@ export function loadWorkSourcePage(
       for (let number = 0; number < count; number++) {
         const next =
           mode === 'issues'
-            ? yield* source.requestEffect(
+            ? yield* reader.requestEffect(
                 '/api/scm/work/issues/list',
                 {
-                  ...source.input,
+                  ...reader.input,
                   state,
-                  expectedReaderIdentity,
+                  ...readGuard,
                   query,
                   cursor: response.next,
                   refresh,
@@ -173,18 +191,19 @@ export function loadWorkSourcePage(
                 },
                 forgeIssuePageSchema,
               )
-            : yield* source.requestEffect(
+            : yield* reader.requestEffect(
                 '/api/scm/work/pipelines/list',
-                { ...source.input, expectedReaderIdentity, cursor: response.next, refresh },
+                { ...reader.input, ...readGuard, cursor: response.next, refresh },
                 forgePipelinePageSchema,
               )
-        response = appendWorkPage(response, next)
+        response = appendWorkPage(response, workPageForOrigin(next, source))
         loadedPages++
         if (!response.next) break
       }
     return {
       ...response,
-      options,
+      options:
+        reader.key === source.key ? options : { ...options, destination: source.destination },
       optionsMode: mode,
       optionsFetchedAt,
       loadedPages: Math.max(1, loadedPages),

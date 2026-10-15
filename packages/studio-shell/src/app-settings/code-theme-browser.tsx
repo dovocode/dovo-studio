@@ -146,7 +146,7 @@ export function CodeThemeBrowser({
         ) : (
           <>
             <div className="relative">
-              <Search className="absolute top-3 left-3 size-4 text-muted-foreground" />
+              <Search className="absolute top-1/2 left-3 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 autoFocus
                 aria-label="Search VS Code themes"

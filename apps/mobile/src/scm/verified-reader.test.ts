@@ -59,3 +59,16 @@ it('accepts an account change only after an explicit source choice, without rewr
   expect(previousView.readerIdentities.get('remote')).toBe('old-account')
   expect(readers.selection('explicit-source').readerIdentities.size).toBe(0)
 })
+
+it('rejects a same-account repository rebind before replacing the verified destination', () => {
+  const readers = new VerifiedReaders()
+  readers.remember('source', { readerIdentity: 'account', destination: 'repo-X' })
+  expect(() =>
+    readers.remember('source', { readerIdentity: 'account', destination: 'repo-Y' }),
+  ).toThrow(/repository changed/)
+  expect(readers.identity('source')?.destination).toBe('repo-X')
+  expect(readers.candidateIdentity('source')).toBeUndefined()
+  readers.acceptAccount('source')
+  readers.remember('source', { readerIdentity: 'account', destination: 'repo-Y' })
+  expect(readers.identity('source')?.destination).toBe('repo-Y')
+})

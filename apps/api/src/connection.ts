@@ -50,7 +50,15 @@ export function publishConnection(directory: string, connection: LocalConnection
   chmodSync(temporary, 0o600)
   renameSync(temporary, path)
   return () => {
-    if (existsSync(path) && readConnection(path).pid === connection.pid) unlinkSync(path)
+    let saved: LocalConnection
+    try {
+      saved = readConnection(path)
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
+        console.warn('Could not verify runtime discovery file ownership; leaving it in place.')
+      return
+    }
+    if (saved.pid === connection.pid) unlinkSync(path)
   }
 }
 export function connectionPaths() {

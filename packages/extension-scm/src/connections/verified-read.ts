@@ -1,6 +1,10 @@
 import { useMemo } from 'react'
 import { Schema } from 'effect'
-import { forgeSourceIdentitySchema, RuntimeRequestError } from '@dovo/protocol'
+import {
+  forgeSourceIdentitySchema,
+  RuntimeRequestError,
+  type ForgeSourceIdentity,
+} from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 
 /** Forms and embedded queries stay on their scoped computer and pin the verified
@@ -27,23 +31,30 @@ export function useVerifiedRead(target: {
       input: Record<string, unknown>,
       schema: T,
     ): Promise<T['Type']> => {
-      let identity: string | undefined
+      let identity: ForgeSourceIdentity | undefined
       try {
-        identity = (await request('/api/scm/source/identity', target, forgeSourceIdentitySchema))
-          .readerIdentity
+        identity = await request('/api/scm/source/identity', target, forgeSourceIdentitySchema)
       } catch (error) {
         if (!(error instanceof RuntimeRequestError && [404, 405].includes(error.status ?? 0)))
           throw error
       }
-      if (readerIdentity && readerIdentity !== identity)
+      if (readerIdentity && readerIdentity !== identity?.readerIdentity)
         throw new RuntimeRequestError({
           kind: 'request',
           status: 409,
           message:
             'This source account changed. Refresh the source and choose its account explicitly.',
         })
-      readerIdentity = identity
-      return request(path, { ...input, expectedReaderIdentity: identity }, schema)
+      readerIdentity = identity?.readerIdentity
+      return request(
+        path,
+        {
+          ...input,
+          expectedReaderIdentity: identity?.readerIdentity,
+          expectedDestination: identity?.destination,
+        },
+        schema,
+      )
     }
   }, [scope, request])
 }

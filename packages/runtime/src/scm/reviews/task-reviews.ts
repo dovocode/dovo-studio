@@ -372,9 +372,6 @@ export class TaskReviews {
     return this.read(taskId)
   }
   /** Latest completed, still-current review approved with no open findings, if any. */
-  async isApproved(taskId: string): Promise<boolean> {
-    return (await this.read(taskId)).approved
-  }
   async fix(taskId: string, reviewId: string, findingIds: string[], messageId: string) {
     const review = this.review(taskId, reviewId)
     const findings = review.findings.filter((finding) => findingIds.includes(finding.id))

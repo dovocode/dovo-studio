@@ -7,7 +7,12 @@ const root = fileURLToPath(new URL('../../../', import.meta.url))
 const mocks = {
   'expo-router': 'export const router={push:path=>window.settingsRoute=path};',
   'react-native': `
-    export const View=({children,testID})=><div data-testid={testID}>{children}</div>;
+    const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style??{};
+    const css=style=>{const value=flat(style);return {...value,paddingLeft:value.paddingHorizontal,paddingRight:value.paddingHorizontal,paddingTop:value.paddingVertical,paddingBottom:value.paddingVertical}};
+    export const View=({children,testID,style})=><div data-testid={testID} style={{display:'flex',flexDirection:'column',flexShrink:0,boxSizing:'border-box',...css(style)}}>{children}</div>;
+    export const StyleSheet={hairlineWidth:1};
+    export const useWindowDimensions=()=>({width:innerWidth,fontScale:window.fontScale??1});
+    export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button disabled={disabled} aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;
     export const Image=View;export const Platform={OS:"web"};
     export const ScrollView=View;
     export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
@@ -16,16 +21,16 @@ const mocks = {
   'expo-crypto': `export const randomUUID=()=> 'host-new';`,
   '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
-  '../ui/content/text': `export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;`,
+  '../ui/content/text': `export const Text=({children,accessibilityRole,style})=><span role={accessibilityRole} style={{fontSize:17*(window.fontScale??1),...(Array.isArray(style)?Object.assign({},...style):style)}}>{children}</span>;`,
+  '../ui/controls/icon': `export const Icon=()=>null;`,
   '../ui/layout/screen-header': `export const ScreenHeader=({title})=><h1>{title}</h1>;`,
   '../ui/controls/switch': `export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;`,
-  './settings-theme': `export const useSettingsTheme=()=>({styles:{}});export const SettingsPage=({children})=>children;export const SettingsSheet=({children,onClose})=><div>{children}<button onClick={onClose}>Close actions</button></div>;`,
+  './settings-theme': `export const useSettingsTheme=()=>({styles:{},colors:{surface:'#fff',border:'#ddd'}});export const SettingsPage=({children})=>children;export const SettingsSheet=({children,onClose})=><div>{children}<button onClick={onClose}>Close actions</button></div>;`,
   './settings-controls': `
     export const SettingsAction=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
     export const SettingsField=({label,value,onChangeText,editable})=><label>{label}<input aria-label={label} value={value} disabled={!editable} onChange={e=>onChangeText(e.target.value)}/></label>;
     export const SettingsChoice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} disabled={disabled} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
   `,
-  './settings-group': `export const SettingsGroup=({children,title})=><section><h2>{title}</h2>{children}</section>;export const SettingsRow=({title,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{title}</button>;`,
 }
 
 Object.assign(mocks, {
@@ -132,6 +137,42 @@ try {
     }, enabled)
   }
   await page.getByLabel('Enable Device Hub').waitFor()
+  await page.setViewportSize({ width: 320, height: 740 })
+  for (const fontScale of [1, 2]) {
+    await page.evaluate((scale) => {
+      window.fontScale = scale
+      window.render()
+    }, fontScale)
+    await page.waitForFunction((scale) => {
+      const row = document.querySelector('input[aria-label="Enable Device Hub"]').parentElement
+      return getComputedStyle(row).flexDirection === (scale >= 1.5 ? 'column' : 'row')
+    }, fontScale)
+    const geometry = await page.getByLabel('Enable Device Hub').evaluate((toggle) => {
+      const row = toggle.parentElement,
+        label = row.querySelector('span')
+      const bounds = row.getBoundingClientRect(),
+        text = label.getBoundingClientRect()
+      const control = toggle.getBoundingClientRect(),
+        style = getComputedStyle(row)
+      return {
+        padding: style.paddingLeft,
+        height: bounds.height,
+        contained:
+          text.left >= bounds.left + 16 &&
+          text.right <= bounds.right - 16 &&
+          control.left >= bounds.left + 16 &&
+          control.right <= bounds.right - 16,
+      }
+    })
+    assert.equal(geometry.padding, '16px')
+    assert.ok(geometry.height >= 56)
+    assert.ok(geometry.contained, `Device Hub contents escape row at ${fontScale}x text`)
+  }
+  await page.evaluate(() => {
+    window.fontScale = 1
+    window.render()
+  })
+  await page.setViewportSize({ width: 1280, height: 800 })
   assert.equal(await page.getByLabel('Enable Device Hub').isChecked(), false)
   assert.equal(await button('Add device host').count(), 0)
   await setHubEnabled(true)

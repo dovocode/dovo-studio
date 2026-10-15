@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 // Run after pnpm build. Uses a temporary desktop profile and an ephemeral runtime.
 const { app } = require('electron')
 const fs = require('node:fs')
@@ -29,7 +30,7 @@ app.on('browser-window-created', (_event, window) => {
       await window.webContents.executeJavaScript(`(async () => {
         const wait = async (check) => { for (let i = 0; i < 150; i++) { if (check()) return; await new Promise(resolve => setTimeout(resolve, 100)) } throw new Error('UI timeout: ' + document.body.innerText.slice(-1500)) }
         const button = label => [...document.querySelectorAll('button')].find(item => item.getAttribute('aria-label') === label || item.textContent.trim() === label)
-        await wait(() => document.body.innerText.includes('Workspace synced'))
+        await wait(() => (${workspaceReady.toString()})())
         button('Settings').click()
         await wait(() => button('Devices & runtime')); button('Devices & runtime').click()
         await wait(() => button('Manage')); button('Manage').click()
@@ -109,9 +110,10 @@ app.on('browser-window-created', (_event, window) => {
       window.setSize(1180, 760)
       const stalledAddress = `http://127.0.0.1:${stalled.address().port}`
       await window.webContents.executeJavaScript(`(async () => {
-        const saved = JSON.parse(await window.dovo.readRuntimeRegistry())
+        const before = await window.dovo.readRuntimeRegistry()
+        const saved = JSON.parse(before)
         saved.pendingPairings = [{ profile: { id: ${JSON.stringify(stalledAddress)}, name: 'Offline test computer', connection: { address: ${JSON.stringify(stalledAddress)}, token: 'synthetic-stalled-pairing-token' } }, proof: { id: 'stalled', secret: 'synthetic-stalled-proof-secret', expiresAt: new Date(Date.now() + 120000).toISOString() } }]
-        await window.dovo.writeRuntimeRegistry(JSON.stringify(saved))
+        await window.dovo.writeRuntimeRegistry(JSON.stringify(saved), before)
       })()`)
       const started = Date.now()
       await new Promise((resolve) => {
@@ -120,7 +122,7 @@ app.on('browser-window-created', (_event, window) => {
       })
       await window.webContents.executeJavaScript(`(async () => {
         for (let i = 0; i < 30; i++) {
-          if (document.body.innerText.includes('Workspace synced')) return
+          if ((${workspaceReady.toString()})()) return
           await new Promise(resolve => setTimeout(resolve, 100))
         }
         throw new Error('Pending pairing blocked the saved workspace')

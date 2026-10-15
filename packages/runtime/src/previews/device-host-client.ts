@@ -15,7 +15,7 @@ import { openTunnel, stopSsh } from './device-host-ssh.js'
 import { HttpError } from '../errors.js'
 import { sameDeviceHostConnection } from './device-host-settings.js'
 type Tunnel = Awaited<ReturnType<typeof openTunnel>>
-export const remoteOpenSchema = mutableStruct({
+const remoteOpenSchema = mutableStruct({
   id: Schema.String,
   ticket: Schema.String,
   screenPoints: Schema.optional(mutableStruct({ width: Schema.Number, height: Schema.Number })),
@@ -93,11 +93,16 @@ export class DeviceHostClient {
     path: string,
     input: unknown = {},
     signal?: AbortSignal,
+    authorize?: () => void,
   ): Promise<unknown> {
+    authorize?.()
+    signal?.throwIfAborted()
     if (!host.token)
       throw new HttpError(409, 'Pair this device host and save its device token first')
     const lease = await this.acquire(host)
     try {
+      authorize?.()
+      signal?.throwIfAborted()
       return await this.call(host, lease.tunnel, path, input, signal)
     } finally {
       lease.release()
@@ -190,12 +195,24 @@ export class DeviceHostClient {
       request.end(payload)
     })
   }
-  async driver(host: DeviceHost, taskId: string, device: PreviewDevice): Promise<NativeSimulator> {
+  async driver(
+    host: DeviceHost,
+    taskId: string,
+    device: PreviewDevice,
+    authorize?: () => void,
+    signal?: AbortSignal,
+  ): Promise<NativeSimulator> {
     if (!host.token)
       throw new HttpError(409, 'Pair this device host and save its device token first')
     let opened = decode(
       remoteOpenSchema,
-      await this.request(host, '/api/device-host/open', { taskId, id: device.id }),
+      await this.request(
+        host,
+        '/api/device-host/open',
+        { taskId, id: device.id },
+        signal,
+        authorize,
+      ),
     )
     let socket: WebSocket | undefined
     let stopped = true
@@ -223,6 +240,7 @@ export class DeviceHostClient {
           .then(async (streamLease) => {
             let attached = false
             try {
+              if (stopped || closed || current !== generation) return
               const ticket = decode(
                 remoteOpenSchema,
                 await this.call(host, streamLease.tunnel, '/api/device-host/open', {
@@ -292,9 +310,15 @@ export class DeviceHostClient {
           .catch((error: Error) => fail(error))
         return stop
       },
-      input: async (input) => {
+      input: async (input, authorize, signal) => {
         if (closed) throw new HttpError(404, 'Device host simulator preview closed')
-        await invoke('input', { input })
+        await this.request(
+          host,
+          '/api/device-host/input',
+          { taskId, id: opened.id, input },
+          signal,
+          authorize,
+        )
       },
       release: async () => {
         if (!closed) await invoke('release')

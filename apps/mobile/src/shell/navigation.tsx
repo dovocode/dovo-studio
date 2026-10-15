@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect } from 'react'
+import { createContext, useContext } from 'react'
 export type WorkTarget = {
   repositoryId: string
   jiraSourceId?: string
@@ -8,7 +8,6 @@ export type WorkTarget = {
   url?: string
 }
 export type StudioNavigation = {
-  setDetail: (detail: boolean) => void
   focused: boolean
   workTarget?: WorkTarget
   openWork: (target: WorkTarget) => void
@@ -19,12 +18,4 @@ export function useNavigation() {
   const navigation = useContext(NavigationContext)
   if (!navigation) throw new Error('Navigation host is missing')
   return navigation
-}
-
-export function useDetailChrome() {
-  const { setDetail } = useNavigation()
-  useEffect(() => {
-    setDetail(true)
-    return () => setDetail(false)
-  }, [setDetail])
 }

@@ -91,7 +91,7 @@ export function resolveDictationLocale(preferred: readonly string[], supported: 
   // An unavailable catalog must not block a service that can still recognize online.
   return preferences[0] ?? 'en-US'
 }
-export function dictationError(event: ExpoSpeechRecognitionErrorEvent): string {
+function dictationError(event: ExpoSpeechRecognitionErrorEvent): string {
   switch (event.error) {
     case 'not-allowed':
       return 'Allow microphone and speech recognition for Dovo Studio in Settings.'

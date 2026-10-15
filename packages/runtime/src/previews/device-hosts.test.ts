@@ -110,12 +110,18 @@ it('routes namespaced devices and explicit host selection while preserving owner
     await manager.save({ enabled: true, hosts: [host] })
     const request = vi.spyOn(manager.client, 'request').mockResolvedValue({ ok: true })
     await manager.action({ taskId: 'foreign', id: 'remote:mac:ios:device', action: 'boot' })
-    expect(request).toHaveBeenCalledWith(host, '/api/device-host/action', {
-      taskId: 'foreign',
-      id: 'ios:device',
-      action: 'boot',
-      hostId: undefined,
-    })
+    expect(request).toHaveBeenCalledWith(
+      host,
+      '/api/device-host/action',
+      {
+        taskId: 'foreign',
+        id: 'ios:device',
+        action: 'boot',
+        hostId: undefined,
+      },
+      undefined,
+      expect.any(Function),
+    )
     expect(manager.deviceId('ios:device', 'mac')).toBe('remote:mac:ios:device')
     expect(splitDeviceId('ios:device')).toEqual({ id: 'ios:device', hostId: undefined })
     expect(() => splitDeviceId('remote:mac:ios:device', 'other')).toThrow('does not match')
@@ -244,6 +250,7 @@ it('requires explicit phone network exposure and verifies the destination bind',
         port: 8081,
       },
       expect.any(AbortSignal),
+      expect.any(Function),
     )
     expect(result.url).toBe('http://mac.local:8081')
     await manager.stopForward(result.id, 'task')

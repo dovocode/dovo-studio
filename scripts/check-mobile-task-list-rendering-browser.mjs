@@ -9,7 +9,7 @@ const mobile = root + 'apps/mobile/src/'
 const controls = `
 import {forwardRef,useImperativeHandle} from 'react';
 export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;
-export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
+export const Text=({children,accessibilityRole,style})=><span role={accessibilityRole} style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;
 export const Image=()=>null;
 export const ScrollView=View;
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID})=><button data-testid={testID} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
@@ -26,7 +26,7 @@ export const SettingsAction=Action;
 export const SettingsSearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;
 export const Sheet=({title,children,onClose})=><div role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close details</button></div>;
 export const ScreenHeader=({title})=><h1>{title}</h1>;
-const theme={styles:{},colors:{}};export const useTheme=()=>theme;
+export const useTheme=()=>window.rowTheme??{styles:{},colors:{}};
 `
 const preferenceModule = `
 const preferences={computerRefresh:'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[],taskSort:'newest',taskGrouping:'none',threadSectionOrder:['active','working','waiting','snoozed','settled'],workingSection:false,collapsedThreadSections:['working','snoozed','settled'],confirmArchive:false};
@@ -157,6 +157,8 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
 import {runtimeProfile} from '@dovo/protocol';
+import {studioThemes} from './packages/studio-core/src/themes.ts';
+window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['light','dark'].map(mode=>({name:name+'/'+mode,...theme[mode]})));
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {RuntimeProvider,useRuntime} from './apps/mobile/src/runtime/connection/provider.tsx';
 import {TaskListViewProvider} from './apps/mobile/src/tasks/list/task-list-view.tsx';
@@ -279,7 +281,54 @@ try {
   assert.equal(pin.origin, 'http://mobile-owner.lan:8787')
   assert.equal(pin.method, 'PATCH')
   assert.deepEqual(pin.body.changes, { pinned: { before: true, after: false } })
+  const luminance = (color) => {
+    const rgb = color
+      .match(/[\d.]+/g)
+      .slice(0, 3)
+      .map(Number)
+    return rgb.reduce((sum, value, index) => {
+      const channel = value / 255
+      return (
+        sum +
+        [0.2126, 0.7152, 0.0722][index] *
+          (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+      )
+    }, 0)
+  }
+  let minimumContrast = Infinity
+  for (const palette of await page.evaluate(() => window.titlePalettes)) {
+    await page.evaluate((palette) => {
+      window.rowTheme = { styles: {}, colors: { text: palette.foreground, surface: palette.card } }
+      window.publish({ 'task-0': { title: palette.name + ' read', status: 'done' } })
+    }, palette)
+    const title = page.getByTestId('Task task-0').getByText(palette.name + ' read', { exact: true })
+    const style = await title.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { color: style.color, opacity: Number(style.opacity), weight: style.fontWeight }
+    })
+    assert.equal(style.opacity, 1, palette.name + ' read title must stay opaque')
+    const background = luminance(
+      'rgb(' +
+        palette.card
+          .match(/\w\w/g)
+          .map((c) => parseInt(c, 16))
+          .join(',') +
+        ')',
+    )
+    const foreground = luminance(style.color)
+    const contrast =
+      (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05)
+    minimumContrast = Math.min(minimumContrast, contrast)
+    assert.ok(contrast >= 4.5, `${palette.name} title contrast ${contrast}`)
+    await page.evaluate(() => window.publish({ 'task-0': { status: 'running' } }))
+    assert.ok(
+      Number(await title.evaluate((el) => getComputedStyle(el).fontWeight)) > Number(style.weight),
+    )
+  }
   assert.deepEqual(errors, [])
+  console.log(
+    `Mobile task title contrast: 28 shipped palette/mode combinations >= ${minimumContrast.toFixed(2)}:1; unread weight verified.`,
+  )
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Latest details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
   )

@@ -838,8 +838,7 @@ function TaskDetailContent({
           >
             <Composer
               renderAbove={(setup) => (
-                <>
-                  <Conversation onBrowse={startup?.onBrowse} setup={setup} />
+                <Conversation onBrowse={startup?.onBrowse} setup={setup}>
                   {preparation ? (
                     <PreparationProgress
                       preparation={preparation}
@@ -977,7 +976,7 @@ function TaskDetailContent({
                   <ReviewFindings task={task} onOpen={() => setPane('diff')} />
                   <ReviewComments task={task} />
                   <MessageQueue task={task} />
-                </>
+                </Conversation>
               )}
               key={task.id}
               task={task}

@@ -1,6 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { Effect } from 'effect'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -16,9 +15,6 @@ vi.mock('electron', () => ({
   },
 }))
 vi.mock('./background-runtime.js', () => ({
-  clearFailedBackgroundRuntime: vi.fn<
-    typeof import('./background-runtime.js').clearFailedBackgroundRuntime
-  >(() => Effect.void),
   stopBackgroundRuntimeForUpdate:
     vi.fn<typeof import('./background-runtime.js').stopBackgroundRuntimeForUpdate>(),
   ensureBackgroundRuntime:
@@ -612,5 +608,26 @@ it('rejects renderer recovery during the crash cooldown', async () => {
   child.emit('exit', 1, null)
   await expect(startLocalRuntime('/unused')).rejects.toThrow('recovery is paused')
   expect(spawn).toHaveBeenCalledOnce()
+  await stopLocalRuntime()
+})
+
+it('ignores pre-boot discovery even when its PID belongs to a live unrelated process', async () => {
+  const { child, spawn, startLocalRuntime, stopLocalRuntime } = await childFixture()
+  const path = join(fixture.directory, 'runtime-connection.json')
+  writeFileSync(
+    path,
+    JSON.stringify({ address: 'http://127.0.0.1:51464', token: 'a'.repeat(32), pid: process.pid }),
+  )
+  utimesSync(path, new Date(0), new Date(0))
+  const request = vi.fn<typeof fetch>().mockRejectedValue(new Error('Unrelated process'))
+  vi.stubGlobal('fetch', request)
+  const probe = vi.spyOn(process, 'kill')
+  const starting = startLocalRuntime('/unused')
+  await vi.waitFor(() => expect(child.listenerCount('message')).toBe(1))
+  child.emit('message', { type: 'ready', port: 51465 })
+  expect((await starting).address).toBe('http://127.0.0.1:51465')
+  expect(spawn).toHaveBeenCalledOnce()
+  expect(request).not.toHaveBeenCalled()
+  expect(probe).not.toHaveBeenCalled()
   await stopLocalRuntime()
 })

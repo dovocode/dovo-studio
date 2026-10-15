@@ -23,6 +23,16 @@ const pull = (state: 'open' | 'merged' | 'closed', checksState: string | null) =
   checksState,
 })
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve
+    reject = onReject
+  })
+  return { promise, resolve, reject }
+}
+
 it('follows a task’s pull request by branch and archives it on merge only when enabled', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -175,8 +185,122 @@ async function smartFixture(state: 'closed' | 'merged' = 'closed') {
       warnings: [],
     }),
   )
-  return { s, task, list, detail, watcher: new TaskPullWatcher(s) }
+  return { runtime, s, task, list, detail, watcher: new TaskPullWatcher(s) }
 }
+
+it.each(['manual', 'polling'] as const)(
+  'drains a delayed %s refresh before disposal and prevents new cycles',
+  async (mode) => {
+    const f = await smartFixture()
+    const { promise: entered, resolve: enter } = deferred<void>()
+    const { promise: response, resolve: release } =
+      deferred<Awaited<ReturnType<typeof f.s.pullCache.list>>>()
+    f.list.mockImplementation(() => {
+      enter()
+      return response
+    })
+    let refresh: Promise<void> | undefined
+    let closing: Promise<void> | undefined
+    try {
+      if (mode === 'polling') {
+        vi.useFakeTimers()
+        f.watcher.start()
+        f.watcher.start()
+        await vi.advanceTimersByTimeAsync(120_000)
+      } else refresh = f.watcher.refresh()
+      await entered
+      let disposed = false
+      closing = f.watcher.dispose().then(() => {
+        disposed = true
+      })
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      expect(disposed).toBe(false)
+      await f.watcher.refresh()
+      expect(f.list).toHaveBeenCalledTimes(1)
+
+      release({ pulls: [pull('open', 'SUCCESS')], hasMore: false, page: 1 })
+      await Promise.all([refresh, closing])
+      expect(f.s.store.task(f.task.id).pullStatus).toMatchObject({ state: 'open' })
+      const update = vi.spyOn(f.s.store, 'update')
+      f.watcher.start()
+      await f.watcher.refresh()
+      if (mode === 'polling') await vi.advanceTimersByTimeAsync(240_000)
+      await f.watcher.dispose()
+      expect(f.list).toHaveBeenCalledTimes(1)
+      expect(update).not.toHaveBeenCalled()
+    } finally {
+      release({ pulls: [], hasMore: false, page: 1 })
+      await Promise.all([refresh, closing, f.watcher.dispose()])
+      vi.useRealTimers()
+    }
+  },
+)
+
+it('waits for every concurrent refresh when disposing', async () => {
+  const f = await smartFixture()
+  const first = deferred<Awaited<ReturnType<typeof f.s.pullCache.list>>>()
+  const second = deferred<Awaited<ReturnType<typeof f.s.pullCache.list>>>()
+  f.list.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+  const refreshes = [f.watcher.refresh(), f.watcher.refresh()]
+  let closing: Promise<void> | undefined
+  try {
+    await vi.waitFor(() => expect(f.list).toHaveBeenCalledTimes(2))
+    let disposed = false
+    closing = f.watcher.dispose().then(() => {
+      disposed = true
+    })
+    first.resolve({ pulls: [pull('open', 'SUCCESS')], hasMore: false, page: 1 })
+    await refreshes[0]
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(disposed).toBe(false)
+    second.reject(new Error('Forge unavailable'))
+    await Promise.all([...refreshes, closing])
+    expect(disposed).toBe(true)
+    await f.watcher.dispose()
+  } finally {
+    first.resolve({ pulls: [], hasMore: false, page: 1 })
+    second.resolve({ pulls: [], hasMore: false, page: 1 })
+    await Promise.all([...refreshes, closing, f.watcher.dispose()])
+  }
+})
+
+it('keeps runtime dependencies open until a delayed task pull refresh finishes', async () => {
+  const start = vi.spyOn(TaskPullWatcher.prototype, 'start')
+  const f = await smartFixture()
+  const watcher = start.mock.contexts[0]
+  if (!(watcher instanceof TaskPullWatcher))
+    throw new Error('Runtime did not start its task pull watcher')
+  const { promise: entered, resolve: enter } = deferred<void>()
+  const { promise: response, resolve: release } =
+    deferred<Awaited<ReturnType<typeof f.s.pullCache.list>>>()
+  f.list.mockImplementation(() => {
+    enter()
+    return response
+  })
+  const refresh = watcher.refresh()
+  let disposed = false
+  const stop = watcher.dispose.bind(watcher)
+  const dispose = vi.spyOn(watcher, 'dispose').mockImplementation(async () => {
+    await stop()
+    disposed = true
+  })
+  let closing: Promise<void> | undefined
+  try {
+    await entered
+    closing = f.runtime.close()
+    await vi.waitFor(() => expect(dispose).toHaveBeenCalled())
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(disposed).toBe(false)
+    expect(f.s.db.open).toBe(true)
+    release({ pulls: [pull('open', 'SUCCESS')], hasMore: false, page: 1 })
+    await Promise.all([refresh, closing])
+    expect(f.s.store.task(f.task.id).pullStatus).toMatchObject({ state: 'open' })
+    expect(f.s.db.open).toBe(false)
+  } finally {
+    release({ pulls: [], hasMore: false, page: 1 })
+    await Promise.all([refresh, closing])
+  }
+})
 
 it('preserves draft state through list and detail refreshes', async () => {
   const f = await smartFixture()

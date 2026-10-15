@@ -150,7 +150,7 @@ function activeTitle(presentation: Presentation) {
     return presentation.title === 'Computer Use' ? 'Using Computer Use' : presentation.title
   return presentation.title
 }
-export function DiffText({ text }: { text: string }) {
+function DiffText({ text }: { text: string }) {
   return (
     <pre className="max-h-72 overflow-auto whitespace-pre font-mono text-[0.6875rem] leading-relaxed">
       {text.split('\n').map((line, index) => (

@@ -22,6 +22,35 @@ async function loadPreferences() {
   return import('./app-preferences')
 }
 
+it('preserves unread settings through failed hydration and merges pending edits on retry', async () => {
+  const saved = JSON.stringify({ taskSort: 'title', carMode: true })
+  const writes: string[] = []
+  storage.getItem = async () => {
+    throw new Error('Storage temporarily unavailable')
+  }
+  storage.setItem = async (value) => {
+    writes.push(value)
+  }
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    const preferences = await loadPreferences()
+    await preferences.preferencesReady
+    preferences.updateMobilePreferences({ keepScreenOn: true })
+    await preferences.loadMobilePreferences()
+    expect(writes).toEqual([])
+    storage.getItem = async () => saved
+    await preferences.loadMobilePreferences()
+    await vi.waitFor(() => expect(writes).toHaveLength(1))
+    expect(JSON.parse(writes[0])).toMatchObject({
+      taskSort: 'title',
+      carMode: true,
+      keepScreenOn: true,
+    })
+  } finally {
+    warning.mockRestore()
+  }
+})
+
 it('keeps an edit made while saved preferences are still loading', async () => {
   let resolveGet: (value: string) => void = () => {}
   storage.getItem = () =>

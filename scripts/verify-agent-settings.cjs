@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 process.env.DOVO_PORT = '0'
 process.env.DOVO_HOST = '127.0.0.1'
@@ -18,7 +19,7 @@ app.on('browser-window-created', (_event, window) => {
         const wait = async (check) => { for (let i=0;i<300;i++) {if(check())return; await new Promise(r=>setTimeout(r,100))}throw new Error('UI timeout: '+document.body.innerText.slice(-1000))};
         const c = await window.dovo.runtimeConnection();
         const snapshot = async () => (await fetch(c.address+'/api/snapshot',{headers:{Authorization:'Bearer '+c.token}})).json();
-        await wait(()=>document.body.innerText.includes('Workspace synced'));
+        await wait(()=>(${workspaceReady.toString()})());
         if ((await snapshot()).workspace.tasks.length) throw new Error('Fresh runtime contains dummy chats');
         const call=async(endpoint,body)=>{const response=await fetch(c.address+endpoint,{method:'POST',headers:{Authorization:'Bearer '+c.token,'Content-Type':'application/json'},body:JSON.stringify(body)});if(!response.ok)throw new Error(await response.text());return response.json()};
         const commands=await call('/api/commands/read',{});await call('/api/commands/save',{...commands.settings,codex:${JSON.stringify(path + '/scripts/fixtures/codex.cjs')}});

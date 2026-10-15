@@ -240,3 +240,60 @@ it('sends versioned deltas, restores baselines on refresh and resets epochs afte
     throw new Error('Expected restart baselines')
   expect(second.epoch).not.toBe(restarted.epoch)
 })
+
+it.each(['success', 'failure'] as const)(
+  'ignores delayed HTTP %s after a newer stream snapshot and disconnect',
+  async (outcome) => {
+    const recover = vi.fn<(connection: RuntimeConnection) => Promise<RuntimeConnection | null>>()
+    const f = fixture(recover),
+      events: DesktopSyncEvent[] = [],
+      popout: DesktopSyncEvent[] = []
+    const pending = Promise.withResolvers<RuntimeSnapshot>()
+    f.read.mockImplementationOnce(() => pending.promise)
+    f.manager.subscribe('main', f.input('main'), (event) => events.push(event))
+    const stream = f.options.get('http://paired.lan:8787')!
+    f.online.add('http://paired.lan:8787')
+    stream.onStatus?.('live')
+    stream.onSnapshot({ ...f.snapshot(['thread']), runtimeInstanceId: 'new' })
+    f.online.clear()
+    stream.onStatus?.('reconnecting')
+    const count = events.length
+    if (outcome === 'success')
+      pending.resolve({ ...f.snapshot(['thread']), runtimeInstanceId: 'old' })
+    else pending.reject(new Error('Old instance failed'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(events).toHaveLength(count)
+    expect(recover).not.toHaveBeenCalled()
+    f.manager.subscribe('popout', f.input('popout'), (event) => popout.push(event))
+    expect(popout.some((event) => event.type === 'snapshot')).toBe(false)
+    // The next request still works after the superseded one settles.
+    f.read.mockResolvedValue({ ...f.snapshot(['thread']), runtimeInstanceId: 'new', revision: 2 })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(f.read).toHaveBeenCalledTimes(2)
+    expect(events.at(-1)?.type).toBe('delta')
+  },
+)
+it.each(['success', 'failure'] as const)(
+  'ignores delayed recovery %s when stream state supersedes it',
+  async (outcome) => {
+    const recovery = Promise.withResolvers<RuntimeConnection | null>()
+    const recover = vi.fn<(connection: RuntimeConnection) => Promise<RuntimeConnection | null>>(
+      () => recovery.promise,
+    )
+    const f = fixture(recover),
+      events: DesktopSyncEvent[] = []
+    f.read.mockRejectedValueOnce(new Error('Old instance failed'))
+    f.manager.subscribe('main', f.input('main'), (event) => events.push(event))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(recover).toHaveBeenCalledOnce()
+    const stream = f.options.get('http://paired.lan:8787')!
+    stream.onSnapshot({ ...f.snapshot(['thread']), runtimeInstanceId: 'new' })
+    stream.onStatus?.('reconnecting')
+    const count = events.length
+    if (outcome === 'success')
+      recovery.resolve({ ...f.input('main').connection, address: 'http://old.lan:8787' })
+    else recovery.reject(new Error('Old recovery failed'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(events).toHaveLength(count)
+  },
+)

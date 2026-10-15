@@ -222,35 +222,7 @@ export function Workbench() {
     router.navigate('/')
   }, [hasOnlineComputer, shortcuts.input])
   const [keyboard, setKeyboard] = useApplicationState(false)
-  const [details, setDetails] = useApplicationState<Record<Tab, boolean>>({
-    tasks: false,
-    issues: false,
-    pulls: false,
-    artifacts: false,
-    settings: false,
-  })
-  const detail =
-    active === 'settings'
-      ? details.settings || pathname.startsWith('/settings/automations/')
-      : routeDetail
-  const detailSetters = useMemo(() => {
-    const setter = (tab: Tab) => (value: boolean) =>
-      setDetails((current) =>
-        current[tab] === value
-          ? current
-          : {
-              ...current,
-              [tab]: value,
-            },
-      )
-    return {
-      tasks: setter('tasks'),
-      issues: setter('issues'),
-      pulls: setter('pulls'),
-      artifacts: setter('artifacts'),
-      settings: setter('settings'),
-    }
-  }, [])
+  const detail = active === 'settings' ? pathname.startsWith('/settings/automations/') : routeDetail
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => setKeyboard(true)),
       hide = Keyboard.addListener('keyboardDidHide', () => setKeyboard(false))
@@ -401,7 +373,6 @@ export function Workbench() {
         } else router.navigate(target.kind === 'issue' ? '/issues' : '/pulls')
       },
       focused: active === tab,
-      setDetail: detailSetters[tab],
       navigate,
     })
     return {
@@ -411,7 +382,7 @@ export function Workbench() {
       artifacts: value('artifacts'),
       settings: value('settings'),
     }
-  }, [active, detailSetters, navigate, work, runtime.activeId])
+  }, [active, navigate, work, runtime.activeId])
   // Native tabs keep their visited screens mounted, preserving filters and scroll position.
   // Unified collections retain their filters and position when opening work on another computer.
   const scenes = useMemo(() => {
@@ -432,8 +403,7 @@ export function Workbench() {
           // Detail screens own their composer/home inset when the tab bar is hidden.
           <NativeSafeAreaView
             edges={{
-              bottom:
-                Platform.OS === 'ios' && (tab !== 'settings' || !details.settings) && !keyboard,
+              bottom: Platform.OS === 'ios' && !keyboard,
             }}
           >
             <View key={tab} />
@@ -446,7 +416,7 @@ export function Workbench() {
         )
     }
     return content
-  }, [screens, runtime.ready, runtime.activeId, details, keyboard])
+  }, [screens, runtime.ready, runtime.activeId, keyboard])
   const content =
     hasOnlineComputer && shortcuts.input
       ? {

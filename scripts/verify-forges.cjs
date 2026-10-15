@@ -1,3 +1,4 @@
+const { workspaceReady } = require('./browser/workspace-ready.cjs')
 const { app } = require('electron')
 const fs = require('node:fs')
 const http = require('node:http')
@@ -94,7 +95,7 @@ app.on('browser-window-created', (_event, window) => {
         const pick=async(label,value)=>{await wait(()=>button(label));button(label).click();await wait(()=>document.querySelector('[role="listbox"]'));await wait(()=>[...document.querySelectorAll('[role="option"]')].some(o=>o.dataset.value===value));const option=[...document.querySelectorAll('[role="option"]')].find(o=>o.dataset.value===value);if(!option)throw new Error('Missing option '+label+': '+value);option.click();await wait(()=>!document.querySelector('[role="listbox"]'));};
         const menu=async(label)=>{button('Projects').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'mouse'}));await wait(()=>document.querySelector('[role="menu"]'));const item=[...document.querySelectorAll('[role^="menuitem"]')].find(m=>normalize(m.innerText)===label);if(!item)throw new Error('Missing Projects item '+label);item.click();await wait(()=>!document.querySelector('[role="menu"]'));};
         const close=async()=>{const dialogs=[...document.querySelectorAll('[role="dialog"]')];button('Close',dialogs.at(-1)).click();await wait(()=>document.querySelectorAll('[role="dialog"]').length<dialogs.length);};
-        await wait(()=>document.body.innerText.includes('Workspace synced'));
+        await wait(()=>(${workspaceReady.toString()})());
         const connection=await window.dovo.runtimeConnection();
         const call=async(path,body,method='POST',failure=false)=>{const response=await fetch(connection.address+path,{method,headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(method==='GET'?{}:{body:JSON.stringify(body)})});const result=await response.json();if(!response.ok&&!failure)throw new Error(JSON.stringify(result));return failure?{status:response.status,result}:result;};
         const commands=await call('/api/commands/read',{});await call('/api/commands/save',{...commands.settings,git:${JSON.stringify(git)},gh:${JSON.stringify(join(root, 'scripts/fixtures/github.cjs'))}});
@@ -171,7 +172,7 @@ app.on('browser-window-created', (_event, window) => {
       })
       const persisted = await window.webContents.executeJavaScript(`(async()=>{
         const wait=async(check)=>{for(let i=0;i<250;i++){if(await check())return;await new Promise(r=>setTimeout(r,100))}throw new Error('Forge reload timeout')};
-        await wait(()=>document.body.innerText.includes('Workspace synced'));
+        await wait(()=>(${workspaceReady.toString()})());
         const c=await window.dovo.runtimeConnection(),response=await fetch(c.address+'/api/snapshot',{headers:{Authorization:'Bearer '+c.token}}),snapshot=await response.json();
         if(snapshot.workspace.repositories.filter(r=>r.forge?.repository==='team/existing'||r.forge?.repository==='team/cloned').length!==2)throw new Error('Bindings lost after renderer reload');
         return {bindingsPersistAfterReload:true};

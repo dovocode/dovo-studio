@@ -74,7 +74,7 @@ async function execute(command: string, args: string[], cwd: string, logPath: st
 }
 // Snapshot only runtime source, manifests and lockfile. Credentials, databases, other app
 // source, Git state and the working checkout's node_modules never enter a release.
-export async function stageServerSource(root: string, target: string) {
+async function stageServerSource(root: string, target: string) {
   await mkdir(target, {
     recursive: true,
     mode: 0o700,

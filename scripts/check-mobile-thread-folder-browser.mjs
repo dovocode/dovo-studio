@@ -17,14 +17,15 @@ const mocks = {
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
   '../../ui/theme': `export const useTheme=()=>({styles:{},colors:{}});`,
   '../../screens/repositories': `import {useRuntime} from '../../runtime/connection/provider';export const AddProject=({initialSource,onClose,onAdded})=>{const runtime=useRuntime();window.addScope=runtime.scope;return <div role="dialog" aria-label="Add project"><span>{initialSource}</span><button onClick={()=>{onAdded({id:'added',name:'Added',path:'/added'});onClose()}}>Add</button></div>;};`,
-  './new-task': `export const NewTask=({repositoryId})=><span>Draft {repositoryId}</span>;`,
 }
 const built = await build({
   stdin: {
     contents: `
-import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Context} from '../../runtime/connection/provider';import {ProjectMachinePicker} from './src/tasks/creation/project-machine-picker';import {TaskMachineSelector} from './src/tasks/creation/task-machine-selector';
+import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Context,useRuntime} from '../../runtime/connection/provider';import {FolderPicker} from './src/tasks/creation/folder-picker';import {TaskMachineSelector} from './src/tasks/creation/task-machine-selector';
 function Transfer({scratch}){const repository={id:'origin',name:'Origin',path:'/origin',kind:scratch?'scratch':undefined,gitIdentity:scratch?undefined:'github.com/test/repo'};const origin={id:'a',name:'Selected',connection:{address:'http://a'}};const destination={id:'b',name:'Other',connection:{address:'http://b'}};const task={id:'task',title:'Draft',createdAt:'2026-10-05T00:00:00Z',repositoryId:'origin',agentId:'',status:'draft',messages:[],files:[],draft:'Persisted',example:false};return <Context.Provider value={{activeId:'a',profile:origin,snapshot:{workspace:{repositories:[repository]}},overviews:[{profile:origin,connected:true,snapshot:{workspace:{repositories:[repository]}}},{profile:destination,connected:true,snapshot:{workspace:{repositories:[{id:'destination-chat',kind:'scratch',name:'Chat',path:'/scratch'}]}}}],readRuntime:async(profile,path,input)=>{window.requests.push({runtimeId:profile.id,path,input});return input.task??{ok:true}},refreshRuntime:async()=>{}}}><TaskMachineSelector task={task} text="Current draft" disabled={false} onMoving={()=>{}} onProjectChange={async()=>{}}/></Context.Provider>};
-function App(){const [mode,setMode]=useState('picker');window.transfer=scratch=>{window.requests=[];window.navigation=null;setMode(scratch?'scratch':'repo')};if(mode!=='picker')return <Transfer scratch={mode==='scratch'}/>;return <Context.Provider value={{activeId:'a',overviews:[{profile:{id:'a',name:'Selected machine',connection:{address:'http://a'}},connected:true,snapshot:{workspace:{repositories:[{id:'chat',kind:'scratch',name:'Temporary',path:'/scratch'},{id:'local',name:'Local folder',path:'/local'},{id:'broken',name:'Broken folder',path:'/broken',gitIdentityError:'Invalid'}]}}},{profile:{id:'b',name:'Other machine',connection:{address:'http://b'}},connected:true,snapshot:{workspace:{repositories:[{id:'remote',name:'Remote folder',path:'/remote'}]}}}]}}><ProjectMachinePicker onCreated={()=>{}} onCancel={()=>{}}/></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
+// Mount the same FolderPicker shipped in the task launcher and startup composer.
+function ProjectSelection(){const runtime=useRuntime();const [selection,setSelection]=useState(null);return <><FolderPicker repositories={runtime.overviews[0].snapshot.workspace.repositories} value={selection?.id??''} onChange={(id,_repository,runtimeId)=>setSelection({id,runtimeId})}/><output>{selection&&selection.runtimeId+'|'+selection.id}</output></>}
+function App(){const [mode,setMode]=useState('picker');window.transfer=scratch=>{window.requests=[];window.navigation=null;setMode(scratch?'scratch':'repo')};if(mode!=='picker')return <Transfer scratch={mode==='scratch'}/>;return <Context.Provider value={{activeId:'a',overviews:[{profile:{id:'a',name:'Selected machine',connection:{address:'http://a'}},connected:true,snapshot:{workspace:{repositories:[{id:'chat',kind:'scratch',name:'Temporary',path:'/scratch'},{id:'local',name:'Local folder',path:'/local'},{id:'broken',name:'Broken folder',path:'/broken',gitIdentityError:'Invalid'}]}}},{profile:{id:'b',name:'Other machine',connection:{address:'http://b'}},connected:true,snapshot:{workspace:{repositories:[{id:'remote',name:'Remote folder',path:'/remote'}]}}}]}}><ProjectSelection/></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: new URL('../apps/mobile/', import.meta.url).pathname,
     loader: 'tsx',
@@ -70,7 +71,7 @@ try {
   await page.getByLabel('Search projects').fill('local')
   assert.equal(await page.getByRole('button', { name: 'No project', exact: true }).count(), 1)
   await page.getByRole('button', { name: 'Local folder', exact: true }).click()
-  assert.equal(await page.getByText('Draft local').count(), 1)
+  assert.equal(await page.getByText('a|local').count(), 1)
   await load()
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: 'Local folder', exact: true }).count(), 1)
@@ -79,7 +80,7 @@ try {
   await page.getByRole('button', { name: 'Other machine', exact: true }).click()
   assert.equal(await page.evaluate(() => window.addScope), 'b')
   await page.getByRole('button', { name: 'Add', exact: true }).click()
-  assert.equal(await page.getByText('Draft added').count(), 1)
+  assert.equal(await page.getByText('b|added').count(), 1)
   await page.evaluate(() => window.transfer(false))
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
   await page.getByRole('button', { name: 'No project', exact: true }).click()

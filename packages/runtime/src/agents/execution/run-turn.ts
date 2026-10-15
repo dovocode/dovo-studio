@@ -1,3 +1,4 @@
+import { runCredentials } from '../../auth/run-credentials.js'
 import type { MemoryScope } from '@dovo/protocol'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
 import { quotaContinuation } from '../tasks/quota-continuation.js'
@@ -91,9 +92,9 @@ export class TaskTurnRunner {
   setMcpApps(apps: McpApps) {
     this.mcpApps = apps
   }
-  private taskTools?: { port: number; token: string; host: string }
-  setTaskTools(port: number, token: string, host: string) {
-    this.taskTools = { port, token, host }
+  private taskTools?: { port: number; host: string }
+  setTaskTools(port: number, _token: string, host: string) {
+    this.taskTools = { port, host }
   }
   constructor(
     private store: WorkspaceStore,
@@ -237,8 +238,37 @@ export class TaskTurnRunner {
             409,
             'The MCP name dovo_cua is reserved for this computer’s Cua Driver. Rename the custom MCP server.',
           )
+        let taskToolsToken: string | undefined
         const originalMcpServers = resources.mcpServers
         if (this.taskTools) {
+          controller.signal.throwIfAborted()
+          if (!task.activeRunId) throw new HttpError(409, 'Task tools require an active run')
+          const credentials = runCredentials(this.store)
+          const token = credentials.issue(
+            {
+              taskId: id,
+              runId: task.activeRunId,
+              permissions: {
+                provider: configured.provider,
+                permission: configured.permission,
+                approvalPolicy: configured.approvalPolicy,
+                sandboxMode: configured.sandboxMode,
+              },
+              readOnly:
+                configured.permission === 'read-only' || configured.sandboxMode === 'read-only',
+              sandboxMode: configured.sandboxMode,
+              artifacts: artifactsEnabled,
+              pipelineWatching: pipelineWatchingEnabled,
+              pullRequestWatching: pullRequestWatchingEnabled,
+              memoryScopes,
+              deviceHub: this.deviceHubEnabled(),
+            },
+            controller.signal,
+          )
+          taskToolsToken = token
+          yield* Effect.addFinalizer(() => Effect.sync(() => credentials.retire(token)))
+          controller.signal.throwIfAborted()
+          const credentialFile = credentials.file(token)
           resources.mcpServers = resources.mcpServers.filter(
             (server) => server.name !== 'dovo_task',
           )
@@ -246,7 +276,7 @@ export class TaskTurnRunner {
             taskToolsServer(
               id,
               this.taskTools.port,
-              this.taskTools.token,
+              '',
               this.taskTools.host,
               configured.permission === 'read-only',
               artifactsEnabled,
@@ -256,6 +286,7 @@ export class TaskTurnRunner {
               memoryScopes,
               this.deviceHubEnabled(),
               configured.sandboxMode,
+              credentialFile,
             ),
           )
         }
@@ -354,6 +385,10 @@ ${
               ? existing
               : { id: `native-session:${randomUUID()}`, fingerprint }
           this.toolBindings.set(id, toolBinding)
+          if (taskToolsToken) {
+            controller.signal.throwIfAborted()
+            runCredentials(this.store).bind(taskToolsToken, toolBinding.id)
+          }
           const server = resources.mcpServers.find((server) => server.name === 'dovo_task')
           if (server) server.envValues = { ...server.envValues, DOVO_TASK_RUN_ID: toolBinding.id }
         }
@@ -883,8 +918,11 @@ ${
                     ownerSessionId === nativeSessionId
                   ) {
                     nativeSessionOpen = false
-                    if (toolBinding && this.toolBindings.get(id) === toolBinding)
-                      this.toolBindings.delete(id)
+                    if (taskToolsToken) runCredentials(this.store).revoke(taskToolsToken)
+                    if (toolBinding) {
+                      if (this.toolBindings.get(id) === toolBinding) this.toolBindings.delete(id)
+                      runCredentials(this.store).releaseBinding(toolBinding.id)
+                    }
                     this.onNativeSession?.(id, ownerSessionId, undefined, [])
                   }
                   const current = this.store.get().tasks.find((task) => task.id === id)
@@ -936,6 +974,8 @@ ${
                 },
                 onNativeSession: (session, sessionId) => {
                   nativeSessionId = sessionId
+                  if (taskToolsToken)
+                    runCredentials(this.store).nativeSession(taskToolsToken, sessionId)
                   this.onNativeSession?.(id, sessionId, session, [
                     cwd,
                     ...linked
@@ -949,6 +989,8 @@ ${
                 onSession: (sessionId) => {
                   if (!acceptsProviderEvents()) return
                   nativeSessionId = sessionId
+                  if (taskToolsToken)
+                    runCredentials(this.store).nativeSession(taskToolsToken, sessionId)
                   if (
                     this.store.taskSummary(id).sessionId !== sessionId ||
                     this.store.taskSummary(id).sessionAgentId !== fingerprint

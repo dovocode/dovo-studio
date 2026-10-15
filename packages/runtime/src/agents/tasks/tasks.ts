@@ -1,3 +1,4 @@
+import { runCredentials } from '../../auth/run-credentials.js'
 import type { MemoryScope } from '@dovo/protocol'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
 import { OwnedProcessShutdownError } from '../execution/stop-owned-child.js'
@@ -126,6 +127,7 @@ export class Tasks {
         if (!oldAgent || !agent || samePermissionPolicy(oldAgent, agent)) continue
         approvals.cancelTask(task.id)
         if (!permissionPolicyTightened(oldAgent, agent)) continue
+        runCredentials(this.store).revokeTask(task.id)
         this.running
           .get(task.id)
           ?.controller.abort(new Error('Access was tightened. Resume to use the updated policy.'))
@@ -1556,6 +1558,7 @@ export class Tasks {
     if (!run) throw new HttpError(409, 'Task is not running')
     if (expectedRunId !== undefined && run.id !== expectedRunId)
       throw new HttpError(409, 'This run ended. Refresh before stopping the current run.')
+    runCredentials(this.store).revokeTask(id)
     this.disposeDelegation(id)
     this.stopChildren(id)
     void this.stopNativeFamily(id).catch((error: unknown) =>
@@ -1616,7 +1619,10 @@ export class Tasks {
   }
   private async stopNativeFamily(id: string, childId?: string) {
     const stops: Promise<void>[] = []
-    for (const taskId of taskFamilyIds(this.store.get().tasks, id)) {
+    const family = taskFamilyIds(this.store.get().tasks, id)
+    // Revoke every owner before any provider shutdown can stall or fail.
+    if (!childId) for (const taskId of family) runCredentials(this.store).revokeTask(taskId)
+    for (const taskId of family) {
       const task = this.store.taskSummary(taskId)
       const selected = (task.subagents ?? []).filter(
         (agent) => agent.source !== 'dovo' && (!childId || (taskId === id && agent.id === childId)),
@@ -1634,6 +1640,19 @@ export class Tasks {
           selected.includes(agent) ? { ...agent, completion: 'disposed' as const } : agent,
         ),
       }))
+      if (
+        childId &&
+        !this.running.has(taskId) &&
+        !this.store
+          .taskSummary(taskId)
+          .subagents?.some(
+            (agent) =>
+              agent.source !== 'dovo' &&
+              agent.completion !== 'disposed' &&
+              nativeAgentWorking(agent),
+          )
+      )
+        runCredentials(this.store).revokeTask(taskId)
       if (!selected.some(nativeAgentWorking)) continue
       const session = this.nativeSessions.get(taskId)
       if (!session)
@@ -2260,7 +2279,10 @@ export class Tasks {
             id,
             true,
             () =>
-              (this.store.taskSummary(id).restartRecovery?.resumeRequested ?? enabled()) &&
+              (this.store.taskSummary(id).restartRecovery?.resumeRequested ??
+                this.store.projectSettings(this.store.taskSummary(id).repositoryId).taskBehavior
+                  ?.continueAfterRestart ??
+                enabled()) &&
               this.store.taskSummary(id).restartRecovery?.automatic === true &&
               !this.store.taskSummary(id).archived,
           ).pipe(

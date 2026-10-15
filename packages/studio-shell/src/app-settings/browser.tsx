@@ -53,6 +53,7 @@ function ProfileName({
       {profile.id !== 'default' && (
         <Button
           title={`Remove ${profile.name}`}
+          type="button"
           variant="outline"
           size="sm"
           disabled={disabled}

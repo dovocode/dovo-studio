@@ -1,3 +1,5 @@
+import { isRunToken } from '../../auth/run-credentials.js'
+import { authorizeRunRoute, authenticateRuntimeOperation } from '../../auth/run-authorization.js'
 import { connect } from 'node:net'
 import { networkInterfaces } from 'node:os'
 import type { IncomingMessage } from 'node:http'
@@ -20,6 +22,30 @@ import { foreignDeviceScope } from '../../previews/device-hosts.js'
 const id = maxValue(minValue(Schema.String, 1), 200)
 const scopeSchema = mutableStruct({ taskId: id })
 const sessionSchema = mutableStruct({ taskId: id, id })
+// Source runtimes cancel their HTTP request when a run loses authority. Keep that
+// cancellation live through destination discovery and queued device work.
+async function deviceOperation<T>(
+  request: IncomingMessage,
+  s: Services,
+  token: string,
+  operation: (signal: AbortSignal, authorize: () => void) => Promise<T>,
+) {
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  const authorize = () => {
+    controller.signal.throwIfAborted()
+    s.devices.authenticate(token)
+    s.deviceHosts.assertEnabled()
+  }
+  request.socket.once('close', abort)
+  if (request.socket.destroyed) abort()
+  try {
+    authorize()
+    return await operation(controller.signal, authorize)
+  } finally {
+    request.socket.off('close', abort)
+  }
+}
 export async function deviceHostRoute(
   request: IncomingMessage,
   path: string,
@@ -28,7 +54,7 @@ export async function deviceHostRoute(
   pairedDeviceId: string,
 ) {
   const method = request.method
-  const agent = request.headers['x-dovo-agent-access'] === '1'
+  const agent = isRunToken(token) || request.headers['x-dovo-agent-access'] === '1'
   if (
     agent &&
     ((path === '/api/device-hosts' && method !== 'GET') ||
@@ -71,15 +97,20 @@ export async function deviceHostRoute(
     s.deviceHosts.assertEnabled()
     s.store.taskSummary(input.taskId)
     const controller = new AbortController()
+    const authorize = () =>
+      isRunToken(token)
+        ? authorizeRunRoute(s, token, method, path, input)
+        : authenticateRuntimeOperation(s, token)
+    const signal = isRunToken(token)
+      ? AbortSignal.any([controller.signal, s.runCredentials.authenticate(token).signal])
+      : controller.signal
     const abort = () => controller.abort()
     request.socket.once('close', abort)
     try {
-      return await s.deviceHosts.install(
-        input,
-        await s.checkouts.directory(input.taskId),
-        agent,
-        controller.signal,
-      )
+      const directory = await s.checkouts.directory(input.taskId)
+      authorize()
+      signal.throwIfAborted()
+      return await s.deviceHosts.install(input, directory, agent, signal, authorize)
     } finally {
       request.socket.off('close', abort)
     }
@@ -88,10 +119,19 @@ export async function deviceHostRoute(
     const input = decode(deviceHostForwardSchema, await body(request, 8192))
     s.store.taskSummary(input.taskId)
     const controller = new AbortController()
+    const authorize = () =>
+      isRunToken(token)
+        ? authorizeRunRoute(s, token, method, path, input)
+        : authenticateRuntimeOperation(s, token)
+    const signal = isRunToken(token)
+      ? AbortSignal.any([controller.signal, s.runCredentials.authenticate(token).signal])
+      : controller.signal
     const abort = () => controller.abort()
     request.socket.once('close', abort)
     try {
-      return await s.deviceHosts.forward(input, agent, controller.signal)
+      authorize()
+      signal.throwIfAborted()
+      return await s.deviceHosts.forward(input, agent, signal, authorize)
     } finally {
       request.socket.off('close', abort)
     }
@@ -164,19 +204,29 @@ export async function deviceHostRoute(
     const input = decode(previewActionSchema, await body(request, 8192))
     if (input.hostId || input.id.startsWith('remote:'))
       throw new HttpError(400, 'Device host endpoint accepts only local devices')
-    return previewDeviceAction({
-      ...input,
-      taskId: foreignDeviceScope(pairedDeviceId, input.taskId),
-    })
+    return deviceOperation(request, s, token, (signal, authorize) =>
+      previewDeviceAction(
+        {
+          ...input,
+          taskId: foreignDeviceScope(pairedDeviceId, input.taskId),
+        },
+        signal,
+        authorize,
+      ),
+    )
   }
   if (path === '/api/device-host/open') {
     const input = decode(sessionSchema, await body(request, 4096))
     if (input.id.startsWith('remote:'))
       throw new HttpError(400, 'Device host endpoint accepts only local devices')
-    const opened = await s.hostSimulators.open(
-      foreignDeviceScope(pairedDeviceId, input.taskId),
-      input.id,
-      pairedDeviceId,
+    const opened = await deviceOperation(request, s, token, (signal, authorize) =>
+      s.hostSimulators.open(
+        foreignDeviceScope(pairedDeviceId, input.taskId),
+        input.id,
+        pairedDeviceId,
+        authorize,
+        signal,
+      ),
     )
     return {
       ...opened,
@@ -206,7 +256,18 @@ export async function deviceHostRoute(
     }
     if (path.endsWith('/input')) {
       if (!input.input) throw new HttpError(400, 'Device input is required')
-      await s.hostSimulators.input(input.id, input.input, authorize)
+      const command = input.input
+      await deviceOperation(request, s, token, (signal, authenticate) =>
+        s.hostSimulators.input(
+          input.id,
+          command,
+          () => {
+            authenticate()
+            authorize()
+          },
+          signal,
+        ),
+      )
     } else if (path.endsWith('/release')) await s.hostSimulators.release(input.id)
     else await s.hostSimulators.close(input.id)
     return { ok: true }

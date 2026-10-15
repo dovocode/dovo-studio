@@ -3,7 +3,7 @@ import type { JiraSource } from '@dovo/studio-core'
 import type { WorkSource } from './work-sources'
 
 /** The same Jira project on several computers is one list source; its reader can change. */
-export const jiraRemoteKey = (jira: Pick<JiraSource, 'site' | 'project'>) =>
+const jiraRemoteKey = (jira: Pick<JiraSource, 'site' | 'project'>) =>
   JSON.stringify(['jira', new URL(jira.site).origin, jira.project])
 
 /** Filtering follows the remote source; details and writes remain pinned to their owner. */

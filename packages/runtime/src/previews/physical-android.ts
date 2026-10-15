@@ -4,24 +4,33 @@ import sharp from 'sharp'
 import type { PreviewDevice } from '@dovo/protocol'
 import type { NativeSimulator } from './simulator-native.js'
 import { androidTool } from './devices.js'
-import { androidScreenSize } from './simulator-native.js'
+import { androidScreenSize, nativePreparation } from './simulator-native.js'
 import { HttpError } from '../errors.js'
 
 const exec = promisify(execFile)
 
 /** ADB works for USB and wireless phones without an emulator control port. */
-export async function physicalAndroid(device: PreviewDevice): Promise<NativeSimulator> {
+export async function physicalAndroid(
+  device: PreviewDevice,
+  authorize?: () => void,
+  signal?: AbortSignal,
+): Promise<NativeSimulator> {
+  const preparation = nativePreparation(authorize, signal)
+  preparation.check()
   if (device.platform !== 'android' || device.kind !== 'physical' || device.state !== 'booted')
     throw new HttpError(409, 'Connect and authorize this Android phone before opening its preview.')
   const adb = await androidTool('adb')
+  preparation.check()
   const target = ['-s', device.runtime]
-  const command = (args: string[]) =>
+  const command = (args: string[], commandSignal?: AbortSignal) =>
     exec(adb, [...target, ...args], {
+      signal: commandSignal,
       windowsHide: true,
       timeout: 10000,
       maxBuffer: 12 * 1024 * 1024,
     })
-  const size = androidScreenSize((await command(['shell', 'wm', 'size'])).stdout)
+  const size = androidScreenSize((await command(['shell', 'wm', 'size'], signal)).stdout)
+  preparation.check()
   if (!size) throw new HttpError(503, 'Could not read the Android display size.')
   let width = size.width,
     height = size.height,
