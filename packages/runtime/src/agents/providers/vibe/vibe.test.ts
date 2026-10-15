@@ -71,7 +71,10 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
   event('history/entryUpdated',{turnId:tid,entryId:'tool',patch:[{op:'replace',path:'/state',value:{status:'completed',outputText:'contents'}}]});
   done();return;
  }
- if(v.method==='callback/result'){reply(v.id,{accepted:true});done();return}
+ if(v.method==='callback/result'){
+  if(!messages.some(message=>message.id==='callback' && message.result?.accepted===true))return done('failed',{error:{message:'Callback result arrived before delivery acknowledgement'}});
+  reply(v.id,{accepted:true});done();return
+ }
  if(v.method==='turn/steer'){reply(v.id,{accepted:true});done();return}
  if(v.method==='turn/interrupt'){reply(v.id,{accepted:true});done('interrupted');return}
  if(v.id!==undefined)reply(v.id,{});
@@ -138,12 +141,33 @@ it.each(['approve', 'deny'] as const)(
       sessionId: 'vibe-session',
       result: { callbackId: 'cb-1', output: { type: 'approval', decision: { type: decision } } },
     })
+    expect(frames.findIndex((m) => m.id === 'callback')).toBeLessThan(
+      frames.findIndex((m) => m.method === 'callback/result'),
+    )
     expect(frames.find((m) => m.id === 'callback')?.result).toEqual({
       callbackId: 'cb-1',
       accepted: true,
     })
   },
 )
+it('acknowledges delivery before an automatic full-access approval', async () => {
+  const f = await fixture()
+  const approve = vi.fn<AgentRun['approve']>()
+  await f.adapter.run({
+    ...f.run,
+    prompt: 'approval',
+    approve,
+    agent: { ...f.run.agent, permission: 'full-access' },
+  })
+  expect(approve).not.toHaveBeenCalled()
+  const frames = await f.messages()
+  expect(frames.findIndex((m) => m.id === 'callback')).toBeLessThan(
+    frames.findIndex((m) => m.method === 'callback/result'),
+  )
+  expect(frames.find((m) => m.method === 'callback/result')?.params).toMatchObject({
+    result: { output: { decision: { type: 'approve' } } },
+  })
+})
 it('denies write/execute callbacks in read-only sessions even if the host asks', async () => {
   const f = await fixture(),
     approve = vi.fn<AgentRun['approve']>()

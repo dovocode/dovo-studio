@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { setImmediate as nextTurn } from 'node:timers/promises'
 import { createMessageConnection } from 'vscode-jsonrpc/node'
 import { Schema } from 'effect'
 import { decode, mutableStruct, effectivePermissionPolicy, isImageAttachment } from '@dovo/protocol'
@@ -253,6 +254,10 @@ export function createVibeAdapter(): AgentAdapter {
         const detail = object(callback.detail)
         // Acknowledge delivery immediately; Vibe expects the answer in a separate callback/result.
         void (async () => {
+          // Let JSON-RPC enqueue this handler's acknowledgement before sending a result,
+          // even when policy or an approval callback resolves immediately.
+          await nextTurn()
+          if (signal.aborted || finished) return
           let output: unknown
           if (detail.kind === 'user_input') output = await vibeQuestions(detail.request, run)
           else if (detail.kind === 'approval') {
