@@ -10,6 +10,11 @@ const brandPaths = {
 type HarnessIconData = { viewBox: string; fill?: string; paths: { d: string; opacity?: number }[] }
 export const harnessIconData: Record<TaskHarness['provider'], HarnessIconData> = {
   codex: { viewBox: '0 0 24 24', paths: [{ d: brandPaths.openai }] },
+  vibe: {
+    viewBox: '0 0 24 24',
+    fill: '#f97316',
+    paths: [{ d: 'M3 3h5v4h8V3h5v18h-5v-7h-3v4h-2v-4H8v7H3z' }],
+  },
   claude: { viewBox: '0 0 24 24', fill: '#d97757', paths: [{ d: brandPaths.claude }] },
   opencode: {
     viewBox: '0 0 240 300',

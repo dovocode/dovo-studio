@@ -75,6 +75,11 @@ export function contextUsage(
       limit = count(event.tokenLimit)
     return used === undefined && limit === undefined ? undefined : { used, limit }
   }
+  if (provider === 'vibe' && name === 'vibe/usage') {
+    const used = count(record(event.stats).contextTokens),
+      limit = count(event.contextWindow)
+    return used === undefined && limit === undefined ? undefined : { used, limit }
+  }
   if (provider === 'muse' && name === 'session/contextUsage') {
     const used = count(event.usedTokens),
       limit = count(event.windowTokens)
@@ -135,10 +140,20 @@ export function turnTokenCounter(
   const opencode = new Map<string, number>()
   let opencodeV2: number | undefined
   let opencodeV2Unavailable = false
+  let vibeUsage: TurnTokenUsage | undefined
   let museUsage: TurnTokenUsage | undefined
   return {
     accept(name: string, payload: unknown) {
       const event = record(payload)
+      if (provider === 'vibe' && name === 'vibe/usage') {
+        const stats = record(event.stats)
+        const input = count(stats.lastTurnPromptTokens),
+          output = count(stats.lastTurnCompletionTokens)
+        if (input !== undefined && output !== undefined) {
+          const cacheRead = Math.min(input, count(stats.lastTurnCachedTokens) ?? 0)
+          vibeUsage = { input: input - cacheRead, output, cacheRead, cacheWrite: 0 }
+        }
+      }
       if (provider === 'cursor' && name === 'cursor/usage' && typeof event.usageId === 'string') {
         const usage = record(event.usage)
         const input = count(usage.inputTokens),
@@ -332,6 +347,8 @@ export function turnTokenCounter(
           ? codexLatest - codexStart
           : undefined
       if (provider === 'claude') return claude
+      if (provider === 'vibe')
+        return vibeUsage ? Object.values(vibeUsage).reduce((a, b) => a + b, 0) : undefined
       if (provider === 'muse')
         return museUsage ? Object.values(museUsage).reduce((a, b) => a + b, 0) : undefined
       if (provider === 'opencode' && opencode.size)
@@ -341,6 +358,7 @@ export function turnTokenCounter(
     },
     usage(): TurnTokenUsage | undefined {
       if (provider === 'cursor') return cursorTotal()
+      if (provider === 'vibe') return vibeUsage
       if (provider === 'claude') return claudeUsage
       if (provider === 'muse') return museUsage
       if (provider === 'opencode' && opencodeV2Unavailable) return undefined

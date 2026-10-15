@@ -60,6 +60,7 @@ it('offers all providers and custom agents before the first input', () => {
   expect(taskHarnessChoices(draft, agents).map((choice) => choice.id)).toEqual([
     'harness:codex',
     'harness:claude',
+    'harness:vibe',
     'harness:opencode',
     'harness:hermes',
     'harness:copilot',

@@ -6,6 +6,7 @@ export const adapterDiagnosticSchema = mutableStruct({
   provider: Schema.Literals([
     'codex',
     'claude',
+    'vibe',
     'opencode',
     'hermes',
     'copilot',

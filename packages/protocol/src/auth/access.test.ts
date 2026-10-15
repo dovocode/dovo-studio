@@ -29,6 +29,8 @@ it('restricts utilities to providers with a tool-disable boundary', () => {
     expect(supportsUtilities(provider)).toBe(false)
     expect(supportsAccess(provider, 'read-only')).toBe(false)
   }
+  expect(supportsUtilities('vibe')).toBe(false)
+  expect(supportsAccess('vibe', 'read-only')).toBe(true)
   expect(supportsUtilities('copilot')).toBe(true)
 })
 

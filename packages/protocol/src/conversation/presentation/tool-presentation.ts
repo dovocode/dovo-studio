@@ -147,6 +147,27 @@ function computePresentation(
       inputPayload,
     )
   const event = object(envelope.event)
+  const vibe = object(event.entry)
+  if (vibe.type === 'effect') {
+    const detail = object(vibe.detail),
+      state = object(vibe.state)
+    const category = detail.kind
+    return {
+      title: text(vibe.title) || text(detail.toolName) || summary,
+      input: detail.input == null ? '' : JSON.stringify(detail.input, null, 2),
+      output: text(state.outputText) || text(object(state.error).message),
+      kind:
+        category === 'shell'
+          ? 'command'
+          : category === 'file_search'
+            ? 'search'
+            : ['file_read', 'file_write', 'file_edit'].includes(text(category))
+              ? 'file'
+              : ['web_search', 'web_fetch'].includes(text(category))
+                ? 'web'
+                : 'tool',
+    }
+  }
   const item = object(event.item)
   const part = object(object(event.properties).part)
   const state = object(part.state)

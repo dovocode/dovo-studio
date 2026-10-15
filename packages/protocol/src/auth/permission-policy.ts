@@ -80,14 +80,14 @@ export function permissionPolicyCapabilities(provider: Agent['provider']) {
     approvalPolicies:
       provider === 'codex'
         ? approvals
-        : ['claude', 'acp', 'copilot', 'opencode'].includes(provider)
+        : ['claude', 'vibe', 'acp', 'copilot', 'opencode'].includes(provider)
           ? mediatedApprovals
           : [],
     sandboxModes: provider === 'codex' ? sandboxes : [],
     approvalDescription:
       provider === 'codex'
         ? 'Codex enforces the selected approval policy.'
-        : ['claude', 'acp', 'copilot', 'opencode'].includes(provider)
+        : ['claude', 'vibe', 'acp', 'copilot', 'opencode'].includes(provider)
           ? 'Controls provider permission requests and Dovo tool callbacks. The provider controls which native actions request approval.'
           : 'This provider does not support separate approval controls. Use its access mode.',
     sandboxDescription:

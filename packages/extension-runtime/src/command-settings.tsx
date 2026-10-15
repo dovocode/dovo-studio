@@ -148,7 +148,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                   },
                   {
                     title: 'Agent commands',
-                    ids: ['codex', 'claude', 'hermes', 'copilot', 'grok', 'muse', 'acp'],
+                    ids: ['codex', 'claude', 'vibe', 'hermes', 'copilot', 'grok', 'muse', 'acp'],
                   },
                 ]
             ).map((group) => (

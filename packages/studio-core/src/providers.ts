@@ -5,6 +5,7 @@ export const providers: Record<
 > = {
   codex: { name: 'Codex App Server', short: 'Codex', description: 'Local app-server process' },
   opencode: { name: 'OpenCode Serve', short: 'OpenCode', description: 'HTTP server connection' },
+  vibe: { name: 'Mistral Vibe App Server', short: 'Vibe', description: 'Local app-server process' },
   claude: { name: 'Claude Agent SDK', short: 'Claude', description: 'Runtime-hosted SDK' },
   hermes: { name: 'Hermes Agent', short: 'Hermes', description: 'Local Hermes agent process' },
   copilot: {

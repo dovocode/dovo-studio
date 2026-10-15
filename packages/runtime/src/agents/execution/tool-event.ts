@@ -32,6 +32,15 @@ export function toolEvent(provider: Agent['provider'], name: string, payload: un
       status: name.endsWith('completed') ? string(item.status) || 'completed' : 'running',
     }
   }
+  if (provider === 'vibe' && name === 'vibe/effect') {
+    const entry = object(data.entry)
+    const state = object(entry.state)
+    return {
+      toolId: string(entry.id),
+      title: string(entry.title) || string(object(entry.detail).toolName) || 'Vibe tool',
+      status: string(state.status) || 'running',
+    }
+  }
   if (provider === 'cursor' && name === 'cursor/tool_call')
     return {
       toolId: string(data.call_id),

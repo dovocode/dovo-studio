@@ -20,6 +20,9 @@ vi.mock('../../process.js', () => ({
     PATH: '/bin',
   }),
 }))
+vi.mock('../catalogs/vibe.js', () => ({
+  vibeVersion: vi.fn<() => Promise<string>>(async () => '2.26.1'),
+}))
 const settings = decode(commandsSchema, {})
 const remote = { provider: 'opencode' as const, endpoint: 'http://127.0.0.1:4096', model: '' }
 const request = vi.fn<typeof fetch>()

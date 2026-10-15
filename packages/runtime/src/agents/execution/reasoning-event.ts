@@ -265,6 +265,15 @@ export class ReasoningEvents {
       else this.complete(id)
       return true
     }
+    if (this.provider === 'vibe' && name === 'vibe/reasoning') {
+      const entry = object(data.entry)
+      this.set(
+        `vibe:${string(entry.id)}`,
+        string(entry.text),
+        entry.generationStatus === 'completed' ? 'completed' : 'running',
+      )
+      return true
+    }
     if (this.provider === 'muse') {
       const item = object(data.item),
         id = `muse:${string(item.itemId) || string(data.itemId)}`

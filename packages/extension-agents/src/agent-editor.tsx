@@ -395,19 +395,21 @@ export function AgentEditor({
                       />
                     </FormField>
                   )}
-                  {(['codex', 'claude', 'hermes', 'copilot'] as const).some(
+                  {(['codex', 'claude', 'vibe', 'hermes', 'copilot'] as const).some(
                     (provider) => provider === agent.provider,
                   ) && (
                     <FormField
                       layout="settings"
                       label={`Config directory (${
-                        agent.provider === 'hermes'
-                          ? 'HERMES_HOME'
-                          : agent.provider === 'copilot'
-                            ? 'COPILOT_HOME'
-                            : agent.provider === 'codex'
-                              ? 'CODEX_HOME'
-                              : 'CLAUDE_CONFIG_DIR'
+                        agent.provider === 'vibe'
+                          ? 'VIBE_HOME'
+                          : agent.provider === 'hermes'
+                            ? 'HERMES_HOME'
+                            : agent.provider === 'copilot'
+                              ? 'COPILOT_HOME'
+                              : agent.provider === 'codex'
+                                ? 'CODEX_HOME'
+                                : 'CLAUDE_CONFIG_DIR'
                       })`}
                     >
                       <Input

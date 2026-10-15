@@ -850,6 +850,9 @@ importers:
       effect:
         specifier: 4.0.1
         version: 4.0.1
+      fast-json-patch:
+        specifier: 3.1.1
+        version: 3.1.1
       file-type:
         specifier: ^22.1.1
         version: 22.1.1(supports-color@8.1.1)
@@ -6216,6 +6219,9 @@ packages:
 
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
+
+  fast-json-patch@3.1.1:
+    resolution: {integrity: sha512-vf6IHUX2SBcA+5/+4883dsIjpBTqmfBjmYiWK1savxQmFk4JfBMLa7ynTYOs1Rolp/T1betJxHiGD3g1Mn8lUQ==}
 
   fast-sha256@1.3.0:
     resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
@@ -15096,6 +15102,8 @@ snapshots:
       fallow-type-aware: 3.31.0
 
   fast-deep-equal@3.1.3: {}
+
+  fast-json-patch@3.1.1: {}
 
   fast-sha256@1.3.0: {}
 

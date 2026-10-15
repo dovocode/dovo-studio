@@ -29,6 +29,7 @@ export const providerSchema = Schema.Literals([
   'codex',
   'opencode',
   'claude',
+  'vibe',
   'hermes',
   'copilot',
   'grok',

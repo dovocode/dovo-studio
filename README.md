@@ -51,14 +51,16 @@ See the [development and operations guide](docs/server-setup.md) for setup detai
 
 ## What you can do
 
-- Run Codex, OpenCode, Claude, or ACP agents against registered projects, with streamed sessions,
-  approvals, questions, cancellation, and resumable tasks.
+- Run Codex, OpenCode, Claude, Mistral Vibe, or ACP agents against registered projects, with
+  streamed sessions, approvals, questions, cancellation, and resumable tasks.
 - Review Git changes, manage branches and worktrees, and browse pull requests, issues, and pipelines
   across supported source-control providers.
 - Use real host terminals, reusable agent profiles, and project or agent MCP servers and skills.
 - Build automations with schedules, webhooks, task runs, and durable human-review steps.
 - Pair desktop, web, and mobile clients to one host workspace, with device revocation and host-side
   data storage.
+
+For Mistral Vibe, see the [Vibe integration setup](docs/mistral-vibe.md).
 
 ## Documentation
 

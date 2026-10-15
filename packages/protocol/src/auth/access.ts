@@ -62,5 +62,5 @@ export function accessLabel(permission: Agent['permission']) {
 
 /** These providers have no tool-disable boundary for utility prompts. */
 export function supportsUtilities(provider: Agent['provider']) {
-  return !['hermes', 'grok', 'muse'].includes(provider)
+  return !['hermes', 'grok', 'muse', 'vibe'].includes(provider)
 }

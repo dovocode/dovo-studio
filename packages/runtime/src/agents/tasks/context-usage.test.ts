@@ -229,3 +229,21 @@ it('reads Muse context usage and accumulates per-request token usage', () => {
   expect(counter.total()).toBe(227)
   expect(turnTokenCounter('muse', () => 's').total()).toBeUndefined()
 })
+
+it('uses Vibe turn totals without double-counting cached prompt tokens', () => {
+  const payload = {
+    stats: {
+      contextTokens: 90,
+      lastTurnPromptTokens: 120,
+      lastTurnCompletionTokens: 20,
+      lastTurnCachedTokens: 30,
+    },
+    contextWindow: 200000,
+  }
+  expect(contextUsage('vibe', 'vibe/usage', payload)).toEqual({ used: 90, limit: 200000 })
+  const counter = turnTokenCounter('vibe', () => undefined)
+  counter.accept('vibe/usage', payload)
+  counter.accept('vibe/usage', payload)
+  expect(counter.usage()).toEqual({ input: 90, output: 20, cacheRead: 30, cacheWrite: 0 })
+  expect(counter.total()).toBe(140)
+})

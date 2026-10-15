@@ -10,6 +10,7 @@ import { Schema } from 'effect'
 import type { AgentDiscovery, CommandSettings } from '@dovo/protocol'
 import { exec, processEnvironment } from '../../process.js'
 import type { AdapterDiagnostic } from '@dovo/protocol'
+import { vibeVersion } from '../catalogs/vibe.js'
 import { hermesExecutable } from '../providers/hermes/hermes-launch.js'
 export type { AdapterDiagnostic } from '@dovo/protocol'
 interface Check {
@@ -67,6 +68,12 @@ function executable(command: string) {
       version: reportedVersion(stdout),
       detail: 'Executable responds. Provider authentication was not tested.',
     }
+  }
+}
+async function vibeExecutable(agent: AgentDiscovery) {
+  return {
+    version: valid(await vibeVersion(agent)),
+    detail: 'App server responds. Provider authentication was not tested.',
   }
 }
 function sdk(name: string) {
@@ -154,6 +161,16 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
     documentationUrl:
       'https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration/',
   })
+  result.push({
+    id: 'vibe',
+    name: 'Mistral Vibe app server',
+    provider: 'vibe',
+    kind: 'executable',
+    inspect: () => vibeExecutable({ provider: 'vibe', endpoint: settings.vibe, model: '' }),
+    guidance:
+      'Install Mistral Vibe 2.26.1 or newer (uv tool install mistral-vibe). Update it with its original installer and configure credentials with vibe --setup.',
+    documentationUrl: 'https://github.com/mistralai/mistral-vibe',
+  })
   for (const [provider, name, command, url] of [
     ['copilot', 'GitHub Copilot CLI', settings.copilot, 'https://github.com/github/copilot-sdk'],
     ['grok', 'Grok Build CLI', settings.grok, 'https://docs.x.ai/build/overview'],
@@ -197,7 +214,7 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
       documentationUrl: url,
     })
   const configured = new Set<string>(
-    (['codex', 'hermes', 'copilot', 'grok', 'muse'] as const).map(
+    (['codex', 'vibe', 'hermes', 'copilot', 'grok', 'muse'] as const).map(
       (provider) => provider + '\0' + settings[provider],
     ),
   )
@@ -218,7 +235,7 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
     configured.add(`${agent.provider}\0${command}`)
     result.push({
       id: `${agent.provider}-executable-${result.length}`,
-      name: `${agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : agent.provider === 'hermes' ? 'Hermes' : agent.provider === 'copilot' ? 'Copilot' : agent.provider === 'grok' ? 'Grok Build' : agent.provider === 'muse' ? 'Muse Code' : 'ACP'} executable (${command})`,
+      name: `${agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : agent.provider === 'hermes' ? 'Hermes' : agent.provider === 'copilot' ? 'Copilot' : agent.provider === 'grok' ? 'Grok Build' : agent.provider === 'muse' ? 'Muse Code' : agent.provider === 'vibe' ? 'Mistral Vibe' : 'ACP'} executable (${command})`,
       provider: agent.provider,
       kind: 'executable',
       ...(agent.provider === 'claude'
@@ -231,9 +248,11 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
             }
           : {}),
       inspect:
-        agent.provider === 'hermes'
-          ? () => executable(hermesExecutable(command, processEnvironment(agent.env)))()
-          : executable(command),
+        agent.provider === 'vibe'
+          ? () => vibeExecutable(agent)
+          : agent.provider === 'hermes'
+            ? () => executable(hermesExecutable(command, processEnvironment(agent.env)))()
+            : executable(command),
       guidance:
         agent.provider === 'hermes'
           ? 'Update this Hermes executable using its original installer (hermes update). Provider credentials use hermes model.'
@@ -243,19 +262,21 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
               ? 'Update this configured executable using its original installer. Custom ACP agents do not share a release version.'
               : 'Update this configured executable with its original installer and authenticate on the runtime host. Dovo’s bundled SDK is updated separately.',
       documentationUrl:
-        agent.provider === 'hermes'
-          ? 'https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration/'
-          : agent.provider === 'claude'
-            ? 'https://code.claude.com/docs/en/setup'
-            : agent.provider === 'codex'
-              ? 'https://developers.openai.com/codex/cli/'
-              : agent.provider === 'copilot'
-                ? 'https://github.com/github/copilot-sdk'
-                : agent.provider === 'grok'
-                  ? 'https://docs.x.ai/build/overview'
-                  : agent.provider === 'muse'
-                    ? 'https://meta-models.github.io/muse-code-sdk/next/'
-                    : 'https://agentclientprotocol.com/overview/agents',
+        agent.provider === 'vibe'
+          ? 'https://github.com/mistralai/mistral-vibe'
+          : agent.provider === 'hermes'
+            ? 'https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration/'
+            : agent.provider === 'claude'
+              ? 'https://code.claude.com/docs/en/setup'
+              : agent.provider === 'codex'
+                ? 'https://developers.openai.com/codex/cli/'
+                : agent.provider === 'copilot'
+                  ? 'https://github.com/github/copilot-sdk'
+                  : agent.provider === 'grok'
+                    ? 'https://docs.x.ai/build/overview'
+                    : agent.provider === 'muse'
+                      ? 'https://meta-models.github.io/muse-code-sdk/next/'
+                      : 'https://agentclientprotocol.com/overview/agents',
     })
   }
   const openCodeAgents = agents.filter((agent) => agent.provider === 'opencode')
@@ -384,7 +405,9 @@ export async function checkAdapterUpdates(
         // Child stderr may contain environment or authentication data; never include it in diagnostics.
         base.detail =
           check.kind === 'executable'
-            ? 'Executable could not be started or did not respond to --version within 5 seconds.'
+            ? check.provider === 'vibe'
+              ? 'Vibe app server could not be started or did not complete its handshake.'
+              : 'Executable could not be started or did not respond to --version within 5 seconds.'
             : check.kind === 'sdk'
               ? 'Installed adapter dependency could not be read. Reinstall Dovo dependencies with its lockfile.'
               : error instanceof Error &&

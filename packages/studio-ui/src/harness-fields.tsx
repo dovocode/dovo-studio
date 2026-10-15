@@ -219,7 +219,7 @@ export function HarnessFields({
                 />
               </FormField>
             )}
-          {(['hermes', 'copilot', 'grok', 'muse'].includes(value.provider) ||
+          {(['hermes', 'vibe', 'copilot', 'grok', 'muse'].includes(value.provider) ||
             (value.provider === 'acp' && !value.acpInstallationId)) && (
             <FormField label="Arguments (one per line)">
               <Textarea

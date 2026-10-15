@@ -20,6 +20,9 @@ export const commandsSchema = mutableStruct({
   fj: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'fj'))),
   acli: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'acli'))),
   codex: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'codex'))),
+  vibe: minValue(executable, 1).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 'vibe-app-server')),
+  ),
   claude: executable.pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
   hermes: minValue(executable, 1).pipe(Schema.withDecodingDefaultType(Effect.sync(() => 'hermes'))),
   copilot: minValue(executable, 1).pipe(
@@ -110,6 +113,7 @@ export const commandFields = [
     label: 'Codex executable',
     placeholder: 'codex',
   },
+  { id: 'vibe', label: 'Mistral Vibe app-server executable', placeholder: 'vibe-app-server' },
   {
     id: 'claude',
     label: 'Claude executable',

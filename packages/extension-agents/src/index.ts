@@ -34,7 +34,7 @@ export const agentsExtension = defineStudioExtension(
       order: 2,
       settingsSection: 'agents',
       keywords:
-        'models defaults providers codex claude opencode hermes copilot grok muse cursor acp permissions access titles dictation',
+        'models defaults providers codex claude vibe opencode hermes copilot grok muse cursor acp permissions access titles dictation',
       load: () => import('./view'),
     },
   ],

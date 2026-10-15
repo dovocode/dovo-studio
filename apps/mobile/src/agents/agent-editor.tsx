@@ -173,17 +173,20 @@ export function AgentEditor({
           )}
           {(draft.provider === 'codex' ||
             draft.provider === 'claude' ||
+            draft.provider === 'vibe' ||
             draft.provider === 'hermes' ||
             draft.provider === 'copilot') && (
             <Field
               label={
-                draft.provider === 'hermes'
-                  ? 'HERMES_HOME directory'
-                  : draft.provider === 'copilot'
-                    ? 'COPILOT_HOME directory'
-                    : draft.provider === 'codex'
-                      ? 'CODEX_HOME directory'
-                      : 'CLAUDE_CONFIG_DIR directory'
+                draft.provider === 'vibe'
+                  ? 'VIBE_HOME directory'
+                  : draft.provider === 'hermes'
+                    ? 'HERMES_HOME directory'
+                    : draft.provider === 'copilot'
+                      ? 'COPILOT_HOME directory'
+                      : draft.provider === 'codex'
+                        ? 'CODEX_HOME directory'
+                        : 'CLAUDE_CONFIG_DIR directory'
               }
               value={draft.configDirectory ?? ''}
               onChangeText={(configDirectory) => setDraft({ ...draft, configDirectory })}

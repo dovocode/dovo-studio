@@ -98,9 +98,16 @@ try {
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
   await waitRequests(1)
   await absent(page.getByRole('button', { name: 'Cursor models', exact: true }))
-  await finish(0, ['harness:codex', 'harness:claude', 'agent:custom', 'acp:installed'])
+  await finish(0, [
+    'harness:codex',
+    'harness:claude',
+    'harness:vibe',
+    'agent:custom',
+    'acp:installed',
+  ])
   await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Installed ACP models', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Vibe models', exact: true }).waitFor()
   await absent(page.getByRole('button', { name: 'Cursor models', exact: true }))
   await absent(page.getByRole('button', { name: 'ACP models', exact: true }))
   await page.getByRole('button', { name: 'Favorite models', exact: true }).click()
@@ -155,10 +162,14 @@ try {
     throw new Error('Availability changed saved selection')
   await page.evaluate(() => window.mode('mobile'))
   await waitRequests(7)
-  await finish(6, ['harness:claude', 'agent:custom', 'acp:installed'])
+  await finish(6, ['harness:claude', 'harness:vibe', 'agent:custom', 'acp:installed'])
   const choice = page.getByRole('combobox', { name: 'Agent', exact: true })
   await choice.getByRole('option', { name: 'Claude', exact: true }).waitFor({ state: 'attached' })
   await absent(choice.getByRole('option', { name: 'Cursor', exact: true }))
+  await choice.getByRole('option', { name: 'Vibe', exact: true }).waitFor({ state: 'attached' })
+  await choice.selectOption('harness:vibe')
+  if (await page.evaluate(() => window.changes.at(-1)?.provider !== 'vibe'))
+    throw new Error('Available mobile Vibe provider was not selectable')
   await choice.selectOption('harness:claude')
   if (await page.evaluate(() => window.changes.at(-1)?.provider !== 'claude'))
     throw new Error('Available mobile provider was not selectable')

@@ -18,6 +18,7 @@ it('provides ready-to-configure profiles with stable identities and provider-own
   expect(presets.map((agent) => agent.name)).toEqual([
     'Codex',
     'Claude Code',
+    'Mistral Vibe',
     'OpenCode',
     'Cursor',
     'GitHub Copilot',

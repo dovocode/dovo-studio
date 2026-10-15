@@ -13,6 +13,11 @@ export const builtInAgentDefinitions = [
     description: 'Uses your Claude Code installation and account.',
   },
   {
+    provider: 'vibe',
+    name: 'Mistral Vibe',
+    description: 'Uses your Mistral Vibe app server and configured credentials.',
+  },
+  {
     provider: 'opencode',
     name: 'OpenCode',
     description: 'Starts a local OpenCode server using your configured providers.',

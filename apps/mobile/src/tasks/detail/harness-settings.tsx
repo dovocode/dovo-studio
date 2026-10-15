@@ -164,7 +164,7 @@ export function HarnessSettings({
       />
       {!custom &&
         (agent.provider === 'opencode' ||
-          ['hermes', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
+          ['hermes', 'vibe', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
           (agent.provider === 'acp' && !agent.acpInstallationId)) && (
           <Field
             label={
@@ -187,7 +187,7 @@ export function HarnessSettings({
           />
         )}
       {!custom &&
-        (['hermes', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
+        (['hermes', 'vibe', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
           (agent.provider === 'acp' && !agent.acpInstallationId)) && (
           <Field
             label="Arguments (one per line)"

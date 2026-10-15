@@ -18,6 +18,7 @@ export class AgentRegistry {
     private acpLaunch?: (id: string) => AcpLaunch,
   ) {
     const providers = [
+      ['vibe', () => import('../providers/vibe/vibe.js').then((m) => m.createVibeAdapter())],
       ['codex', () => import('../providers/codex/codex.js').then((m) => m.createCodexAdapter())],
       [
         'opencode',
@@ -68,15 +69,20 @@ export class AgentRegistry {
       ...agent,
       ...(agent.configDirectory ? { configDirectory: expandHome(agent.configDirectory) } : {}),
       ...(agent.configDirectory &&
-      (agent.provider === 'codex' || agent.provider === 'claude' || agent.provider === 'hermes')
+      (agent.provider === 'codex' ||
+        agent.provider === 'claude' ||
+        agent.provider === 'hermes' ||
+        agent.provider === 'vibe')
         ? {
             env: {
               ...agent.env,
-              [agent.provider === 'hermes'
-                ? 'HERMES_HOME'
-                : agent.provider === 'codex'
-                  ? 'CODEX_HOME'
-                  : 'CLAUDE_CONFIG_DIR']: expandHome(agent.configDirectory),
+              [agent.provider === 'vibe'
+                ? 'VIBE_HOME'
+                : agent.provider === 'hermes'
+                  ? 'HERMES_HOME'
+                  : agent.provider === 'codex'
+                    ? 'CODEX_HOME'
+                    : 'CLAUDE_CONFIG_DIR']: expandHome(agent.configDirectory),
             },
           }
         : {}),
