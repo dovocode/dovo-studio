@@ -8,12 +8,22 @@ import { decode } from '@dovo/protocol'
 import type { AgentRun, AgentAdapter } from '../agents/execution/types'
 import { beforeEach, afterEach, expect, it, vi } from 'vite-plus/test'
 import { join } from 'node:path'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { responses, type Automation, type AutomationData } from '@dovo/protocol'
 // These integration tests run real Git checkout/checkpoint subprocesses.
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
+async function databaseFile(name: string) {
+  // Checkpoints must never stage the runtime's live SQLite/WAL files as project changes.
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-jobs-data-'))
+  cleanups.push(() =>
+    rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }),
+  )
+  return join(directory, name)
+}
 beforeEach(() => {
   vi.spyOn(TitleGeneration.prototype, 'generate').mockResolvedValue({
     title: 'Generated automation title',
@@ -32,7 +42,7 @@ it(
     const f = await fixture()
     cleanups.push(f.cleanup)
     const options = {
-      databasePath: join(f.directory, 'runtime.sqlite'),
+      databasePath: await databaseFile('runtime.sqlite'),
       ownerToken: 'test-owner-token-with-at-least-32-characters',
       port: 0,
     }
@@ -629,7 +639,7 @@ it.each([false, true])(
     const f = await fixture()
     cleanups.push(f.cleanup)
     const options = {
-      databasePath: join(f.directory, 'recover.sqlite'),
+      databasePath: await databaseFile('recover.sqlite'),
       ownerToken: 'test-owner-token-with-at-least-32-characters',
       port: 0,
     }
@@ -644,8 +654,14 @@ it.each([false, true])(
       run: async () => {},
     })
     const id = runtime.services.jobs.start('flow')
-    await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
+    await waitForJob(() => {
+      const { status, error } = runtime.services.jobs.list()[0]
+      expect({ status, error }).toEqual({ status: 'waiting', error: undefined })
+    })
     const original = runtime.services.jobs.list()[0]
+    expect(
+      runtime.services.store.task(original.taskIds[0]).turns?.at(-1)?.checkpoint?.files,
+    ).toEqual([])
     // Simulate a crash after the task persisted success but before Jobs committed the step.
     const stored = {
       ...original,
@@ -726,7 +742,7 @@ it('prunes finished runs and delivery receipts past the retention window', async
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
-    databasePath: join(f.directory, 'runtime.sqlite'),
+    databasePath: await databaseFile('runtime.sqlite'),
     ownerToken: 'test-owner-token-with-at-least-32-characters',
     port: 0,
   })

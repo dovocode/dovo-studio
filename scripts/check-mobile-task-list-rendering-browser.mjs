@@ -18,6 +18,7 @@ export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor
   return <div data-testid={testID}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}</div>
 });
 export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};
+export const Platform={OS:'ios'};
 export const Alert={alert:(title,message,buttons)=>{window.alerts.push({title,message});buttons?.find(button=>button.style!=='cancel')?.onPress?.()}};
 export const Icon=()=>null;
 export const IconButton=({label,onPress,disabled})=><button aria-label={label} onClick={onPress} disabled={disabled}>{label}</button>;
