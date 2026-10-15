@@ -38,7 +38,13 @@ export function acquireProcessLock(path: string) {
       // A record written before this boot names a PID the OS has since reused for something
       // else; only a record from the current boot can belong to a live runtime.
       const bootedAt = Date.now() - uptime() * 1000
-      if (statSync(path).mtimeMs >= bootedAt)
+      // Modern records are protected by the SQLite lock already held above. A crashed
+      // Windows process can leave its PID observable (or reused) after that lock releases.
+      // Only legacy records without a nonce need the compatibility PID check.
+      if (
+        !('nonce' in value && typeof value.nonce === 'string') &&
+        statSync(path).mtimeMs >= bootedAt
+      )
         try {
           process.kill(value.pid, 0)
           throw new Error(

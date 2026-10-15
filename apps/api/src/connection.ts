@@ -1,4 +1,6 @@
-import { chmodSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { rename, rm } from 'node:fs/promises'
+import { setTimeout as delay } from 'node:timers/promises'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 export interface LocalConnection {
@@ -41,14 +43,39 @@ export function readConnection(path: string): LocalConnection {
       'bindHost' in value && typeof value.bindHost === 'string' ? value.bindHost : url.hostname,
   }
 }
-export function publishConnection(directory: string, connection: LocalConnection) {
+export async function publishConnection(directory: string, connection: LocalConnection) {
   const path = join(directory, 'runtime-connection.json')
   const temporary = `${path}.${process.pid}.tmp`
   writeFileSync(temporary, JSON.stringify(connection), {
     mode: 0o600,
   })
   chmodSync(temporary, 0o600)
-  renameSync(temporary, path)
+  try {
+    // Windows scanners/readers may briefly prevent replacement of the previous
+    // discovery file. Keep the old file intact until atomic replacement succeeds.
+    const deadline = Date.now() + 1000
+    for (;;) {
+      try {
+        await rename(temporary, path)
+        break
+      } catch (error) {
+        if (
+          process.platform !== 'win32' ||
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            (error.code === 'EPERM' || error.code === 'EACCES' || error.code === 'EBUSY')
+          ) ||
+          Date.now() >= deadline
+        )
+          throw error
+        await delay(25)
+      }
+    }
+  } catch (error) {
+    await rm(temporary, { force: true })
+    throw error
+  }
   return () => {
     let saved: LocalConnection
     try {

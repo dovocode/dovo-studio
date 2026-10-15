@@ -80,3 +80,17 @@ it('names the lock file when its record is unreadable', () => {
   writeFileSync(path, '')
   expect(() => acquireProcessLock(path)).toThrow(`Invalid process lock: ${path}`)
 })
+
+it('recovers a modern stale record even when its PID is still observable', () => {
+  const path = fixture()
+  writeFileSync(path, JSON.stringify({ pid: process.pid, nonce: 'crashed-owner' }))
+  const release = acquireProcessLock(path)
+  expect(JSON.parse(readFileSync(path, 'utf8')).nonce).not.toBe('crashed-owner')
+  expect(() => acquireProcessLock(path)).toThrow('Another runtime operation is active')
+  release()
+})
+it('still refuses a live legacy owner without a SQLite lock', () => {
+  const path = fixture()
+  writeFileSync(path, JSON.stringify({ pid: process.pid }))
+  expect(() => acquireProcessLock(path)).toThrow('Another runtime operation is active')
+})

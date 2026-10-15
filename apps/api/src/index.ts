@@ -127,14 +127,16 @@ const program = Effect.scoped(
         desktopDualListener || ['0.0.0.0', '::'].includes(bindHost) ? '127.0.0.1' : bindHost
       const address = `http://${clientHost.includes(':') ? `[${clientHost}]` : clientHost}:${runtime.port}`
       yield* Effect.acquireRelease(
-        attempt('publish connection', () =>
-          publishConnection(directory, {
-            address,
-            token: ownerToken,
-            pid: process.pid,
-            bindHost: desktopDualListener ? '127.0.0.1' : bindHost,
-          }),
-        ),
+        Effect.tryPromise({
+          try: () =>
+            publishConnection(directory, {
+              address,
+              token: ownerToken,
+              pid: process.pid,
+              bindHost: desktopDualListener ? '127.0.0.1' : bindHost,
+            }),
+          catch: (cause) => new RuntimeProcessError({ operation: 'publish connection', cause }),
+        }),
         (remove) => Effect.sync(remove),
       )
       yield* Effect.sync(() => {

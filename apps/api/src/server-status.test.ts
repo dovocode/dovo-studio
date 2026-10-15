@@ -42,7 +42,7 @@ it.each([
   const directory = mkdtempSync(join(tmpdir(), 'dovo-server-status-'))
   directories.push(directory)
   setupServer(directory, { host: '127.0.0.1', port: String(address.port) })
-  publishConnection(directory, {
+  await publishConnection(directory, {
     address: `http://127.0.0.1:${address.port}`,
     token,
     pid: process.pid,
