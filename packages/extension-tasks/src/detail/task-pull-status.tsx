@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { Layers, Wrench, CircleCheck, CircleX, CircleDashed, GitMerge } from 'lucide-react'
-import { randomUUID, fixChecksPrompt, pullStatusLabel, pullStackLabel } from '@dovo/protocol'
+import {
+  randomUUID,
+  fixChecksPrompt,
+  pullStatusLabel,
+  pullStackLabel,
+  taskPullStatusFor,
+} from '@dovo/protocol'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import { PullRequestIcon, pullRequestIconTone, Button, cn } from '@dovo/studio-ui'
 
@@ -10,16 +16,18 @@ export function TaskPullStatus({
   onPullLink,
   panel = false,
   title,
+  url,
 }: {
   task: Task
   panel?: boolean
   title?: string
+  url?: string
   onPullLink?: (url: string) => boolean
 }) {
   const { request, connected } = useWorkspace()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const status = task.pullStatus
+  const status = url ? taskPullStatusFor(task, url) : task.pullStatus
   if (!status) return null
   const failing = status.state === 'open' && status.checks === 'failed'
   const tone =
@@ -64,7 +72,7 @@ export function TaskPullStatus({
           panel
             ? 'studio-project-row min-w-0 flex-1 items-start'
             : 'inline-flex min-w-0 items-center gap-1 truncate hover:underline',
-          !panel && tone,
+          pullRequestIconTone(status.state, status.draft),
         )}
       >
         {status.stack ? (
@@ -79,7 +87,7 @@ export function TaskPullStatus({
           <span className="min-w-0 flex-1" title={title}>
             <span className="block truncate">{title || `Pull request #${status.number}`}</span>
             <span
-              className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground"
+              className="mt-1.5 flex items-center gap-3 text-xs"
               aria-label={pullStatusLabel(status)}
             >
               #{status.number}

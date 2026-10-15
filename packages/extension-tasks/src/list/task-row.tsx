@@ -1,6 +1,6 @@
 import { WorkingSubagents } from './working-subagents'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import { pullStackLabel } from '@dovo/protocol'
+import { pullStackLabel, taskPullStatusFor } from '@dovo/protocol'
 import { taskPullLinks } from '../detail/task-pull-links'
 import {
   pullRequestIconTone,
@@ -110,6 +110,7 @@ function TaskRowView({
   const linkedPulls = taskPullLinks(task).sort(
     (a, b) => Number(b.url === task.pullStatus?.url) - Number(a.url === task.pullStatus?.url),
   )
+  const badgeStatus = linkedPulls[0] ? taskPullStatusFor(task, linkedPulls[0].url) : undefined
   const stack = linkedPulls[0]?.url === task.pullStatus?.url ? task.pullStatus?.stack : undefined
   const queue = task.queue?.length ?? 0
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
@@ -210,7 +211,10 @@ function TaskRowView({
                 <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
                 {!!linkedPulls.length && (
                   <span
-                    className="inline-flex shrink-0 items-center gap-0.5"
+                    className={cn(
+                      'inline-flex shrink-0 items-center gap-0.5',
+                      pullRequestIconTone(badgeStatus?.state, badgeStatus?.draft),
+                    )}
                     aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
                     title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
                   >
@@ -223,27 +227,13 @@ function TaskRowView({
                         aria-label={pullStackLabel(stack)}
                       />
                     ) : (
-                      <PullRequestIcon
-                        state={
-                          task.pullStatus?.url === linkedPulls[0]?.url
-                            ? task.pullStatus.state
-                            : undefined
-                        }
-                        draft={
-                          task.pullStatus?.url === linkedPulls[0]?.url
-                            ? task.pullStatus.draft
-                            : undefined
-                        }
-                      />
+                      <PullRequestIcon state={badgeStatus?.state} draft={badgeStatus?.draft} />
                     )}
-                    {linkedPulls[0]!.number}
-                    {stack && (
+                    {linkedPulls.length > 1 ? `${linkedPulls.length} PRs` : linkedPulls[0]!.number}
+                    {stack && linkedPulls.length === 1 && (
                       <span className="text-[0.625rem]">
                         {stack.complete ? `${stack.position}/${stack.size}` : 'Stack'}
                       </span>
-                    )}
-                    {linkedPulls.length > 1 && (
-                      <span className="text-[0.625rem]">+{linkedPulls.length - 1}</span>
                     )}
                   </span>
                 )}
@@ -290,11 +280,20 @@ function TaskRowView({
             <p>{agentDetail}</p>
             <p>{statusDetail}</p>
             {linkedPulls.map((pull) => (
-              <p key={pull.url} className="flex items-center gap-2">
+              <p
+                key={pull.url}
+                className={cn(
+                  'flex items-center gap-2',
+                  pullRequestIconTone(
+                    taskPullStatusFor(task, pull.url)?.state,
+                    taskPullStatusFor(task, pull.url)?.draft,
+                  ),
+                )}
+              >
                 <PullRequestIcon
                   size={14}
-                  state={task.pullStatus?.url === pull.url ? task.pullStatus.state : undefined}
-                  draft={task.pullStatus?.url === pull.url ? task.pullStatus.draft : undefined}
+                  state={taskPullStatusFor(task, pull.url)?.state}
+                  draft={taskPullStatusFor(task, pull.url)?.draft}
                 />
                 <span>
                   #{pull.number} · {pull.title}

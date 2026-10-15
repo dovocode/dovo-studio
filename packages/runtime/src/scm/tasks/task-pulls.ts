@@ -1,4 +1,12 @@
-import { pullStacks, stackSummary, taskFamilyIds } from '@dovo/protocol'
+import {
+  pullStacks,
+  stackSummary,
+  taskFamilyIds,
+  taskPullLinks,
+  taskPullStatusFor,
+  gitRemoteIdentity,
+  pullRepositoryIdentity,
+} from '@dovo/protocol'
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import { checkOutcome, verifyPullUrl, type TaskSummary } from '@dovo/protocol'
@@ -25,6 +33,8 @@ type WatcherServices = Pick<
 const same = (a: PullStatus | undefined, b: PullStatus) =>
   !!a &&
   a.number === b.number &&
+  a.url === b.url &&
+  a.title === b.title &&
   a.state === b.state &&
   a.draft === b.draft &&
   a.checks === b.checks &&
@@ -55,6 +65,9 @@ const summaryChecks = (state: string | null | undefined) => {
  * show merge and check state, and can archive themselves once merged (Settings, optional). */
 export class TaskPullWatcher {
   private poller?: ReturnType<typeof startPolling>
+  private unwatch?: () => void
+  private linkedRefresh?: ReturnType<typeof setTimeout>
+  private linkedTasks = new Set<string>()
   private stopping = false
   private pending = new Set<Promise<void>>()
   private attach(
@@ -142,6 +155,46 @@ export class TaskPullWatcher {
   }
   start() {
     if (this.stopping || this.poller) return
+    this.unwatch = this.s.store.onCommitted((before, after) => {
+      const previous = new Map(before.tasks.map((task) => [task.id, task]))
+      for (const task of after.tasks) {
+        if (task.example || task.archivedAt) continue
+        const prior = previous.get(task.id)
+        if (
+          prior &&
+          prior.pullRequest === task.pullRequest &&
+          prior.linkedPullRequests === task.linkedPullRequests
+        )
+          continue
+        const urls = taskPullLinks(task)
+          .filter((pull) => pull.url !== task.pullStatus?.url || !task.pullStatus.title)
+          .map((pull) => pull.url)
+        const saved = new Set(
+          taskPullLinks(
+            previous.get(task.id) ?? { pullRequest: undefined, linkedPullRequests: undefined },
+          ).map((pull) => pull.url),
+        )
+        if (urls.some((url) => !saved.has(url))) this.linkedTasks.add(task.id)
+      }
+      if (!this.linkedTasks.size || this.linkedRefresh) return
+      this.linkedRefresh = setTimeout(() => {
+        this.linkedRefresh = undefined
+        const ids = [...this.linkedTasks]
+        this.linkedTasks.clear()
+        for (const id of ids) {
+          const task = this.s.store.get().tasks.find((task) => task.id === id)
+          if (!task || task.archivedAt || this.stopping) continue
+          if (taskPullLinks(task).every((link) => taskPullStatusFor(task, link.url)?.title))
+            continue
+          const work = this.refreshLinkedPulls(task)
+          this.pending.add(work)
+          void work
+            .catch((error) => console.warn('Could not refresh linked PR metadata', error))
+            .finally(() => this.pending.delete(work))
+        }
+      }, 250)
+      this.linkedRefresh.unref()
+    })
     this.poller = startPolling(
       Effect.tryPromise(() => this.refresh()),
       {
@@ -154,6 +207,9 @@ export class TaskPullWatcher {
   }
   async dispose() {
     this.stopping = true
+    this.unwatch?.()
+    clearTimeout(this.linkedRefresh)
+    this.linkedTasks.clear()
     // Interrupting the polling fiber does not cancel its underlying refresh promise.
     const results = await Promise.allSettled([this.poller?.stop(), ...this.pending])
     for (const result of results) if (result.status === 'rejected') throw result.reason
@@ -168,11 +224,93 @@ export class TaskPullWatcher {
       this.pending.delete(work)
     }
   }
+  private async refreshLinkedPulls(task: TaskSummary) {
+    const links = taskPullLinks(task)
+    if (!links.length) return
+    const repositories = this.s.store.get().repositories
+    const read = async (link: (typeof links)[number]) => {
+      const identity = gitRemoteIdentity(link.repositoryUrl)
+      const repository =
+        repositories.find(
+          (repo) =>
+            !repo.kind &&
+            repo.id === task.repositoryId &&
+            pullRepositoryIdentity(repo) === identity,
+        ) ?? repositories.find((repo) => !repo.kind && pullRepositoryIdentity(repo) === identity)
+      const detail = await this.s.pullCache.status(
+        repository?.path ?? link.url,
+        link.number,
+        false,
+        true,
+      )
+      verifyPullUrl(link.url, detail.pull.url)
+      const failed = detail.checks.filter((check) => checkOutcome(check.status) === 'failed')
+      const checks = failed.length
+        ? 'failed'
+        : detail.checks.some((check) => checkOutcome(check.status) === 'pending')
+          ? 'pending'
+          : detail.checks.some((check) => checkOutcome(check.status) === 'passed')
+            ? 'passed'
+            : summaryChecks(detail.pull.checksState)
+      return {
+        number: detail.pull.number,
+        url: detail.pull.url,
+        title: detail.pull.title,
+        state: detail.pull.state,
+        draft: detail.pull.draft,
+        ...(checks ? { checks } : {}),
+        ...(failed.length ? { failedChecks: failed.slice(0, 20).map((check) => check.name) } : {}),
+        checkedAt: new Date().toISOString(),
+      }
+    }
+    const results: PromiseSettledResult<Awaited<ReturnType<typeof read>>>[] = []
+    for (let index = 0; index < links.length; index += 4) {
+      if (this.stopping) return
+      results.push(...(await Promise.allSettled(links.slice(index, index + 4).map(read))))
+    }
+    const current = this.s.store.get().tasks.find((item) => item.id === task.id)
+    if (!current || current.archivedAt || current.repositoryId !== task.repositoryId) return
+    const currentLinks = taskPullLinks(current)
+    // A transient provider failure retains metadata for this URL; removed links stay removed.
+    const statuses = currentLinks.flatMap((link) => {
+      const result = results.find((_, index) => links[index]?.url === link.url)
+      const status =
+        result?.status === 'fulfilled'
+          ? result.value
+          : current.pullStatuses?.find((status) => status.url === link.url)
+      return status ? [status] : []
+    })
+    if (
+      statuses.length !== (current.pullStatuses?.length ?? 0) ||
+      statuses.some((status, index) => !same(current.pullStatuses?.[index], status))
+    )
+      this.s.store.update((workspace) => ({
+        ...workspace,
+        tasks: workspace.tasks.map((item) =>
+          item.id === current.id
+            ? {
+                ...item,
+                pullStatuses: statuses,
+                linkedPullRequests: item.linkedPullRequests?.map((link) => ({
+                  ...link,
+                  title: statuses.find((status) => status.url === link.url)?.title || link.title,
+                })),
+              }
+            : item,
+        ),
+      }))
+  }
   private async refreshTasks() {
     const workspace = this.s.store.get()
     const openPulls = new Map<string, Awaited<ReturnType<Services['pullCache']['list']>>>()
     const confirmations = new Map<string, Awaited<ReturnType<Services['pullCache']['status']>>>()
     for (const task of workspace.tasks) {
+      if (
+        !task.example &&
+        !task.archivedAt &&
+        (task.pullRequest || task.linkedPullRequests?.length)
+      )
+        await this.refreshLinkedPulls(task)
       if (
         task.example ||
         task.archivedAt ||
@@ -224,6 +362,7 @@ export class TaskPullWatcher {
         if (summary && checks !== 'failed')
           status = {
             number,
+            title: summary.title,
             url: summary.url,
             state: 'open',
             draft: summary.draft,
@@ -272,6 +411,7 @@ export class TaskPullWatcher {
                 : undefined
           status = {
             number,
+            title: detail.pull.title,
             url: detail.pull.url,
             state: detail.pull.state,
             draft: detail.pull.draft,

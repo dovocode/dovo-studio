@@ -149,6 +149,16 @@ export class ForgePullRequests {
           scope,
         )
       },
+      status: async (number: number, background = false, expectedDestination?: string) => {
+        const scope = await prepare()
+        guardSource(scope, { expectedDestination })
+        return this.tagDetail(
+          await (scope.provider === 'github'
+            ? this.scopedGithub(scope).status(cwd, number, background)
+            : this.scopedAdapter(scope, cwd)!.detail(number)),
+          scope,
+        )
+      },
       section: async (number: number, section: PullDetailSection, expectedDestination?: string) => {
         const scope = await prepare()
         guardSource(scope, { expectedDestination })
@@ -466,6 +476,8 @@ export class ForgePullRequests {
     }
   }
   async status(cwd: string, number: number, background = false, expectedDestination?: string) {
+    if (forgePullTarget(cwd))
+      return this.urlTarget(cwd).status(number, background, expectedDestination)
     const scope = await this.sourceContext(cwd)
     guardSource(scope, { expectedDestination })
     return this.tagDetail(

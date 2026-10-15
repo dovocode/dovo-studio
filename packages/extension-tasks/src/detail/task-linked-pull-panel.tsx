@@ -1,3 +1,4 @@
+import { taskPullStatusFor } from '@dovo/protocol'
 import { useState } from 'react'
 import { GitPullRequest, X } from 'lucide-react'
 import { useWorkspace, type Task } from '@dovo/studio-core'
@@ -34,8 +35,14 @@ export function TaskLinkedPullPanel({
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {pulls.map((pull) => (
           <div key={pull.url} className="studio-project-card p-3">
-            {task.pullStatus?.url === pull.url ? (
-              <TaskPullStatus task={task} panel title={pull.title} onPullLink={onPullLink} />
+            {taskPullStatusFor(task, pull.url) ? (
+              <TaskPullStatus
+                task={task}
+                url={pull.url}
+                panel
+                title={pull.title}
+                onPullLink={onPullLink}
+              />
             ) : (
               <a
                 href={pull.url}

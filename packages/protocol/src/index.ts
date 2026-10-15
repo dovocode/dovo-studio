@@ -234,8 +234,10 @@ export * from './runtime/connection/desktop-sync.js'
 
 export * from './runtime/connection/workspace-mutations.js'
 export { projectIconChoices } from './generated/project-icon-choices.js'
-export { taskPullLinks } from './tasks/task-pull-links.js'
+export { taskPullLinks, taskPullStatusFor } from './tasks/task-pull-links.js'
 
 export { pipelineGraphColumns } from './scm/work/pipeline-graph.js'
 
 export * from './scm/forges/source-identity.js'
+
+export * from './scm/work/pipeline-links.js'

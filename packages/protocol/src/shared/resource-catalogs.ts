@@ -1,7 +1,7 @@
 import { mutableStruct, mutableArray } from './schema.js'
-import { maxValue, urlSchema } from './schema.js'
+import { maxValue, minValue, urlSchema } from './schema.js'
 import { Schema, Effect } from 'effect'
-import { mcpServerSchema } from './resources.js'
+import { mcpServerSchema, managedSkillSchema } from './resources.js'
 export const catalogSearchSchema = mutableStruct({
   query: maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 200).pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => '')),
@@ -37,15 +37,30 @@ export const registryCatalogSchema = mutableStruct({
   cursor: Schema.optional(Schema.String),
 })
 export const skillCatalogImportSchema = mutableStruct({
+  package: Schema.optional(Schema.Boolean),
   revision: Schema.optional(Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/)))),
   source: Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/))),
   skill: Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_-]+$/))),
 })
+export const skillPackageImportSchema = mutableStruct({
+  ...skillCatalogImportSchema.fields,
+  skills: minValue(maxValue(mutableArray(managedSkillSchema.fields.name), 20), 1),
+})
+export const skillPackageSchema = mutableStruct({
+  source: skillCatalogImportSchema.fields.source,
+  revision: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
+  skills: mutableArray(managedSkillSchema),
+})
+export type SkillPackage = Schema.Schema.Type<typeof skillPackageSchema>
 export type SkillCatalogEntry = Schema.Schema.Type<typeof skillCatalogEntrySchema>
 export type RegistryEntry = Schema.Schema.Type<typeof registryEntrySchema>
 
 /** Only the supported catalog can locate a pinned, portable skill bundle. */
-export function catalogSkillSource(skill: { sourceUrl?: string; sourceRevision?: string }) {
+export function catalogSkillSource(skill: {
+  sourceUrl?: string
+  sourceRevision?: string
+  sourcePackage?: boolean
+}) {
   if (!skill.sourceUrl || !skill.sourceRevision || !/^[a-f0-9]{40}$/.test(skill.sourceRevision))
     return undefined
   try {
@@ -57,7 +72,12 @@ export function catalogSkillSource(skill: { sourceUrl?: string; sourceRevision?:
     const source = `${parts[0]}/${parts[1]}`
     if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(source) || !/^[A-Za-z0-9_-]+$/.test(parts[2]))
       return undefined
-    return { source, skill: parts[2], revision: skill.sourceRevision }
+    return {
+      source,
+      skill: parts[2],
+      revision: skill.sourceRevision,
+      ...(skill.sourcePackage ? { package: true } : {}),
+    }
   } catch {
     return undefined
   }

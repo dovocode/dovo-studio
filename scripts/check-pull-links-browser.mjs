@@ -210,6 +210,7 @@ try {
   await mobile.evaluate(() =>
     window.openAppLink('https://github.com/team/project/pull/7/files#note'),
   )
+  await mobile.getByRole('button', { name: 'Open PR details', exact: true }).click()
   const route = await mobile.evaluate(() => window.routes[0])
   assert.equal(route.params.runtimeId, 'mac')
   assert.equal(route.params.repositoryId, 'repo')
@@ -220,6 +221,7 @@ try {
       runtimeId: 'mac',
     }),
   )
+  await mobile.getByRole('button', { name: 'Open PR details', exact: true }).click()
   assert.equal(
     await mobile.evaluate(() => window.routes.at(-1).params.repositoryId),
     'https://github.com/unlinked/project/pull/123',

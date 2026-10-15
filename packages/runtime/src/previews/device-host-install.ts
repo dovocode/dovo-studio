@@ -1,3 +1,4 @@
+import { appleDeviceCommand } from './apple-device-command.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { realpath, stat, lstat, readdir, readFile, mkdtemp, rm } from 'node:fs/promises'
@@ -79,7 +80,7 @@ export async function installNative(
     if (device.kind === 'physical') {
       try {
         await readFile(join(file, 'embedded.mobileprovision'))
-        await exec('codesign', ['--verify', '--deep', '--strict', file], {
+        await appleDeviceCommand('codesign', ['--verify', '--deep', '--strict', file], {
           signal,
           timeout: 30000,
           maxBuffer: 1024 * 1024,
@@ -91,7 +92,7 @@ export async function installNative(
         )
       }
       authorize()
-      await exec(
+      await appleDeviceCommand(
         'xcrun',
         ['devicectl', 'device', 'install', 'app', '--device', device.runtime, file],
         { timeout: 120000, maxBuffer: 1024 * 1024, signal },

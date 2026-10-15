@@ -1,3 +1,4 @@
+import { agentHookSchema, agentHookEventChoices } from '@dovo/protocol'
 import {
   resolveScopedSettings,
   sharedProjectKey,
@@ -450,7 +451,7 @@ function ResourceScopeView({
             scope={settingsScope}
             origin={(name) => origin('hooks', name)}
             disabled={disabled}
-            change={act}
+            change={change}
           />
         </>
       )}
@@ -475,6 +476,16 @@ function ResourceScopeView({
               value: skill,
               imported: true,
             })
+          }}
+          onSkills={async (skills) => {
+            await change((value) => ({
+              ...value,
+              skills: [
+                ...value.skills.filter((item) => !skills.some((skill) => skill.name === item.name)),
+                ...skills,
+              ],
+            }))
+            setCatalog(null)
           }}
         />
       )}
@@ -521,27 +532,24 @@ function ResourceScopeView({
   )
 }
 
-const hookEvents: readonly { id: AgentHook['event']; name: string }[] = [
-  { id: 'before-turn', name: 'Before each turn' },
-  { id: 'after-turn', name: 'After each turn' },
-]
+const hookEvents = agentHookEventChoices
 const hookEventName = (event: AgentHook['event']) =>
   hookEvents.find((entry) => entry.id === event)?.name ?? event
 
-function HookSettings({
+export function HookSettings({
   hooks,
   inherited,
   scope,
   origin,
   disabled,
-  change,
+  change: persist,
 }: {
   hooks: AgentHook[]
   inherited: readonly AgentHook[]
   scope?: SettingsScope
   origin: (name: string) => SettingOrigin['source']
   disabled: boolean
-  change: (update: (value: ResourceSettings) => ResourceSettings) => void
+  change: (update: (value: ResourceSettings) => ResourceSettings) => Promise<void>
 }) {
   const [draft, setDraft] = useApplicationState<AgentHook | null>(null)
   const [previousName, setPreviousName] = useApplicationState<string | null>(null)
@@ -549,29 +557,30 @@ function HookSettings({
   const inheritedHooks = inherited.filter(
     (hook) => !hooks.some((entry) => entry.name === hook.name),
   )
-  const save = () => {
+  const change = (update: (value: ResourceSettings) => ResourceSettings) => {
+    void persist(update).catch((error: unknown) => setValidation(resourceError(error)))
+  }
+  const save = async () => {
     if (!draft) return
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(draft.name)) {
-      setValidation('Use a name of up to 80 letters, numbers, underscores, or hyphens.')
-      return
-    }
-    if (
-      !draft.command.trim() ||
-      !Number.isInteger(draft.timeoutSeconds) ||
-      draft.timeoutSeconds < 1 ||
-      draft.timeoutSeconds > 600
-    ) {
-      setValidation('Enter a command and a timeout between 1 and 600 seconds.')
+    try {
+      decode(agentHookSchema, draft)
+    } catch (error) {
+      setValidation(resourceError(error))
       return
     }
     if (hooks.some((hook) => hook.name === draft.name && hook.name !== previousName)) {
       setValidation('Hook names must be unique within this scope.')
       return
     }
-    change((value) => ({
-      ...value,
-      hooks: [...(value.hooks ?? []).filter((hook) => hook.name !== previousName), draft],
-    }))
+    try {
+      await persist((value) => ({
+        ...value,
+        hooks: [...(value.hooks ?? []).filter((hook) => hook.name !== previousName), draft],
+      }))
+    } catch (error) {
+      setValidation(resourceError(error))
+      return
+    }
     setDraft(null)
     setPreviousName(null)
     setValidation('')
@@ -579,7 +588,7 @@ function HookSettings({
   return (
     <ResourceSection
       title="Agent loop hooks"
-      description="Commands that run in the task checkout before or after each agent turn. If an after-turn check fails, the agent is asked to fix the result, up to two times."
+      description="Commands run in the task checkout with JSON event context on stdin. Tool lifecycle hooks observe execution across harnesses; permission-request hooks can deny approval. Failed after-turn checks trigger up to two repair turns."
       actions={
         <Button
           size="sm"
@@ -657,7 +666,7 @@ function HookSettings({
           className="space-y-4 border-t bg-muted/20 p-4"
           onSubmit={(event) => {
             event.preventDefault()
-            save()
+            void save()
           }}
         >
           <h4 className="text-xs font-semibold">
@@ -694,6 +703,16 @@ function HookSettings({
               </Select>
             </FormField>
           </div>
+          <FormField label="Matcher (optional)">
+            <Input
+              value={draft.matcher ?? ''}
+              onChange={(event) => setDraft({ ...draft, matcher: event.target.value || undefined })}
+              placeholder="command|file or a tool name"
+            />
+            <p className="text-xs text-muted-foreground">
+              Regular expression matching tool kind, tool name or subagent name. Empty matches all.
+            </p>
+          </FormField>
           <FormField label="Command">
             <Input
               required

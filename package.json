@@ -78,6 +78,8 @@
     "test:terminal-fonts:browser": "node scripts/build-mobile-terminal.mjs && node scripts/check-terminal-fonts-browser.mjs",
     "test:appearance:browser": "pnpm --filter @dovo/web build && node scripts/check-appearance-browser.mjs",
     "test:ux-polish:browser": "node scripts/check-ux-polish-browser.mjs",
+    "test:lifecycle-hooks:browser": "node scripts/check-lifecycle-hooks-browser.mjs",
+    "test:skill-packages:browser": "node scripts/check-skill-packages-browser.mjs",
     "test:scoped-settings:browser": "node scripts/check-scoped-settings-browser.mjs",
     "test:mobile-models:browser": "node scripts/check-mobile-models-browser.mjs",
     "test:mobile-thread-rendering:browser": "node scripts/check-mobile-thread-rendering.mjs",

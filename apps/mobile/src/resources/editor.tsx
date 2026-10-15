@@ -333,6 +333,7 @@ export function ResourceEditor({
                     sourcePath: undefined,
                     sourceUrl: undefined,
                     sourceRevision: undefined,
+                    sourcePackage: undefined,
                   })
                 }
               />

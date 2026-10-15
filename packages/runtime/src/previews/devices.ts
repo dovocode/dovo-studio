@@ -1,3 +1,4 @@
+import { appleDeviceCommand } from './apple-device-command.js'
 import { deviceApps, launchDeviceApp } from './device-app-actions.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
@@ -14,7 +15,7 @@ import { HttpError } from '../errors.js'
 const exec = promisify(execFile)
 const run = async (file: string, args: string[], signal?: AbortSignal) =>
   (
-    await exec(file, args, {
+    await (file === 'xcrun' && args[0] === 'devicectl' ? appleDeviceCommand : exec)(file, args, {
       signal,
       windowsHide: true,
       timeout: 30000,
@@ -231,7 +232,7 @@ async function discoverIosSimulators() {
     for (const device of devices)
       if (device.platform === 'ios' && device.kind !== 'physical') device.liveSupported = false
     diagnostics.push(
-      'iOS live previews: install idb_companion (brew install facebook/fb/idb-companion) or set DOVO_IDB_COMPANION. Start, screenshots and app installation remain available.',
+      'iOS simulator live previews: idb_companion is missing on this host. Start, screenshots and app installation remain available; physical iPhones do not use idb. Device Hub can use live previews on another authorized host.',
     )
   }
   return { devices, diagnostics }
@@ -279,6 +280,12 @@ async function discoverPhysicalAndroid() {
   const devices: PreviewDevice[] = [],
     diagnostics: string[] = []
   try {
+    if (!(await executableAvailable(await androidTool('adb')))) {
+      diagnostics.push(
+        'Android: adb is missing on this host. Device Hub can still use Android devices on an authorized remote host; local adb is not required for those devices.',
+      )
+      return { devices, diagnostics }
+    }
     devices.push(
       ...parsePhysicalAndroidDevices(await run(await androidTool('adb'), ['devices', '-l'])),
     )
@@ -293,6 +300,12 @@ async function discoverAndroidEmulators() {
   try {
     const emulator = await androidTool('emulator'),
       adb = await androidTool('adb')
+    if (!(await executableAvailable(adb)) || !(await executableAvailable(emulator))) {
+      diagnostics.push(
+        'Android emulators: adb or emulator is missing on this host. Use a device on an authorized Device Hub host, or configure this host’s Android SDK.',
+      )
+      return { devices, diagnostics }
+    }
     const [avds, attached] = await Promise.all([
       run(emulator, ['-list-avds']),
       run(adb, ['devices']),
@@ -353,7 +366,9 @@ export async function previewDevices(deviceId?: string) {
   const devices = results.flatMap((result) => result?.devices ?? [])
   const diagnostics = results.flatMap((result) => result?.diagnostics ?? [])
   if (!mac && (requested('ios:') || requested('physical-ios:')))
-    diagnostics.unshift('iOS simulators require a macOS runtime with Xcode.')
+    diagnostics.unshift(
+      'This host cannot build or run iOS apps. Use a macOS Device Hub host with Xcode; local Xcode, adb or idb is not required to control its devices.',
+    )
   const endpointDiagnostics = await Promise.all(
     devices
       .filter(

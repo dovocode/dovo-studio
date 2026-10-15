@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import {
   fixChecksPrompt,
+  taskPullStatusFor,
   pullStatusLabel,
   pullStackLabel,
   responses,
@@ -139,9 +140,23 @@ export function PullStatus({
                 }}
                 style={{ minHeight: 36, justifyContent: 'center' }}
               >
-                <Text numberOfLines={1} style={{ color: colors.text, fontSize: 13 }}>
-                  #{pull.number} · {pull.title}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <PullRequestIcon
+                    state={taskPullStatusFor(task, pull.url)?.state}
+                    draft={taskPullStatusFor(task, pull.url)?.draft}
+                    size={14}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={{ color: colors.text, fontSize: 13 }}>
+                      #{pull.number} · {pull.title}
+                    </Text>
+                    {!!taskPullStatusFor(task, pull.url) && (
+                      <Text style={{ color: colors.muted, fontSize: 12 }}>
+                        {pullStatusLabel(taskPullStatusFor(task, pull.url)!)}
+                      </Text>
+                    )}
+                  </View>
+                </View>
               </Pressable>
             ))}
           {!!linkError && <Text style={{ color: colors.error, fontSize: 12 }}>{linkError}</Text>}

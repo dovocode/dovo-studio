@@ -3,7 +3,12 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { registryEntry, searchRegistry } from './registry'
-import { installCatalogSkill, searchSkills } from './skills'
+import {
+  installCatalogSkill,
+  searchSkills,
+  previewSkillPackage,
+  installSkillPackage,
+} from './skills'
 import { catalogJson } from './fetch'
 import { mcpServerEnvironment, mcpHeaders } from '../configuration/mcp-settings'
 const roots: string[] = []
@@ -321,3 +326,78 @@ it.each([false, true])(
     expect(await readdir(join(skill.sourcePath!, '..'))).toEqual(['SKILL.md', 'references'])
   },
 )
+
+it('previews sibling skills, installs a selected package with shared assets and keeps single installs isolated', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dovo-package-test-'))
+  roots.push(root)
+  const sha = 'd'.repeat(40)
+  const files = {
+    '.agents/skills/review/SKILL.md':
+      '---\nname: review\ndescription: Review code\n---\nRead ../shared/check.sh',
+    '.agents/skills/ship/SKILL.md':
+      '---\nname: ship\ndescription: Ship code\n---\nRead ../review/SKILL.md',
+    '.agents/skills/shared/check.sh': 'echo shared',
+    '.claude/skills/review/SKILL.md':
+      '---\nname: review\ndescription: Provider copy\n---\nProvider instructions',
+    'tests/fixture/SKILL.md': '---\nname: fixture\ndescription: Test fixture\n---\nDo not install',
+  }
+  const requests: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (input) => {
+      const url = input instanceof Request ? input.url : input.toString()
+      requests.push(url)
+      if (url.includes('/commits/')) return Response.json({ sha })
+      if (url.includes('/git/trees/'))
+        return Response.json({
+          truncated: false,
+          tree: Object.entries(files).map(([path, content]) => ({
+            path,
+            type: 'blob',
+            mode: path.endsWith('.sh') ? '100755' : '100644',
+            size: content.length,
+          })),
+        })
+      const path = url.split(`/${sha}/`)[1]
+      const content = Object.entries(files).find(([key]) => key === path)?.[1]
+      return new Response(content, { status: content ? 200 : 404 })
+    }),
+  )
+  const preview = await previewSkillPackage({ source: 'owner/repo', skill: 'review' })
+  expect(preview.skills.map((skill) => skill.name)).toEqual(['review', 'ship'])
+  const installed = await installSkillPackage(
+    {
+      source: 'owner/repo',
+      skill: 'review',
+      revision: preview.revision,
+      skills: ['review', 'ship'],
+    },
+    root,
+  )
+  expect(installed.skills.map((skill) => skill.sourcePackage)).toEqual([true, true])
+  expect(
+    await readFile(join(installed.skills[0].sourcePath!, '../../shared/check.sh'), 'utf8'),
+  ).toBe('echo shared')
+  expect(
+    await readFile(join(installed.skills[1].sourcePath!, '../../review/SKILL.md'), 'utf8'),
+  ).toContain('Review code')
+  const single = await installCatalogSkill({ source: 'owner/repo', skill: 'review' }, root)
+  expect(single.sourcePackage).toBeUndefined()
+  expect(await readdir(join(single.sourcePath!, '..'))).toEqual(['SKILL.md'])
+  const shared = await installCatalogSkill(
+    { source: 'owner/repo', skill: 'ship', revision: sha, package: true },
+    root,
+  )
+  expect(shared.sourcePath).toBe(installed.skills[1].sourcePath)
+  await expect(
+    installSkillPackage(
+      { source: 'owner/repo', skill: 'review', revision: sha, skills: ['fixture'] },
+      root,
+    ),
+  ).rejects.toThrow('package preview')
+  expect(
+    requests
+      .filter((url) => url.includes('raw.githubusercontent.com'))
+      .every((url) => url.includes(sha)),
+  ).toBe(true)
+})

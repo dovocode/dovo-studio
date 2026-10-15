@@ -1,3 +1,4 @@
+import { deviceHubAgentInstructions } from './device-guidance.js'
 import { readFileSync } from 'node:fs'
 import { terminalInputFrames } from '@dovo/client-runtime'
 import {
@@ -336,13 +337,13 @@ const tools: Array<
   {
     name: 'devices',
     description:
-      'List local iOS and Android devices and devices on SSH hosts that allow agent access. Use the returned device IDs unchanged.',
+      'Discover Device Hub devices and authorized remote hosts before native testing/deployment, including when local adb, idb or Xcode is missing. Use returned IDs unchanged; diagnostics describe the owning host, not a requirement to install tools on this coding machine.',
     inputSchema: { type: 'object' as const, properties: {} },
   },
   {
     name: 'device',
     description:
-      'Boot, open a URL, launch an app, inspect apps, or take a screenshot. Screenshots are returned as images.',
+      'Use Device Hub on the owning local/remote host to boot, launch/relaunch apps, inspect installed apps or capture native screenshots. Works with physical phones and simulators; no local adb/idb is needed. Screenshots are returned as images. Use the exact devices ID.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -374,7 +375,7 @@ const tools: Array<
         {
           name: 'device_install',
           description:
-            'Install a built APK or iOS .app from this thread’s checkout on a local device or an authorized SSH device host. iPhone apps must be signed and provisioned; simulator apps must be built for the simulator.',
+            'Install a built APK or iOS .app from this thread’s checkout on a local device or an authorized SSH device host. iPhone apps must target iphoneos and be signed/provisioned in the Mac user’s logged-in login shell. Device Hub installs through that user’s login environment and handles Apple GUI-session fallback. Simulator apps must target the simulator. Use this tool even when the coding machine lacks adb/idb/Xcode.',
           inputSchema: {
             type: 'object' as const,
             properties: {
@@ -654,9 +655,10 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
         }
       }
       case 'devices':
-        return text(
-          decode(previewDevicesSchema, await post('/api/previews/devices', { taskId: task })),
-        )
+        return text({
+          ...decode(previewDevicesSchema, await post('/api/previews/devices', { taskId: task })),
+          guidance: deviceHubAgentInstructions,
+        })
       case 'device_install':
         writable()
         return text(

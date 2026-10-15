@@ -316,6 +316,17 @@ forwarded port before reporting success. Use a hostname/IP reachable from the ph
 not resolve there. Alternatively, use a directly reachable development-server URL or platform USB
 forwarding. Loopback forwarding alone is not reachable through the destination’s LAN IP.
 
+When enabled for an agent, Device Hub adds discovery and deployment instructions to each turn. The
+agent checks local devices and authorized remote hosts before treating missing local adb, idb or
+Xcode as a blocker. Discovery diagnostics distinguish missing live-preview tools from missing
+installation or launch support, so usable devices remain available.
+
+Physical iOS signing and device commands run in the owning Mac user's login shell. Apple CoreDevice
+service assertion errors trigger a retry through that same user's logged-in GUI Terminal session; a
+different desktop user is rejected. This preserves existing signing and provisioning and does not
+change accounts or require sudo. Keep real phones unlocked, trusted and connected for deployment.
+Installation alone does not verify startup: launch and inspect the app.
+
 ### Reviewing this checkout on an iOS simulator
 
 Launching an installed Release app loads its embedded JavaScript bundle, even when Metro is running.
@@ -338,9 +349,10 @@ use `localhost` or `[::1]` for local checks rather than assuming `127.0.0.1`.
 Both computers need SSH tooling. Artifact transfer requires OpenSSH 8.7 or newer on the coding
 computer because Dovo forces SFTP rather than legacy shell-based SCP. The destination needs an SSH
 server, and its SSH user must be the OS user running Dovo so it can write private staging files.
-Native requirements still apply there (Xcode/idb for iOS, Android SDK tools for Android). SSH
-tunnels protect the connection without requiring HTTPS. HTTP remains supported for LAN/VPN runtime
-addresses; pairing tokens remain required and stay in the coding runtime’s private local database.
-Revoking the paired client used to configure a host also revokes that host’s borrowed destination
-token; pair and save it again. Artifact transfers have a 120-second deadline and report a timeout
-separately from SFTP errors.
+Native requirements still apply on the owning host (Xcode for iOS, idb_companion for simulator live
+previews, Android SDK tools for Android). Physical iPhones do not require idb. SSH tunnels protect
+the connection without requiring HTTPS. HTTP remains supported for LAN/VPN runtime addresses;
+pairing tokens remain required and stay in the coding runtime’s private local database. Revoking the
+paired client used to configure a host also revokes that host’s borrowed destination token; pair and
+save it again. Artifact transfers have a 120-second deadline and report a timeout separately from
+SFTP errors.

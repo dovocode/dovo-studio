@@ -18,7 +18,7 @@ import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
 import { registerRemoteUpdates } from './remote-updates.js'
 import { registerBrowser } from './browser.js'
-import { offerLink, openExternalLink } from './links.js'
+import { offerLink, openExternalLink, openBrowserLink } from './links.js'
 import {
   startLocalRuntime,
   stopLocalRuntime,
@@ -278,11 +278,11 @@ app.on('second-instance', () => {
   window?.focus()
 })
 
-ipcMain.handle('links:choose', async (event, url: unknown) => {
+ipcMain.handle('links:browser', async (event, url: unknown) => {
   requireTrustedRenderer(event, rendererPath)
   const window = BrowserWindow.fromWebContents(event.sender)
-  if (!window || typeof url !== 'string') return false
-  return offerLink(window, url, () => {})
+  if (!window || typeof url !== 'string') throw new Error('Expected a link URL and window')
+  await openBrowserLink(window, url)
 })
 ipcMain.handle('links:external', async (event, url: unknown) => {
   requireTrustedRenderer(event, rendererPath)

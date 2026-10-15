@@ -25,7 +25,12 @@ import { searchRegistry } from '../../agents/catalogs/registry.js'
 import { ModelCatalogCache, configuredModelCatalogKey } from '../../agents/catalogs/model-cache.js'
 import { HarnessAvailabilityCache } from '../../agents/catalogs/harness-availability.js'
 import { harnessAvailabilityCandidates } from '@dovo/protocol'
-import { searchSkills, installCatalogSkill } from '../../agents/catalogs/skills.js'
+import {
+  searchSkills,
+  installCatalogSkill,
+  previewSkillPackage,
+  installSkillPackage,
+} from '../../agents/catalogs/skills.js'
 import { importSkill, testMcpServer } from '../../agents/configuration/resources.js'
 import { attachmentIdsSchema } from '@dovo/protocol'
 import { startForkSchema } from '@dovo/protocol'
@@ -219,6 +224,17 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         return yield* serviceResult(searchRegistry(yield* serviceResult(body(request))))
       if (method === 'POST' && path === '/api/agents/catalogs/skills')
         return yield* serviceResult(searchSkills(yield* serviceResult(body(request))))
+      if (method === 'POST' && path === '/api/agents/catalogs/skills/package/preview')
+        return yield* serviceResult(previewSkillPackage(yield* serviceResult(body(request))))
+      if (method === 'POST' && path === '/api/agents/catalogs/skills/package/import')
+        return yield* serviceResult(
+          installSkillPackage(
+            yield* serviceResult(body(request)),
+            s.db.name === ':memory:'
+              ? join(tmpdir(), 'dovo-catalog-skills')
+              : join(dirname(resolve(s.db.name)), 'skills'),
+          ),
+        )
       if (method === 'POST' && path === '/api/agents/catalogs/skills/import')
         return yield* serviceResult(
           installCatalogSkill(

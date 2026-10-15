@@ -63,12 +63,19 @@ export interface StudioHostApi {
   threadWindow?: boolean
   taskLauncher?: import('@dovo/protocol').TaskLauncherBridge
   browser?: import('@dovo/protocol').BrowserBridge
-  /** Ask where a link should open; true requests the thread sidebar browser. */
   /** Opens a recognized forge PR in native details; false leaves normal link handling. */
   openPullLink?: (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => boolean
   /** A handoff is valid only while its initiating view and navigation are still current. */
   taskNavigationGuard?: () => () => boolean
-  chooseLink?: (url: string) => Promise<boolean>
+  chooseLink?: (
+    url: string,
+    options?: { details?: 'pull' | 'pipeline'; browser?: boolean; signal?: AbortSignal },
+  ) => Promise<'browser' | 'details' | 'external' | 'cancel'>
+  openBrowserLink?: (url: string) => Promise<void>
+  openPipelineLink?: (
+    url: string,
+    origin?: { runtimeId?: string; repositoryId?: string },
+  ) => boolean
   openExternalLink?: (url: string) => Promise<void>
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
   goBack?: () => boolean

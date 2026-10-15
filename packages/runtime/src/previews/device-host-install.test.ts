@@ -7,6 +7,7 @@ const commands = vi.hoisted(() => ({
     (file: string, args: string[], options: unknown) => Promise<{ stdout: string; stderr: string }>
   >(),
 }))
+vi.mock('./apple-device-command', () => ({ appleDeviceCommand: commands.run }))
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>()
   return {

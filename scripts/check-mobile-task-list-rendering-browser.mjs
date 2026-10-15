@@ -37,7 +37,7 @@ const stubs = [
   { path: 'react-native', contents: controls },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=()=>null;export {Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as Pin,Icon as Save};`,
+    contents: `const Icon=({color,accessibilityLabel})=><svg aria-label={accessibilityLabel} style={{color}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as Pin,Icon as Save};`,
   },
   {
     path: '@dovo/protocol',
@@ -148,6 +148,7 @@ for (const [path, importer] of [
   ['../../ui/content/text', 'tasks/list/task-list-row.tsx'],
   ['../../ui/controls/icon', 'tasks/list/task-list-row.tsx'],
   ['../../ui/theme', 'tasks/list/task-list-row.tsx'],
+  ['../theme', 'ui/content/pull-request-icon.tsx'],
 ])
   stubs.push({ path, importer: mobile + importer, contents: controls })
 const built = await bundleBrowser(
@@ -222,6 +223,37 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByTestId('Task task-99').waitFor()
   await page.waitForTimeout(100)
+  await page.evaluate(() => {
+    window.rowTheme = { styles: {}, colors: { success: '#00ee88' } }
+    window.publish({
+      'task-7': {
+        linkedPullRequests: [7, 8].map((number) => ({
+          number,
+          url: 'https://github.com/o/r/pull/' + number,
+          repositoryUrl: 'https://github.com/o/r',
+          title: 'PR ' + number,
+        })),
+        pullStatus: {
+          number: 7,
+          url: 'https://github.com/o/r/pull/7',
+          state: 'open',
+          draft: false,
+          checkedAt: new Date().toISOString(),
+        },
+      },
+    })
+  })
+  const pullBadge = page.getByTestId('Task task-7')
+  await pullBadge.getByText('2 PRs', { exact: true }).waitFor()
+  assert.equal(await pullBadge.getByText('+1', { exact: true }).count(), 0)
+  assert.equal(
+    await pullBadge
+      .getByText('2 PRs', { exact: true })
+      .evaluate((element) => getComputedStyle(element).color),
+    await pullBadge
+      .locator('svg[aria-label="open pull request"]')
+      .evaluate((element) => getComputedStyle(element).color),
+  )
   await page.evaluate(() => {
     window.rowRenders = {}
     for (let frame = 0; frame < 30; frame++)

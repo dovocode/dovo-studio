@@ -463,6 +463,22 @@ export const taskModelSchema = mutableStruct({
     Schema.NullOr(Schema.required(agentSchema.fields.cyberAccessProgram.schema.schema)),
   ),
 })
+export const taskPullStatusSchema = mutableStruct({
+  title: Schema.optional(maxValue(Schema.String, 2000)),
+  stack: Schema.optional(pullStackSummarySchema),
+  number: Schema.Number.pipe(
+    Schema.check(Schema.isFinite()),
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThan(0)),
+  ),
+  url: maxValue(Schema.String, 2000),
+  state: maxValue(Schema.String, 40),
+  draft: Schema.optional(Schema.Boolean),
+  // 'passed', 'failed' or 'pending'; absent when the pull request has no checks.
+  checks: Schema.optional(maxValue(Schema.String, 20)),
+  failedChecks: Schema.optional(maxValue(mutableArray(maxValue(Schema.String, 200)), 20)),
+  checkedAt: Schema.String,
+})
 export const linkedPullRequestSchema = mutableStruct({
   ...taskPullSchema.mapFields(Struct.pick(['number', 'url', 'provider', 'repositoryUrl'])).fields,
   title: maxValue(Schema.String, 2000),
@@ -611,25 +627,10 @@ export const taskSchema = mutableStruct({
       }),
     ),
   ),
-  // Runtime-owned: the task's pull request state and check summary, refreshed in the background.
-  // Strings, not literals, so a new forge state never breaks an older client's snapshot.
-  pullStatus: Schema.optional(
-    mutableStruct({
-      stack: Schema.optional(pullStackSummarySchema),
-      number: Schema.Number.pipe(
-        Schema.check(Schema.isFinite()),
-        Schema.check(Schema.isInt()),
-        Schema.check(Schema.isGreaterThan(0)),
-      ),
-      url: maxValue(Schema.String, 2000),
-      state: maxValue(Schema.String, 40),
-      draft: Schema.optional(Schema.Boolean),
-      // 'passed', 'failed' or 'pending'; absent when the pull request has no checks.
-      checks: Schema.optional(maxValue(Schema.String, 20)),
-      failedChecks: Schema.optional(maxValue(mutableArray(maxValue(Schema.String, 200)), 20)),
-      checkedAt: Schema.String,
-    }),
-  ),
+  // Runtime-owned: primary PR drives checkout and settlement; other linked PRs are informational.
+  pullStatus: Schema.optional(taskPullStatusSchema),
+  pullStatuses: Schema.optional(maxValue(mutableArray(taskPullStatusSchema), 21)),
+
   // Runtime-owned checkout progress while runPhase is 'preparing'. Step ids are strings, not
   // literals, so a newer runtime's extra step never breaks an older client's snapshot.
   preparation: Schema.optional(

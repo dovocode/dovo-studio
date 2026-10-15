@@ -66,7 +66,7 @@ export function appLinkChoices(
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return []
     const issue = url.pathname.match(/^\/(.+?)\/(?:-\/)?issues\/([1-9]\d*)\/?$/)
     const run = url.pathname.match(
-      /^\/(.+?)\/(?:actions\/runs|(?:-\/)?pipelines(?:\/results)?)\/([A-Za-z0-9%{}_-]+)\/?$/,
+      /^\/(.+?)\/(?:actions\/runs|(?:-\/)?pipelines(?:\/results)?)\/([A-Za-z0-9%{}_-]+)(?:\/job\/[1-9]\d*)?\/?$/,
     )
     const azureIssue =
       url.hostname.toLowerCase() === 'dev.azure.com'

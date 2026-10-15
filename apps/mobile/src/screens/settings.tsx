@@ -87,7 +87,7 @@ export default function SettingsScreen() {
           keywords: 'models providers permissions access accounts login reasoning',
         },
         {
-          title: 'MCP & skills',
+          title: 'MCP, skills & hooks',
           subtitle: 'Shared tools and project or agent overrides',
           icon: 'jobs',
           tint: '#5ac8bd',

@@ -1,6 +1,13 @@
 import { useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
-import { forgePullTarget, pullRepositoryIdentity, taskPullLinks, type Task } from '@dovo/protocol'
+import {
+  taskPullStatusFor,
+  pullStatusLabel,
+  forgePullTarget,
+  pullRepositoryIdentity,
+  taskPullLinks,
+  type Task,
+} from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { Text } from '../../ui/content/text'
@@ -93,15 +100,18 @@ export function TaskLinkedPullSheet({
               ]}
             >
               <PullRequestIcon
-                state={task.pullStatus?.url === pull.url ? task.pullStatus.state : undefined}
-                draft={task.pullStatus?.url === pull.url ? task.pullStatus.draft : undefined}
+                state={taskPullStatusFor(task, pull.url)?.state}
+                draft={taskPullStatusFor(task, pull.url)?.draft}
               />
               <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
                 <Text numberOfLines={2} style={{ color: colors.text, fontSize: 16 }}>
                   {pull.title}
                 </Text>
                 <Text numberOfLines={1} style={styles.muted}>
-                  #{pull.number} · {pull.repositoryUrl.replace(/^https?:\/\//, '')}
+                  {taskPullStatusFor(task, pull.url)
+                    ? pullStatusLabel(taskPullStatusFor(task, pull.url)!)
+                    : `#${pull.number}`}{' '}
+                  · {pull.repositoryUrl.replace(/^https?:\/\//, '')}
                 </Text>
               </View>
             </Pressable>

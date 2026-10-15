@@ -4,7 +4,12 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, posix } from 'node:path'
 import { Schema, Effect } from 'effect'
-import { catalogSearchSchema, skillCatalogSchema, skillCatalogImportSchema } from '@dovo/protocol'
+import {
+  catalogSearchSchema,
+  skillCatalogSchema,
+  skillCatalogImportSchema,
+  skillPackageImportSchema,
+} from '@dovo/protocol'
 import { catalogBytes, catalogJson } from './fetch.js'
 import { importSkill, parseSkillDocument } from '../configuration/resources.js'
 export async function searchSkills(input: unknown) {
@@ -52,7 +57,7 @@ const fileSchema = mutableStruct({
   mode: Schema.String,
   size: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
 })
-export async function installCatalogSkill(input: unknown, root: string) {
+async function resolveCatalogSkill(input: unknown) {
   const { source, skill, revision } = decode(skillCatalogImportSchema, input)
   const api = `https://api.github.com/repos/${source}`
   const commit = decode(
@@ -129,11 +134,114 @@ export async function installCatalogSkill(input: unknown, root: string) {
       `Could not locate one SKILL.md declaring "${skill}". Import the skill from a local SKILL.md instead.`,
     )
   const selected = candidates[0]
-  const directory = posix.dirname(selected.path)
+  return { source, skill, revision: commit.sha, selected, manifests, documents, tree: tree.tree }
+}
+
+async function packageSkills(bundle: Awaited<ReturnType<typeof resolveCatalogSkill>>) {
+  const directory = posix.dirname(posix.dirname(bundle.selected.path))
+  const manifests = bundle.manifests.filter(
+    (file) => posix.dirname(posix.dirname(file.path)) === directory,
+  )
+  if (manifests.length > 200) throw new Error('Package exceeds 200 skill definitions')
+  const entries = []
+  for (const file of manifests) {
+    if (
+      !['100644', '100755'].includes(file.mode) ||
+      file.path.includes('\\') ||
+      file.path.split('/').some((part) => !part || part === '.' || part === '..')
+    )
+      throw new Error('Skill definitions must be regular files without symlinks or parent paths')
+    const contents =
+      bundle.documents.get(file.path) ??
+      (await catalogBytes(
+        `https://raw.githubusercontent.com/${bundle.source}/${bundle.revision}/${file.path.split('/').map(encodeURIComponent).join('/')}`,
+        64_000,
+      ))
+    bundle.documents.set(file.path, contents)
+    const skill = parseSkillDocument(contents.toString('utf8'))
+    entries.push({
+      ...skill,
+      path: file.path,
+      sourceUrl: `https://skills.sh/${bundle.source}/${skill.name}`,
+      sourceRevision: bundle.revision,
+      sourcePackage: true,
+    })
+  }
+  if (new Set(entries.map((skill) => skill.name)).size !== entries.length)
+    throw new Error('Package contains duplicate skill names')
+  return entries.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function previewSkillPackage(input: unknown) {
+  const bundle = await resolveCatalogSkill(input)
+  const skills = await packageSkills(bundle)
+  return {
+    source: bundle.source,
+    revision: bundle.revision,
+    skills: skills.map(({ path: _path, ...skill }) => skill),
+  }
+}
+
+export async function installSkillPackage(input: unknown, root: string) {
+  const options = decode(skillPackageImportSchema, input)
+  if (!options.revision) throw new Error('Preview the package before installing it')
+  const bundle = await resolveCatalogSkill(options)
+  const skills = await packageSkills(bundle)
+  if (
+    new Set(options.skills).size !== options.skills.length ||
+    options.skills.some((name) => !skills.some((skill) => skill.name === name))
+  )
+    throw new Error('Choose skills from the package preview')
+  const destination = await writeBundle({ ...bundle, package: true }, root)
+  const directory = posix.dirname(posix.dirname(bundle.selected.path))
   const prefix = directory === '.' ? '' : `${directory}/`
-  const files = tree.tree.filter((file) => file.path.startsWith(prefix) && file.type !== 'tree')
-  if (files.length > 200 || files.reduce((size, file) => size + (file.size ?? 0), 0) > 8_000_000)
-    throw new Error('Skill bundle exceeds 200 files or 8 MB')
+  return {
+    source: bundle.source,
+    revision: bundle.revision,
+    skills: skills
+      .filter((skill) => options.skills.includes(skill.name))
+      .map(({ path, ...skill }) => ({
+        ...skill,
+        sourcePath: join(destination, path.slice(prefix.length)),
+      })),
+  }
+}
+
+export async function installCatalogSkill(input: unknown, root: string) {
+  const options = decode(skillCatalogImportSchema, input)
+  const bundle = await resolveCatalogSkill(options)
+  const destination = await writeBundle({ ...bundle, package: options.package }, root)
+  const directory = options.package
+    ? posix.dirname(posix.dirname(bundle.selected.path))
+    : posix.dirname(bundle.selected.path)
+  const prefix = directory === '.' ? '' : `${directory}/`
+  const imported = await importSkill({
+    path: join(destination, bundle.selected.path.slice(prefix.length)),
+  })
+  return {
+    ...imported,
+    sourceUrl: `https://skills.sh/${bundle.source}/${bundle.skill}`,
+    sourceRevision: bundle.revision,
+    ...(options.package ? { sourcePackage: true } : {}),
+  }
+}
+
+async function writeBundle(
+  bundle: Awaited<ReturnType<typeof resolveCatalogSkill>> & { package?: boolean },
+  root: string,
+) {
+  const { source, revision, selected, documents } = bundle
+  const skillDirectory = posix.dirname(selected.path)
+  const directory = bundle.package ? posix.dirname(skillDirectory) : skillDirectory
+  const prefix = directory === '.' ? '' : `${directory}/`
+  const files = bundle.tree.filter((file) => file.path.startsWith(prefix) && file.type !== 'tree')
+  const maxFiles = bundle.package ? 2000 : 200
+  const maxBytes = bundle.package ? 32_000_000 : 8_000_000
+  if (
+    files.length > maxFiles ||
+    files.reduce((size, file) => size + (file.size ?? 0), 0) > maxBytes
+  )
+    throw new Error(`Skill bundle exceeds ${maxFiles} files or ${maxBytes / 1_000_000} MB`)
   for (const file of files) {
     const relative = file.path.slice(prefix.length)
     if (
@@ -149,7 +257,7 @@ export async function installCatalogSkill(input: unknown, root: string) {
   })
   const destination = join(
     root,
-    createHash('sha256').update(`${source}:${commit.sha}:${directory}`).digest('hex'),
+    createHash('sha256').update(`${source}:${revision}:${directory}`).digest('hex'),
   )
   const staging = await mkdtemp(join(root, '.import-'))
   try {
@@ -160,11 +268,11 @@ export async function installCatalogSkill(input: unknown, root: string) {
           const contents =
             documents.get(file.path) ??
             (await catalogBytes(
-              `https://raw.githubusercontent.com/${source}/${commit.sha}/${file.path.split('/').map(encodeURIComponent).join('/')}`,
+              `https://raw.githubusercontent.com/${source}/${revision}/${file.path.split('/').map(encodeURIComponent).join('/')}`,
               8_000_000,
             ))
           bytes += contents.length
-          if (bytes > 8_000_000) throw new Error('Skill bundle exceeds 8 MB')
+          if (bytes > maxBytes) throw new Error(`Skill bundle exceeds ${maxBytes / 1_000_000} MB`)
           const path = join(staging, file.path.slice(prefix.length))
           await mkdir(dirname(path), {
             recursive: true,
@@ -177,11 +285,6 @@ export async function installCatalogSkill(input: unknown, root: string) {
       )
       for (const result of results) if (result.status === 'rejected') throw result.reason
     }
-    const imported = await importSkill({
-      path: join(staging, 'SKILL.md'),
-    })
-    if (imported.name !== skill)
-      throw new Error('Skill metadata does not match the selected catalog entry')
     try {
       await rename(staging, destination)
     } catch (error) {
@@ -193,12 +296,7 @@ export async function installCatalogSkill(input: unknown, root: string) {
         throw error
       // An immutable copy of the same repository revision already exists.
     }
-    return {
-      ...imported,
-      sourcePath: join(destination, 'SKILL.md'),
-      sourceUrl: `https://skills.sh/${source}/${skill}`,
-      sourceRevision: commit.sha,
-    }
+    return destination
   } finally {
     await rm(staging, {
       recursive: true,

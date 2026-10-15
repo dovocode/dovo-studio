@@ -162,6 +162,7 @@ export function SkillEditor({
                       sourcePath: undefined,
                       sourceUrl: undefined,
                       sourceRevision: undefined,
+                      sourcePackage: undefined,
                     })
                   }
                 >

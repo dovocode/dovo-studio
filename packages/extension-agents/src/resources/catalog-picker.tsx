@@ -1,5 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { resourceError } from './error'
+import { skillPackageSchema, type SkillPackage } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
 import {
   managedSkillSchema,
@@ -32,12 +33,14 @@ export function CatalogPicker({
   onClose,
   onServer,
   onSkill,
+  onSkills,
 }: {
   kind: 'mcp' | 'skill'
   scope: string
   onClose: () => void
   onServer: (server: McpServer, notes: string[]) => void
   onSkill: (skill: ManagedSkill) => void
+  onSkills: (skills: ManagedSkill[]) => Promise<void>
 }) {
   const { request } = useWorkspace()
   const [query, setQuery] = useApplicationState('')
@@ -49,6 +52,8 @@ export function CatalogPicker({
   const [loading, setLoading] = useApplicationState(false)
   const [importing, setImporting] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
+  const [bundle, setBundle] = useApplicationState<(SkillPackage & { skill: string }) | null>(null)
+  const [chosen, setChosen] = useApplicationState<string[]>([])
   const generation = useRef(0)
   useEffect(() => {
     const id = ++generation.current
@@ -142,6 +147,40 @@ export function CatalogPicker({
     }
   }
   const variant = selected?.variants.find((item) => item.id === variantId)
+  const previewPackage = async (entry: SkillCatalogEntry) => {
+    setImporting(true)
+    setError('')
+    try {
+      const result = await request(
+        '/api/agents/catalogs/skills/package/preview',
+        { source: entry.source, skill: entry.id },
+        skillPackageSchema,
+      )
+      setBundle({ ...result, skill: entry.id })
+      setChosen(result.skills.length <= 20 ? result.skills.map((skill) => skill.name) : [entry.id])
+    } catch (error) {
+      setError(resourceError(error))
+    } finally {
+      setImporting(false)
+    }
+  }
+  const installPackage = async () => {
+    if (!bundle) return
+    setImporting(true)
+    setError('')
+    try {
+      const result = await request(
+        '/api/agents/catalogs/skills/package/import',
+        { source: bundle.source, skill: bundle.skill, revision: bundle.revision, skills: chosen },
+        skillPackageSchema,
+      )
+      await onSkills(result.skills)
+    } catch (error) {
+      setError(resourceError(error))
+    } finally {
+      setImporting(false)
+    }
+  }
   return (
     <Dialog
       open
@@ -151,12 +190,57 @@ export function CatalogPicker({
     >
       <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{kind === 'mcp' ? 'MCP Registry' : 'skills.sh'}</DialogTitle>
+          <DialogTitle>
+            {bundle ? 'Install skill package' : kind === 'mcp' ? 'MCP Registry' : 'skills.sh'}
+          </DialogTitle>
           <DialogDescription>
             Pick an entry to add at {scope}. You can review and edit it before saving.
           </DialogDescription>
         </DialogHeader>
-        {selected ? (
+        {bundle ? (
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-self-start"
+              disabled={importing}
+              onClick={() => setBundle(null)}
+            >
+              Back to results
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {bundle.source} · {bundle.revision.slice(0, 12)}. Includes scripts, references and
+              assets. Matching saved skill names will be replaced.
+            </p>
+            <div className="min-h-0 space-y-2 overflow-y-auto">
+              {bundle.skills.map((skill) => (
+                <label key={skill.name} className="flex items-start gap-3 rounded-lg border p-3">
+                  <input
+                    type="checkbox"
+                    checked={chosen.includes(skill.name)}
+                    disabled={importing || (!chosen.includes(skill.name) && chosen.length >= 20)}
+                    onChange={(event) =>
+                      setChosen(
+                        event.target.checked
+                          ? [...chosen, skill.name]
+                          : chosen.filter((name) => name !== skill.name),
+                      )
+                    }
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{skill.name}</span>
+                    <span className="block text-xs text-muted-foreground">{skill.description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <Button disabled={importing || !chosen.length} onClick={() => void installPackage()}>
+              {importing
+                ? 'Installing…'
+                : `Install ${chosen.length} ${chosen.length === 1 ? 'skill' : 'skills'}`}
+            </Button>
+          </div>
+        ) : selected ? (
           <div className="grid gap-4 overflow-y-auto">
             <Button
               variant="ghost"
@@ -264,6 +348,14 @@ export function CatalogPicker({
                       <p className="text-xs text-muted-foreground">Import this source manually.</p>
                     )}
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={importing || !entry.supported}
+                    onClick={() => void previewPackage(entry)}
+                  >
+                    Install package
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"

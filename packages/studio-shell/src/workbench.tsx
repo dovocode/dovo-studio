@@ -1,4 +1,11 @@
-import { forgePullTarget, pullRepositoryIdentity, decodeWorkTarget } from '@dovo/protocol'
+import {
+  forgePullTarget,
+  pullRepositoryIdentity,
+  decodeWorkTarget,
+  githubPipelineTarget,
+  encodeWorkTarget,
+} from '@dovo/protocol'
+import { useLinkChooser } from './link-chooser'
 import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
 import {
   lazy,
@@ -50,7 +57,7 @@ type WorkbenchProps = {
   extensions: readonly StudioExtension[]
   pickDirectory?: StudioHostApi['pickDirectory']
   browser?: StudioHostApi['browser']
-  chooseLink?: StudioHostApi['chooseLink']
+  openBrowserLink?: StudioHostApi['openBrowserLink']
   openExternalLink?: StudioHostApi['openExternalLink']
   desktopPlatform?: DesktopPlatform
   inputPreview?: InputPreviewBridge
@@ -143,7 +150,7 @@ function WorkbenchContent({
   popOutThread,
   pickDirectory,
   browser,
-  chooseLink,
+  openBrowserLink,
   openExternalLink,
   appInfo,
   desktopPlatform,
@@ -326,6 +333,7 @@ function WorkbenchContent({
     [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
   )
   const repositorySources = useRepositorySources()
+  const { chooseLink, dialog: linkDialog } = useLinkChooser()
   const linkContext = useRef({ repositorySources, tasks: workspace.tasks })
   linkContext.current = { repositorySources, tasks: workspace.tasks }
   const openPullLink = useCallback(
@@ -380,6 +388,46 @@ function WorkbenchContent({
     },
     [navigate],
   )
+  const resolvePipelineLink = useCallback(
+    (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => {
+      const run = githubPipelineTarget(url)
+      if (!run) return undefined
+      const matches = linkContext.current.repositorySources.filter(
+        (source) => pullRepositoryIdentity(source.repository) === run.identity,
+      )
+      const { target } = settingsNavigation.current
+      const integration = target.pullTarget ?? decodeWorkTarget(target.entityId)
+      const runtimeId = origin?.runtimeId ?? integration?.runtimeId ?? currentRuntime.current
+      const repositoryId =
+        origin?.repositoryId ??
+        integration?.repositoryId ??
+        linkContext.current.tasks.find((task) => task.id === target.entityId)?.repositoryId
+      const sameRuntime = matches.filter((source) => source.runtimeId === runtimeId)
+      const source =
+        sameRuntime.find((source) => source.repository.id === repositoryId) ??
+        (sameRuntime.length === 1 ? sameRuntime[0] : matches.length === 1 ? matches[0] : undefined)
+      return source ? { run, source } : undefined
+    },
+    [],
+  )
+  const openPipelineLink = useCallback(
+    (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => {
+      const match = resolvePipelineLink(url, origin)
+      if (!match) return false
+      const { run, source } = match
+      navigate({
+        viewId: 'pipelines',
+        entityId: encodeWorkTarget({
+          runtimeId: source.runtimeId,
+          repositoryId: source.repository.id,
+          id: run.id,
+          url: run.url,
+        }),
+      })
+      return true
+    },
+    [navigate, resolvePipelineLink],
+  )
   const taskNotice = useTaskNotifications(
     openNotification,
     inputPreview,
@@ -415,8 +463,10 @@ function WorkbenchContent({
       pickDirectory,
       browser,
       chooseLink,
+      openBrowserLink,
       openExternalLink,
       openPullLink,
+      openPipelineLink,
       appInfo,
       updates,
       taskLauncher,
@@ -431,8 +481,10 @@ function WorkbenchContent({
       pickDirectory,
       browser,
       chooseLink,
+      openBrowserLink,
       openExternalLink,
       openPullLink,
+      openPipelineLink,
       appInfo,
       updates,
       taskLauncher,
@@ -624,9 +676,36 @@ function WorkbenchContent({
                 const anchor =
                   event.target instanceof Element ? event.target.closest('a[href]') : null
                 if (!(anchor instanceof HTMLAnchorElement) || anchor.dataset.dovoExternal) return
-                if (openPullLink(anchor.href)) event.preventDefault()
+                if (!/^https?:\/\//i.test(anchor.href)) return
+                event.preventDefault()
+                const url = anchor.href
+                const details = forgePullTarget(
+                  url,
+                  repositorySources.map((source) => ({
+                    identity: pullRepositoryIdentity(source.repository),
+                  })),
+                )
+                  ? 'pull'
+                  : resolvePipelineLink(url)
+                    ? 'pipeline'
+                    : undefined
+                void chooseLink(url, { details, browser: !!openBrowserLink })
+                  .then(async (destination) => {
+                    if (destination === 'details') {
+                      if (details === 'pull') openPullLink(url)
+                      else openPipelineLink(url)
+                    } else if (destination === 'browser') await openBrowserLink?.(url)
+                    else if (destination === 'external') {
+                      if (openExternalLink) await openExternalLink(url)
+                      else window.open(url, '_blank', 'noopener,noreferrer')
+                    }
+                  })
+                  .catch((cause: unknown) =>
+                    setSwitchError(cause instanceof Error ? cause.message : String(cause)),
+                  )
               }}
             >
+              {linkDialog}
               {/* Settings get a grouped sidebar with search; other views use the full area. */}
               <div
                 className={`flex min-h-0 min-w-0 flex-1 ${inSettings ? 'flex-col md:flex-row' : ''}`}

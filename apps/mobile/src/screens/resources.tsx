@@ -1,3 +1,4 @@
+import { HookSettings } from '../resources/hook-settings'
 import { ScopedSettings } from '../runtime/preferences/settings-target'
 import {
   resolveScopedSettings,
@@ -39,7 +40,7 @@ export default function ResourcesScreen() {
 
   return (
     <SettingsPage>
-      <ScreenHeader title="MCP servers & skills" />
+      <ScreenHeader title="MCP, skills & hooks" />
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -95,7 +96,7 @@ function ComputerResources({
             <SettingsRow
               key={scope.id}
               title={scope.item.name}
-              subtitle={`${scope.label} · ${resources.mcpServers.length} MCP · ${resources.skills.length} skills${names.length ? ` · ${names.join(', ')}` : ''}`}
+              subtitle={`${scope.label} · ${resources.mcpServers.length} MCP · ${resources.skills.length} skills · ${resources.hooks?.length ?? 0} hooks${names.length ? ` · ${names.join(', ')}` : ''}`}
               icon={scope.repository ? 'folder' : 'chat'}
               last={index === visibleScopes.length - 1}
               onPress={() => setSelected(scope.id)}
@@ -205,7 +206,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
-      <ScreenHeader title="MCP servers & skills" />
+      <ScreenHeader title="MCP, skills & hooks" />
       <Text style={styles.muted}>
         Global → Computer → Project → Project on computer. Matching names override earlier scopes;
         agent entries apply last. Shared credentials must reference host environment variables.
@@ -369,6 +370,22 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
               </View>
             ))}
           </View>
+          <HookSettings
+            hooks={resources.hooks ?? []}
+            inherited={inherited?.hooks ?? []}
+            disabled={!connected || busy}
+            scope={scope.scope}
+            origin={(name) =>
+              resourceOrigin(
+                snapshot?.defaults,
+                scope.repository,
+                scope.scope ?? 'environment',
+                'hooks',
+                name,
+              )
+            }
+            save={save}
+          />
           <View style={styles.card}>
             <Text style={styles.title}>Skills</Text>
             <View style={styles.row}>
@@ -530,6 +547,16 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
           onSelect={(entry) => {
             setCatalog(null)
             setEditing(entry)
+          }}
+          onSkills={async (skills) => {
+            await save((value) => ({
+              ...value,
+              skills: [
+                ...value.skills.filter((item) => !skills.some((skill) => skill.name === item.name)),
+                ...skills,
+              ],
+            }))
+            setCatalog(null)
           }}
         />
       )}

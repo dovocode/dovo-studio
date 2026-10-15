@@ -71,17 +71,63 @@ export const managedSkillSchema = mutableStruct({
   sourceUrl: Schema.optional(urlSchema()),
   sourceRevision: Schema.optional(maxValue(Schema.String, 200)),
   sourcePath: Schema.optional(maxValue(Schema.String, 4000)),
+  sourcePackage: Schema.optional(Schema.Boolean),
 })
-export const agentHookSchema = mutableStruct({
-  name,
-  enabled: Schema.Boolean,
-  event: Schema.Literals(['before-turn', 'after-turn']),
-  command: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 4000),
-  timeoutSeconds: Schema.Number.pipe(
-    Schema.check(Schema.isInt()),
-    Schema.check(Schema.isBetween({ minimum: 1, maximum: 600 })),
-  ),
-})
+export const agentHookEvents = [
+  'before-turn',
+  'after-turn',
+  'session-start',
+  'tool-start',
+  'tool-complete',
+  'tool-error',
+  'permission-request',
+  'permission-response',
+  'before-compaction',
+  'after-compaction',
+  'subagent-start',
+  'subagent-stop',
+  'turn-error',
+  'turn-interrupted',
+] as const
+export const agentHookEventChoices = agentHookEvents.map((id) => ({
+  id,
+  name:
+    id === 'before-turn'
+      ? 'Before each turn'
+      : id === 'after-turn'
+        ? 'After each turn'
+        : id === 'session-start'
+          ? 'Session attached'
+          : id
+              .split('-')
+              .map((word) => word[0].toUpperCase() + word.slice(1))
+              .join(' '),
+}))
+export const agentHookSchema = superRefine(
+  mutableStruct({
+    name,
+    enabled: Schema.Boolean,
+    event: Schema.Literals(agentHookEvents),
+    matcher: Schema.optional(maxValue(Schema.String, 400)),
+    command: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 4000),
+    timeoutSeconds: Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 1, maximum: 600 })),
+    ),
+  }),
+  (hook, context) => {
+    if (!hook.matcher || hook.matcher === '*') return
+    try {
+      new RegExp(hook.matcher)
+    } catch {
+      context.addIssue({
+        code: 'custom',
+        path: ['matcher'],
+        message: 'Enter a valid regular expression',
+      })
+    }
+  },
+)
 export type AgentHook = Schema.Schema.Type<typeof agentHookSchema>
 export const resourceSettingsSchema = superRefine(
   mutableStruct({
@@ -125,7 +171,13 @@ export function mergeResources(
 ): ResourceSettings {
   return {
     ...(project?.hooks || agent?.hooks
-      ? { hooks: [...(project?.hooks ?? []), ...(agent?.hooks ?? [])] }
+      ? {
+          hooks: [
+            ...new Map(
+              [...(project?.hooks ?? []), ...(agent?.hooks ?? [])].map((hook) => [hook.name, hook]),
+            ).values(),
+          ],
+        }
       : {}),
     mcpServers: [
       ...new Map(

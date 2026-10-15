@@ -100,7 +100,7 @@ contextBridge.exposeInMainWorld('dovo', {
       return () => ipcRenderer.removeListener('input-preview:open-thread', handler)
     },
   },
-  chooseLink: (url: string): Promise<boolean> => ipcRenderer.invoke('links:choose', url),
+  openBrowserLink: (url: string): Promise<void> => ipcRenderer.invoke('links:browser', url),
   openExternalLink: (url: string): Promise<void> => ipcRenderer.invoke('links:external', url),
   appInfo: ipcRenderer.sendSync('app:info'),
   platform:

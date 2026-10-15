@@ -73,3 +73,14 @@ it('opens an explicitly chosen external HTTP link without another chooser and re
   )
   expect(fixture.external).toHaveBeenCalledOnce()
 })
+
+it('opens an explicitly chosen Dovo browser link without a second dialog', async () => {
+  const { openBrowserLink } = await import('./links')
+  await openBrowserLink(new BrowserWindow(), 'http://runtime.local/page')
+  expect(fixture.loaded).toHaveBeenCalledWith('http://runtime.local/page')
+  expect(fixture.answer).not.toHaveBeenCalled()
+  expect(fixture.external).not.toHaveBeenCalled()
+  await expect(openBrowserLink(new BrowserWindow(), 'javascript:alert(1)')).rejects.toThrow(
+    'Use an HTTP or HTTPS address.',
+  )
+})

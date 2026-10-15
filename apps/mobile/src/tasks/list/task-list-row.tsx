@@ -4,6 +4,8 @@ import { harnessNames } from '../creation/harness-choices'
 import {
   hasUnreadTaskActivity,
   pullStackLabel,
+  taskPullLinks,
+  taskPullStatusFor,
   subagentMetadata,
   type SubagentListItem,
 } from '@dovo/protocol'
@@ -34,6 +36,7 @@ import {
   resolveTaskAgent,
   type RuntimeTask,
 } from '@dovo/protocol'
+import { PullRequestIcon, usePullRequestColor } from '../../ui/content/pull-request-icon'
 import { DeviceLabel } from './device-label'
 import { TaskRowMenu } from './task-row-menu'
 import { TaskSwipeActions } from './task-swipe-actions'
@@ -102,6 +105,10 @@ function TaskListRowView({
   const task = row.task,
     repository = owner.repository,
     agent = resolveTaskAgent(task, owner.agents)
+  const pulls = taskPullLinks(task)
+  const pullStatus =
+    task.pullStatus ?? (pulls[0] ? taskPullStatusFor(task, pulls[0].url) : undefined)
+  const pullColor = usePullRequestColor(pullStatus?.state, pullStatus?.draft)
   const executionDevice = row.runtimeName
   const { modelName, catalog } = useCachedModelCatalog(agent, owner.profile)
   const providerName = agent
@@ -285,7 +292,19 @@ function TaskListRowView({
                 {row.reachability === 'offline' && (
                   <Text style={[styles.muted, { fontSize: 13 }]}>Offline</Text>
                 )}
-                {task.pullStatus?.stack && (
+                {pulls.length > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <PullRequestIcon
+                      state={pullStatus?.state}
+                      draft={pullStatus?.draft}
+                      size={12}
+                    />
+                    <Text style={{ color: pullColor, fontSize: 12 }}>
+                      {pulls.length > 1 ? `${pulls.length} PRs` : `#${pulls[0].number}`}
+                    </Text>
+                  </View>
+                )}
+                {pulls.length <= 1 && task.pullStatus?.stack && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                     <Icon name="stack" size={12} color={colors.accent} />
                     <Text style={{ color: colors.accent, fontSize: 12 }}>

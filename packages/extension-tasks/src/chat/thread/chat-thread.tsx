@@ -5,6 +5,9 @@ import { DeferredTurn } from './deferred-turn'
 import { TurnWindow, TurnWindowContext } from './turn-window'
 import {
   threadPullLink,
+  forgePullTarget,
+  githubPipelineTarget,
+  pullRepositoryIdentity,
   unassignedConversationTools,
   conversationMessageTurns,
   conversationToolsByMessage,
@@ -84,11 +87,18 @@ export function ChatThread({
   const history = useConversationHistory(liveTask, recentScope === linkScope)
   const task = history.task
   const turnWindow = useMemo(() => new TurnWindow(), [linkScope])
-  const { chooseLink, openPullLink } = useStudioHost()
+  const { chooseLink, openPullLink, openPipelineLink, openExternalLink, openBrowserLink } =
+    useStudioHost()
   const [linkError, setLinkError] = useState('')
   const [selectedPull, setSelectedPull] = useState<{ scope: string; url: string } | null>(null)
   const pull = selectedPull?.scope === linkScope ? threadPullLink(selectedPull.url) : null
   const fullTask = workspace.tasks.find((item) => item.id === liveTask.id)
+  const linkOperation = useRef<AbortController | null>(null)
+  useLayoutEffect(() => {
+    const controller = new AbortController()
+    linkOperation.current = controller
+    return () => controller.abort()
+  }, [active, linkScope])
   const copyOperation = useRef<AbortController | null>(null)
   const [copying, setCopying] = useState(false)
   useLayoutEffect(() => {
@@ -428,25 +438,44 @@ export function ChatThread({
             )
               return
             const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
-            if (
-              !(anchor instanceof HTMLAnchorElement) ||
-              !/^https?:\/\//i.test(anchor.href) ||
-              (!onPullLink && !openPullLink && (!chooseLink || !onBrowser))
-            )
-              return
-            if (onPullLink?.(anchor.href) || openPullLink?.(anchor.href)) {
-              event.preventDefault()
-              event.stopPropagation()
-              return
-            }
-            if (!chooseLink || !onBrowser) return
+            if (!(anchor instanceof HTMLAnchorElement) || !/^https?:\/\//i.test(anchor.href)) return
+            if (!chooseLink) return
             event.preventDefault()
             event.stopPropagation()
             const url = anchor.href
             setLinkError('')
-            void chooseLink(url)
-              .then((internal) => {
-                if (internal) onBrowser(url)
+            const details = forgePullTarget(
+              url,
+              workspace.repositories.map((repository) => ({
+                identity: pullRepositoryIdentity(repository),
+              })),
+            )
+              ? 'pull'
+              : githubPipelineTarget(url) &&
+                  workspace.repositories.some(
+                    (repository) =>
+                      pullRepositoryIdentity(repository) === githubPipelineTarget(url)?.identity,
+                  )
+                ? 'pipeline'
+                : undefined
+            void chooseLink(url, {
+              details,
+              browser: !!onBrowser || !!openBrowserLink,
+              signal: linkOperation.current?.signal,
+            })
+              .then(async (destination) => {
+                if (destination === 'browser') {
+                  if (onBrowser) onBrowser(url)
+                  else await openBrowserLink?.(url)
+                } else if (destination === 'details') {
+                  if (details === 'pull') {
+                    if (!onPullLink?.(url)) openPullLink?.(url)
+                  } else if (!openPipelineLink?.(url, { repositoryId: fullTask?.repositoryId }))
+                    throw new Error('Select a repository source in Pipelines to open this run.')
+                } else if (destination === 'external') {
+                  if (openExternalLink) await openExternalLink(url)
+                  else window.open(url, '_blank', 'noopener,noreferrer')
+                }
               })
               .catch((cause: unknown) =>
                 setLinkError(cause instanceof Error ? cause.message : String(cause)),

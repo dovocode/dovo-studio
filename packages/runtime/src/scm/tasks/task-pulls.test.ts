@@ -694,3 +694,51 @@ it('refreshes a stale open list before deciding a main PR is still open', async 
   expect(f.list).toHaveBeenCalledWith(expect.any(String), 'open', 1, true, true)
   expect(f.s.store.task(f.task.id).archived).toBe(true)
 })
+
+it('refreshes every linked PR independently, including foreign repositories, and preserves metadata on failure', async () => {
+  const f = await smartFixture()
+  const links = [
+    {
+      number: 8,
+      title: 'PR #8',
+      url: 'https://github.com/o/r/pull/8',
+      repositoryUrl: 'https://github.com/o/r',
+    },
+    {
+      number: 9,
+      title: 'PR #9',
+      url: 'https://github.com/other/project/pull/9',
+      repositoryUrl: 'https://github.com/other/project',
+    },
+  ]
+  f.s.store.updateTask(f.task.id, (task) => ({ ...task, linkedPullRequests: links }))
+  const before = f.s.store.task(f.task.id).updatedAt
+  const original = await f.s.pullCache.status('fixture', 7)
+  const status = vi.spyOn(f.s.pullCache, 'status').mockImplementation(async (_path, number) => ({
+    ...original,
+    pull: {
+      ...original.pull,
+      state: number === 9 ? 'merged' : 'open',
+      number,
+      title: `Resolved ${number}`,
+      url: links.find((link) => link.number === number)?.url ?? original.pull.url,
+    },
+    checks: number === 8 ? [{ name: 'test', status: 'failure' }] : [],
+  }))
+  await f.watcher.refresh()
+  expect(status).toHaveBeenCalledWith('https://github.com/other/project/pull/9', 9, false, true)
+  expect(f.s.store.task(f.task.id).pullStatuses).toMatchObject([
+    { number: 8, title: 'Resolved 8', checks: 'failed', failedChecks: ['test'] },
+    { number: 9, title: 'Resolved 9', state: 'merged' },
+  ])
+  expect(f.s.store.task(f.task.id).linkedPullRequests?.map((pull) => pull.title)).toEqual([
+    'Resolved 8',
+    'Resolved 9',
+    'Fix',
+  ])
+  expect(f.s.store.task(f.task.id).updatedAt).toBe(before)
+  const saved = f.s.store.task(f.task.id).pullStatuses
+  status.mockRejectedValue(new Error('offline'))
+  await f.watcher.refresh()
+  expect(f.s.store.task(f.task.id).pullStatuses).toMatchObject(saved!)
+})

@@ -245,7 +245,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                       {group === 'setup'
                         ? '2. Permissions & desktop access'
                         : group === 'skills'
-                          ? '3. Agent MCP & skills'
+                          ? '3. Agent MCP, skills & hooks'
                           : '4. Computer History (optional preview)'}
                     </Text>
                     <Text style={styles.muted}>

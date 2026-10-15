@@ -36,7 +36,10 @@ export class SharedSkillBundles {
       }),
     )
   }
-  private async install(source: { source: string; skill: string; revision: string }, key: string) {
+  private async install(
+    source: { source: string; skill: string; revision: string; package?: boolean },
+    key: string,
+  ) {
     const index = join(this.root, `.shared-${key}.json`)
     try {
       const result = decodeResult(managedSkillSchema, JSON.parse(await readFile(index, 'utf8')))

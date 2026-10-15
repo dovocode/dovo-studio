@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { ContextMenu } from '@dovo/studio-ui'
-import { threadPullLink } from '@dovo/protocol'
-import { useStudioHost } from '@dovo/studio-core'
+import { threadPullLink, githubPipelineTarget, pullRepositoryIdentity } from '@dovo/protocol'
+import { useStudioHost, useWorkspace } from '@dovo/studio-core'
 import type { Task } from '@dovo/studio-core'
 
 const itemClass =
@@ -35,13 +35,21 @@ export function ThreadLinkMenu({
   onBookmark: (id: string, bookmarked: boolean) => Promise<void>
   canBookmark: (id: string) => boolean
 }) {
-  const { openExternalLink } = useStudioHost()
+  const { openExternalLink, openBrowserLink, openPipelineLink } = useStudioHost()
+  const { workspace } = useWorkspace()
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
   const [selection, setSelection] = useState('')
   const [messageId, setMessageId] = useState('')
   const message = task.messages.find((item) => item.id === messageId)
   const pull = threadPullLink(url)
+  const pipeline = githubPipelineTarget(url)
+  const hasPipeline =
+    pipeline &&
+    openPipelineLink &&
+    workspace.repositories.some(
+      (repository) => pullRepositoryIdentity(repository) === pipeline.identity,
+    )
   const perform = (action: () => Promise<void>) => {
     void action().catch((cause: unknown) =>
       setError(cause instanceof Error ? cause.message : String(cause)),
@@ -89,8 +97,25 @@ export function ThreadLinkMenu({
               Open PR details
             </ContextMenu.Item>
           )}
-          {url && onBrowser && (
-            <ContextMenu.Item className={itemClass} onSelect={() => onBrowser(url)}>
+          {hasPipeline && (
+            <ContextMenu.Item
+              className={itemClass}
+              onSelect={() => {
+                if (!openPipelineLink(url))
+                  setError('Select a repository source in Pipelines to open this run.')
+              }}
+            >
+              Open pipeline details
+            </ContextMenu.Item>
+          )}
+          {url && (onBrowser || openBrowserLink) && (
+            <ContextMenu.Item
+              className={itemClass}
+              onSelect={() => {
+                if (onBrowser) onBrowser(url)
+                else if (openBrowserLink) perform(() => openBrowserLink(url))
+              }}
+            >
               Open in Dovo browser
             </ContextMenu.Item>
           )}

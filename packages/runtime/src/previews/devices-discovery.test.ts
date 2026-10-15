@@ -14,6 +14,7 @@ const command = vi.hoisted(() =>
     ) => Promise<{ stdout: string; stderr: string }>
   >(),
 )
+vi.mock('./apple-device-command', () => ({ appleDeviceCommand: command }))
 vi.mock('node:child_process', async (original) => {
   const child = await original<typeof import('node:child_process')>()
   const { promisify } = await import('node:util')
@@ -26,6 +27,7 @@ vi.mock('node:fs/promises', async (original) => {
 afterEach(() => {
   vi.restoreAllMocks()
   command.mockReset()
+  vi.mocked(files.access).mockResolvedValue(undefined)
 })
 const physical = {
   result: {
@@ -125,4 +127,33 @@ it('keeps usable sources when an independent discovery command fails', async () 
   expect(result.diagnostics).toEqual([
     'iOS: install Xcode, select its developer directory and install a Simulator runtime.',
   ])
+})
+
+it('keeps physical iPhones available without idb and explains the simulator-only limitation', async () => {
+  setup()
+  command.mockImplementation(respond)
+  vi.mocked(files.access).mockImplementation(async (path) => {
+    if (String(path).endsWith('/idb_companion'))
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+  })
+  const result = await previewDevices()
+  expect(result.devices.find((device) => device.id === 'physical-ios:phone')?.liveSupported).toBe(
+    true,
+  )
+  expect(result.devices.find((device) => device.id === 'ios:sim')?.liveSupported).toBe(false)
+  expect(result.diagnostics).toEqual([expect.stringContaining('physical iPhones do not use idb')])
+})
+
+it('reports missing local Android tools with remote Hub guidance while keeping Apple devices usable', async () => {
+  setup()
+  command.mockImplementation(respond)
+  vi.mocked(files.access).mockImplementation(async (path) => {
+    if (['adb', 'emulator'].includes(basename(String(path))))
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+  })
+  const result = await previewDevices()
+  expect(result.devices.map((device) => device.id)).toEqual(['physical-ios:phone', 'ios:sim'])
+  expect(result.diagnostics).toContainEqual(expect.stringContaining('adb is missing on this host'))
+  expect(result.diagnostics).toContainEqual(expect.stringContaining('authorized remote host'))
+  expect(command.mock.calls.every(([file]) => file === 'xcrun')).toBe(true)
 })

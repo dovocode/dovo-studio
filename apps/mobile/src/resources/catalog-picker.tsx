@@ -10,6 +10,9 @@ import {
   managedSkillSchema,
   registryCatalogSchema,
   skillCatalogSchema,
+  skillPackageSchema,
+  type SkillPackage,
+  type ManagedSkill,
   type RegistryEntry,
   type SkillCatalogEntry,
 } from '@dovo/protocol'
@@ -26,11 +29,13 @@ export function CatalogPicker({
   scope,
   onClose,
   onSelect,
+  onSkills,
 }: {
   kind: 'mcp' | 'skill'
   scope: string
   onClose: () => void
   onSelect: (entry: ResourceSelection) => void
+  onSkills: (skills: ManagedSkill[]) => Promise<void>
 }) {
   const openLink = useOpenAppLink(undefined)
   const { styles } = useTheme()
@@ -46,6 +51,18 @@ export function CatalogPicker({
     [loading, setLoading] = useApplicationState(false),
     [loadError, setLoadError] = useApplicationState('')
   const generation = useRef(0)
+  const [bundle, setBundle] = useApplicationState<(SkillPackage & { skill: string }) | null>(null)
+  const [chosen, setChosen] = useApplicationState<string[]>([])
+  const previewPackage = (entry: SkillCatalogEntry) =>
+    act(async () => {
+      const result = await call(
+        '/api/agents/catalogs/skills/package/preview',
+        { source: entry.source, skill: entry.id },
+        skillPackageSchema,
+      )
+      setBundle({ ...result, skill: entry.id })
+      setChosen(result.skills.length <= 20 ? result.skills.map((skill) => skill.name) : [entry.id])
+    })
   useEffect(() => {
     const id = ++generation.current
     setServers([])
@@ -107,7 +124,57 @@ export function CatalogPicker({
   return (
     <Sheet title={kind === 'mcp' ? 'MCP Registry' : 'skills.sh'} busy={busy} onClose={onClose}>
       <Text style={styles.muted}>{scope} · Review before saving</Text>
-      {selected ? (
+      {bundle ? (
+        <>
+          <Action
+            secondary
+            label="Search results"
+            disabled={busy}
+            onPress={() => setBundle(null)}
+          />
+          <Text style={styles.title}>{bundle.source}</Text>
+          <Text style={styles.muted}>
+            Includes scripts, references and assets. Matching saved skill names will be replaced.
+          </Text>
+          {bundle.skills.map((skill) => (
+            <View key={skill.name} style={styles.card}>
+              <Text style={styles.text}>{skill.name}</Text>
+              <Text style={styles.muted}>{skill.description}</Text>
+              <Action
+                secondary
+                label={`${chosen.includes(skill.name) ? 'Selected' : 'Select'} ${skill.name}`}
+                disabled={busy || (!chosen.includes(skill.name) && chosen.length >= 20)}
+                onPress={() =>
+                  setChosen(
+                    chosen.includes(skill.name)
+                      ? chosen.filter((name) => name !== skill.name)
+                      : [...chosen, skill.name],
+                  )
+                }
+              />
+            </View>
+          ))}
+          <Action
+            label={`Install ${chosen.length} ${chosen.length === 1 ? 'skill' : 'skills'}`}
+            disabled={busy || !chosen.length}
+            onPress={() =>
+              act(async () => {
+                const result = await call(
+                  '/api/agents/catalogs/skills/package/import',
+                  {
+                    source: bundle.source,
+                    skill: bundle.skill,
+                    revision: bundle.revision,
+                    skills: chosen,
+                  },
+                  skillPackageSchema,
+                )
+                await onSkills(result.skills)
+              })
+            }
+          />
+        </>
+      ) : selected ? (
         <>
           <Action secondary label="Search results" onPress={() => setSelected(undefined)} />
           <Text style={styles.title}>{selected.name}</Text>
@@ -169,6 +236,12 @@ export function CatalogPicker({
                 label="View source"
                 disabled={busy}
                 onPress={() => act(() => openLink(entry.url))}
+              />
+              <Action
+                label={`Install package from ${entry.source}`}
+                secondary
+                disabled={busy || !entry.supported}
+                onPress={() => previewPackage(entry)}
               />
               <Action
                 label={`Import ${entry.name}`}

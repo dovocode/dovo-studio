@@ -1,3 +1,4 @@
+import { taskPullStatusFor } from '@dovo/protocol'
 import { WorkingSubagents } from '../list/working-subagents'
 import { useCallback, useMemo, useRef } from 'react'
 import { Schema } from 'effect'
@@ -505,12 +506,13 @@ export function TaskProjectPanel({
             Pull requests & changes
           </h3>
           {(showAllPulls ? displayedPulls : displayedPulls.slice(0, 1)).map((pull) =>
-            task.pullStatus?.url === pull.url ? (
+            taskPullStatusFor(task, pull.url) ? (
               <TaskPullStatus
                 key={pull.url}
                 panel
                 title={pull.title}
                 task={task}
+                url={pull.url}
                 onPullLink={onPullLink}
               />
             ) : (

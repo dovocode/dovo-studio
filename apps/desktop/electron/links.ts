@@ -33,6 +33,12 @@ export async function offerLink(
     onInternal(url)
     return true
   }
+  await openBrowserLink(parent, url)
+  return false
+}
+
+export async function openBrowserLink(parent: BrowserWindow, raw: string) {
+  const url = previewUrl(raw)
   const browser = new BrowserWindow({
     parent,
     width: 1100,
@@ -61,5 +67,4 @@ export async function offerLink(
   )
   browser.webContents.session.setPermissionCheckHandler(() => false)
   await browser.loadURL(url)
-  return false
 }

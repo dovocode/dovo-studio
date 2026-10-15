@@ -2,7 +2,6 @@ import { appLinkChoices } from './app-link-target'
 import { useLinkOrigin, type LinkOrigin } from './link-origin'
 import { router } from 'expo-router'
 import { useRuntime } from '../../runtime/connection/provider'
-import { Choice } from '../controls/choice'
 import { Sheet, useSheetNavigation, type SheetHandle } from '../layout/sheet'
 import { SafeModal } from '../layout/safe-modal'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -12,33 +11,23 @@ import WebView from 'react-native-webview'
 import { Text } from './text'
 import { useTheme } from '../theme'
 
-let openPull: ((url: string, origin?: LinkOrigin) => boolean) | undefined
-let showInternal: ((url: string) => void) | undefined
+export type LinkAction = {
+  label: string
+  disabled?: boolean
+  signal?: AbortSignal
+  run: () => Promise<unknown>
+}
+let showLink: ((url: string, origin?: LinkOrigin, actions?: LinkAction[]) => void) | undefined
 
-export function openAppLink(url: string, external = false, origin?: LinkOrigin): Promise<void> {
-  if (external) return Linking.openURL(url)
-  if (openPull?.(url, origin)) return Promise.resolve()
-  if (!/^https?:\/\//i.test(url)) return Linking.openURL(url)
-  return new Promise((resolve, reject) => {
-    Alert.alert('Open link', url, [
-      {
-        text: 'In Dovo',
-        onPress: () => {
-          if (!showInternal) {
-            reject(new Error('The in-app browser is unavailable'))
-            return
-          }
-          showInternal(url)
-          resolve()
-        },
-      },
-      {
-        text: 'Default browser',
-        onPress: () => void Linking.openURL(url).then(resolve, reject),
-      },
-      { text: 'Cancel', style: 'cancel', onPress: () => resolve() },
-    ])
-  })
+export async function openAppLink(
+  url: string,
+  external = false,
+  origin?: LinkOrigin,
+  actions?: LinkAction[],
+): Promise<void> {
+  if (external || !/^https?:\/\//i.test(url)) return Linking.openURL(url)
+  if (!showLink) throw new Error('The link chooser is unavailable')
+  showLink(url, origin, actions)
 }
 
 /** Capture the rendering owner and wait for containing native sheets before navigation. */
@@ -60,50 +49,95 @@ export function LinkBrowser() {
   const { colors } = useTheme()
 
   const { overviews } = useRuntime()
-  const [choices, setChoices] = useState<ReturnType<typeof appLinkChoices>>([])
-  const [selected, setSelected] = useState('')
+  const [pending, setPending] = useState<{
+    url: string
+    origin?: LinkOrigin
+    actions?: LinkAction[]
+  } | null>(null)
   const picker = useRef<SheetHandle>(null)
-  useEffect(() => {
-    const open = (url: string, origin?: LinkOrigin) => {
-      const candidates = appLinkChoices(url, overviews, origin)
-      if (!candidates.length) return false
-      if (candidates.length === 1) router.push(candidates[0].href)
-      else {
-        setChoices(candidates)
-        setSelected('')
-      }
-      return true
-    }
-    openPull = open
-    return () => {
-      if (openPull === open) openPull = undefined
-    }
-  }, [overviews])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const choices = pending ? appLinkChoices(pending.url, overviews, pending.origin) : []
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
-    showInternal = setUrl
+    const show = (url: string, origin?: LinkOrigin, actions?: LinkAction[]) => {
+      setBusy(false)
+      setError('')
+      setPending({ url, origin, actions })
+    }
+    showLink = show
     return () => {
-      showInternal = undefined
+      if (showLink === show) showLink = undefined
     }
   }, [])
+  useEffect(() => {
+    if (!pending) return
+    const signals =
+      pending.actions?.flatMap((action) => (action.signal ? [action.signal] : [])) ?? []
+    const cancel = () => setPending((current) => (current === pending ? null : current))
+    if (signals.some((signal) => signal.aborted)) cancel()
+    for (const signal of signals) signal.addEventListener('abort', cancel, { once: true })
+    return () => {
+      for (const signal of signals) signal.removeEventListener('abort', cancel)
+    }
+  }, [pending])
   return (
     <>
-      {!!choices.length && (
-        <Sheet ref={picker} title="Choose link source" onClose={() => setChoices([])}>
-          <Choice
-            label="Source"
-            value={selected}
-            onChange={setSelected}
-            items={choices.map((choice, index) => ({ id: String(index), name: choice.label }))}
-          />
+      {pending && (
+        <Sheet ref={picker} title="Open link" busy={busy} onClose={() => setPending(null)}>
+          <Text numberOfLines={3}>{pending.url}</Text>
+          {choices.map((choice, index) => (
+            <Action
+              key={`${choice.runtimeId}:${index}`}
+              secondary
+              label={`${choice.href.pathname.includes('/pulls/pr/') ? 'Open PR details' : choice.href.pathname.includes('/pulls/pipeline/') ? 'Open pipeline details' : 'Open issue details'}${choices.length > 1 ? ` · ${choice.label}` : ''}`}
+              onPress={() => picker.current?.dismiss(() => router.push(choice.href))}
+            />
+          ))}
           <Action
-            label="Open"
-            disabled={!selected}
+            label="Open in Dovo browser"
+            secondary
             onPress={() => {
-              const choice = choices[Number(selected)]
-              if (choice) picker.current?.dismiss(() => router.push(choice.href))
+              const target = pending.url
+              picker.current?.dismiss(() => setUrl(target))
             }}
           />
+          <Action
+            label="Open in external browser"
+            secondary
+            onPress={() => {
+              const target = pending.url
+              picker.current?.dismiss(() => {
+                void Linking.openURL(target).catch((cause: unknown) =>
+                  Alert.alert('Could not open link', String(cause)),
+                )
+              })
+            }}
+          />
+          {pending.actions?.map((action) => (
+            <Action
+              key={action.label}
+              label={action.label}
+              disabled={busy || action.disabled}
+              onPress={() => {
+                if (action.signal?.aborted) return
+                setBusy(true)
+                setError('')
+                void action
+                  .run()
+                  .then(() => {
+                    if (!action.signal?.aborted) picker.current?.dismiss()
+                  })
+                  .catch((cause: unknown) => {
+                    if (!action.signal?.aborted) setError(String(cause))
+                  })
+                  .finally(() => {
+                    if (!action.signal?.aborted) setBusy(false)
+                  })
+              }}
+            />
+          ))}
+          {!!error && <Text accessibilityRole="alert">{error}</Text>}
         </Sheet>
       )}
       <SafeModal visible={url !== null} animationType="slide" onRequestClose={() => setUrl(null)}>

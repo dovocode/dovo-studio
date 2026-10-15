@@ -168,9 +168,14 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
     })
     expect(idleSpawn.isError).toBe(true)
     expect(decodeToolText(idleSpawn)).toContain('active parent turn')
-    expect((await client.callTool({ name: 'devices', arguments: {} })).content).toEqual([
-      { type: 'text', text: JSON.stringify({ host: 'Test Mac', devices: [], diagnostics: [] }) },
-    ])
+    expect(
+      JSON.parse(decodeToolText(await client.callTool({ name: 'devices', arguments: {} }))),
+    ).toMatchObject({
+      host: 'Test Mac',
+      devices: [],
+      diagnostics: [],
+      guidance: expect.stringContaining('Device Hub is enabled'),
+    })
     const screenshot = await client.callTool({
       name: 'device',
       arguments: { id: 'ios:test', action: 'screenshot' },

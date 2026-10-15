@@ -9,7 +9,7 @@ import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
 export const updateTask=(w,id,change)=>({...w,tasks:w.tasks.map(task=>task.id===id?change(task):task)});export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);
 export const useRuntime=useWorkspace;export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
-export const useStudioHost=()=>({openExternalLink:async url=>{window.external.push(url)},openPullLink:url=>{window.opened.push(url);return true}});
+export const useStudioHost=()=>({...useWorkspace().host,openExternalLink:async url=>{window.external.push(url)},openPullLink:url=>{window.opened.push(url);return true}});
 `
 const fixture = `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
@@ -17,10 +17,10 @@ import {TooltipProvider} from '@radix-ui/react-tooltip';import {Effect} from 'ef
 window.writes=[];window.copied=[];window.opened=[];window.external=[];window.alerts=[];window.fail=false;
 const url='https://github.com/foreign/project/pull/42/files#note';
 const initial={id:'thread',title:'Thread',repositoryId:'original-project',status:'draft',messages:[{id:'m',role:'assistant',text:url}],files:[],draft:'',example:false};
-function App(){const[task,setTask]=useState(initial),[connected,setConnected]=useState(true),[runtime,setRuntime]=useState('http://runtime.local'),[manage,setManage]=useState(false);window.setTask=setTask;window.connect=setConnected;window.runtime=setRuntime;
+function App(){CHOOSER_STATE const[task,setTask]=useState(initial),[connected,setConnected]=useState(true),[runtime,setRuntime]=useState('http://runtime.local'),[manage,setManage]=useState(false);window.setTask=setTask;window.connect=setConnected;window.runtime=setRuntime;
 const request=async(path,input)=>{window.writes.push({path,input,runtime});if(path==='/api/tasks/message/bookmark'){setTask(task=>({...task,messages:task.messages.map(message=>message.id===input.messageId?{...message,bookmarked:input.bookmarked}:message)}));return {ok:true}};if(path==='/api/scm/pulls/detail')return {pull:{number:input.number,title:'Resolved project PR',url:'https://github.com/original/project/pull/'+input.number,repositoryUrl:'https://github.com/original/project',provider:'github'}};if(window.fail)throw new Error('Link failed');setTask(current=>addTaskPullLinks(current,input.pulls));return {ok:true}};
-const value={workspace:{tasks:[task]},connected,connection:{address:runtime,token:'paired'},profile:{connection:{address:runtime,token:'paired'}},request,callEffect:(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error})};
-return <Context.Provider value={value}>CONTENT</Context.Provider>};createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
+const value={host:CHOOSER_HOST,workspace:{tasks:[task],repositories:[]},activeId:runtime,overviews:[{profile:{id:runtime,name:'Computer',connection:{address:runtime,token:'paired'}},snapshot:{workspace:{repositories:[]}}}],snapshot:{workspace:{tasks:[task]}},call:request,connected,connection:{address:runtime,token:'paired'},profile:{connection:{address:runtime,token:'paired'}},request,callEffect:(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error})};
+return <Context.Provider value={value}>CHOOSER_DIALOG CONTENT</Context.Provider>};createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
 `
 async function bundle(mobile) {
   const mocks = {
@@ -39,9 +39,11 @@ async function bundle(mobile) {
     '../../runtime/connection/provider': `export {useRuntime} from '@dovo/studio-core';`,
     '../../../runtime/connection/provider': `export {useRuntime} from '@dovo/studio-core';`,
     '../state/provider': `export {useConversationSelector} from '@dovo/studio-core';`,
-    '../../../ui/content/open-link': `export const openAppLink=async url=>{window.opened.push(url)};export const useOpenAppLink=()=>openAppLink;`,
-    './open-link': `export const openAppLink=async url=>{window.opened.push(url)};export const useOpenAppLink=()=>openAppLink;`,
-    '../layout/sheet': `export const useSheetNavigation=()=>navigate=>navigate();`,
+    '../layout/sheet': `import {useImperativeHandle} from 'react';export const useSheetNavigation=()=>navigate=>navigate();export const Sheet=({title,children,onClose,busy,ref})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section role="dialog"><h2>{title}</h2>{children}<button disabled={busy} onClick={onClose}>Close</button></section>};`,
+    '../layout/safe-modal': `export const SafeModal=({visible,children})=>visible?children:null;`,
+    '../controls/action': `export const Action=({label,disabled,onPress})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
+    'expo-router': `export const router={push:href=>window.opened.push(href.params.navigationUrl??href.params.url??href.params.repositoryId)};`,
+    'react-native-webview': `export default ()=>null;`,
     '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;export const carZoom=1.5;`,
     '../../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
     '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
@@ -53,16 +55,20 @@ async function bundle(mobile) {
     '../theme': `export const styles={chatText:{}};export const colors={};export const useTheme=()=>({styles,colors,mode:'dark'});`,
     './mermaid-diagram': `export const MermaidDiagram=()=>null;`,
     './task-visualization': `export const TaskVisualization=()=>null;`,
-    'react-native': `export const View=({children})=><div>{children}</div>;export const Text=({children,onPress,onLongPress})=>onPress?<a href="#" onClick={e=>{e.preventDefault();onPress()}} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</a>:<span>{children}</span>;export const Platform={OS:'ios'};export const Alert={alert:(...args)=>window.alerts.push(args)};`,
+    'react-native': `export const View=({children})=><div>{children}</div>;export const Text=({children,onPress,onLongPress})=>onPress?<a href="#" onClick={e=>{e.preventDefault();onPress()}} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</a>:<span>{children}</span>;export const Keyboard={dismiss:()=>{}};export const Linking={openURL:async url=>window.external.push(url)};export const Platform={OS:'ios'};export const Alert={alert:(...args)=>window.alerts.push(args)};`,
     'react-native-enriched-markdown': `export const EnrichedMarkdownText=({markdown,onLinkPress,onLinkLongPress})=>{const url=markdown.match(/\\]\\(<([^>]+)>\\)/)?.[1]??markdown;return <a href={url} onClick={e=>{e.preventDefault();onLinkPress({url})}} onContextMenu={e=>{e.preventDefault();onLinkLongPress?.({url})}}>{markdown.includes('&#')?url:'Thread PR'}</a>};`,
   }
   const ui = `${root}/packages/studio-ui/src/components`
   if (!mobile)
     mocks['@dovo/studio-ui'] =
       `export * as ContextMenu from '@radix-ui/react-context-menu';export {Button} from '${ui}/ui/button.tsx';export {Input} from '${ui}/ui/input.tsx';export {IconButton} from '${ui}/icon-button.tsx';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${ui}/ui/dialog.tsx';export const Conversation=({children,...props})=><div {...props}>{children}</div>;export const ConversationContent=({children})=><div>{children}</div>;export const ConversationHistory=ConversationContent;export const ConversationRail=()=>null;export const ConversationScrollButton=()=>null;`
+  const renderedFixture = fixture
+    .replace('CHOOSER_STATE', mobile ? '' : 'const chooser=useLinkChooser();')
+    .replace('CHOOSER_HOST', mobile ? '{}' : '{chooseLink:chooser.chooseLink}')
+    .replace('CHOOSER_DIALOG', mobile ? '<LinkBrowser/>' : '{chooser.dialog}')
   const entry = mobile
-    ? `import {ThreadMarkdown} from '${root}/apps/mobile/src/tasks/conversation/components/thread-markdown.tsx';${fixture.replace('CONTENT', '<><ThreadMarkdown text={url} variant="chat"/><ThreadMarkdown text={"See "+url+"."} plainText/></>')}`
-    : `import {TaskPullLinkDialog} from '${root}/packages/extension-tasks/src/dialogs/task-pull-link-dialog.tsx';import {ChatThread} from '${root}/packages/extension-tasks/src/chat/thread/chat-thread.tsx';${fixture.replace('CONTENT', '<><ChatThread task={task} onManagePulls={()=>setManage(true)}/>{manage&&<TaskPullLinkDialog task={task} onClose={()=>setManage(false)}/>}</>')}`
+    ? `import {LinkBrowser} from '${root}/apps/mobile/src/ui/content/open-link.tsx';import {ThreadMarkdown} from '${root}/apps/mobile/src/tasks/conversation/components/thread-markdown.tsx';${renderedFixture.replace('CONTENT', '<><ThreadMarkdown text={url} variant="chat"/><ThreadMarkdown text={"See "+url+"."} plainText/></>')}`
+    : `import {useLinkChooser} from '${root}/packages/studio-shell/src/link-chooser.tsx';import {TaskPullLinkDialog} from '${root}/packages/extension-tasks/src/dialogs/task-pull-link-dialog.tsx';import {ChatThread} from '${root}/packages/extension-tasks/src/chat/thread/chat-thread.tsx';${renderedFixture.replace('CONTENT', '<><ChatThread task={task} onManagePulls={()=>setManage(true)}/>{manage&&<TaskPullLinkDialog task={task} onClose={()=>setManage(false)}/>}</>')}`
   const result = await build({
     stdin: { contents: entry, resolveDir: root, loader: 'tsx' },
     alias: {
@@ -162,6 +168,9 @@ try {
       })
     }
     await link.click()
+    await page.getByRole('dialog').waitFor()
+    assert.equal(await page.getByRole('dialog').count(), 1)
+    await page.getByRole('button', { name: 'Open PR details', exact: true }).click()
     await page.waitForFunction(() => window.opened.length === 1)
     assert.equal(await page.getByRole('dialog').count(), 0)
     await page.evaluate(() => {
@@ -184,7 +193,7 @@ try {
       assert.ok(
         await page.getByRole('button', { name: 'Already linked to this thread' }).isDisabled(),
       )
-      await page.getByRole('button', { name: 'Open PR', exact: true }).click()
+      await page.getByRole('button', { name: 'Open PR details', exact: true }).click()
       await page.getByRole('dialog').waitFor({ state: 'hidden' })
     } else {
       assert.ok(
@@ -193,7 +202,9 @@ try {
       await page.getByRole('menuitem', { name: 'Open PR details', exact: true }).click()
     }
     assert.deepEqual(await page.evaluate(() => window.opened), [
-      'https://github.com/foreign/project/pull/42',
+      mobile
+        ? 'https://github.com/foreign/project/pull/42/files#note'
+        : 'https://github.com/foreign/project/pull/42',
     ])
     await page.evaluate(() => {
       window.setTask((task) => ({ ...task, linkedPullRequests: [] }))
@@ -225,7 +236,7 @@ try {
     if (!mobile)
       await page.getByRole('menuitem', { name: 'Link to this thread', exact: true }).click()
     await page.getByRole('button', { name: 'Link to this thread', exact: true }).click()
-    await page.getByText('Link failed', { exact: true }).waitFor()
+    await page.getByText(/Link failed/, { exact: false }).waitFor()
     await page.evaluate(() => {
       window.fail = false
     })

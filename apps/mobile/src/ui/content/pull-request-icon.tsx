@@ -6,6 +6,19 @@ import {
 } from 'lucide-react-native'
 import { useTheme } from '../theme'
 
+export function usePullRequestColor(state?: string, draft?: boolean) {
+  const { colors, mode } = useTheme()
+  return state === 'merged'
+    ? mode === 'dark'
+      ? '#a78bfa'
+      : '#7c3aed'
+    : state === 'closed'
+      ? colors.error
+      : draft || state !== 'open'
+        ? colors.muted
+        : colors.success
+}
+
 export function PullRequestIcon({
   state,
   draft,
@@ -15,7 +28,7 @@ export function PullRequestIcon({
   draft?: boolean
   size?: number
 }) {
-  const { colors, mode } = useTheme()
+  const color = usePullRequestColor(state, draft)
   const Glyph =
     state === 'merged'
       ? GitMerge
@@ -24,16 +37,6 @@ export function PullRequestIcon({
         : draft
           ? GitPullRequestDraft
           : GitPullRequest
-  const color =
-    state === 'merged'
-      ? mode === 'dark'
-        ? '#a78bfa'
-        : '#7c3aed'
-      : state === 'closed'
-        ? colors.error
-        : draft || state !== 'open'
-          ? colors.muted
-          : colors.success
   return (
     <Glyph
       size={size}
