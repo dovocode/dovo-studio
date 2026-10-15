@@ -15,7 +15,9 @@ async function fixture() {
   const f = await providerFixture(
     'vibe',
     String.raw`
-const {writeFileSync}=require('node:fs');const messages=[];
+const {writeFileSync,renameSync}=require('node:fs');const messages=[];
+// Shutdown may interrupt a recording write; publish only complete snapshots.
+const record=()=>{const path=process.env.TEST_RECORD;writeFileSync(path+'.tmp',JSON.stringify(messages));renameSync(path+'.tmp',path)};
 const send=value=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...value})+'\n');
 const reply=(id,result)=>send({id,result});
 let initialized=false;
@@ -26,7 +28,7 @@ const added=e=>event('history/entryAdded',{turnId:tid,entry:e});
 const done=(status='completed',extra={})=>{event('session/statsUpdated',{stats:{lastTurnPromptTokens:120,lastTurnCompletionTokens:20,lastTurnCachedTokens:30,contextTokens:90},contextWindow:200000});event('turn/completed',{turn:{id:tid,status,...extra}})};
 const config={activeModel:{alias:'devstral'},models:[{alias:'devstral',displayName:'Devstral',thinking:'high',thinkingLevels:['off','high']}]};
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
- const v=JSON.parse(line);messages.push(v);writeFileSync(process.env.TEST_RECORD,JSON.stringify(messages));const p=v.params||{};
+ const v=JSON.parse(line);messages.push(v);record();const p=v.params||{};
  if(!v.method)return;
  if(v.method==='initialize')return reply(v.id,{serverInfo:{name:'vibe-app-server',version:'2.26.1'}});
  if(v.method==='initialized'){initialized=true;return}
