@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
 import type { Task } from '@dovo/protocol'
 import { useWorkspace, type WorkspaceContextValue } from './context'
 import { WorkspaceValueProvider } from './selector'
@@ -17,15 +17,34 @@ export function TemporaryTaskWorkspace({
   const [draft, setDraft] = useState(task)
   const current = useRef(draft)
   const committed = useRef(false)
-  const commit = () => {
+  const committedCallback = useRef(onCommit)
+  committedCallback.current = onCommit
+  const { setWorkspace: rootSetWorkspace, flush: rootFlush, request: rootRequest } = root
+  const commit = useCallback(() => {
     if (committed.current) return
     committed.current = true
-    root.setWorkspace((workspace) => ({
+    rootSetWorkspace((workspace) => ({
       ...workspace,
       tasks: [current.current, ...workspace.tasks],
     }))
-    onCommit(current.current)
-  }
+    committedCallback.current(current.current)
+  }, [rootSetWorkspace])
+  // Sync publishes context updates after requests, including reads. Keep this identity
+  // stable so newly mounted readers do not restart themselves after every publication.
+  const request = useCallback<WorkspaceContextValue['request']>(
+    async (path, input, schema, method) => {
+      // Attachments and sending require a real task; catalogue and SCM reads do not.
+      if (
+        (path.startsWith('/api/tasks/') && path !== '/api/tasks/title') ||
+        path.startsWith('/api/attachments/')
+      ) {
+        commit()
+        await rootFlush()
+      }
+      return rootRequest(path, input, schema, method)
+    },
+    [commit, rootFlush, rootRequest],
+  )
   const setWorkspace: WorkspaceContextValue['setWorkspace'] = (update) => {
     if (committed.current) return root.setWorkspace(update)
     const workspace = { ...root.workspace, tasks: [current.current, ...root.workspace.tasks] }
@@ -45,17 +64,7 @@ export function TemporaryTaskWorkspace({
     flush: async () => {
       if (committed.current) await root.flush()
     },
-    request: async (path, input, schema, method) => {
-      // Attachments and sending require a real task; catalogue and SCM reads do not.
-      if (
-        (path.startsWith('/api/tasks/') && path !== '/api/tasks/title') ||
-        path.startsWith('/api/attachments/')
-      ) {
-        commit()
-        await root.flush()
-      }
-      return root.request(path, input, schema, method)
-    },
+    request,
   }
   return <WorkspaceValueProvider value={value}>{children}</WorkspaceValueProvider>
 }
