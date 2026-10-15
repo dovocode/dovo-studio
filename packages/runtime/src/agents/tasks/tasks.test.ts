@@ -1687,13 +1687,15 @@ it('settles provider output before checkpointing and rejects callbacks from a re
     expect(s.store.version()).toBe(revision)
     expect(s.approvals.list()).toHaveLength(0)
     s.tasks.queue.change(task.id, 'pause')
-    await s.tasks.steer(task.id, 'during-finalize', 'Next request')
+    const steering = s.tasks.steer(task.id, 'during-finalize', 'Next request')
+    await waitForTask(() => expect(s.store.task(task.id).queue?.[0]?.id).toBe('during-finalize'))
     expect(provider?.signal.aborted).toBe(false)
     expect(s.store.task(task.id).queue?.[0]?.id).toBe('during-finalize')
     releaseCapture()
+    await steering
     await execution.done
-    expect(s.store.task(task.id).runPhase).toBeUndefined()
-    expect(s.store.task(task.id).turns?.at(-1)?.finishedAt).toBe(turn?.finishedAt)
+    await waitForTask(() => expect(s.store.task(task.id).runPhase).toBeUndefined())
+    expect(s.store.task(task.id).turns?.[0]?.finishedAt).toBe(turn?.finishedAt)
     expect(s.store.task(task.id).sessionId).toBe('owned-session')
   } finally {
     releaseCapture()
@@ -2157,3 +2159,64 @@ it.each(['accept', 'reject'] as const)(
     await execution.done
   },
 )
+
+it('applies Claude steering received during finalization even when the remaining queue is paused', async () => {
+  const s = await setup()
+  let releaseCapture = () => {}
+  const capture = new Promise<void>((resolve) => {
+    releaseCapture = resolve
+  })
+  const snapshot = s.git.snapshot.bind(s.git)
+  let captured = false
+  vi.spyOn(s.git, 'snapshot').mockImplementation(async (cwd, ref) => {
+    if (ref.endsWith('/after') && !captured) {
+      captured = true
+      await capture
+    }
+    return snapshot(cwd, ref)
+  })
+  const runs: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      run.onSession('claude-session')
+      run.onText('Done')
+    },
+  })
+  s.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({ ...agent, provider: 'claude' })),
+  }))
+  const task = s.tasks.create({
+    title: 'Claude steering',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Original',
+  })
+  const initial = await s.tasks.start(task.id)
+  try {
+    await waitForTask(() => expect(s.store.task(task.id).runPhase).toBe('finalizing'))
+    s.tasks.queue.add(task.id, 'later', 'Later request')
+    s.tasks.queue.change(task.id, 'pause')
+    const steering = s.tasks.steer(task.id, 'steer-finalizing', 'Change direction')
+    await waitForTask(() =>
+      expect(
+        s.store.task(task.id).queue?.some((message) => message.id === 'steer-finalizing'),
+      ).toBe(true),
+    )
+    releaseCapture()
+    await steering
+    await initial.done
+    await waitForTask(() => expect(runs).toHaveLength(2))
+    expect(runs[0].signal.aborted).toBe(false)
+    expect(runs[1].sessionId).toBe('claude-session')
+    expect(runs[1].prompt).toContain('Change direction')
+    expect(runs[1].prompt).not.toContain('Later request')
+    expect(s.store.task(task.id).queuePaused).toBe(true)
+    expect(s.store.task(task.id).queue?.map((message) => message.id)).toEqual(['later'])
+  } finally {
+    releaseCapture()
+    await initial.done
+  }
+})

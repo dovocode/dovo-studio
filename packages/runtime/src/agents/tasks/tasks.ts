@@ -865,11 +865,7 @@ export class Tasks {
       if (!run) throw new HttpError(409, 'The turn finished. Send this as a follow-up instead.')
       if (expectedRunId !== undefined && run.id !== expectedRunId)
         throw new HttpError(409, 'This run ended. Send your instruction as a follow-up instead.')
-      if (this.store.taskSummary(id).runPhase === 'finalizing') {
-        if (!fromQueue)
-          this.queue.add(id, messageId, text, this.attachments.metadata(id, attachmentIds))
-        return null
-      }
+      const finalizing = this.store.taskSummary(id).runPhase === 'finalizing'
       if (fromQueue) {
         const queued = this.store.taskSummary(id).queue?.find((message) => message.id === messageId)
         if (
@@ -880,7 +876,7 @@ export class Tasks {
         )
           throw new HttpError(409, 'This queued message changed. Refresh it before steering.')
       }
-      const nativeSteer = run.steer
+      const nativeSteer = finalizing ? undefined : run.steer
       const paused = this.store.taskSummary(id).queuePaused ?? false
       if (
         !fromQueue &&
@@ -909,11 +905,11 @@ export class Tasks {
           ...(task.queue ?? []).filter((message) => message.id !== messageId),
         ],
       }))
-      return { run, nativeSteer, paused, token }
+      return { run, nativeSteer, paused, token, finalizing }
     }).pipe(
       Effect.flatMap((prepared) => {
         if (!prepared) return Effect.succeed({ ok: true })
-        const { run, nativeSteer, paused, token } = prepared
+        const { run, nativeSteer, paused, token, finalizing } = prepared
         const operation = nativeSteer
           ? runtimeOperation(() => nativeSteer(messageId)).pipe(
               Effect.catch((error) =>
@@ -928,7 +924,8 @@ export class Tasks {
               Effect.asVoid,
             )
           : Effect.gen({ self: this }, function* () {
-              run.controller.abort(new Error('Interrupted to apply steering'))
+              // Change capture must finish before a new provider turn owns this checkout.
+              if (!finalizing) run.controller.abort(new Error('Interrupted to apply steering'))
               if (run.fiber) yield* Fiber.await(run.fiber)
               if (run.shutdownUnconfirmed)
                 return yield* Effect.fail(
