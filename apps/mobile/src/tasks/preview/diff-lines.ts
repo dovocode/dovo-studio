@@ -41,6 +41,9 @@ export type ReviewDiffProps = {
   patch: string
   path?: string
   previousPath?: string
+  /** Complete file contents preserve lexical state before the first visible hunk. */
+  before?: string
+  after?: string
   focusedLine?: number
   onLinePress?: (line: number, side: 'additions' | 'deletions') => void
   annotations?: { line: number; side: 'additions' | 'deletions'; text: string }[]

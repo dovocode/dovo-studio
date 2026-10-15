@@ -29,7 +29,7 @@ export const ScreenHeader=({title})=><h1>{title}</h1>;
 export const useTheme=()=>window.rowTheme??{styles:{},colors:{}};
 `
 const preferenceModule = `
-const preferences={computerRefresh:'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[],taskSort:'newest',taskGrouping:'none',threadSectionOrder:['active','working','waiting','snoozed','settled'],workingSection:false,collapsedThreadSections:['working','snoozed','settled'],confirmArchive:false};
+const preferences={computerRefresh:'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[],taskSort:'newest',taskGrouping:'none',threadSectionOrder:['active','working','waiting','snoozed','settled'],workingSection:false,collapsedThreadSections:['working','snoozed'],confirmArchive:false};
 export const useMobilePreferences=()=>preferences;export const readMobilePreferences=()=>preferences;export const updateMobilePreferences=()=>{};export const preferencesReady=Promise.resolve();export const useCarMode=()=>false;
 `
 const stubs = [
@@ -306,7 +306,15 @@ try {
       const style = getComputedStyle(element)
       return { color: style.color, opacity: Number(style.opacity), weight: style.fontWeight }
     })
-    assert.equal(style.opacity, 1, palette.name + ' read title must stay opaque')
+    assert.equal(style.opacity, 0.4, palette.name + ' read title must be dimmed')
+    assert.equal(style.weight, '500')
+    await page.evaluate(() => window.publish({ 'task-0': { status: 'running' } }))
+    const unreadStyle = await title.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { color: style.color, opacity: Number(style.opacity), weight: style.fontWeight }
+    })
+    assert.equal(unreadStyle.opacity, 1, palette.name + ' unread title must stay opaque')
+    assert.equal(unreadStyle.weight, style.weight)
     const background = luminance(
       'rgb(' +
         palette.card
@@ -315,22 +323,42 @@ try {
           .join(',') +
         ')',
     )
-    const foreground = luminance(style.color)
+    const foreground = luminance(unreadStyle.color)
     const contrast =
       (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05)
     minimumContrast = Math.min(minimumContrast, contrast)
-    assert.ok(contrast >= 4.5, `${palette.name} title contrast ${contrast}`)
-    await page.evaluate(() => window.publish({ 'task-0': { status: 'running' } }))
-    assert.ok(
-      Number(await title.evaluate((el) => getComputedStyle(el).fontWeight)) > Number(style.weight),
-    )
+    assert.ok(contrast >= 4.5, `${palette.name} unread title contrast ${contrast}`)
   }
   assert.deepEqual(errors, [])
   console.log(
-    `Mobile task title contrast: 28 shipped palette/mode combinations >= ${minimumContrast.toFixed(2)}:1; unread weight verified.`,
+    `Mobile task titles: read dimming and unread emphasis verified across 28 shipped palette/mode combinations; unread contrast >= ${minimumContrast.toFixed(2)}:1.`,
   )
+  // Settled rows keep only the project icon and title, with details on the icon.
+  await page.evaluate(() => window.publish({ 'task-1': { archived: true } }))
+  const settled = page.getByTestId('Task task-1')
+  await settled.waitFor()
+  assert.equal(await settled.textContent(), 'Task 1')
+  assert.equal(await page.getByTestId('Task task-1 actions').count(), 0)
+  assert.equal(
+    await settled
+      .getByText('Task 1', { exact: true })
+      .evaluate((el) => getComputedStyle(el).opacity),
+    '0.4',
+  )
+  await settled.click()
+  assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'task-1')
+  await page.getByRole('button', { name: 'Task details for Task 1', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Task details' })
+    .getByText('Task 1', { exact: true })
+    .waitFor()
+  await page.getByRole('button', { name: 'Close details', exact: true }).click()
+  await page.evaluate(() => window.publish({ 'task-1': { archived: false } }))
+  await page.getByTestId('Task task-1 actions').waitFor()
+  assert.ok((await page.getByTestId('Task task-1').textContent()).includes('Project'))
+  assert.deepEqual(errors, [])
   console.log(
-    'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Latest details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
+    'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
   )
 } finally {
   await browser.close()

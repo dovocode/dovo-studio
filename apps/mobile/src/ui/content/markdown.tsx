@@ -1,6 +1,8 @@
 import { TaskVisualization } from './task-visualization'
 import { markdownImages, type MarkdownImagePart } from './markdown-images'
 import { markdownCodeStyle } from './markdown-code-style'
+import { markdownCodeBlocks, type MarkdownCodePart } from './markdown-code-blocks'
+import { CodeBlock } from './code-block'
 import { ServerImage } from './server-image'
 import { Text } from './text'
 import { useLinkOrigin } from './link-origin'
@@ -264,33 +266,41 @@ export const Markdown = memo(function Markdown({
     () => createMarkdownStyles(theme),
     [theme],
   )
-  const parts = useMemo(
-    () =>
-      richMarkdown(text, !!taskId && !baseURL && !fileBaseURL).flatMap<
-        | Exclude<RichMarkdownPart, { kind: 'markdown' }>
-        | MarkdownPart
-        | Extract<MarkdownImagePart, { kind: 'image' }>
-      >((rich) =>
-        rich.kind !== 'markdown'
-          ? [rich]
-          : mermaidBlocks(rich.text).flatMap<
-              MarkdownPart | Extract<MarkdownImagePart, { kind: 'image' }>
-            >((part) =>
-              part.kind === 'mermaid'
-                ? [{ ...part, offset: rich.offset + part.offset }]
-                : markdownImages(part.text).map((image) =>
-                    image.kind === 'text'
-                      ? {
-                          kind: 'markdown' as const,
-                          text: image.text,
-                          offset: rich.offset + part.offset + image.offset,
-                        }
-                      : { ...image, offset: rich.offset + part.offset + image.offset },
-                  ),
-            ),
-      ),
-    [text, taskId, baseURL, fileBaseURL],
-  )
+  const parts = useMemo(() => {
+    const result: (
+      | Exclude<RichMarkdownPart, { kind: 'markdown' }>
+      | MarkdownPart
+      | MarkdownCodePart
+      | Extract<MarkdownImagePart, { kind: 'image' }>
+    )[] = []
+    for (const rich of richMarkdown(text, !!taskId && !baseURL && !fileBaseURL)) {
+      if (rich.kind !== 'markdown') {
+        result.push(rich)
+        continue
+      }
+      for (const part of mermaidBlocks(rich.text)) {
+        if (part.kind === 'mermaid') {
+          result.push({ ...part, offset: rich.offset + part.offset })
+          continue
+        }
+        for (const block of markdownCodeBlocks(part.text)) {
+          const offset = rich.offset + part.offset + block.offset
+          if (block.kind === 'code') {
+            result.push({ ...block, offset })
+            continue
+          }
+          for (const image of markdownImages(block.text)) {
+            result.push(
+              image.kind === 'text'
+                ? { kind: 'markdown', text: image.text, offset: offset + image.offset }
+                : { ...image, offset: offset + image.offset },
+            )
+          }
+        }
+      }
+    }
+    return result
+  }, [text, taskId, baseURL, fileBaseURL])
   const car = useCarMode()
   const style =
     variant === 'chat'
@@ -337,6 +347,8 @@ export const Markdown = memo(function Markdown({
           >
             <MermaidDiagram chart={part.text} />
           </Suspense>
+        ) : part.kind === 'code' ? (
+          <CodeBlock key={part.offset} content={part.text} language={part.language} />
         ) : part.kind === 'image' ? (
           (() => {
             const imageURL = 'url' in part ? part.url : part.path

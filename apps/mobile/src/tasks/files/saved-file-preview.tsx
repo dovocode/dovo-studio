@@ -10,6 +10,8 @@ import {
 import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
+import { CodeBlock } from '../../ui/content/code-block'
+import { fileLanguage } from '../../ui/content/syntax-highlighter'
 
 export function SavedFilePreview({
   file,
@@ -96,9 +98,7 @@ export function SavedFilePreview({
                 resizeMode="contain"
               />
             ) : side?.text !== undefined ? (
-              <Text selectable style={{ fontFamily: 'monospace', fontSize: 12 }}>
-                {side.text || '(empty file)'}
-              </Text>
+              <CodeBlock content={side.text || '(empty file)'} language={fileLanguage(file.path)} />
             ) : side ? (
               <Text style={styles.muted}>
                 {side.notice ?? 'Binary contents saved. No text preview.'}

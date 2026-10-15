@@ -3,6 +3,7 @@ import { fromMarkdown } from 'mdast-util-from-markdown'
 import { artifactSourceMarkdown, richMarkdown } from '@dovo/protocol'
 import { markdownImages } from './markdown-images'
 import { mermaidBlocks } from './mermaid-blocks'
+import { markdownCodeBlocks } from './markdown-code-blocks'
 
 it('keeps inline code preview contents literal through the Markdown rendering pipeline', () => {
   const content = [
@@ -19,6 +20,9 @@ it('keeps inline code preview contents literal through the Markdown rendering pi
   expect(richMarkdown(text, true)).toMatchObject([{ kind: 'markdown', text }])
   expect(mermaidBlocks(text)).toEqual([{ kind: 'markdown', text, offset: 0 }])
   expect(markdownImages(text)).toEqual([{ kind: 'text', text, offset: 0 }])
+  expect(markdownCodeBlocks(text)).toEqual([
+    { kind: 'code', text: content, language: 'tsx', offset: 0 },
+  ])
   const nodes = fromMarkdown(text).children
   expect(nodes).toHaveLength(1)
   expect(nodes[0]).toMatchObject({ type: 'code', lang: 'tsx', value: content })

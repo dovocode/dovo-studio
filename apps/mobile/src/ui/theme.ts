@@ -1,7 +1,12 @@
 import { nativeCodeColors, type resolveCodeTheme } from '@dovo/studio-core/code-themes'
 import { StyleSheet } from 'react-native'
 import { createContext, useContext } from 'react'
-import { studioThemes, type StudioThemeId, type StudioThemeMode } from '@dovo/studio-core/themes'
+import {
+  studioSyntaxTheme,
+  studioThemes,
+  type StudioThemeId,
+  type StudioThemeMode,
+} from '@dovo/studio-core/themes'
 
 function createMobileColors(palette: StudioThemeId, mode: StudioThemeMode) {
   const tokens = studioThemes[palette][mode]
@@ -36,6 +41,7 @@ export function createMobileTheme(
     mode,
     colors,
     styles: createStyles(colors),
+    syntaxTheme: code?.theme ?? studioSyntaxTheme(palette, mode),
     code: code ? { colors: nativeCodeColors(code.theme), custom: code.custom } : undefined,
   }
 }

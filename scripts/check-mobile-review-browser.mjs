@@ -1,14 +1,27 @@
 import assert from 'node:assert/strict'
-import { mkdir } from 'node:fs/promises'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = new URL('../', import.meta.url).pathname.replace(/\/$/, '')
 const mobile = root + '/apps/mobile'
+const themeStub = `import {useMemo} from 'react';
+        export const useTheme=()=>{
+          const dark=window.diffDark;const custom=window.customCode;
+          const colors=dark?{selection:'#443',success:'#8ad5b0',error:'#ff7e97',background:'#16181c',surface:'#25282d',muted:'#a0a0a0',text:'#ededed'}:{selection:'#ffc',success:'#080',error:'#800',background:'#fff',surface:'#eee',muted:'#666',text:'#111'};
+          const syntaxTheme=useMemo(()=>({name:custom?'custom':dark?'dark':'light',type:dark?'dark':'light',fg:custom?.colors.text??colors.text,bg:custom?.colors.background??colors.background,tokenColors:[{scope:['keyword','storage'],settings:{foreground:custom?'#c02d69':dark?'#7cc9ff':'#005cc5'}},{scope:'comment',settings:{foreground:'#777777',fontStyle:'italic'}},{scope:'entity.name.type',settings:{foreground:'#445566',fontStyle:'bold underline'}}]}),[dark,custom]);
+          return {colors,styles:{muted:{color:colors.muted}},syntaxTheme,code:custom};
+        };`
 const built = await bundleBrowser(
   {
     stdin: {
       resolveDir: mobile,
       loader: 'tsx',
-      contents: `import {createRoot} from 'react-dom/client';import {DiffView} from './src/tasks/preview/interactive-diff-view';import {DiffView as IosDiffView} from './src/tasks/preview/diff-view.ios';const root=createRoot(document.getElementById('app'));window.renderDiff=()=>root.render(<DiffView path="Card.tsx" patch={'diff --git a/file b/file\\n--- a/file\\n+++ b/file\\n@@ -1,2 +1,2 @@\\n-export const old = <span title="old" />;\\n+export const next = <span title="new" />;\\n context\\n'} focusedLine={1} onLinePress={(line,side)=>window.comment={line,side}} annotations={[{line:1,side:'additions',text:'Check persistence'}]}/>);window.renderNativeDiff=()=>root.render(<IosDiffView {...window.nativeOptions}/>);window.renderDiff();`,
+      contents: `import {createRoot} from 'react-dom/client';
+        import {DiffView} from './src/tasks/preview/diff-view.ios';
+        import {CodeBlock} from './src/ui/content/code-block';
+        const root=createRoot(document.getElementById('app'));
+        window.renderDiff=()=>root.render(<DiffView {...window.diffOptions}/>);
+        window.renderCode=()=>root.render(<CodeBlock content={window.source} language={window.language}/>);
+        window.diffOptions={path:'Card.tsx',patch:'--- a/file\\n+++ b/file\\n@@ -1,2 +1,2 @@\\n-export const old = <span title="old" />;\\n+export const next = <span title="new" />;\\n context\\n',focusedLine:1,onLinePress:(line,side)=>window.comment={line,side},annotations:[{line:1,side:'additions',text:'Check persistence'}]};
+        window.renderDiff();`,
     },
     bundle: true,
     write: false,
@@ -20,17 +33,37 @@ const built = await bundleBrowser(
   },
   [
     {
-      path: 'react-native-diffs',
-      contents: 'export const DiffsView=({content})=><pre data-native-diff>{content}</pre>;',
+      path: './syntax-engine',
+      importer: mobile,
+      // Only the engine is substituted: renderers, hook, grammar loading and tokenization are real.
+      contents: `import {createSyntaxHighlighter} from './src/ui/content/syntax-highlighter';
+        import {createOnigurumaEngine} from '@shikijs/engine-oniguruma';
+        const prepare=createSyntaxHighlighter(()=>createOnigurumaEngine(import('@shikijs/engine-oniguruma/wasm-inlined')));
+        export async function prepareSyntax(...args){
+          if(window.failSyntax) throw new Error('Test: engine unavailable');
+          if(window.delaySyntax) await new Promise(resolve=>window.resolveSyntax=resolve);
+          return prepare(...args);
+        }`,
     },
     {
       path: 'react-native',
-      contents: `import {forwardRef,useImperativeHandle} from 'react';export const View=({children,style})=><div style={style}>{children}</div>;export const ScrollView=View;export const Pressable=({children,accessibilityLabel,onPress,disabled,style})=><button style={style} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Switch=({value,onValueChange})=><input type="checkbox" checked={value} onChange={e=>onValueChange(e.target.checked)}/>;export const Platform={OS:'ios'};export const useWindowDimensions=()=>({width:360,fontScale:window.diffFontScale??1});export const FlatList=forwardRef(({data,renderItem,keyExtractor,style},ref)=>{window.diffListWidth=style.width;useImperativeHandle(ref,()=>({scrollToIndex:input=>window.scrollTarget=input,scrollToOffset:()=>{}}));return <div>{data.map((item,index)=><div key={keyExtractor(item,index)}>{renderItem({item})}</div>)}</div>});`,
+      contents: `import {forwardRef,useImperativeHandle} from 'react';
+        export const View=({children,style,...props})=><div style={style} role={props.accessibilityRole}>{children}</div>;
+        export const ScrollView=({children,contentContainerStyle,style})=><div style={style}><div style={contentContainerStyle}>{children}</div></div>;
+        export const Pressable=({children,accessibilityLabel,onPress,disabled,style})=><button style={style} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;
+        export const Switch=({value,onValueChange})=><input type="checkbox" checked={value} onChange={e=>onValueChange(e.target.checked)}/>;
+        export const Platform={OS:'ios'};export const useWindowDimensions=()=>({width:360,fontScale:window.diffFontScale??1});
+        export const FlatList=forwardRef(({data,renderItem,keyExtractor,style},ref)=>{window.diffListWidth=style.width;useImperativeHandle(ref,()=>({scrollToIndex:input=>window.scrollTarget=input,scrollToOffset:()=>{}}));return <div>{data.map((item,index)=><div key={keyExtractor(item,index)}>{renderItem({item})}</div>)}</div>});`,
+    },
+    {
+      path: './text',
+      importer: mobile + '/src/ui/content',
+      contents: `export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole} style={{...style,...(typeof style?.lineHeight==='number'?{lineHeight:style.lineHeight+'px'}:{})}}>{children}</span>;`,
     },
     {
       path: '../../ui/content/text',
       importer: mobile,
-      contents: `export const Text=({children,style})=><span style={{...style,...(typeof style?.lineHeight === "number" ? {lineHeight:style.lineHeight+"px"}: {})}}>{children}</span>;`,
+      contents: `export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole} style={{...style,...(typeof style?.lineHeight==='number'?{lineHeight:style.lineHeight+'px'}:{})}}>{children}</span>;`,
     },
     {
       path: '../../runtime/preferences/app-preferences',
@@ -40,7 +73,12 @@ const built = await bundleBrowser(
     {
       path: '../../ui/theme',
       importer: mobile,
-      contents: `export const useTheme=()=>({colors:window.diffDark ? {selection:'#443',success:'#8ad5b0',error:'#ff7e97',background:'#16181c',surface:'#25282d',muted:'#a0a0a0',text:'#ededed',syntaxKeyword:'#7cc9ff',syntaxFunction:'#7cc9ff',warning:'#e7c681'} : {selection:'#ffc',success:'#080',error:'#800',background:'#fff',surface:'#eee',muted:'#666',text:'#111',syntaxKeyword:'#005cc5',syntaxFunction:'#005cc5',warning:'#946200'},styles:{},code:window.customCode});`,
+      contents: themeStub,
+    },
+    {
+      path: '../theme',
+      importer: mobile + '/src/ui/content',
+      contents: themeStub,
     },
   ],
 )
@@ -51,6 +89,14 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const keywords = page.getByText('export', { exact: true })
+  await keywords.first().waitFor()
+  assert.equal(await keywords.count(), 2)
+  for (const keyword of await keywords.all())
+    assert.equal(
+      await keyword.evaluate((element) => getComputedStyle(element).color),
+      'rgb(0, 92, 197)',
+    )
   await page.getByRole('button', { name: 'Comment on new line 1' }).click()
   assert.deepEqual(await page.evaluate(() => window.comment), { line: 1, side: 'additions' })
   await page.getByRole('button', { name: 'Comment on old line 1' }).click()
@@ -58,13 +104,6 @@ try {
   assert.equal(await page.getByText('Check persistence', { exact: true }).isVisible(), true)
   await page.waitForFunction(() => window.scrollTarget)
   assert.equal(await page.evaluate(() => window.scrollTarget.index), 2)
-  const keywords = page.getByText('export', { exact: true })
-  assert.equal(await keywords.count(), 2)
-  for (const keyword of await keywords.all())
-    assert.equal(
-      await keyword.evaluate((element) => getComputedStyle(element).color),
-      'rgb(0, 92, 197)',
-    )
   const originalWidth = await page.evaluate(() => window.diffListWidth)
   await page.evaluate(() => {
     window.diffFontScale = 2
@@ -79,7 +118,6 @@ try {
   )
   await page.getByRole('checkbox').check()
   assert.equal(await page.getByRole('checkbox').isChecked(), true)
-  assert.equal(await page.getByText('Check persistence', { exact: true }).isVisible(), true)
   await page.evaluate(() => {
     window.diffDark = true
     window.renderDiff()
@@ -91,76 +129,43 @@ try {
         getComputedStyle(element).color === 'rgb(124, 201, 255)',
     ),
   )
-  for (const keyword of await keywords.all())
-    assert.equal(
-      await keyword.evaluate((element) => getComputedStyle(element).color),
-      'rgb(124, 201, 255)',
-    )
-  if (process.env.DOVO_REVIEW_SCREENSHOTS) {
-    await mkdir(process.env.DOVO_REVIEW_SCREENSHOTS, { recursive: true })
-    await page.addStyleTag({
-      content:
-        'body{margin:0;font:14px system-ui;background:#fff}body:before{content:"Mobile diff · sample test data";display:block;padding:16px;background:#eee;color:#555}button{border:0;background:transparent}span{display:inline-block}',
-    })
-    await page.screenshot({
-      path: process.env.DOVO_REVIEW_SCREENSHOTS + '/review-mobile-diff.png',
-      fullPage: true,
-    })
-  }
-  // Verify the real iOS wrapper: its native renderer requires an explicit fence language.
+  assert.equal(await page.getByRole('checkbox').isChecked(), true)
+  assert.equal(await page.getByText('Check persistence', { exact: true }).isVisible(), true)
+
   await page.evaluate(() => {
-    window.nativeOptions = {
-      path: 'Card.tsx',
-      patch:
-        '--- a/file\n+++ b/file\n@@ -1 +1 @@\n-export const old = "```";\n+export const next = "new";\n',
-    }
-    window.renderNativeDiff()
-  })
-  const native = page.locator('[data-native-diff]')
-  await native.waitFor()
-  assert.ok((await native.textContent()).startsWith('````diff tsx\n'))
-  assert.ok((await native.textContent()).endsWith('\n````'))
-  await page.evaluate(() => {
-    window.nativeOptions = {
+    window.diffOptions = {
       path: 'new.tsx',
       previousPath: 'old.py',
       patch:
         '--- a/file\n+++ b/file\n@@ -1 +1 @@\n-def example(): pass\n+export const next = <span />;\n',
     }
-    window.renderNativeDiff()
+    window.renderDiff()
   })
-  await native.waitFor({ state: 'detached' })
-  assert.equal(await page.getByText('def', { exact: true }).count(), 1)
-  assert.equal(await page.getByText('export', { exact: true }).count(), 1)
+  await page.getByText('def', { exact: true }).waitFor()
+  assert.equal(await keywords.count(), 1)
   await page.evaluate(() => {
     window.customCode = {
-      custom: true,
       colors: {
         background: '#fefdfa',
         text: '#123456',
         gutter: '#777777',
-        comment: '#888888',
-        keyword: '#c02d69',
-        function: '#112233',
-        string: '#008855',
-        number: '#885500',
-        type: '#445566',
+        selection: '#ffeebb',
+        addition: '#008855',
+        deletion: '#cc3344',
       },
     }
-    window.nativeOptions = {
+    window.diffOptions = {
       path: 'file.ts',
       patch: '@@ -1 +1 @@\n-export const n = 1;\n+export const n = 2;\n',
     }
-    window.renderNativeDiff()
+    window.renderDiff()
   })
-  await page.getByText('Wrap lines', { exact: true }).waitFor()
-  assert.equal(await page.locator('[data-native-diff]').count(), 0)
-  for (const keyword of await page.getByText('export', { exact: true }).all())
-    assert.equal(
-      await keyword.evaluate((element) => getComputedStyle(element).color),
-      'rgb(192, 45, 105)',
-    )
-  // App and code appearance can be selected independently. Gutter labels belong to code.
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('span')].some(
+      (element) =>
+        element.textContent === 'export' && getComputedStyle(element).color === 'rgb(192, 45, 105)',
+    ),
+  )
   for (const [appDark, background, gutter] of [
     [true, '#fefdfa', '#777777'],
     [false, '#16181c', '#bbbbbb'],
@@ -168,9 +173,8 @@ try {
     await page.evaluate(
       ({ appDark, background, gutter }) => {
         window.diffDark = appDark
-        window.customCode.colors.background = background
-        window.customCode.colors.gutter = gutter
-        window.renderNativeDiff()
+        window.customCode = { colors: { ...window.customCode.colors, background, gutter } }
+        window.renderDiff()
       },
       { appDark, background, gutter },
     )
@@ -184,22 +188,69 @@ try {
       expected,
     )
     assert.equal(await lineNumbers.count(), 2)
-    for (const line of await lineNumbers.all())
-      assert.equal(
-        await line.locator('span').evaluate((element) => getComputedStyle(element).color),
-        expected,
-      )
   }
-  // MobileAppearance supplies a code palette even for the default app theme.
+
+  // The ordinary source viewer uses the same loaded grammar and complete token styles.
   await page.evaluate(() => {
-    window.customCode.custom = false
-    window.renderNativeDiff()
+    window.source = '// Héllo 👋\r\n\r\n\tclass Example {}\r\n'
+    window.language = 'ts'
+    window.renderCode()
   })
-  assert.equal(await page.locator('[data-native-diff]').count(), 0)
-  assert.equal(await page.getByText('Wrap lines', { exact: true }).isVisible(), true)
+  const name = page.getByText('Example', { exact: true })
+  await name.waitFor()
+  assert.deepEqual(
+    await name.evaluate((element) => ({
+      weight: getComputedStyle(element).fontWeight,
+      decoration: getComputedStyle(element).textDecorationLine,
+    })),
+    { weight: '700', decoration: 'underline' },
+  )
+  assert.equal(
+    await page
+      .getByText('// Héllo 👋', { exact: true })
+      .evaluate((element) => getComputedStyle(element).fontStyle),
+    'italic',
+  )
+  const codeText = await name.evaluate((element) => element.parentElement.parentElement.textContent)
+  assert.equal(codeText, '// Héllo 👋\r\n\r\n\tclass Example {}\r\n')
+  await page.evaluate(() => {
+    window.language = 'unknown'
+    window.source = '<script>literal & source</script>'
+    window.renderCode()
+  })
+  await page.getByText('<script>literal & source</script>', { exact: true }).waitFor()
+  assert.equal(await name.count(), 0)
+
+  // Old asynchronous results must not replace a newly selected file.
+  await page.evaluate(() => {
+    window.delaySyntax = true
+    window.source = 'const oldFile = 1;'
+    window.language = 'ts'
+    window.renderCode()
+  })
+  await page.waitForFunction(() => window.resolveSyntax)
+  await page.evaluate(() => {
+    window.language = 'unknown'
+    window.source = 'new file'
+    window.renderCode()
+  })
+  await page.getByText('new file', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.delaySyntax = false
+    window.resolveSyntax()
+  })
+  assert.equal(await page.getByText('new file', { exact: true }).isVisible(), true)
+  await page.evaluate(() => {
+    window.failSyntax = true
+    window.language = 'ts'
+    window.source = 'const readable = true;'
+    window.renderCode()
+  })
+  await page.getByRole('alert').waitFor()
+  assert.equal(await page.getByText('const readable = true;', { exact: true }).isVisible(), true)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile review diff: syntax, independent app/code gutter themes, font scaling, wrapping, line comments, annotations, iOS language fences and cross-language renames passed',
+    'Mobile diff/code: real Shiki tokens, full themes/styles, Unicode/CRLF, wrapping, comments, annotations, scaling, renames, stale results and readable failure fallback passed.',
   )
 } finally {
   await browser.close()

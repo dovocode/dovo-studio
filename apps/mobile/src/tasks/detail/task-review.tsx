@@ -574,6 +574,8 @@ export function TaskReview({
             key={`${checkpoint}:${checkoutId}:${file?.path}:${since?.id ?? ''}`}
             patch={patch}
             path={file?.path}
+            before={file?.before}
+            after={file?.after}
             focusedLine={focusedLine}
             onLinePress={
               !checkpoint && !checkoutId && !since && scope === 'working'

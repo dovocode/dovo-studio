@@ -115,6 +115,7 @@ function TaskRowView({
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
   const presentation = taskPresentation(task, needsInput, now)
   const unread = hasUnreadTaskActivity(task)
+  const compact = task.archived || !!task.archivedAt
   const status = !owner.online && owner.runtimeId ? 'Offline · Cached' : presentation.label
   const offline = !owner.online && !!owner.runtimeId
   const compactStatus = offline ? 'Offline' : presentation.compactLabel
@@ -145,7 +146,10 @@ function TaskRowView({
             aria-current={selected ? 'true' : undefined}
             data-unread={unread || undefined}
             className={cn(
-              'mb-1 h-auto min-h-[72px] w-full min-w-0 flex-col items-stretch gap-1 whitespace-normal rounded-xl border border-transparent px-2.5 py-2 text-left font-normal',
+              'mb-1 h-auto w-full min-w-0 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
+              compact
+                ? 'min-h-9 flex-row items-center gap-2 py-1.5'
+                : 'min-h-[72px] flex-col items-stretch gap-1 py-2',
               selected || multiSelected || selectedChildId
                 ? 'border-border/50 bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
                 : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
@@ -153,96 +157,106 @@ function TaskRowView({
             onClick={onSelect}
             disabled={disabled}
           >
-            <span
-              className={cn(
-                'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
-                editable &&
-                  'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
-              )}
-            >
-              <ProjectIcon repository={repository} className="size-4" />
-              <span className="min-w-0 flex-1 truncate" title={`${statusDetail} · ${agentDetail}`}>
-                {repository?.name ?? 'No project'}
-              </span>
-              {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-              {task.execution === 'worktree' && (
-                <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
-              )}
+            {compact ? (
+              <ProjectIcon repository={repository} className="size-4 shrink-0" />
+            ) : (
               <span
                 className={cn(
-                  'flex shrink-0 items-center gap-1 text-xs',
-                  !offline && presentation.state === 'Working' && 'text-sky-400',
-                  !offline &&
-                    ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
-                    'text-emerald-400',
-                  !offline && presentation.state === 'Failed' && 'text-destructive',
+                  'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
+                  editable &&
+                    'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                 )}
               >
-                {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
-                {compactStatus}
+                <ProjectIcon repository={repository} className="size-4" />
+                <span
+                  className="min-w-0 flex-1 truncate"
+                  title={`${statusDetail} · ${agentDetail}`}
+                >
+                  {repository?.name ?? 'No project'}
+                </span>
+                {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
+                {task.execution === 'worktree' && (
+                  <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
+                )}
+                <span
+                  className={cn(
+                    'flex shrink-0 items-center gap-1 text-xs',
+                    !offline && presentation.state === 'Working' && 'text-sky-400',
+                    !offline &&
+                      ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
+                      'text-emerald-400',
+                    !offline && presentation.state === 'Failed' && 'text-destructive',
+                  )}
+                >
+                  {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
+                  {compactStatus}
+                </span>
               </span>
-            </span>
+            )}
             <span
               className={cn(
-                'block w-full truncate text-sm leading-5 text-foreground',
-                unread ? 'font-semibold' : 'font-medium',
+                'block min-w-0 truncate text-sm font-medium leading-5',
+                compact ? 'flex-1' : 'w-full',
+                unread ? 'text-foreground' : 'text-foreground/40',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
             >
               {task.title}
             </span>
-            <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
-              <GitBranch className="size-3 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
-              {!!linkedPulls.length && (
-                <span
-                  className="inline-flex shrink-0 items-center gap-0.5"
-                  aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
-                  title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
-                >
-                  {stack ? (
-                    <Layers
-                      className={cn(
-                        'size-3',
-                        pullRequestIconTone(task.pullStatus?.state, task.pullStatus?.draft),
-                      )}
-                      aria-label={pullStackLabel(stack)}
-                    />
-                  ) : (
-                    <PullRequestIcon
-                      state={
-                        task.pullStatus?.url === linkedPulls[0]?.url
-                          ? task.pullStatus.state
-                          : undefined
-                      }
-                      draft={
-                        task.pullStatus?.url === linkedPulls[0]?.url
-                          ? task.pullStatus.draft
-                          : undefined
-                      }
-                    />
-                  )}
-                  {linkedPulls[0]!.number}
-                  {stack && (
-                    <span className="text-[0.625rem]">
-                      {stack.complete ? `${stack.position}/${stack.size}` : 'Stack'}
-                    </span>
-                  )}
-                  {linkedPulls.length > 1 && (
-                    <span className="text-[0.625rem]">+{linkedPulls.length - 1}</span>
-                  )}
-                </span>
-              )}
-              <RuntimeIcon
-                icon={owner.runtimeIcon}
-                className="size-3 shrink-0"
-                aria-label={host ?? 'Unknown host'}
-              />
-              {provider && (
-                <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5" />
-              )}
-            </span>
+            {!compact && (
+              <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
+                <GitBranch className="size-3 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
+                {!!linkedPulls.length && (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-0.5"
+                    aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
+                    title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
+                  >
+                    {stack ? (
+                      <Layers
+                        className={cn(
+                          'size-3',
+                          pullRequestIconTone(task.pullStatus?.state, task.pullStatus?.draft),
+                        )}
+                        aria-label={pullStackLabel(stack)}
+                      />
+                    ) : (
+                      <PullRequestIcon
+                        state={
+                          task.pullStatus?.url === linkedPulls[0]?.url
+                            ? task.pullStatus.state
+                            : undefined
+                        }
+                        draft={
+                          task.pullStatus?.url === linkedPulls[0]?.url
+                            ? task.pullStatus.draft
+                            : undefined
+                        }
+                      />
+                    )}
+                    {linkedPulls[0]!.number}
+                    {stack && (
+                      <span className="text-[0.625rem]">
+                        {stack.complete ? `${stack.position}/${stack.size}` : 'Stack'}
+                      </span>
+                    )}
+                    {linkedPulls.length > 1 && (
+                      <span className="text-[0.625rem]">+{linkedPulls.length - 1}</span>
+                    )}
+                  </span>
+                )}
+                <RuntimeIcon
+                  icon={owner.runtimeIcon}
+                  className="size-3 shrink-0"
+                  aria-label={host ?? 'Unknown host'}
+                />
+                {provider && (
+                  <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5" />
+                )}
+              </span>
+            )}
           </Button>
         </TooltipTrigger>
         <TooltipContent
@@ -299,14 +313,17 @@ function TaskRowView({
           </div>
         </TooltipContent>
       </Tooltip>
-      <WorkingSubagents
-        subagents={subagents}
-        online={owner.online}
-        disabled={disabled}
-        selectedChildId={selectedChildId}
-        onOpenSubagent={onOpenSubagent}
-      />
-      {selectedChildId &&
+      {!compact && (
+        <WorkingSubagents
+          subagents={subagents}
+          online={owner.online}
+          disabled={disabled}
+          selectedChildId={selectedChildId}
+          onOpenSubagent={onOpenSubagent}
+        />
+      )}
+      {!compact &&
+        selectedChildId &&
         !subagents.some((agent) => (agent.taskId ?? agent.id) === selectedChildId) && (
           <p className="mb-2 px-2.5 text-[0.625rem] text-muted-foreground">Viewing subagent</p>
         )}

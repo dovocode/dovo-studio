@@ -320,11 +320,18 @@ try {
   // Opening a collapsed section renders its rows on demand, still windowed.
   await page.locator('summary').filter({ hasText: 'Settled' }).click()
   await page.getByText('Settled thread 0', { exact: true }).waitFor({ state: 'attached' })
+  const settledRow = page.getByRole('button', { name: /Settled thread 0/, exact: true })
+  // The project badge falls back to its initial; no status, branch or device text remains.
+  assert.equal(await settledRow.textContent(), 'PRSettled thread 0')
+  assert.equal(await settledRow.locator('[aria-hidden="true"]').count(), 1)
+  assert.equal(await settledRow.locator('[data-row-icon]').count(), 0)
+  await settledRow.click()
+  assert.equal(await page.evaluate(() => window.selected.task.id), 'settled-0')
   await page.locator('summary').filter({ hasText: 'Settled' }).click()
   await page.waitForFunction(
     () =>
-      ![...document.querySelectorAll('[data-row-icon]')].some((icon) =>
-        icon.closest('button')?.textContent?.includes('Settled thread'),
+      ![...document.querySelectorAll('button')].some((button) =>
+        button.textContent?.includes('Settled thread'),
       ),
   )
 

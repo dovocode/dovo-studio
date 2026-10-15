@@ -133,11 +133,59 @@ function TaskListRowView({
     'Project checkout'
   const icon = projectIcon(repository)
   const StatusIcon = statusIcons[state]
+  const compact = task.archived || !!task.archivedAt
+
+  const projectBadge = (
+    <View
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: 5,
+        overflow: 'hidden',
+        backgroundColor: icon ? colors.accent : projectIconColor(repository),
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {icon ? (
+        <Image source={{ uri: icon }} style={{ width: 22, height: 22 }} />
+      ) : (
+        <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
+          {projectIconInitials(repository, row.projectName || 'P')}
+        </Text>
+      )}
+    </View>
+  )
+  const title = (
+    <Text
+      numberOfLines={1}
+      style={{
+        flex: 1,
+        color: colors.text,
+        opacity: hasUnreadTaskActivity(task) ? 1 : 0.4,
+        fontSize: 17,
+        lineHeight: 22,
+        fontWeight: '500',
+      }}
+    >
+      {task.title}
+    </Text>
+  )
 
   const content = (
     <View style={{ marginVertical: 3, borderRadius: 12, backgroundColor: colors.surface }}>
-      {/* The menu shares the metadata line, leaving the title its full width. */}
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+      <View style={{ flexDirection: 'row', alignItems: compact ? 'center' : 'flex-start' }}>
+        {compact && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Task details for ${task.title}`}
+            disabled={disabled}
+            onPress={onDetails}
+            style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+          >
+            {projectBadge}
+          </Pressable>
+        )}
         <Pressable
           testID={testID}
           accessibilityRole="button"
@@ -147,7 +195,9 @@ function TaskListRowView({
               ? 'Open conversation.'
               : selectionActive
                 ? 'Tap to toggle selection.'
-                : 'Open conversation. Touch and hold to select. Task details are in the actions menu.'
+                : compact
+                  ? 'Open conversation. Touch and hold to select. Tap the project icon for task details.'
+                  : 'Open conversation. Touch and hold to select. Task details are in the actions menu.'
           }
           accessibilityState={{ disabled, selected }}
           accessibilityActions={
@@ -163,14 +213,15 @@ function TaskListRowView({
             flex: 1,
             minWidth: 0,
             flexDirection: 'row',
-            paddingVertical: 12,
-            paddingLeft: 12,
+            minHeight: compact ? 44 : undefined,
+            paddingVertical: compact ? 11 : 12,
+            paddingLeft: compact ? 0 : 12,
             paddingRight: 12,
             opacity: pressed ? 0.55 : 1,
           })}
         >
           {selectionActive && (
-            <View style={{ width: 28, alignItems: 'center', paddingTop: 7 }}>
+            <View style={{ width: 28, alignItems: 'center', paddingTop: compact ? 1 : 7 }}>
               <View
                 style={{
                   width: 20,
@@ -187,97 +238,72 @@ function TaskListRowView({
               </View>
             </View>
           )}
-          <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                minHeight: 32,
-                paddingRight: car ? 0 : 32,
-              }}
-            >
+          {compact ? (
+            title
+          ) : (
+            <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
               <View
                 style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 5,
-                  overflow: 'hidden',
-                  backgroundColor: icon ? colors.accent : projectIconColor(repository),
+                  flexDirection: 'row',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  gap: 8,
+                  minHeight: 32,
+                  paddingRight: car ? 0 : 32,
                 }}
               >
-                {icon ? (
-                  <Image source={{ uri: icon }} style={{ width: 22, height: 22 }} />
-                ) : (
-                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
-                    {projectIconInitials(repository, row.projectName || 'P')}
-                  </Text>
-                )}
-              </View>
-              <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
-                {row.projectName || 'No project'}
-              </Text>
-              {task.pinned && <Pin size={12} color={colors.muted} />}
-              {worktree && <GitFork size={12} color={colors.muted} />}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                {StatusIcon && <StatusIcon size={14} color={stateColor} />}
-                <Text style={{ color: stateColor, fontSize: 13 }}>
-                  {working || row.needsInput || done || failed
-                    ? `${state}${age ? ` ${age}` : ''}`
-                    : age || state}
+                {projectBadge}
+                <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
+                  {row.projectName || 'No project'}
                 </Text>
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-              <Text
-                numberOfLines={1}
-                style={{
-                  flex: 1,
-                  color: colors.text,
-                  fontSize: 17,
-                  lineHeight: 22,
-                  fontWeight: hasUnreadTaskActivity(task) ? '600' : '500',
-                }}
-              >
-                {task.title}
-              </Text>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <GitBranch size={12} color={colors.muted} />
-              <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
-                {branch}
-              </Text>
-              {showDevice && !car && (
-                <DeviceLabel
-                  runtimeIcon={owner.runtimeIcon}
-                  task={task}
-                  runtimeHost={row.runtimeName}
-                  compact
-                />
-              )}
-              {row.reachability === 'offline' && (
-                <Text style={[styles.muted, { fontSize: 13 }]}>Offline</Text>
-              )}
-              {task.pullStatus?.stack && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <Icon name="stack" size={12} color={colors.accent} />
-                  <Text style={{ color: colors.accent, fontSize: 12 }}>
-                    {pullStackLabel(task.pullStatus.stack)}
+                {task.pinned && <Pin size={12} color={colors.muted} />}
+                {worktree && <GitFork size={12} color={colors.muted} />}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  {StatusIcon && <StatusIcon size={14} color={stateColor} />}
+                  <Text style={{ color: stateColor, fontSize: 13 }}>
+                    {working || row.needsInput || done || failed
+                      ? `${state}${age ? ` ${age}` : ''}`
+                      : age || state}
                   </Text>
                 </View>
-              )}
-              {!!agent && (
-                <>
-                  <HarnessIcon provider={agent.provider} />
-                  <Text style={[styles.muted, { fontSize: 12 }]}>{providerName}</Text>
-                </>
-              )}
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                {title}
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <GitBranch size={12} color={colors.muted} />
+                <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
+                  {branch}
+                </Text>
+                {showDevice && !car && (
+                  <DeviceLabel
+                    runtimeIcon={owner.runtimeIcon}
+                    task={task}
+                    runtimeHost={row.runtimeName}
+                    compact
+                  />
+                )}
+                {row.reachability === 'offline' && (
+                  <Text style={[styles.muted, { fontSize: 13 }]}>Offline</Text>
+                )}
+                {task.pullStatus?.stack && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <Icon name="stack" size={12} color={colors.accent} />
+                    <Text style={{ color: colors.accent, fontSize: 12 }}>
+                      {pullStackLabel(task.pullStatus.stack)}
+                    </Text>
+                  </View>
+                )}
+                {!!agent && (
+                  <>
+                    <HarnessIcon provider={agent.provider} />
+                    <Text style={[styles.muted, { fontSize: 12 }]}>{providerName}</Text>
+                  </>
+                )}
+              </View>
             </View>
-          </View>
+          )}
         </Pressable>
-        {!car && (
+        {!car && !compact && (
           <View style={{ position: 'absolute', right: 0, top: 6 }}>
             <TaskRowMenu
               testID={`${testID} actions`}
@@ -290,14 +316,16 @@ function TaskListRowView({
           </View>
         )}
       </View>
-      <WorkingSubagents
-        subagents={subagents}
-        online={row.online}
-        disabled={disabled}
-        car={car}
-        onSelect={onSelect}
-        onOpenSubagent={onOpenSubagent}
-      />
+      {!compact && (
+        <WorkingSubagents
+          subagents={subagents}
+          online={row.online}
+          disabled={disabled}
+          car={car}
+          onSelect={onSelect}
+          onOpenSubagent={onOpenSubagent}
+        />
+      )}
       {!!actions.error && (
         <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 8 }]}>
           {actions.error}

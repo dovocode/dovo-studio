@@ -346,8 +346,15 @@ composer; an untouched composer does not create a saved task.
 ### Mobile walkthrough
 
 The native app uses Expo UI buttons and pickers, SecureStore device credentials, and the shared
-extension lifecycle. It requires a native development/release build: Expo Go does not include
-`react-native-diffs`, Nitro or the terminal WebView dependencies.
+extension lifecycle. It requires a native development/release build: Expo Go does not include the
+native Shiki engine or the terminal WebView dependencies.
+
+Mobile diffs and standalone code fences render with React Native text and native Oniguruma through
+`react-native-shiki-engine` and Shiki. They use the complete selected code theme, including imported
+TextMate rules and token font styles. Task diffs use saved before/after contents to preserve
+multiline syntax state outside visible hunks; patch-only PR diffs reset state between hunks. Large
+inputs stay readable as plain text, and a highlighting initialization failure shows a plain-text
+fallback message. Nested Markdown fences keep the native Markdown renderer's highlighting.
 
 ```sh
 pnpm dev:mobile

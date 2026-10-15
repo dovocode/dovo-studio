@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useCallback, useMemo, useState, useRef } from 'react'
 import {
   FlatList,
   ScrollView,
@@ -9,51 +9,29 @@ import {
   useWindowDimensions,
 } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { useTheme, type MobileColors } from '../../ui/theme'
+import { useTheme } from '../../ui/theme'
 import type { ReviewDiffProps } from './diff-lines'
-import { highlightedDiffRows, type HighlightedDiffRow } from './diff-syntax'
+import { diffLanguages, highlightedDiffRows, type HighlightedDiffRow } from './diff-syntax'
 import { diffContentWidth } from './diff-layout'
+import { diffRows } from './diff-lines'
+import { useSyntax } from '../../ui/content/use-syntax'
+import { SyntaxText } from '../../ui/content/syntax-text'
+import type { SyntaxTokenize } from '../../ui/content/syntax-highlighter'
 import { carZoom, useCarMode } from '../../runtime/preferences/app-preferences'
 
 const monospace = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
 
-function syntaxColor(kind: string | undefined, colors: MobileColors) {
-  switch (kind) {
-    case 'comment':
-    case 'prolog':
-    case 'doctype':
-      return colors.muted
-    case 'keyword':
-    case 'tag':
-    case 'boolean':
-      return colors.syntaxKeyword
-    case 'function':
-      return colors.syntaxFunction
-    case 'string':
-    case 'char':
-    case 'attr-value':
-    case 'template-string':
-      return colors.success
-    case 'number':
-    case 'constant':
-    case 'class-name':
-    case 'builtin':
-    case 'attr-name':
-      return colors.warning
-    default:
-      return colors.text
-  }
-}
-// Android: upstream react-native-diffs only implements the iOS renderer.
 export function DiffView({
   patch,
   path,
   previousPath,
+  before,
+  after,
   focusedLine,
   onLinePress,
   annotations = [],
 }: ReviewDiffProps) {
-  const { colors, styles, code } = useTheme()
+  const { colors, styles, code, syntaxTheme } = useTheme()
   const codeColors = code
     ? {
         ...colors,
@@ -61,22 +39,27 @@ export function DiffView({
         surface: code.colors.background,
         text: code.colors.text,
         muted: code.colors.gutter,
-        syntaxKeyword: code.colors.keyword,
-        syntaxFunction: code.colors.function,
-        success: code.colors.string,
-        warning: code.colors.number,
       }
     : colors
   const addition = code?.colors.addition ?? colors.success
   const deletion = code?.colors.deletion ?? colors.error
+  const changeAlpha = syntaxTheme.type === 'dark' ? '33' : '15'
   const { width, fontScale } = useWindowDimensions()
   const car = useCarMode()
   const textScale = fontScale * (car ? carZoom : 1)
   const [wrap, setWrap] = useState(false)
-  const rows = useMemo(
-    () => highlightedDiffRows(patch, path, previousPath),
+  const plainRows = useMemo(() => diffRows(patch), [patch])
+  const languages = useMemo(
+    () => diffLanguages(patch, path, previousPath),
     [patch, path, previousPath],
   )
+  const highlight = useCallback(
+    (tokenize: SyntaxTokenize) =>
+      highlightedDiffRows(patch, path, previousPath, tokenize, { before, after }),
+    [patch, path, previousPath, before, after],
+  )
+  const syntax = useSyntax(languages, highlight)
+  const rows = syntax?.value ?? plainRows
   const contentWidth = useMemo(
     () =>
       diffContentWidth(
@@ -88,13 +71,13 @@ export function DiffView({
   )
   const listRef = useRef<FlatList<HighlightedDiffRow>>(null)
   useEffect(() => {
-    const index = rows.findIndex((row) => row.after === focusedLine)
+    const index = plainRows.findIndex((row) => row.after === focusedLine)
     if (focusedLine === undefined || index < 0) return
     const frame = requestAnimationFrame(() =>
       listRef.current?.scrollToIndex({ index, viewPosition: 0.3, animated: false }),
     )
     return () => cancelAnimationFrame(frame)
-  }, [rows, focusedLine])
+  }, [plainRows, focusedLine])
   const render = ({ item }: { item: HighlightedDiffRow }) => (
     <View>
       <View
@@ -104,17 +87,18 @@ export function DiffView({
             focusedLine !== undefined && item.after === focusedLine
               ? (code?.colors.selection ?? colors.selection)
               : item.kind === 'addition'
-                ? `${addition}15`
+                ? `${addition}${changeAlpha}`
                 : item.kind === 'deletion'
-                  ? `${deletion}15`
+                  ? `${deletion}${changeAlpha}`
                   : item.kind === 'header'
                     ? codeColors.surface
                     : codeColors.background,
-          minHeight: onLinePress ? 44 : 22,
+          minHeight: 20,
         }}
       >
         <Pressable
-          style={{ minHeight: onLinePress ? 44 : 22, justifyContent: 'center' }}
+          // Keep the gutter on the first visual line when source wraps.
+          style={{ justifyContent: 'flex-start' }}
           disabled={!onLinePress || (item.after === undefined && item.before === undefined)}
           accessibilityRole="button"
           accessibilityLabel={`Comment on ${item.kind === 'deletion' ? 'old' : 'new'} line ${item.kind === 'deletion' ? item.before : item.after}`}
@@ -131,7 +115,8 @@ export function DiffView({
               color: codeColors.muted,
               fontFamily: monospace,
               fontSize: 11,
-              lineHeight: 22,
+              lineHeight: 20,
+              includeFontPadding: false,
               textAlign: 'right',
               paddingRight: 6,
             }}
@@ -146,7 +131,8 @@ export function DiffView({
             color: item.kind === 'header' ? codeColors.muted : codeColors.text,
             fontFamily: monospace,
             fontSize: 13,
-            lineHeight: 22,
+            lineHeight: 20,
+            includeFontPadding: false,
           }}
         >
           <Text
@@ -161,23 +147,7 @@ export function DiffView({
           >
             {item.kind === 'addition' ? '+' : item.kind === 'deletion' ? '−' : ' '}
           </Text>
-          {item.spans?.length
-            ? item.spans.map((span, index) => (
-                <Text
-                  key={index}
-                  style={{
-                    color:
-                      span.kind === 'comment' && code
-                        ? code.colors.comment
-                        : (span.kind === 'class-name' || span.kind === 'builtin') && code
-                          ? code.colors.type
-                          : syntaxColor(span.kind, codeColors),
-                  }}
-                >
-                  {span.text}
-                </Text>
-              ))
-            : item.text || ' '}
+          {item.spans?.length ? <SyntaxText tokens={item.spans} /> : item.text || ' '}
         </Text>
       </View>
       {annotations
@@ -229,6 +199,11 @@ export function DiffView({
         <Text style={styles.muted}>Wrap lines</Text>
         <Switch accessibilityLabel="Wrap diff lines" value={wrap} onValueChange={setWrap} />
       </View>
+      {syntax?.error && (
+        <Text accessibilityRole="alert" style={[styles.muted, { color: codeColors.muted }]}>
+          {syntax.error}
+        </Text>
+      )}
       {wrap ? (
         list
       ) : (
