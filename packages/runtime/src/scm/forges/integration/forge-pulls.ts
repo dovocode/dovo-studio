@@ -53,7 +53,34 @@ export class ForgePullRequests {
           candidates.some((c) => c.id === repo.forge?.connectionId) &&
           repo.forge.repository.toLowerCase() === repository.toLowerCase(),
       )
-    const bound = [...new Set(projects.map((repo) => repo.forge!.connectionId))]
+    // A linked PR can belong to a different repository. Retain the thread project's
+    // account (including its gh environment) rather than falling back to the home directory.
+    // Multiple originating projects remain ambiguous and require an explicit account.
+    const linkedRepositoryIds = new Set(
+      this.store
+        .get()
+        .tasks.filter((task) =>
+          [task.pullRequest, ...(task.linkedPullRequests ?? [])].some(
+            (pull) => pull && forgePullTarget(pull.url)?.url === target.url,
+          ),
+        )
+        .map((task) => task.repositoryId),
+    )
+    const linkedProject =
+      target.provider === 'github' && linkedRepositoryIds.size === 1
+        ? this.store
+            .get()
+            .repositories.find((repo) => linkedRepositoryIds.has(repo.id) && !repo.kind)
+        : undefined
+    const origin =
+      linkedProject &&
+      (!linkedProject.forge ||
+        candidates.some((candidate) => candidate.id === linkedProject.forge?.connectionId))
+        ? linkedProject
+        : undefined
+    const bound = origin
+      ? [origin.forge?.connectionId]
+      : [...new Set(projects.map((repo) => repo.forge!.connectionId))]
     const choices = connectionId
       ? candidates.filter((c) => c.id === connectionId)
       : candidates.filter((c) => (bound.length ? bound.includes(c.id) : true))
@@ -70,7 +97,9 @@ export class ForgePullRequests {
         409,
         `Connect a ${label} account on this runtime to open this pull request.`,
       )
-    const project = projects.find((repo) => repo.forge?.connectionId === selected?.id)
+    const project =
+      (!connectionId && origin) ||
+      projects.find((repo) => repo.forge?.connectionId === selected?.id)
     const cwd = project?.path ?? homedir()
     const prepare = async () => {
       const validate = () => {
@@ -82,8 +111,11 @@ export class ForgePullRequests {
         if (
           project &&
           !isDeepStrictEqual(
-            this.store.get().repositories.find((repo) => repo.id === project.id)?.forge,
-            project.forge,
+            (() => {
+              const current = this.store.get().repositories.find((repo) => repo.id === project.id)
+              return current && { path: current.path, forge: current.forge }
+            })(),
+            { path: project.path, forge: project.forge },
           )
         )
           throw new HttpError(409, 'This project source changed. Refresh before continuing.')

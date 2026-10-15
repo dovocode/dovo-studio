@@ -398,3 +398,69 @@ it('rejects an account switch between cache scope resolution and detail loading 
   expect(result.status).toBe(409)
   expect(f.reads.some((path) => path.endsWith('/pulls/7'))).toBe(false)
 })
+
+it('uses the linked thread project account for a PR in another GitHub repository', async () => {
+  const f = await setup('github')
+  const other = f.s.forges.save({
+    name: 'Other',
+    provider: 'github',
+    baseUrl: 'https://github.com',
+    credential: 'token',
+    token: 'other-account',
+  })
+  const url = 'https://github.com/unrelated/private/pull/7'
+  const task = f.s.tasks.create({
+    title: 'Linked PR',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Review',
+  })
+  f.s.store.updateTask(task.id, (task) => ({
+    ...task,
+    linkedPullRequests: [
+      { number: 7, url, title: 'Linked PR', repositoryUrl: 'https://github.com/unrelated/private' },
+    ],
+  }))
+  const reader = vi.spyOn(f.s.git, 'githubAccount')
+  const source = f.s.pulls.urlTarget(url)
+  const identity = await source.sourceIdentity()
+  expect(identity.readerIdentity).toBe((await f.identity()).readerIdentity)
+  expect(reader.mock.calls[0]?.[2]).toBe(f.s.store.get().repositories[0].path)
+  expect(reader.mock.calls[0]?.[3]?.token).toBe('secret-one')
+  await f.s.pulls.urlTarget(url, other.id).sourceIdentity()
+  expect(reader.mock.calls.at(-1)?.[3]?.token).toBe('other-account')
+  const scope = identity.destination
+  f.rotate('secret-two')
+  await expect(source.guard({ expectedDestination: scope })).rejects.toThrow('account changed')
+})
+
+it('uses the originating project gh environment when a linked PR has no explicit forge binding', async () => {
+  const f = await setup('github')
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repo) => ({ ...repo, forge: undefined })),
+  }))
+  const url = 'https://github.com/unrelated/private/pull/7'
+  const task = f.s.tasks.create({
+    title: 'CLI account',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Review',
+  })
+  f.s.store.updateTask(task.id, (task) => ({
+    ...task,
+    linkedPullRequests: [
+      { number: 7, url, title: 'Linked PR', repositoryUrl: 'https://github.com/unrelated/private' },
+    ],
+  }))
+  const credential = vi
+    .spyOn(f.s.git, 'githubCredential')
+    .mockResolvedValue({ host: 'github.com', token: 'project-cli-token' })
+  await f.s.pulls.urlTarget(url).sourceIdentity()
+  expect(credential).toHaveBeenCalledWith(
+    f.s.store.get().repositories[0].path,
+    'github.com',
+    undefined,
+    true,
+  )
+})
