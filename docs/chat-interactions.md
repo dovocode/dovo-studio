@@ -16,7 +16,7 @@ While an agent runs, write a message to reveal **Queue** and **Steer**. **Stop**
 
 - **Queue** saves the message for a separate turn after current work finishes. Reorder or remove
   pending messages in the queue. Pausing prevents automatic follow-ups; Stop also pauses the queue.
-- **Steer** sends guidance into an active Codex turn, preserving its tools, session and checkpoint.
+- **Steer** sends guidance into an active turn using native steering when the provider supports it.
   Harnesses without native steering interrupt and resume with that instruction first. A finished
   turn cannot be steered: send a follow-up instead.
 - Message IDs deduplicate retries. When native steering cannot be confirmed, the instruction remains
@@ -31,6 +31,14 @@ snapshot is still in transit.
 For Codex 0.161.0 and newer, Dovo enables the experimental `features.instant_interrupt` flag on new
 and resumed threads while using native `turn/steer`. Older or unrecognized Codex versions retain
 their existing native steering behavior.
+
+Claude steering sends a user message with `priority: "now"` into the existing SDK query, retaining
+the process, session and Dovo turn. Running root-owned foreground subagents move to the background
+first so they can continue. Backgrounding waits at most five seconds; a refusal, error or timeout
+still allows the instruction through. Nested agents stay with their owner. Claude's
+`aborted_streaming` and `aborted_tools` results after steering are intermediate segments; their
+token usage contributes to the completed turn. Stop still cancels the active query. If the turn
+finishes while subagents are moving, the instruction stays queued for an explicit follow-up.
 
 Codex/Astra choice forms include option descriptions, custom answers and secret fields. The
 harness's `isBlocking` flag determines whether the composer waits for an answer. Non-blocking

@@ -1,6 +1,31 @@
 import { expect, it } from 'vite-plus/test'
 import { contextUsage, turnTokenCounter } from './context-usage'
 
+it('sums Claude steering segments and counts child messages once across results', () => {
+  const counter = turnTokenCounter('claude', () => 'session')
+  counter.accept('assistant', {
+    type: 'assistant',
+    parent_tool_use_id: 'child-tool',
+    message: { id: 'child', model: 'claude', usage: { input_tokens: 7, output_tokens: 2 } },
+  })
+  const segment = (reason: string, input: number, output: number) => ({
+    type: 'result',
+    terminal_reason: reason,
+    usage: {
+      input_tokens: input,
+      output_tokens: output,
+      cache_read_input_tokens: 2,
+      cache_creation_input_tokens: 1,
+    },
+    modelUsage: { claude: { inputTokens: 999_999, outputTokens: 999_999 } },
+  })
+  counter.accept('result', segment('aborted_tools', 10, 3))
+  counter.accept('result', segment('aborted_streaming', 20, 4))
+  counter.accept('result', segment('completed', 30, 5))
+  expect(counter.usage()).toEqual({ input: 67, output: 14, cacheRead: 6, cacheWrite: 3 })
+  expect(counter.total()).toBe(90)
+})
+
 it('reads Hermes native context usage', () => {
   expect(
     contextUsage('hermes', 'session.usage', { usage: { context_used: 42, context_max: 1000 } }),

@@ -1,4 +1,5 @@
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
+import { randomUUID } from 'node:crypto'
 import { claudeLaunchFlags } from '../../configuration/launch-flags.js'
 import { claudeAuthenticated, claudeCommand } from '../../configuration/claude-command.js'
 import { decode } from '@dovo/protocol'
@@ -20,6 +21,7 @@ import { IdleProviders, releaseIdleProvider } from '../../execution/warm-process
 import { updateSubagents } from '../../execution/subagents.js'
 import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { readClaudeThread } from './claude-thread.js'
+import { ClaudeBackgroundTasks } from './claude-background-tasks.js'
 function claudeStream(
   run: AgentRun,
   controller: AbortController,
@@ -165,7 +167,12 @@ function claudeStream(
     },
   })
 }
-function handleMessage(run: AgentRun, message: SDKMessage, compacted: () => void) {
+function handleMessage(
+  run: AgentRun,
+  message: SDKMessage,
+  compacted: () => void,
+  intermediate = false,
+) {
   if (message.type === 'system' && message.subtype === 'compact_boundary') compacted()
   if (message.type === 'assistant' || message.type === 'stream_event' || message.type === 'result')
     run.onPromptAccepted?.()
@@ -182,6 +189,12 @@ function handleMessage(run: AgentRun, message: SDKMessage, compacted: () => void
   if (message.type === 'assistant')
     for (const block of message.message.content)
       if (block.type === 'tool_use') run.onActivity(block.name)
+  if (intermediate) return
+  if (
+    message.type === 'result' &&
+    (message.terminal_reason === 'aborted_streaming' || message.terminal_reason === 'aborted_tools')
+  )
+    throw new Error('Claude turn interrupted')
   if (message.type === 'result' && message.subtype !== 'success')
     throw new Error(message.errors.join('\n'))
   if (message.type === 'result' && message.subtype === 'success' && message.is_error)
@@ -213,6 +226,7 @@ class MessageQueue implements AsyncIterable<SDKUserMessage> {
 type WarmTurn = {
   run: AgentRun
   compacted: boolean
+  steered: boolean
   resolve: () => void
   reject: (error: Error) => void
 }
@@ -235,6 +249,7 @@ type WarmClaude = {
   onSubagentEvent?: AgentRun['onSubagentEvent']
   owner: AgentRun
   nativeAgents: Subagent[]
+  backgroundTasks: ClaudeBackgroundTasks
 }
 
 export function createClaudeAdapter(): AgentAdapter {
@@ -378,6 +393,7 @@ export function createClaudeAdapter(): AgentAdapter {
         onSubagentEvent: run.onSubagentEvent,
         owner: run,
         nativeAgents: [],
+        backgroundTasks: new ClaudeBackgroundTasks(),
       }
       active.add(session)
       session.consumer = (async () => {
@@ -385,6 +401,7 @@ export function createClaudeAdapter(): AgentAdapter {
           for await (const message of stream) {
             if (session.closed) break
             const turn = session.turn
+            session.backgroundTasks.accept(message)
             if (message.session_id) {
               session.sessionId = message.session_id
               turn?.run.onSession(message.session_id)
@@ -401,11 +418,19 @@ export function createClaudeAdapter(): AgentAdapter {
             session.onSubagentEvent?.(message.type, message, session.sessionId)
             if (!turn) continue
             try {
-              handleMessage(turn.run, message, () => (turn.compacted = true))
+              const intermediate =
+                turn.steered &&
+                !turn.run.signal.aborted &&
+                message.type === 'result' &&
+                (message.terminal_reason === 'aborted_streaming' ||
+                  message.terminal_reason === 'aborted_tools')
+              handleMessage(turn.run, message, () => (turn.compacted = true), intermediate)
+              if (intermediate) continue
               if (message.type === 'result') {
                 if (turn.run.compact && !turn.compacted)
                   throw new Error('Claude did not report a completed compaction')
                 turn.run.onNativeTurnEnd?.()
+                turn.run.onSteer?.(undefined)
                 session.turn = undefined
                 turn.resolve()
               }
@@ -440,8 +465,9 @@ export function createClaudeAdapter(): AgentAdapter {
     session.owner = run
     publish(session, run)
     const completion = new Promise<void>((resolve, reject) => {
-      session.turn = { run, compacted: false, resolve, reject }
+      session.turn = { run, compacted: false, steered: false, resolve, reject }
     })
+    const turn = session.turn
     const abort = () => {
       session.turn?.reject(new Error('Task cancelled'))
       void close(session).catch((error) => console.error('Could not stop Claude:', error))
@@ -492,6 +518,25 @@ export function createClaudeAdapter(): AgentAdapter {
           }
           run.signal.throwIfAborted()
           session.input.push(claudeMessage(run))
+          if (!run.compact)
+            run.onSteer?.(async (input) => {
+              const checkActive = () => {
+                run.signal.throwIfAborted()
+                if (!turn || session.turn !== turn || session.closed)
+                  throw new Error('The Claude turn finished. Send this as a follow-up instead.')
+                return turn
+              }
+              checkActive()
+              const message: SDKUserMessage = {
+                ...claudeMessage({ ...run, ...input, sessionId: session.sessionId }),
+                uuid: randomUUID(),
+                priority: 'now',
+              }
+              await session.backgroundTasks.preserve(session.stream, run.signal)
+              const current = checkActive()
+              current.steered = true
+              session.input.push(message)
+            })
         })(),
       ])
       if (session.sessionId && !session.closed && !session.controller.signal.aborted) {
@@ -503,6 +548,7 @@ export function createClaudeAdapter(): AgentAdapter {
       await close(session)
       throw error
     } finally {
+      run.onSteer?.(undefined)
       run.signal.removeEventListener('abort', abort)
     }
   }

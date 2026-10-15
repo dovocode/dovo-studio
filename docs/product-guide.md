@@ -137,9 +137,9 @@ guide before creating a separate workspace.
 4. Create a task with that repository and agent. Sending starts execution or queues a follow-up
    behind the active turn. Pause, reorder or remove queued messages above the composer. Stop pauses
    remaining messages; Resume queue continues them. During a run, Stop replaces Send and Queue adds
-   a follow-up. Steer interrupts the current turn, records its checkpoint, and resumes the session
-   with the new instruction ahead of queued messages, preserving a paused queue. This works through
-   interruption/resume, not provider-native live turn injection. Approvals appear in the
+   a follow-up. Steer sends guidance into the active turn when the provider supports native
+   steering, including Codex and Claude. Other providers interrupt, record a checkpoint and resume
+   the session with the instruction first, preserving a paused queue. Approvals appear in the
    conversation.
 5. Choose Chat, Changes or Terminal in the task header. Use Split with chat to keep the conversation
    visible alongside a diff or shell. In Changes, choose a file to review, save edits and explicitly

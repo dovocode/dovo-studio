@@ -114,6 +114,7 @@ export function turnTokenCounter(
   let codexStartUsage: TurnTokenUsage | undefined
   let codexLatestUsage: TurnTokenUsage | undefined
   let claudeUsage: TurnTokenUsage | undefined
+  let claudeSegments: TurnTokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
   let claudeModel: string | undefined
   let reportedModel: string | undefined
   const cursorUsage = new Map<string, TurnTokenUsage>()
@@ -275,11 +276,19 @@ export function turnTokenCounter(
         const output = count(usage.output_tokens)
         if (input !== undefined && output !== undefined)
           claudeUsage = {
-            input,
-            output,
-            cacheRead: count(usage.cache_read_input_tokens) ?? 0,
-            cacheWrite: count(usage.cache_creation_input_tokens) ?? 0,
+            input: claudeSegments.input + input,
+            output: claudeSegments.output + output,
+            cacheRead: claudeSegments.cacheRead + (count(usage.cache_read_input_tokens) ?? 0),
+            cacheWrite: claudeSegments.cacheWrite + (count(usage.cache_creation_input_tokens) ?? 0),
           }
+        // Priority-now steering splits one logical turn into SDK result segments.
+        // Save only main-loop usage here; child messages are counted once below.
+        if (
+          claudeUsage &&
+          (event.terminal_reason === 'aborted_streaming' ||
+            event.terminal_reason === 'aborted_tools')
+        )
+          claudeSegments = claudeUsage
       }
       // The result's usage covers the main loop only. Child messages are per-request,
       // while result.modelUsage is cumulative across a warm/resumed session.
