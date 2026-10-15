@@ -1,20 +1,20 @@
 class DovoServerNightly < Formula
   desc "Dovo Studio personal agent runtime and pairing CLI"
   homepage "https://github.com/dovocode/dovo-studio"
-  version "0.0.9-nightly.337"
+  version "0.0.9-nightly.342"
   on_macos do
     depends_on arch: :arm64
-    url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.9-nightly.337/Dovo-Server-Nightly-0.0.9-nightly.337-macos-arm64.tar.gz"
-      sha256 "1128e6b8405b9c65e09bd5329a0c5a7d8f7f280c9ae006b95028608d457e6354"
+    url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.9-nightly.342/Dovo-Server-Nightly-0.0.9-nightly.342-macos-arm64.tar.gz"
+      sha256 "3f88913cf328b357915b871f11bff8e4674f70d0250b62cf2fa43bb865c0d152"
   end
   on_linux do
     on_arm do
-      url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.9-nightly.337/Dovo-Server-Nightly-0.0.9-nightly.337-linux-arm64.tar.gz"
-      sha256 "54b359d086271ee8d389080cb35d710ae3659ddc4d533eca36c73bcf4cabc04e"
+      url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.9-nightly.342/Dovo-Server-Nightly-0.0.9-nightly.342-linux-arm64.tar.gz"
+      sha256 "0e349e6b39423345b61cf91996aef929b5fef9cc45d2423eec362d55a9b5b7e5"
     end
     on_intel do
-      url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.9-nightly.337/Dovo-Server-Nightly-0.0.9-nightly.337-linux-x64.tar.gz"
-      sha256 "d40ed3f51e4318354fa7dd20f7b861b49bb63a7427e3d90c28dda7adaaace618"
+      url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.9-nightly.342/Dovo-Server-Nightly-0.0.9-nightly.342-linux-x64.tar.gz"
+      sha256 "319969ab2c1f730fcca6cd2ca1ac25c5c530d26f4657e68984e3c8022bc46597"
     end
   end
   def install
