@@ -25,9 +25,17 @@ async function fixture() {
   setupServer(directory, { host: '127.0.0.1', port: String(address.port) })
   return directory
 }
-afterEach(async () => {
+afterEach(async (context) => {
   vi.unstubAllEnvs()
   for (const directory of directories.splice(0)) {
+    if (context.task.result?.state === 'fail') {
+      const log = join(directory, 'server.log')
+      try {
+        console.error(`Runtime lifecycle log (${directory}):\n${readFileSync(log, 'utf8')}`)
+      } catch (error) {
+        console.error('Could not read runtime lifecycle log', error)
+      }
+    }
     await stopServer(directory)
     // Windows can retain filesystem locks briefly after confirmed process exit.
     await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
@@ -82,8 +90,10 @@ it('restarts on a changed host and port without losing the owner credential', as
   const first = await startServer(directory, entrypoint)
   const token = readConnection(join(directory, 'runtime-connection.json')).token
   await stopServer(directory)
+  // Reserve on the actual bind address; a loopback-only free port may be occupied
+  // on another interface when the restarted runtime binds all IPv4 interfaces.
   const socket = createServer()
-  await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve))
+  await new Promise<void>((resolve) => socket.listen(0, '0.0.0.0', resolve))
   const address = socket.address()
   if (!address || typeof address === 'string') throw new Error('No fixture port')
   await new Promise<void>((resolve) => socket.close(() => resolve()))
