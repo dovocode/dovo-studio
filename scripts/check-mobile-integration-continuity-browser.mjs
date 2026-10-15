@@ -231,7 +231,26 @@ try {
     ['Jira', '/issues/jira/'],
     ['Pipeline', '/pulls/pipeline/'],
   ]) {
+    const navigationCount = await page.evaluate(() => window.nav.length)
     await page.getByRole('button', { name: label, exact: true }).click()
+    assert.equal(
+      await page.evaluate(() => window.nav.length),
+      navigationCount,
+      'Wait for a link destination',
+    )
+    const detailLabel =
+      label === 'PR'
+        ? 'Open PR details'
+        : label === 'Pipeline'
+          ? 'Open pipeline details'
+          : 'Open issue details'
+    await page.getByRole('region', { name: 'Open link', exact: true }).waitFor()
+    assert.equal(await page.getByRole('region', { name: 'Open link', exact: true }).count(), 1)
+    await page.getByRole('button', { name: detailLabel, exact: true }).click()
+    await page.waitForFunction((count) => window.nav.length > count, navigationCount)
+    await page
+      .getByRole('region', { name: 'Open link', exact: true })
+      .waitFor({ state: 'detached' })
     const target = await page.evaluate(() => window.nav.at(-1))
     assert.equal(
       target.params.runtimeId,

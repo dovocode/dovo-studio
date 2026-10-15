@@ -398,6 +398,7 @@ it('opens unlinked GitHub PRs using URL targets without adding a project, with c
     sourceIdentity: async () => ({ readerIdentity: 'reader', destination: 'account' }),
     guard: async () => {},
     detail: read,
+    status: vi.fn<UrlTarget['status']>().mockResolvedValue(detail),
     section: vi.fn<UrlTarget['section']>().mockResolvedValue(detail),
     act,
     comment: async () => ({ url }),

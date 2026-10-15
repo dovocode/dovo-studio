@@ -95,7 +95,12 @@ export async function runWithHooks(
           hook.event,
         )),
   )
-  if (!enabled.length) return adapter.run(run)
+  if (!enabled.length) {
+    run.signal.throwIfAborted()
+    await adapter.run(run)
+    run.signal.throwIfAborted()
+    return
+  }
   if (run.agent.permission === 'read-only')
     throw new Error(
       'Agent hooks require write access. Disable hooks or change the task access mode.',

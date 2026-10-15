@@ -30,7 +30,7 @@ const mocks = {
       return <WorkspaceContext.Provider value={store}>{children}</WorkspaceContext.Provider>;
     }
   `,
-  '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/sidebar-header.tsx';export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;export const ErrorBoundary=({children})=>children;export const TooltipProvider=({children})=>children;export const useCompactLayout=()=>false;`,
+  '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/sidebar-header.tsx';export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;export const ErrorBoundary=({children})=>children;export const TooltipProvider=({children})=>children;export const useCompactLayout=()=>false;`,
   './app-extension': 'export const appSettingsExtension={views:[]};',
   './appearance': 'export const useAppearance=()=>{};',
   './task-notifications': 'export const useTaskNotifications=open=>{window.notify=open;return {}};',

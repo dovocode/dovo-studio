@@ -304,3 +304,41 @@ it('fails observational hooks after execution and ignores callbacks after the ru
   await new Promise((resolve) => setImmediate(resolve))
   expect(report).toHaveBeenCalledTimes(2)
 })
+
+it.each(['none', 'disabled', 'compaction'] as const)(
+  'preserves the abort reason after adapter cleanup with %s hooks',
+  async (mode) => {
+    const controller = new AbortController()
+    const reason = new Error('Access was tightened during execution')
+    const { run, report, repair } = fixture({
+      signal: controller.signal,
+      compact: mode === 'compaction',
+    })
+    const hooks = mode === 'none' ? [] : [hook('after-turn', { enabled: mode === 'compaction' })]
+    let cleaned = false
+    await expect(
+      runWithHooks(
+        {
+          run: async () => {
+            controller.abort(reason)
+            await Promise.resolve()
+            cleaned = true
+          },
+        },
+        run,
+        hooks,
+        report,
+        repair,
+      ),
+    ).rejects.toBe(reason)
+    expect(cleaned).toBe(true)
+    expect(report).not.toHaveBeenCalled()
+  },
+)
+it('does not start the adapter when a turn without hooks is already aborted', async () => {
+  const reason = new Error('Cancelled by user')
+  const { run, report, repair } = fixture({ signal: AbortSignal.abort(reason) })
+  const adapter = { run: vi.fn<(input: AgentRun) => Promise<void>>() }
+  await expect(runWithHooks(adapter, run, [], report, repair)).rejects.toBe(reason)
+  expect(adapter.run).not.toHaveBeenCalled()
+})
