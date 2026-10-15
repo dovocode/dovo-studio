@@ -871,13 +871,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
             onBottomTerminal={toggleBottomTerminal}
           />
         )}
-        {!temporary && !projectPanelOpen && !native && (
-          <TaskWaitingPanel
-            onPullLink={(url) => openPullPreview(task, url)}
-            key={`${activeRuntimeId}:${task.id}`}
-            taskId={task.id}
-          />
-        )}
         <div
           ref={workspacePane}
           className={cn('relative flex min-h-0 min-w-0 flex-1 overflow-hidden', native && 'hidden')}
@@ -894,6 +887,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 'hidden',
             )}
           >
+            {!temporary && !projectPanelOpen && !native && (
+              <TaskWaitingPanel
+                onPullLink={(url) => openPullPreview(task, url)}
+                key={`${activeRuntimeId}:${task.id}`}
+                taskId={task.id}
+              />
+            )}
             <p
               role="status"
               aria-live="polite"

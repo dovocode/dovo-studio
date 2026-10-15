@@ -29,7 +29,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {StrictMode} from 'react';import {createRoot} from 'react-dom/client';import {TaskWaitingPanel} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/detail'}/task-waiting-panel.tsx';const root=createRoot(document.getElementById('app'));window.render=()=>root.render(<StrictMode><TaskWaitingPanel key={window.target} taskId={window.target}/></StrictMode>);window.render();`,
+        contents: `import {StrictMode} from 'react';import {createRoot} from 'react-dom/client';import {TaskWaitingPanel} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/detail'}/task-waiting-panel.tsx';const root=createRoot(document.getElementById('app'));window.render=()=>root.render(<StrictMode><TaskWaitingPanel key={window.target} taskId={window.target} panel={window.panel}/></StrictMode>);window.render();`,
         loader: 'tsx',
         resolveDir: root + 'packages/extension-tasks/',
       },
@@ -205,7 +205,7 @@ try {
     if (!mobile) await page.getByRole('button', { name: 'Stop watching', exact: true }).click()
     await page.waitForFunction(() => document.getElementById('app').textContent === '')
     assert.equal(await page.evaluate(() => window.calls.at(-1).taskId), 'second')
-    // A related item remains a link after monitoring ends, with no stop control.
+    // Finished watches disappear from the thread row; related links remain in the project panel.
     await page.evaluate(() => {
       window.related = [
         {
@@ -216,6 +216,13 @@ try {
       ]
     })
     await page.clock.fastForward(15000)
+    if (!mobile) {
+      assert.equal(await page.getByRole('link', { name: 'Other · Pipeline run 9' }).count(), 0)
+      await page.evaluate(() => {
+        window.panel = true
+        window.render()
+      })
+    }
     await page
       .getByRole('link', {
         name: mobile ? 'Open Pipeline run 9' : 'Other · Pipeline run 9',

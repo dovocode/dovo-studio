@@ -58,9 +58,9 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   '../detail/task-context-menu':
     'export const TaskContextMenu=({children})=><div>{children}</div>;',
   './detail/resizable-sidebar':
-    'export const ResizableSidebar=({children,className})=><div className={className}>{children}</div>;',
+    'export const ResizableSidebar=({children,className,label})=><div data-sidebar={label} className={className}>{children}</div>;',
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
-  './detail/task-header': `export const TaskHeader=({task})=><header data-thread-header={task.id}>{task.title}</header>;`,
+  './detail/task-header': `export const TaskHeader=({task,onTools})=><header data-thread-header={task.id}>{task.title}<button onClick={onTools}>Toggle tools</button></header>;`,
   '../chat/thread/chat-thread': `export const ChatThread=({task})=><div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
   '../chat/thread/use-task-viewed': 'export const useTaskViewed=()=>({error:null});',
@@ -236,6 +236,48 @@ try {
       ),
       'opus',
     )
+    if (!fixture.launcher && fixture.defaultProvider === 'codex') {
+      await page.getByRole('button', { name: 'Toggle tools', exact: true }).click()
+      const sidebar = page.locator('[data-sidebar="tools sidebar"]')
+      await sidebar.waitFor({ state: 'visible' })
+      await page.evaluate(() => {
+        window.watchedItems = Array.from({ length: 20 }, (_, i) => ({
+          kind: 'pipeline',
+          repositoryId: 'project',
+          target: String(i),
+          label: 'Pipeline run ' + i,
+          project: 'Project',
+          url: 'https://github.com/team/project/actions/runs/' + i,
+          status: 'running',
+        }))
+      })
+      await page.evaluate(() =>
+        window.setEntity(window.saved.find((task) => task.title === 'Existing').id),
+      )
+      await page.locator('[data-thread-header]').filter({ hasText: 'Existing' }).waitFor()
+      await page.evaluate(() => window.setEntity(window.saved.find((task) => task.harness).id))
+      const watchers = page.getByRole('region', { name: 'Related items and watchers' })
+      await watchers.waitFor()
+      assert.ok(
+        await sidebar.evaluate((element) => {
+          const watchers = document.querySelector(
+            'section[aria-label="Related items and watchers"]',
+          )
+          return (
+            element.parentElement.contains(watchers) &&
+            !element.contains(watchers) &&
+            element.getBoundingClientRect().top ===
+              element.parentElement.getBoundingClientRect().top
+          )
+        }),
+        'The tools sidebar must share a row with the conversation containing the watches',
+      )
+      assert.equal(
+        await watchers.evaluate((element) => getComputedStyle(element).flexWrap),
+        'nowrap',
+      )
+      assert.ok(await watchers.evaluate((element) => element.scrollWidth > element.clientWidth))
+    }
     assert.deepEqual(errors, [])
     await page.close()
   }

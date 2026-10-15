@@ -37,7 +37,7 @@ export function TaskWaitingPanel({
     JSON.stringify([activeRuntimeId, connection]),
   )
   const watchingUrls = new Set(data?.dependencies.map((item) => item.url))
-  const related = data?.related?.filter((item) => !watchingUrls.has(item.url)) ?? []
+  const related = panel ? (data?.related?.filter((item) => !watchingUrls.has(item.url)) ?? []) : []
   if (connected && !error && !data?.dependencies.length && !related.length) return null
   const openPull = (url: string) => onPullLink?.(url) || openPullLink?.(url)
   const openRelated = (url: string) => {
@@ -64,7 +64,7 @@ export function TaskWaitingPanel({
       className={
         panel
           ? 'studio-project-section border-t border-border/60 text-xs'
-          : 'flex max-h-32 shrink-0 flex-wrap items-center gap-2 overflow-y-auto px-4 py-2 text-xs'
+          : 'flex min-w-0 shrink-0 items-center gap-2 overflow-x-auto px-4 py-2 text-xs'
       }
     >
       {!connected && <p>Offline · Showing saved watches. Reconnect to update or stop them.</p>}
@@ -110,7 +110,7 @@ export function TaskWaitingPanel({
         {data?.dependencies.map((item) => (
           <div
             key={JSON.stringify([item.kind, item.repositoryId, item.target])}
-            className="inline-flex max-w-full items-center rounded-full border bg-muted/30"
+            className="inline-flex max-w-full shrink-0 items-center rounded-full border bg-muted/30"
             title={[item.pausedReason ?? item.status, item.error].filter(Boolean).join(' · ')}
           >
             <Eye size={13} className="ml-2 shrink-0 text-muted-foreground" aria-hidden="true" />
