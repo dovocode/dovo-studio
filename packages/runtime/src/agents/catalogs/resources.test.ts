@@ -246,29 +246,78 @@ it('finds catalog skills by their declared name when folder names differ, and ke
   )
   expect(requests.filter((url) => url.endsWith('/react-best-practices/SKILL.md'))).toHaveLength(1)
 })
-it('rejects ambiguous declared skill names rather than installing a different directory', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'dovo-catalog-ambiguous-'))
-  roots.push(root)
-  vi.stubGlobal(
-    'fetch',
-    vi.fn<typeof fetch>(async (input) => {
-      const url = input instanceof Request ? input.url : input.toString()
-      if (url.includes('/commits/')) return Response.json({ sha: 'a'.repeat(40) })
-      if (url.includes('/git/trees/'))
-        return Response.json({
-          truncated: false,
-          tree: ['first', 'second'].map((name) => ({
-            path: `skills/${name}/SKILL.md`,
-            type: 'blob',
-            mode: '100644',
-            size: 80,
-          })),
-        })
-      return new Response('---\nname: review\ndescription: Review\n---\nReview code')
-    }),
-  )
-  await expect(
-    installCatalogSkill({ source: 'owner/repo', skill: 'review' }, root),
-  ).rejects.toThrow('one SKILL.md')
-  expect(await readdir(root)).toEqual([])
-})
+it.each(['skills', '.agents/skills'])(
+  'rejects ambiguous declared skill names in %s',
+  async (directory) => {
+    const root = await mkdtemp(join(tmpdir(), 'dovo-catalog-ambiguous-'))
+    roots.push(root)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (input) => {
+        const url = input instanceof Request ? input.url : input.toString()
+        if (url.includes('/commits/')) return Response.json({ sha: 'a'.repeat(40) })
+        if (url.includes('/git/trees/'))
+          return Response.json({
+            truncated: false,
+            tree: ['first', 'second'].map((name) => ({
+              path: `${directory}/${name}/SKILL.md`,
+              type: 'blob',
+              mode: '100644',
+              size: 80,
+            })),
+          })
+        return new Response('---\nname: review\ndescription: Review\n---\nReview code')
+      }),
+    )
+    await expect(
+      installCatalogSkill({ source: 'owner/repo', skill: 'review' }, root),
+    ).rejects.toThrow('one SKILL.md')
+    expect(await readdir(root)).toEqual([])
+  },
+)
+
+it.each([false, true])(
+  'selects the portable skill bundle among agent-specific copies (reverse: %s)',
+  async (reverse) => {
+    const root = await mkdtemp(join(tmpdir(), 'dovo-catalog-portable-'))
+    roots.push(root)
+    const sha = 'c'.repeat(40)
+    const paths = [
+      '.claude/skills/impeccable/SKILL.md',
+      'plugin/skills/impeccable/SKILL.md',
+      'tests/fixture/.agents/skills/impeccable/SKILL.md',
+      '.agents/skills/impeccable/SKILL.md',
+      '.agents/skills/impeccable/references/design.md',
+    ]
+    if (reverse) paths.reverse()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (input) => {
+        const url = input instanceof Request ? input.url : input.toString()
+        if (url.includes('/commits/')) return Response.json({ sha })
+        if (url.includes('/git/trees/'))
+          return Response.json({
+            truncated: false,
+            tree: paths.map((path) => ({ path, type: 'blob', mode: '100644', size: 120 })),
+          })
+        if (url.endsWith('/references/design.md')) return new Response('Portable supporting file')
+        const portable = url.endsWith('/' + sha + '/.agents/skills/impeccable/SKILL.md')
+        return new Response(
+          '---\nname: impeccable\ndescription: Design UI\n---\n' +
+            (portable ? 'Read references/design.md' : 'Agent-specific instructions'),
+        )
+      }),
+    )
+    const skill = await installCatalogSkill(
+      { source: 'pbakaus/impeccable', skill: 'impeccable' },
+      root,
+    )
+    expect(skill.content).toBe('Read references/design.md')
+    expect(skill.sourceRevision).toBe(sha)
+    expect(skill.sourceUrl).toBe('https://skills.sh/pbakaus/impeccable/impeccable')
+    expect(await readFile(join(skill.sourcePath!, '..', 'references/design.md'), 'utf8')).toBe(
+      'Portable supporting file',
+    )
+    expect(await readdir(join(skill.sourcePath!, '..'))).toEqual(['SKILL.md', 'references'])
+  },
+)

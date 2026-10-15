@@ -121,11 +121,14 @@ export async function installCatalogSkill(input: unknown, root: string) {
   }
   await discover(direct)
   if (!matching.length) await discover(manifests.filter((file) => !direct.includes(file)))
-  if (matching.length !== 1)
+  // Prefer the repository-root portable bundle over provider-specific copies.
+  const portable = matching.filter((file) => /^\.agents\/skills\/[^/]+\/SKILL\.md$/.test(file.path))
+  const candidates = portable.length ? portable : matching
+  if (candidates.length !== 1)
     throw new Error(
       `Could not locate one SKILL.md declaring "${skill}". Import the skill from a local SKILL.md instead.`,
     )
-  const selected = matching[0]
+  const selected = candidates[0]
   const directory = posix.dirname(selected.path)
   const prefix = directory === '.' ? '' : `${directory}/`
   const files = tree.tree.filter((file) => file.path.startsWith(prefix) && file.type !== 'tree')

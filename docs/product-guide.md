@@ -912,8 +912,10 @@ harness configuration or install skills globally.
 
 Use **Browse skills.sh** to search public GitHub skills and import their instructions and supporting
 files. Imports pin a Git commit and store an isolated copy in the runtime's skills cache, without
-running installation scripts. Source links and revisions remain visible in the editor. Bundles are
-limited to 200 regular files / 8 MB; other sources can be imported from a local SKILL.md.
+running installation scripts. When a repository publishes multiple agent-specific copies, imports
+prefer a unique portable bundle in its root `.agents/skills` directory. Source links and revisions
+remain visible in the editor. Bundles are limited to 200 regular files / 8 MB; other sources can be
+imported from a local SKILL.md.
 
 **Browse MCP Registry** searches the official Model Context Protocol registry's latest active
 entries, with pagination. Choose a Streamable HTTP or supported stdio package variant (npm via npx,
