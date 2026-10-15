@@ -4,6 +4,7 @@ import {
   assignRemoteSources,
   forgePullTarget,
   pullDetailSchema,
+  type PullDetailSection,
   pullRepositoryKey,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
@@ -74,7 +75,7 @@ export function usePullReader(
   const expectedIdentity = retained?.readerIdentity
   const destination = retained?.destination
   const readDetail = useCallback(
-    (refresh: boolean) => {
+    (refresh: boolean, section?: PullDetailSection, revision?: string) => {
       if (
         !alternateProfile ||
         !alternateKey ||
@@ -84,7 +85,7 @@ export function usePullReader(
       )
         return origin.readEffect(
           '/api/scm/pulls/detail',
-          { repositoryId, number, refresh, connectionId },
+          { repositoryId, number, refresh, connectionId, section, revision },
           pullDetailSchema,
         )
       const read: typeof origin.readEffect = (path, body, schema, method) =>
@@ -96,7 +97,7 @@ export function usePullReader(
         expectedIdentity,
       )(
         '/api/scm/pulls/detail',
-        { repositoryId: alternateRepositoryId, number, refresh },
+        { repositoryId: alternateRepositoryId, number, refresh, section, revision },
         pullDetailSchema,
       ).pipe(
         Effect.map((value) => ({

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Pressable, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { Pressable, ScrollView, View } from 'react-native'
 import { Effect } from 'effect'
 import { randomUUID } from 'expo-crypto'
 import {
@@ -72,6 +72,7 @@ function ProjectRow({
 
 export function TaskProjectSheet({
   task,
+  inline = false,
   scripts,
   branchActions,
   onChanges,
@@ -80,6 +81,7 @@ export function TaskProjectSheet({
   onClose,
 }: {
   task: Task
+  inline?: boolean
   scripts: HeaderAction[]
   branchActions: HeaderAction[]
   onChanges: () => void
@@ -147,9 +149,9 @@ export function TaskProjectSheet({
   const agents = indexed(task, true)
   const pulls = taskPullLinks(task)
   const sheet = useRef<SheetHandle>(null)
-  const dismissThen = (action: () => void) => sheet.current?.dismiss(action)
+  const dismissThen = (action: () => void) => (inline ? action() : sheet.current?.dismiss(action))
   return (
-    <Sheet ref={sheet} title="Project information" busy={busy} onClose={onClose}>
+    <ProjectPanelFrame inline={inline} sheet={sheet} busy={busy} onClose={onClose}>
       <View
         accessibilityLabel="Thread project"
         style={[styles.card, { borderRadius: 24, padding: 16, gap: 12 }]}
@@ -383,6 +385,38 @@ export function TaskProjectSheet({
           )}
         </Sheet>
       )}
-    </Sheet>
+    </ProjectPanelFrame>
+  )
+}
+
+function ProjectPanelFrame({
+  inline,
+  sheet,
+  busy,
+  onClose,
+  children,
+}: {
+  inline: boolean
+  sheet: RefObject<SheetHandle | null>
+  busy: boolean
+  onClose: () => void
+  children: ReactNode
+}) {
+  const { colors } = useTheme()
+  if (!inline)
+    return (
+      <Sheet ref={sheet} title="Project information" busy={busy} onClose={onClose}>
+        {children}
+      </Sheet>
+    )
+  return (
+    <View
+      accessibilityLabel="Project information"
+      style={{ maxHeight: '42%', borderBottomWidth: 1, borderBottomColor: colors.border }}
+    >
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 12 }}>
+        {children}
+      </ScrollView>
+    </View>
   )
 }

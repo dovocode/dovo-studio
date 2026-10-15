@@ -1,3 +1,4 @@
+import type { ForgePipelineSection, ForgePipelineDetail } from '@dovo/protocol'
 import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -446,7 +447,11 @@ export class AzureForgeWork implements ForgeWorkProvider {
       next,
     }
   }
-  async pipeline(id: string) {
+  async pipeline(
+    id: string,
+    _cursor?: string,
+    section?: ForgePipelineSection,
+  ): Promise<ForgePipelineDetail> {
     const n = decode(
         CoercedNumber.pipe(
           Schema.check(Schema.isInt()),
@@ -460,6 +465,8 @@ export class AzureForgeWork implements ForgeWorkProvider {
         id,
       ),
       current = decode(build, await this.get(`build/builds/${n}`))
+    if (section === 'overview' || section === 'graph')
+      return { run: this.normalizeRun(current), jobs: [] }
     const timeline = decode(
       mutableStruct({
         records: mutableArray(

@@ -24,8 +24,10 @@ import {
 export function CheckpointDiff({ file }: { file: ChangedFile }) {
   const [ready, setReady] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
-  // Hooks run before any early return; the count must match once the highlighter is ready.
+  const [attempt, setAttempt] = useApplicationState(0)
   const diffs = useDiffOptions()
+  const [split, setSplit] = useApplicationState(diffs.defaultSplit)
+  const [overflow, setOverflow] = useApplicationState(diffs.options.overflow)
   const diff = useMemo(
     () =>
       parseDiffFromFile(
@@ -38,10 +40,13 @@ export function CheckpointDiff({ file }: { file: ChangedFile }) {
           contents: file.after,
         },
       ),
-    [file],
+    [file.path, file.before, file.after],
   )
+  const stats = useMemo(() => fileStats(file), [file])
   useEffect(() => {
     let active = true
+    setReady(false)
+    setError('')
     void preloadStudioHighlighter(getFiletypeFromFileName(file.path))
       .then(() => {
         if (active) setReady(true)
@@ -52,33 +57,81 @@ export function CheckpointDiff({ file }: { file: ChangedFile }) {
     return () => {
       active = false
     }
-  }, [file.path])
-  if (error)
-    return (
-      <p role="alert" className="p-3 text-sm text-destructive">
-        {error}
-      </p>
-    )
-  if (!ready)
-    return (
-      <p role="status" className="p-3 text-sm text-muted-foreground">
-        Loading diff…
-      </p>
-    )
-  if (file.before === file.after)
-    return (
-      <p className="p-4 text-xs text-muted-foreground">
-        No text changes. This file was added, removed, or its file mode changed.
-      </p>
-    )
+  }, [file.path, attempt])
   return (
-    <FileDiff
-      fileDiff={diff}
-      options={{
-        ...diffs.options,
-        diffStyle: diffs.defaultSplit ? 'split' : 'unified',
-      }}
-    />
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/20 px-3 py-2">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
+          {file.path}
+        </span>
+        <DiffAmounts stats={stats} />
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[0.6875rem]"
+          aria-label="Split diff"
+          aria-pressed={split}
+          onClick={() => setSplit((value) => !value)}
+        >
+          {split ? 'Split' : 'Unified'}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[0.6875rem]"
+          aria-label="Wrap diff lines"
+          aria-pressed={overflow === 'wrap'}
+          onClick={() => setOverflow((value) => (value === 'wrap' ? 'scroll' : 'wrap'))}
+        >
+          Wrap
+        </Button>
+      </div>
+      <div
+        className="studio-code min-h-0 min-w-0 flex-1 overflow-auto"
+        aria-label="Saved file diff"
+      >
+        {error ? (
+          <div className="space-y-3 p-3 text-xs">
+            <p role="alert" className="break-words text-destructive">
+              Highlighting unavailable. {error}
+            </p>
+            <Button size="sm" variant="outline" onClick={() => setAttempt((value) => value + 1)}>
+              Retry highlighting
+            </Button>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(['before', 'after'] as const).map((side) => (
+                <section key={side} className="min-w-0 rounded-md border">
+                  <h3 className="border-b px-3 py-2 font-medium">
+                    {side === 'before' ? 'Before' : 'After'}
+                  </h3>
+                  <pre className="overflow-auto whitespace-pre-wrap break-words p-3">
+                    {file[side] || '(empty file)'}
+                  </pre>
+                </section>
+              ))}
+            </div>
+          </div>
+        ) : file.before === file.after ? (
+          <p className="p-4 text-xs text-muted-foreground">
+            No text changes. This file was added, removed, or its file mode changed.
+          </p>
+        ) : ready ? (
+          <FileDiff
+            fileDiff={diff}
+            options={{
+              ...diffs.options,
+              overflow,
+              diffStyle: split ? 'split' : 'unified',
+              disableFileHeader: true,
+            }}
+          />
+        ) : (
+          <p role="status" className="p-4 text-xs text-muted-foreground">
+            Loading diff…
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 export function TurnCheckpoint({
@@ -131,7 +184,7 @@ export function TurnCheckpoint({
   const checkpoint = turn.checkpoint
   if (!checkpoint) return null
   const undone = !!checkpoint.undone
-  const file = selected ? files.find((entry) => entry.path === selected) : files[0]
+  const file = files.find((entry) => entry.path === selected) ?? files[0]
   const count = files.length
   // Show checkpoint controls only once the turn has a result to inspect.
   if ((!checkpoint.after && !checkpoint.error) || (!count && checkpoint.after && !checkpoint.error))
@@ -188,19 +241,23 @@ export function TurnCheckpoint({
         </div>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex h-[85dvh] max-w-5xl flex-col gap-3">
-          <DialogTitle className="text-sm">Turn checkpoint</DialogTitle>
-          <DialogDescription className="text-xs">
-            Changes between the snapshots taken before and after this turn. Existing edits are part
-            of the starting snapshot. This is a saved, read-only diff.
-          </DialogDescription>
+        <DialogContent className="flex h-[85dvh] max-w-7xl flex-col gap-0 overflow-hidden p-0">
+          <div className="shrink-0 space-y-1 border-b px-4 py-3 pr-12">
+            <DialogTitle className="text-sm">
+              Turn checkpoint · {count} {count === 1 ? 'file' : 'files'}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Saved changes from this turn. Edits that existed before the turn are preserved in the
+              starting snapshot.
+            </DialogDescription>
+          </div>
           {checkpoint.error && (
             <p role="alert" className="text-xs text-destructive">
               {checkpoint.error}
             </p>
           )}
           {file && taskId && (
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
               <Button
                 size="sm"
                 variant="outline"
@@ -231,37 +288,54 @@ export function TurnCheckpoint({
               {restoreError && <span className="text-muted-foreground">{restoreError}</span>}
             </div>
           )}
-          {file && (
-            <ChoicePicker
-              aria-label="Checkpoint file"
-              value={file.path}
-              onValueChange={setSelected}
-            >
-              {files.map((entry) => (
-                <option key={entry.path} value={entry.path}>
-                  {entry.path}
-                </option>
-              ))}
-            </ChoicePicker>
-          )}
-          <div className="studio-code min-h-0 flex-1 overflow-auto rounded-md border">
-            {file ? (
-              <ErrorBoundary key={file.path}>
-                {file.preview ? (
-                  <SavedFilePreview
-                    key={file.path}
-                    file={file}
-                    taskId={taskId}
-                    turnId={turn.id}
-                    checkoutId={checkoutId}
-                  />
-                ) : (
-                  <CheckpointDiff key={file.path} file={file} />
-                )}
-              </ErrorBoundary>
-            ) : (
-              <p className="p-4 text-xs text-muted-foreground">No changed files.</p>
+          <div className="shrink-0 border-b px-3 py-2 md:hidden">
+            {file && (
+              <ChoicePicker
+                aria-label="Checkpoint file"
+                value={file.path}
+                onValueChange={setSelected}
+              >
+                {files.map((entry) => (
+                  <option key={entry.path} value={entry.path}>
+                    {entry.path}
+                  </option>
+                ))}
+              </ChoicePicker>
             )}
+          </div>
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <aside
+              aria-label="Checkpoint files"
+              className="hidden min-h-0 w-60 shrink-0 overflow-y-auto border-r bg-muted/10 p-2 md:block"
+            >
+              <FileBrowserTree
+                files={treeFiles}
+                selected={file?.path}
+                onSelect={setSelected}
+                defaultExpandedDepth={1}
+              />
+            </aside>
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+              {file ? (
+                <ErrorBoundary key={file.path}>
+                  {file.preview ? (
+                    <div className="h-full overflow-auto">
+                      <SavedFilePreview
+                        key={file.path}
+                        file={file}
+                        taskId={taskId}
+                        turnId={turn.id}
+                        checkoutId={checkoutId}
+                      />
+                    </div>
+                  ) : (
+                    <CheckpointDiff key={file.path} file={file} />
+                  )}
+                </ErrorBoundary>
+              ) : (
+                <p className="p-4 text-xs text-muted-foreground">No changed files.</p>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -131,4 +131,6 @@ it.each([401, 403, 409])('never returns cached private work data after HTTP %s',
       ),
     ),
   ).rejects.toMatchObject({ status })
+  // Ordinary polling must not revive private data after a background or explicit rejection.
+  await expect(runClientEffect(cache.readEffect(options()))).rejects.toMatchObject({ status })
 })

@@ -162,6 +162,12 @@ try {
       await page.locator('[data-saved="true"]').waitFor()
       await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
       const after = await geometry()
+      if (device.name === 'desktop') {
+        const bar = await page
+          .getByRole('group', { name: 'Project and checkout', exact: true })
+          .boundingBox()
+        assert.ok(bar && bar.height <= 44, JSON.stringify(bar))
+      }
       for (const key of ['heroX', 'heroY', 'composerY', 'composerHeight'])
         assert(
           Math.abs(before[key] - after[key]) < 2,
@@ -263,10 +269,10 @@ try {
   if (screenshots) {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.evaluate(() => window.showSettings())
-    await page.getByRole('button', { name: 'Default server', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Preferred computer', exact: true }).waitFor()
     await page.waitForFunction(() =>
       document
-        .querySelector('[aria-label="Default server"]')
+        .querySelector('[aria-label="Preferred computer"]')
         ?.textContent.includes('Linux workstation'),
     )
     await page.screenshot({ path: screenshots + '/desktop-project-default-server.png' })

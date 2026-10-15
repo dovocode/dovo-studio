@@ -483,3 +483,85 @@ it.each([401, 403, 409])(
     await expect(cache.list('/repo', 'open', 1, true)).rejects.toMatchObject({ status })
   },
 )
+
+it('caches PR sections independently, coalesces concurrent reads, and scopes them by revision and account', async () => {
+  const { db, store, pulls } = setup()
+  let account = 'owner'
+  const cache = new PullCache(db, pulls, store, async () => account)
+  cleanup.push(() => cache.dispose())
+  const detail: PullDetail = {
+    pull: {
+      number: 7,
+      title: 'PR',
+      url: 'https://github.com/a/b/pull/7',
+      repositoryUrl: 'https://github.com/a/b',
+      state: 'open',
+      draft: false,
+      author: 'dev',
+      updatedAt: '',
+      head: 'feature',
+      base: 'main',
+      labels: [],
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      body: 'Description',
+      additions: 1,
+      deletions: 0,
+      changedFiles: 1,
+      mergeable: true,
+      reviewers: [],
+      assignees: [],
+    },
+    comments: [],
+    files: [],
+    checks: [],
+    warnings: [],
+  }
+  const section = vi.spyOn(pulls, 'section').mockResolvedValue(detail)
+  const read = (
+    kind: 'overview' | 'changes' | 'checks',
+    force = false,
+    revision = `${'a'.repeat(40)}:${'b'.repeat(40)}`,
+  ) => Effect.runPromise(cache.sectionEffect('/repo', 7, kind, force, undefined, revision))
+  await Promise.all([read('overview'), read('overview'), read('changes')])
+  expect(section).toHaveBeenCalledTimes(2)
+  section.mockRejectedValueOnce(new Error('Checks offline'))
+  await expect(read('checks')).rejects.toThrow('Checks offline')
+  expect((await read('overview')).pull.body).toBe('Description')
+  expect(section).toHaveBeenCalledTimes(3)
+  await read('changes', true)
+  expect(section).toHaveBeenCalledTimes(4)
+  await read('changes', false, `${'c'.repeat(40)}:${'b'.repeat(40)}`)
+  expect(section).toHaveBeenCalledTimes(5)
+  account = 'other-account'
+  await read('overview')
+  expect(section).toHaveBeenCalledTimes(6)
+  const reopened = new PullCache(db, pulls, store, async () => account)
+  cleanup.push(() => reopened.dispose())
+  expect(
+    (await Effect.runPromise(reopened.sectionEffect('/repo', 7, 'overview'))).cachedAt,
+  ).toBeDefined()
+  expect(section).toHaveBeenCalledTimes(6)
+  reopened.invalidate('/repo', 7)
+  account = 'owner'
+  expect((await read('overview')).stale).toBe(true)
+  await vi.waitFor(() => expect(section).toHaveBeenCalledTimes(7))
+  account = 'other-account'
+  expect((await read('overview')).stale).toBe(true)
+  await vi.waitFor(() => expect(section).toHaveBeenCalledTimes(8))
+})
+
+it('migrates persisted checkout aliases so writes invalidate pre-upgrade caches', async () => {
+  const { db, store, pulls, cache } = setup()
+  vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+  await cache.list('/repo', 'open', 1)
+  db.exec('CREATE TABLE pull_cache_scopes (cwd TEXT PRIMARY KEY, scope TEXT NOT NULL)')
+  db.prepare('INSERT INTO pull_cache_scopes(cwd,scope) VALUES(?,?)').run(
+    '/legacy-worktree',
+    '/repo',
+  )
+  const reopened = new PullCache(db, pulls, store)
+  cleanup.push(() => reopened.dispose())
+  reopened.invalidate('/legacy-worktree')
+  expect((await cache.list('/repo', 'open', 1)).stale).toBe(true)
+})

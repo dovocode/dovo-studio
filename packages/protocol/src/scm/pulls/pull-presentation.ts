@@ -178,6 +178,8 @@ export function pullMergeability(pull: PullDetail['pull']): PullSignal {
     : { label: 'Merge conflicts', tone: 'danger' }
 }
 export function pullDetailChecks(detail: PullDetail): PullSignal {
+  if (!detail.checks.length && (detail.pull.checksState !== undefined || detail.pull.statusError))
+    return pullChecks(detail.pull)
   const failed = detail.checks.filter((check) => checkSignal(check.status).tone === 'danger').length
   const pending = detail.checks.filter(
     (check) => checkSignal(check.status).tone === 'warning',
@@ -199,6 +201,8 @@ export function pullDetailChecks(detail: PullDetail): PullSignal {
       }
 }
 export function pullDetailReviews(detail: PullDetail): PullSignal {
+  if (detail.pull.reviewDecision !== undefined || detail.pull.statusError)
+    return pullReview(detail.pull)
   const reviews = latestPullReviews(detail.comments)
   if (reviews.some((review) => review.state === 'CHANGES_REQUESTED'))
     return { label: 'Changes requested', tone: 'danger' }

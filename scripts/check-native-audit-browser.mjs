@@ -70,7 +70,7 @@ const mocks = {
   '../../../ui/content/markdown': `export const Markdown=({text})=><p>{text}</p>;`,
   '../../../ui/layout/screen-header': `export const ScreenHeader=({title,leading,actions})=><header><h2>{title}</h2>{leading}{actions}</header>;`,
   '../list/create-pull': `export const CreatePull=()=>null;`,
-  './use-pull-detail': `export const usePullDetail=()=>({detail:window.detail,error:'',setError:()=>{},refresh:()=>{},invalidate:()=>{},busy:false,refreshing:false});`,
+  './use-pull-detail': `export const usePullDetail=()=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:true,detail:window.detail,refresh:()=>{}}])),detail:window.detail,error:'',setError:()=>{},refresh:()=>{},invalidate:()=>{},busy:false,refreshing:false});`,
   '../list/pull-menu': `export const PullMenu=({onStartTask,onOpen})=><><button onClick={()=>onStartTask('new-branch')}>Start PR task</button><button onClick={onOpen}>Open on server</button></>;`,
   './pull-status': `export const PullStatus=()=>null;export const Signal=({signal})=><span>{signal?.label}</span>;export const PullCommentLabel=()=>null;`,
   '../../review/use-file-review': `export const useFileReview=()=>({progress:{files:[],groups:[]},ready:false,setViewed(){},reload(){}});`,

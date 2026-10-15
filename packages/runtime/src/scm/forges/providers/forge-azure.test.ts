@@ -7,6 +7,7 @@ const base = 'b'.repeat(40)
 const author = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   displayName: 'Dominic',
+  imageUrl: 'https://dev.azure.com/team/_apis/GraphProfile/MemberAvatars/author',
 }
 const reviewerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const repository = {
@@ -226,6 +227,7 @@ function fixture(
 it('normalizes rich Azure detail with captured merge-base diff, review votes, threads and policies', async () => {
   const { forge, calls } = fixture()
   const detail = await forge.detail(7)
+  expect(detail.pull.authorAvatarUrl).toBe(author.imageUrl)
   expect(new URL(detail.fileBaseUrl!).searchParams.get('version')).toBe(`GC${sha}`)
   expect(new URL(detail.fileBaseUrl!).searchParams.get('path')).toBe('/')
   expect(detail.pull).toMatchObject({

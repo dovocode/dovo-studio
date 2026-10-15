@@ -1,3 +1,4 @@
+import { combinePullSections, matchingPullSection, pullRevision } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
 import { Effect } from 'effect'
 import { startPolling, useWorkspace, useRepositorySources } from '@dovo/studio-core'
@@ -5,12 +6,20 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useDetailReader, verifySourceReader } from '../../connections/source-readers'
 import {
   pullDetailSchema,
+  type PullDetailSection,
   forgeSourceIdentitySchema,
   RuntimeRequestError,
   type PullDetail as Detail,
 } from '@dovo/protocol'
 
-export function usePullDetail(repositoryId: string, number: number, connectionId?: string) {
+function usePullSection(
+  repositoryId: string,
+  number: number,
+  connectionId: string | undefined,
+  section: PullDetailSection,
+  enabled: boolean,
+  revision?: string,
+) {
   const {
     requestEffect: request,
     connected,
@@ -31,6 +40,17 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
   const cacheKey = JSON.stringify([
     'pulls',
+    'detail-section',
+    section,
+    revision,
+    repositoryId,
+    repository?.path ?? '',
+    number,
+    repository?.forge,
+    ...(connectionId ? ['connection', connectionId] : []),
+  ])
+  const legacyCacheKey = JSON.stringify([
+    'pulls',
     'detail',
     repositoryId,
     repository?.path ?? '',
@@ -39,6 +59,7 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
     ...(connectionId ? ['connection', connectionId] : []),
   ])
   const [state, setState] = useApplicationState({
+    scope: cacheKey,
     detail: null as Detail | null,
     error: '',
     busy: false,
@@ -50,7 +71,7 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
   const setError = (error: string) => setState((current) => ({ ...current, error }))
   useEffect(() => {
     urlIdentity.current = undefined
-    setState((current) => ({ ...current, detail: null, error: '' }))
+    setState((current) => ({ ...current, scope: cacheKey, detail: null, error: '' }))
   }, [cacheKey, readCache])
   useEffect(() => {
     let stopped = false
@@ -58,7 +79,9 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
       Effect.cached(
         Effect.gen(function* () {
           if (!readCache) return
-          const cached = yield* readCache.readEffect(cacheKey, pullDetailSchema)
+          const cached =
+            (yield* readCache.readEffect(cacheKey, pullDetailSchema)) ??
+            (yield* readCache.readEffect(legacyCacheKey, pullDetailSchema))
           if (cached && !stopped)
             setState((current) => ({
               ...current,
@@ -78,11 +101,11 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
       ),
     )
     let force = forceNext.current
-    forceNext.current = false
+    if (enabled) forceNext.current = false
     setState((current) => ({ ...current, busy: false, refreshing: false }))
     const load = Effect.gen(function* () {
       yield* hydrated
-      if (!readConnected || document.visibilityState !== 'visible') return
+      if (!enabled || !readConnected || document.visibilityState !== 'visible') return
       const refresh = force
       force = false
       setState((current) => ({ ...current, busy: true, refreshing: refresh }))
@@ -122,6 +145,8 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
           number,
           connectionId,
           refresh,
+          section,
+          revision,
           ...readGuard,
         },
         pullDetailSchema,
@@ -156,7 +181,12 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
     const polling = startPolling(load, {
       interval: 10000,
       onError: (error) => {
-        if (!stopped) setError(error.message)
+        if (!stopped)
+          setState((current) => ({
+            ...current,
+            error: error.message,
+            detail: current.detail ? { ...current.detail, stale: true } : null,
+          }))
       },
     })
     document.addEventListener('visibilitychange', polling.refresh)
@@ -169,7 +199,11 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
     repositoryId,
     number,
     connectionId,
+    section,
+    revision,
+    enabled,
     cacheKey,
+    legacyCacheKey,
     readConnected,
     reader,
     destination,
@@ -185,19 +219,123 @@ export function usePullDetail(repositoryId: string, number: number, connectionId
   const invalidate = () => {
     void readCache
       ?.remove(cacheKey)
+      .then(() => readCache.remove(legacyCacheKey))
       .catch(() =>
         setError('Saved details could not be cleared. Refresh to load the latest discussion.'),
       )
     refresh()
   }
   return {
+    enabled,
+    ready: !!(state.scope === cacheKey && state.detail),
     readConnected,
-    detail: state.detail,
+    detail: state.scope === cacheKey ? state.detail : null,
     error: state.error,
     setError,
     busy: state.busy,
     refreshing: state.refreshing,
     refresh,
     invalidate,
+  }
+}
+
+export function usePullDetail(
+  repositoryId: string,
+  number: number,
+  connectionId?: string,
+  options: { tab?: string; discussionInOverview?: boolean } = {},
+) {
+  const tab = options.tab ?? 'overview'
+  const overview = usePullSection(repositoryId, number, connectionId, 'overview', true)
+  const revision = overview.detail ? pullRevision(overview.detail) : undefined
+  const available = !!overview.detail
+  const status = usePullSection(repositoryId, number, connectionId, 'status', available, revision)
+  const discussion = usePullSection(
+    repositoryId,
+    number,
+    connectionId,
+    'discussion',
+    available &&
+      (tab === 'discussion' ||
+        tab === 'checks' ||
+        tab === 'changes' ||
+        (tab === 'overview' && !!options.discussionInOverview)),
+    revision,
+  )
+  const changes = usePullSection(
+    repositoryId,
+    number,
+    connectionId,
+    'changes',
+    available && tab === 'changes',
+    revision,
+  )
+  const checks = usePullSection(
+    repositoryId,
+    number,
+    connectionId,
+    'checks',
+    available && tab === 'checks',
+    revision,
+  )
+  const stack = usePullSection(
+    repositoryId,
+    number,
+    connectionId,
+    'stack',
+    available && overview.detail?.pull.state === 'open' && !repositoryId.startsWith('http'),
+    revision,
+  )
+  const current = (section: typeof overview) => ({
+    ...section,
+    ready: matchingPullSection(overview.detail, section.detail),
+  })
+  const sections = {
+    overview,
+    status: current(status),
+    discussion: current(discussion),
+    changes: current(changes),
+    checks: current(checks),
+    stack: current(stack),
+  }
+  const detail = combinePullSections(overview.detail, {
+    status: status.detail,
+    discussion: discussion.detail,
+    changes: changes.detail,
+    checks: checks.detail,
+    stack: stack.enabled ? stack.detail : null,
+  })
+  // A section can discover a push before the overview's cache expires. Refresh the overview once
+  // for that discovered revision; never attach the mismatched comments or diff in the meantime.
+  const discovered = [status, discussion, changes, checks, stack]
+    .map((value) => value.detail)
+    .find((value) => value && overview.detail && !matchingPullSection(overview.detail, value))
+  const discoveredRevision = discovered ? pullRevision(discovered) : undefined
+  const lastDiscovered = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (discoveredRevision && discoveredRevision !== lastDiscovered.current) {
+      lastDiscovered.current = discoveredRevision
+      overview.refresh()
+    }
+  }, [discoveredRevision])
+  const active =
+    tab === 'changes'
+      ? changes
+      : tab === 'checks'
+        ? checks
+        : tab === 'discussion'
+          ? discussion
+          : overview
+  return {
+    ...overview,
+    detail,
+    sections,
+    refreshing: overview.refreshing || active.refreshing,
+    refresh: () => {
+      for (const section of Object.values(sections)) if (section.enabled) section.refresh()
+    },
+    invalidate: () => {
+      for (const section of Object.values(sections)) section.invalidate()
+    },
   }
 }

@@ -1,3 +1,6 @@
+import { useIssueDiscussion } from './use-issue-discussion'
+import { usePipelineSections } from './use-pipeline-sections'
+import { PipelineSectionStatus } from './pipeline-section-status'
 import {
   useDetailReader,
   verifySourceReader,
@@ -12,7 +15,7 @@ import { IssueDetail } from './issue-detail'
 import { formatDate } from './format-date'
 import { PipelineDetail as PipelineDetailView, PipelineState } from './pipeline-detail'
 import { ArrowLeft, GitBranch, Search, CircleDot, MoreHorizontal, RefreshCw } from 'lucide-react'
-import { useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Effect, Schema } from 'effect'
 import {
   useWorkspace,
@@ -32,6 +35,7 @@ import {
   forgeWorkResultSchema,
   type ForgeWorkOptions,
   type ForgeIssueDetail,
+  type ForgePipelineSection,
 } from '@dovo/studio-core'
 import {
   Button,
@@ -85,8 +89,8 @@ export function WorkContent({
   const [cursor, setCursor] = useApplicationState<string | undefined>(undefined)
   const [state, setState] = useApplicationState('all')
   const [selected, setSelected] = useApplicationState(initialSelected ?? '')
-  const [issue, setIssue] = useApplicationState<ForgeIssueDetail | undefined>(undefined)
-  const [pipeline, setPipeline] = useApplicationState<PipelineDetail | undefined>(undefined)
+  const [issueOverview, setIssue] = useApplicationState<ForgeIssueDetail | undefined>(undefined)
+  const [pipelineOverview, setPipeline] = useApplicationState<PipelineDetail | undefined>(undefined)
   const [revision, reload] = useApplicationState(0)
   const [error, setError] = useApplicationState('')
   const [message, setMessage] = useApplicationState('')
@@ -143,6 +147,161 @@ export function WorkContent({
   )
   const optionsKey = keys.options
   const detailKey = keys.detail
+  const loadPipelineSection = useCallback(
+    async (
+      section: ForgePipelineSection,
+      cursor: string | undefined,
+      refresh: boolean,
+      revision: string,
+    ) => {
+      const guard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
+      const value = await (reader?.request ?? request)(
+        '/api/scm/work/pipelines/detail',
+        {
+          ...(reader ? sourceIdentityInput(reader) : target),
+          ...guard,
+          id: selected,
+          section,
+          cursor,
+          refresh,
+          revision,
+        },
+        forgePipelineDetailSchema,
+      )
+      if (selected === initialSelected && initialSourceURL && value.run.url !== initialSourceURL)
+        throw new Error('This pipeline source changed. Open the original source below.')
+      return reader && reader.key !== origin?.key
+        ? { ...value, destination, run: { ...value.run, destination } }
+        : value
+    },
+    [
+      reader,
+      request,
+      target,
+      selected,
+      initialSelected,
+      initialSourceURL,
+      destination,
+      origin?.key,
+    ],
+  )
+  const pipelineSections = usePipelineSections({
+    overview:
+      mode === 'pipelines' && pipelineOverview?.run.id === selected ? pipelineOverview : undefined,
+    cacheKey: detailKey,
+    readCache,
+    enabled: mode === 'pipelines' && !!selected && readConnected,
+    refreshToken: revision,
+    load: loadPipelineSection,
+    refreshOverview: () => reload((value) => value + 1),
+  })
+  const pipeline = pipelineSections.detail
+  const loadIssueDiscussion = useCallback(
+    async (
+      section: 'discussion',
+      cursor: string | undefined,
+      refresh: boolean,
+      revision: string,
+    ) => {
+      const guard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
+      const value = await (reader?.request ?? request)(
+        '/api/scm/work/issues/detail',
+        {
+          ...(reader ? sourceIdentityInput(reader) : target),
+          ...guard,
+          id: selected,
+          section,
+          cursor,
+          refresh,
+          revision,
+        },
+        forgeIssueDetailSchema,
+      )
+      if (selected === initialSelected && initialSourceURL && value.issue.url !== initialSourceURL)
+        throw new Error('This issue source changed. Open the original source below.')
+      return reader && reader.key !== origin?.key
+        ? { ...value, destination, issue: { ...value.issue, destination } }
+        : value
+    },
+    [
+      reader,
+      request,
+      target,
+      selected,
+      initialSelected,
+      initialSourceURL,
+      destination,
+      origin?.key,
+    ],
+  )
+  const discussion = useIssueDiscussion({
+    overview: jiraSourceId && issueOverview?.issue.id === selected ? issueOverview : undefined,
+    cacheKey: detailKey,
+    readCache,
+    enabled: !!jiraSourceId && mode === 'issues' && !!selected && readConnected,
+    refreshToken: revision,
+    load: loadIssueDiscussion,
+    refreshOverview: () => reload((value) => value + 1),
+  })
+  const issue = jiraSourceId ? discussion.issue : issueOverview
+  const [workOptionsError, setWorkOptionsError] = useApplicationState('')
+  const [optionsRevision, reloadOptions] = useApplicationState(0)
+  useEffect(() => {
+    if (
+      (!jiraSourceId && mode !== 'pipelines') ||
+      !selected ||
+      !readConnected ||
+      (jiraSourceId && !issueOverview)
+    )
+      return
+    let stopped = false
+    const polling = startPolling(
+      Effect.tryPromise({
+        try: async () => {
+          if (document.visibilityState !== 'visible') return
+          const guard = reader ? await Effect.runPromise(verifySourceReader(reader)) : undefined
+          const value = await (reader?.request ?? request)(
+            '/api/scm/work/options',
+            { ...(reader ? sourceIdentityInput(reader) : target), ...guard, area: mode },
+            forgeWorkOptionsSchema,
+          )
+          if (stopped) return
+          const options = reader && reader.key !== origin?.key ? { ...value, destination } : value
+          setOptions(options)
+          setWorkOptionsError('')
+          await readCache?.write(optionsKey, options)
+        },
+        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+      }),
+      {
+        interval: 30000,
+        onError: (error) => {
+          if (!stopped) setWorkOptionsError(error.message)
+        },
+      },
+    )
+    document.addEventListener('visibilitychange', polling.refresh)
+    return () => {
+      stopped = true
+      document.removeEventListener('visibilitychange', polling.refresh)
+      void polling.stop()
+    }
+  }, [
+    mode,
+    selected,
+    readConnected,
+    reader,
+    request,
+    target,
+    destination,
+    origin?.key,
+    readCache,
+    optionsKey,
+    revision,
+    optionsRevision,
+    jiraSourceId,
+    !!issueOverview,
+  ])
   const cacheScope = useRef({ detailKey, readCache })
   const base = '/api/scm/work/'
   useEffect(() => {
@@ -160,6 +319,7 @@ export function WorkContent({
     setPipeline((value) => (sameSource && value?.run.id === selected ? value : undefined))
     if (!sameSource) {
       setOptions(undefined)
+      setWorkOptionsError('')
       loadedDetailPages.current = 1
     }
     const load = async () => {
@@ -204,6 +364,52 @@ export function WorkContent({
         }
         const refresh = force
         force = false
+        if (mode === 'pipelines' && selected) {
+          let data = await readRequest(
+            base + 'pipelines/detail',
+            { ...readTarget, id: selected, refresh, section: 'overview' },
+            forgePipelineDetailSchema,
+          )
+          if (!current()) return
+          if (
+            selected === initialSelected &&
+            initialSourceURL &&
+            data.run.url !== initialSourceURL
+          ) {
+            setPipeline(undefined)
+            throw new Error('This pipeline source changed. Open the original source below.')
+          }
+          if (reader && reader.key !== origin?.key)
+            data = { ...data, destination, run: { ...data.run, destination } }
+          setPipeline(data)
+          setStale(!!data.stale || !!data.refreshError)
+          setError(data.refreshError ?? '')
+          await save(detailKey, { ...data, overviewOnly: true })
+          return
+        }
+        if (jiraSourceId && mode === 'issues' && selected) {
+          let data = await readRequest(
+            base + 'issues/detail',
+            { ...readTarget, id: selected, refresh, section: 'overview' },
+            forgeIssueDetailSchema,
+          )
+          if (!current()) return
+          if (
+            selected === initialSelected &&
+            initialSourceURL &&
+            data.issue.url !== initialSourceURL
+          ) {
+            setIssue(undefined)
+            throw new Error('This issue source changed. Open the original source below.')
+          }
+          if (reader && reader.key !== origin?.key)
+            data = { ...data, destination, issue: { ...data.issue, destination } }
+          setIssue(data)
+          setStale(!!data.stale || !!data.refreshError)
+          setError(data.refreshError ?? '')
+          await save(detailKey, { ...data, overviewOnly: true })
+          return
+        }
         const loadedOptions = await readRequest(
           base + 'options',
           {
@@ -267,58 +473,6 @@ export function WorkContent({
               if (reader && reader.key !== origin?.key)
                 data = { ...data, destination, issue: { ...data.issue, destination } }
               setIssue(data)
-              setStale(!!data.stale || !!data.refreshError)
-              setError(data.refreshError ?? '')
-              await save(detailKey, { ...data, loadedPages: loadedDetailPages.current })
-            }
-          } else {
-            let data = await readRequest(
-              base + 'pipelines/detail',
-              {
-                ...readTarget,
-                id: selected,
-                refresh,
-              },
-              forgePipelineDetailSchema,
-            )
-            if (current()) {
-              if (
-                selected === initialSelected &&
-                initialSourceURL &&
-                data.run.url !== initialSourceURL
-              ) {
-                setPipeline(undefined)
-                throw new Error(
-                  'This project now uses a different pipeline source. Open the original source below.',
-                )
-              }
-              let pages = 1
-              const wanted = refresh ? 1 : loadedDetailPages.current
-              while (data.next && pages < wanted) {
-                const next = await readRequest(
-                  base + 'pipelines/detail',
-                  {
-                    ...readTarget,
-                    id: selected,
-                    cursor: data.next,
-                    refresh,
-                  },
-                  forgePipelineDetailSchema,
-                )
-                if (!current()) return
-                if (next.run.url !== data.run.url) throw new Error('This pipeline source changed.')
-                data = {
-                  ...next,
-                  jobs: appendUniqueRows(data.jobs, next.jobs),
-                  stale: data.stale || next.stale,
-                  refreshError: data.refreshError || next.refreshError,
-                }
-                pages++
-              }
-              loadedDetailPages.current = pages
-              if (reader && reader.key !== origin?.key)
-                data = { ...data, destination, run: { ...data.run, destination } }
-              setPipeline(data)
               setStale(!!data.stale || !!data.refreshError)
               setError(data.refreshError ?? '')
               await save(detailKey, { ...data, loadedPages: loadedDetailPages.current })
@@ -416,6 +570,14 @@ export function WorkContent({
     onChanged?.()
   }
   const moreDetail = async () => {
+    if (mode === 'pipelines') {
+      pipelineSections.jobs.more()
+      return
+    }
+    if (jiraSourceId) {
+      discussion.more()
+      return
+    }
     if (pending.current || busy || !readConnected) return
     const current = requests.current.begin()
     setError('')
@@ -449,31 +611,6 @@ export function WorkContent({
           comments: appendUniqueRows(issue.comments, data.comments),
         }
         setIssue(merged)
-        loadedDetailPages.current++
-        setStale(stale || !!data.stale)
-        setError(data.refreshError ?? '')
-        if (readCache)
-          await readCache.write(detailKey, { ...merged, loadedPages: loadedDetailPages.current })
-      } else if (pipeline?.next) {
-        const data = await readRequest(
-          base + 'pipelines/detail',
-          {
-            ...readTarget,
-            id: selected,
-            cursor: pipeline.next,
-          },
-          forgePipelineDetailSchema,
-        )
-        if (!current()) return
-        if (data.run.url !== pipeline.run.url) throw new Error('This pipeline source changed.')
-        const merged = {
-          ...data,
-          ...(reader && reader.key !== origin?.key
-            ? { destination, run: { ...data.run, destination } }
-            : {}),
-          jobs: appendUniqueRows(pipeline.jobs, data.jobs),
-        }
-        setPipeline(merged)
         loadedDetailPages.current++
         setStale(stale || !!data.stale)
         setError(data.refreshError ?? '')
@@ -575,7 +712,7 @@ export function WorkContent({
             {!selected && mode === 'issues' && options?.issues && (
               <Button
                 size="sm"
-                disabled={!connected || busy || stale}
+                disabled={!connected || busy || stale || !options || !!workOptionsError}
                 onClick={() => setForm('create')}
               >
                 New issue
@@ -584,7 +721,7 @@ export function WorkContent({
             {!selected && mode === 'pipelines' && options?.pipelineActions.includes('run') && (
               <Button
                 size="sm"
-                disabled={!connected || busy || stale}
+                disabled={!connected || busy || stale || !options || !!workOptionsError}
                 onClick={() => setForm('run')}
               >
                 Run pipeline
@@ -598,7 +735,7 @@ export function WorkContent({
                     className="size-8"
                     variant="ghost"
                     aria-label={issue ? 'Issue actions' : 'Pipeline actions'}
-                    disabled={!connected || busy || stale}
+                    disabled={!connected || busy || stale || !options || !!workOptionsError}
                   >
                     <MoreHorizontal className="size-4" />
                   </Button>
@@ -713,6 +850,14 @@ export function WorkContent({
                 : 'Showing saved results. Reconnect for live updates.'}
             </p>
           )}
+          {jiraSourceId && workOptionsError && (
+            <div role="alert" className="my-3 flex items-center gap-3 text-sm text-destructive">
+              <span>Issue actions: {workOptionsError}</span>
+              <Button size="sm" variant="outline" onClick={() => reloadOptions((v) => v + 1)}>
+                Retry actions
+              </Button>
+            </div>
+          )}
           {message && (
             <p role="status" className="my-3 text-sm">
               {message}
@@ -823,8 +968,10 @@ export function WorkContent({
           {issue && selected === issue.issue.id && (
             <IssueDetail
               detail={issue}
+              discussionState={jiraSourceId ? discussion : undefined}
+              actionsReady={!!options && !workOptionsError}
               preview={preview}
-              provider={options?.provider}
+              provider={jiraSourceId ? 'jira' : options?.provider}
               repositoryId={repositoryId}
               jiraSourceId={jiraSourceId}
               connected={connected}
@@ -842,10 +989,26 @@ export function WorkContent({
             <PipelineDetailView
               key={pipeline.run.url}
               detail={pipeline}
-              notice={options?.pipelineNotice}
+              notice={workOptionsError || options?.pipelineNotice}
               repositoryId={repositoryId}
               disabled={busy || stale}
-              loading={busy || !readConnected}
+              loading={pipelineSections.jobs.busy || !readConnected}
+              jobsReady={pipelineSections.jobs.ready}
+              graphReady={pipelineSections.graph.ready}
+              jobsStatus={
+                <PipelineSectionStatus
+                  label="Jobs"
+                  state={pipelineSections.jobs}
+                  connected={readConnected}
+                />
+              }
+              graphStatus={
+                <PipelineSectionStatus
+                  label="Workflow"
+                  state={pipelineSections.graph}
+                  connected={readConnected}
+                />
+              }
               onMore={() => void moreDetail()}
             />
           )}

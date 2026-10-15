@@ -18,7 +18,7 @@ export function CarComposer({ task, onType }: { task: Task; onType: () => void }
   const finishing = dictation.isStopping || dictation.state?.status === 'cleaning'
   const text = draft.text.trim()
   const running = task.status === 'running'
-  const canDictate = draft.ready && !busy && !task.archived && !finishing
+  const canDictate = draft.ready && !busy && !task.archivedAt && !finishing
   const label = dictation.isStarting
     ? 'Starting microphone…'
     : dictation.isRecording

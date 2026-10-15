@@ -169,13 +169,15 @@ export function useWorkSources(
               refresh,
               previous,
               jiraFilters,
+              (page) => update(source, page),
             )
             update(source, page)
             yield* Effect.gen(function* () {
-              yield* source.readCache.writeEffect(
-                workSourceCacheKey(source, mode, 'options'),
-                page.options,
-              )
+              if (page.options)
+                yield* source.readCache.writeEffect(
+                  workSourceCacheKey(source, mode, 'options'),
+                  page.options,
+                )
               yield* source.readCache.writeEffect(
                 workSourceCacheKey(source, mode, 'list', search, state, jiraFilters),
                 workPageCacheValue(page),

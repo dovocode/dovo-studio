@@ -6,10 +6,12 @@ export function PipelineGraph({
   detail,
   now,
   onSelect,
+  selectedJob,
 }: {
   detail: ForgePipelineDetail
   now: number
   onSelect: (id: string) => void
+  selectedJob?: string | null
 }) {
   const columns = useMemo(
     () => pipelineGraphColumns(detail.graph, detail.jobs),
@@ -54,7 +56,10 @@ export function PipelineGraph({
     for (const node of element.querySelectorAll('[data-graph-node]')) observer.observe(node)
     return () => observer.disconnect()
   }, [columns])
-  if (!columns.length) return null
+  if (!columns.length)
+    return detail.graphNotice ? (
+      <p className="text-xs text-muted-foreground">{detail.graphNotice}</p>
+    ) : null
   return (
     <section aria-label="Pipeline graph" className="space-y-3">
       <h3 className="text-sm font-medium">Workflow</h3>
@@ -62,11 +67,11 @@ export function PipelineGraph({
       {!detail.graph && (
         <p className="text-xs text-muted-foreground">Jobs · dependencies not provided</p>
       )}
-      <div className="overflow-x-auto rounded-xl border bg-muted/10">
-        <div ref={surface} className="relative flex w-max min-w-full items-start gap-10 p-4">
+      <div className="overflow-x-auto rounded-xl border bg-muted/20">
+        <div ref={surface} className="relative flex w-max min-w-full items-start gap-10 p-5">
           <svg
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 h-full w-full overflow-visible text-muted-foreground"
+            className="pointer-events-none absolute inset-0 h-full w-full overflow-visible text-muted-foreground/40"
           >
             <defs>
               <marker id={marker} markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">
@@ -86,11 +91,16 @@ export function PipelineGraph({
           </svg>
           {columns.map((column, index) => (
             <div key={index} className="w-56 shrink-0 space-y-3">
+              {columns.length > 1 && (
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Stage {index + 1}
+                </p>
+              )}
               {column.map((node) => (
                 <div
                   key={node.id}
                   data-graph-node={node.id}
-                  className="rounded-lg border bg-card p-3 space-y-2"
+                  className="relative space-y-3 rounded-xl border bg-card p-3 shadow-sm"
                 >
                   <p className="text-sm font-medium break-words">{node.name}</p>
                   {!!node.needs.length && (
@@ -105,10 +115,12 @@ export function PipelineGraph({
                           type="button"
                           onClick={() => onSelect(id)}
                           aria-label={`View job ${job.name}`}
-                          className="flex w-full items-center justify-between gap-2 rounded p-1 text-left hover:bg-muted"
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg border p-2 text-left transition-colors hover:bg-muted ${selectedJob === id ? 'border-primary/50 bg-primary/5' : 'border-transparent bg-muted/30'}`}
                         >
-                          <span className="min-w-0 text-xs">
-                            <span className="block truncate">{job.name}</span>
+                          <span className="min-w-0 space-y-2 text-xs">
+                            {job.name !== node.name && (
+                              <span className="block break-words">{job.name}</span>
+                            )}
                             <PipelineState status={job.status} />
                           </span>
                           <span className="text-xs text-muted-foreground tabular-nums">

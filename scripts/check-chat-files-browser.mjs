@@ -8,6 +8,8 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const ui = root + '/packages/studio-ui/src'
 const mocks = {
+  // Native syntax rendering is covered by check-mobile-review-browser.
+  './code-block': 'export const CodeBlock=({content})=><pre>{content}</pre>;',
   '@dovo/studio-ui': `export {MessageResponse} from '${ui}/components/ai-elements/message.tsx';export {FileTypeIcon} from '${ui}/file-tree.tsx';export {Button} from '${ui}/components/ui/button.tsx';export {IconButton} from '${ui}/components/icon-button.tsx';export {TooltipProvider} from '${ui}/components/ui/tooltip.tsx';export {RepositoryOpenItems} from '${ui}/repository-open-items.tsx';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {cn} from '${ui}/lib/utils.ts';export {Dialog,DialogContent,DialogTitle} from '${ui}/components/ui/dialog.tsx';`,
   '@dovo/studio-core': `export {responses} from '@dovo/protocol';export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({themePalette:'dovo'});export const useWorkspace=()=>window.runtime;const openExternalLink=async url=>window.opened.push(url);export const useStudioHost=()=>({openExternalLink});`,
   '../../runtime/connection/provider': 'export const useRuntime=()=>window.runtime;',

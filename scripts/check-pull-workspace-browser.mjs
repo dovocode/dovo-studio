@@ -16,7 +16,7 @@ const mocks = {
   '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
-  './use-pull-detail': `export const usePullDetail=()=>({detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
+  './use-pull-detail': `export const usePullDetail=()=>({sections:Object.fromEntries(['overview','status','discussion','changes','checks','stack'].map(key=>[key,{ready:true,detail:window.detail,refresh:()=>{}}])),detail:window.detail,readConnected:window.store.connected,error:'',busy:false,refresh:()=>{},invalidate:()=>{}});`,
   './patch': `export const emptyPullLineDraft={selection:null,destination:'agent'};export const PullPatch=({file})=><pre>{file.patch}</pre>;`,
   './pipeline-runs': `export const PullPipelineRuns=()=>null;`,
   '../list/start-task': `export const StartPullTask=()=> <button>New task</button>;`,
@@ -29,7 +29,7 @@ const built = await build({
     loader: 'tsx',
     resolveDir: root,
     contents: `import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';import {SidebarHeaderLayout,HeaderFallback,TooltipProvider} from '@dovo/studio-ui';import {pullFileFingerprint} from '@dovo/protocol';import {createRoot} from 'react-dom/client';import {PullDetail} from '${root}/packages/extension-scm/src/pulls/detail/detail.tsx';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';
-const pull={number:7,title:'Improve pull request reviews',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'dominic',updatedAt:'2026-10-04',head:'feature',base:'main',labels:['feature'],checksState:'SUCCESS',reviewDecision:'REVIEW_REQUIRED',additions:24,deletions:8,commentCount:3,viewerIsAuthor:true,viewerIsAssigned:true,viewerIsInvolved:true,viewerReviewRequested:true};
+const pull={number:7,title:'Improve pull request reviews',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'dominic',authorAvatarUrl:'https://avatars.example/dominic.png',updatedAt:'2026-10-04',head:'feature',base:'main',labels:['feature'],checksState:'SUCCESS',reviewDecision:'REVIEW_REQUIRED',additions:24,deletions:8,commentCount:3,viewerIsAuthor:true,viewerIsAssigned:true,viewerIsInvolved:true,viewerReviewRequested:true};
 window.pulls=[pull,{...pull,number:8,url:'https://github.com/team/project/pull/8',title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,url:'https://github.com/team/project/pull/9',title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
 window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project'}};
 window.detail={pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
@@ -79,6 +79,12 @@ try {
   page.setDefaultTimeout(8000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
+  await page.route('https://avatars.example/**', (route) =>
+    route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="#417daa"/><text x="10" y="14" text-anchor="middle" font-size="12" fill="white">D</text></svg>',
+    }),
+  )
   await page.setContent('<div id="app"></div>')
   const assets = root + '/apps/desktop/dist/assets'
   for (const file of (await readdir(assets)).filter((file) => file.endsWith('.css')))
@@ -104,6 +110,27 @@ try {
       ),
       true,
     )
+  const filterToggle = list.getByRole('button', { name: 'Filters', exact: true })
+  assert.equal(await filterToggle.getAttribute('aria-expanded'), 'false')
+  assert.equal(await list.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), false)
+  for (const name of ['PR repository', 'PR state', 'PR sort', 'PR draft status'])
+    assert.equal(await list.getByRole('button', { name, exact: true }).isVisible(), false)
+  await list.getByRole('button', { name: 'Authored by me', exact: true }).waitFor()
+  assert.equal(await list.getByText(/loaded pull requests?/).count(), 0)
+  const avatar = row('Improve pull request reviews').locator('img')
+  assert.equal(await avatar.getAttribute('src'), 'https://avatars.example/dominic.png')
+  await avatar.evaluate((element) => element.decode())
+  await page.screenshot({ path: '/tmp/dovo-pull-list-clean.png' })
+  // Failed profile images retain a compact author initial without breaking the row.
+  await avatar.dispatchEvent('error')
+  assert.equal(await row('Improve pull request reviews').locator('img').count(), 0)
+  assert.equal(
+    await row('Improve pull request reviews')
+      .locator('span[aria-hidden][title="dominic"]')
+      .innerText(),
+    'D',
+  )
+  await filterToggle.click()
   await page.getByRole('textbox', { name: 'Search pull requests' }).waitFor()
   for (const name of [
     'PR repository',
@@ -147,8 +174,13 @@ try {
   await search.fill('Other author')
   assert.equal(await row('Improve pull request reviews').count(), 0)
   await row('Other author').waitFor()
+  await filterToggle.click()
+  assert.equal(await search.isVisible(), false)
+  assert.match(await filterToggle.innerText(), /1/)
+  assert.equal(await row('Improve pull request reviews').count(), 0)
+  await filterToggle.click()
+  assert.equal(await search.inputValue(), 'Other author')
   await search.fill('')
-  await list.getByRole('button', { name: 'Filters', exact: true }).click()
   await list.getByRole('button', { name: 'PR draft status', exact: true }).click()
   await page.getByRole('option', { name: 'Drafts', exact: true }).click()
   assert.equal(await row('Other author').count(), 0)
@@ -268,7 +300,7 @@ try {
   await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
   await fullWidthList()
   await noOverflow()
-  assert.equal(await list.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), true)
+  assert.equal(await list.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), false)
   await page.screenshot({ path: '/tmp/dovo-pull-list-narrow.png' })
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.evaluate(() => {
@@ -326,7 +358,7 @@ try {
   )
   assert.equal(await page.evaluate(() => document.scrollingElement.scrollTop), 0)
   assert.equal(await page.evaluate(() => document.querySelector('.studio').scrollTop), 0)
-  assert.equal(await page.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), true)
+  assert.equal(await page.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), false)
   const overflow = await scroll.evaluate((element) => ({
     width: element.scrollWidth,
     visible: element.clientWidth,

@@ -8,7 +8,7 @@ const pull = {
   state: 'open',
   merged_at: null,
   draft: false,
-  user: { login: 'dominic' },
+  user: { login: 'dominic', avatar_url: 'https://git.example.com/avatars/dominic' },
   updated_at: '2026-09-07T10:00:00Z',
   head: { label: 'team:fix', sha: 'a'.repeat(40) },
   base: { label: 'team:main', sha: 'b'.repeat(40) },
@@ -107,6 +107,7 @@ it('loads repository-scoped pages and keeps merged and draft states', async () =
   const page = await new PullRequests(git).list('/project/worktree', 'closed', 2)
   expect(page).toMatchObject({ page: 2, hasMore: true })
   expect(page.pulls[0]).toMatchObject({ state: 'merged', draft: true })
+  expect(page.pulls[0].authorAvatarUrl).toBe(pull.user.avatar_url)
   expect(page.pulls[1].state).toBe('closed')
   expect(run).toHaveBeenCalledWith(
     '/project/worktree',
@@ -222,4 +223,107 @@ it('posts line ranges to the pinned PR in the project host and rejects stale hea
     'This PR changed',
   )
   expect(run.mock.calls.some(([, args]) => args.includes('POST'))).toBe(false)
+})
+
+it('opens the overview without requesting discussion, files, checks, settings or stacks', async () => {
+  const git = new GitService()
+  const run = vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
+    if (args[0] === 'repo')
+      return JSON.stringify({
+        nameWithOwner: 'team/project',
+        url: 'https://git.example.com/team/project',
+      })
+    if (args[3] === 'repos/team/project/pulls/7') return JSON.stringify(pull)
+    throw new Error(`Overview must not load ${args.join(' ')}`)
+  })
+  const detail = await new PullRequests(git).section('/project', 7, 'overview')
+  expect(detail.pull.body).toBe('Description')
+  expect(detail.warnings).toEqual([])
+  expect(detail.files).toEqual([])
+  expect(detail.comments).toEqual([])
+  expect(detail.checks).toEqual([])
+  expect(run).toHaveBeenCalledTimes(2)
+})
+it('loads file changes without waiting for comments, checks or merge settings', async () => {
+  const git = new GitService()
+  const endpoints: string[] = []
+  vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
+    if (args[0] === 'repo')
+      return JSON.stringify({
+        nameWithOwner: 'team/project',
+        url: 'https://git.example.com/team/project',
+      })
+    endpoints.push(args[3])
+    if (args[3] === 'repos/team/project/pulls/7')
+      return JSON.stringify({ ...pull, changed_files: 1 })
+    if (args[3] === 'repos/team/project/pulls/7/files?per_page=100')
+      return JSON.stringify([
+        [
+          {
+            filename: 'a.ts',
+            status: 'added',
+            additions: 1,
+            deletions: 0,
+            patch: '@@ -0,0 +1 @@\n+code',
+          },
+        ],
+      ])
+    throw new Error(`Changes must not load ${args.join(' ')}`)
+  })
+  const detail = await new PullRequests(git).section('/project', 7, 'changes')
+  expect(detail.files[0]?.path).toBe('a.ts')
+  expect(detail.warnings).toEqual([])
+  expect(endpoints).toEqual([
+    'repos/team/project/pulls/7',
+    'repos/team/project/pulls/7/files?per_page=100',
+    'repos/team/project/pulls/7',
+  ])
+})
+it('keeps a failed discussion section isolated from the overview and changes', async () => {
+  const git = new GitService()
+  vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
+    if (args[0] === 'repo')
+      return JSON.stringify({
+        nameWithOwner: 'team/project',
+        url: 'https://git.example.com/team/project',
+      })
+    if (args[3] === 'repos/team/project/pulls/7')
+      return JSON.stringify({ ...pull, changed_files: 0 })
+    if (args[3]?.includes('/files?')) return '[]'
+    throw new Error('Discussion permission denied')
+  })
+  const service = new PullRequests(git)
+  const [discussion, overview, changes] = await Promise.all(
+    (['discussion', 'overview', 'changes'] as const).map((section) =>
+      service.section('/project', 7, section),
+    ),
+  )
+  expect(discussion.warnings.some((w) => w.includes('Discussion permission denied'))).toBe(true)
+  expect(overview.pull.body).toBe('Description')
+  expect(overview.warnings).toEqual([])
+  expect(changes.warnings).toEqual([])
+})
+
+it('rejects patches if a push occurs during file pagination and recovers on a fresh read', async () => {
+  const git = new GitService()
+  let head = pull.head.sha
+  vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
+    if (args[0] === 'repo')
+      return JSON.stringify({
+        nameWithOwner: 'team/project',
+        url: 'https://git.example.com/team/project',
+      })
+    if (args[3] === 'repos/team/project/pulls/7')
+      return JSON.stringify({ ...pull, head: { ...pull.head, sha: head }, changed_files: 0 })
+    if (args[3]?.includes('/files?')) {
+      head = 'c'.repeat(40)
+      return '[]'
+    }
+    throw new Error('Unexpected request')
+  })
+  const service = new PullRequests(git)
+  await expect(service.section('/project', 7, 'changes')).rejects.toMatchObject({ status: 409 })
+  const detail = await service.section('/project', 7, 'changes')
+  expect(detail.pull.headSha).toBe(head)
+  expect(detail.warnings).toEqual([])
 })

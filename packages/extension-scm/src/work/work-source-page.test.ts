@@ -105,7 +105,9 @@ it('queries Jira before pagination so an older open issue with a custom status i
   expect(all.items).not.toContainEqual(olderOpen)
   const open = await Effect.runPromise(loadWorkSourcePage(source, 'issues', '', 'open', false))
   expect(open.items).toEqual([olderOpen])
-  expect(calls.at(-1)).toMatchObject({ input: { jiraSourceId: 'tracker', state: 'open' } })
+  expect(calls.filter((call) => call.path.endsWith('/list')).at(-1)).toMatchObject({
+    input: { jiraSourceId: 'tracker', state: 'open' },
+  })
 })
 
 it('keeps loaded depth, filters and server order during a forced refresh and replaces duplicates', async () => {
@@ -134,15 +136,6 @@ it('keeps loaded depth, filters and server order during a forced refresh and rep
   expect(calls).toEqual([
     { path: '/api/scm/source/identity', input: { jiraSourceId: 'tracker' } },
     {
-      path: '/api/scm/work/options',
-      input: {
-        jiraSourceId: 'tracker',
-        area: 'issues',
-        expectedReaderIdentity: 'jira-account',
-        expectedDestination: 'jira-destination',
-      },
-    },
-    {
       path: '/api/scm/work/issues/list',
       input: {
         jiraSourceId: 'tracker',
@@ -164,6 +157,15 @@ it('keeps loaded depth, filters and server order during a forced refresh and rep
         query: 'triage',
         cursor: '30',
         refresh: true,
+      },
+    },
+    {
+      path: '/api/scm/work/options',
+      input: {
+        jiraSourceId: 'tracker',
+        area: 'issues',
+        expectedReaderIdentity: 'jira-account',
+        expectedDestination: 'jira-destination',
       },
     },
   ])
@@ -264,7 +266,7 @@ it('reads refreshed pages through an alternate Jira source while retaining origi
     ['TEAM-1', 'original-destination'],
     ['TEAM-2', 'original-destination'],
   ])
-  expect(page.options.destination).toBe('original-destination')
+  expect(page.options?.destination).toBe('original-destination')
   expect(calls.filter((call) => !call.path.endsWith('/identity'))).toHaveLength(3)
   for (const call of calls.filter((call) => !call.path.endsWith('/identity')))
     expect(call.input).toMatchObject({
@@ -332,7 +334,7 @@ for (const change of ['destination', 'readerIdentity'] as const) {
       Effect.gen(function* () {
         if (!path.endsWith('/identity')) {
           requests++
-          if (requests === 3) identity[change] = 'changed'
+          if (requests === 2) identity[change] = 'changed'
           yield* Effect.try({
             try: () => guardSource(identity, decode(guardSchema, input)),
             catch: (error) => (error instanceof Error ? error : new Error(String(error))),
@@ -353,3 +355,37 @@ for (const change of ['destination', 'readerIdentity'] as const) {
     expect(calls.filter((call) => call.path.endsWith('/list'))).toHaveLength(1)
   })
 }
+
+it('publishes Jira content while options are still pending and retains it on an options failure', async () => {
+  const { source } = fixture(() => ({ items: [issue(1)] }))
+  const raw = source.reader.requestEffect
+  let release: () => void = () => {
+    throw new Error('Options not started')
+  }
+  let started: () => void = () => {}
+  const pending = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  source.reader.requestEffect = (path, input, schema) =>
+    path.endsWith('/options')
+      ? Effect.promise(() => {
+          started()
+          return new Promise<void>((resolve) => {
+            release = resolve
+          })
+        }).pipe(Effect.flatMap(() => Effect.fail(new Error('Jira options unavailable'))))
+      : raw(path, input, schema)
+  let visible: unknown
+  const result = Effect.runPromise(
+    loadWorkSourcePage(source, 'issues', '', 'open', false, undefined, undefined, (page) => {
+      visible = page
+    }),
+  )
+  await pending
+  expect(visible).toMatchObject({ items: [issue(1)] })
+  release()
+  expect(await result).toMatchObject({
+    items: [issue(1)],
+    optionsError: 'Jira options unavailable',
+  })
+})

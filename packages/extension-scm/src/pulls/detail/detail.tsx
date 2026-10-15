@@ -1,3 +1,5 @@
+import { AuthorAvatar } from '../author-avatar'
+import { PullSectionStatus } from './section-status'
 import { PullStack } from './stack'
 import { CreatePull } from '../list/create'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -81,11 +83,6 @@ function PullDetailContent({
 }: PullDetailProps) {
   const { connected, workspace } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
-  const { detail, error, busy, readConnected, refresh, invalidate } = usePullDetail(
-    repositoryId,
-    number,
-    connectionId,
-  )
   const changed = () => {
     invalidate()
     onChanged()
@@ -96,6 +93,13 @@ function PullDetailContent({
   const [starting, setStarting] = useApplicationState(false)
   const stateKey = usePullStateKey(repositoryId, number, connectionId)
   const [tab, setTab] = useRetainedPullState(tabCache, stateKey, initialTab ?? 'overview')
+  const { detail, error, busy, readConnected, refresh, invalidate, sections } = usePullDetail(
+    repositoryId,
+    number,
+    connectionId,
+    { tab, discussionInOverview: true },
+  )
+
   const content = useRef<HTMLDivElement>(null)
   const scrollPositions = useRef(
     scrollCache.read(stateKey) ?? { overview: 0, changes: 0, checks: 0 },
@@ -273,8 +277,14 @@ function PullDetailContent({
                 <Badge variant="outline">
                   <Signal signal={pullState(detail.pull)} />
                 </Badge>
-                <span className="max-w-full truncate" title={detail.pull.author}>
-                  #{number} · {detail.pull.author}
+                <span
+                  className="inline-flex min-w-0 items-center gap-1.5"
+                  title={detail.pull.author}
+                >
+                  <AuthorAvatar author={detail.pull.author} url={detail.pull.authorAvatarUrl} />
+                  <span className="truncate">
+                    #{number} · {detail.pull.author}
+                  </span>
                 </span>
                 <a
                   data-dovo-external="true"
@@ -287,6 +297,7 @@ function PullDetailContent({
                   <ArrowUpRight className="size-3.5" />
                 </a>
               </div>
+              <PullSectionStatus label="Status" section={sections.status} />
               <div className="flex min-w-0 flex-wrap items-center gap-2 text-[0.6875rem] text-muted-foreground">
                 <span
                   className="inline-flex min-w-0 max-w-full items-center gap-1.5"
@@ -324,11 +335,23 @@ function PullDetailContent({
                   {
                     id: 'overview',
                     label: 'Overview',
-                    count: discussion.length,
+                    count: sections.discussion.ready ? discussion.length : undefined,
                     icon: MessageSquare,
                   },
-                  { id: 'changes', label: 'Changes', count: detail.files.length, icon: FileDiff },
-                  { id: 'checks', label: 'Checks', count: detail.checks.length, icon: ListChecks },
+                  {
+                    id: 'changes',
+                    label: 'Changes',
+                    count: sections.changes.ready
+                      ? detail.files.length
+                      : (detail.pull.changedFiles ?? undefined),
+                    icon: FileDiff,
+                  },
+                  {
+                    id: 'checks',
+                    label: 'Checks',
+                    count: sections.checks.ready ? detail.checks.length : undefined,
+                    icon: ListChecks,
+                  },
                 ] as const
               ).map((item) => (
                 <button
@@ -336,7 +359,11 @@ function PullDetailContent({
                   type="button"
                   role="tab"
                   id={`pr-tab-${item.id}`}
-                  aria-label={item.id === 'overview' ? item.label : `${item.label} (${item.count})`}
+                  aria-label={
+                    item.id === 'overview' || item.count === undefined
+                      ? item.label
+                      : `${item.label} (${item.count})`
+                  }
                   aria-controls={`pr-panel-${item.id}`}
                   aria-selected={tab === item.id}
                   tabIndex={tab === item.id ? 0 : -1}
@@ -383,9 +410,21 @@ function PullDetailContent({
                 onClick={() => selectTab('checks')}
                 className="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-primary"
               >
-                <Signal signal={pullDetailChecks(detail)} />
+                <Signal
+                  signal={
+                    sections.status.ready || sections.checks.ready
+                      ? pullDetailChecks(detail)
+                      : { label: 'Loading checks…', tone: 'neutral' }
+                  }
+                />
               </button>
-              <Signal signal={pullDetailReviews(detail)} />
+              <Signal
+                signal={
+                  sections.status.ready || sections.discussion.ready
+                    ? pullDetailReviews(detail)
+                    : { label: 'Loading review status…', tone: 'neutral' }
+                }
+              />
               <Signal signal={pullMergeability(detail.pull)} />
             </div>
           </>
@@ -399,7 +438,7 @@ function PullDetailContent({
               scrollPositions.current[tab] = event.currentTarget.scrollTop
               scrollCache.write(stateKey, { ...scrollPositions.current })
             }}
-            className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4"
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 [container-type:size]"
             aria-label="Pull request content"
           >
             {error && (
@@ -467,6 +506,7 @@ function PullDetailContent({
                     </div>
                   </section>
                   <section id="pr-panel-discussion" aria-label="Pull request activity">
+                    <PullSectionStatus label="Activity" section={sections.discussion} />
                     <div className="mb-4 flex flex-wrap items-center gap-1">
                       <h3 className="mr-auto text-sm font-medium">Activity</h3>
                       {(
@@ -497,17 +537,19 @@ function PullDetailContent({
                         </Button>
                       ))}
                     </div>
-                    <PullComments
-                      fileBaseURL={
-                        detail.fileBaseUrl ??
-                        `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
-                      }
-                      actionContext={{ repositoryId, detail, onDone: changed }}
-                      comments={discussion.filter(
-                        (comment) =>
-                          discussionFilter === 'all' || comment.kind === discussionFilter,
-                      )}
-                    />
+                    {sections.discussion.ready && (
+                      <PullComments
+                        fileBaseURL={
+                          detail.fileBaseUrl ??
+                          `${detail.pull.repositoryUrl}/blob/${detail.pull.headSha}/`
+                        }
+                        actionContext={{ repositoryId, detail, onDone: changed }}
+                        comments={discussion.filter(
+                          (comment) =>
+                            discussionFilter === 'all' || comment.kind === discussionFilter,
+                        )}
+                      />
+                    )}
                   </section>
                   <PullCommentComposer
                     repositoryId={repositoryId}
@@ -521,7 +563,9 @@ function PullDetailContent({
                 >
                   <div>
                     <h3 className="mb-2 font-medium">Review decisions</h3>
-                    {reviews.length ? (
+                    {!sections.discussion.ready ? (
+                      <span className="text-muted-foreground">Review decisions loading…</span>
+                    ) : reviews.length ? (
                       <div className="space-y-3">
                         {reviews.map((review) => (
                           <div key={review.author} className="flex flex-wrap items-center gap-2">
@@ -582,7 +626,8 @@ function PullDetailContent({
                       </dd>
                     </div>
                   </dl>
-                  {!detail.stack && stackControls}
+                  <PullSectionStatus label="Stack" section={sections.stack} />
+                  {!detail.stack && sections.stack.ready && stackControls}
                   <Button size="sm" variant="outline" onClick={() => selectTab('changes')}>
                     <FileDiff className="size-3.5" />
                     Review{' '}
@@ -607,7 +652,11 @@ function PullDetailContent({
                   active={tab === 'checks'}
                 />
               )}
-              <PullStatus detail={detail} />
+              <PullSectionStatus label="Checks" section={sections.checks} />
+              <PullSectionStatus label="Reviews" section={sections.discussion} />
+              {sections.checks.ready && (
+                <PullStatus reviewsReady={sections.discussion.ready} detail={detail} />
+              )}
             </section>
             <section
               role="tabpanel"
@@ -615,7 +664,9 @@ function PullDetailContent({
               aria-labelledby="pr-tab-changes"
               hidden={tab !== 'changes'}
             >
-              {changesOpened && (
+              <PullSectionStatus label="Files" section={sections.changes} />
+              <PullSectionStatus label="Code discussion" section={sections.discussion} />
+              {changesOpened && sections.changes.ready && (
                 <PullChanges
                   active={tab === 'changes'}
                   key={`${repositoryId}:${detail.pull.connectionId ?? ''}:${detail.pull.url}`}

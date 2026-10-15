@@ -18,6 +18,7 @@ const count = Schema.optional(
 )
 export const forgeUser = mutableStruct({
   login: Schema.String,
+  avatar_url: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export const forgeRepository = mutableStruct({
   id: Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(

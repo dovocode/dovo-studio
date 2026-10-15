@@ -6,6 +6,7 @@ const sha = 'a'.repeat(40)
 const user = {
   uuid: '{author}',
   display_name: 'Dominic',
+  links: { avatar: { href: 'https://bitbucket.org/account/avatar' } },
 }
 const repository = {
   uuid: '{repo}',
@@ -282,6 +283,7 @@ it('follows opaque next URLs and does not invent page URLs', async () => {
       {
         number: 8,
         state: 'merged',
+        authorAvatarUrl: user.links.avatar.href,
       },
     ],
   })

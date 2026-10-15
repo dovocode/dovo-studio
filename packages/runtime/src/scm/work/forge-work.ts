@@ -16,12 +16,16 @@ import {
   forgePipelineActionSchema,
   forgeWorkQuerySchema,
   jiraIssueFilterKey,
+  jiraBoardsSchema,
+  jiraSprintsSchema,
+  jiraNumericId,
   hasJiraIssueFilters,
   forgeWorkOptionsSchema,
   forgeIssuePageSchema,
   forgeIssueDetailSchema,
   forgePipelinePageSchema,
   forgePipelineDetailSchema,
+  pipelineRevision,
   forgeDefinitionsSchema,
   forgeWorkResultSchema,
   forgeIssueSchema,
@@ -253,6 +257,14 @@ export class ForgeWork {
     const query = decode(forgeWorkQuerySchema, input)
     if (query.jiraFilters !== undefined && operation !== 'issues/list')
       throw new HttpError(400, 'Jira filters are only supported for issue lists')
+    if (
+      query.section &&
+      ((operation !== 'issues/detail' && operation !== 'pipelines/detail') ||
+        (operation === 'issues/detail' && !['overview', 'discussion'].includes(query.section)) ||
+        (operation === 'pipelines/detail' &&
+          !['overview', 'jobs', 'graph'].includes(query.section)))
+    )
+      throw new HttpError(400, 'This section is not supported for this operation')
     const filterKey = jiraIssueFilterKey(query.jiraFilters)
     const area =
       operation === 'options'
@@ -268,6 +280,36 @@ export class ForgeWork {
     }
     const source = JSON.stringify([sourceId, identity.destination])
     validateSource()
+    if (operation === 'jira/boards' || operation === 'jira/sprints') {
+      if (!(provider instanceof JiraWork)) throw new HttpError(400, 'Choose a Jira source.')
+      const board = operation === 'jira/sprints' ? decode(jiraNumericId, data.id) : undefined
+      const closed = query.state === 'closed'
+      const common = {
+        key: JSON.stringify([source, operation, board, closed]),
+        source,
+        refresh: query.refresh,
+        retainLoad: () => provider.retain(),
+        validateSource,
+      }
+      if (board)
+        return runClientEffect(
+          this.cache.readEffect({
+            ...common,
+            schema: jiraSprintsSchema,
+            load: async () => ({
+              ...(await provider.sprints(board, closed)),
+              destination: identity.destination,
+            }),
+          }),
+        )
+      return runClientEffect(
+        this.cache.readEffect({
+          ...common,
+          schema: jiraBoardsSchema,
+          load: async () => ({ ...(await provider.boards()), destination: identity.destination }),
+        }),
+      )
+    }
     const id = () => decode(maxValue(minValue(Schema.String, 1), 300), data.id)
     if (
       operation === 'issues/create' ||
@@ -283,7 +325,15 @@ export class ForgeWork {
       await this.cache.invalidate(source)
       return decode(forgeWorkResultSchema, result)
     }
-    const key = JSON.stringify([source, operation, data.id, query.state, query.cursor, query.query])
+    const key = JSON.stringify([
+      source,
+      operation,
+      data.id,
+      query.state,
+      query.cursor,
+      query.query,
+      ...(query.section ? [query.section] : []),
+    ])
     if (operation === 'issues/list' && provider instanceof JiraWork) {
       // ACLI has no page token: every page is a slice of one ordered prefix. Cache the prefix
       // per state, search and filters so later pages do not read the earlier rows again.
@@ -346,10 +396,19 @@ export class ForgeWork {
           key,
           source,
           schema: forgeIssueDetailSchema,
+          acceptCached: query.revision
+            ? (value) => value.issue.revision === query.revision
+            : undefined,
           retainLoad: provider instanceof JiraWork ? () => provider.retain() : undefined,
           refresh: query.refresh,
           load: async () => {
-            const result = await provider.issue(id(), query.cursor)
+            const result = await provider.issue(
+              id(),
+              query.cursor,
+              query.section === 'overview' || query.section === 'discussion'
+                ? query.section
+                : undefined,
+            )
             return {
               ...result,
               destination: identity.destination,
@@ -383,9 +442,16 @@ export class ForgeWork {
           key,
           source,
           schema: forgePipelineDetailSchema,
+          acceptCached: query.revision
+            ? (value) => pipelineRevision(value.run) === query.revision
+            : undefined,
           refresh: query.refresh,
           load: async () => {
-            const result = await provider.pipeline(id(), query.cursor)
+            const result = await provider.pipeline(
+              id(),
+              query.cursor,
+              query.section === 'discussion' ? undefined : query.section,
+            )
             return {
               ...result,
               destination: identity.destination,

@@ -81,7 +81,7 @@ const built = await build({
     let initial={id:'thread',title:'Fix reconnection',repositoryId:'repo',agentId:'',status:'done',createdAt:'2026-10-14',messages:[],files:[{path:'connection.ts',before:'old connection\\nremove timeout\\n',after:'new connection\\nrestore session\\nhandle network switch\\n'}],draft:'',example:false,execution:'worktree',checkoutBranch:'fix/reconnection',turns:[],linkedPullRequests:[{number:7,url:'https://github.com/test/project/pull/7',repositoryUrl:'https://github.com/test/project',title:'Fix iOS reconnection across Wi-Fi switches'},{number:9,url:'https://github.com/test/project/pull/9',repositoryUrl:'https://github.com/test/project',title:'Preserve the runtime session'}],pullStatus:{number:7,url:'https://github.com/test/project/pull/7',state:'open',checks:'passed',checkedAt:''}};
     function App(){
       const [task,setTask]=useState(initial),[panel,setPanel]=useState(false),[surface,setSurface]=useState('chat'),[hideSidebar,setHideSidebar]=useState(false);window.hideSidebar=setHideSidebar;
-      window.setPullState=(state,draft=false)=>setTask(task=>({...task,pullStatus:{...task.pullStatus,state,draft,checks:'failed'}}));
+      window.switchThread=()=>setTask(task=>({...task,id:task.id==='other-thread'?'thread':'other-thread',title:task.id==='other-thread'?'Fix reconnection':'Another thread'}));window.setPullState=(state,draft=false)=>setTask(task=>({...task,pullStatus:{...task.pullStatus,state,draft,checks:'failed'}}));
       window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));
       const request=async(path,input)=>{
         window.calls.push({path,input});
@@ -200,10 +200,13 @@ try {
       .waitFor({ state: 'hidden' })
     await page.getByRole('button', { name: 'Show project panel', exact: true }).click()
     await page.keyboard.press('Escape')
-    await page
-      .getByRole('region', { name: 'Thread project', exact: true })
-      .waitFor({ state: 'hidden' })
-    await page.getByRole('button', { name: 'Show project panel', exact: true }).click()
+    await page.getByRole('region', { name: 'Thread project', exact: true }).waitFor()
+    await page.locator('[data-thread-content]').click({ position: { x: 10, y: 100 } })
+    await page.getByRole('region', { name: 'Thread project', exact: true }).waitFor()
+    await page.evaluate(() => window.switchThread())
+    await page.getByText('Another thread', { exact: true }).first().waitFor()
+    await page.getByRole('region', { name: 'Thread project', exact: true }).waitFor()
+    await page.evaluate(() => window.switchThread())
 
     await page.getByRole('region', { name: 'Thread project', exact: true }).waitFor()
     await page.getByRole('heading', { name: 'Project', exact: true }).waitFor()

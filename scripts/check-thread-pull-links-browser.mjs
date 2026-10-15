@@ -24,6 +24,8 @@ return <Context.Provider value={value}>CONTENT</Context.Provider>};createRoot(do
 `
 async function bundle(mobile) {
   const mocks = {
+    // Native syntax rendering is covered by check-mobile-review-browser.
+    './code-block': 'export const CodeBlock=({content})=><pre>{content}</pre>;',
     // File previews are exercised by check-chat-files-browser; this suite verifies PR links.
     './rich-file': `export const RichFile=()=>null;export const TemplateCard=()=>null;`,
     './server-image': `export const ServerImage=()=>null;`,

@@ -22,7 +22,11 @@ import {
 } from '@dovo/protocol'
 import { Effect, Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
-import { useCarMode } from '../../runtime/preferences/app-preferences'
+import {
+  useCarMode,
+  useMobilePreferences,
+  updateMobilePreferences,
+} from '../../runtime/preferences/app-preferences'
 import { useAction } from '../../ui/controls/use-action'
 import {
   createDetailDrafts,
@@ -498,7 +502,8 @@ function TaskDetailContent({
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [renaming, setRenaming] = useApplicationState(false)
   const [artifactsOpen, setArtifactsOpen] = useState(false)
-  const [projectInfo, setProjectInfo] = useState(false)
+  const { projectPanelOpen: projectInfo } = useMobilePreferences()
+  const setProjectInfo = (open: boolean) => updateMobilePreferences({ projectPanelOpen: open })
   const [linkedPulls, setLinkedPulls] = useState(false)
   const [linkedPullUrl, setLinkedPullUrl] = useState<string | undefined>(undefined)
   const [threadBehavior, setThreadBehavior] = useState(false)
@@ -629,7 +634,7 @@ function TaskDetailContent({
                       selected: projectInfo,
                       onPress: () => {
                         Keyboard.dismiss()
-                        setProjectInfo((value) => !value)
+                        setProjectInfo(!projectInfo)
                       },
                     },
                     ...(pulls.length
@@ -786,6 +791,26 @@ function TaskDetailContent({
                 )
         }
       />
+      {projectInfo && !native && !car && (
+        <TaskProjectSheet
+          key={`${activeId}:${task.id}`}
+          inline
+          task={task}
+          scripts={projectActions}
+          branchActions={[...branchActions, ...worktreeActions, ...moveActions]}
+          onClose={() => setProjectInfo(false)}
+          onAgents={() => {
+            setPane('agents')
+          }}
+          onChanges={() => {
+            setPane('diff')
+          }}
+          onPulls={(url) => {
+            setLinkedPullUrl(url)
+            setLinkedPulls(true)
+          }}
+        />
+      )}
       {/* Offline and reconnect state lives in the floating pill above the composer. */}
       {viewed.error && !native && (
         <View
@@ -1044,27 +1069,6 @@ function TaskDetailContent({
           key={`${activeId}:${task.id}`}
           taskId={task.id}
           onClose={() => setArtifactsOpen(false)}
-        />
-      )}
-      {projectInfo && (
-        <TaskProjectSheet
-          key={`${activeId}:${task.id}`}
-          task={task}
-          scripts={projectActions}
-          branchActions={[...branchActions, ...worktreeActions, ...moveActions]}
-          onClose={() => setProjectInfo(false)}
-          onAgents={() => {
-            setProjectInfo(false)
-            setPane('agents')
-          }}
-          onChanges={() => {
-            setProjectInfo(false)
-            setPane('diff')
-          }}
-          onPulls={(url) => {
-            setLinkedPullUrl(url)
-            setLinkedPulls(true)
-          }}
         />
       )}
       {linkedPulls && (

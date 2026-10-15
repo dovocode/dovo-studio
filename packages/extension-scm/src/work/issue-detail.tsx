@@ -1,3 +1,5 @@
+import { PipelineSectionStatus } from './pipeline-section-status'
+import type { useIssueDiscussion } from './use-issue-discussion'
 import { CircleDot, ExternalLink } from 'lucide-react'
 import {
   issueLabel,
@@ -19,6 +21,8 @@ export function IssueDetail({
   busy,
   stale,
   notice,
+  discussionState,
+  actionsReady = true,
   onEdit,
   onTransition,
   onComment,
@@ -34,6 +38,8 @@ export function IssueDetail({
   busy: boolean
   stale: boolean
   notice?: string
+  discussionState?: ReturnType<typeof useIssueDiscussion>
+  actionsReady?: boolean
   onEdit: () => void
   onTransition: () => void
   onComment: () => void
@@ -55,7 +61,7 @@ export function IssueDetail({
       className="@container/issue-detail mx-auto max-w-4xl space-y-5"
       aria-label="Issue details"
     >
-      <header className="space-y-3">
+      <header className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-foreground">
             <CircleDot className="size-3.5" />
@@ -73,7 +79,7 @@ export function IssueDetail({
           </a>
         </div>
         <h2 className="break-words text-xl font-semibold leading-snug">{issue.title}</h2>
-        <dl className="grid grid-cols-2 gap-3 rounded-md border bg-card p-3 text-xs @2xl/issue-detail:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-4 text-xs @2xl/issue-detail:grid-cols-4">
           <div>
             <dt className="text-muted-foreground">Assigned to</dt>
             <dd className="mt-1 break-words">
@@ -91,8 +97,9 @@ export function IssueDetail({
           <div>
             <dt className="text-muted-foreground">Discussion</dt>
             <dd className="mt-1">
-              {comments.length}
-              {next ? '+' : ''} comments loaded
+              {discussionState && !discussionState.ready
+                ? 'Loading…'
+                : `${comments.length}${next ? '+' : ''} comments loaded`}
             </dd>
           </div>
         </dl>
@@ -118,7 +125,7 @@ export function IssueDetail({
           <Button
             size="sm"
             variant="outline"
-            disabled={!connected || busy || stale}
+            disabled={!connected || busy || stale || !actionsReady}
             onClick={provider === 'jira' ? onTransition : onEdit}
           >
             {provider === 'jira' ? 'Change status' : 'Edit issue'}
@@ -127,7 +134,7 @@ export function IssueDetail({
             <Button
               size="sm"
               variant="ghost"
-              disabled={!connected || busy || stale}
+              disabled={!connected || busy || stale || !actionsReady}
               onClick={onEdit}
             >
               Edit details
@@ -137,7 +144,7 @@ export function IssueDetail({
             <Button
               size="sm"
               variant="outline"
-              disabled={!connected || busy || stale}
+              disabled={!connected || busy || stale || !actionsReady}
               onClick={onComment}
             >
               Comment
@@ -158,7 +165,7 @@ export function IssueDetail({
       )}
       <section
         aria-label="Issue description"
-        className="min-w-0 max-w-prose border-t pt-5 text-sm leading-7"
+        className="min-w-0 rounded-xl border bg-card p-5 text-sm leading-7"
       >
         <h3 className="mb-3 font-medium">Description</h3>
         <MessageResponse baseURL={issue.url}>
@@ -172,25 +179,36 @@ export function IssueDetail({
         <Button
           size="sm"
           variant="outline"
-          disabled={!connected || busy || stale}
+          disabled={!connected || busy || stale || !actionsReady}
           onClick={onComment}
         >
           Comment
         </Button>
       </div>
+      {discussionState && (
+        <PipelineSectionStatus
+          label="Discussion"
+          state={discussionState}
+          connected={readConnected}
+        />
+      )}
       {discussionNotice && (
         <p role="status" className="text-xs text-muted-foreground">
           {discussionNotice}
         </p>
       )}
-      {!comments.length && (
-        <p className="text-sm text-muted-foreground">
-          No comments yet. Add context or start a linked task.
-        </p>
-      )}
-      <div className="divide-y">
+      {!comments.length &&
+        (!discussionState || (discussionState.ready && !discussionState.error)) && (
+          <p className="text-sm text-muted-foreground">
+            No comments yet. Add context or start a linked task.
+          </p>
+        )}
+      <div className="space-y-3">
         {comments.map((comment) => (
-          <section key={comment.id} className="py-4">
+          <section
+            key={comment.id}
+            className="min-w-0 rounded-xl border bg-card p-4 text-sm leading-relaxed"
+          >
             <p className="mb-2 text-xs text-muted-foreground">
               {comment.author} · {formatDate(comment.createdAt)}
             </p>
@@ -199,7 +217,7 @@ export function IssueDetail({
         ))}
       </div>
       {next && (
-        <Button disabled={busy || !readConnected} onClick={onMore}>
+        <Button disabled={(discussionState?.busy ?? busy) || !readConnected} onClick={onMore}>
           More comments
         </Button>
       )}

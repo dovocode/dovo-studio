@@ -88,8 +88,10 @@ async function setup(provider: 'forgejo' | 'github' = 'forgejo') {
     return Response.json([])
   })
   vi.stubGlobal('fetch', fetcher)
+  const githubReads: string[] = []
   const githubWrites: Array<{ token: string; path: string }> = []
   vi.spyOn(GithubTransport.prototype, 'send').mockImplementation(async (request, token) => {
+    if (request.method === 'GET') githubReads.push(request.path)
     if (request.path === 'user') return JSON.stringify({ id: account, login: 'viewer' })
     if (request.method !== 'GET') {
       githubWrites.push({ token, path: request.path })
@@ -99,9 +101,15 @@ async function setup(provider: 'forgejo' | 'github' = 'forgejo') {
       return JSON.stringify({
         ...pull(),
         html_url: `https://github.com/${repository}/pull/7`,
-        head: { ref: 'fix', sha, repo: { clone_url: `https://github.com/${repository}.git` } },
-        base: { ref: 'main', sha: 'b'.repeat(40) },
+        head: {
+          label: 'author:fix',
+          ref: 'fix',
+          sha,
+          repo: { clone_url: `https://github.com/${repository}.git` },
+        },
+        base: { label: 'main', ref: 'main', sha: 'b'.repeat(40) },
         merged: false,
+        merged_at: null,
         draft: false,
         mergeable: true,
       })
@@ -147,6 +155,7 @@ async function setup(provider: 'forgejo' | 'github' = 'forgejo') {
     writes,
     reads,
     githubWrites,
+    githubReads,
     connection,
     f,
     bind,
@@ -463,4 +472,52 @@ it('uses the originating project gh environment when a linked PR has no explicit
     undefined,
     true,
   )
+})
+
+it('loads and caches a guarded GitHub overview without reading files, discussion or checks', async () => {
+  const f = await setup('github')
+  const identity = await f.identity()
+  const input = {
+    repositoryId: 'repo',
+    number: 7,
+    section: 'overview',
+    expectedReaderIdentity: identity.readerIdentity,
+    expectedDestination: identity.destination,
+  }
+  for (let i = 0; i < 2; i++) {
+    const result = await f.call('pulls/detail', input)
+    expect(result.status).toBe(200)
+    expect(decode(pullDetailSchema, result.data).pull.body).toBe('Private body')
+  }
+  expect(f.githubReads.filter((path) => path !== 'user')).toEqual(['repos/old/project/pulls/7'])
+  expect((await f.call('pulls/detail', { ...input, refresh: true })).status).toBe(200)
+  expect(f.githubReads.filter((path) => path.endsWith('/pulls/7'))).toHaveLength(2)
+  const before = f.githubReads.length
+  expect(
+    (await f.call('pulls/detail', { ...input, expectedDestination: 'different' })).status,
+  ).toBe(409)
+  expect(f.githubReads.slice(before).every((path) => path === 'user')).toBe(true)
+  f.setAccount(18)
+  expect((await f.call('pulls/detail', input)).status).toBe(409)
+  expect(f.githubReads.filter((path) => path.endsWith('/pulls/7'))).toHaveLength(2)
+})
+it('checks URL section destinations before returning cached PR data', async () => {
+  const f = await setup('github')
+  const input = {
+    repositoryId: 'https://github.com/old/project/pull/7',
+    number: 7,
+    connectionId: f.connection.id,
+    section: 'overview',
+  }
+  const first = await f.call('pulls/detail', input)
+  expect(first.status).toBe(200)
+  const detail = decode(pullDetailSchema, first.data)
+  expect(
+    (await f.call('pulls/detail', { ...input, expectedDestination: detail.destination })).status,
+  ).toBe(200)
+  expect(
+    (await f.call('pulls/detail', { ...input, expectedDestination: 'different' })).status,
+  ).toBe(409)
+  expect(f.githubReads.filter((path) => path.endsWith('/pulls/7'))).toHaveLength(1)
+  expect((await f.call('pulls/detail', { ...input, section: 'stack' })).status).toBe(400)
 })

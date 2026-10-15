@@ -1,3 +1,4 @@
+import { PullSectionStatus } from './section-status'
 import { PullRequestIcon } from '../../../ui/content/pull-request-icon'
 import {
   gitRemoteIdentity,
@@ -115,26 +116,6 @@ export function PullDetail({
   const body = useRef<ScrollView>(null)
   const content = useRef<View>(null)
   const navigateAfterSheet = useSheetNavigation()
-  const {
-    detail,
-    error,
-    setError,
-    busy,
-    refreshing,
-    refresh,
-    invalidate,
-    acceptCurrentAccount,
-    readConnected,
-  } = usePullDetail(repositoryId, number, account)
-  const onPosted = () => {
-    invalidate()
-    invalidatePullList(readCache, repositoryId)
-  }
-  const taskCreation = usePullTaskCreation(repositoryId, detail?.pull)
-  const actionOrigin = useRef(detail)
-  const lineOrigin = useRef(detail)
-  const stackOrigin = useRef(detail)
-  const [creatingStack, setCreatingStack] = useApplicationState(false)
   const { draft: navigation, setField } = useDetailDraft(
     pullNavigation,
     integrationDraftKey(
@@ -149,6 +130,27 @@ export function PullDetail({
     () => ({ tab: initialTab ?? 'overview', metadataOpen: false }),
   )
   const { tab, metadataOpen } = navigation
+  const {
+    detail,
+    sections,
+    error,
+    setError,
+    busy,
+    refreshing,
+    refresh,
+    invalidate,
+    acceptCurrentAccount,
+    readConnected,
+  } = usePullDetail(repositoryId, number, account, { tab })
+  const onPosted = () => {
+    invalidate()
+    invalidatePullList(readCache, repositoryId)
+  }
+  const taskCreation = usePullTaskCreation(repositoryId, detail?.pull)
+  const actionOrigin = useRef(detail)
+  const lineOrigin = useRef(detail)
+  const stackOrigin = useRef(detail)
+  const [creatingStack, setCreatingStack] = useApplicationState(false)
   const setTab = (value: string) => {
     if (value === 'overview' || value === 'changes' || value === 'discussion' || value === 'checks')
       setField('tab', value)
@@ -496,10 +498,24 @@ export function PullDetail({
                       Updated {formatDateTime(detail.pull.updatedAt)}
                     </Text>
                   </View>
+                  <PullSectionStatus label="Status" section={sections.status} />
+                  <PullSectionStatus label="Stack" section={sections.stack} />
                   <View style={styles.row}>
-                    <Signal signal={pullDetailChecks(detail)} />
+                    <Signal
+                      signal={
+                        sections.status.ready || sections.checks.ready
+                          ? pullDetailChecks(detail)
+                          : { label: 'Loading checks…', tone: 'neutral' }
+                      }
+                    />
                     <Text style={styles.muted}>·</Text>
-                    <Signal signal={pullDetailReviews(detail)} />
+                    <Signal
+                      signal={
+                        sections.status.ready || sections.discussion.ready
+                          ? pullDetailReviews(detail)
+                          : { label: 'Loading review status…', tone: 'neutral' }
+                      }
+                    />
                     <Text style={styles.muted}>·</Text>
                     <Signal signal={pullMergeability(detail.pull)} />
                   </View>
@@ -584,20 +600,25 @@ export function PullDetail({
                     gap: 12,
                   }}
                 >
-                  <Text style={styles.muted}>
-                    {discussion.filter((comment) => comment.kind === 'review').length} reviews ·{' '}
-                    {discussion.filter((comment) => comment.kind === 'comment').length} discussion
-                    comments
-                  </Text>
-                  <PullComments
-                    comments={discussion}
-                    fragment={fragment}
-                    onAnchor={tab === 'discussion' ? scrollToAnchor : undefined}
-                    onOpen={open}
-                    fileBaseURL={fileBaseURL}
-                    onAction={actionDisabled ? undefined : openAction}
-                    capabilities={detail.capabilities}
-                  />
+                  {sections.discussion.ready && (
+                    <Text style={styles.muted}>
+                      {discussion.filter((comment) => comment.kind === 'review').length} reviews ·{' '}
+                      {discussion.filter((comment) => comment.kind === 'comment').length} discussion
+                      comments
+                    </Text>
+                  )}
+                  <PullSectionStatus label="Activity" section={sections.discussion} />
+                  {sections.discussion.ready && (
+                    <PullComments
+                      comments={discussion}
+                      fragment={fragment}
+                      onAnchor={tab === 'discussion' ? scrollToAnchor : undefined}
+                      onOpen={open}
+                      fileBaseURL={fileBaseURL}
+                      onAction={actionDisabled ? undefined : openAction}
+                      capabilities={detail.capabilities}
+                    />
+                  )}
                 </View>
               </View>
               <View
@@ -620,14 +641,24 @@ export function PullDetail({
                     }}
                   />
                 )}
-                <PullStatus detail={detail} onOpen={open} />
+                <PullSectionStatus label="Checks" section={sections.checks} />
+                <PullSectionStatus label="Reviews" section={sections.discussion} />
+                {sections.checks.ready && (
+                  <PullStatus
+                    reviewsReady={sections.discussion.ready}
+                    detail={detail}
+                    onOpen={open}
+                  />
+                )}
               </View>
               <View
                 style={{
                   display: tab === 'changes' ? 'flex' : 'none',
                 }}
               >
-                {changesOpened && (
+                <PullSectionStatus label="Files" section={sections.changes} />
+                <PullSectionStatus label="Code discussion" section={sections.discussion} />
+                {changesOpened && sections.changes.ready && (
                   <PullChanges
                     active={tab === 'changes'}
                     key={`${repositoryId}:${detail.pull.number}`}

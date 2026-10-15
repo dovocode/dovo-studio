@@ -30,6 +30,7 @@ export type WorkSourcePage = WorkItemsPage & {
   query?: string
   options?: ForgeWorkOptions
   error?: string
+  optionsError?: string
 }
 
 export type WorkListSource = WorkSource & {
@@ -148,29 +149,27 @@ export function loadWorkSourcePage(
   refresh: boolean,
   previous?: WorkSourcePage,
   jiraFilters?: JiraIssueFilters,
+  onPage?: (page: Omit<WorkSourcePage, 'source' | 'reader'>) => void,
 ) {
   return Effect.gen(function* () {
     const reader = source.reader
     const readGuard = yield* verifySourceReader(reader)
-    const options =
-      reusableOptions(previous, reader, mode, refresh) ??
-      (yield* reader.requestEffect(
-        '/api/scm/work/options',
-        { ...reader.input, ...readGuard, area: mode },
-        forgeWorkOptionsSchema,
-      ))
-    const optionsFetchedAt =
-      options === previous?.options && previous?.optionsFetchedAt !== undefined
-        ? previous.optionsFetchedAt
-        : Date.now()
+    const jira = mode === 'issues' && !!source.jira
+    const readOptions = reader.requestEffect(
+      '/api/scm/work/options',
+      { ...reader.input, ...readGuard, area: mode },
+      forgeWorkOptionsSchema,
+    )
+    let options = reusableOptions(previous, reader, mode, refresh)
+    if (!jira && !options) options = yield* readOptions
     const query =
       mode === 'issues' &&
-      options.issueSearch &&
+      (jira || options?.issueSearch) &&
       search &&
       !`${source.name} ${source.runtimeName}`.toLowerCase().includes(search.toLowerCase())
         ? search
         : undefined
-    const supported = mode === 'issues' ? options.issues : options.pipelines
+    const supported = jira || (mode === 'issues' ? options?.issues : options?.pipelines)
     const count = Math.max(1, previous?.loadedPages ?? 1)
     let response: WorkItemsPage = { items: [] }
     let loadedPages = 0
@@ -200,15 +199,40 @@ export function loadWorkSourcePage(
         loadedPages++
         if (!response.next) break
       }
-    return {
+    const content = {
       ...response,
-      options:
-        reader.key === source.key ? options : { ...options, destination: source.destination },
-      optionsMode: mode,
-      optionsFetchedAt,
       loadedPages: Math.max(1, loadedPages),
       query,
       error: response.refreshError,
+    }
+    let optionsError: string | undefined
+    if (jira && !options) {
+      onPage?.(content)
+      yield* readOptions.pipe(
+        Effect.tap((value) =>
+          Effect.sync(() => {
+            options = value
+          }),
+        ),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            optionsError = error.message
+          }),
+        ),
+      )
+    }
+    return {
+      ...content,
+      options:
+        options &&
+        (reader.key === source.key ? options : { ...options, destination: source.destination }),
+      optionsMode: mode,
+      optionsFetchedAt: options
+        ? options === previous?.options
+          ? previous?.optionsFetchedAt
+          : Date.now()
+        : undefined,
+      optionsError,
     }
   })
 }

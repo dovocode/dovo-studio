@@ -212,9 +212,13 @@ it('settles inactive task families using scoped policy without archiving or touc
   expect(s.store.get().tasks.every((item) => item.archived && !item.archivedAt)).toBe(true)
   expect(close).not.toHaveBeenCalled()
   s.store.updateTask('parent', (task) => ({ ...task, draft: 'New work' }))
-  expect(s.store.task('parent').archived).toBe(false)
-  expect(s.store.task('parent').autoSettled).toBeUndefined()
-  expect(s.store.get().tasks.every((task) => !task.archived)).toBe(true)
+  expect(s.store.get().tasks.every((task) => task.archived && task.autoSettled)).toBe(true)
+  s.store.patch({
+    collection: 'tasks',
+    id: 'parent',
+    changes: { draft: { before: 'New work', after: 'More draft work' } },
+  })
+  expect(s.store.get().tasks.every((task) => task.archived && task.autoSettled)).toBe(true)
 })
 it('revives automatically settled families when a new message is queued', async () => {
   const { s, housekeeping } = await archiveFixture()

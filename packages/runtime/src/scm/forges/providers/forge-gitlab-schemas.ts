@@ -1,7 +1,11 @@
 import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '@dovo/protocol'
 
-export const gitlabUser = mutableStruct({ id: Schema.Number, username: Schema.String })
+export const gitlabUser = mutableStruct({
+  id: Schema.Number,
+  username: Schema.String,
+  avatar_url: Schema.optional(Schema.NullOr(Schema.String)),
+})
 export const gitlabProject = mutableStruct({
   id: Schema.Number,
   name: Schema.String,

@@ -83,7 +83,7 @@ export function ComposerWorkspace({
           onMoving={onMachineMoving}
           onSelectRemote={onSelectRemote}
         />
-        <span className="ml-auto inline-flex h-7 items-center gap-1.5 px-2 text-[0.6875rem]">
+        <span className="ml-auto inline-flex h-6 items-center gap-1.5 px-2 text-[0.6875rem]">
           <Folder className="size-3 shrink-0" />
           {repository.kind === 'scratch' ? 'Private thread folder' : 'Project folder'}
         </span>
@@ -104,7 +104,7 @@ export function ComposerWorkspace({
             <Button
               type="button"
               variant="ghost"
-              className="h-7 gap-1.5 px-2 text-[0.6875rem] font-normal"
+              className="h-6 gap-1.5 px-2 text-[0.6875rem] font-normal"
               aria-label="Working directory"
               data-value={task.execution ?? 'main'}
               disabled={disabled}
@@ -214,7 +214,7 @@ export function ComposerWorkspace({
         </DropdownMenu.Root>
       ) : (
         <span
-          className="inline-flex h-7 items-center gap-1.5 px-2 text-[0.6875rem]"
+          className="inline-flex h-6 items-center gap-1.5 px-2 text-[0.6875rem]"
           aria-label={`Working directory: ${task.execution === 'worktree' ? 'Worktree' : 'Local checkout'}`}
           title="Checkout cannot be changed after a task starts."
         >
@@ -255,7 +255,7 @@ export function ComposerWorkspace({
               task.status === 'running' ||
               (task.execution === 'worktree' && !task.checkoutBranch && !choosingBase)
             }
-            className="ml-auto h-7 min-w-0 max-w-48 gap-1 px-2 text-[0.6875rem] font-normal"
+            className="ml-auto h-6 min-w-0 max-w-48 gap-1 px-2 text-[0.6875rem] font-normal"
           >
             <GitBranch className="size-3" />
             <span className="truncate">

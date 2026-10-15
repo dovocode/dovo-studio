@@ -9,7 +9,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/components/ai-elements/conversation.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;`,
   '../chat/thread/use-task-viewed': `export const useTaskViewed=()=>({});`,
-  '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';export function ChatThread({task,onReadingHistory}){return <Conversation><ConversationHistory onReadingHistory={onReadingHistory}><ConversationContent data-conversation-content style={{padding:16}}><div className="flex flex-col">{Array.from({length:20},(_,index)=>index).map(index=><section key={index} style={{contentVisibility:"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn id={task.id+'-'+index} pinned={index>=18}>{()=> <div style={{height:350}}>Turn {task.id} {index}</div>}</DeferredTurn></section>)}</div></ConversationContent></ConversationHistory></Conversation>}`,
+  '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory,ConversationScrollButton} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';export function ChatThread({task,onReadingHistory,active}){return <Conversation><ConversationHistory active={active} settled={task.archived} onReadingHistory={onReadingHistory}><ConversationContent data-conversation-content style={{padding:16}}><div className="flex flex-col"><div style={{height:window.olderHeight??0}}>Earlier preloaded history</div>{Array.from({length:20},(_,index)=>index).map(index=><section key={index} style={{contentVisibility:"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn id={task.id+'-'+index} pinned={index>=18}>{()=> <div style={{height:350}}>Turn {task.id} {index}</div>}</DeferredTurn></section>)}<div style={{height:window.newHeight??0}}>Latest response</div></div></ConversationContent></ConversationHistory><ConversationScrollButton/></Conversation>}`,
   '../chat/composer/composer': `export function Composer({collapsed}){return <form data-collapsed={collapsed} style={{height:collapsed?48:150}}><textarea aria-label="Message" style={{width:'100%',height:collapsed?30:100}} onChange={e=>{e.currentTarget.form.style.height=e.target.value.length>20?'300px':'150px'}}/></form>}`,
 }
 for (const [path, name] of [
@@ -27,7 +27,7 @@ for (const [path, name] of [
   mocks[path] = `export const ${name}=()=>null;`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[id,setId]=useState('first');window.openThread=setId;return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',draft:'',messages:[],queue:[],turns:[],files:[]}} historyLoaded visible onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[]}} historyLoaded visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: root,
     loader: 'tsx',
   },
@@ -134,6 +134,39 @@ try {
   await input.fill('Another longer draft that resizes the composer')
   await page.waitForTimeout(200)
   assert.equal(await page.locator('[role=log] > div').evaluate((e) => e.scrollTop), before)
+  // Reopen an already mounted settled thread while reading an older turn.
+  await page.evaluate(() => window.setSettled(false))
+  await bottom()
+  // Earlier pages, late Markdown measurements and new responses preserve following.
+  for (const [older, newest] of [
+    [4000, 0],
+    [8000, 250],
+    [8500, 700],
+    [5000, 1000],
+  ]) {
+    await page.evaluate(([older, newest]) => window.resizeHistory(older, newest), [older, newest])
+    await bottom()
+  }
+  await input.blur()
+  await page.locator('[role=log]').hover()
+  await page.mouse.wheel(0, -1000)
+  await page.getByRole('button', { name: 'Scroll to latest message' }).waitFor()
+  await page.waitForTimeout(200)
+  const detached = await page.locator('[role=log] > div').evaluate((e) => e.scrollTop)
+  await page.evaluate(() => window.resizeHistory(5000, 1700))
+  await page.waitForTimeout(200)
+  assert.equal(await page.locator('[role=log] > div').evaluate((e) => e.scrollTop), detached)
+  await page.getByRole('button', { name: 'Scroll to latest message' }).click()
+  await bottom()
+  await page.evaluate(() => window.resizeHistory(9000, 2200))
+  await bottom()
+  // Returning from another surface restores the latest reply too.
+  await page.mouse.wheel(0, -1000)
+  await page.getByRole('button', { name: 'Scroll to latest message' }).waitFor()
+  await page.evaluate(() => window.setVisible(false))
+  await page.waitForTimeout(50)
+  await page.evaluate(() => window.setVisible(true))
+  await bottom()
   assert.deepEqual(errors, [])
   console.log(
     'Newest-first thread opening, initial visibility, deferred layout, composer resizing, and reading-history focus checks passed.',

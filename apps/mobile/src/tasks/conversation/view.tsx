@@ -493,6 +493,7 @@ export function Conversation({
   const task = useConversationSelector((value) => value.task)
   const legacyEvents = useConversationSelector((value) => value.legacyEvents)
   const activityError = useConversationSelector((value) => value.activityError)
+  const visible = useConversationSelector((value) => value.visible)
   const followRequest = useConversationSelector((value) => value.followRequest)
   const recentReady = useConversationSelector((value) => value.recentReady)
   const onRecentLayout = useConversationSelector((value) => value.onRecentLayout)
@@ -540,6 +541,13 @@ export function Conversation({
     setFollowing(true)
   }, [move, scroll])
   useEffect(latest, [followRequest, latest])
+  const previous = useRef({ id: task.id, visible, settled: task.archived })
+  useEffect(() => {
+    const before = previous.current
+    previous.current = { id: task.id, visible, settled: task.archived }
+    if (visible && (before.id !== task.id || !before.visible || (before.settled && !task.archived)))
+      latest()
+  }, [task.id, task.archived, visible, latest])
   const recordScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
     scroll.scroll(nativeEvent.contentOffset.y)
     setFollowing(scroll.following)

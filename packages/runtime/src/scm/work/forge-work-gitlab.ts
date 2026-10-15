@@ -1,3 +1,4 @@
+import type { ForgePipelineSection, ForgePipelineDetail } from '@dovo/protocol'
 import { Schema } from 'effect'
 import {
   decode,
@@ -238,15 +239,29 @@ export class GitLabForgeWork implements ForgeWorkProvider {
       next: rows.length === SIZE ? String(page + 1) : undefined,
     }
   }
-  async pipeline(id: string, cursor?: string) {
+  async pipeline(
+    id: string,
+    cursor?: string,
+    section?: ForgePipelineSection,
+  ): Promise<ForgePipelineDetail> {
     const selected = this.id(id),
       page = workPage(cursor)
-    const [run, jobs] = await Promise.all([
-      this.get(`pipelines/${selected}`).then((value) => decode(gitlabPipeline, value)),
-      this.get(
+    const run = decode(gitlabPipeline, await this.get(`pipelines/${selected}`))
+    if (section === 'overview' || section === 'graph')
+      return {
+        run: this.normalizePipeline(run),
+        jobs: [],
+        graphNotice:
+          section === 'graph'
+            ? 'GitLab job dependencies and child pipelines are available on GitLab.'
+            : undefined,
+      }
+    const jobs = decode(
+      mutableArray(jobSchema),
+      await this.get(
         `pipelines/${selected}/jobs?include_retried=false&per_page=${SIZE}&page=${page}`,
-      ).then((value) => decode(mutableArray(jobSchema), value)),
-    ])
+      ),
+    )
     // Stages alone do not imply `needs`: keep the graph honest instead of inventing dependencies.
     return {
       run: this.normalizePipeline(run),

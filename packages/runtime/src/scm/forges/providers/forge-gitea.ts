@@ -203,6 +203,7 @@ export class GiteaForge implements ForgeAdapter {
       state: pull.merged ? 'merged' : pull.state,
       draft: pull.draft,
       author: pull.user?.login ?? 'Deleted user',
+      authorAvatarUrl: pull.user?.avatar_url || undefined,
       updatedAt: pull.updated_at,
       head: pull.head.label,
       base: pull.base.ref,

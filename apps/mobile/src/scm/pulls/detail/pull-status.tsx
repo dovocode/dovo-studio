@@ -72,8 +72,10 @@ export function PullCommentLabel({ comment }: { comment: PullComment }) {
 export function PullStatus({
   detail,
   onOpen,
+  reviewsReady = true,
 }: {
   detail: PullDetail
+  reviewsReady?: boolean
   onOpen: (url: string) => void
 }) {
   const { colors, styles } = useTheme()
@@ -144,7 +146,9 @@ export function PullStatus({
         >
           Review decisions
         </Text>
-        {reviews.length ? (
+        {!reviewsReady ? (
+          <Text style={styles.muted}>Reviews have not loaded yet.</Text>
+        ) : reviews.length ? (
           reviews.map((review) => (
             <Pressable
               key={review.author}

@@ -253,7 +253,7 @@ export function Composer({
   // Measure the toolbar itself: split views and safe-area insets can reduce its width.
   const overflowActions =
     showFollowupActions && toolbarWidth < (5 + Number(hasSideQuestion) + Number(showFork)) * 44
-  const canDictate = draft.ready && !busy && !task.archived && !attaching
+  const canDictate = draft.ready && !busy && !task.archivedAt && !attaching
   const listening = dictation.isRecording || dictation.isStarting
   const dictationStatus = dictation.isStarting
     ? 'Starting microphone…'
@@ -394,7 +394,7 @@ export function Composer({
     <FileDropTarget
       key={actions.threadScope}
       enabled={
-        connected && draft.ready && !busy && !attaching && !dictation.active && !task.archived
+        connected && draft.ready && !busy && !attaching && !dictation.active && !task.archivedAt
       }
       upload={attachmentPicker.upload}
       testID="Composer"
@@ -513,16 +513,20 @@ export function Composer({
                 placeholder={
                   dictation.isRecording
                     ? 'Listening…'
-                    : firstMessage
-                      ? 'What would you like to work on?'
-                      : task.status === 'running'
-                        ? 'Add a follow-up…'
-                        : 'Ask a follow-up…'
+                    : task.archivedAt
+                      ? 'Restore this archived thread to continue'
+                      : task.archived
+                        ? 'Send a message to reopen this thread…'
+                        : firstMessage
+                          ? 'What would you like to work on?'
+                          : task.status === 'running'
+                            ? 'Add a follow-up…'
+                            : 'Ask a follow-up…'
                 }
                 value={draft.text}
                 revision={draft.revision}
                 onChangeText={type}
-                editable={draft.ready && !busy && !dictation.active && !task.archived}
+                editable={draft.ready && !busy && !dictation.active && !task.archivedAt}
                 showOptions={showOptions}
                 trailingControlCount={2 + Number(hasSideQuestion)}
               />
@@ -558,7 +562,7 @@ export function Composer({
               variant="plain"
               icon="add"
               label="Attach photos or files"
-              disabled={!connected || busy || attaching || dictation.active || task.archived}
+              disabled={!connected || busy || attaching || dictation.active || !!task.archivedAt}
               onPress={attachmentPicker.pick}
             />
             <View

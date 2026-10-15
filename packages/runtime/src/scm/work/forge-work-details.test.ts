@@ -508,3 +508,43 @@ it('reads GitHub dependencies at the run commit and preserves detail when source
   expect(unavailable.graphNotice).toContain('Access denied')
   expect(unavailable.jobs).toHaveLength(1)
 })
+
+it('loads overview, attempt-pinned jobs and commit-pinned dependencies independently', async () => {
+  const json = vi.fn<WorkHttp['json']>().mockImplementation(async (path) => {
+    if (path.includes('/contents/'))
+      return {
+        encoding: 'base64',
+        content: Buffer.from('jobs:\n  build: {name: Build}\n  publish: {needs: build}').toString(
+          'base64',
+        ),
+      }
+    if (path.includes('/jobs?')) return { jobs: [gitJob] }
+    return { ...gitRun, run_attempt: 2, path: '.github/workflows/ci.yml' }
+  })
+  const provider = new GitForgeWork({ json }, 'github', 'me/app')
+  const overview = decode(
+    forgePipelineDetailSchema,
+    await provider.pipeline('42', undefined, 'overview'),
+  )
+  expect(overview.jobs).toEqual([])
+  expect(json.mock.calls.map(([path]) => path)).toEqual(['repos/me/app/actions/runs/42'])
+  json.mockClear()
+  const jobs = decode(forgePipelineDetailSchema, await provider.pipeline('42', '2', 'jobs'))
+  expect(jobs.jobs[0]?.name).toBe('Build')
+  expect(jobs.graph).toBeUndefined()
+  expect(json.mock.calls.map(([path]) => path)).toEqual([
+    'repos/me/app/actions/runs/42',
+    'repos/me/app/actions/runs/42/attempts/2/jobs?per_page=50&page=2',
+  ])
+  json.mockClear()
+  const graph = decode(forgePipelineDetailSchema, await provider.pipeline('42', undefined, 'graph'))
+  expect(graph.jobs).toEqual([])
+  expect(graph.graph).toEqual([
+    { id: 'build', name: 'Build', needs: [], jobIds: [] },
+    { id: 'publish', name: 'publish', needs: ['build'], jobIds: [] },
+  ])
+  expect(json.mock.calls.map(([path]) => path)).toEqual([
+    'repos/me/app/actions/runs/42',
+    `repos/me/app/contents/.github/workflows/ci.yml?ref=${gitRun.head_sha}`,
+  ])
+})

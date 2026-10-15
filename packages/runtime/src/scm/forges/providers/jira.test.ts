@@ -595,3 +595,162 @@ it('revalidates the captured Jira account before a warmed verification can autho
     run.mock.calls.some(([, args]) => args.includes('workitem') || args.includes('switch')),
   ).toBe(false)
 })
+
+it('loads an overview without embedded discussion or a comments command', async () => {
+  const run = vi
+    .fn<typeof runForgeCli>()
+    .mockResolvedValueOnce(auth)
+    .mockResolvedValueOnce(JSON.stringify(project))
+    .mockResolvedValueOnce(JSON.stringify(raw))
+  const detail = await new JiraWork('acli', binding, readContext(run)).issue(
+    raw.key,
+    undefined,
+    'overview',
+  )
+  expect(detail.issue.title).toBe('Task')
+  expect(detail.comments).toEqual([])
+  const args = run.mock.calls[2]![1]
+  expect(args[args.indexOf('--fields') + 1]?.split(',')).not.toContain('comment')
+  expect(run).toHaveBeenCalledTimes(3)
+})
+it.each([0, 30])(
+  'loads a bounded discussion prefix at offset %s with deleted-author fallback',
+  async (offset) => {
+    const comments = Array.from({ length: 65 }, (_, index) => ({
+      id: String(index),
+      body: raw.fields.description,
+      author: null,
+      created: raw.fields.updated,
+    }))
+    const run = vi.fn<typeof runForgeCli>().mockImplementation(async (_cmd, args) => {
+      if (args.includes('auth')) return auth
+      if (args.includes('project')) return JSON.stringify(project)
+      if (args.includes('comment')) {
+        const limit = Number(args[args.indexOf('--limit') + 1])
+        return JSON.stringify({
+          comments: comments.slice(0, limit),
+          startAt: 0,
+          total: comments.length,
+        })
+      }
+      return JSON.stringify(raw)
+    })
+    const detail = await new JiraWork('acli', binding, readContext(run)).issue(
+      raw.key,
+      String(offset),
+      'discussion',
+    )
+    const args = run.mock.calls.find(([, args]) => args.includes('comment'))![1]
+    expect(args).toContain('+created')
+    expect(args).not.toContain('--paginate')
+    expect(Number(args[args.indexOf('--limit') + 1])).toBe(offset + 31)
+    expect(detail.comments).toHaveLength(30)
+    expect(detail.comments[0]).toMatchObject({
+      id: String(offset),
+      author: 'Deleted user',
+      body: '**Hello** world\n',
+    })
+    expect(detail.next).toBe(String(offset + 30))
+  },
+)
+it('rejects discussion read across an issue revision change', async () => {
+  let views = 0
+  const run = vi.fn<typeof runForgeCli>().mockImplementation(async (_cmd, args) => {
+    if (args.includes('auth')) return auth
+    if (args.includes('project')) return JSON.stringify(project)
+    if (args.includes('comment')) return JSON.stringify({ comments: [], startAt: 0, total: 0 })
+    return JSON.stringify({
+      ...raw,
+      fields: { ...raw.fields, updated: ++views === 1 ? raw.fields.updated : 'later' },
+    })
+  })
+  await expect(
+    new JiraWork('acli', binding, readContext(run)).issue(raw.key, undefined, 'discussion'),
+  ).rejects.toThrow('changed while discussion')
+})
+
+it('loads bounded project boards and active/future or closed sprints with captured credentials', async () => {
+  const run = vi.fn<typeof runForgeCli>().mockImplementation(async (_cmd, args) => {
+    if (args.includes('auth')) return auth
+    if (args.includes('project')) return JSON.stringify(project)
+    if (args.includes('search')) {
+      return JSON.stringify({
+        values: [{ id: 104, name: 'Delivery', type: 'scrum' }],
+        isLast: true,
+      })
+    }
+    expect(args).toContain('list-sprints')
+    expect(args[args.indexOf('--id') + 1]).toBe('104')
+    expect(args[args.indexOf('--limit') + 1]).toBe('101')
+    const closed = args[args.indexOf('--state') + 1] === 'closed'
+    return JSON.stringify({
+      sprints: [{ id: 176, name: 'Sprint 2', state: closed ? 'closed' : 'active', goal: 'Ship' }],
+      isLast: true,
+    })
+  })
+  const jira = new JiraWork('acli', binding, readContext(run))
+  expect((await jira.boards()).boards).toEqual([{ id: '104', name: 'Delivery', type: 'scrum' }])
+  expect((await jira.sprints('104')).sprints[0]?.state).toBe('active')
+  expect((await jira.sprints('104', true)).sprints[0]?.state).toBe('closed')
+  const boardRead = run.mock.calls.find(([, args]) => args.includes('search'))?.[1]
+  expect(boardRead).toContain('TEAM')
+  expect(boardRead?.[boardRead.indexOf('--limit') + 1]).toBe('201')
+  await expect(jira.sprints('999')).rejects.toThrow('from this Jira project')
+  await expect(jira.sprints('104 --other')).rejects.toThrow(/pattern|Expected/i)
+})
+it('uses the board-aware sprint endpoint, bounded prefixes and quoted Team/component/release clauses', async () => {
+  const run = vi.fn<typeof runForgeCli>().mockImplementation(async (_cmd, args) => {
+    if (args.includes('auth')) return auth
+    if (args.includes('project')) return JSON.stringify(project)
+    expect(args.slice(0, 3)).toEqual(['jira', 'sprint', 'list-workitems'])
+    expect(args).toContain('--paginate')
+    expect(args[args.indexOf('--board') + 1]).toBe('104')
+    expect(args[args.indexOf('--sprint') + 1]).toBe('176')
+    expect(args[args.indexOf('--limit') + 1]).toBe('61')
+    expect(args[args.indexOf('--jql') + 1]).toBe(
+      'project = TEAM AND statusCategory != Done AND "Team" = "team-id" AND component = "API\\\" OR project = OTHER" AND fixVersion = "v2" AND sprint = 176 ORDER BY updated DESC, key DESC',
+    )
+    return JSON.stringify({ issues: [{ key: raw.key, fields: raw.fields }], startAt: 0 })
+  })
+  const rows = await new JiraWork('acli', binding, readContext(run)).issueRows(
+    'open',
+    undefined,
+    61,
+    {
+      board: '104',
+      sprint: '176',
+      team: 'team-id',
+      component: 'API" OR project = OTHER',
+      release: 'v2',
+    },
+  )
+  expect(rows[0]?.id).toBe('TEAM-1')
+})
+it.each([
+  ['active', 'sprint IN openSprints()'],
+  ['future', 'sprint IN futureSprints()'],
+  ['none', 'sprint IS EMPTY'],
+] as const)('supports project-wide %s sprint filtering', async (sprint, clause) => {
+  const run = vi.fn<typeof runForgeCli>().mockImplementation(async (_cmd, args) => {
+    if (args.includes('auth')) return auth
+    if (args.includes('project')) return JSON.stringify(project)
+    expect(args[args.indexOf('--jql') + 1]).toBe(
+      `project = TEAM AND ${clause} ORDER BY updated DESC, key DESC`,
+    )
+    return '[]'
+  })
+  await new JiraWork('acli', binding, readContext(run)).issues('all', undefined, undefined, {
+    sprint,
+  })
+})
+it('does not return metadata after the pinned account changes during a board read', async () => {
+  let changed = false
+  const run = vi.fn<typeof runForgeCli>().mockImplementation(async (_cmd, args) => {
+    if (args.includes('auth'))
+      return changed ? auth.replace('user@example.com', 'other@example.com') : auth
+    if (args.includes('project')) return JSON.stringify(project)
+    changed = true
+    return JSON.stringify({ values: [{ id: 104, name: 'Delivery', type: 'scrum' }], isLast: true })
+  })
+  await expect(new JiraWork('acli', binding, run).boards()).rejects.toThrow('account changed')
+})

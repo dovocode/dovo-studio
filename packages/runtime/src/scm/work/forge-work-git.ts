@@ -1,3 +1,4 @@
+import type { ForgePipelineSection, ForgePipelineDetail } from '@dovo/protocol'
 import { mutableStruct, mutableArray, CoercedNumber } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import { Schema, Effect } from 'effect'
@@ -431,7 +432,11 @@ export class GitForgeWork implements ForgeWorkProvider {
       next: raw.length === 30 ? String(page + 1) : undefined,
     }
   }
-  async pipeline(id: string, cursor?: string) {
+  async pipeline(
+    id: string,
+    cursor?: string,
+    section?: ForgePipelineSection,
+  ): Promise<ForgePipelineDetail> {
     const n = decode(
         CoercedNumber.pipe(
           Schema.check(Schema.isInt()),
@@ -446,9 +451,19 @@ export class GitForgeWork implements ForgeWorkProvider {
       ),
       page = workPage(cursor)
     const current = decode(run, await this.get(`actions/runs/${n}`))
-    const data = await this.get(
-      `actions/runs/${n}/jobs?${this.provider === 'github' ? 'per_page' : 'limit'}=50&page=${page}`,
-    )
+    if (section === 'overview') return { run: this.normalizeRun(current), jobs: [] }
+    const jobsPath =
+      section === 'jobs' && this.provider === 'github' && current.run_attempt
+        ? `actions/runs/${n}/attempts/${current.run_attempt}/jobs`
+        : `actions/runs/${n}/jobs`
+    const data =
+      section === 'graph'
+        ? this.provider === 'forgejo'
+          ? []
+          : { jobs: [] }
+        : await this.get(
+            `${jobsPath}?${this.provider === 'github' ? 'per_page' : 'limit'}=50&page=${page}`,
+          )
     const jobs =
       this.provider === 'forgejo'
         ? decode(mutableArray(job), data)
@@ -477,7 +492,7 @@ export class GitForgeWork implements ForgeWorkProvider {
     }))
     let graph: ReturnType<typeof workflowGraph> | undefined
     let graphNotice: string | undefined
-    if (this.provider === 'github' && current.path && current.head_sha) {
+    if (section !== 'jobs' && this.provider === 'github' && current.path && current.head_sha) {
       try {
         const path = current.path.split('@')[0]
         if (!path.startsWith('.github/workflows/') || path.split('/').includes('..'))

@@ -55,7 +55,7 @@ const read=async(path,input)=>{window.calls.push({path,input});if(path==='/api/s
 window.runtime={connected:true,profile:{id:'mac',name:'MacBook',connection:{address:'http://mac.local',token:'paired'}},snapshot:{workspace:{repositories:[repo],tasks:[task]}},read,call:read,refresh:async()=>window.refreshes++,callEffect:(path,input)=>Effect.promise(()=>read(path,input))};
 const jobs=[{id:'test',name:'Tests',status:'success',url:'https://github.com/o/r/actions/runs/1',steps:[{id:'1',name:'Run tests',status:'success'}]},{id:'release',name:'Release',status:'in_progress',url:'https://github.com/o/r/actions/runs/1',steps:[{id:'1',name:'Sign app',status:'in_progress'}]}];
 const graph=[{id:'check',name:'Tests',needs:[],jobIds:['test']},{id:'publish',name:'Release',needs:['check'],jobIds:['release']}];
-function App(){const[page,setPage]=useState('project');window.show=setPage;return page==='project'?<TaskProjectSheet task={task} scripts={[]} branchActions={[]} onChanges={()=>window.changed=true} onPulls={()=>setPage('pulls')} onClose={()=>{}}/>:page==='pulls'?<TaskLinkedPullSheet task={task} onClose={()=>setPage('project')}/>:page==='behavior'?<TaskThreadBehavior task={task} onClose={()=>setPage('project')}/>:page==='icons'?<ProjectIconSettings repository={repo}/>:<PipelineJobs graph={graph} jobs={jobs} hasMore={false} onOpen={url=>window.opened=url}/>}
+function App(){const[page,setPage]=useState('project');window.show=setPage;return page==='inline'?<div style={{height:'100vh',display:'flex',flexDirection:'column',background:'#101014',color:'#efeff2'}}><header style={{padding:12}}>Thread · Project information <button onClick={()=>setPage('project')}>i</button></header><TaskProjectSheet inline task={task} scripts={[]} branchActions={[]} onChanges={()=>window.inlineChanged=true} onPulls={()=>setPage('pulls')} onClose={()=>setPage('project')}/><p style={{padding:16}}>Conversation remains available</p></div>:page==='project'?<TaskProjectSheet task={task} scripts={[]} branchActions={[]} onChanges={()=>window.changed=true} onPulls={()=>setPage('pulls')} onClose={()=>{}}/>:page==='pulls'?<TaskLinkedPullSheet task={task} onClose={()=>setPage('project')}/>:page==='behavior'?<TaskThreadBehavior task={task} onClose={()=>setPage('project')}/>:page==='icons'?<ProjectIconSettings repository={repo}/>:<PipelineJobs graph={graph} jobs={jobs} hasMore={false} onOpen={url=>window.opened=url}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
   },
   bundle: true,
@@ -142,6 +142,11 @@ try {
   await page.getByRole('button', { name: 'View job Release', exact: true }).click()
   await page.getByText('Sign app', { exact: true }).waitFor()
   await page.screenshot({ path: '/tmp/dovo-native-pipeline.png' })
+  await page.evaluate(() => window.show('inline'))
+  await page.getByText('Conversation remains available', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Changes (0)', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.inlineChanged), true)
+  await page.screenshot({ path: '/tmp/dovo-native-project-sticky.png' })
   assert.deepEqual(errors, [])
   console.log(
     'React Native project panel: editor, scripts, linked PRs, lifecycle overrides, PNG emoji picker, refresh, watchers and pipeline graph passed.',

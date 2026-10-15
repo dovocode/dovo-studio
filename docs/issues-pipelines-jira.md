@@ -166,11 +166,26 @@ in additional issues. The board opens the same preview for status changes and ot
 **Open**, **My issues**, **Unassigned** and **Done** provide quick starting points. They preserve
 search and advanced filters. **My issues** means the signed-in Atlassian CLI account on the computer
 reading each source. **Filters** opens additional controls; active chips remove individual filters.
-Assignment, status category, priority, issue type and label are applied by Jira before pagination.
-Filter suggestions come from loaded issues, and you can type a value that is not suggested. Dovo
-project links still filter loaded results locally. Source and sort choices are kept inside the
-filter panel, leaving the main toolbar compact. Mobile offers the same quick views and filters, with
-an optional grouped status layout instead of horizontal board columns.
+Assignment, status category, priority, issue type, label, sprint, standard Team, component and
+release are applied by Jira before pagination. Team accepts the team ID from the Jira team URL;
+component and release accept exact names or IDs. Filter suggestions come from loaded issues, and you
+can type a value that is not suggested. Dovo project links still filter loaded results locally.
+Source and sort choices are kept inside the filter panel, leaving the main toolbar compact. Mobile
+offers the same quick views and filters, with an optional grouped status layout instead of
+horizontal board columns.
+
+Choose an explicit source to browse its saved **Jira boards** and their active/future sprints;
+**Show closed sprints** loads historical choices separately. Selecting a board clears its previous
+sprint. Selecting a sprint uses the CLI's board-aware sprint endpoint and still restricts issues to
+the source project. Without a selected board, **Active sprints**, **Future sprints** and **No
+sprint** search the project. Changing sources clears project-specific filters on desktop; mobile
+retains separate preferences per source. All new filters participate in runtime and device cache
+identities. Board/sprint discovery loads independently of issues, uses bounded reads (200 boards,
+100 sprints), and shares the account-scoped runtime cache. Device-saved choices remain available
+offline; failures have independent retry and refresh controls. ACLI does not expose a saved board's
+configuration or saved filter, so board-only selection keeps showing project issues with an explicit
+notice. Dovo's columns remain status groups of loaded issues; use Jira for the exact saved board
+layout/filter.
 
 The preview offers **Change status**, **Edit details** and **Comment** using the same fresh-detail
 and revision checks as full issue details. Successful changes refresh the collection without
@@ -203,15 +218,28 @@ supported. Pagination reads a bounded prefix because `acli` has no offset token;
 cached per state and search, so later pages reuse the rows already read. Actively changing results
 can move between pages. Search can narrow the result set.
 
+Jira lists and issue overviews load before action options. The description stays available while
+options or discussion are loading or unavailable. Desktop/web and mobile show issue metadata and
+comments in separate cards. Actions stay disabled until options and the issue are current.
+Discussion has its own retry and device cache, pinned to the issue URL, destination and revision;
+refreshing it does not reload the description. Loaded comment pages survive refresh and offline
+remounts. Runtime overview and discussion caches are independent and shared by clients using the
+same account. Successful writes invalidate both.
+
+Jira comments load in pages of 30 through `acli jira workitem comment list`, oldest first. As with
+issue search, the CLI only supports a limit, so Dovo reads a bounded prefix and slices the requested
+page. It checks the issue revision before and after reading discussion. A truncated CLI response or
+the paging limit shows a notice and links to the rest of the discussion in Jira. Older clients keep
+the embedded-discussion response.
+
 Jira Cloud is supported; Jira Data Center is not. Subtask creation requiring a parent and custom
-required fields are handled on Jira. If the CLI's detail response contains only part of a
-discussion, Dovo shows a notice and links to the full discussion on Jira. Dovo uses the active
-`acli` account; switch sites on the host rather than changing accounts while operations are in
-progress. Standalone Jira commands use the runtime's account context, independently of a task's
-checkout. Jira commands run in the runtime user's home directory. Existing repository-level Jira
-bindings migrate to independent sources, preserving historical task links and restoring native
-repository issues. Jira profile switching is not exposed: the supported `acli` commands do not
-provide a per-command account selector, and Dovo does not change its global active account.
+required fields are handled on Jira. Dovo uses the active `acli` account; switch sites on the host
+rather than changing accounts while operations are in progress. Standalone Jira commands use the
+runtime's account context, independently of a task's checkout. Jira commands run in the runtime
+user's home directory. Existing repository-level Jira bindings migrate to independent sources,
+preserving historical task links and restoring native repository issues. Jira profile switching is
+not exposed: the supported `acli` commands do not provide a per-command account selector, and Dovo
+does not change its global active account.
 
 Bitbucket Cloud's retired native issue API is not used. Connect an independent Jira source to work
 with Jira issues alongside Bitbucket or any other code host.
@@ -244,6 +272,19 @@ Availability also depends on the server version and returned fields. GitHub norm
 provide a run completion timestamp, so its overall duration may be absent even when individual job
 and step durations are available. Dovo does not substitute the last-update time for completion.
 
+Pipeline details load the run overview, jobs and workflow graph independently on desktop and mobile.
+A slow jobs, workflow or action-capability request leaves the run summary readable. Each section has
+its own refresh/error state and device cache, including loaded job pages. Previously saved full
+details remain readable offline after upgrading. Runtime caches are scoped by account and source;
+sections only combine when the run URL, commit and attempt match. Providers without attempt numbers
+use their last-update time. GitHub job reads target the captured run attempt, and workflow source is
+read at the run commit. Reruns cannot display the previous attempt's jobs under a new summary.
+
+Status badges, run timing, stage columns and expandable job cards keep the overview compact. Failed
+jobs open automatically, while steps retain execution order. Selecting a workflow job expands its
+existing card. Polling pauses when the view or app is inactive. Provider failures are shown beside
+the affected section; automatic reads back off for 30 seconds and explicit refresh retries at once.
+
 Step status and error summaries help identify where a run failed. Full logs stay on the provider;
 use the run/job log links for complete output. Dispatch takes a branch/ref and optional JSON string
 inputs. Workflows must support manual dispatch. Pipeline configuration editing, secrets management,
@@ -262,3 +303,7 @@ an uncertain write fails, refresh before submitting again to avoid duplicates.
 
 Provider and CLI contract fixtures cover source identity, writes and task creation. Live account
 permissions and enterprise-specific policies still require validation against your own hosts.
+
+ACLI credentials remain encrypted in Dovo's private account snapshot. The renewal cache preserves
+YAML `!!binary` token values; older Buffer-map entries are restored from their exact bytes without
+reverting to an older token or changing the global CLI login.

@@ -240,7 +240,7 @@ export function Composer({
       sendingRequest.current ||
       stopping ||
       attachments.busy ||
-      task.archived ||
+      task.archivedAt ||
       pendingQuestion
     )
       return
@@ -317,6 +317,7 @@ export function Composer({
           updateTask(w, task.id, (t) => ({
             ...t,
             messages: [...t.messages, pending.message],
+            ...(t.archived ? { archived: false, autoSettled: undefined, snoozedUntil: null } : {}),
           })),
         )
       if (!attempt.current.accepted) composerDraft.accept(text)
@@ -431,7 +432,7 @@ export function Composer({
             )}
             {!pendingQuestion && (
               <AttachmentPicker
-                disabled={!connected || sending || !!task.archived || attachments.busy}
+                disabled={!connected || sending || !!task.archivedAt || attachments.busy}
                 upload={attachments.upload}
               />
             )}
@@ -522,7 +523,7 @@ export function Composer({
                   sending ||
                   stopping ||
                   attachments.busy ||
-                  task.archived ||
+                  !!task.archivedAt ||
                   (!!connection && !connected) ||
                   (firstMessage && (!connected || !task.repositoryId || !agent))
                 }
@@ -563,7 +564,7 @@ export function Composer({
         onDragOver={(event) => {
           if (!event.dataTransfer.types.includes('Files')) return
           event.preventDefault()
-          const allowed = connected && !sending && !attachments.busy && !task.archived
+          const allowed = connected && !sending && !attachments.busy && !task.archivedAt
           event.dataTransfer.dropEffect = allowed ? 'copy' : 'none'
           setFileDrag(allowed)
         }}
@@ -579,13 +580,13 @@ export function Composer({
           setFileDrag(false)
           if (!event.dataTransfer.files.length) return
           event.preventDefault()
-          if (connected && !sending && !task.archived)
+          if (connected && !sending && !task.archivedAt)
             void attachments.upload(Array.from(event.dataTransfer.files))
         }}
         onPaste={(event) => {
           if (!event.clipboardData.files.length) return
           event.preventDefault()
-          if (connected && !sending && !task.archived)
+          if (connected && !sending && !task.archivedAt)
             void attachments.upload(Array.from(event.clipboardData.files))
         }}
         onSubmit={(e) => {
@@ -603,6 +604,7 @@ export function Composer({
         )}
         <div className={cn('px-3', pendingQuestion && 'hidden')}>
           <MessageAttachments
+            compact
             taskId={task.id}
             files={submitBusy ? [] : attachments.files}
             previews={attachments.previews}
@@ -612,19 +614,25 @@ export function Composer({
         </div>
         {!!attachments.uploading.length && (
           <div
-            className="flex flex-wrap gap-2 px-3 py-1"
+            className="flex flex-wrap gap-1.5 px-3 py-1"
             role="status"
             aria-label="Uploading attachments"
           >
             {attachments.uploading.map(({ attachment, url }) => (
               <div
                 key={attachment.id}
-                className="flex min-w-0 items-center gap-2 rounded-md border bg-secondary/40 px-2 py-1 text-xs"
+                className="flex h-7 min-w-0 max-w-52 items-center gap-1.5 rounded-md border bg-secondary/40 px-1.5 text-[0.6875rem]"
               >
                 {url && (
-                  <img src={url} alt={attachment.name} className="size-10 rounded object-cover" />
+                  <img
+                    src={url}
+                    alt={attachment.name}
+                    className="size-5 shrink-0 rounded object-cover"
+                  />
                 )}
-                <span className="max-w-40 truncate">{attachment.name}</span>
+                <span className="min-w-0 truncate" title={attachment.name}>
+                  {attachment.name}
+                </span>
                 <span className="animate-pulse text-muted-foreground">Uploading…</span>
               </div>
             ))}
@@ -649,19 +657,21 @@ export function Composer({
           onManagePrompts={task.repositoryId ? () => setManagingPrompts(true) : undefined}
           autoFocus={firstMessage}
           hidden={pendingQuestion}
-          disabled={machineMoving || !!task.archived || pendingQuestion}
+          disabled={machineMoving || !!task.archivedAt || pendingQuestion}
           submitBusy={submitBusy}
           submittedText={submittedText}
           placeholder={
-            task.archived
-              ? 'Reopen this task to continue'
-              : task.status === 'running'
-                ? steerFirst
-                  ? 'Steer the agent while it works…'
-                  : 'Queue a follow-up while the agent works…'
-                : firstMessage
-                  ? 'What would you like to build or fix?'
-                  : 'Ask a follow-up or describe a change…'
+            task.archivedAt
+              ? 'Restore this archived thread to continue'
+              : task.archived
+                ? 'Send a message to reopen this thread…'
+                : task.status === 'running'
+                  ? steerFirst
+                    ? 'Steer the agent while it works…'
+                    : 'Queue a follow-up while the agent works…'
+                  : firstMessage
+                    ? 'What would you like to build or fix?'
+                    : 'Ask a follow-up or describe a change…'
           }
         />
       </ComposerSurface>

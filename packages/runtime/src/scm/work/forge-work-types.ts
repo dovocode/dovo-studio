@@ -4,6 +4,8 @@ import type {
   ForgeIssueCreate,
   ForgeIssueAction,
   ForgePipelineAction,
+  ForgePipelineSection,
+  ForgeIssueSection,
   ForgeWorkResult,
   forgeIssuePageSchema,
   forgeIssueDetailSchema,
@@ -22,7 +24,11 @@ export interface ForgeWorkProvider {
     cursor?: string,
     query?: string,
   ): Promise<Schema.Schema.Type<typeof forgeIssuePageSchema>>
-  issue(id: string, cursor?: string): Promise<Schema.Schema.Type<typeof forgeIssueDetailSchema>>
+  issue(
+    id: string,
+    cursor?: string,
+    section?: ForgeIssueSection,
+  ): Promise<Schema.Schema.Type<typeof forgeIssueDetailSchema>>
   createIssue(input: ForgeIssueCreate): Promise<ForgeWorkResult>
   actOnIssue(input: ForgeIssueAction): Promise<ForgeWorkResult>
   definitions(cursor?: string): Promise<Schema.Schema.Type<typeof forgeDefinitionsSchema>>
@@ -30,6 +36,7 @@ export interface ForgeWorkProvider {
   pipeline(
     id: string,
     cursor?: string,
+    section?: ForgePipelineSection,
   ): Promise<Schema.Schema.Type<typeof forgePipelineDetailSchema>>
   actOnPipeline(input: ForgePipelineAction): Promise<ForgeWorkResult>
 }

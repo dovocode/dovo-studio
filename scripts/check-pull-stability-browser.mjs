@@ -39,7 +39,7 @@ write:async(key,value)=>cachedReads.set(key,{value:structuredClone(value),cached
 remove:async key=>cachedReads.delete(key),
 readEffect:key=>Effect.sync(()=>cachedReads.get(key)??null),
 writeEffect:(key,value)=>Effect.sync(()=>{cachedReads.set(key,{value:structuredClone(value),cachedAt:'2026-10-14'})})
-};window.detailReads=0;window.store.requestEffect=()=>Effect.sync(()=>{window.detailReads++;return JSON.parse(JSON.stringify(window.detail));});const realRoot=createRoot(document.getElementById('app'));const rootView={render:element=>realRoot.render(<ApplicationStateProvider>{element}</ApplicationStateProvider>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);window.renderKey=0;window.showProbe=()=>rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><nav className="studio-navigation" style={{width:44}}/><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key={window.renderKey++}/></div></div></main></div></div>);
+};window.detailReads=0;window.sectionReads=[];window.sectionReleases={};window.releaseSection=section=>{window.blockedSections=window.blockedSections.filter(value=>value!==section);for(const release of window.sectionReleases[section]??[])release();};window.store.requestEffect=(_path,input)=>Effect.tryPromise({try:async()=>{window.detailReads++;window.sectionReads.push(input.section);if(window.blockedSections?.includes(input.section))await new Promise(resolve=>(window.sectionReleases[input.section]??=[]).push(resolve));if(input.section===window.failedSection)throw new Error('Checks temporarily unavailable');const value=JSON.parse(JSON.stringify({...window.detail,pull:{...window.detail.pull,changedFiles:window.detail.files.length}}));if(input.section!=='changes')value.files=[];if(input.section!=='checks')value.checks=[];if(input.section!=='discussion')value.comments=[];return value;},catch:error=>error});const realRoot=createRoot(document.getElementById('app'));const rootView={render:element=>realRoot.render(<ApplicationStateProvider>{element}</ApplicationStateProvider>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);window.renderKey=0;window.showProbe=()=>rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><nav className="studio-navigation" style={{width:44}}/><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key={window.renderKey++}/></div></div></main></div></div>);
 const originalRequest = window.store.request; const marks = new Map();
 window.store.request = async (path, input, ...rest) => {
   if (!path.startsWith('/api/review/')) return originalRequest(path, input, ...rest);
@@ -122,6 +122,44 @@ try {
     assert.equal(await locator.evaluate((e) => e.scrollWidth <= e.clientWidth + 1), true)
   const open = async () =>
     list.getByRole('button').filter({ hasText: 'Improve pull request reviews' }).first().click()
+
+  await page.evaluate(() => {
+    window.detail.pull.headSha = 'e'.repeat(40)
+    window.blockedSections = ['changes', 'checks', 'stack']
+  })
+  await open()
+  await detail.getByText('Review workflow description', { exact: true }).waitFor()
+  await detail.getByText('Loading stack…', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.sectionReads.includes('changes') || window.sectionReads.includes('checks'),
+    ),
+    false,
+  )
+  await detail.getByRole('tab', { name: 'Changes (2)', exact: true }).click()
+  await detail.getByText('Loading files…', { exact: true }).waitFor()
+  await page.evaluate(() => window.releaseSection('changes'))
+  await detail.getByRole('navigation', { name: 'Changed files', exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.failedSection = 'checks'
+    window.releaseSection('checks')
+  })
+  await detail.getByRole('tab', { name: /^Checks/ }).click()
+  await detail.getByRole('alert').filter({ hasText: 'Checks temporarily unavailable' }).waitFor()
+  await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await detail.getByText('Review workflow description', { exact: true }).waitFor()
+  await detail.getByRole('tab', { name: /^Checks/ }).click()
+  await page.evaluate(() => {
+    window.failedSection = undefined
+  })
+  await detail.getByRole('button', { name: 'Refresh checks', exact: true }).click()
+  await detail.getByText('All tests passed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.releaseSection('stack')
+    window.detail.pull.headSha = 'a'.repeat(40)
+    window.savedReads.clear()
+  })
+  await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
 
   await page.evaluate(() => {
     window.detail.files = Array.from({ length: 30 }, (_, i) => ({
@@ -306,7 +344,7 @@ try {
   })
   await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
   await page.waitForFunction(() => window.detailReads >= 4)
-  await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
+  await detail.getByRole('tab', { name: /^Checks(?: \(\d+\))?$/ }).click()
   await bounded(content)
   assert.ok((await content.evaluate((e) => e.clientHeight)) >= 100)
   await bounded(detail)
@@ -327,7 +365,7 @@ try {
     e.scrollTop = e.scrollHeight
   })
   await list.getByRole('button').filter({ hasText: 'Scroll regression 179' }).first().click()
-  await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
+  await detail.getByRole('tab', { name: /^Checks(?: \(\d+\))?$/ }).click()
   await bounded(content)
   await bounded(list)
   await bounded(page.locator('html'))

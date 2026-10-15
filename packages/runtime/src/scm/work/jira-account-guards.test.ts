@@ -3,6 +3,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vite-plus/test'
 import { decode, commandsSchema, forgeSourceIdentitySchema } from '@dovo/protocol'
 import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'
+import { JiraWork } from '../forges/providers/jira'
 import { ForgeWork } from './forge-work'
 import { GitService } from '../git/git'
 import { ForgeConnections } from '../forges/integration/forge-connections'
@@ -164,4 +165,86 @@ it('awaits the verified Jira account ID and distinguishes two accounts at the sa
     }),
   ).rejects.toThrow('destination or account changed')
   expect(f.run.mock.calls.some(([, args]) => args.includes('create'))).toBe(false)
+})
+
+it('caches Jira overview and discussion separately and rejects earlier-revision discussion', async () => {
+  const f = setup()
+  let revision = 'v1'
+  const load = vi
+    .spyOn(JiraWork.prototype, 'issue')
+    .mockImplementation(async (id, _cursor, section) => ({
+      issue: {
+        id,
+        title: 'Work',
+        body: 'Description',
+        state: 'Open',
+        type: 'Task',
+        url: 'https://first.atlassian.net/browse/TEAM-1',
+        author: '',
+        assignees: [],
+        labels: [],
+        updatedAt: revision,
+        revision,
+        bodyFormat: 'markdown',
+      },
+      comments:
+        section === 'discussion'
+          ? [{ id: '1', body: revision, author: 'Dominic', createdAt: '', bodyFormat: 'markdown' }]
+          : [],
+    }))
+  for (const section of ['overview', 'discussion']) {
+    await f.work.requestJira('jira', 'issues/detail', { id: 'TEAM-1', section })
+    await f.work.requestJira('jira', 'issues/detail', { id: 'TEAM-1', section })
+  }
+  expect(load).toHaveBeenCalledTimes(2)
+  revision = 'v2'
+  await expect(
+    f.work.requestJira('jira', 'issues/detail', { id: 'TEAM-1', section: 'discussion', revision }),
+  ).resolves.toMatchObject({ issue: { revision }, comments: [{ body: revision }] })
+  expect(load).toHaveBeenCalledTimes(3)
+  f.setEmail('second@example.com')
+  await f.work.requestJira('jira', 'issues/detail', {
+    id: 'TEAM-1',
+    section: 'discussion',
+    revision,
+  })
+  expect(load).toHaveBeenCalledTimes(4)
+})
+it.each([
+  ['issues/detail', 'jobs'],
+  ['pipelines/detail', 'discussion'],
+  ['issues/list', 'overview'],
+])('rejects invalid %s section %s before provider reads', async (operation, section) => {
+  const f = setup()
+  await expect(f.work.requestJira('jira', operation, { id: 'TEAM-1', section })).rejects.toThrow(
+    'not supported',
+  )
+  expect(f.run.mock.calls.some(([, args]) => args.includes('workitem'))).toBe(false)
+})
+
+it('caches board/sprint discovery by account and board, with explicit refresh', async () => {
+  const f = setup()
+  const boards = vi.spyOn(JiraWork.prototype, 'boards').mockResolvedValue({
+    boards: [{ id: '104', name: 'Delivery', type: 'scrum' }],
+    truncated: false,
+  })
+  const sprints = vi.spyOn(JiraWork.prototype, 'sprints').mockImplementation(async (board) => ({
+    board,
+    sprints: [{ id: '176', name: 'Sprint 2', state: 'active' }],
+    truncated: false,
+  }))
+  await f.work.requestJira('jira', 'jira/boards', {})
+  await f.work.requestJira('jira', 'jira/boards', {})
+  expect(boards).toHaveBeenCalledTimes(1)
+  await f.work.requestJira('jira', 'jira/sprints', { id: '104' })
+  await f.work.requestJira('jira', 'jira/sprints', { id: '104' })
+  expect(sprints).toHaveBeenCalledTimes(1)
+  await f.work.requestJira('jira', 'jira/sprints', { id: '105' })
+  await f.work.requestJira('jira', 'jira/sprints', { id: '104', state: 'closed' })
+  expect(sprints).toHaveBeenCalledTimes(3)
+  await f.work.requestJira('jira', 'jira/boards', { refresh: true })
+  expect(boards).toHaveBeenCalledTimes(2)
+  f.setEmail('another@example.com')
+  await f.work.requestJira('jira', 'jira/boards', {})
+  expect(boards).toHaveBeenCalledTimes(3)
 })

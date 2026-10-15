@@ -13,7 +13,7 @@ const connection: ForgeConnection = {
   revision: '1',
 }
 const sha = 'a'.repeat(40)
-const user = { id: 7, username: 'dominic' }
+const user = { id: 7, username: 'dominic', avatar_url: 'https://gitlab.example/avatar/7' }
 const project = {
   id: 99,
   name: 'App',
@@ -158,6 +158,7 @@ it('creates drafts and preserves GitLab closed/merged list semantics', async () 
   })
   const result = await pulls.list('closed', 1)
   expect(result.pulls.map((pull) => pull.state)).toEqual(['merged', 'closed'])
+  expect(result.pulls[0].authorAvatarUrl).toBe(user.avatar_url)
   await pulls.create({ title: 'Change', head: 'topic', base: 'main', body: 'Body', draft: true })
   expect(requests.at(-1)?.request?.body).toBe(
     JSON.stringify({

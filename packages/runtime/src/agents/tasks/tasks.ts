@@ -782,6 +782,8 @@ export class Tasks {
         undefined,
         review,
         resumePaused && !this.running.has(id),
+        undefined,
+        { reopenSettled: resumePaused },
       )
       return (
         this.store.taskSummary(id).queue?.some((message) => message.id === messageId) &&
@@ -889,7 +891,7 @@ export class Tasks {
           false,
           false,
           undefined,
-          true,
+          { steering: true },
         )
       )
         return null

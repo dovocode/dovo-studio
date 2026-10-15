@@ -1,7 +1,8 @@
+import { taskSnoozeOptions } from '@dovo/protocol'
 import { readMobilePreferences } from '../../runtime/preferences/app-preferences'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { workspacePatchResultSchema } from '@dovo/protocol'
-import { Alert } from 'react-native'
+import { Alert, Platform } from 'react-native'
 import { Schema, Effect } from 'effect'
 import {
   latestCompletedTaskTurn,
@@ -16,25 +17,26 @@ import {
   type Runtime,
 } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
-export const snoozeOptions = [
-  {
-    hours: 1,
-    label: 'Snooze 1 hour',
-  },
-  {
-    hours: 4,
-    label: 'Snooze 4 hours',
-  },
-  {
-    hours: 24,
-    label: 'For 24 hours',
-  },
-] as const
+export { taskSnoozeOptions as snoozeOptions } from '@dovo/protocol'
 export function chooseSnoozeDuration(title: string, apply: (hours: number) => void) {
-  Alert.alert(title, 'The thread returns to Active when this duration ends.', [
-    ...snoozeOptions.map(({ hours, label }) => ({ text: label, onPress: () => apply(hours) })),
-    { text: 'Cancel', style: 'cancel' },
-  ])
+  const show = (options: readonly (typeof taskSnoozeOptions)[number][], cancel: boolean) =>
+    Alert.alert(
+      title,
+      'The thread returns to Active when this duration ends.',
+      [
+        ...options.map(({ hours, label }) => ({ text: label, onPress: () => apply(hours) })),
+        ...(cancel ? [{ text: 'Cancel', style: 'cancel' as const }] : []),
+      ],
+      { cancelable: true },
+    )
+  // Android Alert supports at most three buttons. Keep every duration reachable.
+  if (Platform.OS === 'android') {
+    Alert.alert(title, 'Choose a snooze duration.', [
+      { text: 'Up to a day', onPress: () => show(taskSnoozeOptions.slice(0, 3), false) },
+      { text: 'Multiple days', onPress: () => show(taskSnoozeOptions.slice(3), false) },
+      { text: 'Cancel', style: 'cancel' },
+    ])
+  } else show(taskSnoozeOptions, true)
 }
 type LifecycleChanges = Partial<{
   [Key in 'pinned' | 'archived' | 'snoozedUntil']: {

@@ -210,7 +210,7 @@ export function useConversationActions(task: Task) {
     hasInput &&
     !attaching &&
     !dictation.active &&
-    !task.archived &&
+    !task.archivedAt &&
     !task.example &&
     !!task.repositoryId &&
     !!agent

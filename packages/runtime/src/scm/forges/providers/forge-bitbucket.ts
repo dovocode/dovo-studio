@@ -21,6 +21,7 @@ const link = mutableStruct({
 })
 const user = mutableStruct({
   uuid: Schema.String,
+  links: Schema.optional(mutableStruct({ avatar: Schema.optional(link) })),
   display_name: Schema.optional(Schema.String),
   nickname: Schema.optional(Schema.String),
 })
@@ -347,6 +348,7 @@ export class BitbucketForge implements ForgeAdapter {
       state: value.state === 'OPEN' ? 'open' : value.state === 'MERGED' ? 'merged' : 'closed',
       draft: value.draft,
       author: person(value.author),
+      authorAvatarUrl: value.author.links?.avatar?.href || undefined,
       updatedAt: value.updated_on,
       head: value.source.branch.name,
       base: value.destination.branch.name,

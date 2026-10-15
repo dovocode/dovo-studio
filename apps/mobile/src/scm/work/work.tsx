@@ -45,6 +45,7 @@ import { useListScroll } from '../../ui/layout/use-list-scroll'
 import { useWorkCollection, type WorkPage } from './use-work-collection'
 import { matchesPipelineCommit } from './work-list'
 import { startsStatusGroup } from './jira-list'
+import { JiraBrowseControls } from './jira-browse-controls'
 import { JiraChip, JiraQuickViews, JiraFilterFields } from './jira-filters'
 type Mode = 'issues' | 'pipelines'
 const workPreferences = createDetailDrafts<{
@@ -281,6 +282,12 @@ export function WorkScreen({
             />
             {jiraOnly && (
               <>
+                {!!jiraFilters.board && !jiraFilters.sprint && (
+                  <Text style={styles.muted}>
+                    Showing project issues. Choose a sprint to filter by the selected board. Saved
+                    board columns and filters are available in Jira.
+                  </Text>
+                )}
                 <JiraQuickViews
                   state={state}
                   filters={jiraFilters}
@@ -303,7 +310,20 @@ export function WorkScreen({
                   {state !== 'all' && (
                     <JiraChip label={`Status: ${state} ×`} onPress={() => setState('all')} />
                   )}
-                  {(['assignee', 'priority', 'type', 'label', 'statusCategory'] as const)
+                  {(
+                    [
+                      'assignee',
+                      'priority',
+                      'type',
+                      'label',
+                      'statusCategory',
+                      'board',
+                      'sprint',
+                      'team',
+                      'component',
+                      'release',
+                    ] as const
+                  )
                     .filter(
                       (key) =>
                         jiraFilters[key] && !(key === 'assignee' && jiraFilters[key] === 'all'),
@@ -311,8 +331,14 @@ export function WorkScreen({
                     .map((key) => (
                       <JiraChip
                         key={key}
-                        label={`${key === 'assignee' ? (jiraFilters[key] === 'mine' ? 'Assigned to me' : 'Unassigned') : `${key === 'statusCategory' ? 'Category' : key === 'type' ? 'Type' : key === 'label' ? 'Label' : 'Priority'}: ${jiraFilters[key]}`} ×`}
-                        onPress={() => setJiraFilters({ ...jiraFilters, [key]: undefined })}
+                        label={`${key === 'assignee' ? (jiraFilters[key] === 'mine' ? 'Assigned to me' : 'Unassigned') : `${key === 'statusCategory' ? 'Category' : key === 'type' ? 'Type' : key === 'label' ? 'Label' : key === 'priority' ? 'Priority' : key === 'board' ? 'Board' : key === 'sprint' ? 'Sprint' : key === 'team' ? 'Team' : key === 'component' ? 'Component' : 'Release'}: ${jiraFilters[key]}`} ×`}
+                        onPress={() =>
+                          setJiraFilters({
+                            ...jiraFilters,
+                            [key]: undefined,
+                            ...(key === 'board' ? { sprint: undefined } : {}),
+                          })
+                        }
                       />
                     ))}
                 </View>
@@ -575,6 +601,7 @@ export function WorkScreen({
               .filter(
                 (page) =>
                   page.error ||
+                  page.optionsError ||
                   page.next ||
                   (mode === 'issues'
                     ? !page.options?.issues && page.options?.issueNotice
@@ -587,9 +614,10 @@ export function WorkScreen({
                     gap: 8,
                   }}
                 >
-                  {!!page.error && (
+                  {!!(page.error || page.optionsError) && (
                     <Text accessibilityRole="alert" style={styles.error}>
-                      {workSourceName(page.source)} · {page.source.computerName}: {page.error}
+                      {workSourceName(page.source)} · {page.source.computerName}:{' '}
+                      {page.error || page.optionsError}
                     </Text>
                   )}
                   {!!(mode === 'issues'
@@ -600,10 +628,10 @@ export function WorkScreen({
                       {mode === 'issues' ? page.options?.issueNotice : page.options?.pipelineNotice}
                     </Text>
                   )}
-                  {(page.next || page.error) && (
+                  {(page.next || page.error || page.optionsError) && (
                     <Action
                       secondary
-                      label={`${page.error ? 'Retry' : 'Load more'} · ${workSourceName(page.source)}`}
+                      label={`${page.error || page.optionsError ? 'Retry' : 'Load more'} · ${workSourceName(page.source)}`}
                       disabled={busy || !page.source.connected}
                       onPress={() => void more(page.source.key)}
                     />
@@ -631,15 +659,23 @@ export function WorkScreen({
             ]}
           />
           {jiraOnly && (
-            <JiraFilterFields
-              state={state}
-              filters={jiraFilters}
-              issues={pages.flatMap((page) =>
-                page.items.filter((row): row is ForgeIssue => 'state' in row),
-              )}
-              onState={setState}
-              onFilters={setJiraFilters}
-            />
+            <>
+              <JiraBrowseControls
+                source={selected ?? (sources.length === 1 ? sources[0] : undefined)}
+                filters={jiraFilters}
+                onFilters={setJiraFilters}
+                enabled={focused}
+              />
+              <JiraFilterFields
+                state={state}
+                filters={jiraFilters}
+                issues={pages.flatMap((page) =>
+                  page.items.filter((row): row is ForgeIssue => 'state' in row),
+                )}
+                onState={setState}
+                onFilters={setJiraFilters}
+              />
+            </>
           )}
           <Choice
             label="Sort issues"

@@ -34,6 +34,7 @@ export type WorkPage = {
   stale: boolean
   searched?: boolean
   error?: string
+  optionsError?: string
   firstPageIds?: string[]
   paginated?: boolean
   loadedPages?: number
@@ -170,19 +171,16 @@ export function useWorkCollection(
       )
         return
       return yield* Effect.gen(function* () {
-        const options =
-          knownOptions ??
-          (yield* read(
-            source.profile,
-            '/api/scm/work/options',
-            {
-              ...workSourceInput(source),
-              area: mode,
-            },
-            forgeWorkOptionsSchema,
-          ))
+        const jira = source.kind === 'jira' && mode === 'issues'
+        const readOptions = read(
+          source.profile,
+          '/api/scm/work/options',
+          { ...workSourceInput(source), area: mode },
+          forgeWorkOptionsSchema,
+        )
+        let options = knownOptions ?? (jira ? undefined : yield* readOptions)
         if (generation.current !== current) return
-        if (!(mode === 'issues' ? options.issues : options.pipelines)) {
+        if (!jira && !(mode === 'issues' ? options?.issues : options?.pipelines)) {
           const empty: WorkPage = {
             source,
             options,
@@ -190,15 +188,15 @@ export function useWorkCollection(
             stale: false,
           }
           if (publish) update(source.key, empty)
-          yield* cache.writeEffect(optionsKey, options)
+          if (options) yield* cache.writeEffect(optionsKey, options)
           return empty
         }
         const sourceState =
           state === 'all'
             ? 'all'
-            : options.provider === 'jira'
+            : jira || options?.provider === 'jira'
               ? state
-              : options.issueStates.find((value) => value.toLowerCase() === state.toLowerCase())
+              : options?.issueStates.find((value) => value.toLowerCase() === state.toLowerCase())
         if (mode === 'issues' && !sourceState) {
           const empty: WorkPage = {
             source,
@@ -218,7 +216,7 @@ export function useWorkCollection(
                   ...workSourceInput(source),
                   state: sourceState,
                   ...(source.kind === 'jira' ? { jiraFilters } : {}),
-                  ...(options.issueSearch && query
+                  ...((jira || options?.issueSearch) && query
                     ? {
                         query,
                       }
@@ -248,7 +246,7 @@ export function useWorkCollection(
             : retaining
               ? refreshFirstPage(page.items, page.firstPageIds ?? [], data.items, (item) => item.id)
               : data.items,
-          searched: mode === 'issues' && !!query && !!options.issueSearch,
+          searched: mode === 'issues' && !!query && !!(jira || options?.issueSearch),
           firstPageIds: cursor ? page.firstPageIds : data.items.map((item) => item.id),
           paginated: !!cursor || !!retaining,
           loadedPages: cursor
@@ -263,7 +261,10 @@ export function useWorkCollection(
         if (publish) update(source.key, next)
         let cacheError = false
         yield* Effect.all(
-          [cache.writeEffect(optionsKey, options), cache.writeEffect(pageKey, data)],
+          [
+            ...(options ? [cache.writeEffect(optionsKey, options)] : []),
+            cache.writeEffect(pageKey, data),
+          ],
           { concurrency: 2 },
         ).pipe(
           Effect.catch(() =>
@@ -277,6 +278,30 @@ export function useWorkCollection(
             }),
           ),
         )
+        if (jira && !options) {
+          yield* readOptions.pipe(
+            Effect.tap((value) =>
+              Effect.sync(() => {
+                options = value
+              }),
+            ),
+            Effect.flatMap((value) => cache.writeEffect(optionsKey, value)),
+            Effect.catch((error) =>
+              Effect.sync(() => {
+                next.optionsError = error.message
+              }),
+            ),
+          )
+          if (generation.current !== current) return
+          next.options = next.optionsError ? undefined : options
+          if (publish)
+            update(source.key, {
+              ...next,
+              ...(cacheError
+                ? { error: 'Work loaded, but could not be saved for offline use.' }
+                : {}),
+            })
+        }
         return cacheError
           ? { ...next, error: 'Work loaded, but could not be saved for offline use.' }
           : next
@@ -401,7 +426,7 @@ export function useWorkCollection(
               const page = pageRef.current[key]
               if (!page || !page.source.connected || !focused || AppState.currentState !== 'active')
                 return
-              if (page.error) {
+              if (page.error || page.optionsError) {
                 forceNext.current = true
                 setRevision((value) => value + 1)
                 return

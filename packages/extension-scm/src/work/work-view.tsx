@@ -95,7 +95,22 @@ function WorkView({
       },
   )
   const { project, search, state, jiraFilters, jiraLayout, sort, linked } = preferences
-  const setProject = (project: string) => setPreferences((value) => ({ ...value, project }))
+  const setProject = (project: string) =>
+    setPreferences((value) => ({
+      ...value,
+      project,
+      jiraFilters:
+        value.project === project
+          ? value.jiraFilters
+          : {
+              ...value.jiraFilters,
+              board: undefined,
+              sprint: undefined,
+              team: undefined,
+              component: undefined,
+              release: undefined,
+            },
+    }))
   const setSearch = (search: string) => setPreferences((value) => ({ ...value, search }))
   const setState = (state: string) => setPreferences((value) => ({ ...value, state }))
   const setJiraFilters = (jiraFilters: JiraIssueFilters) =>
@@ -315,7 +330,7 @@ function WorkView({
       const page = pages.find(
         (page) => page.source.key === source.key && page.source.scope === source.scope,
       )
-      if (page?.options) setCreating({ source, options: page.options })
+      if (page?.options && !page.optionsError) setCreating({ source, options: page.options })
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -327,6 +342,7 @@ function WorkView({
   const sourceProblems = visiblePages.filter(
     (page) =>
       page.error ||
+      page.optionsError ||
       (mode === 'issues'
         ? !page.options?.issues && page.options?.issueNotice
         : !page.options?.pipelines && page.options?.pipelineNotice),
@@ -672,16 +688,17 @@ function WorkView({
                       </span>
                     </p>
                     <p
-                      role={page.error ? 'alert' : 'status'}
+                      role={page.error || page.optionsError ? 'alert' : 'status'}
                       className="mt-1 break-words text-muted-foreground"
                     >
                       {page.error ||
+                        page.optionsError ||
                         (mode === 'issues'
                           ? page.options?.issueNotice
                           : page.options?.pipelineNotice)}
                     </p>
                   </div>
-                  {page.error && (
+                  {(page.error || page.optionsError) && (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -895,7 +912,7 @@ function WorkView({
             const page = pages.find(
               (page) => page.source.key === source.key && page.source.scope === source.scope,
             )
-            if (page?.options) setCreating({ source, options: page.options })
+            if (page?.options && !page.optionsError) setCreating({ source, options: page.options })
             setPicking(false)
           }}
         />

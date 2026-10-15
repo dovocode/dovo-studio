@@ -1,3 +1,4 @@
+import { taskSnoozeOptions } from '@dovo/protocol'
 import { ProjectSettings } from '@dovo/extension-scm/projects'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -362,20 +363,14 @@ export function TaskContextMenu({
                 </Menu.SubTrigger>
                 <Menu.Portal>
                   <Menu.SubContent className={menuClass} collisionPadding={8}>
-                    {[
-                      [1, 'For 1 hour'],
-                      [4, 'For 4 hours'],
-                      [24, 'Until tomorrow'],
-                    ].map(([hours, label]) => (
+                    {taskSnoozeOptions.map(({ hours, label }) => (
                       <Menu.Item
                         key={hours}
                         className={itemClass}
                         onSelect={() =>
                           void run(() =>
                             patch({
-                              snoozedUntil: new Date(
-                                Date.now() + Number(hours) * 3600000,
-                              ).toISOString(),
+                              snoozedUntil: new Date(Date.now() + hours * 3600000).toISOString(),
                             }),
                           )
                         }

@@ -1,3 +1,4 @@
+import type { ForgePipelineSection, ForgePipelineDetail } from '@dovo/protocol'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -155,11 +156,16 @@ export class BitbucketForgeWork implements ForgeWorkProvider {
       next: result.next ? String(page + 1) : undefined,
     }
   }
-  async pipeline(id: string, cursor?: string) {
+  async pipeline(
+    id: string,
+    cursor?: string,
+    section?: ForgePipelineSection,
+  ): Promise<ForgePipelineDetail> {
     const selected = encodeURIComponent(id),
       page = workPage(cursor)
     const value = decode(pipeline, await this.get(`pipelines/${selected}`)),
       run = this.normalize(value)
+    if (section === 'overview' || section === 'graph') return { run, jobs: [] }
     const steps = decode(
       mutableStruct({
         values: mutableArray(

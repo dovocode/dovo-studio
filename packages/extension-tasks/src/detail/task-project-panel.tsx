@@ -461,6 +461,14 @@ export function TaskProjectPanel({
               <h2 className="truncate text-sm font-medium text-foreground">
                 {repo?.name ?? 'Project'}
               </h2>
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span
+                  className={`size-1.5 shrink-0 rounded-full ${connected ? 'bg-emerald-500' : 'bg-muted-foreground'}`}
+                  aria-hidden="true"
+                />
+                {executionHost ?? 'Selected computer'}
+                {!connected && ' · Offline'}
+              </p>
               <p
                 className="studio-project-path mt-0.5 truncate text-xs text-muted-foreground"
                 title={task.existingWorktreePath || repo?.path || 'No local checkout'}
@@ -493,6 +501,9 @@ export function TaskProjectPanel({
           {actions}
         </div>
         <div className="studio-project-section border-t border-border/60">
+          <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            Pull requests & changes
+          </h3>
           {(showAllPulls ? displayedPulls : displayedPulls.slice(0, 1)).map((pull) =>
             task.pullStatus?.url === pull.url ? (
               <TaskPullStatus

@@ -20,6 +20,7 @@ it('keeps valid saved choices, fills in new defaults and ignores invalid values'
     storage({
       'dovo.app-preferences.v1': JSON.stringify({
         theme: 'light',
+        projectPanelOpen: true,
         launchView: 'overview',
         lastThreadId: 'saved-thread',
         sendWith: 'bogus',
@@ -32,6 +33,7 @@ it('keeps valid saved choices, fills in new defaults and ignores invalid values'
   // The invalid field falls back alone; the valid saved theme survives.
   expect(readAppPreferences()).toMatchObject({
     theme: 'light',
+    projectPanelOpen: true,
     themePalette: 'dovo',
     lastThreadId: 'saved-thread',
     threadSidebarWidth: 280,

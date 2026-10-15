@@ -176,6 +176,7 @@ try {
   await page.getByRole('button', { name: 'Select thread', exact: true }).click()
   await task('thread-a')
   await section('PRs')
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
   await page.getByRole('textbox', { name: 'Search pull requests' }).fill('Keep')
   await page.evaluate(() => window.switchRuntime('b'))
   assert.equal(

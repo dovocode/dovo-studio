@@ -200,7 +200,7 @@ export function ComposerProject({
             variant="ghost"
             disabled={locked}
             aria-label="Task project"
-            className="h-7 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
+            className="h-6 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
           >
             {repository?.kind === 'scratch' ? (
               <MessageCircle className="size-3.5" />
@@ -322,7 +322,7 @@ export function ComposerProject({
               variant="ghost"
               disabled={locked}
               aria-label="Task server"
-              className="h-7 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
+              className="h-6 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
             >
               <RuntimeIcon icon={current?.snapshot?.runtimeIcon} className="size-3.5" />
               <span className="max-w-28 truncate">{current?.name ?? 'This server'}</span>

@@ -217,3 +217,119 @@ it('serves a stale entry at once, refreshes it once behind the response and shar
   expect(await service.request('repo', 'issues/list', {})).not.toMatchObject({ stale: true })
   expect(load).toHaveBeenCalledTimes(2)
 })
+
+it('caches pipeline sections independently and rejects a persisted section from an earlier attempt', async () => {
+  const { service, db } = setup()
+  let attempt = 1
+  const load = vi
+    .spyOn(GitForgeWork.prototype, 'pipeline')
+    .mockImplementation(async (_id, _cursor, section) => ({
+      run: {
+        id: '42',
+        title: 'Build',
+        url: 'https://github.com/me/app/actions/runs/42',
+        status: 'success',
+        sha: 'a'.repeat(40),
+        ref: 'main',
+        actor: 'me',
+        createdAt: '',
+        updatedAt: '',
+        attempt,
+      },
+      jobs:
+        section === 'jobs'
+          ? [
+              {
+                id: 'job',
+                name: `Attempt ${attempt}`,
+                status: 'success',
+                url: 'https://github.com/me/app/actions/runs/42',
+              },
+            ]
+          : [],
+      graph:
+        section === 'graph' ? [{ id: 'build', name: 'Build', needs: [], jobIds: [] }] : undefined,
+    }))
+  for (const section of ['overview', 'jobs', 'graph']) {
+    await service.request('repo', 'pipelines/detail', { id: '42', section })
+    await service.request('repo', 'pipelines/detail', { id: '42', section })
+  }
+  expect(load).toHaveBeenCalledTimes(3)
+  expect(db.prepare('SELECT count(*) AS count FROM forge_work_cache').get()).toEqual({ count: 3 })
+  attempt = 2
+  await expect(
+    service.request('repo', 'pipelines/detail', {
+      id: '42',
+      section: 'jobs',
+      revision: JSON.stringify(['a'.repeat(40), 2]),
+    }),
+  ).resolves.toMatchObject({ run: { attempt: 2 }, jobs: [{ name: 'Attempt 2' }] })
+  expect(load).toHaveBeenCalledTimes(4)
+})
+
+it('shows background refresh errors, backs off failed reads and allows an explicit retry', async () => {
+  const { service, db } = setup()
+  const load = vi
+    .spyOn(GitForgeWork.prototype, 'issues')
+    .mockResolvedValue({ items: [], next: undefined })
+  await service.request('repo', 'issues/list', {})
+  db.prepare('UPDATE forge_work_cache SET updated=?').run(Date.now() - 60_000)
+  load.mockRejectedValue(new Error('Provider unavailable'))
+  await expect(service.request('repo', 'issues/list', {})).resolves.toMatchObject({ stale: true })
+  await vi.waitFor(async () =>
+    expect(await service.request('repo', 'issues/list', {})).toMatchObject({
+      stale: true,
+      refreshError: 'Provider unavailable',
+    }),
+  )
+  expect(load).toHaveBeenCalledTimes(2)
+  await service.request('repo', 'issues/list', {})
+  expect(load).toHaveBeenCalledTimes(2)
+  load.mockResolvedValue({ items: [], next: undefined })
+  expect(await service.request('repo', 'issues/list', { refresh: true })).not.toHaveProperty(
+    'refreshError',
+  )
+  expect(load).toHaveBeenCalledTimes(3)
+})
+
+it('backs off uncached failures without delaying an explicit retry', async () => {
+  const { service } = setup()
+  const load = vi
+    .spyOn(GitForgeWork.prototype, 'issues')
+    .mockRejectedValue(new Error('Rate limited'))
+  await expect(service.request('repo', 'issues/list', {})).rejects.toThrow('Rate limited')
+  await expect(service.request('repo', 'issues/list', {})).rejects.toThrow('Rate limited')
+  expect(load).toHaveBeenCalledTimes(1)
+  load.mockResolvedValue({ items: [], next: undefined })
+  await service.request('repo', 'issues/list', { refresh: true })
+  expect(load).toHaveBeenCalledTimes(2)
+})
+
+it('starts a fresh post-write read while the pre-write read is still pending', async () => {
+  const { db, service } = setup()
+  let release: (value: Awaited<ReturnType<GitForgeWork['issues']>>) => void = () => {
+    throw new Error('Read not started')
+  }
+  const load = vi
+    .spyOn(GitForgeWork.prototype, 'issues')
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
+    .mockResolvedValue({ items: [], next: undefined })
+  vi.spyOn(GitForgeWork.prototype, 'createIssue').mockResolvedValue({
+    id: '2',
+    url: 'https://github.com/me/app/issues/2',
+    message: 'Created',
+  })
+  const before = service.request('repo', 'issues/list', {})
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+  await service.request('repo', 'issues/create', { title: 'New issue', body: '' })
+  await service.request('repo', 'issues/list', {})
+  expect(load).toHaveBeenCalledTimes(2)
+  release({ items: [], next: undefined })
+  await expect(before).resolves.toMatchObject({ stale: true })
+  expect(db.prepare('SELECT count(*) AS count FROM forge_work_cache').get()).toEqual({ count: 1 })
+})

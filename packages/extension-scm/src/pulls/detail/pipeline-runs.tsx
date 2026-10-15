@@ -156,7 +156,7 @@ export function PullPipelineRuns({
   }, [cacheKey, readCache])
   useEffect(() => {
     if (!active || !connected) return
-    const refresh = () => void loadRef.current(undefined, true)
+    const refresh = () => void loadRef.current()
     refresh()
     const timer = setInterval(refresh, 10000)
     document.addEventListener('visibilitychange', refresh)

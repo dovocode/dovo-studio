@@ -30,6 +30,10 @@ export function TaskProjectPopover({ children }: { children: ReactNode }) {
       <Popover.Portal>
         <Popover.Content
           aria-label="Project information"
+          onInteractOutside={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
           align="end"
           side="bottom"
           sideOffset={-1}

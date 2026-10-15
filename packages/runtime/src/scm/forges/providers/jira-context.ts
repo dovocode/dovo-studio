@@ -224,7 +224,12 @@ export async function captureJiraContext(
     try {
       if (selected) {
         const updated = await currentProfile()
-        const state = { fingerprint: selected.fingerprint, profile: stringify(updated) }
+        // ACLI stores its encrypted token as YAML !!binary. Without the binary tag,
+        // Buffer.toJSON turns it into a map that ACLI cannot authenticate with.
+        const state = {
+          fingerprint: selected.fingerprint,
+          profile: stringify(updated, { customTags: ['binary'] }),
+        }
         const staged = `${selected.stateFile}.${randomUUID()}.tmp`
         try {
           await writeFile(staged, JSON.stringify(state), { mode: 0o600, flag: 'wx' })
@@ -297,6 +302,29 @@ export async function captureJiraContext(
             409,
             'The retained Jira credential does not match this account. Sign in again and refresh.',
           )
+        if (Buffer.isBuffer(profile.token) && !Buffer.isBuffer(refreshed.token)) {
+          // Recover the exact bytes written by older runtimes, without falling back
+          // to an older source credential or attempting a second provider operation.
+          const legacy = decode(
+            mutableStruct({
+              type: Schema.Literal('Buffer'),
+              data: maxValue(
+                minValue(
+                  mutableArray(
+                    Schema.Number.pipe(
+                      Schema.check(Schema.isInt()),
+                      Schema.check(Schema.isBetween({ minimum: 0, maximum: 255 })),
+                    ),
+                  ),
+                  1,
+                ),
+                1024 * 1024,
+              ),
+            }),
+            refreshed.token,
+          )
+          refreshed.token = Buffer.from(legacy.data)
+        }
         const document = parseDocument(contents.toString('utf8'))
         document.setIn(['profiles', index, 'token'], refreshed.token)
         await writeFile(configFile, document.toString())

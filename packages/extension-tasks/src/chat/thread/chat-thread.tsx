@@ -61,6 +61,7 @@ export function ChatThread({
   active = true,
 }: {
   task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'> & {
+    archived?: Task['archived']
     historyBefore: Task['historyBefore']
     historyRevision: Task['historyRevision']
   }
@@ -453,6 +454,8 @@ export function ChatThread({
           }}
         >
           <ConversationHistory
+            active={active}
+            settled={liveTask.archived}
             onReady={onRecentReady}
             onReadingHistory={onReadingHistory}
             onLoadEarlier={

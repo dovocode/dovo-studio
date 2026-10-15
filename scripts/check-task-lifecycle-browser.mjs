@@ -73,6 +73,15 @@ try {
   await page.getByRole('button', { name: 'Snooze task' }).click()
   await page.getByRole('menuitem', { name: 'For 1 hour' }).click()
   await page.waitForFunction(() => !!window.task.snoozedUntil)
+  for (const days of [2, 3, 7]) {
+    await page.getByRole('button', { name: 'Snooze task' }).click()
+    await page.getByRole('menuitem', { name: `For ${days} days`, exact: true }).click()
+    await page.waitForFunction(
+      (days) =>
+        Math.abs(Date.parse(window.task.snoozedUntil) - Date.now() - days * 86400000) < 10000,
+      days,
+    )
+  }
   await page.getByRole('button', { name: 'Settle task' }).click()
   await page.getByRole('button', { name: 'Reopen task' }).waitFor()
   assert.equal(await page.evaluate(() => window.task.snoozedUntil), null)
@@ -83,7 +92,7 @@ try {
     await page.evaluate(() =>
       window.writes.map(({ owner, path, method }) => ({ owner, path, method })),
     ),
-    Array(3).fill({ owner: 'remote', path: '/api/workspace', method: 'PATCH' }),
+    Array(6).fill({ owner: 'remote', path: '/api/workspace', method: 'PATCH' }),
   )
   await page.evaluate(() => {
     window.fail = true

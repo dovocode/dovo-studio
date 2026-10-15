@@ -34,18 +34,12 @@ export function WorkSignal({ status, emphasis = false }: { status: string; empha
     neutral: colors.muted,
   }[signal.tone]
   return (
-    <Text
-      style={[
-        styles.muted,
-        {
-          color,
-          fontWeight: emphasis ? '600' : '400',
-          flexShrink: 1,
-        },
-      ]}
-    >
-      {signal.label}
-    </Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />
+      <Text style={[styles.muted, { color, fontWeight: emphasis ? '600' : '500', flexShrink: 1 }]}>
+        {signal.label}
+      </Text>
+    </View>
   )
 }
 function date(value?: string) {
@@ -108,16 +102,20 @@ function Errors({ errors }: { errors?: string[] }) {
   ) : null
 }
 export function PipelineRunInfo({ run }: { run: ForgePipeline }) {
-  const { styles } = useTheme()
+  const { styles, colors } = useTheme()
 
   const now = usePipelineNow(pipelineSignal(run.status).phase === 'active' && !!run.startedAt)
   const duration = pipelineDuration(run, now)
   return (
-    <View
-      style={{
-        gap: 10,
-      }}
-    >
+    <View style={[styles.card, { gap: 12, padding: 16 }]}>
+      <View style={[styles.row, { justifyContent: 'space-between' }]}>
+        <WorkSignal status={run.status} emphasis />
+        <Text style={styles.muted}>
+          Run {run.number || run.id}
+          {run.attempt ? ` · Attempt ${run.attempt}` : ''}
+        </Text>
+      </View>
+      {run.workflow && <Text style={[styles.muted, { fontWeight: '600' }]}>{run.workflow}</Text>}
       <Text
         selectable
         style={[
@@ -130,14 +128,23 @@ export function PipelineRunInfo({ run }: { run: ForgePipeline }) {
       >
         {run.title}
       </Text>
-      <View style={styles.row}>
-        <WorkSignal status={run.status} emphasis />
-        {duration && <Text style={styles.muted}>· {duration}</Text>}
-        {run.attempt !== undefined && <Text style={styles.muted}>· Attempt {run.attempt}</Text>}
+      <View style={[styles.row, { gap: 12 }]}>
+        {!!run.ref && (
+          <View style={[styles.row, { flexShrink: 1 }]}>
+            <Icon name="changes" size={13} color={colors.muted} />
+            <Text selectable style={[styles.muted, { flexShrink: 1 }]}>
+              {run.ref}
+            </Text>
+          </View>
+        )}
+        {!!run.sha && (
+          <Text selectable style={styles.muted}>
+            {run.sha.slice(0, 8)}
+          </Text>
+        )}
+        {duration && <Text style={styles.muted}>{duration}</Text>}
       </View>
-      <Text selectable style={styles.muted}>
-        {[run.ref, run.sha.slice(0, 8), run.actor].filter(Boolean).join(' · ')}
-      </Text>
+      {run.actor && <Text style={styles.muted}>Triggered by {run.actor}</Text>}
       <Errors errors={run.errors} />
     </View>
   )
@@ -240,8 +247,11 @@ function PipelineJob({
   return (
     <View
       style={{
-        borderTopWidth: 0.5,
-        borderColor: colors.border,
+        borderWidth: 1,
+        borderColor: selected ? colors.accent : failed ? colors.error : colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: 12,
+        overflow: 'hidden',
       }}
     >
       <Pressable
@@ -257,7 +267,7 @@ function PipelineJob({
           {
             flexWrap: 'nowrap',
             minHeight: 56,
-            paddingVertical: 10,
+            padding: 14,
             opacity: pressed ? 0.55 : 1,
           },
         ]}
@@ -289,8 +299,10 @@ function PipelineJob({
       {expanded && (
         <View
           style={{
-            gap: 10,
-            paddingBottom: 12,
+            gap: 14,
+            padding: 14,
+            borderTopWidth: 0.5,
+            borderTopColor: colors.border,
           }}
         >
           <Errors errors={job.errors} />
@@ -300,49 +312,44 @@ function PipelineJob({
                 gap: 12,
               }}
             >
-              {[...job.steps]
-                .sort(
-                  (a, b) =>
-                    Number(pipelineSignal(b.status).tone === 'danger') -
-                    Number(pipelineSignal(a.status).tone === 'danger'),
-                )
-                .map((step) => (
-                  <View
-                    key={step.id}
-                    style={{
-                      gap: 4,
-                      paddingLeft: 12,
-                      borderLeftWidth: 1,
-                      borderLeftColor: colors.border,
-                    }}
+              {job.steps.map((step) => (
+                <View
+                  key={step.id}
+                  style={{
+                    gap: 4,
+                    paddingLeft: 12,
+                    borderLeftWidth: 2,
+                    borderLeftColor:
+                      pipelineSignal(step.status).tone === 'danger' ? colors.error : colors.border,
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.text,
+                      {
+                        fontSize: 15,
+                      },
+                    ]}
                   >
-                    <Text
-                      style={[
-                        styles.text,
-                        {
-                          fontSize: 15,
-                        },
-                      ]}
-                    >
-                      {step.number !== undefined ? `${step.number}. ` : ''}
-                      {step.name}
-                    </Text>
-                    <View style={styles.row}>
-                      <WorkSignal status={step.status} />
-                      {!!pipelineDuration(step, now) && (
-                        <Text style={styles.muted}>· {pipelineDuration(step, now)}</Text>
-                      )}
-                    </View>
-                    <Errors errors={step.errors} />
-                    {step.url && (
-                      <Action
-                        secondary
-                        label={`Open ${step.name} logs`}
-                        onPress={() => onOpen(step.url!)}
-                      />
+                    {step.number !== undefined ? `${step.number}. ` : ''}
+                    {step.name}
+                  </Text>
+                  <View style={styles.row}>
+                    <WorkSignal status={step.status} />
+                    {!!pipelineDuration(step, now) && (
+                      <Text style={styles.muted}>· {pipelineDuration(step, now)}</Text>
                     )}
                   </View>
-                ))}
+                  <Errors errors={step.errors} />
+                  {step.url && (
+                    <Action
+                      secondary
+                      label={`Open ${step.name} logs`}
+                      onPress={() => onOpen(step.url!)}
+                    />
+                  )}
+                </View>
+              ))}
             </View>
           ) : (
             <Text style={styles.muted}>The provider did not supply step details for this job.</Text>
@@ -364,7 +371,9 @@ export function PipelineJobs({
   jobs,
   hasMore,
   onOpen,
+  ready = true,
 }: {
+  ready?: boolean
   graph?: ForgePipelineDetail['graph']
   graphNotice?: string
   jobs: ForgePipelineJob[]
@@ -373,7 +382,6 @@ export function PipelineJobs({
 }) {
   const { styles, colors } = useTheme()
   const [selected, setSelected] = useApplicationState<string | null>(null)
-  const selectedJob = jobs.find((job) => job.id === selected)
   const columns = pipelineGraphColumns(graph, jobs)
 
   const now = usePipelineNow(
@@ -391,23 +399,9 @@ export function PipelineJobs({
   return (
     <View
       style={{
-        gap: 4,
+        gap: 10,
       }}
     >
-      <Text
-        accessibilityRole="header"
-        style={[
-          styles.text,
-          {
-            fontWeight: '600',
-            paddingBottom: 6,
-          },
-        ]}
-      >
-        Jobs · {jobs.length}
-        {hasMore ? ' loaded' : ''}
-        {failures ? ` · ${failures} failed` : ''}
-      </Text>
       {!!columns.length && (
         <View accessibilityLabel="Pipeline graph" style={{ gap: 10 }}>
           <Text style={styles.text}>Workflow</Text>
@@ -419,7 +413,14 @@ export function PipelineJobs({
             contentContainerStyle={{ gap: 16, paddingVertical: 8 }}
           >
             {columns.map((column, index) => (
-              <View key={index} style={{ width: 220, gap: 12 }}>
+              <View key={index} style={{ width: 240, gap: 12 }}>
+                {columns.length > 1 && (
+                  <Text
+                    style={[styles.muted, { fontSize: 11, fontWeight: '600', letterSpacing: 1 }]}
+                  >
+                    STAGE {index + 1}
+                  </Text>
+                )}
                 {column.map((node) => (
                   <View key={node.id} style={[styles.card, { gap: 8 }]}>
                     <Text style={[styles.text, { fontWeight: '600' }]}>{node.name}</Text>
@@ -436,15 +437,20 @@ export function PipelineJobs({
                             accessibilityLabel={`View job ${job.name}`}
                             onPress={() => setSelected(id)}
                             style={{
-                              padding: 8,
-                              gap: 4,
+                              padding: 10,
+                              gap: 8,
+                              minHeight: 44,
                               backgroundColor: colors.elevated,
                               borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: selected === id ? colors.accent : colors.border,
                             }}
                           >
-                            <Text style={styles.text}>{job.name}</Text>
-                            <WorkSignal status={job.status} />
-                            <Text style={styles.muted}>{pipelineDuration(job, now)}</Text>
+                            {job.name !== node.name && <Text style={styles.text}>{job.name}</Text>}
+                            <View style={[styles.row, { justifyContent: 'space-between' }]}>
+                              <WorkSignal status={job.status} />
+                              <Text style={styles.muted}>{pipelineDuration(job, now)}</Text>
+                            </View>
                           </Pressable>
                         )
                       )
@@ -455,18 +461,26 @@ export function PipelineJobs({
               </View>
             ))}
           </ScrollView>
-          {selectedJob && (
-            <PipelineJob
-              key={`selected:${selectedJob.id}`}
-              job={selectedJob}
-              selected
-              onOpen={onOpen}
-              now={now}
-            />
-          )}
         </View>
       )}
-      {!jobs.length && <Text style={styles.muted}>No jobs have been returned for this run.</Text>}
+      {!columns.length && graphNotice && <Text style={styles.muted}>{graphNotice}</Text>}
+      <Text
+        accessibilityRole="header"
+        style={[
+          styles.text,
+          {
+            fontWeight: '600',
+            paddingBottom: 6,
+          },
+        ]}
+      >
+        Jobs{ready ? ` · ${jobs.length}` : ''}
+        {hasMore ? ' loaded' : ''}
+        {failures ? ` · ${failures} failed` : ''}
+      </Text>
+      {ready && !jobs.length && (
+        <Text style={styles.muted}>No jobs have been returned for this run.</Text>
+      )}
       {[...jobs]
         .sort(
           (a, b) =>
@@ -474,7 +488,13 @@ export function PipelineJobs({
             Number(pipelineSignal(a.status).tone === 'danger' || !!a.errors?.length),
         )
         .map((job) => (
-          <PipelineJob key={job.id} job={job} onOpen={onOpen} now={now} />
+          <PipelineJob
+            key={job.id}
+            job={job}
+            selected={selected === job.id}
+            onOpen={onOpen}
+            now={now}
+          />
         ))}
     </View>
   )

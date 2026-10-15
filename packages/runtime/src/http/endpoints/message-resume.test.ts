@@ -24,11 +24,11 @@ async function setup() {
     agentId: 'agent',
     objective: 'First request',
   })
-  const send = (messageId: string, text: string) =>
+  const send = (messageId: string, text: string, attachmentIds: string[] = []) =>
     fetch(`http://127.0.0.1:${runtime.port}/api/tasks/message`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: task.id, messageId, text }),
+      body: JSON.stringify({ id: task.id, messageId, text, attachmentIds }),
     })
   return { ...runtime.services, task, send }
 }
@@ -99,4 +99,68 @@ it('sending to a stopped thread with no queued messages immediately starts the n
     expect(s.store.task(s.task.id).status).toBe('review')
   })
   expect(run.mock.calls[0]?.[0].prompt).toContain('Continue with this change')
+})
+
+it('reopens a settled thread only on accepted send and does not reopen on replay', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Done'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  s.store.updateTask(s.task.id, (task) => ({ ...task, status: 'review', archived: true }))
+  s.store.patch({
+    collection: 'tasks',
+    id: s.task.id,
+    changes: { draft: { before: '', after: 'Continue this work' } },
+  })
+  expect(s.store.task(s.task.id).archived).toBe(true)
+  expect((await s.send('invalid', '')).status).toBe(400)
+  expect(s.store.task(s.task.id).archived).toBe(true)
+  expect((await s.send('follow-up', 'Continue this work')).status).toBe(200)
+  await waitForRuntime(() => {
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(s.store.task(s.task.id).status).toBe('review')
+  })
+  expect(s.store.task(s.task.id)).toMatchObject({ archived: false, draft: '' })
+  s.store.updateTask(s.task.id, (task) => ({ ...task, archived: true }))
+  expect((await s.send('follow-up', 'Continue this work')).status).toBe(200)
+  expect(s.store.task(s.task.id).archived).toBe(true)
+  expect(run).toHaveBeenCalledTimes(1)
+})
+
+it('requires explicit restoration for an archived thread', async () => {
+  const s = await setup()
+  const archivedAt = new Date().toISOString()
+  s.store.updateTask(s.task.id, (task) => ({
+    ...task,
+    status: 'review',
+    archived: true,
+    archivedAt,
+  }))
+  expect((await s.send('follow-up', 'Continue')).status).toBe(409)
+  expect(s.store.task(s.task.id)).toMatchObject({ archived: true, archivedAt })
+  expect(s.store.taskSubmission(s.task.id, 'follow-up')).toBeUndefined()
+})
+
+it('reopens a settled thread on an attachment-only message after validating its files', async () => {
+  const s = await setup()
+  const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Read attachment'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  s.store.updateTask(s.task.id, (task) => ({ ...task, status: 'review', archived: true }))
+  const attachmentId = '00000000-0000-4000-8000-000000000001'
+  expect((await s.send('missing-file', '', [attachmentId])).status).toBe(404)
+  expect(s.store.task(s.task.id).archived).toBe(true)
+  const { attachment } = await s.attachments.upload({
+    taskId: s.task.id,
+    id: attachmentId,
+    name: 'note.txt',
+    data: Buffer.from('New context').toString('base64'),
+  })
+  expect(s.store.task(s.task.id).archived).toBe(true)
+  expect((await s.send('attachment-only', '', [attachment.id])).status).toBe(200)
+  await waitForRuntime(() => {
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(s.store.task(s.task.id).status).toBe('review')
+  })
+  expect(s.store.task(s.task.id).archived).toBe(false)
+  expect(s.store.task(s.task.id).draftAttachments).toEqual([])
+  expect(run.mock.calls[0]?.[0].attachments?.[0]?.name).toBe('note.txt')
 })

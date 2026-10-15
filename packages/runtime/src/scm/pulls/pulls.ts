@@ -14,6 +14,7 @@ import {
   pullPageSchema,
   pullDetailSchema,
   type PullComment,
+  type PullDetailSection,
   type PullCreate,
   type PullAction,
   type ForgeCapabilities,
@@ -302,6 +303,9 @@ export class PullRequests {
   async status(cwd: string, number: number, background = false) {
     return this.detail(cwd, number, true, background)
   }
+  section(cwd: string, number: number, section: PullDetailSection) {
+    return this.detail(cwd, number, false, false, false, section)
+  }
   async feedback(cwd: string, number: number) {
     return this.detail(cwd, number, false, true, true)
   }
@@ -311,6 +315,7 @@ export class PullRequests {
     monitor = false,
     background = false,
     feedbackOnly = false,
+    section?: PullDetailSection,
   ) {
     const repo = await this.location(cwd)
     const json = (args: string[]) => this.json(cwd, args, background)
@@ -361,43 +366,50 @@ export class PullRequests {
         })),
       })
     }
+    const discussion = !section || section === 'discussion'
+    const changes = !feedbackOnly && (!section || section === 'changes')
+    const checksRequested = !section || section === 'checks'
+    const settings = !feedbackOnly && (!section || section === 'status')
     const results = await Promise.allSettled([
-      api(`issues/${number}/comments?per_page=100`, true).then((v) =>
-        decode(mutableArray(mutableArray(restComment)), v).flat(),
+      (discussion ? api(`issues/${number}/comments?per_page=100`, true) : Promise.resolve([])).then(
+        (v) => decode(mutableArray(mutableArray(restComment)), v).flat(),
       ),
-      api(`pulls/${number}/reviews?per_page=100`, true).then((v) =>
-        decode(
-          mutableArray(
+      (discussion ? api(`pulls/${number}/reviews?per_page=100`, true) : Promise.resolve([])).then(
+        (v) =>
+          decode(
             mutableArray(
-              mutableStruct({
-                ...restReview.fields,
-                ...{
-                  commit_id: Schema.optional(Schema.String),
-                },
-              }),
+              mutableArray(
+                mutableStruct({
+                  ...restReview.fields,
+                  ...{
+                    commit_id: Schema.optional(Schema.String),
+                  },
+                }),
+              ),
             ),
-          ),
-          v,
-        ).flat(),
+            v,
+          ).flat(),
       ),
-      api(`pulls/${number}/comments?per_page=100`, true).then((v) =>
-        decode(mutableArray(mutableArray(restInline)), v).flat(),
+      (discussion ? api(`pulls/${number}/comments?per_page=100`, true) : Promise.resolve([])).then(
+        (v) => decode(mutableArray(mutableArray(restInline)), v).flat(),
       ),
-      feedbackOnly
+      !changes
         ? Promise.resolve([])
         : api(`pulls/${number}/files?per_page=100`, true).then((v) =>
             decode(mutableArray(mutableArray(restFile)), v).flat(),
           ),
-      json([
-        'pr',
-        'view',
-        String(number),
-        '--repo',
-        repo.repository,
-        '--json',
-        'statusCheckRollup',
-      ]).then((v) => decode(checkRollup, v).statusCheckRollup ?? []),
-      feedbackOnly
+      checksRequested
+        ? json([
+            'pr',
+            'view',
+            String(number),
+            '--repo',
+            repo.repository,
+            '--json',
+            'statusCheckRollup',
+          ]).then((v) => decode(checkRollup, v).statusCheckRollup ?? [])
+        : Promise.resolve([]),
+      feedbackOnly || !discussion
         ? Promise.resolve(
             new Map<
               string,
@@ -405,8 +417,10 @@ export class PullRequests {
             >(),
           )
         : githubThreads(json, repo, number),
-      githubChecks(json, repo, pull.head.sha, !feedbackOnly),
-      feedbackOnly
+      checksRequested
+        ? githubChecks(json, repo, pull.head.sha, !feedbackOnly)
+        : Promise.resolve({ checks: [], warnings: [] }),
+      !settings
         ? Promise.resolve({
             allow_merge_commit: false,
             allow_squash_merge: false,
@@ -427,6 +441,16 @@ export class PullRequests {
       comments: PullComment[] = []
     const [conversation, reviews, inline, files, checks, threads, checkDetails, repository] =
       results
+    // GitHub's paginated files endpoint follows the live PR. Do not label patches with an
+    // earlier revision if a push or base update happened while those pages were loading.
+    if (section === 'changes' && files.status === 'fulfilled') {
+      const current = decode(restDetail, await api(`pulls/${number}`))
+      if (current.head.sha !== pull.head.sha || current.base.sha !== pull.base.sha)
+        throw new HttpError(
+          409,
+          'The PR changed while files were loading. Refresh to load its current diff.',
+        )
+    }
     for (const [i, result] of results.entries())
       if (result.status === 'rejected')
         warnings.push(
@@ -481,7 +505,7 @@ export class PullRequests {
         })),
       )
     comments.sort((a, b) => (a.date || '\uffff').localeCompare(b.date || '\uffff'))
-    if (!feedbackOnly && files.status === 'fulfilled' && files.value.length < pull.changed_files)
+    if (changes && files.status === 'fulfilled' && files.value.length < pull.changed_files)
       warnings.push(
         'GitHub returned only part of this PR’s file list. Open GitHub for the remaining files.',
       )
@@ -504,7 +528,9 @@ export class PullRequests {
         'reviewers',
         'close',
         'reopen',
-        ...(!feedbackOnly && threads.status === 'fulfilled' ? ['resolve' as const] : []),
+        ...(!feedbackOnly && discussion && threads.status === 'fulfilled'
+          ? ['resolve' as const]
+          : []),
         ...(mergeMethods.length ? ['merge' as const] : []),
       ],
       reviewDecisions: ['comment', 'approve', 'request-changes'],
@@ -526,11 +552,18 @@ export class PullRequests {
               : {}),
           }))
         : []
+    const statuses =
+      section === 'status'
+        ? await pullStatuses(this.git, cwd, repo.host, repo.nameWithOwner, [number], (args) =>
+            this.run(cwd, args, background),
+          )
+        : undefined
     return decode(pullDetailSchema, {
       capabilities,
       fileBaseUrl: `${repo.url}/blob/${pull.head.sha}/`,
       pull: {
         ...summary(pull),
+        ...statuses?.get(number),
         provider: 'github',
         cloneUrl: `${repo.url.replace(/\/$/, '')}.git`,
         headCloneUrl: pull.head.repo?.clone_url,

@@ -34,7 +34,13 @@ export function Signal({ signal }: { signal: PullSignal }) {
     </span>
   )
 }
-export function PullStatus({ detail }: { detail: PullDetail }) {
+export function PullStatus({
+  detail,
+  reviewsReady = true,
+}: {
+  detail: PullDetail
+  reviewsReady?: boolean
+}) {
   const reviews = latestPullReviews(detail.comments)
   const checks = [...detail.checks].sort((a, b) => {
     const priority = (status: string) =>
@@ -124,7 +130,9 @@ export function PullStatus({ detail }: { detail: PullDetail }) {
       <aside className="min-w-0 space-y-4 rounded-xl border p-4 text-xs [overflow-wrap:anywhere]">
         <div>
           <h3 className="mb-2 font-medium">Latest reviews</h3>
-          {reviews.length ? (
+          {!reviewsReady ? (
+            <p className="text-muted-foreground">Reviews have not loaded yet.</p>
+          ) : reviews.length ? (
             reviews.map((review) => (
               <div key={review.author} className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="min-w-0 break-words">{review.author}</span>

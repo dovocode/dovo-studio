@@ -52,6 +52,7 @@ export const pullSummarySchema = mutableStruct({
   state: Schema.Literals(['open', 'closed', 'merged']),
   draft: Schema.Boolean,
   author: Schema.String,
+  authorAvatarUrl: Schema.optional(link),
   updatedAt: Schema.String,
   head: Schema.String,
   base: Schema.String,
@@ -91,6 +92,20 @@ export const pullCommentSchema = mutableStruct({
   replyTo: Schema.optional(Schema.String),
   diff: Schema.optional(Schema.String),
 })
+/** Independently loaded PR resources. Omitting section retains the complete-detail API. */
+export const pullDetailSectionSchema = Schema.Literals([
+  'overview',
+  'status',
+  'discussion',
+  'changes',
+  'checks',
+  'stack',
+])
+export type PullDetailSection = typeof pullDetailSectionSchema.Type
+export function pullRevision(detail: Pick<PullDetail, 'pull'>) {
+  return `${detail.pull.headSha}:${detail.pull.baseSha}`
+}
+
 export const pullDetailSchema = mutableStruct({
   destination: Schema.optional(forgeIdentityTokenSchema),
   stack: Schema.optional(pullStackSchema),
@@ -163,6 +178,55 @@ export type PullSummary = Schema.Schema.Type<typeof pullSummarySchema>
 export type PullPage = Schema.Schema.Type<typeof pullPageSchema>
 export type PullDetail = Schema.Schema.Type<typeof pullDetailSchema>
 export type PullComment = Schema.Schema.Type<typeof pullCommentSchema>
+/** Never put comments or code from a different revision/account onto the current overview. */
+export function matchingPullSection(overview: PullDetail | null, section: PullDetail | null) {
+  return (
+    !!overview &&
+    !!section &&
+    overview.pull.url === section.pull.url &&
+    overview.destination === section.destination &&
+    pullRevision(overview) === pullRevision(section)
+  )
+}
+export function combinePullSections(
+  overview: PullDetail | null,
+  sections: Partial<Record<PullDetailSection, PullDetail | null>>,
+): PullDetail | null {
+  if (!overview) return null
+  const get = (key: PullDetailSection) => {
+    const value = sections[key]
+    return value && matchingPullSection(overview, value) ? value : undefined
+  }
+  const status = get('status'),
+    discussion = get('discussion'),
+    changes = get('changes'),
+    checks = get('checks'),
+    stack = get('stack')
+  return {
+    ...overview,
+    capabilities: status?.capabilities
+      ? {
+          ...status.capabilities,
+          actions: [
+            ...status.capabilities.actions,
+            ...(discussion?.capabilities?.actions.includes('resolve') ? ['resolve' as const] : []),
+          ],
+        }
+      : overview.capabilities,
+    pull: {
+      ...overview.pull,
+      checksState: status ? status.pull.checksState : overview.pull.checksState,
+      reviewDecision: status ? status.pull.reviewDecision : overview.pull.reviewDecision,
+      statusError: status ? status.pull.statusError : overview.pull.statusError,
+      stack: stack?.pull.stack,
+    },
+    stack: stack?.stack,
+    comments: discussion?.comments ?? [],
+    files: changes?.files ?? [],
+    checks: checks?.checks ?? [],
+  }
+}
+
 export const pullTaskInputSchema = refine(
   mutableStruct({
     ...forgeDestinationGuardFields,

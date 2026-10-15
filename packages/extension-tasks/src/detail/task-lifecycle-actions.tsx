@@ -1,3 +1,4 @@
+import { taskSnoozeOptions } from '@dovo/protocol'
 import { AlarmClock, Check, Undo2 } from 'lucide-react'
 import { updateTask, type Task } from '@dovo/studio-core'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
@@ -54,17 +55,11 @@ export function TaskLifecycleActions({
               sideOffset={4}
               className="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
             >
-              {[
-                [1, 'For 1 hour'],
-                [4, 'For 4 hours'],
-                [24, 'Until tomorrow'],
-              ].map(([hours, label]) => (
+              {taskSnoozeOptions.map(({ hours, label }) => (
                 <DropdownMenu.Item
                   key={hours}
                   className="rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[highlighted]:bg-accent/55 motion-reduce:transition-none"
-                  onSelect={() =>
-                    snooze(new Date(Date.now() + Number(hours) * 3600000).toISOString())
-                  }
+                  onSelect={() => snooze(new Date(Date.now() + hours * 3600000).toISOString())}
                 >
                   {label}
                 </DropdownMenu.Item>

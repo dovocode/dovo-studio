@@ -1,6 +1,6 @@
 import { PipelineGraph } from './pipeline-graph'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import {
   CheckCircle2,
   ChevronDown,
@@ -26,8 +26,16 @@ export function PipelineDetail({
   disabled,
   loading,
   onMore,
+  jobsReady = true,
+  graphReady = true,
+  jobsStatus,
+  graphStatus,
 }: {
   detail: ForgePipelineDetail
+  jobsReady?: boolean
+  graphReady?: boolean
+  jobsStatus?: ReactNode
+  graphStatus?: ReactNode
   notice?: string
   repositoryId: string
   disabled: boolean
@@ -67,10 +75,13 @@ export function PipelineDetail({
   ]
   return (
     <article className="mx-auto max-w-4xl space-y-5" aria-label="Pipeline details">
-      <header className="space-y-2">
+      <header className="space-y-4 rounded-xl border bg-card p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-3">
           <PipelineState status={run.status} />
-          <span className="text-xs text-muted-foreground">Run {run.number || run.id}</span>
+          <span className="text-xs text-muted-foreground">
+            Run {run.number || run.id}
+            {run.attempt ? ` · Attempt ${run.attempt}` : ''}
+          </span>
           <a
             href={run.url}
             target="_blank"
@@ -80,7 +91,12 @@ export function PipelineDetail({
             Open run and logs <ExternalLink className="size-3.5 shrink-0" />
           </a>
         </div>
-        <h2 className="break-words text-xl font-semibold">{run.title}</h2>
+        <div className="space-y-1">
+          {run.workflow && (
+            <p className="text-xs font-medium text-muted-foreground">{run.workflow}</p>
+          )}
+          <h2 className="break-words text-xl font-semibold tracking-tight">{run.title}</h2>
+        </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
           {run.ref && (
             <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -89,7 +105,8 @@ export function PipelineDetail({
             </span>
           )}
           {duration && (
-            <span className="tabular-nums">
+            <span className="inline-flex items-center gap-1.5 tabular-nums">
+              <Clock3 className="size-3.5" />
               {active ? 'Running for ' : ''}
               {duration}
             </span>
@@ -109,46 +126,53 @@ export function PipelineDetail({
         </p>
       )}
       <PipelineErrors errors={run.errors} />
-      <PipelineGraph
-        detail={detail}
-        now={now}
-        onSelect={(id) => {
-          setSelectedJob(id)
-          requestAnimationFrame(() =>
-            document
-              .getElementById(`pipeline-job-${id}`)
-              ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
-          )
-        }}
-      />
-      <section aria-label="Pipeline jobs" className="space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <h3 className="text-sm font-medium">
-            {failedJobs ? `${failedJobs} failed ${failedJobs === 1 ? 'job' : 'jobs'}` : 'Jobs'}
-          </h3>
-          <span className="text-xs text-muted-foreground">
-            {jobs.length}
-            {detail.next ? '+' : ''} {jobs.length === 1 && !detail.next ? 'job' : 'jobs'}
-          </span>
-        </div>
-        <div className="divide-y overflow-hidden rounded-lg border">
-          {orderedJobs.map((job) => (
-            <PipelineJob key={job.id} job={job} now={now} selected={selectedJob === job.id} />
-          ))}
-          {!jobs.length && (
-            <p className="p-4 text-sm text-muted-foreground">
-              {active
-                ? 'Jobs will appear when the runner reports them. Refresh to check for updates.'
-                : 'No jobs were returned for this run.'}
-            </p>
+      {graphStatus}
+      {(graphReady || jobsReady) && (
+        <PipelineGraph
+          detail={detail}
+          now={now}
+          selectedJob={selectedJob}
+          onSelect={(id) => {
+            setSelectedJob(id)
+            requestAnimationFrame(() =>
+              document
+                .getElementById(`pipeline-job-${id}`)
+                ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
+            )
+          }}
+        />
+      )}
+      {jobsStatus}
+      {jobsReady && (
+        <section aria-label="Pipeline jobs" className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-sm font-medium">
+              {failedJobs ? `${failedJobs} failed ${failedJobs === 1 ? 'job' : 'jobs'}` : 'Jobs'}
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              {jobs.length}
+              {detail.next ? '+' : ''} {jobs.length === 1 && !detail.next ? 'job' : 'jobs'}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {orderedJobs.map((job) => (
+              <PipelineJob key={job.id} job={job} now={now} selected={selectedJob === job.id} />
+            ))}
+            {!jobs.length && (
+              <p className="p-4 text-sm text-muted-foreground">
+                {active
+                  ? 'Jobs will appear when the runner reports them. Refresh to check for updates.'
+                  : 'No jobs were returned for this run.'}
+              </p>
+            )}
+          </div>
+          {detail.next && (
+            <Button disabled={loading} variant="outline" size="sm" onClick={onMore}>
+              More jobs
+            </Button>
           )}
-        </div>
-        {detail.next && (
-          <Button disabled={loading} variant="outline" size="sm" onClick={onMore}>
-            More jobs
-          </Button>
-        )}
-      </section>
+        </section>
+      )}
       <details className="border-t pt-3">
         <summary className="cursor-pointer py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
           Run details
@@ -194,18 +218,22 @@ function PipelineJob({
   }, [failed, selected])
   const duration = pipelineDuration(job, now)
   return (
-    <section id={`pipeline-job-${job.id}`} aria-label={`Job ${job.name}`}>
+    <section
+      id={`pipeline-job-${job.id}`}
+      aria-label={`Job ${job.name}`}
+      className={`overflow-hidden rounded-xl border bg-card ${selected ? 'ring-2 ring-primary/40' : failed ? 'border-destructive/40' : ''}`}
+    >
       <button
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
-        className="flex w-full min-w-0 items-center gap-3 p-3 text-left hover:bg-muted/40"
+        className="flex w-full min-w-0 flex-wrap items-center gap-3 p-3 text-left transition-colors hover:bg-muted/40 sm:p-4"
       >
         <ChevronDown
           className={`size-4 shrink-0 text-muted-foreground transition-transform ${expanded ? '' : '-rotate-90'}`}
         />
-        <span className="min-w-0 flex-1 break-words text-sm font-medium">{job.name}</span>
-        <span className="flex shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
+        <span className="min-w-20 flex-1 break-words text-sm font-medium">{job.name}</span>
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
           {duration && (
             <span className="text-xs tabular-nums text-muted-foreground">{duration}</span>
           )}
@@ -213,7 +241,7 @@ function PipelineJob({
         </span>
       </button>
       {expanded && (
-        <div className="space-y-3 border-t bg-muted/10 p-3 sm:pl-10">
+        <div className="space-y-4 border-t bg-muted/10 p-3 sm:p-4 sm:pl-11">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
             {job.runner && <span className="min-w-0 break-words">Runner · {job.runner}</span>}
             {job.startedAt && <span>Started {formatPipelineDate(job.startedAt)}</span>}
@@ -229,17 +257,17 @@ function PipelineJob({
           </div>
           <PipelineErrors errors={job.errors} />
           {job.steps?.length ? (
-            <ol aria-label={`${job.name} steps`} className="divide-y">
+            <ol aria-label={`${job.name} steps`} className="divide-y divide-border/60">
               {job.steps.map((step) => (
                 <li key={step.id} className="space-y-2 py-2.5">
-                  <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
                     {step.number !== undefined && (
                       <span className="w-4 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                         {step.number}
                       </span>
                     )}
-                    <span className="min-w-0 flex-1 break-words text-sm">{step.name}</span>
-                    <span className="flex shrink-0 flex-wrap justify-end gap-x-3 gap-y-1">
+                    <span className="min-w-20 flex-1 break-words text-sm">{step.name}</span>
+                    <span className="ml-auto flex flex-wrap justify-end gap-x-3 gap-y-1">
                       <span className="text-xs tabular-nums text-muted-foreground">
                         {pipelineDuration(step, now)}
                       </span>
@@ -311,14 +339,16 @@ export function PipelineState({ status }: { status: string }) {
           ? Clock3
           : CircleDot
   const color = {
-    success: 'text-emerald-500',
-    danger: 'text-destructive',
-    warning: 'text-amber-500',
-    info: 'text-blue-500',
-    neutral: 'text-muted-foreground',
+    success: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+    danger: 'bg-destructive/10 text-destructive',
+    warning: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    info: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
+    neutral: 'bg-muted text-muted-foreground',
   }[signal.tone]
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs ${color}`}>
+    <span
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium leading-none ${color}`}
+    >
       <Icon className="size-3.5" />
       {signal.label}
     </span>

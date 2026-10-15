@@ -30,10 +30,16 @@ const cached = {
   stale: Schema.optional(Schema.Boolean),
   refreshError: Schema.optional(Schema.String),
 }
+export const forgeIssueSectionSchema = Schema.Literals(['overview', 'discussion'])
+export type ForgeIssueSection = typeof forgeIssueSectionSchema.Type
+export const forgePipelineSectionSchema = Schema.Literals(['overview', 'jobs', 'graph'])
+export type ForgePipelineSection = typeof forgePipelineSectionSchema.Type
 export const forgeWorkQuerySchema = mutableStruct({
   ...forgeReadGuardFields,
   ...forgeDestinationGuardFields,
   jiraFilters: Schema.optional(jiraIssueFiltersSchema),
+  section: Schema.optional(Schema.Literals(['overview', 'discussion', 'jobs', 'graph'])),
+  revision: Schema.optional(maxValue(Schema.String, 1000)),
   cursor: Schema.optional(maxValue(Schema.String, 4000)),
   query: Schema.optional(maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 300)),
   state: maxValue(Schema.String, 100).pipe(
@@ -108,6 +114,33 @@ export const forgeIssueDetailSchema = mutableStruct({
   ...cached,
 })
 export type ForgeIssueDetail = Schema.Schema.Type<typeof forgeIssueDetailSchema>
+/** Only combine discussion with the exact issue snapshot and destination it was read from. */
+export function matchingIssueSection(
+  overview: ForgeIssueDetail | undefined,
+  discussion: ForgeIssueDetail | undefined,
+) {
+  return (
+    !!overview &&
+    !!discussion &&
+    overview.issue.id === discussion.issue.id &&
+    overview.issue.url === discussion.issue.url &&
+    overview.destination === discussion.destination &&
+    overview.issue.revision === discussion.issue.revision
+  )
+}
+export function combineIssueSections(
+  overview: ForgeIssueDetail | undefined,
+  discussion: ForgeIssueDetail | undefined,
+): ForgeIssueDetail | undefined {
+  if (!overview) return undefined
+  const current = matchingIssueSection(overview, discussion) ? discussion : undefined
+  return {
+    ...overview,
+    comments: current?.comments ?? [],
+    next: current?.next,
+    discussionNotice: current?.discussionNotice,
+  }
+}
 const fields = {
   title: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 1000),
   body: maxValue(Schema.String, 100000),
@@ -241,6 +274,39 @@ export const forgePipelineDetailSchema = mutableStruct({
   ...cached,
 })
 export type ForgePipelineDetail = Schema.Schema.Type<typeof forgePipelineDetailSchema>
+/** Attempt-less providers reuse IDs on retry; their update time distinguishes job snapshots. */
+export function pipelineRevision(run: ForgePipeline) {
+  return JSON.stringify([run.sha, run.attempt ?? run.updatedAt])
+}
+export function matchingPipelineSection(
+  overview: ForgePipelineDetail | undefined,
+  section: ForgePipelineDetail | undefined,
+) {
+  return (
+    !!overview &&
+    !!section &&
+    overview.run.id === section.run.id &&
+    overview.run.url === section.run.url &&
+    overview.destination === section.destination &&
+    pipelineRevision(overview.run) === pipelineRevision(section.run)
+  )
+}
+export function combinePipelineSections(
+  overview: ForgePipelineDetail | undefined,
+  jobs: ForgePipelineDetail | undefined,
+  graph: ForgePipelineDetail | undefined,
+): ForgePipelineDetail | undefined {
+  if (!overview) return undefined
+  const currentJobs = matchingPipelineSection(overview, jobs) ? jobs : undefined
+  const currentGraph = matchingPipelineSection(overview, graph) ? graph : undefined
+  return {
+    ...overview,
+    jobs: currentJobs?.jobs ?? [],
+    next: currentJobs?.next,
+    graph: currentGraph?.graph,
+    graphNotice: currentGraph?.graphNotice,
+  }
+}
 export const forgeDefinitionsSchema = mutableStruct({
   destination: Schema.optional(forgeIdentityTokenSchema),
   items: mutableArray(

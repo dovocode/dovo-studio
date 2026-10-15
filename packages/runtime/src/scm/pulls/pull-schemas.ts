@@ -3,6 +3,7 @@ import { Schema } from 'effect'
 const user = Schema.NullOr(
   mutableStruct({
     login: Schema.String,
+    avatar_url: Schema.optional(Schema.NullOr(Schema.String)),
   }),
 )
 export const restPull = mutableStruct({
@@ -118,6 +119,7 @@ export function summary(p: Schema.Schema.Type<typeof restPull>) {
     state: p.merged_at ? ('merged' as const) : p.state,
     draft: p.draft ?? false,
     author: p.user?.login ?? 'Deleted user',
+    authorAvatarUrl: p.user?.avatar_url || undefined,
     updatedAt: p.updated_at,
     head: p.head.label,
     base: p.base.label,

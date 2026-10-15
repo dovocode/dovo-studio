@@ -405,3 +405,90 @@ it('rejects queued restoration beyond the combined attachment limit without chan
     db.close()
   }
 })
+
+it('atomically reopens the settled family on explicit send, including attachment-only input', () => {
+  const db = openDatabase(':memory:')
+  try {
+    let fail = false
+    const store = new WorkspaceStore(db, () => {
+      if (fail) throw new Error('Storage unavailable')
+    })
+    const task = {
+      id: 'parent',
+      title: 'Settled',
+      repositoryId: '',
+      agentId: '',
+      status: 'review' as const,
+      createdAt: '',
+      messages: [],
+      files: [],
+      draft: '',
+      example: false,
+      archived: true,
+      snoozedUntil: '2099-01-01T00:00:00Z',
+    }
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        task,
+        {
+          ...task,
+          id: 'child',
+          delegation: { parentTaskId: 'parent', parentRunId: 'old', key: 'child' },
+        },
+        {
+          ...task,
+          id: 'archived-child',
+          delegation: { parentTaskId: 'parent', parentRunId: 'old', key: 'archived-child' },
+          archivedAt: '2026-10-01T00:00:00Z',
+        },
+        { ...task, id: 'unrelated' },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    const attachment = {
+      id: '00000000-0000-0000-0000-000000000000',
+      name: 'note.txt',
+      mime: 'text/plain',
+      size: 1,
+    }
+    const submit = () =>
+      queue.add('parent', 'follow-up', '', [attachment], undefined, false, true, undefined, {
+        reopenSettled: true,
+      })
+    expect(() => queue.add('parent', 'background', 'Background update')).toThrow('Restore')
+    fail = true
+    expect(submit).toThrow('Storage unavailable')
+    expect(store.taskSubmission('parent', 'follow-up')).toBeUndefined()
+    expect(new WorkspaceStore(db).task('parent').archived).toBe(true)
+    expect(store.get().tasks.every((item) => item.archived)).toBe(true)
+    fail = false
+    expect(submit()).toBe(true)
+    for (const id of ['parent', 'child'])
+      expect(store.task(id)).toMatchObject({ archived: false, snoozedUntil: null })
+    expect(store.task('parent').queue?.[0]).toMatchObject({ text: '', attachments: [attachment] })
+    expect(store.task('archived-child').archivedAt).toBeTruthy()
+    expect(store.task('unrelated').archived).toBe(true)
+    store.updateTask('parent', (current) => ({ ...current, archived: true }))
+    expect(submit()).toBe(false)
+    expect(store.task('parent').archived).toBe(true)
+    store.updateTask('parent', (current) => ({
+      ...current,
+      queue: Array.from({ length: 50 }, (_, i) => ({
+        id: String(i),
+        role: 'user' as const,
+        text: 'Queued',
+        createdAt: '',
+      })),
+    }))
+    expect(() =>
+      queue.add('parent', 'overflow', 'New', [], undefined, false, true, undefined, {
+        reopenSettled: true,
+      }),
+    ).toThrow('Queue is full')
+    expect(store.task('parent').archived).toBe(true)
+    expect(store.taskSubmission('parent', 'overflow')).toBeUndefined()
+  } finally {
+    db.close()
+  }
+})

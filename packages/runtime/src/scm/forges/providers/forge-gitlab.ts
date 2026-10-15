@@ -93,6 +93,7 @@ export class GitLabForge implements ForgeAdapter {
       state: pull.state === 'merged' ? 'merged' : pull.state === 'opened' ? 'open' : 'closed',
       draft: pull.draft ?? pull.work_in_progress ?? /^(?:Draft|WIP):/i.test(pull.title),
       author: author ?? 'Deleted user',
+      authorAvatarUrl: pull.author?.avatar_url || undefined,
       updatedAt: pull.updated_at,
       head: pull.source_branch,
       base: pull.target_branch,

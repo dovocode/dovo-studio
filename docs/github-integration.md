@@ -46,6 +46,32 @@ GitHub list queries report the account's remaining GraphQL quota, which every ca
 credential shares. Background refreshes pause when less than ten percent remains, keeping the rest
 for the PR screens and actions; cached data stays available until the reset.
 
+## Loading and caching PR details
+
+Overview loads the PR header and description first. Status summaries and stack discovery load
+independently. Files load when Changes opens, detailed checks and annotations when Checks opens, and
+discussion when its activity, review or code-comment views need it. A slow or unavailable section
+has its own loading state, warning and refresh control; it does not block the description or discard
+other loaded sections.
+
+The runtime stores each section separately in SQLite and shares concurrent requests for the same
+section and verified account. Overview, status, discussion, checks and stack caches are fresh for
+one minute; files for five minutes. Expired entries appear immediately while refreshing in the
+background. Explicit refresh waits for a fresh read. Failed refreshes retain cached content with a
+visible warning; an explicit retry bypasses the normal failure backoff. Writes invalidate the PR's
+sections and lists across remembered checkout/account aliases, including after a restart.
+
+Clients also retain sections for offline use. Files, comments and checks are combined only when
+their PR URL, destination, head and base commits match Overview. A section that discovers a new
+revision refreshes Overview; patches are withheld when a push happens during file pagination. Each
+runtime still verifies the selected reader before serving its cache. Routed reads retain the
+original runtime's destination, and writes remain on that original runtime.
+
+The detail endpoint accepts an optional `section` and expected `revision` (`headSha:baseSha`).
+Callers without a section retain the existing complete-detail response. Other forge providers
+currently use their complete-detail adapter for section reads; the reduced GitHub API work described
+above applies to GitHub.
+
 ## Projects on multiple computers
 
 If the original runtime goes offline, PR lists and open PR details can continue reading through
@@ -74,6 +100,11 @@ of the identity, so forks and repositories on different hosts remain separate.
 Choose a specific project in the PR filter to use that checkout and its configured account. PR rows
 keep that source's personal relationship flags; flags from different accounts are never combined.
 Credentials and PR caches remain isolated by account on each runtime.
+
+The PR category bar stays visible. **Filters** expands search, repository, state, sorting, draft and
+attention controls; its badge counts active non-default controls while collapsed. Author profile
+pictures appear beside author names in the list and details, with initials when an image is missing
+or fails to load. Avatars use the forge-provided URL without extra API reads.
 
 The clients coordinate these listing reads. A runtime refreshes a checkout's open PR list in the
 background only while a client read it within the last 30 minutes, so idle repositories cost no

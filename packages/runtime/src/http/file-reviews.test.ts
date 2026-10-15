@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
   decode,
@@ -194,7 +195,7 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
       warnings: [],
     }),
   )
-  vi.spyOn(runtime.services.pulls, 'detail').mockImplementation(async () => detail)
+  vi.spyOn(runtime.services.pulls, 'section').mockImplementation(async () => detail)
   const context: ReviewContext = { kind: 'pull', repositoryId: 'repo', number: 1 }
   const initial = await read(context)
   for (const file of initial.files)
@@ -211,11 +212,15 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
     pull: { ...detail.pull, headSha: 'c'.repeat(40) },
     files: [{ ...detail.files[0], patch: '@@ -1 +1 @@\n-old\n+newer' }, detail.files[1]],
   }
-  await runtime.services.pullCache.detail('/file-review-test/absent', 1, true)
+  await Effect.runPromise(
+    runtime.services.pullCache.sectionEffect('/file-review-test/absent', 1, 'changes', true),
+  )
   expect((await read(context)).files.map((file) => file.viewed)).toEqual([false, true])
   const current = await read(context)
   expect((await request(context, mobile, { ...current.files[0], viewed: true })).status).toBe(200)
-  const cachedRead = vi.spyOn(runtime.services.pullCache, 'detail').mockResolvedValue(oldDetail)
+  const cachedRead = vi
+    .spyOn(runtime.services.pullCache, 'sectionEffect')
+    .mockReturnValue(Effect.succeed(oldDetail))
   expect((await read(context)).files.every((file) => file.viewed)).toBe(true)
   cachedRead.mockRestore()
   expect((await read(context)).files.every((file) => file.viewed)).toBe(true)
@@ -223,7 +228,9 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
   expect((await request(context, mobile, { ...initial.files[0], viewed: true })).status).toBe(409)
   // A provider failure must not clear saved progress as if all files were removed.
   detail = { ...detail, files: [], warnings: ['Files: unavailable'] }
-  await runtime.services.pullCache.detail('/file-review-test/absent', 1, true)
+  await Effect.runPromise(
+    runtime.services.pullCache.sectionEffect('/file-review-test/absent', 1, 'changes', true),
+  )
   expect((await request(context)).status).toBe(503)
   detail = {
     ...detail,
@@ -239,7 +246,9 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
     ],
     warnings: [],
   }
-  await runtime.services.pullCache.detail('/file-review-test/absent', 1, true)
+  await Effect.runPromise(
+    runtime.services.pullCache.sectionEffect('/file-review-test/absent', 1, 'changes', true),
+  )
   expect((await read(context)).files[0].viewed).toBe(false)
 })
 it('retries unavailable PR sources after the cache interval and isolates local checkout identity', async () => {
@@ -281,7 +290,7 @@ it('retries unavailable PR sources after the cache interval and isolates local c
       warnings: [],
     }),
   )
-  vi.spyOn(runtime.services.pulls, 'detail').mockResolvedValue(detail)
+  vi.spyOn(runtime.services.pulls, 'section').mockResolvedValue(detail)
   const sources = vi.spyOn(runtime.services.git, 'reviewSources').mockResolvedValue([])
   let now = Date.now()
   vi.spyOn(Date, 'now').mockImplementation(() => now)

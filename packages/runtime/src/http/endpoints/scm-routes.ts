@@ -1,5 +1,7 @@
 import {
   forgeSourceIdentityQuerySchema,
+  pullDetailSectionSchema,
+  pullSummarySchema,
   forgeSourceIdentitySchema,
   forgeReadGuardFields,
   forgeDestinationGuardFields,
@@ -409,16 +411,58 @@ export function scmRoute(request: IncomingMessage, path: string) {
           if (!target) throw new HttpError(400, 'Invalid PR target')
           const pulls = s.pulls.urlTarget(target.url, input.connectionId)
           const urlScope =
-            input.expectedReaderIdentity !== undefined
+            input.expectedReaderIdentity !== undefined || input.expectedDestination !== undefined
               ? yield* serviceResult(pulls.sourceIdentity())
               : undefined
-          if (urlScope && input.expectedReaderIdentity !== urlScope.readerIdentity)
+          if (
+            urlScope &&
+            input.expectedReaderIdentity !== undefined &&
+            input.expectedReaderIdentity !== urlScope.readerIdentity
+          )
             throw new HttpError(
               409,
               'This integration reader account changed. Refresh before continuing.',
             )
+          if (
+            urlScope &&
+            input.expectedDestination !== undefined &&
+            input.expectedDestination !== urlScope.destination
+          )
+            throw new HttpError(
+              409,
+              'This integration destination or account changed. Refresh before continuing.',
+            )
           if (input.taskId || input.number !== target.number)
             throw new HttpError(400, 'PR target does not match its URL')
+          const section =
+            path === '/api/scm/pulls/detail'
+              ? decode(Schema.UndefinedOr(pullDetailSectionSchema), input.section)
+              : undefined
+          if (section === 'stack')
+            throw new HttpError(400, 'Connect this project to discover stacks.')
+          if (path === '/api/scm/pulls/detail' && section)
+            return yield* s.pullCache.sectionEffect(
+              target.url,
+              target.number,
+              section,
+              decode(
+                withDefault(Schema.Boolean, () => false),
+                input.refresh,
+              ),
+              urlScope?.destination,
+              decode(Schema.UndefinedOr(maxValue(Schema.String, 200)), input.revision),
+              {
+                identity: () => pulls.identity(false),
+                reader: {
+                  list: async () => {
+                    throw new HttpError(400, 'Connect this project to discover stacks.')
+                  },
+                  detail: (_cwd, number) => pulls.detail(number, urlScope?.destination),
+                  section: (_cwd, number, resource) =>
+                    pulls.section(number, resource, urlScope?.destination),
+                },
+              },
+            )
           if (path === '/api/scm/pulls/detail' && input.connectionId)
             return yield* serviceResult(pulls.detail(target.number, urlScope?.destination))
           if (path === '/api/scm/pulls/detail')
@@ -450,7 +494,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
           ? yield* serviceResult(s.checkouts.directory(input.taskId))
           : repo.path
         const readScope =
-          input.expectedReaderIdentity !== undefined
+          input.expectedReaderIdentity !== undefined || input.expectedDestination !== undefined
             ? yield* serviceResult(s.pulls.guard(cwd, input))
             : undefined
         if (path === '/api/scm/action-state') {
@@ -616,6 +660,31 @@ export function scmRoute(request: IncomingMessage, path: string) {
             ),
             readScope?.destination,
           )
+        if (path === '/api/scm/pulls/detail' && input.section !== undefined) {
+          const scope = readScope ?? (yield* serviceResult(s.pulls.sourceContext(cwd)))
+          return yield* s.pullCache.sectionEffect(
+            cwd,
+            decode(pullSummarySchema.fields.number, input.number),
+            decode(pullDetailSectionSchema, input.section),
+            decode(
+              withDefault(Schema.Boolean, () => false),
+              input.refresh,
+            ),
+            scope.destination,
+            decode(Schema.UndefinedOr(maxValue(Schema.String, 200)), input.revision),
+            {
+              identity: async () => {
+                scope.validate()
+                return scope.destination
+              },
+              reader: {
+                ...s.pulls.forDestination(scope.destination),
+                section: (_cwd, number, section) =>
+                  s.pulls.sectionInContext(cwd, number, section, scope),
+              },
+            },
+          )
+        }
         if (path === '/api/scm/pulls/detail')
           return yield* s.pullCache.detailWithStackEffect(
             cwd,

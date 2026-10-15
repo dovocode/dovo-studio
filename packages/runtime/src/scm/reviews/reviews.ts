@@ -1,3 +1,4 @@
+import { runClientEffect } from '@dovo/client-runtime'
 import { createTwoFilesPatch, parsePatch } from 'diff'
 import {
   githubPullTarget,
@@ -96,9 +97,9 @@ export class FileReviews {
       if (repo?.kind || (!repo && !target)) throw new HttpError(404, 'Git project not found')
       if (target && context.number !== target.number)
         throw new HttpError(400, 'PR target does not match its URL')
-      const detail = repo
-        ? await s.pullCache.detail(repo.path, context.number)
-        : await s.pullCache.detail(context.repositoryId, context.number)
+      const detail = await runClientEffect(
+        s.pullCache.sectionEffect(repo?.path ?? context.repositoryId, context.number, 'changes'),
+      )
       if (detail.warnings.some((warning) => warning.startsWith('Files:')))
         throw new HttpError(503, 'PR files are unavailable. Refresh the PR to try again.')
       if (repo) pullSource = { cwd: repo.path, detail }

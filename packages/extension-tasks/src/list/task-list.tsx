@@ -1,3 +1,4 @@
+import { taskSnoozeOptions } from '@dovo/protocol'
 import { orderThreadSections } from '@dovo/protocol'
 import { SectionOrderDialog } from './section-order-dialog'
 import { useTaskSearch } from './use-task-search'
@@ -684,11 +685,7 @@ export function TaskList({
               </ContextMenu.SubTrigger>
               <ContextMenu.Portal>
                 <ContextMenu.SubContent className="z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                  {[
-                    { hours: 1, label: 'For 1 hour' },
-                    { hours: 4, label: 'For 4 hours' },
-                    { hours: 24, label: 'For 24 hours' },
-                  ].map((option) => (
+                  {taskSnoozeOptions.map((option) => (
                     <ContextMenu.Item
                       key={option.hours}
                       className="rounded-sm px-2 py-1.5 text-xs data-[highlighted]:bg-accent/55"

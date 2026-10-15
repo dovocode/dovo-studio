@@ -10,8 +10,10 @@ export function MessageAttachments({
   remove,
   disabled,
   previews,
+  compact = false,
 }: {
   taskId: string
+  compact?: boolean
   files?: Attachment[]
   remove?: (id: string) => Promise<void>
   previews?: Map<string, string>
@@ -53,30 +55,35 @@ export function MessageAttachments({
       {files.map((file) => (
         <div
           key={file.id}
-          className="flex max-w-full items-center rounded-md border bg-secondary/40 text-[0.6875rem]"
+          className={`flex min-w-0 items-center rounded-md border bg-secondary/40 text-[0.6875rem] ${compact ? 'max-w-52' : 'max-w-full'}`}
         >
           <button
             type="button"
-            className="flex min-w-0 items-center gap-1.5 px-2 py-1.5"
+            className={`flex min-w-0 items-center gap-1.5 ${compact ? 'h-7 px-1.5' : 'px-2 py-1.5'}`}
             disabled={!connected || busy || disabled}
             onClick={() => void open(file.id)}
             aria-label={`Preview ${file.name}`}
+            title={file.name}
           >
             {isImageAttachment(file) ? (
               previews?.get(file.id) ? (
                 <img
                   src={previews.get(file.id)}
                   alt={file.name}
-                  className="size-10 shrink-0 rounded object-cover"
+                  className={`${compact ? 'size-5' : 'size-10'} shrink-0 rounded object-cover`}
                 />
               ) : (
-                <AttachmentThumbnail taskId={taskId} file={file} />
+                <AttachmentThumbnail taskId={taskId} file={file} compact={compact} />
               )
             ) : (
               <Paperclip className="size-3 shrink-0" />
             )}
             <span className="truncate">{file.name}</span>
-            <span className="shrink-0 text-muted-foreground">{Math.ceil(file.size / 1024)} KB</span>
+            {!compact && (
+              <span className="shrink-0 text-muted-foreground">
+                {Math.ceil(file.size / 1024)} KB
+              </span>
+            )}
           </button>
           {remove && (
             <Button
@@ -153,7 +160,15 @@ function textPreview(data: string) {
   }
 }
 
-function AttachmentThumbnail({ taskId, file }: { taskId: string; file: Attachment }) {
+function AttachmentThumbnail({
+  taskId,
+  file,
+  compact,
+}: {
+  taskId: string
+  file: Attachment
+  compact: boolean
+}) {
   const { request, connected } = useWorkspace()
   const [src, setSrc] = useApplicationState('')
   const [failed, setFailed] = useApplicationState(false)
@@ -181,7 +196,7 @@ function AttachmentThumbnail({ taskId, file }: { taskId: string; file: Attachmen
   return (
     <span
       ref={ref}
-      className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded bg-muted"
+      className={`flex ${compact ? 'size-5' : 'size-10'} shrink-0 items-center justify-center overflow-hidden rounded bg-muted`}
     >
       {src ? (
         <img src={src} alt={file.name} className="size-full object-cover" />

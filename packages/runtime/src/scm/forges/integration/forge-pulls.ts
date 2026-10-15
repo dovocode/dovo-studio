@@ -12,6 +12,7 @@ import {
   pullLineCommentSchema,
   type ForgeRepositoryPage,
   type PullAction,
+  type PullDetailSection,
   type PullCreate,
 } from '@dovo/protocol'
 import { PullRequests } from '../../pulls/pulls.js'
@@ -145,6 +146,16 @@ export class ForgePullRequests {
         return this.tagDetail(
           await (this.scopedAdapter(scope, cwd)?.detail(number) ??
             this.scopedGithub(scope).detail(cwd, number)),
+          scope,
+        )
+      },
+      section: async (number: number, section: PullDetailSection, expectedDestination?: string) => {
+        const scope = await prepare()
+        guardSource(scope, { expectedDestination })
+        return this.tagDetail(
+          await (scope.provider === 'github'
+            ? this.scopedGithub(scope).section(cwd, number, section)
+            : this.scopedAdapter(scope, cwd)!.detail(number)),
           scope,
         )
       },
@@ -413,6 +424,8 @@ export class ForgePullRequests {
       list: (cwd: string, state: 'open' | 'closed' | 'all', page: number, background = false) =>
         this.list(cwd, state, page, background, destination),
       detail: (cwd: string, number: number) => this.detail(cwd, number, destination),
+      section: (cwd: string, number: number, section: PullDetailSection) =>
+        this.section(cwd, number, section, destination),
       status: (cwd: string, number: number, background = false) =>
         this.status(cwd, number, background, destination),
       feedback: (cwd: string, number: number) => this.feedback(cwd, number, destination),
@@ -469,6 +482,34 @@ export class ForgePullRequests {
     const detail = await (this.scopedAdapter(scope, cwd)?.detail(number) ??
       this.scopedGithub(scope).detail(cwd, number))
     return this.tagDetail(await pullAttributes(this.git, cwd, detail), scope)
+  }
+  async section(
+    cwd: string,
+    number: number,
+    section: PullDetailSection,
+    expectedDestination?: string,
+  ) {
+    if (forgePullTarget(cwd))
+      return this.urlTarget(cwd).section(number, section, expectedDestination)
+    const scope = await this.sourceContext(cwd)
+    guardSource(scope, { expectedDestination })
+    return this.sectionInContext(cwd, number, section, scope)
+  }
+  /** The request already verified this credential; still validate the binding before dispatch. */
+  async sectionInContext(
+    cwd: string,
+    number: number,
+    section: PullDetailSection,
+    scope: SourceContext,
+  ) {
+    scope.validate()
+    const detail = await (scope.provider === 'github'
+      ? this.scopedGithub(scope).section(cwd, number, section)
+      : this.scopedAdapter(scope, cwd)!.detail(number))
+    return this.tagDetail(
+      section === 'changes' ? await pullAttributes(this.git, cwd, detail) : detail,
+      scope,
+    )
   }
   async feedback(cwd: string, number: number, expectedDestination?: string) {
     const scope = await this.sourceContext(cwd)

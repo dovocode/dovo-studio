@@ -195,8 +195,8 @@ export function ConversationProvider({
   )
   useKeepScreenOn(task.id, visible && task.status === 'running')
   useEffect(() => {
-    if ((!visible || answeringQuestion || task.archived) && dictating) finishDictation()
-  }, [visible, answeringQuestion, task.archived, dictating, finishDictation])
+    if ((!visible || answeringQuestion || task.archivedAt) && dictating) finishDictation()
+  }, [visible, answeringQuestion, task.archivedAt, dictating, finishDictation])
   const activity = useToolActivity(task.id, visible && !temporary, task.status === 'running')
   const pendingMessages = useMemo(
     () => actions.pendingMessages.filter((pending) => pending.destination === 'thread'),
@@ -238,7 +238,7 @@ export function ConversationProvider({
     messages,
     convertMessage: convertConversationMessage,
     isRunning: task.status === 'running',
-    isDisabled: !actions.connected || !!task.archived || !!task.example,
+    isDisabled: !actions.connected || !!task.archivedAt || !!task.example,
     onNew: async (message) => {
       if (!actions.canSend) return
       const text = message.content

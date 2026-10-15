@@ -68,7 +68,7 @@ const repository=id=>({id:'repo-'+id,name:id,path:'/checkout/'+id,branch:'main',
 const snapshot=id=>decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',repositories:[repository(id)],agents:[],automations:[],tasks:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]});
 const detail=id=>decode(pullDetailSchema,{destination:'destination-'+id,pull:{destination:'destination-'+id,connectionId:'local-'+id,provider:'github',number:7,title:'PR from '+id+' '+window.count,url:'https://github.com/team/project/pull/7',state:'open',draft:false,head:'feature',base:'main',author:'dominic',labels:[],updatedAt:'2026-10-14T10:00:00Z',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',body:'Body',additions:0,deletions:0,changedFiles:0,mergeable:true,reviewers:[],assignees:[]},capabilities:{actions:['comment'],mergeMethods:[],reviewDecisions:[]},comments:[],commits:[],files:[],checks:[],warnings:[]});
 const data=new Map();const caches=new Map();const cache=profile=>{if(!caches.has(profile.id))caches.set(profile.id,{readEffect:key=>Effect.succeed(data.get(profile.id+key)),writeEffect:(key,value)=>Effect.sync(()=>{window.cacheWrites.push({owner:profile.id,key,value});data.set(profile.id+key,{value,cachedAt:'2026-10-14T10:00:00Z'})}),removeEffect:key=>Effect.sync(()=>data.delete(profile.id+key))});return caches.get(profile.id)};
-const request=(profile,path,input,schema)=>Effect.try({try:()=>{
+const request=(profile,path,input,schema)=>Effect.tryPromise({try:async()=>{
 const id=profile.id;window.calls.push({owner:id,path,input});
 if(window.offline&&id==='origin')throw Error('Origin offline');
 if(path.endsWith('/identity')){if(id==='legacy'||(id==='origin'&&window.failOriginIdentity))throw new RuntimeRequestError({kind:'response',status:501,message:'Endpoint not found'});return decode(schema,{readerIdentity:id==='mismatch'||id==='wrong-host'||(id==='matching'&&window.changedAccount)?'other-verified-account':'github-host-account',destination:'destination-'+id})}
@@ -77,11 +77,18 @@ if(input.expectedDestination!=='destination-'+id&&!(id==='origin'&&window.failOr
 if(input.repositoryId!=='repo-'+id)throw Error('Wrong repository id');
 if(id!=='origin'&&input.connectionId)throw Error('Original connection id leaked');
 if(input.expectedReaderIdentity!=='github-host-account'&&!(id==='origin'&&window.failOriginIdentity))throw Error('Missing read guard');
-if(path.endsWith('/detail'))return detail(id);
+if(path.endsWith('/detail')){
+ if(window.failedSection===input.section)throw Error(input.section+' temporarily unavailable');
+ if(window.blockedSections?.includes(input.section))await new Promise(resolve=>(window.releaseSections??={})[input.section]=resolve);
+ const value=detail(id);
+ if(input.section==='overview'&&window.pushed)value.pull.headSha='c'.repeat(40);
+ if(input.section==='changes') { value.pull.headSha=(window.pushed?'c':'a').repeat(40); value.files=[{path:'changed.ts',status:'added',additions:1,deletions:0,patch:'@@ -0,0 +1 @@\\n+new code'}]; }
+ return value;
+}
 if(path.endsWith('/overview'))return decode(schema,{destination:'destination-'+id,pulls:[input.page===2?{...detail(id).pull,number:8,url:'https://github.com/team/project/pull/8'}:detail(id).pull],page:input.page,hasMore:input.page===1});
 throw Error('Unexpected request '+path);
 },catch:error=>error});
-function Observe(){const value=usePullDetail('repo-origin',7,window.explicitConnection??'local-origin');window.reader=value;return <output aria-label="observed">{value.detail?.pull.title}</output>}
+function Observe(){const [tab,setTab]=useState('overview');window.setObservedTab=setTab;const value=usePullDetail('repo-origin',7,window.explicitConnection??'local-origin',{tab});window.reader=value;return <output aria-label="observed">{value.detail?.pull.title}</output>}
 function List(){const value=usePulls(window.listFilter??JSON.stringify(['origin','repo-origin']),'open');window.list=value;return <><output aria-label="list">{value.pages.map(page=>page.pulls.map(pull=>pull.title).join(',')).join(',')}</output><button disabled={value.busy||!value.pages[0]?.readConnected} onClick={()=>value.more(value.pages[0].sourceKey)}>More PRs</button></>}
 function App(){const [binding,setBinding]=useState(false);window.rebind=()=>{window.reboundOrigin=true;setBinding(true)};const [offline,setOffline]=useState(false),[matching,setMatching]=useState(true),[mounted,setMounted]=useState(true),[version,setVersion]=useState(0),[detailShown,setDetailShown]=useState(!window.initialListOnly);window.setDetailShown=setDetailShown;window.offline=offline;window.setOffline=setOffline;window.setMatching=setMatching;window.setMounted=setMounted;window.remount=()=>setVersion(value=>value+1);
 const overviews=profiles.map(profile=>({profile,snapshot:snapshot(profile.id),connected:profile.id==='origin'?!offline:profile.id==='matching'?matching:true}));
@@ -245,7 +252,7 @@ try {
   )
   await page.evaluate(() => (window.changedAccount = true))
   await page.getByRole('button', { name: 'Refresh PR', exact: true }).click()
-  await page.getByRole('alert').filter({ hasText: 'different account' }).waitFor()
+  await page.getByRole('alert').filter({ hasText: 'different account' }).first().waitFor()
   assert.equal(
     await page.evaluate(
       () =>
@@ -413,6 +420,60 @@ try {
     'Rejected pagination cannot publish data into the origin cache',
   )
   await race.close()
+  const sectionsPage = await browser.newPage()
+  sectionsPage.on('pageerror', (error) => errors.push(error.message))
+  await sectionsPage.setContent('<div id="app"></div>')
+  await sectionsPage.evaluate(() => {
+    window.blockedSections = ['stack', 'checks', 'changes']
+  })
+  await sectionsPage.addScriptTag({ content: built.outputFiles[0].text })
+  await sectionsPage.waitForFunction(
+    () => window.reader?.detail?.pull.body === 'Body' && window.reader.sections.status.ready,
+  )
+  assert.equal(
+    await sectionsPage.evaluate(() =>
+      window.calls.some((call) => ['checks', 'changes'].includes(call.input.section)),
+    ),
+    false,
+  )
+  await sectionsPage.evaluate(() => window.setObservedTab('changes'))
+  await sectionsPage.waitForFunction(() => !!window.releaseSections?.changes)
+  assert.equal(await sectionsPage.evaluate(() => window.reader.detail.pull.body), 'Body')
+  assert.equal(await sectionsPage.evaluate(() => window.reader.sections.changes.ready), false)
+  await sectionsPage.evaluate(() => {
+    window.blockedSections = ['stack', 'checks']
+    window.releaseSections.changes()
+  })
+  await sectionsPage.waitForFunction(() => window.reader.detail.files[0]?.path === 'changed.ts')
+  await sectionsPage.evaluate(() => {
+    window.failedSection = 'checks'
+    window.setObservedTab('checks')
+  })
+  await sectionsPage.waitForFunction(() =>
+    window.reader.sections.checks.error.includes('temporarily unavailable'),
+  )
+  assert.equal(await sectionsPage.evaluate(() => window.reader.detail.pull.body), 'Body')
+  assert.equal(await sectionsPage.evaluate(() => window.reader.detail.files[0]?.path), 'changed.ts')
+  await sectionsPage.evaluate(() => {
+    window.failedSection = undefined
+    window.blockedSections = ['stack']
+    window.reader.sections.checks.refresh()
+  })
+  await sectionsPage.waitForFunction(
+    () => window.reader.sections.checks.ready && !window.reader.sections.checks.error,
+  )
+  // A section sees a push first: the overview follows; old-revision files never leak through.
+  await sectionsPage.evaluate(() => {
+    window.pushed = true
+    window.setObservedTab('changes')
+    window.reader.sections.changes.refresh()
+  })
+  await sectionsPage.waitForFunction(
+    () =>
+      window.reader.detail.pull.headSha === 'c'.repeat(40) && window.reader.sections.changes.ready,
+  )
+  assert.equal(await sectionsPage.evaluate(() => window.reader.detail.files[0]?.path), 'changed.ts')
+  await sectionsPage.close()
   assert.deepEqual(errors, [])
   console.log(
     'Mobile PR handoff passed: filtered list and actual detail UI use same-repository verified reader; refresh enabled with writes disabled; original cache/destinations/connection retained; remote rebind invalidates origin association; rejected pagination cannot publish caches; remount and reconnect; mismatched, unverified, other-repository/host and changed-account readers rejected. Native presentation and runtime transport mocked; no provider writes.',

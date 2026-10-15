@@ -63,7 +63,7 @@ const mocks = {
     };
   `,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
-  '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;`,
+  '../../runtime/preferences/app-preferences': `import {useSyncExternalStore} from 'react';const listeners=new Set();let prefs={projectPanelOpen:false};export const useCarMode=()=>false;export const useMobilePreferences=()=>useSyncExternalStore(listener=>{listeners.add(listener);return()=>listeners.delete(listener)},()=>prefs);export const updateMobilePreferences=changes=>{prefs={...prefs,...changes};listeners.forEach(listener=>listener())};`,
   '../../shell/navigation': `import {createContext,useContext} from 'react';export const FocusContext=createContext(true);export const useNavigation=()=>({focused:useContext(FocusContext),navigate:()=>{}});`,
   '../../shell/use-route-computer': `export const useRouteComputer=()=>({error:'',retry:()=>{}});`,
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,

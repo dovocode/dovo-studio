@@ -301,7 +301,7 @@ export function PullChanges({
           })}
         </div>
         {treeOpen && (
-          <aside className="flex max-h-[65vh] min-h-0 shrink-0 flex-col overflow-hidden border-b p-2 @4xl:sticky @4xl:top-2 @4xl:w-64 @4xl:self-start @4xl:border-b-0 @4xl:border-l">
+          <aside className="flex max-h-[min(65vh,calc(100cqh-2rem))] min-h-0 shrink-0 flex-col overflow-hidden border-b p-2 @4xl:sticky @4xl:top-2 @4xl:w-64 @4xl:self-start @4xl:border-b-0 @4xl:border-l">
             <ReviewFiles
               files={files.map((file) => ({
                 path: file.path,

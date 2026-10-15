@@ -1142,13 +1142,13 @@ export class WorkspaceStore {
     const newActivity =
       previous.autoSettled &&
       !previous.archivedAt &&
-      (next.draft !== previous.draft ||
-        ('messages' in next &&
-          'messages' in previous &&
-          !isDeepStrictEqual(next.messages, previous.messages)) ||
+      (('messages' in next &&
+        'messages' in previous &&
+        !isDeepStrictEqual(next.messages, previous.messages)) ||
         !isDeepStrictEqual(next.files, previous.files) ||
         !isDeepStrictEqual(next.queue, previous.queue))
-    const family = newActivity ? taskFamilyIds(w.tasks, id) : undefined
+    const reopened = previous.archived && next.archived === false && !previous.archivedAt
+    const family = newActivity || reopened ? taskFamilyIds(w.tasks, id) : undefined
     return {
       ...w,
       tasks: w.tasks.map((task): TaskSummary | Task =>
@@ -1158,8 +1158,13 @@ export class WorkspaceStore {
               ...(newActivity ? { archived: false, autoSettled: undefined } : {}),
               updatedAt: new Date().toISOString(),
             }
-          : family?.has(task.id) && task.autoSettled && !task.archivedAt
-            ? { ...task, archived: false, autoSettled: undefined }
+          : family?.has(task.id) && (reopened || task.autoSettled) && !task.archivedAt
+            ? {
+                ...task,
+                archived: false,
+                autoSettled: undefined,
+                snoozedUntil: reopened ? null : task.snoozedUntil,
+              }
             : task,
       ),
     }
@@ -1545,7 +1550,7 @@ export class WorkspaceStore {
       patch.collection === 'tasks' &&
       current.autoSettled &&
       !current.archivedAt &&
-      !!(patch.changes.draft || patch.changes.messages || patch.changes.files)
+      !!(patch.changes.messages || patch.changes.files)
     if (autoUnsettle) {
       current.archived = false
       current.autoSettled = undefined

@@ -1,3 +1,6 @@
+import { useIssueDiscussion } from './use-issue-discussion'
+import { usePipelineSections } from './use-pipeline-sections'
+import { PipelineSectionStatus } from './pipeline-section-status'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useSourceReader } from '../source-reader'
 import { useLinkOrigin } from '../../ui/content/link-origin'
@@ -13,7 +16,7 @@ import {
   startPolling,
 } from '@dovo/client-runtime'
 import { AppState } from 'react-native'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshControl, ScrollView, View } from 'react-native'
 import {
   forgeWorkOptionsSchema,
@@ -26,6 +29,7 @@ import {
   type ForgeIssueDetail,
   type ForgePipelineDetail,
   type ForgeWorkOptions,
+  type ForgePipelineSection,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useNavigation } from '../../shell/navigation'
@@ -126,10 +130,131 @@ function WorkItemContent({
   })
   const [options, setOptions] = useApplicationState<ForgeWorkOptions | undefined>(undefined)
   const [revision, reload] = useApplicationState(0)
-  const [issue, setIssue, issueRef] = useApplicationState<ForgeIssueDetail | undefined>(undefined)
-  const [pipeline, setPipeline, pipelineRef] = useApplicationState<ForgePipelineDetail | undefined>(
+  const [issueOverview, setIssue, issueRef] = useApplicationState<ForgeIssueDetail | undefined>(
     undefined,
   )
+  const [pipelineOverview, setPipeline, pipelineRef] = useApplicationState<
+    ForgePipelineDetail | undefined
+  >(undefined)
+  const loadPipelineSection = useCallback(
+    async (
+      section: ForgePipelineSection,
+      cursor: string | undefined,
+      refresh: boolean,
+      revision: string,
+    ) => {
+      const value = await runClientEffect(
+        readEffect(
+          '/api/scm/work/pipelines/detail',
+          { repositoryId, id: selected, section, cursor, refresh, revision },
+          forgePipelineDetailSchema,
+        ),
+      )
+      assertWorkSource('pipelines', value.run.url, expectedURL)
+      return value
+    },
+    [readEffect, repositoryId, selected, expectedURL],
+  )
+  const pipelineSections = usePipelineSections({
+    overview: mode === 'pipelines' ? pipelineOverview : undefined,
+    cacheKey: detailKey,
+    readCache,
+    enabled: mode === 'pipelines' && connected && focused,
+    refreshToken: revision,
+    load: loadPipelineSection,
+    refreshOverview: () => reload((value) => value + 1),
+  })
+  const pipeline = pipelineSections.detail
+  const loadIssueDiscussion = useCallback(
+    async (
+      section: 'discussion',
+      cursor: string | undefined,
+      refresh: boolean,
+      revision: string,
+    ) => {
+      const value = await runClientEffect(
+        readEffect(
+          '/api/scm/work/issues/detail',
+          { repositoryId, jiraSourceId, id: selected, section, cursor, refresh, revision },
+          forgeIssueDetailSchema,
+        ),
+      )
+      assertWorkSource('issues', value.issue.url, expectedURL)
+      return value
+    },
+    [readEffect, repositoryId, jiraSourceId, selected, expectedURL],
+  )
+  const discussion = useIssueDiscussion({
+    overview: jiraSourceId ? issueOverview : undefined,
+    cacheKey: detailKey,
+    readCache,
+    enabled: !!jiraSourceId && mode === 'issues' && connected && focused,
+    refreshToken: revision,
+    load: loadIssueDiscussion,
+    refreshOverview: () => reload((value) => value + 1),
+  })
+  const issue = jiraSourceId ? discussion.issue : issueOverview
+  const [workOptionsError, setWorkOptionsError] = useApplicationState('')
+  const [optionsRevision, reloadOptions] = useApplicationState(0)
+  useEffect(() => {
+    if (
+      (!jiraSourceId && mode !== 'pipelines') ||
+      !connected ||
+      !focused ||
+      (jiraSourceId && !issueOverview)
+    )
+      return
+    let stopped = false
+    const polling = startPolling(
+      Effect.suspend(() =>
+        AppState.currentState === 'active'
+          ? readEffect(
+              '/api/scm/work/options',
+              { repositoryId, jiraSourceId, area: mode },
+              forgeWorkOptionsSchema,
+            ).pipe(
+              Effect.tap((value) =>
+                nativeEffect(() => {
+                  if (!stopped) {
+                    setOptions(value)
+                    setWorkOptionsError('')
+                  }
+                }),
+              ),
+              Effect.flatMap((value) =>
+                !stopped && readCache ? readCache.writeEffect(optionsKey, value) : Effect.void,
+              ),
+            )
+          : Effect.void,
+      ),
+      {
+        interval: 30000,
+        onError: (error) => {
+          if (!stopped) setWorkOptionsError(error.message)
+        },
+      },
+    )
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') polling.refresh()
+    })
+    return () => {
+      stopped = true
+      subscription.remove()
+      void polling.stop()
+    }
+  }, [
+    mode,
+    connected,
+    focused,
+    readEffect,
+    repositoryId,
+    jiraSourceId,
+    !!issueOverview,
+    readCache,
+    optionsKey,
+    revision,
+    optionsRevision,
+  ])
   const [busy, setBusy] = useApplicationState(false)
   const [refreshing, setRefreshing] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
@@ -231,6 +356,42 @@ function WorkItemContent({
         force = false
         consumedRevision.current = revision
         if (showBusy) setStale(true)
+        if (mode === 'pipelines') {
+          const data = yield* readEffect(
+            '/api/scm/work/pipelines/detail',
+            { ...sourceInput, id: selected, refresh, section: 'overview' },
+            forgePipelineDetailSchema,
+          )
+          if (!valid()) return
+          assertWorkSource(mode, data.run.url, expectedURL)
+          setPipeline(data)
+          setStale(!!data.stale || !!data.refreshError)
+          setError(data.refreshError ?? '')
+          yield* readCache?.writeEffect(detailKey, { ...data, overviewOnly: true }) ?? Effect.void
+          return
+        }
+        if (jiraSourceId && mode === 'issues') {
+          const data = yield* readEffect(
+            '/api/scm/work/issues/detail',
+            { ...sourceInput, id: selected, refresh, section: 'overview' },
+            forgeIssueDetailSchema,
+          )
+          if (!valid()) return
+          assertWorkSource(mode, data.issue.url, expectedURL)
+          setIssue(data)
+          setStale(!!data.stale || !!data.refreshError)
+          setError(data.refreshError ?? '')
+          yield* (
+            readCache?.writeEffect(detailKey, { ...data, overviewOnly: true }) ?? Effect.void
+          ).pipe(
+            Effect.catch(() =>
+              nativeEffect(() => {
+                if (valid()) setError('Details loaded, but could not be saved for offline use.')
+              }),
+            ),
+          )
+          return
+        }
         const opts = yield* readEffect(
           '/api/scm/work/options',
           { ...sourceInput, area: mode },
@@ -287,50 +448,6 @@ function WorkItemContent({
               }),
             ),
           )
-        } else {
-          let data = yield* readEffect(
-            '/api/scm/work/pipelines/detail',
-            { ...sourceInput, id: selected, refresh },
-            forgePipelineDetailSchema,
-          )
-          if (!valid()) return
-          assertWorkSource(mode, data.run.url, expectedURL)
-          let pagesLoaded = 1
-          for (let page = 1; data.next && page < loadedPages.current; page++) {
-            const next = yield* readEffect(
-              '/api/scm/work/pipelines/detail',
-              { ...sourceInput, id: selected, cursor: data.next },
-              forgePipelineDetailSchema,
-            )
-            if (!valid()) return
-            assertWorkSource(mode, next.run.url, expectedURL ?? data.run.url)
-            data = {
-              ...next,
-              jobs: appendUniqueRows(data.jobs, next.jobs),
-              stale: data.stale || next.stale,
-              refreshError: data.refreshError ?? next.refreshError,
-            }
-            pagesLoaded++
-          }
-          loadedPages.current = pagesLoaded
-          setPipeline(data)
-          setStale(!!data.stale || !!data.refreshError)
-          setError(data.refreshError ?? '')
-          yield* mobileWorkflow(function* () {
-            yield* readCache?.writeEffect(optionsKey, opts) ?? Effect.succeed(undefined)
-            yield* (
-              readCache?.writeEffect(detailKey, {
-                ...data,
-                loadedPages: loadedPages.current,
-              }) ?? Effect.succeed(undefined)
-            )
-          }).pipe(
-            Effect.catch(() =>
-              nativeEffect(() => {
-                if (valid()) setError('Details loaded, but could not be saved for offline use.')
-              }),
-            ),
-          )
         }
       }).pipe(
         Effect.catch((cause) =>
@@ -366,6 +483,7 @@ function WorkItemContent({
     }
   }, [
     read,
+    readEffect,
     connected,
     repositoryId,
     jiraSourceId,
@@ -408,6 +526,14 @@ function WorkItemContent({
     )
   }
   const more = () => {
+    if (mode === 'pipelines') {
+      pipelineSections.jobs.more()
+      return Promise.resolve()
+    }
+    if (jiraSourceId) {
+      discussion.more()
+      return Promise.resolve()
+    }
     return runClientEffect(
       mobileWorkflow(function* () {
         if (pending.current || refreshInFlight.current || busy || !connected || !focused) return
@@ -459,49 +585,6 @@ function WorkItemContent({
               ),
             )
           }
-          if (pipeline?.next) {
-            const data = yield* readEffect(
-              '/api/scm/work/pipelines/detail',
-              {
-                ...(jiraSourceId
-                  ? {
-                      jiraSourceId,
-                    }
-                  : {
-                      repositoryId,
-                    }),
-                id: selected,
-                cursor: pipeline.next,
-              },
-              forgePipelineDetailSchema,
-            )
-            if (!current()) return
-            assertWorkSource(mode, data.run.url, expectedURL ?? pipeline.run.url)
-            const merged = {
-              ...data,
-              jobs: appendUniqueRows(pipeline.jobs, data.jobs),
-              stale: pipeline.stale || data.stale,
-              refreshError: pipeline.refreshError ?? data.refreshError,
-            }
-            setPipeline(merged)
-            loadedPages.current = Math.min(500, loadedPages.current + 1)
-            setStale(stale || !!data.stale || !!data.refreshError)
-            setError(data.refreshError ?? '')
-            yield* mobileWorkflow(function* () {
-              yield* (
-                readCache?.writeEffect(detailKey, {
-                  ...merged,
-                  loadedPages: loadedPages.current,
-                }) ?? Effect.succeed(undefined)
-              )
-            }).pipe(
-              Effect.catch((_error) =>
-                nativeEffect(() => {
-                  if (current()) setError('Details loaded, but could not be saved for offline use.')
-                }),
-              ),
-            )
-          }
         }).pipe(
           Effect.catch((cause) =>
             nativeEffect(() => {
@@ -535,7 +618,8 @@ function WorkItemContent({
     setForm(kind)
   }
   const confirmed = confirmOrigin.current ?? pipeline
-  const mutationDisabled = !focused || !connected || busy || refreshing || stale
+  const mutationDisabled =
+    !focused || !connected || busy || refreshing || stale || !options || !!workOptionsError
   const confirmAllowed = !!(
     confirm &&
     pipeline &&
@@ -737,21 +821,28 @@ function WorkItemContent({
                   {
                     fontSize: 14,
                     fontWeight: '600',
+                    backgroundColor: colors.elevated,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    borderRadius: 8,
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
                   },
                 ]}
               >
                 {issue.issue.state}
               </Text>
               <Text style={styles.muted}>· {issue.issue.type}</Text>
-              {options?.provider === 'jira' && <Text style={styles.muted}>· Jira</Text>}
+              {jiraSourceId && <Text style={styles.muted}>· Jira</Text>}
             </View>
             <View
               style={{
                 gap: 8,
-                paddingVertical: 12,
-                borderTopWidth: 0.5,
-                borderBottomWidth: 0.5,
+                padding: 16,
+                borderRadius: 14,
+                borderWidth: 1,
                 borderColor: colors.border,
+                backgroundColor: colors.surface,
               }}
             >
               <Text style={styles.muted}>
@@ -771,8 +862,9 @@ function WorkItemContent({
                 </Text>
               )}
               <Text style={styles.muted}>
-                {issue.comments.length}
-                {issue.next ? '+' : ''} comments loaded
+                {jiraSourceId && !discussion.ready
+                  ? 'Loading discussion…'
+                  : `${issue.comments.length}${issue.next ? '+' : ''} comments loaded`}
               </Text>
               {!!issue.issue.labels.length && (
                 <Text style={styles.muted}>
@@ -783,27 +875,31 @@ function WorkItemContent({
                 <Text style={styles.muted}>Updated {formatDateTime(issue.issue.updatedAt)}</Text>
               )}
             </View>
-            <Text
-              accessibilityRole="header"
-              style={[
-                styles.text,
-                {
-                  fontWeight: '600',
-                  paddingTop: 4,
-                },
-              ]}
-            >
-              Description
-            </Text>
-            {!issue.issue.body && !issue.issue.preview && (
-              <Text style={styles.muted}>No description provided.</Text>
-            )}
-            {!!issue.issue.bodyNotice && <Text style={styles.muted}>{issue.issue.bodyNotice}</Text>}
-            <Markdown
-              text={issue.issue.preview ?? issue.issue.body}
-              baseURL={issue.issue.url}
-              preserveLineBreaks
-            />
+            <View style={[styles.card, { padding: 16, borderRadius: 14, gap: 12 }]}>
+              <Text
+                accessibilityRole="header"
+                style={[
+                  styles.text,
+                  {
+                    fontWeight: '600',
+                    paddingTop: 4,
+                  },
+                ]}
+              >
+                Description
+              </Text>
+              {!issue.issue.body && !issue.issue.preview && (
+                <Text style={styles.muted}>No description provided.</Text>
+              )}
+              {!!issue.issue.bodyNotice && (
+                <Text style={styles.muted}>{issue.issue.bodyNotice}</Text>
+              )}
+              <Markdown
+                text={issue.issue.preview ?? issue.issue.body}
+                baseURL={issue.issue.url}
+                preserveLineBreaks
+              />
+            </View>
             {jiraSourceId && (
               <JiraIssueProject
                 sourceId={jiraSourceId}
@@ -840,18 +936,35 @@ function WorkItemContent({
               disabled={mutationDisabled}
               onPress={() => openForm('comment')}
             />
-            {!issue.comments.length && !issue.discussionNotice && (
-              <Text style={styles.muted}>No comments yet.</Text>
+            {jiraSourceId && (
+              <PipelineSectionStatus label="Discussion" state={discussion} connected={connected} />
             )}
+            {jiraSourceId && workOptionsError && (
+              <View style={styles.card}>
+                <Text style={styles.error}>Issue actions: {workOptionsError}</Text>
+                <Action
+                  secondary
+                  label="Retry actions"
+                  onPress={() => reloadOptions((value) => value + 1)}
+                />
+              </View>
+            )}
+            {!issue.comments.length &&
+              !issue.discussionNotice &&
+              (!jiraSourceId || (discussion.ready && !discussion.error)) && (
+                <Text style={styles.muted}>No comments yet.</Text>
+              )}
             {!!options?.issueNotice && <Text style={styles.muted}>{options.issueNotice}</Text>}
             {!!issue.discussionNotice && <Text style={styles.muted}>{issue.discussionNotice}</Text>}
             {issue.comments.map((comment) => (
               <View
                 key={comment.id}
                 style={{
-                  borderTopWidth: 0.5,
-                  borderTopColor: colors.border,
-                  paddingTop: 16,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface,
+                  borderRadius: 14,
+                  padding: 16,
                   gap: 8,
                 }}
               >
@@ -869,7 +982,7 @@ function WorkItemContent({
               <Action
                 label="More comments"
                 secondary
-                disabled={busy || !connected}
+                disabled={(jiraSourceId ? discussion.busy : busy) || !connected}
                 onPress={() => void more()}
               />
             )}
@@ -887,7 +1000,19 @@ function WorkItemContent({
               }}
               disabled={mutationDisabled}
             />
+            <PipelineSectionStatus
+              label="Jobs"
+              state={pipelineSections.jobs}
+              connected={connected}
+            />
+            <PipelineSectionStatus
+              label="Workflow"
+              state={pipelineSections.graph}
+              connected={connected}
+            />
+            {workOptionsError && <Text style={styles.error}>{workOptionsError}</Text>}
             <PipelineJobs
+              ready={pipelineSections.jobs.ready}
               graph={pipeline.graph}
               graphNotice={pipeline.graphNotice}
               jobs={pipeline.jobs}
@@ -902,7 +1027,7 @@ function WorkItemContent({
               <Action
                 label="More jobs"
                 secondary
-                disabled={busy || !connected}
+                disabled={pipelineSections.jobs.busy || !connected}
                 onPress={() => void more()}
               />
             )}

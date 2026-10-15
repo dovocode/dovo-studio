@@ -1,4 +1,14 @@
 import type { Task } from '../workspace.js'
+
+export const taskSnoozeOptions = [
+  { hours: 1, label: 'For 1 hour' },
+  { hours: 4, label: 'For 4 hours' },
+  { hours: 24, label: 'For 24 hours' },
+  { hours: 48, label: 'For 2 days' },
+  { hours: 72, label: 'For 3 days' },
+  { hours: 168, label: 'For 7 days' },
+] as const
+
 export function isSnoozed(task: Task, now: number) {
   return !!task.snoozedUntil && Date.parse(task.snoozedUntil) > now
 }

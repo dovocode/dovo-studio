@@ -103,8 +103,10 @@ export function ComposerSubmit({
 export function ComposerWorkspaceBar({ className, ...props }: ComponentProps<'div'>) {
   return (
     <div
+      role="group"
+      aria-label="Project and checkout"
       className={cn(
-        'relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] flex-wrap items-center gap-x-2 gap-y-1 rounded-b-xl border border-t-0 bg-muted/15 px-2 pb-1.5 pt-4 text-muted-foreground',
+        'relative mx-auto -mt-3 flex w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-b-xl border border-t-0 bg-muted/15 px-2 pb-1 pt-3.5 text-muted-foreground',
         className,
       )}
       {...props}

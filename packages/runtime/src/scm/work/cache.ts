@@ -4,6 +4,7 @@ import { Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
   errorMessage,
+  runtimeFailure,
   runtimeOperation,
   RuntimeOperationError,
   type RuntimeFailure,
@@ -28,7 +29,11 @@ const STALE_TTL = 300_000
 
 export class ForgeWorkCache {
   private versions = new Map<string, number>()
-  private loads = new Map<string, { promise: Promise<unknown>; interest: number; keep: boolean }>()
+  private loads = new Map<
+    string,
+    { promise: Promise<unknown>; interest: number; keep: boolean; source: string }
+  >()
+  private failures = new Map<string, { source: string; failure: RuntimeFailure; at: number }>()
 
   constructor(private readonly db: Database.Database) {
     db.exec(
@@ -40,6 +45,9 @@ export class ForgeWorkCache {
     return runtimeOperation(() => {
       this.versions.set(source, (this.versions.get(source) ?? 0) + 1)
       this.db.prepare('DELETE FROM forge_work_cache WHERE source=?').run(source)
+      for (const [key, value] of this.failures)
+        if (value.source === source) this.failures.delete(key)
+      for (const [key, value] of this.loads) if (value.source === source) this.loads.delete(key)
     })
   }
 
@@ -82,14 +90,15 @@ export class ForgeWorkCache {
   ) {
     const { key, source, schema, validateSource } = options
     let entry = this.loads.get(key) as
-      | { promise: Promise<Loaded<T>>; interest: number; keep: boolean }
+      | { promise: Promise<Loaded<T>>; interest: number; keep: boolean; source: string }
       | undefined
     if (!entry) {
       const version = this.versions.get(source) ?? 0
-      const created = { interest: 0, keep: false } as {
+      const created = { interest: 0, keep: false, source } as {
         promise: Promise<Loaded<T>>
         interest: number
         keep: boolean
+        source: string
       }
       const release = options.retainLoad?.()
       created.promise = (async () => {
@@ -109,11 +118,23 @@ export class ForgeWorkCache {
             )
             .run()
         }
+        if (current) this.failures.delete(key)
         return { ...value, cachedAt: new Date(updated).toISOString(), stale: !current }
-      })().finally(async () => {
-        if (this.loads.get(key) === created) this.loads.delete(key)
-        await release?.()
-      })
+      })()
+        .catch((error: unknown) => {
+          if (version === (this.versions.get(source) ?? 0)) {
+            this.failures.set(key, { source, failure: runtimeFailure(error), at: Date.now() })
+            if (this.failures.size > 500) {
+              const oldest = this.failures.keys().next().value
+              if (oldest !== undefined) this.failures.delete(oldest)
+            }
+          }
+          throw error
+        })
+        .finally(async () => {
+          if (this.loads.get(key) === created) this.loads.delete(key)
+          await release?.()
+        })
       entry = created
       this.loads.set(key, created)
     }
@@ -130,21 +151,41 @@ export class ForgeWorkCache {
     load: () => Promise<T>
     validateSource: () => void
     retainLoad?: () => () => Promise<void>
+    acceptCached?: (value: T) => boolean
   }): Effect.Effect<Loaded<T>, RuntimeFailure> {
     return Effect.gen({ self: this }, function* () {
       const { key, schema, refresh, validateSource } = options
-      const cached = yield* runtimeOperation(() => this.read(key, schema))
+      const stored = yield* runtimeOperation(() => this.read(key, schema))
+      const cached =
+        stored && (!options.acceptCached || options.acceptCached(stored.value)) ? stored : undefined
       yield* runtimeOperation(validateSource)
+      const previous = this.failures.get(key)
+      const failure =
+        previous?.failure instanceof RuntimeOperationError
+          ? previous.failure.cause
+          : previous?.failure
+      const rejected = decodeResult(mutableStruct({ status: Schema.Number }), failure)
+      const blocked = rejected.success && [401, 403, 409].includes(rejected.data.status)
+      if (previous && !refresh && Date.now() - previous.at < FRESH_TTL) {
+        if (!cached || blocked) return yield* Effect.fail(previous.failure)
+        return {
+          ...cached.value,
+          cachedAt: new Date(cached.updated).toISOString(),
+          stale: true,
+          refreshError: errorMessage(previous.failure),
+        }
+      }
       const age = cached ? Date.now() - cached.updated : Infinity
-      if (cached && !refresh && age < FRESH_TTL)
+      if (cached && !refresh && !previous && age < FRESH_TTL)
         return { ...cached.value, cachedAt: new Date(cached.updated).toISOString() }
-      if (cached && !refresh && age < STALE_TTL) {
+      if (cached && !refresh && !blocked && age < STALE_TTL) {
         // Serve what is known and refresh behind it; the next read sees the result.
         void this.start(options, true).promise.catch(() => undefined)
         return {
           ...cached.value,
           cachedAt: new Date(cached.updated).toISOString(),
           stale: true,
+          refreshError: previous ? errorMessage(previous.failure) : undefined,
         }
       }
       const entry = this.start(options, false)
@@ -158,11 +199,11 @@ export class ForgeWorkCache {
       if (refreshed._tag === 'Success') return refreshed.success
 
       yield* runtimeOperation(validateSource)
-      const failure =
+      const refreshFailure =
         refreshed.failure instanceof RuntimeOperationError
           ? refreshed.failure.cause
           : refreshed.failure
-      const status = decodeResult(mutableStruct({ status: Schema.Number }), failure)
+      const status = decodeResult(mutableStruct({ status: Schema.Number }), refreshFailure)
       if (cached && !(status.success && [401, 403, 409].includes(status.data.status)))
         return {
           ...cached.value,

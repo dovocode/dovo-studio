@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
@@ -7,7 +8,9 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
 const ui = `
 import {useImperativeHandle} from 'react';
-export const Text=({children,...props})=><span role={props.accessibilityRole==='alert'?'alert':undefined}>{children}</span>;
+const flat=style=>{const value=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(typeof value.lineHeight==='number')value.lineHeight=value.lineHeight+'px';return value};export const Text=({children,...props})=><span style={flat(props.style)} role={props.accessibilityRole==='alert'?'alert':undefined}>{children}</span>;
+export const Icon=()=>null;
+export const IconButton=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Field=({label,value,onChangeText,editable=true})=><input aria-label={label} value={value??''} disabled={!editable} onChange={event=>onChangeText(event.target.value)}/>;
 export const Choice=({label,value,onChange,items,disabled})=><select aria-label={label} value={value??''} disabled={disabled} onChange={event=>onChange(event.target.value)}><option value="">Choose…</option>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;
@@ -15,12 +18,13 @@ export const Sheet=({children,footer,title,onClose,ref})=>{useImperativeHandle(r
 export const useSheetNavigation=()=>callback=>{window.dismissals++;callback()};
 export const SafeModal=({visible,children})=>visible?<div>{children}</div>:null;
 export const ScreenHeader=({title,leading})=><header>{title}{leading}</header>;
-export const useTheme=()=>({colors:{background:'#111',muted:'#777'},styles:{},mode:'dark'});
+export const useTheme=()=>({colors:{background:'#141419',surface:'#1c1c23',elevated:'#25252e',muted:'#aaaab7',border:'#393943',text:'#e9e9ef',accent:'#ad9cfa',error:'#ff7e97'},styles:{screen:{flex:1,backgroundColor:'#141419'},content:{padding:16},text:{color:'#e9e9ef',fontSize:16,lineHeight:22},muted:{color:'#aaaab7',fontSize:13,lineHeight:18},title:{color:'#e9e9ef',fontWeight:'700'},error:{color:'#ff7e97'},row:{flexDirection:'row',alignItems:'center',gap:6,flexWrap:'wrap'},card:{backgroundColor:'#1c1c23',borderRadius:12,padding:12,borderWidth:1,borderColor:'#393943',gap:8}},mode:'dark'});
 export const Switch=({value,onValueChange,label})=><button onClick={()=>onValueChange(!value)}>{label}</button>;
 `
 const native = `
-export const View=({children})=><div>{children}</div>;
-export const ScrollView=View;
+const flat=style=>{const value=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(typeof value.lineHeight==='number')value.lineHeight=value.lineHeight+'px';return value};export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;
+export const ScrollView=({children,style,contentContainerStyle,testID})=><div data-testid={testID} style={flat(style)}><div style={{display:'flex',flexDirection:'column',...flat(contentContainerStyle)}}>{children}</div></div>;
+export const RefreshControl=()=>null;
 export const ActivityIndicator=()=> <span>Loading</span>;
 export const Pressable=({children,onPress})=><button onClick={onPress}>{children}</button>;
 export const Platform={OS:'ios'};
@@ -33,6 +37,8 @@ const boundaries = new Map([
   ...[
     'ui/content/text',
     'ui/controls/action',
+    'ui/controls/icon-button',
+    'ui/controls/icon',
     'ui/controls/field',
     'ui/controls/choice',
     'ui/layout/sheet',
@@ -54,6 +60,7 @@ const boundaries = new Map([
     `export {browserMutationStorage as mobileMutationStorage} from '${root}packages/studio-core/src/workspace/read-cache.ts';`,
   ],
   [mobile + 'ui/content/task-visualization', 'export const TaskVisualization=()=>null;'],
+  [mobile + 'ui/content/code-block', 'export const CodeBlock=()=>null;'],
   [mobile + 'ui/content/server-image', 'export const ServerImage=()=>null;'],
   [
     mobile + 'ui/content/rich-file',
@@ -62,7 +69,7 @@ const boundaries = new Map([
   [mobile + 'ui/content/mermaid-diagram', 'export const MermaidDiagram=()=>null;'],
   [
     mobile + 'scm/work/work-menu',
-    'export const WorkMenu=({actions})=><div>{actions.map((action,index)=><button key={index} onClick={action.onPress}>{action.label}</button>)}</div>;',
+    'export const WorkMenu=({actions})=><div>{actions.map((action,index)=><button key={index} disabled={action.disabled} onClick={action.onPress}>{action.label}</button>)}</div>;',
   ],
 ])
 const built = await bundleBrowser(
@@ -82,6 +89,8 @@ import {PullActionSheet} from './apps/mobile/src/scm/pulls/list/pull-actions';
 import {LineComment} from './apps/mobile/src/scm/pulls/detail/line-comment';
 import {CreatePull} from './apps/mobile/src/scm/pulls/list/create-pull';
 import {WorkForm} from './apps/mobile/src/scm/work/work-form';
+import {useWorkCollection} from './apps/mobile/src/scm/work/use-work-collection';
+import {WorkItemScreen} from './apps/mobile/src/scm/work/work-item';
 import {WorkTaskAction} from './apps/mobile/src/scm/work/work-task-action';
 import {usePullTaskCreation} from './apps/mobile/src/scm/pulls/list/start-pull-task';
 import {usePullDetail} from './apps/mobile/src/scm/pulls/detail/use-pull-detail';
@@ -92,9 +101,11 @@ const workspace=(name)=>decode(snapshotSchema,{revision:1,owner:false,workspace:
 const pull=decode(pullDetailSchema,{destination:'old-destination',pull:{destination:'old-destination',connectionId:'account-one',provider:'github',number:7,title:'Same-number PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,head:'feature',base:'main',author:'dominic',labels:[],updatedAt:'2026-10-14T10:00:00Z',headSha:window.sameSha,baseSha:window.sameSha,repositoryUrl:'https://github.com/team/project',body:'Body',additions:0,deletions:0,changedFiles:0,mergeable:true,reviewers:[],assignees:[]},comments:[],commits:[],files:[],checks:[],warnings:[]});
 const options=decode(forgeWorkOptionsSchema,{destination:'old-destination',provider:'jira',issues:true,pipelines:false,issueStates:['Open','Done'],issueTypes:['Task'],assignees:false,labels:true,pipelineActions:[]});
 const pipelineOptions=decode(forgeWorkOptionsSchema,{destination:'old-destination',provider:'github',issues:false,pipelines:true,pipelineActions:['run']});
-const issue=decode(forgeIssueSchema,{destination:'old-destination',id:'TEAM-7',title:'Same-number issue',body:'Body',url:'https://team.atlassian.net/browse/TEAM-7',state:'Open',author:'dominic',assignees:[],labels:[],updatedAt:'2026-10-14T10:00:00Z',revision:'same-revision'});
-const caches=new Map();const cache=profile=>{let value=caches.get(profile.id);if(!value){const data=new Map();value={readEffect:key=>Effect.succeed(data.get(key)),writeEffect:(key,value)=>Effect.sync(()=>data.set(key,{value,cachedAt:'2026-10-14T10:00:00Z'})),removeEffect:key=>Effect.sync(()=>data.delete(key))};caches.set(profile.id,value)}return value};
-const request=(profile,path,input,schema)=>Effect.try({try:()=>{
+const issue=decode(forgeIssueSchema,{destination:'old-destination',id:'TEAM-7',title:'Same-number issue',type:'Bug',priority:'High',assigneeNames:['Sam Developer'],body:'Investigate and fix the mobile connection issue.',url:'https://team.atlassian.net/browse/TEAM-7',state:'Open',author:'dominic',assignees:[],labels:[],updatedAt:'2026-10-14T10:00:00Z',revision:'same-revision'});
+window.blockedPipeline=[];window.pipelineReleases={};window.failedPipeline=[];window.releasePipeline=section=>{window.blockedPipeline=window.blockedPipeline.filter(s=>s!==section);for(const release of window.pipelineReleases[section]??[])release();window.pipelineReleases[section]=[]};
+const pipelineRun={destination:'old-destination',id:'42',title:'Mobile pipeline build',url:'https://github.com/team/project/actions/runs/42',status:'success',sha:window.sameSha,attempt:1,ref:'main',actor:'dominic',createdAt:'',updatedAt:''};
+const caches=new Map();const cache=profile=>{let value=caches.get(profile.id);if(!value){const data=new Map();value={read:async(key,schema)=>{const row=data.get(key);return row?{...row,value:decode(schema,row.value)}:null},write:async(key,value)=>{data.set(key,{value,cachedAt:'2026-10-14T10:00:00Z'})},remove:async key=>{data.delete(key)},readEffect:key=>Effect.succeed(data.get(key)),writeEffect:(key,value)=>Effect.sync(()=>data.set(key,{value,cachedAt:'2026-10-14T10:00:00Z'})),removeEffect:key=>Effect.sync(()=>data.delete(key))};caches.set(profile.id,value)}return value};
+const request=(profile,path,input,schema)=>Effect.tryPromise({try:async()=>{
 window.calls.push({owner:profile.id,path,input});
 if(path.endsWith('/identity'))return decode(schema,{readerIdentity:window.account,destination:window.remote});
 if(input.expectedReaderIdentity&&input.expectedReaderIdentity!==window.account)throw Error('409 reader changed');
@@ -108,18 +119,34 @@ if(/\\/(action|comment|create|task)$/.test(path)){
 if(path.endsWith('/options/read'))return decode(schema,{destination:window.remote,provider:'github',draft:true});
 if(path.endsWith('/definitions'))return decode(schema,{items:[{id:'ci',name:'CI'}],manual:false});
 if(path.endsWith('/overview'))return decode(schema,{pulls:[pull.pull],page:1,hasMore:false});
+if(path==='/api/scm/work/issues/list')return decode(schema,{items:[issue],next:undefined});
+if(input.jiraSourceId && (path==='/api/scm/work/issues/detail'||path==='/api/scm/work/options')){
+const section=input.section??'issue-options';
+if(window.blockedPipeline.includes(section))await new Promise(resolve=>(window.pipelineReleases[section]??=[]).push(resolve));
+if(window.failedPipeline.includes(section))throw Error(section+' temporarily unavailable');
+if(section==='issue-options')return decode(schema,{...options,destination:window.remote});
+return decode(schema,{destination:window.remote,issue:{...issue,revision:window.issueRevision??issue.revision,destination:window.remote},comments:section==='discussion'?[{id:input.cursor?'2':'1',body:input.cursor?'Second comment':'First comment',author:'Dominic',createdAt:'2026-10-14T10:00:00Z'}]:[],next:section==='discussion'&&!input.cursor?'30':undefined});
+}
+if(path==='/api/scm/work/pipelines/detail'||path==='/api/scm/work/options'){
+const section=input.section??'options';
+if(window.blockedPipeline.includes(section))await new Promise(resolve=>(window.pipelineReleases[section]??=[]).push(resolve));
+if(window.failedPipeline.includes(section))throw Error(section+' temporarily unavailable');
+if(section==='options')return decode(schema,{...pipelineOptions,destination:window.remote});
+return decode(schema,{destination:window.remote,run:{...pipelineRun,destination:window.remote},jobs:section==='jobs'?[{id:'job',name:'Mobile compile',status:'success',url:pipelineRun.url,steps:[]}]:[],graph:section==='graph'?[{id:'compile',name:'Mobile compile',jobIds:[],needs:[]}]:undefined});
+}
 if(path.endsWith('/detail'))return decode(schema,pull);
 throw Error('Unexpected request '+path);
 },catch:error=>error});
+function JiraCollection(){const value=useWorkCollection('issues',JSON.stringify(['one','jira','jira']),'open','TEAM-7');window.jiraCollection=value;return <div>{value.pages.flatMap(page=>page.items).map(item=><span key={item.id}>{item.title}</span>)}</div>}
 function Reader(){const value=usePullDetail('repo',7);window.reader=value;return <div aria-label="reader">{value.detail?.pull.title}{value.error}</div>}
 function List(){const value=usePulls('','open');window.list=value;return <div aria-label="list">{value.pages.map(page=>page.runtimeName+':'+page.pulls.length).join(',')}</div>}
 function Task(){const value=usePullTaskCreation('repo',pull.pull);return <><button onClick={()=>value.start('new-branch')}>Create task</button><span>{value.error}</span></>}
-function Detail({kind,observed}){useEffect(()=>{window.mounts++;window.mountedKind=kind},[]);return kind==='markdown'?<Markdown text="[PR](https://github.com/team/project/pull/7/files#diff-1) [Issue](https://github.com/team/project/issues/7) [Jira](https://team.atlassian.net/browse/TEAM-7) [Pipeline](https://github.com/team/project/actions/runs/7)"/>:kind==='line'?<LineComment repositoryId="repo" detail={pull} path="file.ts" onClose={()=>{}} onDone={()=>{}}/>:kind==='work'?<WorkForm kind="comment" jiraSourceId="jira" issue={issue} options={options} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='run'?<WorkForm kind="run" repositoryId="repo" options={pipelineOptions} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='worktask'||kind==='worktaskpicker'?<WorkTaskAction repositoryId={kind==='worktask'?'repo':undefined} jiraSourceId="jira" source={{kind:'issue',item:observed?{...issue,destination:'new-destination'}:issue}} disabled={false}/>:kind==='create'?<CreatePull repositoryId="repo" onClose={()=>{}} onCreated={()=>{}}/>:kind==='task'?<Task/>:kind==='reader'?<Reader/>:<PullActionSheet repositoryId="repo" detail={observed?{...pull,destination:"new-destination",pull:{...pull.pull,destination:"new-destination"}}:pull} target={{action:'comment'}} onClose={()=>{}} onDone={()=>{}}/>}
+function Detail({kind,observed}){useEffect(()=>{window.mounts++;window.mountedKind=kind},[]);return kind==='jira-collection'?<JiraCollection/>:kind==='jira-detail'?<WorkItemScreen mode="issues" jiraSourceId="jira" itemId="TEAM-7" expectedURL={issue.url} onBack={()=>{}}/>:kind==='pipeline'?<WorkItemScreen mode="pipelines" repositoryId="repo" itemId="42" expectedURL={pipelineRun.url} onBack={()=>{}}/>:kind==='markdown'?<Markdown text="[PR](https://github.com/team/project/pull/7/files#diff-1) [Issue](https://github.com/team/project/issues/7) [Jira](https://team.atlassian.net/browse/TEAM-7) [Pipeline](https://github.com/team/project/actions/runs/7)"/>:kind==='line'?<LineComment repositoryId="repo" detail={pull} path="file.ts" onClose={()=>{}} onDone={()=>{}}/>:kind==='work'?<WorkForm kind="comment" jiraSourceId="jira" issue={issue} options={options} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='run'?<WorkForm kind="run" repositoryId="repo" options={pipelineOptions} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='worktask'||kind==='worktaskpicker'?<WorkTaskAction repositoryId={kind==='worktask'?'repo':undefined} jiraSourceId="jira" source={{kind:'issue',item:observed?{...issue,destination:'new-destination'}:issue}} disabled={false}/>:kind==='create'?<CreatePull repositoryId="repo" onClose={()=>{}} onCreated={()=>{}}/>:kind==='task'?<Task/>:kind==='reader'?<Reader/>:<PullActionSheet repositoryId="repo" detail={observed?{...pull,destination:"new-destination",pull:{...pull.pull,destination:"new-destination"}}:pull} target={{action:'comment'}} onClose={()=>{}} onDone={()=>{}}/>}
 function App(){const [active,setActive]=useState('one'),[name,setName]=useState('Original Jira'),[kind,setKind]=useState('markdown'),[shown,setShown]=useState(true),[offline,setOffline]=useState(false),[observed,setObserved]=useState(false);
 window.setKind=value=>{window.remote='old-destination';setObserved(false);setKind(value)};window.setActive=setActive;window.setShown=setShown;window.setOffline=setOffline;
 const overviews=profiles.map(profile=>({profile,connected:profile.id==='one'?!offline:true,snapshot:workspace(name),error:null,pulls:null,pullError:null,lastSeen:null}));
 const value={ready:true,activeId:active,profile:profiles.find(p=>p.id===active),connection:profiles.find(p=>p.id===active).connection,profiles,overviews,snapshot:overviews.find(e=>e.profile.id===active).snapshot,connected:true,readRuntimeEffect:request,cacheForRuntime:cache,pendingMessagesFor:()=>[],refreshRuntimeEffect:()=>Effect.void,refreshRuntime:async()=>{},refresh:async()=>{},selectRuntime:()=>{throw Error('No global selection during links')}};
-return <RuntimeContext value={value}><NavigationContext value={{focused:true,navigate:(...args)=>window.nav.push(args),setDetail:()=>{},openWork:()=>{}}}><button onClick={()=>setActive('two')}>Select global two</button><button onClick={()=>setName('Renamed Jira')}>Rename Jira</button><button onClick={()=>window.remote='new-destination'}>Rebind remote only</button><button onClick={()=>setObserved(true)}>Observe replacement detail</button><button onClick={()=>window.account='account-two'}>Switch remote account</button>{shown&&<RuntimeRoute runtimeId="one" repositoryId="repo" jiraSourceId={kind==='work'?'jira':undefined} title="Detail" backTo="/pulls"><Detail key={kind} kind={kind} observed={observed}/></RuntimeRoute>}{kind==='list'&&shown&&<List/>}<LinkBrowser/></NavigationContext></RuntimeContext>}
+return <RuntimeContext value={value}><NavigationContext value={{focused:true,navigate:(...args)=>window.nav.push(args),setDetail:()=>{},openWork:()=>{}}}><button onClick={()=>setActive('two')}>Select global two</button><button onClick={()=>setName('Renamed Jira')}>Rename Jira</button><button onClick={()=>window.remote='new-destination'}>Rebind remote only</button><button onClick={()=>setObserved(true)}>Observe replacement detail</button><button onClick={()=>window.account='account-two'}>Switch remote account</button>{shown&&<RuntimeRoute runtimeId="one" repositoryId="repo" jiraSourceId={kind==='work'||kind==='jira-detail'||kind==='jira-collection'?'jira':undefined} title="Detail" backTo="/pulls"><Detail key={kind} kind={kind} observed={observed}/></RuntimeRoute>}{kind==='list'&&shown&&<List/>}<LinkBrowser/></NavigationContext></RuntimeContext>}
 createRoot(document.getElementById('app')).render(<RegistryProvider><App/></RegistryProvider>);
 `,
     },
@@ -159,7 +186,7 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
     { path: 'react-native', contents: native },
     {
       path: 'react-native-enriched-markdown',
-      contents: `export const EnrichedMarkdownText=({markdown,onLinkPress})=><div>{[...markdown.matchAll(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g)].map((match,index)=><button key={index} onClick={()=>onLinkPress({url:match[2]})}>{match[1]}</button>)}</div>;`,
+      contents: `export const EnrichedMarkdownText=({markdown,onLinkPress})=>!/[\\[]/.test(markdown)?<div style={{whiteSpace:"pre-wrap"}}>{markdown}</div>:<div>{[...markdown.matchAll(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g)].map((match,index)=><button key={index} onClick={()=>onLinkPress({url:match[2]})}>{match[1]}</button>)}</div>;`,
     },
     { path: 'react-native-webview', contents: 'export default ()=>null;' },
     {
@@ -357,9 +384,127 @@ try {
     'one',
     'Owner persists through remount after global selection changes',
   )
+  await page.evaluate(() => {
+    window.account = 'account-two'
+    window.blockedPipeline = ['jobs', 'graph', 'options']
+    window.setKind('pipeline')
+  })
+  await page.getByText('Mobile pipeline build', { exact: true }).waitFor()
+  await page.getByText('Loading jobs…', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.failedPipeline = ['jobs']
+    window.releasePipeline('jobs')
+  })
+  await page.getByRole('alert').filter({ hasText: 'jobs temporarily unavailable' }).waitFor()
+  assert.equal(await page.getByText('Mobile pipeline build', { exact: true }).count(), 1)
+  await page.evaluate(() => {
+    window.failedPipeline = []
+    window.releasePipeline('options')
+    window.releasePipeline('graph')
+  })
+  await page.getByRole('button', { name: 'Refresh jobs', exact: true }).click()
+  await page.getByRole('button').filter({ hasText: 'Mobile compile' }).last().waitFor()
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls
+        .filter((c) => c.path === '/api/scm/work/pipelines/detail')
+        .every((c) => c.owner === 'one'),
+    ),
+    true,
+    'Pipeline reads escaped their runtime route',
+  )
+  await page.evaluate(() => {
+    window.setOffline(true)
+    window.setShown(false)
+  })
+  await page.getByText('Mobile pipeline build', { exact: true }).waitFor({ state: 'detached' })
+  await page.evaluate(() => window.setShown(true))
+  await page.getByText('Mobile pipeline build', { exact: true }).waitFor()
+  await page.getByRole('button').filter({ hasText: 'Mobile compile' }).last().waitFor()
+  await page.evaluate(() => {
+    window.setOffline(false)
+    window.blockedPipeline = ['discussion', 'issue-options']
+    window.setKind('jira-detail')
+  })
+  await page.getByText('Same-number issue', { exact: true }).waitFor()
+  await page.getByText('Loading discussion…', { exact: true }).last().waitFor()
+  assert.equal(await page.getByText('No comments yet.', { exact: true }).count(), 0)
+  assert.equal(
+    await page.getByRole('button', { name: 'Add comment', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.failedPipeline = ['discussion', 'issue-options']
+    window.releasePipeline('discussion')
+    window.releasePipeline('issue-options')
+  })
+  await page.getByRole('alert').filter({ hasText: 'discussion temporarily unavailable' }).waitFor()
+  await page
+    .getByText('Issue actions: issue-options temporarily unavailable', { exact: true })
+    .waitFor()
+  assert.equal(await page.getByText('Same-number issue', { exact: true }).count(), 1)
+  await page.evaluate(() => {
+    window.failedPipeline = []
+  })
+  await page.getByRole('button', { name: 'Refresh discussion', exact: true }).click()
+  await page.getByText('Discussion · 1+', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'More comments', exact: true }).click()
+  await page.getByText('Discussion · 2', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Retry actions', exact: true }).click()
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('button')].some(
+      (button) => button.textContent === 'Add comment' && !button.disabled,
+    ),
+  )
+  await page.getByText('Discussion · 2', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls
+        .filter((call) => call.path === '/api/scm/work/issues/detail')
+        .every((call) => call.owner === 'one'),
+    ),
+    true,
+  )
+  await page.evaluate(() => {
+    window.setOffline(true)
+    window.setShown(false)
+  })
+  await page.getByText('Same-number issue', { exact: true }).waitFor({ state: 'detached' })
+  await page.evaluate(() => window.setShown(true))
+  await page.getByText('Same-number issue', { exact: true }).waitFor()
+  await page.getByText('Discussion · 2', { exact: true }).waitFor()
+  await page.evaluate(() => window.setOffline(false))
+  await page.getByRole('button', { name: 'Add comment', exact: true }).waitFor()
+  await mkdir('/tmp/dovo-jira', { recursive: true })
+  await page.addStyleTag({
+    content:
+      'body{margin:0;background:#141419;color:#e9e9ef;font-family:system-ui}button{color:inherit;background:#25252e;border:1px solid #393943;border-radius:7px;padding:8px 12px;font:inherit}header{display:flex;gap:12px;align-items:center;padding:16px}span{overflow-wrap:anywhere}',
+  })
+  await page
+    .locator('[data-testid="Work detail content"]')
+    .screenshot({ path: '/tmp/dovo-jira/mobile-dark.png' })
+  await page.evaluate(() => {
+    window.blockedPipeline = ['issue-options']
+    window.setKind('jira-collection')
+  })
+  await page.waitForFunction(() => window.jiraCollection?.pages[0]?.items.length === 1)
+  assert.equal(await page.evaluate(() => window.jiraCollection.pages[0].searched), true)
+  assert.equal(await page.evaluate(() => window.jiraCollection.pages[0].options), undefined)
+  await page.evaluate(() => {
+    window.failedPipeline = ['issue-options']
+    window.releasePipeline('issue-options')
+  })
+  await page.waitForFunction(
+    () => window.jiraCollection.pages[0]?.optionsError === 'issue-options temporarily unavailable',
+  )
+  assert.equal(
+    await page.evaluate(() => window.jiraCollection.pages[0].items[0].title),
+    'Same-number issue',
+  )
+  assert.equal(await page.evaluate(() => window.jiraCollection.pages[0].stale), false)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile integration continuity passed: actual RuntimeScope and Markdown owner after global selection; PR action/inline/create/task and Jira destination guards; preserved rejected drafts and Jira rename mount; verified reader/account rejection and explicit recovery; retained list owner through remount; pipeline/Jira task guards. Native boundaries mocked; no device or provider writes.',
+    'Mobile integration continuity passed: actual RuntimeScope and Markdown owner after global selection; PR action/inline/create/task and Jira destination guards; preserved rejected drafts and Jira rename mount; verified reader/account rejection and explicit recovery; retained list owner through remount; pipeline/Jira task guards; actual pipeline and Jira screens independent overview/options/discussion loading, section failure/retry, pagination, pinned runtime and offline sections. Native boundaries mocked; no device or provider writes.',
   )
 } finally {
   await browser.close()

@@ -750,11 +750,12 @@ room for base64 encoding. Smaller images remain unchanged, transparency is prese
 GIF, PNG and WebP files are kept intact (and must fit the 5 MB attachment limit). Mobile converts
 HEIC/HEIF to JPEG; browser support for decoding HEIC/HEIF varies. The original source file is kept.
 
-Click a file chip to preview an image or text, download it on desktop/web, or share it on mobile.
-PNG, JPEG, GIF and WebP images use native provider image inputs; ACP does this only when its agent
-advertises image support. Other files are supplied through local file paths, with UTF-8 excerpts
-included in the prompt (up to 32,000 characters per file). Binary documents require the agent's own
-file-reading tools. Model vision support still depends on the selected provider/model.
+Desktop/web composer attachments use compact chips with 20-pixel thumbnails; full filenames appear
+on hover. Click a file chip to preview an image or text, download it on desktop/web, or share it on
+mobile. PNG, JPEG, GIF and WebP images use native provider image inputs; ACP does this only when its
+agent advertises image support. Other files are supplied through local file paths, with UTF-8
+excerpts included in the prompt (up to 32,000 characters per file). Binary documents require the
+agent's own file-reading tools. Model vision support still depends on the selected provider/model.
 
 File contents are stored in the host SQLite database. Provider-readable copies are placed in the
 private `attachments` directory beside it, outside project checkouts. Workspace snapshots and upload
@@ -865,9 +866,12 @@ activity history remain available in these sections.
 
 Task triage: pinned tasks come first, then requests needing input, failures, running tasks, and
 recent activity. Settle moves a task to the collapsed Settled section (stored compatibly as
-`archived`); Reopen returns it. Snooze for 1 hour, 4 hours, or 24 hours hides a task in Snoozed
-until its deadline, with manual Unsnooze available. Snoozing does not stop a running agent. Hover or
-focus a row for project, branch, host, model, queue, and terminal-session details.
+`archived`); Reopen or sending a message returns it. Drafting leaves it settled. Reopening shows the
+latest message and follows new messages while history preloads; scrolling up pauses following.
+Archived threads still require Restore before sending. Snooze hides a task in Snoozed until its
+deadline, with presets of 1 hour, 4 hours, 24 hours, 2 days, 3 days and 7 days. Manual Unsnooze is
+available at any time. Snoozing does not stop a running agent. Hover or focus a row for project,
+branch, host, model, queue, and terminal-session details.
 
 New task opens an empty chat. The first message defines the task and generates its title. Settings →
 Agents → Task title generation selects the harness, model and reasoning used for titles. This runs
@@ -899,6 +903,14 @@ chats and checkouts. See [Automations](automations.md) for recovery behavior and
 
 `verify-automator.cjs` exercises native node dragging, edge selection/deletion, validation, task
 execution and human review against an isolated fixture runtime.
+
+The thread's **i** button toggles project information. Its open state is an app-wide local
+preference: switching threads or computers shows the new thread's project without closing the panel,
+and leaving/reopening the app retains the choice. Click **i** again to close it. Desktop keeps the
+panel open when clicking elsewhere or pressing Escape; nested menus and dialogs still close
+normally. Mobile docks a scrollable project panel below the header so the conversation and **i**
+button remain accessible. The panel shows the current project's checkout, computer, Git status,
+linked PRs, scripts, changes and watchers.
 
 ### Project and custom-agent resources
 
@@ -996,11 +1008,13 @@ Dovo owns messages, turn status, checkpoints, pending questions, approvals and q
 assistant-ui renders message parts and the native scrolling viewport. The Expo UI composer submits
 through the adapter and keeps its existing persisted draft, idempotent send, queue/steer and Stop
 controls. Tool records attach to their originating turn, and changed-file checkpoint summaries open
-that turn's snapshot diff. Legacy tool records remain available below the transcript. Tool polling
-uses read-only requests without reloading the workspace. The `assistant-cloud` package is needed to
-resolve optional upstream exports in Metro; no cloud client or cloud persistence is configured. The
-conversation follows its measured native content height through streaming Markdown and keyboard
-changes. Scrolling up keeps your reading position; Latest message or a local send resumes following.
+that turn's snapshot diff. The desktop/web dialog includes a file sidebar, per-file change counts,
+split/unified layouts and line wrapping. Narrow windows use a file picker. Legacy tool records
+remain available below the transcript. Tool polling uses read-only requests without reloading the
+workspace. The `assistant-cloud` package is needed to resolve optional upstream exports in Metro; no
+cloud client or cloud persistence is configured. The conversation follows its measured native
+content height through streaming Markdown and keyboard changes. Scrolling up keeps your reading
+position; Latest message or a local send resumes following.
 
 Run `node scripts/verify-mobile.mjs <simulator UUID> --conversation-only` to verify streaming,
 expandable tool output and checkpoint navigation against the isolated local harness fixture.

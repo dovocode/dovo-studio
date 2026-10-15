@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import { JiraBrowseControls } from './jira-browse-controls'
 import { SlidersHorizontal, X, List, Columns3 } from 'lucide-react'
 import { hasJiraIssueFilters, type ForgeIssue, type JiraIssueFilters } from '@dovo/protocol'
 import { Button, Input, Popover, ChoicePicker } from '@dovo/studio-ui'
 import type { WorkSource } from './work-sources'
-import { workRemoteKey, matchesWorkSource } from './work-source-identity'
+import { matchesWorkSource } from './work-source-identity'
 
 export function JiraToolbar({
   state,
@@ -39,6 +40,8 @@ export function JiraToolbar({
   onClear: () => void
 }) {
   const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const browseSource = sources.find((entry) => entry.key === source)
   const presets = [
     { name: 'Open', state: 'open', assignee: 'all' },
     { name: 'My issues', state: 'open', assignee: 'mine' },
@@ -53,6 +56,9 @@ export function JiraToolbar({
     },
     { key: 'type', name: 'Issue type', values: issues.map((issue) => issue.type) },
     { key: 'label', name: 'Label', values: issues.flatMap((issue) => issue.labels) },
+    { key: 'team', name: 'Team', values: [] as string[] },
+    { key: 'component', name: 'Component', values: [] as string[] },
+    { key: 'release', name: 'Release', values: [] as string[] },
   ] as const
   const chip = (label: string, clear: () => void) => (
     <Button
@@ -98,7 +104,7 @@ export function JiraToolbar({
             </Button>
           ))}
         </div>
-        <Popover.Root>
+        <Popover.Root open={open} onOpenChange={setOpen}>
           <Popover.Trigger asChild>
             <Button type="button" size="sm" variant="outline">
               <SlidersHorizontal className="size-3.5" />
@@ -144,21 +150,28 @@ export function JiraToolbar({
               <ChoicePicker aria-label="Jira source" value={source} onValueChange={onSource}>
                 <option value="">All sources</option>
                 {sources.map((entry) => (
-                  <option key={entry.key} value={workRemoteKey(entry)}>
+                  <option key={entry.key} value={entry.key}>
                     {entry.name} · {entry.runtimeName}
                   </option>
                 ))}
               </ChoicePicker>
+              <JiraBrowseControls
+                source={browseSource}
+                filters={filters}
+                onFilters={onFilters}
+                enabled={open}
+              />
               <Input
                 maxLength={100}
                 aria-label="Find filter values"
-                placeholder="Find a status, priority, type or label…"
+                placeholder="Find or enter a filter value…"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
                 Suggestions come from loaded issues. Applied filters search Jira. My issues uses the
-                signed-in account on each source’s computer.
+                signed-in account on each source’s computer. Team uses the standard Team field;
+                enter the team ID from its Jira team URL.
               </p>
               <section aria-label="Workflow status" className="space-y-1">
                 <h4 className="text-xs font-medium">Workflow status</h4>
@@ -283,6 +296,12 @@ export function JiraToolbar({
           ))}
         </div>
       </div>
+      {!!filters.board && !filters.sprint && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Showing project issues. Choose a sprint to filter by the selected board. Saved board
+          columns and filters are available in Jira.
+        </p>
+      )}
       <div className="flex flex-wrap gap-1.5" aria-label="Active Jira filters">
         {filters.assignee &&
           filters.assignee !== 'all' &&
@@ -305,6 +324,12 @@ export function JiraToolbar({
                 : 'In progress',
             () => onFilters({ ...filters, statusCategory: undefined }),
           )}
+        {filters.board &&
+          chip(`Board: ${filters.board}`, () =>
+            onFilters({ ...filters, board: undefined, sprint: undefined }),
+          )}
+        {filters.sprint &&
+          chip(`Sprint: ${filters.sprint}`, () => onFilters({ ...filters, sprint: undefined }))}
         {choices.map((group) =>
           filters[group.key]
             ? chip(`${group.name}: ${filters[group.key]}`, () =>

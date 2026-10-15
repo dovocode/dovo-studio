@@ -6,6 +6,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
   type ComponentProps,
@@ -47,14 +48,26 @@ export function ConversationHistory({
   onLoadEarlier,
   onReadingHistory,
   onReady,
+  active = true,
+  settled = false,
 }: {
   children: ReactNode
   onLoadEarlier?: () => void
   onReadingHistory?: () => void
   onReady?: () => void
+  active?: boolean
+  settled?: boolean
 }) {
   const { scrollToBottom, scrollRef, escapedFromLock } = useStickToBottomContext()
   const [ready, setReady] = useState(false)
+  const previous = useRef({ active, settled })
+  useEffect(() => {
+    const before = previous.current
+    previous.current = { active, settled }
+    // Reopening an already mounted thread restores following just like a fresh visit.
+    if (active && (!before.active || (before.settled && !settled)))
+      void scrollToBottom({ animation: 'instant' })
+  }, [active, settled, scrollToBottom])
   useEffect(() => {
     let disposed = false
     void Promise.resolve(scrollToBottom({ animation: 'instant' })).then(() => {

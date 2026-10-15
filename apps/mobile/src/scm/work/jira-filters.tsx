@@ -159,7 +159,8 @@ export function JiraFilterFields({
     <View style={{ gap: 16 }}>
       <Text style={styles.muted}>
         Suggestions come from loaded issues. Filters search Jira. My issues uses the Jira account
-        signed in on each source computer.
+        signed in on each source computer. Team uses the standard Team field; enter the team ID from
+        its Jira team URL.
       </Text>
       <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
         {(['all', 'mine', 'unassigned'] as const).map((assignee) => (
@@ -215,13 +216,31 @@ export function JiraFilterFields({
           onFilters({ ...filters, statusCategory: undefined })
         }}
       />
-      {(['priority', 'type', 'label'] as const).map((field) => (
+      {(['priority', 'type', 'label', 'team', 'component', 'release'] as const).map((field) => (
         <SuggestedFilter
           key={`${field}:${filters[field] ?? ''}`}
-          label={field === 'type' ? 'Issue type' : field === 'label' ? 'Label' : 'Priority'}
+          label={
+            field === 'type'
+              ? 'Issue type'
+              : field === 'label'
+                ? 'Label'
+                : field === 'priority'
+                  ? 'Priority'
+                  : field === 'team'
+                    ? 'Team ID'
+                    : field === 'component'
+                      ? 'Component'
+                      : 'Release'
+          }
           value={filters[field] ?? ''}
           suggestions={issues.flatMap((issue) =>
-            field === 'label' ? issue.labels : issue[field] ? [issue[field]] : [],
+            field === 'label'
+              ? issue.labels
+              : field === 'type'
+                ? [issue.type]
+                : field === 'priority' && issue.priority
+                  ? [issue.priority]
+                  : [],
           )}
           onChange={(value) => onFilters({ ...filters, [field]: value || undefined })}
         />

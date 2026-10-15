@@ -74,8 +74,7 @@ export class Attachments {
   async upload(value: unknown) {
     const input = decode(attachmentUploadSchema, value)
     const task = this.store.taskSummary(input.taskId)
-    if (task.archived || task.archivedAt)
-      throw new HttpError(409, 'Restore the task before attaching files')
+    if (task.archivedAt) throw new HttpError(409, 'Restore the task before attaching files')
     const data = Buffer.from(input.data, 'base64')
     if (data.toString('base64') !== input.data) throw new HttpError(400, 'Invalid file data')
     const name = attachmentFileName(input.name)
@@ -103,8 +102,7 @@ export class Attachments {
     })
     this.store.transaction(() => {
       const current = this.store.taskSummary(input.taskId)
-      if (current.archived || current.archivedAt)
-        throw new HttpError(409, 'Restore the task before attaching files')
+      if (current.archivedAt) throw new HttpError(409, 'Restore the task before attaching files')
       if (this.db.prepare('SELECT id FROM attachments WHERE id=?').get(input.id)) {
         const previous = this.read(input.taskId, input.id)
         if (previous.data !== input.data || previous.attachment.name !== attachment.name)

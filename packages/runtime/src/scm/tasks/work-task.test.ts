@@ -378,7 +378,7 @@ it('retains migrated Jira as the authoritative source for existing issue tasks',
     id: detail.issue.id,
     url: detail.issue.url,
   })
-  expect(load).toHaveBeenCalledExactlyOnceWith('APP-7', undefined)
+  expect(load).toHaveBeenCalledExactlyOnceWith('APP-7', undefined, undefined)
   expect(s.store.task(id).workItem).toMatchObject({
     kind: 'issue',
     provider: 'jira',

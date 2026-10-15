@@ -42,11 +42,11 @@ export class TaskQueue {
     review = false,
     resumePaused = false,
     subagentResultId?: string,
-    steering = false,
+    options: { steering?: boolean; reopenSettled?: boolean } = {},
   ) {
     if (this.accepted(id, messageId, text, attachments)) return false
     const task = this.store.taskSummary(id)
-    if (task.archived && !task.autoSettled)
+    if (task.archivedAt || (task.archived && !task.autoSettled && !options.reopenSettled))
       throw new HttpError(409, 'Restore this task before sending a message')
     if ((task.queue?.length ?? 0) >= 50)
       throw new HttpError(409, 'Queue is full (50 messages). Remove a message or let it run.')
@@ -56,6 +56,9 @@ export class TaskQueue {
       (t) => ({
         ...t,
         checkoutLocked: true,
+        ...(t.archived && options.reopenSettled
+          ? { archived: false, autoSettled: undefined, snoozedUntil: null }
+          : {}),
         ...(!response && !review && !subagentResultId && text.trim() !== '/compact'
           ? { lastPromptAt: createdAt }
           : {}),
@@ -74,7 +77,7 @@ export class TaskQueue {
             ...(review ? { review: true } : {}),
             ...(subagentResultId ? { subagentResultId } : {}),
             createdAt,
-            ...(steering ? { steering: true } : {}),
+            ...(options.steering ? { steering: true } : {}),
           },
         ],
       }),

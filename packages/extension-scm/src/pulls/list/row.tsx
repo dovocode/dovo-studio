@@ -13,6 +13,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react'
 import { Signal } from '../detail/status'
+import { AuthorAvatar } from '../author-avatar'
 export function PullRow({
   pull,
   repository,
@@ -146,8 +147,12 @@ export function PullRow({
                       >
                         {repository}
                       </span>
-                      <span className="max-w-32 truncate" title={pull.author}>
-                        {pull.author}
+                      <span
+                        className="inline-flex min-w-0 items-center gap-1.5"
+                        title={pull.author}
+                      >
+                        <AuthorAvatar author={pull.author} url={pull.authorAvatarUrl} />
+                        <span className="max-w-32 truncate">{pull.author}</span>
                       </span>
                       <time
                         className={compact ? '' : '@4xl/pr-list:hidden'}

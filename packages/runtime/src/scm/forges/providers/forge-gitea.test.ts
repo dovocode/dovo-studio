@@ -24,6 +24,7 @@ const pull = {
   draft: false,
   user: {
     login: 'author',
+    avatar_url: 'https://forge.example/avatars/author',
   },
   updated_at: '2026-09-20T10:00:00Z',
   head: {
@@ -251,6 +252,7 @@ describe('Forgejo and Gitea', () => {
       pulls: [
         {
           provider: 'forgejo',
+          authorAvatarUrl: pull.user.avatar_url,
           viewerReviewRequested: true,
           viewerIsInvolved: true,
           viewerIsAssigned: false,

@@ -15,12 +15,21 @@ import type {
   JiraBinding,
   JiraIssueFilters,
   ForgeIssue,
+  ForgeIssueSection,
+  ForgeIssueDetail,
   ForgeIssueCreate,
   ForgeIssueAction,
   ForgeWorkOptions,
   ForgePipelineAction,
 } from '@dovo/protocol'
-import { jiraBindingSchema, jiraProjectsSchema, jiraIssueFiltersSchema } from '@dovo/protocol'
+import {
+  jiraBindingSchema,
+  jiraProjectsSchema,
+  jiraIssueFiltersSchema,
+  jiraBoardsSchema,
+  jiraSprintsSchema,
+  jiraNumericId,
+} from '@dovo/protocol'
 import type { ForgeWorkProvider } from '../../work/forge-work-types.js'
 import { runForgeCli } from '../integration/forge-cli.js'
 import { HttpError } from '../../../errors.js'
@@ -169,6 +178,26 @@ function renderJiraBody(value: unknown) {
     }
   }
 }
+const rawComment = mutableStruct({
+  id: Schema.String,
+  body: Schema.Unknown,
+  author: Schema.optional(Schema.NullOr(person)),
+  created: Schema.String,
+})
+function normalizeComment(c: typeof rawComment.Type) {
+  const rendered = renderJiraBody(c.body)
+  return {
+    id: c.id,
+    body:
+      rendered.body +
+      (rendered.bodyNotice
+        ? '\n\n_Some rich content is shown as text. Open in Jira for the original comment._'
+        : ''),
+    author: c.author?.displayName ?? 'Deleted user',
+    createdAt: c.created,
+    bodyFormat: 'markdown' as const,
+  }
+}
 const rawIssue = mutableStruct({
   id: Schema.String,
   key: Schema.String,
@@ -190,14 +219,7 @@ const rawIssue = mutableStruct({
     comment: Schema.optional(
       Schema.NullOr(
         mutableStruct({
-          comments: mutableArray(
-            mutableStruct({
-              id: Schema.String,
-              body: Schema.Unknown,
-              author: Schema.optional(Schema.NullOr(person)),
-              created: Schema.String,
-            }),
-          ),
+          comments: mutableArray(rawComment),
           total: Schema.Number.pipe(Schema.check(Schema.isFinite())),
         }),
       ),
@@ -252,7 +274,8 @@ export class JiraWork implements ForgeWorkProvider {
     this.validateSource?.()
     const context = await (this.context ??= captureJiraContext(this.executable, this.run, this.cwd))
     this.validateSource?.()
-    const dataCommand = args[0] === 'jira' && args[1] === 'workitem'
+    const dataCommand =
+      args[0] === 'jira' && ['workitem', 'board', 'sprint'].includes(args[1] ?? '')
     if (dataCommand) await this.assertAccount()
     const result = await this.run(this.executable, args, undefined, this.cwd, context.env)
     if (dataCommand) await this.assertAccount()
@@ -377,7 +400,7 @@ export class JiraWork implements ForgeWorkProvider {
       pipelineActions: [],
     }
   }
-  private check(raw: Schema.Schema.Type<typeof rawIssue>) {
+  private check(raw: Pick<typeof rawIssue.Type, 'key'>) {
     if (!raw.key.startsWith(this.binding.project + '-'))
       throw new HttpError(409, 'Jira returned an item outside the selected project')
   }
@@ -390,7 +413,7 @@ export class JiraWork implements ForgeWorkProvider {
       throw new HttpError(400, 'The Jira issue belongs to another project')
     return key
   }
-  private normalize(raw: Schema.Schema.Type<typeof rawIssue>): ForgeIssue {
+  private normalize(raw: Pick<typeof rawIssue.Type, 'key' | 'fields'>): ForgeIssue {
     this.check(raw)
     return {
       id: raw.key,
@@ -417,6 +440,73 @@ export class JiraWork implements ForgeWorkProvider {
     const rows = await this.issueRows(state, query, offset + 31, jiraFilters)
     return jiraIssuePage(rows, offset)
   }
+  async boards() {
+    await this.verify()
+    const page = decode(
+      mutableStruct({
+        values: mutableArray(
+          mutableStruct({
+            id: Schema.Number,
+            name: Schema.String,
+            type: Schema.Literals(['scrum', 'kanban', 'simple']),
+          }),
+        ),
+        isLast: Schema.Boolean,
+      }),
+      await this.json([
+        'board',
+        'search',
+        '--project',
+        this.binding.project,
+        '--limit',
+        '201',
+        '--order-by',
+        'name',
+      ]),
+    )
+    return decode(jiraBoardsSchema, {
+      boards: page.values.slice(0, 200).map((board) => ({ ...board, id: String(board.id) })),
+      truncated: !page.isLast || page.values.length > 200,
+    })
+  }
+  async sprints(boardId: string, closed = false) {
+    const board = decode(jiraNumericId, boardId)
+    const boards = await this.boards()
+    const selected = boards.boards.find((value) => value.id === board)
+    if (!selected) throw new HttpError(400, 'Choose a board from this Jira project.')
+    if (selected.type === 'kanban')
+      return decode(jiraSprintsSchema, { board, sprints: [], truncated: false })
+    const page = decode(
+      mutableStruct({
+        sprints: mutableArray(
+          mutableStruct({
+            id: Schema.Number,
+            name: Schema.String,
+            state: Schema.Literals(['active', 'future', 'closed']),
+            startDate: Schema.optional(Schema.String),
+            endDate: Schema.optional(Schema.String),
+            goal: Schema.optional(Schema.String),
+          }),
+        ),
+        isLast: Schema.Boolean,
+      }),
+      await this.json([
+        'board',
+        'list-sprints',
+        '--id',
+        board,
+        '--state',
+        closed ? 'closed' : 'active,future',
+        '--limit',
+        '101',
+      ]),
+    )
+    return decode(jiraSprintsSchema, {
+      board,
+      sprints: page.sprints.slice(0, 100).map((sprint) => ({ ...sprint, id: String(sprint.id) })),
+      truncated: !page.isLast || page.sprints.length > 100,
+    })
+  }
   /** The newest `limit` matching issues in the server's order. ACLI exposes a result limit but
    * no page token, so pages are slices of one prefix read. */
   async issueRows(state: string, query?: string, limit = 31, jiraFilters?: JiraIssueFilters) {
@@ -438,9 +528,16 @@ export class JiraWork implements ForgeWorkProvider {
       ['priority', filters.priority],
       ['issuetype', filters.type],
       ['labels', filters.label],
+      ['"Team"', filters.team],
+      ['component', filters.component],
+      ['fixVersion', filters.release],
     ]) {
       if (value !== undefined) clauses.push(`${field} = ${JSON.stringify(value)}`)
     }
+    if (filters.sprint === 'active') clauses.push('sprint IN openSprints()')
+    else if (filters.sprint === 'future') clauses.push('sprint IN futureSprints()')
+    else if (filters.sprint === 'none') clauses.push('sprint IS EMPTY')
+    else if (filters.sprint) clauses.push(`sprint = ${filters.sprint}`)
     if (filters.statusCategory) {
       const category = { todo: 'To Do', 'in-progress': 'In Progress', done: 'Done' }[
         filters.statusCategory
@@ -453,19 +550,51 @@ export class JiraWork implements ForgeWorkProvider {
       : /^[A-Z][A-Z0-9_]*-\d+$/i.test(text)
         ? ` AND key = ${JSON.stringify(text.toUpperCase())}`
         : ` AND text ~ ${JSON.stringify('"' + text.replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&') + '"')}`
+    const jql = `project = ${this.binding.project}${status}${search}${structured} ORDER BY updated DESC, key DESC`
+    const fields = 'key,summary,description,status,issuetype,priority,creator,assignee,labels'
+    // The CLI has no board issue endpoint or saved-filter/configuration read. Only its
+    // sprint endpoint can enforce a saved board's filter; never invent `board = id` JQL.
+    if (filters.board && filters.sprint && /^\d+$/.test(filters.sprint)) {
+      const page = decode(
+        mutableStruct({
+          // ACLI's sprint projection omits the REST issue id/self envelope.
+          issues: mutableArray(
+            mutableStruct({ key: rawIssue.fields.key, fields: rawIssue.fields.fields }),
+          ),
+          startAt: Schema.Number,
+        }),
+        await this.json([
+          'sprint',
+          'list-workitems',
+          '--paginate',
+          '--board',
+          filters.board,
+          '--sprint',
+          filters.sprint,
+          '--jql',
+          jql,
+          '--limit',
+          String(Math.min(limit, 10021)),
+          '--fields',
+          fields,
+        ]),
+      )
+      if (page.startAt !== 0) throw new HttpError(502, 'Jira returned an unexpected sprint page')
+      return page.issues.map((value) => this.normalize(value))
+    }
     const result = await this.json([
       'workitem',
       'search',
       '--jql',
-      `project = ${this.binding.project}${status}${search}${structured} ORDER BY updated DESC, key DESC`,
+      jql,
       '--limit',
       String(Math.min(limit, 10021)),
       '--fields',
-      'key,summary,description,status,issuetype,priority,creator,assignee,labels',
+      fields,
     ])
     return decode(mutableArray(rawIssue), result).map((v) => this.normalize(v))
   }
-  private async raw(id: string) {
+  private async raw(id: string, comments = true) {
     await this.verify()
     const value = decode(
       rawIssue,
@@ -474,7 +603,8 @@ export class JiraWork implements ForgeWorkProvider {
         'view',
         this.key(id),
         '--fields',
-        'key,summary,description,status,issuetype,priority,creator,assignee,labels,updated,comment',
+        'key,summary,description,status,issuetype,priority,creator,assignee,labels,updated' +
+          (comments ? ',comment' : ''),
       ]),
     )
     this.check(value)
@@ -485,24 +615,60 @@ export class JiraWork implements ForgeWorkProvider {
       )
     return value
   }
-  async issue(id: string) {
-    const raw = await this.raw(id)
+  async issue(id: string, cursor?: string, section?: ForgeIssueSection): Promise<ForgeIssueDetail> {
+    const raw = await this.raw(id, section === undefined)
+    const issue = this.normalize(raw)
+    if (section === 'overview') return { issue, comments: [] }
+    if (section === 'discussion') {
+      const offset = jiraOffset(cursor)
+      // ACLI has no offset flag. Read a bounded prefix and slice it; never fetch all comments.
+      const page = decode(
+        mutableStruct({
+          comments: mutableArray(rawComment),
+          total: Schema.Number.pipe(
+            Schema.check(Schema.isInt()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+          ),
+          startAt: Schema.Number,
+        }),
+        await this.json([
+          'workitem',
+          'comment',
+          'list',
+          '--key',
+          this.key(id),
+          '--limit',
+          String(offset + 31),
+          '--order',
+          '+created',
+        ]),
+      )
+      if (page.startAt !== 0)
+        throw new HttpError(502, 'Jira returned an unexpected discussion page')
+      const latest = await this.raw(id, false)
+      if (latest.fields.updated !== raw.fields.updated)
+        throw new HttpError(
+          409,
+          'This issue changed while discussion was loading. Refresh the issue.',
+        )
+      const end = offset + 30
+      const hasMore = page.total > end && page.comments.length > end
+      return {
+        issue,
+        comments: page.comments.slice(offset, end).map(normalizeComment),
+        next: hasMore && end <= 9990 ? String(end) : undefined,
+        ...(page.total > Math.min(end, page.comments.length) && (!hasMore || end > 9990)
+          ? {
+              discussionNotice:
+                'More comments are available in Jira. Open on server to view the full discussion.',
+            }
+          : {}),
+      }
+    }
+    // Preserve the response contract for older clients and mutation callers.
     return {
-      issue: this.normalize(raw),
-      comments: (raw.fields.comment?.comments ?? []).map((c) => {
-        const rendered = renderJiraBody(c.body)
-        return {
-          id: c.id,
-          body:
-            rendered.body +
-            (rendered.bodyNotice
-              ? '\n\n_Some rich content is shown as text. Open in Jira for the original comment._'
-              : ''),
-          author: c.author?.displayName ?? 'Deleted user',
-          createdAt: c.created,
-          bodyFormat: 'markdown' as const,
-        }
-      }),
+      issue,
+      comments: (raw.fields.comment?.comments ?? []).map(normalizeComment),
       ...(raw.fields.comment && raw.fields.comment.total > raw.fields.comment.comments.length
         ? {
             discussionNotice:

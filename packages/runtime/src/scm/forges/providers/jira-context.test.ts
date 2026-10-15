@@ -475,3 +475,52 @@ it('redacts malformed private credential documents from verification and close e
       'The isolated Jira account configuration changed unexpectedly. Refresh before continuing.',
   })
 })
+
+it('preserves encrypted YAML binary tokens across renewed contexts and repairs the legacy Buffer map losslessly', async () => {
+  const f = await setup()
+  const initialToken = Buffer.from('encrypted-initial-fixture')
+  const renewedToken = Buffer.from('encrypted-renewed-fixture')
+  const source = stringify(
+    { ...original, profiles: [{ ...original.profiles[0], token: initialToken }] },
+    { customTags: ['binary'] },
+  )
+  await writeFile(f.file, source)
+  const unsigned: typeof runForgeCli = async () => {
+    throw new HttpError(502, 'Unsigned context')
+  }
+  const first = await captureJiraContext('acli', unsigned)
+  await writeFile(
+    join(first.env.ACLI_CONFIG_DIR!, 'acli', 'jira_config.yaml'),
+    stringify(
+      { ...original, profiles: [{ ...original.profiles[0], token: renewedToken }] },
+      { customTags: ['binary'] },
+    ),
+  )
+  await first.close()
+  const stateDirectory = join(f.root, 'acli', 'dovo-jira-accounts')
+  const stateFile = join(
+    stateDirectory,
+    (await readdir(stateDirectory)).find((name) => name.endsWith('.json'))!,
+  )
+  const stateSchema = mutableStruct({ fingerprint: Schema.String, profile: Schema.String })
+  const state = decode(stateSchema, JSON.parse(await readFile(stateFile, 'utf8')))
+  const binaryProfile = mutableStruct({ token: Schema.Unknown })
+  expect(decode(binaryProfile, parse(state.profile)).token).toEqual(renewedToken)
+  expect(state.profile).toContain('!!binary')
+  // Reproduce the previous serializer's output rather than replacing the credential.
+  const legacyProfile = stringify({ ...original.profiles[0], token: renewedToken })
+  await writeFile(stateFile, JSON.stringify({ ...state, profile: legacyProfile }))
+  const next = await captureJiraContext('acli', unsigned)
+  cleanup.push(next.close)
+  const privateConfig = mutableStruct({ profiles: mutableArray(binaryProfile) })
+  const restored = decode(
+    privateConfig,
+    parse(await readFile(join(next.env.ACLI_CONFIG_DIR!, 'acli', 'jira_config.yaml'), 'utf8')),
+  )
+  expect(restored.profiles[0]?.token).toEqual(renewedToken)
+  await next.close()
+  const repaired = decode(stateSchema, JSON.parse(await readFile(stateFile, 'utf8')))
+  expect(decode(binaryProfile, parse(repaired.profile)).token).toEqual(renewedToken)
+  expect(repaired.profile).toContain('!!binary')
+  expect(await readFile(f.file, 'utf8')).toBe(source)
+})

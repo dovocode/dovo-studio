@@ -22,6 +22,7 @@ const identity = mutableStruct({
   id: Schema.String,
   displayName: Schema.optional(Schema.String),
   uniqueName: Schema.optional(Schema.String),
+  imageUrl: Schema.optional(Schema.NullOr(Schema.String)),
 })
 const repositoryInput = mutableStruct({
   id: Schema.String,
@@ -351,6 +352,7 @@ export class AzureForge implements ForgeAdapter {
         value.status === 'active' ? 'open' : value.status === 'completed' ? 'merged' : 'closed',
       draft: value.isDraft,
       author: label(value.createdBy),
+      authorAvatarUrl: value.createdBy.imageUrl || undefined,
       updatedAt: value.closedDate ?? value.creationDate,
       head: branchName(value.sourceRefName),
       base: branchName(value.targetRefName),

@@ -5,7 +5,12 @@ import { retainUnavailableSections } from './cached-detail.js'
 import type Database from 'better-sqlite3'
 import { Effect, Fiber, Layer, ManagedRuntime, Schema } from 'effect'
 import { startPolling, runClientEffect } from '@dovo/client-runtime'
-import { pullPageSchema, pullDetailSchema } from '@dovo/protocol'
+import {
+  pullPageSchema,
+  pullDetailSchema,
+  pullRevision,
+  type PullDetailSection,
+} from '@dovo/protocol'
 import type { PullRequests } from './pulls.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import {
@@ -30,6 +35,11 @@ type PullReader = {
     background?: boolean,
   ) => ReturnType<PullRequests['list']>
   detail: (cwd: string, number: number) => ReturnType<PullRequests['detail']>
+  section?: (
+    cwd: string,
+    number: number,
+    section: PullDetailSection,
+  ) => ReturnType<PullRequests['detail']>
   status?: (cwd: string, number: number, background?: boolean) => ReturnType<PullRequests['detail']>
   feedback?: (cwd: string, number: number) => ReturnType<PullRequests['detail']>
 }
@@ -53,8 +63,18 @@ export class PullCache {
     private onDetail?: (detail: PullDetail) => void,
   ) {
     db.exec(
-      'CREATE TABLE IF NOT EXISTS pull_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS pull_cache_scopes (cwd TEXT PRIMARY KEY, scope TEXT NOT NULL)',
+      'CREATE TABLE IF NOT EXISTS pull_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS pull_cache_aliases (cwd TEXT NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(cwd,scope))',
     )
+    if (
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='pull_cache_scopes'")
+        .get()
+    )
+      db.transaction(() => {
+        db.exec(
+          'INSERT OR IGNORE INTO pull_cache_aliases(cwd,scope) SELECT cwd,scope FROM pull_cache_scopes; DROP TABLE pull_cache_scopes',
+        )
+      })()
   }
   private rejectCachedFallback(error: unknown): boolean {
     if (error instanceof RuntimeOperationError) return this.rejectCachedFallback(error.cause)
@@ -72,7 +92,7 @@ export class PullCache {
     if (this.scopes.get(cwd) === scope) return
     this.scopes.set(cwd, scope)
     this.db
-      .prepare('INSERT OR REPLACE INTO pull_cache_scopes(cwd,scope) VALUES(?,?)')
+      .prepare('INSERT OR IGNORE INTO pull_cache_aliases(cwd,scope) VALUES(?,?)')
       .run(cwd, scope)
   }
   private readEffect<T extends { cachedAt?: string; stale?: boolean; refreshError?: string }, I>(
@@ -82,6 +102,7 @@ export class PullCache {
     force: boolean,
     reconcile?: (fresh: T, cached?: T) => T,
     ttl = 120_000,
+    acceptCached?: (value: T) => boolean,
   ): Effect.Effect<T, RuntimeFailure> {
     return Effect.gen({ self: this }, function* () {
       if (this.stopped && force)
@@ -103,6 +124,7 @@ export class PullCache {
             this.db.prepare('DELETE FROM pull_cache WHERE key=?').run(key),
           )
       }
+      if (cached && acceptCached && !acceptCached(cached)) cached = undefined
       const refresh = Effect.suspend(() => {
         if (this.stopped) return Effect.fail(runtimeFailure(new Error('Pull cache is closed')))
         const existing = this.pending.get(key)
@@ -364,6 +386,62 @@ export class PullCache {
       )
     })
   }
+  sectionEffect(
+    cwd: string,
+    number: number,
+    section: PullDetailSection,
+    force = false,
+    expectedScope?: string,
+    revision?: string,
+    source?: { identity: () => Promise<string>; reader: PullReader },
+  ): Effect.Effect<PullDetail, RuntimeFailure> {
+    return Effect.gen({ self: this }, function* () {
+      this.noteDemand(cwd)
+      const identify = source?.identity ?? this.identity
+      const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+      if (expectedScope !== undefined && scope !== expectedScope)
+        throw new HttpError(
+          409,
+          'This integration reader account or destination changed. Refresh before continuing.',
+        )
+      this.rememberScope(cwd, scope)
+      return yield* this.readEffect(
+        JSON.stringify(['section', scope, number, section]),
+        pullDetailSchema,
+        async () => {
+          const reader = source?.reader ?? this.pulls.forDestination?.(scope) ?? this.pulls
+          if (section === 'stack') {
+            const detail = await runClientEffect(
+              this.sectionEffect(cwd, number, 'overview', false, scope, revision, source),
+            )
+            if (detail.pull.state !== 'open') return detail
+            const { stack, warning } = await runClientEffect(
+              this.stackEffect(cwd, number, force, scope),
+            )
+            return {
+              ...detail,
+              stack,
+              pull: { ...detail.pull, stack: stack ? stackSummary(stack) : undefined },
+              warnings: warning ? [warning] : [],
+            }
+          }
+          const result = await (reader.section
+            ? reader.section(cwd, number, section)
+            : reader.detail(cwd, number))
+          this.validateDestination(result, scope)
+          return result
+        },
+        force,
+        (fresh, cached) => {
+          const detail = retainUnavailableSections(fresh, cached)
+          if (section === 'changes') this.onDetail?.(detail)
+          return detail
+        },
+        section === 'changes' ? 300_000 : 60_000,
+        revision ? (detail) => pullRevision(detail) === revision : undefined,
+      )
+    })
+  }
   detail(cwd: string, number: number, force = false) {
     return runClientEffect(this.detailEffect(cwd, number, force))
   }
@@ -416,10 +494,10 @@ export class PullCache {
   invalidate(cwd: string, number?: number) {
     // Worktree aliases survive a runtime restart, even before this checkout is read again.
     const saved = decode(
-      Schema.UndefinedOr(mutableStruct({ scope: Schema.String })),
-      this.db.prepare('SELECT scope FROM pull_cache_scopes WHERE cwd=?').get(cwd),
+      mutableArray(mutableStruct({ scope: Schema.String })),
+      this.db.prepare('SELECT scope FROM pull_cache_aliases WHERE cwd=?').all(cwd),
     )
-    const scope = this.scopes.get(cwd) ?? saved?.scope
+    const scopes = new Set([cwd, ...saved.map((entry) => entry.scope)])
     const matches = (key: string) => {
       try {
         const parsed = decodeResult(
@@ -430,9 +508,10 @@ export class PullCache {
         )
         return (
           parsed.success &&
-          (parsed.data[1] === cwd || parsed.data[1] === scope) &&
+          scopes.has(parsed.data[1]) &&
           (parsed.data[0] === 'list' ||
-            ((parsed.data[0] === 'detail' ||
+            ((parsed.data[0] === 'section' ||
+              parsed.data[0] === 'detail' ||
               parsed.data[0] === 'status' ||
               parsed.data[0] === 'feedback') &&
               (number === undefined || parsed.data[2] === number)))

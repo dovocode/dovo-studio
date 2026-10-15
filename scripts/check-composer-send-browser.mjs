@@ -6,7 +6,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
-  './composer-editor': `import {useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText})=>{const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} onChange={event=>controller.update(event.target.value)}/>};`,
+  './composer-editor': `import {useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText,disabled})=>{const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} disabled={disabled} onChange={event=>controller.update(event.target.value)}/>};`,
 }
 for (const [path, name] of [
   ['./attachment-picker', 'AttachmentPicker'],
@@ -266,6 +266,43 @@ try {
     throw new Error('Accepted queue item can be moved into a local-only row')
   if (await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).isDisabled())
     throw new Error('Accepted queue item lost its actions')
+  await page.evaluate(() => {
+    window.setTask((task) => ({ ...task, status: 'review', archived: true, queue: [] }))
+    window.setPendingQueue([])
+  })
+  await input.fill('Reopen on send')
+  if (!(await page.evaluate(() => window.current.archived)))
+    throw new Error('Typing reopened the settled thread')
+  await submit('Reopen on send')
+  const reopeningId = await page.evaluate(() => window.pending.message.id)
+  await respond(true)
+  if (
+    !(await page.evaluate(() => window.current.archived)) ||
+    (await input.inputValue()) !== 'Reopen on send'
+  )
+    throw new Error('Rejected send changed settlement or lost draft')
+  await page.locator('button[type=submit]').click()
+  await page.waitForFunction(() => window.response !== null)
+  if ((await page.evaluate(() => window.pending.message.id)) !== reopeningId)
+    throw new Error('Reopening retry changed identity')
+  await respond()
+  // The runtime snapshot owns the transition; the composer must not issue a reopen PATCH.
+  await page.evaluate(() => window.setTask((task) => ({ ...task, archived: false })))
+  await acknowledge('queue')
+  if (
+    await page.evaluate(() =>
+      window.requests.some(
+        (request) => request.path === '/api/workspace' && request.input.changes?.archived,
+      ),
+    )
+  )
+    throw new Error('Composer reopened before message acceptance')
+  await page.evaluate(() =>
+    window.setTask((task) => ({ ...task, archived: true, archivedAt: '2026-10-15T00:00:00Z' })),
+  )
+  await page.waitForFunction(() => document.querySelector('textarea').disabled)
+  if (!(await page.locator('button[type=submit]').isDisabled()))
+    throw new Error('Archived thread can send without restoration')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing and fork dispatch with stable retry IDs passed.',

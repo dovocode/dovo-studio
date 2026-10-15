@@ -197,7 +197,7 @@ it('validates the normalized file name so paths cannot become directory referenc
   expect(s.db.prepare('SELECT COUNT(*) AS total FROM attachments').get()).toEqual({ total: 0 })
 })
 
-it.each(['archived', 'archivedAt', 'during-upload'] as const)(
+it.each(['archivedAt', 'during-upload'] as const)(
   'rejects attachment admission for %s threads without storing a blob',
   async (state) => {
     const f = await fixture()
@@ -216,7 +216,7 @@ it.each(['archived', 'archivedAt', 'during-upload'] as const)(
       s.store.updateTask(task.id, (current) => ({
         ...current,
         archived: state !== 'archivedAt',
-        archivedAt: state !== 'archived' ? new Date().toISOString() : undefined,
+        archivedAt: new Date().toISOString(),
       }))
     if (state !== 'during-upload') archive()
     const pending = s.attachments.upload({
@@ -310,3 +310,40 @@ it('prunes materialized orphan files but keeps attachments referenced by convers
   await expect(readFile(orphanDisk.path)).rejects.toThrow('ENOENT')
   expect(() => s.attachments.read(task.id, orphan.id)).toThrow('not found')
 })
+
+it.each([false, true])(
+  'allows draft attachments without reopening a settled thread (automatic=%s)',
+  async (automatic) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    cleanups.push(runtime.close)
+    const s = runtime.services
+    s.store.update(() => f.workspace)
+    const task = s.tasks.create({
+      title: 'Settled',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: '',
+    })
+    s.store.updateTask(task.id, (current) => ({
+      ...current,
+      status: 'review',
+      archived: true,
+      autoSettled: automatic || undefined,
+    }))
+    const upload = await s.attachments.upload({
+      taskId: task.id,
+      id: randomUUID(),
+      name: 'note.txt',
+      data: Buffer.from('Draft context').toString('base64'),
+    })
+    expect(s.store.task(task.id)).toMatchObject({
+      archived: true,
+      draftAttachments: [upload.attachment],
+    })
+    expect(s.store.task(task.id).autoSettled).toBe(automatic || undefined)
+    s.attachments.removeDraft(task.id, upload.attachment.id)
+    expect(s.store.task(task.id).archived).toBe(true)
+  },
+)
