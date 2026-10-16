@@ -93,6 +93,20 @@ export const agentSchema = mutableStruct({
 })
 export const taskHarnessSchema = agentPresetSchema.mapFields(Struct.omit(['id', 'name', 'icon']))
 export type TaskHarness = Schema.Schema.Type<typeof taskHarnessSchema>
+export const automaticDifficultyChoices = [
+  { id: 'auto', name: 'Auto' },
+  { id: 'low', name: 'Low' },
+  { id: 'medium', name: 'Medium' },
+  { id: 'high', name: 'High' },
+  { id: 'xhigh', name: 'Extra High' },
+] as const
+export const taskModelSelectionDifficultySchema = Schema.Literals([
+  'auto',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+])
 export const taskModelSelectionSchema = Schema.Literals(['inherit', 'auto', 'smart'])
 export const projectTaskDefaultsSchema = mutableStruct({
   modelSelection: Schema.optional(Schema.Literals(['fixed', 'smart'])),
@@ -758,6 +772,8 @@ export const taskSchema = mutableStruct({
   harnessCustomized: Schema.optional(Schema.Boolean),
   /** Pending first-turn model selection; removed after resolution. */
   modelSelection: Schema.optional(taskModelSelectionSchema),
+  /** Difficulty preference for pending AUTO/SMART selection, independent of task defaults. */
+  modelSelectionDifficulty: Schema.optional(taskModelSelectionDifficultySchema),
   /** Resolve projects on the selected runtime before the first prompt. */
   autoProject: Schema.optional(Schema.Boolean),
   autoProjectExecution: Schema.optional(executionSchema),

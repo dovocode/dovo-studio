@@ -24,6 +24,7 @@ export function taskMachineDraft(
     modelSelection:
       task.modelSelection ??
       (task.autoProject ? 'inherit' : resolveTaskDefaults(defaults, repository).modelSelection),
+    modelSelectionDifficulty: task.modelSelectionDifficulty,
     harnessCustomized: task.modelSelection ? task.harnessCustomized : undefined,
     agentId: '',
     status: 'draft',

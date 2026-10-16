@@ -158,3 +158,25 @@ it('starts from project defaults without requiring a favorite', () => {
     harness: { reasoning: 'high', permission: 'ask' },
   })
 })
+
+it('keeps automatic difficulty independent of the ordinary harness reasoning', () => {
+  const snapshot = fixture()
+  const selection = {
+    ...launcherDefaultAgent(snapshot, repository),
+    modelSelection: 'smart' as const,
+    modelSelectionDifficulty: 'high' as const,
+  }
+  const task = createLauncherTask(snapshot, repository, selection, 'Investigate this', 'task')
+  expect(task.modelSelection).toBe('smart')
+  expect(task.modelSelectionDifficulty).toBe('high')
+  expect(task.harness?.reasoning).toBe(selection.harness?.reasoning)
+  expect(
+    createLauncherTask(
+      snapshot,
+      repository,
+      { ...selection, modelSelectionDifficulty: undefined },
+      '',
+      'auto',
+    ).modelSelectionDifficulty,
+  ).toBeUndefined()
+})

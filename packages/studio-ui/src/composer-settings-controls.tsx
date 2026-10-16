@@ -1,4 +1,8 @@
-import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
+import {
+  automaticDifficultyChoices,
+  selectPermissionPreset,
+  permissionPolicyLabel,
+} from '@dovo/protocol'
 import { Schema } from 'effect'
 import { useState, type ComponentProps } from 'react'
 import {
@@ -41,6 +45,7 @@ import { ComposerModelPicker } from './composer-model-picker'
 import { useHarnessCatalog } from './harness-catalog'
 const effortName = (id: string) =>
   ({
+    auto: 'Auto',
     low: 'Low',
     medium: 'Medium',
     high: 'High',
@@ -61,8 +66,13 @@ export function ComposerSettingsControls({
   value,
   disabled,
   onChange,
+  modelSelectionDifficulty,
+  onSelectDifficulty,
   ...pickerProps
-}: ComponentProps<typeof ComposerModelPicker>) {
+}: ComponentProps<typeof ComposerModelPicker> & {
+  modelSelectionDifficulty?: string
+  onSelectDifficulty?: (reasoning: string) => Promise<boolean>
+}) {
   const { snapshot } = useWorkspace()
   const policySupported = snapshot?.permissionPolicySupported === true
   const capabilities = permissionPolicyCapabilities(value.provider)
@@ -74,12 +84,17 @@ export function ComposerSettingsControls({
   const selected =
     catalog?.models.find((model) => model.id === value.model) ??
     (!value.model ? catalog?.models.find((model) => model.isDefault) : undefined)
-  const effectiveReasoning = value.reasoning || selected?.defaultReasoning
+  const automatic = pickerProps.modelSelection === 'auto' || pickerProps.modelSelection === 'smart'
+  const effectiveReasoning = automatic
+    ? modelSelectionDifficulty || 'auto'
+    : value.reasoning || selected?.defaultReasoning
   const AccessIcon = accessIcon[value.permission]
   const fast = ['priority', 'fast'].includes(serviceTierValue(value.serviceTier))
   const efforts = selected?.reasoning ?? catalog?.reasoning ?? []
   const tiers =
-    value.provider === 'codex' ? modelServiceTiers(catalog, value.model, value.serviceTier) : []
+    !automatic && value.provider === 'codex'
+      ? modelServiceTiers(catalog, value.model, value.serviceTier)
+      : []
   const locked = disabled
   const itemClass =
     'relative flex cursor-default select-none items-center rounded-md py-1.5 pl-3 pr-8 text-sm outline-none transition-colors duration-150 focus:bg-accent/50 data-[state=checked]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40'
@@ -93,7 +108,7 @@ export function ComposerSettingsControls({
             type="button"
             variant="ghost"
             disabled={locked}
-            aria-label="Reasoning and speed"
+            aria-label={automatic ? 'Difficulty' : 'Reasoning and speed'}
             className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
           >
             {fast && <Zap className="size-3.5 fill-current" />}
@@ -110,39 +125,48 @@ export function ComposerSettingsControls({
             className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-60 overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
           >
             <DropdownMenu.Label className="px-3 py-2 text-xs text-muted-foreground">
-              Reasoning
+              {automatic ? 'Difficulty' : 'Reasoning'}
             </DropdownMenu.Label>
             <DropdownMenu.RadioGroup
-              value={value.reasoning || selected?.defaultReasoning || ''}
+              value={
+                automatic
+                  ? modelSelectionDifficulty || 'auto'
+                  : value.reasoning || selected?.defaultReasoning || ''
+              }
               onValueChange={(reasoning) =>
-                void onChange({
-                  ...value,
-                  reasoning,
-                })
+                void (automatic
+                  ? onSelectDifficulty?.(reasoning)
+                  : onChange({
+                      ...value,
+                      reasoning,
+                    }))
               }
             >
-              {[
-                ...(!selected?.defaultReasoning
-                  ? [
-                      {
-                        id: '',
-                        name: 'Provider default',
-                      },
-                    ]
-                  : []),
-                ...efforts,
-                ...(value.reasoning && !efforts.some((e) => e.id === value.reasoning)
-                  ? [
-                      {
-                        id: value.reasoning,
-                        name: value.reasoning,
-                      },
-                    ]
-                  : []),
-              ].map((effort) => (
+              {(automatic
+                ? automaticDifficultyChoices
+                : [
+                    ...(!selected?.defaultReasoning
+                      ? [
+                          {
+                            id: '',
+                            name: 'Provider default',
+                          },
+                        ]
+                      : []),
+                    ...efforts,
+                    ...(value.reasoning && !efforts.some((e) => e.id === value.reasoning)
+                      ? [
+                          {
+                            id: value.reasoning,
+                            name: value.reasoning,
+                          },
+                        ]
+                      : []),
+                  ]
+              ).map((effort) => (
                 <DropdownMenu.RadioItem key={effort.id} value={effort.id} className={itemClass}>
                   {effortName(effort.id || effort.name)}
-                  {effort.id === selected?.defaultReasoning && (
+                  {!automatic && effort.id === selected?.defaultReasoning && (
                     <span className="ml-2 rounded border border-border/60 px-1 text-[0.625rem] text-muted-foreground">
                       Default
                     </span>

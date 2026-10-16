@@ -1,5 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  taskModelSelectionDifficultySchema,
   decode,
   resolveScopedAgents,
   canChangeTaskCheckout,
@@ -91,6 +92,13 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
       <ComposerSettingsControls
         automaticModesEnabled={snapshot?.smartModelSelectionEnabled === true}
         modelSelection={task.modelSelection}
+        modelSelectionDifficulty={task.modelSelectionDifficulty}
+        onSelectDifficulty={(reasoning) =>
+          save((current) => ({
+            ...current,
+            modelSelectionDifficulty: decode(taskModelSelectionDifficultySchema, reasoning),
+          }))
+        }
         onSelectMode={
           canChangeTaskCheckout(task) && !task.delegation
             ? (mode) =>

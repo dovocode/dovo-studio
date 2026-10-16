@@ -54,6 +54,7 @@ function setup(mode: Task['modelSelection'] = 'smart') {
   const runs: AgentRun[] = []
   let output: string | undefined
   let selectedProvider: Agent['provider'] = 'claude'
+  let reasoning: { id: string; name: string }[] = []
   const get = vi.spyOn(registry, 'get').mockImplementation(async (provider) => ({
     probe: vi.fn<AgentAdapter['probe']>().mockResolvedValue({
       available: provider === 'codex' || provider === 'claude',
@@ -65,7 +66,7 @@ function setup(mode: Task['modelSelection'] = 'smart') {
         { id: `${provider}-small`, name: 'Small', description: 'Fast, simple tasks' },
         { id: `${provider}-large`, name: 'Large', description: 'Complex reasoning' },
       ],
-      reasoning: [],
+      reasoning,
     }),
     run: async (run) => {
       runs.push(run)
@@ -74,7 +75,14 @@ function setup(mode: Task['modelSelection'] = 'smart') {
         (c: { provider: string; model: string }) =>
           c.provider === selectedProvider && c.model.endsWith('-large'),
       )
-      run.onText(output ?? JSON.stringify({ id: candidate?.id, reason: 'Complex task' }))
+      run.onText(
+        output ??
+          JSON.stringify({
+            id: candidate?.id,
+            reasoning: reasoning[0]?.id ?? '',
+            reason: 'Complex task',
+          }),
+      )
     },
   }))
   const selection = new ModelSelection(db, store, registry, titles)
@@ -87,6 +95,9 @@ function setup(mode: Task['modelSelection'] = 'smart') {
     selection,
     runs,
     get,
+    setReasoning: (value: { id: string; name: string }[]) => {
+      reasoning = value
+    },
     setOutput: (value: string) => {
       output = value
     },
@@ -187,6 +198,66 @@ it.each(['disabled', 'invalid', 'changed', 'disabled-during-selection'] as const
       expect(s.store.task('task').modelSelection).toBe('smart')
       expect(s.store.task('task').harness).toBeUndefined()
       expect(s.runs).toHaveLength(reason === 'disabled' ? 0 : 1)
+    } finally {
+      await s.close()
+    }
+  },
+)
+
+it.each(['auto', 'smart'] as const)(
+  '%s uses difficulty to choose model and supported reasoning together',
+  async (mode) => {
+    const s = setup(mode)
+    s.setProvider(mode === 'auto' ? 'codex' : 'claude')
+    s.setReasoning([
+      { id: 'medium', name: 'Medium' },
+      { id: 'high', name: 'High' },
+    ])
+    s.store.updateTask('task', (task) => ({ ...task, modelSelectionDifficulty: 'high' }))
+    try {
+      await runClientEffect(s.selection.resolveEffect('task'))
+      const input = JSON.parse(s.runs[0].prompt)
+      expect(input.difficulty).toBe('high')
+      expect(input.candidates[0].reasoning).toContainEqual({ id: 'medium', name: 'Medium' })
+      // Difficulty is a hint: the selected model can use a different supported reasoning level.
+      expect(s.store.task('task').harness?.reasoning).toBe('medium')
+      expect(s.store.task('task').modelSelectionDifficulty).toBeUndefined()
+      await runClientEffect(s.selection.resolveEffect('task', 'Later message'))
+      expect(s.runs).toHaveLength(1)
+    } finally {
+      await s.close()
+    }
+  },
+)
+
+it('defaults difficulty to auto independently of project reasoning', async () => {
+  const s = setup()
+  try {
+    await runClientEffect(s.selection.resolveEffect('task'))
+    expect(JSON.parse(s.runs[0].prompt).difficulty).toBe('auto')
+  } finally {
+    await s.close()
+  }
+})
+
+it.each(['missing', 'unsupported'])(
+  'rejects %s reasoning before changing the thread',
+  async (kind) => {
+    const s = setup()
+    s.setReasoning([{ id: 'high', name: 'High' }])
+    s.setOutput(
+      JSON.stringify({
+        id: '1',
+        reason: 'Complex',
+        ...(kind === 'unsupported' ? { reasoning: 'invented' } : {}),
+      }),
+    )
+    const before = s.store.task('task')
+    try {
+      await expect(runClientEffect(s.selection.resolveEffect('task'))).rejects.toThrow(
+        /reasoning level/,
+      )
+      expect(s.store.task('task')).toEqual(before)
     } finally {
       await s.close()
     }

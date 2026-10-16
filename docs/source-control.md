@@ -184,12 +184,16 @@ Running tasks settings to enable AUTO and SMART. Before the first message, the m
   suitable.
 
 The runtime resolves the choice once and saves the concrete harness/model for the thread. With AUTO
-project selection, projects resolve first. Hidden or disabled models are excluded. A failed or
-invalid selection preserves the pending mode and does not send the message. Only SMART can be saved
-as an automatic project or system task default. **AUTO project mode model** is a separate computer
-preference with Inherit, AUTO and SMART; it starts at Inherit and does not follow the ordinary task
-default mode. Choosing AUTO projects uses that preference, while preserving an explicitly selected
-AUTO or SMART model mode.
+project selection, projects resolve first. Hidden or disabled models are excluded.
+
+AUTO and SMART have a separate **Difficulty** picker, starting at **Auto**. An explicit difficulty
+guides model choice while the selector independently chooses a supported reasoning level for that
+model. The model and reasoning are fixed together before the first turn. Inherit and specific models
+keep their usual reasoning settings. An invalid selection preserves the pending mode and does not
+send the message. Only SMART can be saved as an automatic project or system task default. **AUTO
+project mode model** is a separate computer preference with Inherit, AUTO and SMART; it starts at
+Inherit and does not follow the ordinary task default mode. Choosing AUTO projects uses that
+preference, while preserving an explicitly selected AUTO or SMART model mode.
 
 Titles and dictation require an explicit utility harness and model in Agents settings. The **AUTO &
 SMART selector** inherits that title model by default. Set a separate utility harness/model there to

@@ -33,6 +33,7 @@ type Candidate = {
   harness: TaskHarness
   description?: string
   specialty?: string
+  reasoning: readonly { id: string; name: string }[]
 }
 
 /** Resolves only pending first-turn modes. The durable concrete harness owns later turns. */
@@ -92,19 +93,24 @@ export class ModelSelection {
                   ?.name,
                 access: link.access,
               })),
+              difficulty: before.modelSelectionDifficulty ?? 'auto',
               default: { provider: defaults.provider, model: defaults.model },
-              candidates: candidates.map(({ id, name, harness, description, specialty }) => ({
-                id,
-                name,
-                provider: harness.provider,
-                model: harness.model,
-                description,
-                specialty,
-                preferred:
-                  harness.provider === defaults.provider &&
-                  harness.acpInstallationId === defaults.acpInstallationId &&
-                  harness.model === defaults.model,
-              })),
+              candidates: candidates.map(
+                ({ id, name, harness, description, specialty, reasoning }) => ({
+                  id,
+                  name,
+                  provider: harness.provider,
+                  model: harness.model,
+                  description,
+                  specialty,
+                  reasoning,
+                  defaultReasoning: harness.reasoning,
+                  preferred:
+                    harness.provider === defaults.provider &&
+                    harness.acpInstallationId === defaults.acpInstallationId &&
+                    harness.model === defaults.model,
+                }),
+              ),
             }),
           )
           let raw: unknown
@@ -122,7 +128,11 @@ export class ModelSelection {
             )
           }
           const result = decodeResult(
-            mutableStruct({ id: Schema.String, reason: Schema.String }),
+            mutableStruct({
+              id: Schema.String,
+              reason: Schema.String,
+              reasoning: Schema.optional(Schema.String),
+            }),
             raw,
           )
           const chosen = result.success
@@ -145,7 +155,18 @@ export class ModelSelection {
             ]?.disabled
           )
             throw new HttpError(409, 'Model availability changed during selection. Try again.')
-          harness = chosen.harness
+          const selectedReasoning = result.success ? result.data.reasoning : undefined
+          if (
+            selectedReasoning &&
+            !chosen.reasoning.some((level) => level.id === selectedReasoning)
+          )
+            throw new HttpError(
+              502,
+              'Model selection returned an unsupported reasoning level. Try again or choose a model manually.',
+            )
+          if (!selectedReasoning && chosen.reasoning.length)
+            throw new HttpError(502, 'Model selection did not choose a reasoning level. Try again.')
+          harness = { ...chosen.harness, reasoning: selectedReasoning ?? chosen.harness.reasoning }
         }
         if (before.modelSelection !== 'inherit') this.requireEnabled()
         if (
@@ -160,6 +181,7 @@ export class ModelSelection {
           agentOverrides: undefined,
           harnessCustomized: true,
           modelSelection: undefined,
+          modelSelectionDifficulty: undefined,
         }))
       }),
     )
@@ -220,6 +242,7 @@ export class ModelSelection {
               name: `${agent.name} · ${model.name}`,
               description: model.description,
               specialty: model.specialty,
+              reasoning: model.reasoning ?? catalog.reasoning ?? [],
               harness: {
                 ...base,
                 model: model.id,

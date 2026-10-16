@@ -211,6 +211,19 @@ try {
         .getByRole('button', { name: 'Choose agent and model' })
         .filter({ hasText: mode })
         .waitFor()
+      if (mode === 'AUTO' || mode === 'SMART') {
+        const difficulty = page.getByRole('button', { name: 'Difficulty', exact: true })
+        assert.match(await difficulty.textContent(), mode === 'AUTO' ? /Auto/ : /High/)
+        await difficulty.click()
+        await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
+        assert.match(await difficulty.textContent(), /High/)
+        assert.match(
+          await page.getByRole('button', { name: 'Choose agent and model' }).textContent(),
+          new RegExp(mode),
+        )
+      } else {
+        assert.equal(await page.getByRole('button', { name: 'Difficulty', exact: true }).count(), 0)
+      }
     }
     await page.getByRole('button', { name: 'Choose agent and model' }).click()
     if (fixture.defaultProvider !== 'claude')

@@ -26,6 +26,7 @@ export function createTask(
     | 'autoProject'
     | 'autoProjectExecution'
     | 'modelSelection'
+    | 'modelSelectionDifficulty'
   > & {
     objective: string
     origin?: string
@@ -40,6 +41,7 @@ export function createTask(
     agentId: input.agentId,
     harness: input.harness,
     modelSelection: input.modelSelection ?? (input.autoProject ? 'inherit' : undefined),
+    modelSelectionDifficulty: input.modelSelectionDifficulty,
     agentOverrides: input.agentOverrides,
     execution: input.execution,
     worktreeBaseBranch: input.worktreeBaseBranch,

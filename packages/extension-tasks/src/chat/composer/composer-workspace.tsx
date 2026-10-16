@@ -39,6 +39,7 @@ export function ComposerWorkspace({
     autoProject?: boolean,
     autoProjectExecution?: Task['autoProjectExecution'],
     modelSelection?: Task['modelSelection'],
+    modelSelectionDifficulty?: Task['modelSelectionDifficulty'],
   ) => Promise<void>
 }) {
   const { workspace, setWorkspace, request, connected, snapshot } = useWorkspace()

@@ -1,5 +1,6 @@
-import type { TaskHarness } from '../workspace.js'
+import type { Task, TaskHarness } from '../workspace.js'
 export type LauncherAgent = {
+  modelSelectionDifficulty?: Task['modelSelectionDifficulty']
   modelSelection?: 'inherit' | 'auto' | 'smart'
   key: string
   name: string

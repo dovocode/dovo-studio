@@ -1,6 +1,11 @@
-import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
+import {
+  taskModelSelectionDifficultySchema,
+  selectPermissionPreset,
+  permissionPolicyLabel,
+} from '@dovo/protocol'
 import { View } from 'react-native'
 import {
+  automaticDifficultyChoices,
   resolveScopedAgents,
   decode,
   taskHarnessSchema,
@@ -103,19 +108,36 @@ export function TaskLauncherControls({
               : 'No providers available on this runtime. Configure agents in Settings.'}
         </Text>
       )}
-      <ModelSettings
-        agent={agent}
-        disabled={disabled}
-        onChange={(next) => {
-          if (!disabled)
-            onChange({
-              ...selection,
-              modelSelection: undefined,
-              model: next.model,
-              harness: decode(taskHarnessSchema, next),
-            })
-        }}
-      />
+      {(selection.modelSelection === 'auto' || selection.modelSelection === 'smart') && (
+        <Choice
+          label="Difficulty"
+          value={selection.modelSelectionDifficulty ?? 'auto'}
+          items={[...automaticDifficultyChoices]}
+          disabled={disabled}
+          onChange={(reasoning) => {
+            if (!disabled)
+              onChange({
+                ...selection,
+                modelSelectionDifficulty: decode(taskModelSelectionDifficultySchema, reasoning),
+              })
+          }}
+        />
+      )}
+      {selection.modelSelection !== 'auto' && selection.modelSelection !== 'smart' && (
+        <ModelSettings
+          agent={agent}
+          disabled={disabled}
+          onChange={(next) => {
+            if (!disabled)
+              onChange({
+                ...selection,
+                modelSelection: undefined,
+                model: next.model,
+                harness: decode(taskHarnessSchema, next),
+              })
+          }}
+        />
+      )}
       <Choice
         label="Access mode"
         selectedLabel={permissionPolicyLabel(agent)}

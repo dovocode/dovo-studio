@@ -9,6 +9,7 @@ import {
   DialogDescription,
 } from '@dovo/studio-ui'
 import {
+  taskModelSelectionDifficultySchema,
   resolveScopedAgents,
   type Repository,
   decode,
@@ -64,6 +65,14 @@ export function TaskLauncherControls({
       <ComposerSettingsControls
         automaticModesEnabled={snapshot?.smartModelSelectionEnabled === true}
         modelSelection={selection.modelSelection}
+        modelSelectionDifficulty={selection.modelSelectionDifficulty}
+        onSelectDifficulty={async (reasoning) => {
+          onChange({
+            ...selection,
+            modelSelectionDifficulty: decode(taskModelSelectionDifficultySchema, reasoning),
+          })
+          return true
+        }}
         onSelectMode={async (mode) => {
           onChange({ ...selection, modelSelection: mode, agentId: undefined })
           return true

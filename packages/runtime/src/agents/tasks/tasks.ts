@@ -2380,6 +2380,7 @@ export class Tasks {
       objective: string
       harness?: Task['harness']
       modelSelection?: Task['modelSelection']
+      modelSelectionDifficulty?: Task['modelSelectionDifficulty']
       agentOverrides?: Task['agentOverrides']
       linkedCheckouts?: Task['linkedCheckouts']
       origin?: string

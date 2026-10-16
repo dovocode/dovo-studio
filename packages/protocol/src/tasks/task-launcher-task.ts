@@ -27,6 +27,7 @@ export function createLauncherTask(
     title: text.trim().split('\n')[0].slice(0, 80) || 'New task',
     repositoryId: repository.id,
     modelSelection: agent.modelSelection,
+    modelSelectionDifficulty: agent.modelSelectionDifficulty,
     agentId: agent.agentId ?? '',
     agentOverrides:
       agent.agentId && agent.harness

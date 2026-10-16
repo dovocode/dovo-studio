@@ -33,6 +33,7 @@ export function StartupDraft({
     autoProject?: boolean
     autoProjectExecution?: Task['autoProjectExecution']
     modelSelection?: Task['modelSelection']
+    modelSelectionDifficulty?: Task['modelSelectionDifficulty']
   } | null>(null)
   const [committedTask, setCommittedTask] = useState<Task | null>(null)
   const repository = store.workspace.repositories.find((item) =>
@@ -50,6 +51,7 @@ export function StartupDraft({
         repositoryId: repository?.id ?? '',
         autoProject: selection?.autoProject,
         autoProjectExecution: selection?.autoProjectExecution,
+        modelSelectionDifficulty: selection?.modelSelectionDifficulty,
         ...(selection?.autoProject
           ? {
               modelSelection:
@@ -92,6 +94,7 @@ export function StartupDraft({
           autoProject,
           autoProjectExecution,
           modelSelection,
+          modelSelectionDifficulty,
         ) => {
           setSelection({
             runtimeId: source.runtimeId,
@@ -99,6 +102,7 @@ export function StartupDraft({
             autoProject,
             autoProjectExecution,
             modelSelection,
+            modelSelectionDifficulty,
           })
           await store.switchRuntime(source.runtimeId ?? '')
         }}
@@ -126,6 +130,7 @@ function StartupComposer({
     autoProject?: boolean,
     autoProjectExecution?: Task['autoProjectExecution'],
     modelSelection?: Task['modelSelection'],
+    modelSelectionDifficulty?: Task['modelSelectionDifficulty'],
   ) => Promise<void>
 }) {
   const store = useWorkspace()

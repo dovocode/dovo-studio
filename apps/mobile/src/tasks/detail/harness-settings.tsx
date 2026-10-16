@@ -1,4 +1,6 @@
 import {
+  taskModelSelectionDifficultySchema,
+  automaticDifficultyChoices,
   selectPermissionPreset,
   permissionPolicyLabel,
   changeTaskModelSelection,
@@ -151,190 +153,226 @@ export function HarnessSettings({
                       harness: { before: task.harness ?? null, after: next.harness },
                       agentId: { before: task.agentId, after: '' },
                       agentOverrides: { before: task.agentOverrides ?? null, after: null },
-                      harnessCustomized: { before: task.harnessCustomized ?? null, after: null },
+                      harnessCustomized: {
+                        before: task.harnessCustomized ?? null,
+                        after: next.harnessCustomized ?? null,
+                      },
                     },
                   },
                   workspacePatchResultSchema,
                 )
-                onClose()
+                if (value === 'inherit') onClose()
               }),
             )
           }}
         />
       )}
-      <Choice
-        row
-        label="Agent"
-        value={selection}
-        selectedLabel={agent.name}
-        disabled={controlsDisabled || !choices.length}
-        items={choices}
-        onChange={(value) => {
-          if (controlsDisabled || value === selection) return
-          const next = selectedTaskHarness(task, agents, value, installations)
-          if (!next) return
-          setSelection(value)
-          setAgent(next)
-        }}
-      />
-      {(availability.loading || availability.error || !choices.length) && (
-        <Text style={styles.muted}>
-          {availability.loading
-            ? 'Checking available providers…'
-            : availability.error
-              ? `Could not check available providers: ${availability.error}`
-              : !choices.length
-                ? 'No providers available on this runtime. Configure agents in Settings.'
-                : ''}
-        </Text>
-      )}
-      <Text style={styles.muted}>
-        {custom
-          ? `${agent.name} uses its saved instructions, skills and MCP servers. Model and access changes apply only to this task.`
-          : 'Choose a built-in provider, installed ACP agent or saved custom agent.'}
-      </Text>
-      {providerLocked && (
-        <Text style={styles.muted}>
-          {lockedProvider
-            ? `This thread uses ${harnessNames[lockedProvider]}. Choose any ${harnessNames[lockedProvider]} agent or model; start a new task to change provider.`
-            : 'The provider is fixed after the first message. Start a new task to choose another provider.'}
-        </Text>
-      )}
-      <ModelSettings
-        agent={agent}
-        onChange={setAgent}
-        disabled={controlsDisabled || !selectionAllowed}
-      />
-      <Choice
-        row
-        label="Access mode"
-        value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
-        selectedLabel={permissionPolicyLabel(agent)}
-        disabled={controlsDisabled || !selectionAllowed}
-        items={selectableAccessModes(agent.permission, agent.provider)
-          .filter((mode) => supportsAccess(agent.provider, mode.id))
-          .map((mode) => ({
-            id: mode.id,
-            name: mode.name,
-          }))}
-        onChange={(value) =>
-          setAgent(selectPermissionPreset(agent, decode(agentSchema.fields.permission, value)))
-        }
-      />
-      <Text style={styles.muted}>
-        {
-          selectableAccessModes(agent.permission, agent.provider).find(
-            (mode) => mode.id === agent.permission,
-          )?.description
-        }
-      </Text>
-      <PermissionPolicyControls
-        value={agent}
-        supported={snapshot?.permissionPolicySupported === true}
-        disabled={controlsDisabled || !selectionAllowed}
-        onChange={(policy) => setAgent({ ...agent, ...policy })}
-      />
-      {!custom &&
-        (agent.provider === 'opencode' ||
-          ['hermes', 'vibe', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
-          (agent.provider === 'acp' && !agent.acpInstallationId)) && (
-          <Field
-            label={
-              agent.provider === 'hermes'
-                ? 'Hermes executable'
-                : agent.provider === 'acp'
-                  ? 'ACP executable'
-                  : agent.provider === 'opencode'
-                    ? 'OpenCode server URL'
-                    : 'Executable'
-            }
-            value={agent.endpoint}
-            editable={!controlsDisabled && selectionAllowed}
-            onChangeText={(endpoint) =>
-              setAgent({
-                ...agent,
-                endpoint,
-              })
-            }
-          />
-        )}
-      {!custom &&
-        (['hermes', 'vibe', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
-          (agent.provider === 'acp' && !agent.acpInstallationId)) && (
-          <Field
-            label="Arguments (one per line)"
-            value={agent.args?.join('\n') ?? ''}
-            multiline
-            editable={!controlsDisabled && selectionAllowed}
-            onChangeText={(value) =>
-              setAgent({
-                ...agent,
-                args: value.split('\n').filter(Boolean),
-              })
-            }
-          />
-        )}
-      {task.status === 'running' ? (
-        <Text style={styles.muted}>Stop the active turn to change model settings.</Text>
-      ) : (
-        <Text style={styles.muted}>Applies to the next turn.</Text>
-      )}
-      {!selectionAllowed && (
-        <Text accessibilityRole="alert" style={styles.error}>
-          Choose an available {lockedProvider ? harnessNames[lockedProvider] : ''} harness or custom
-          agent before saving.
-        </Text>
-      )}
-      {busy && (
-        <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Saving model settings…
-        </Text>
-      )}
-      {!!error && <Text style={styles.error}>{error}</Text>}
-      <Action
-        label="Save agent & model"
-        disabled={
-          !connected ||
-          busy ||
-          task.status === 'running' ||
-          !selectionAllowed ||
-          !!task.archived ||
-          !!permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true) ||
-          !supportsAccess(agent.provider, agent.permission)
-        }
-        onPress={() =>
-          act(() =>
-            mobileWorkflow(function* () {
-              if (
-                controlsDisabled ||
-                !selectionAllowed ||
-                permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true)
-              )
-                return
-              if (!profile) throw new Error('This computer is no longer saved.')
-              const changes = taskHarnessChanges(task, selection, agent)
-              yield* previewTaskEffect(
-                profile,
-                task.id,
-                {
-                  agentId: changes.agentId.after,
-                  harness: changes.harness.after,
-                  harnessCustomized: changes.harnessCustomized.after,
-                  modelSelection: undefined,
-                  agentOverrides: changes.agentOverrides.after ?? undefined,
-                },
-                callEffect(
+      {(task.modelSelection === 'auto' || task.modelSelection === 'smart') && (
+        <Choice
+          row
+          label="Difficulty"
+          value={task.modelSelectionDifficulty ?? 'auto'}
+          items={[...automaticDifficultyChoices]}
+          disabled={controlsDisabled}
+          onChange={(reasoning) =>
+            act(() =>
+              mobileWorkflow(function* () {
+                yield* callEffect(
                   '/api/workspace',
-                  { collection: 'tasks', id: task.id, changes },
+                  {
+                    collection: 'tasks',
+                    id: task.id,
+                    changes: {
+                      modelSelectionDifficulty: {
+                        before: task.modelSelectionDifficulty ?? null,
+                        after: decode(taskModelSelectionDifficultySchema, reasoning),
+                      },
+                    },
+                  },
                   workspacePatchResultSchema,
-                  'PATCH',
-                ),
+                )
+              }),
+            )
+          }
+        />
+      )}
+      {task.modelSelection !== 'auto' && task.modelSelection !== 'smart' && (
+        <>
+          <Choice
+            row
+            label="Agent"
+            value={selection}
+            selectedLabel={agent.name}
+            disabled={controlsDisabled || !choices.length}
+            items={choices}
+            onChange={(value) => {
+              if (controlsDisabled || value === selection) return
+              const next = selectedTaskHarness(task, agents, value, installations)
+              if (!next) return
+              setSelection(value)
+              setAgent(next)
+            }}
+          />
+          {(availability.loading || availability.error || !choices.length) && (
+            <Text style={styles.muted}>
+              {availability.loading
+                ? 'Checking available providers…'
+                : availability.error
+                  ? `Could not check available providers: ${availability.error}`
+                  : !choices.length
+                    ? 'No providers available on this runtime. Configure agents in Settings.'
+                    : ''}
+            </Text>
+          )}
+          <Text style={styles.muted}>
+            {custom
+              ? `${agent.name} uses its saved instructions, skills and MCP servers. Model and access changes apply only to this task.`
+              : 'Choose a built-in provider, installed ACP agent or saved custom agent.'}
+          </Text>
+          {providerLocked && (
+            <Text style={styles.muted}>
+              {lockedProvider
+                ? `This thread uses ${harnessNames[lockedProvider]}. Choose any ${harnessNames[lockedProvider]} agent or model; start a new task to change provider.`
+                : 'The provider is fixed after the first message. Start a new task to choose another provider.'}
+            </Text>
+          )}
+          <ModelSettings
+            agent={agent}
+            onChange={setAgent}
+            disabled={controlsDisabled || !selectionAllowed}
+          />
+          <Choice
+            row
+            label="Access mode"
+            value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
+            selectedLabel={permissionPolicyLabel(agent)}
+            disabled={controlsDisabled || !selectionAllowed}
+            items={selectableAccessModes(agent.permission, agent.provider)
+              .filter((mode) => supportsAccess(agent.provider, mode.id))
+              .map((mode) => ({
+                id: mode.id,
+                name: mode.name,
+              }))}
+            onChange={(value) =>
+              setAgent(selectPermissionPreset(agent, decode(agentSchema.fields.permission, value)))
+            }
+          />
+          <Text style={styles.muted}>
+            {
+              selectableAccessModes(agent.permission, agent.provider).find(
+                (mode) => mode.id === agent.permission,
+              )?.description
+            }
+          </Text>
+          <PermissionPolicyControls
+            value={agent}
+            supported={snapshot?.permissionPolicySupported === true}
+            disabled={controlsDisabled || !selectionAllowed}
+            onChange={(policy) => setAgent({ ...agent, ...policy })}
+          />
+          {!custom &&
+            (agent.provider === 'opencode' ||
+              ['hermes', 'vibe', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
+              (agent.provider === 'acp' && !agent.acpInstallationId)) && (
+              <Field
+                label={
+                  agent.provider === 'hermes'
+                    ? 'Hermes executable'
+                    : agent.provider === 'acp'
+                      ? 'ACP executable'
+                      : agent.provider === 'opencode'
+                        ? 'OpenCode server URL'
+                        : 'Executable'
+                }
+                value={agent.endpoint}
+                editable={!controlsDisabled && selectionAllowed}
+                onChangeText={(endpoint) =>
+                  setAgent({
+                    ...agent,
+                    endpoint,
+                  })
+                }
+              />
+            )}
+          {!custom &&
+            (['hermes', 'vibe', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
+              (agent.provider === 'acp' && !agent.acpInstallationId)) && (
+              <Field
+                label="Arguments (one per line)"
+                value={agent.args?.join('\n') ?? ''}
+                multiline
+                editable={!controlsDisabled && selectionAllowed}
+                onChangeText={(value) =>
+                  setAgent({
+                    ...agent,
+                    args: value.split('\n').filter(Boolean),
+                  })
+                }
+              />
+            )}
+          {task.status === 'running' ? (
+            <Text style={styles.muted}>Stop the active turn to change model settings.</Text>
+          ) : (
+            <Text style={styles.muted}>Applies to the next turn.</Text>
+          )}
+          {!selectionAllowed && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              Choose an available {lockedProvider ? harnessNames[lockedProvider] : ''} harness or
+              custom agent before saving.
+            </Text>
+          )}
+          {busy && (
+            <Text accessibilityLiveRegion="polite" style={styles.muted}>
+              Saving model settings…
+            </Text>
+          )}
+          {!!error && <Text style={styles.error}>{error}</Text>}
+          <Action
+            label="Save agent & model"
+            disabled={
+              !connected ||
+              busy ||
+              task.status === 'running' ||
+              !selectionAllowed ||
+              !!task.archived ||
+              !!permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true) ||
+              !supportsAccess(agent.provider, agent.permission)
+            }
+            onPress={() =>
+              act(() =>
+                mobileWorkflow(function* () {
+                  if (
+                    controlsDisabled ||
+                    !selectionAllowed ||
+                    permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true)
+                  )
+                    return
+                  if (!profile) throw new Error('This computer is no longer saved.')
+                  const changes = taskHarnessChanges(task, selection, agent)
+                  yield* previewTaskEffect(
+                    profile,
+                    task.id,
+                    {
+                      agentId: changes.agentId.after,
+                      harness: changes.harness.after,
+                      harnessCustomized: changes.harnessCustomized.after,
+                      modelSelection: undefined,
+                      agentOverrides: changes.agentOverrides.after ?? undefined,
+                    },
+                    callEffect(
+                      '/api/workspace',
+                      { collection: 'tasks', id: task.id, changes },
+                      workspacePatchResultSchema,
+                      'PATCH',
+                    ),
+                  )
+                  onClose()
+                }),
               )
-              onClose()
-            }),
-          )
-        }
-      />
+            }
+          />
+        </>
+      )}
     </>
   )
   return inline ? (
