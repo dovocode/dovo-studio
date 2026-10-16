@@ -44,6 +44,7 @@
     "file-type": "^22.1.1",
     "icojs": "^1.0.1",
     "jose": "^6.2.12",
+    "marked": "^18.1.0",
     "marklassian": "^1.2.1",
     "mdast-util-from-adf": "^2.2.0",
     "mdast-util-from-markdown": "^2.1.0",

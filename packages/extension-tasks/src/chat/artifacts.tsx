@@ -1,7 +1,8 @@
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
-import { memo, useContext, useEffect, useState } from 'react'
+import { memo, useContext, useEffect, useRef, useState } from 'react'
 import {
   artifactFile,
+  artifactPdfResponseSchema,
   artifactSourceMarkdown,
   artifactFormatLabels,
   artifactListSchema,
@@ -32,6 +33,7 @@ import {
   CodeXml,
   Copy,
   Download,
+  FileDown,
   Eye,
   Layers,
   LoaderCircle,
@@ -117,6 +119,8 @@ export function ArtifactBrowser({
   const [source, setSource] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const exportingRequest = useRef(false)
   useEffect(() => {
     if (!copied) return
     const timer = setTimeout(() => setCopied(false), 2000)
@@ -191,6 +195,35 @@ export function ArtifactBrowser({
     anchor.download = file.name
     anchor.click()
     setTimeout(() => URL.revokeObjectURL(url), 30_000)
+  }
+  const exportPdf = async () => {
+    if (!artifact || !connected || exportingRequest.current) return
+    exportingRequest.current = true
+    setExporting(true)
+    setActionError('')
+    try {
+      const result = await request(
+        '/api/artifacts/pdf',
+        {
+          taskId: artifact.taskId,
+          id: artifact.id,
+          revision: artifact.revision,
+        },
+        artifactPdfResponseSchema,
+      )
+      const bytes = Uint8Array.from(atob(result.data), (char) => char.charCodeAt(0))
+      const url = URL.createObjectURL(new Blob([bytes], { type: result.mime }))
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = result.name
+      anchor.click()
+      setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      exportingRequest.current = false
+      setExporting(false)
+    }
   }
   const copy = async () => {
     if (!artifact) return
@@ -330,6 +363,19 @@ export function ArtifactBrowser({
               disabled={!artifact}
             >
               {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            </IconButton>
+            <IconButton
+              label={exporting ? 'Exporting PDF' : 'Export PDF'}
+              type="button"
+              className="size-7"
+              onClick={() => void exportPdf()}
+              disabled={!artifact || !connected || exporting}
+            >
+              {exporting ? (
+                <LoaderCircle className="size-3.5 animate-spin" />
+              ) : (
+                <FileDown className="size-3.5" />
+              )}
             </IconButton>
             <IconButton label="Download" className="size-7" onClick={download} disabled={!artifact}>
               <Download className="size-3.5" />

@@ -8,6 +8,8 @@ import {
   previewUrl,
   remoteBrowserDialogSchema,
   artifactPreviewHtml,
+  artifactPrintDocument,
+  type Artifact,
   remoteBrowserInputSchema,
   type RemoteBrowserInput,
   type RemoteBrowserMessage,
@@ -69,8 +71,8 @@ type Session = {
 }
 const idleMs = 5 * 60 * 1000
 export class RemoteBrowsers {
-  private snapshotQueue: Promise<unknown> = Promise.resolve()
-  private pendingSnapshots = 0
+  private artifactQueue: Promise<unknown> = Promise.resolve()
+  private pendingArtifactRenders = 0
   private browser?: Promise<Browser>
   private sessions = new Map<string, Promise<Session>>()
   private owners = new Map<string, string>()
@@ -127,41 +129,90 @@ export class RemoteBrowsers {
     }
     return this.browser
   }
-  /** Rasterize in a fresh, networkless guest; never use a signed-in browser profile. */
-  async artifactSnapshot(content: string) {
+  /** Exports and snapshots share a bounded queue and never use a signed-in profile. */
+  private async renderArtifact<T>(render: (page: Page) => Promise<T>): Promise<T> {
     if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
-    if (this.pendingSnapshots >= 32)
+    if (this.pendingArtifactRenders >= 32)
       throw new HttpError(503, 'Artifact previews are busy. Try again.')
-    this.pendingSnapshots++
-    const pending = this.snapshotQueue.then(async () => {
+    this.pendingArtifactRenders++
+    const pending = this.artifactQueue.then(async () => {
       if (this.disposed) throw new HttpError(503, 'Runtime is shutting down')
       const browser = await this.launch()
       const context = await browser.newContext({
         viewport: { width: 640, height: 360 },
         serviceWorkers: 'block',
       })
+      let timeout: ReturnType<typeof setTimeout> | undefined
       try {
         await context.route('**/*', (route) => route.abort())
         const page = await context.newPage()
-        page.setDefaultTimeout(5000)
-        await page.setContent(artifactPreviewHtml(content), { waitUntil: 'load', timeout: 5000 })
-        const image = await page.screenshot({
-          type: 'jpeg',
-          quality: 65,
-          timeout: 5000,
-          animations: 'disabled',
-        })
-        return `data:image/jpeg;base64,${image.toString('base64')}`
+        page.setDefaultTimeout(10_000)
+        return await Promise.race([
+          render(page),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(
+              () =>
+                reject(new HttpError(504, 'Artifact rendering timed out. Try a smaller artifact.')),
+              30_000,
+            )
+          }),
+        ])
       } finally {
+        clearTimeout(timeout)
         await context.close()
       }
     })
-    this.snapshotQueue = pending.catch(() => {})
+    this.artifactQueue = pending.catch(() => {})
     try {
       return await pending
     } finally {
-      this.pendingSnapshots--
+      this.pendingArtifactRenders--
     }
+  }
+  /** Rasterize in a fresh, networkless guest; never use a signed-in browser profile. */
+  artifactSnapshot(content: string) {
+    return this.renderArtifact(async (page) => {
+      await page.setContent(artifactPreviewHtml(content), { waitUntil: 'load', timeout: 5000 })
+      const image = await page.screenshot({
+        type: 'jpeg',
+        quality: 65,
+        timeout: 5000,
+        animations: 'disabled',
+      })
+      return `data:image/jpeg;base64,${image.toString('base64')}`
+    })
+  }
+  artifactPdf(artifact: Artifact) {
+    return this.renderArtifact(async (page) => {
+      const { artifactPrintContent } = await import('../artifacts/artifact-print.js')
+      const printDocument = artifactPrintDocument(artifactPrintContent(artifact))
+      await page.setViewportSize({ width: 794, height: 1123 })
+      await page.emulateMedia({ media: 'print', colorScheme: 'light', reducedMotion: 'reduce' })
+      // A response-header sandbox gives the standalone document the same opaque origin and
+      // restrictions as the preview iframe, while allowing the entire document to paginate.
+      const url = 'http://artifact.dovo.invalid/print'
+      await page.route(
+        url,
+        (route) =>
+          route.fulfill({
+            contentType: 'text/html; charset=utf-8',
+            headers: { 'Content-Security-Policy': printDocument.policy },
+            body: printDocument.html,
+          }),
+        { times: 1 },
+      )
+      await page.goto(url, { waitUntil: 'load', timeout: 10_000 })
+      await page.evaluate((title) => {
+        if (!document.title) document.title = title
+      }, artifact.title)
+      return page.pdf({
+        format: 'A4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        margin: { top: '16mm', right: '16mm', bottom: '16mm', left: '16mm' },
+        tagged: true,
+      })
+    })
   }
   async open(
     taskId: string,

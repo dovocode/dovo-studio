@@ -32,6 +32,7 @@ import {
   artifactDeleteSchema,
   artifactAttachSchema,
   artifactScopeSchema,
+  artifactFile,
 } from '@dovo/protocol'
 import { mutableArray } from '@dovo/protocol'
 import { runtimeSnapshot } from './support/runtime-snapshot.js'
@@ -284,6 +285,19 @@ export function route(
           return yield* serviceResult({
             artifact: s.artifacts.attach(taskId, id, targetTaskId, revision),
           })
+        }
+        if (path === '/api/artifacts/pdf') {
+          const { taskId, id, revision } = decode(
+            artifactReadSchema,
+            yield* serviceResult(body(request, 4096)),
+          )
+          const artifact = s.artifacts.read(taskId, id, revision)
+          const pdf = yield* serviceResult(s.browsers.artifactPdf(artifact))
+          return {
+            name: artifactFile(artifact).name.replace(/\.[^.]+$/, '.pdf'),
+            mime: 'application/pdf',
+            data: pdf.toString('base64'),
+          }
         }
         if (path === '/api/artifacts/snapshot') {
           const { taskId, id, revision } = decode(

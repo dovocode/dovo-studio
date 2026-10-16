@@ -86,6 +86,11 @@ export const artifactSnapshotSchema = mutableStruct({
   image: Schema.optional(Schema.String),
   excerpt: Schema.String,
 })
+export const artifactPdfResponseSchema = mutableStruct({
+  name: Schema.String,
+  mime: Schema.Literal('application/pdf'),
+  data: Schema.String,
+})
 export const artifactDeleteResponseSchema = mutableStruct({ ok: Schema.Boolean })
 export const artifactLinkSchema = mutableStruct({
   url: Schema.String,
@@ -162,7 +167,7 @@ export type ArtifactPreviewTheme = {
   accent: string
 }
 /** Guest gets no host APIs, runtime credentials, network or navigation privileges. */
-export function artifactPreviewHtml(content: string, theme?: ArtifactPreviewTheme) {
+function artifactDocument(content: string, theme?: ArtifactPreviewTheme) {
   const dark = theme?.mode === 'dark'
   const defaults = dark
     ? {
@@ -203,6 +208,25 @@ export function artifactPreviewHtml(content: string, theme?: ArtifactPreviewThem
   const policy =
     "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; worker-src 'none'"
   const html = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${themeStyle}</style>${content}`
+  return { html, policy, background: color('background'), foreground: color('foreground'), dark }
+}
+
+/** A standalone guest for paginated printing; deliver the policy as an HTTP header. */
+export function artifactPrintDocument(content: string) {
+  const document = artifactDocument(content, {
+    mode: 'light',
+    background: '#ffffff',
+    foreground: '#151515',
+    surface: '#ffffff',
+    border: '#dddddd',
+    accent: '#0965b5',
+  })
+  return { html: document.html, policy: `sandbox allow-scripts; ${document.policy}` }
+}
+
+/** Guest gets no host APIs, runtime credentials, network or navigation privileges. */
+export function artifactPreviewHtml(content: string, theme?: ArtifactPreviewTheme) {
+  const { html, policy, background, foreground, dark } = artifactDocument(content, theme)
   const escaped = html
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
@@ -210,7 +234,7 @@ export function artifactPreviewHtml(content: string, theme?: ArtifactPreviewThem
     .replace(/>/g, '&gt;')
   // The outer document is trusted and has no bridge to the guest. This also isolates iOS's native WebView channel.
   const outerPolicy = policy.replace("frame-src 'none'", 'frame-src about:')
-  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${outerPolicy}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;height:100%;background:${color('background')};color:${color('foreground')};color-scheme:${dark ? 'dark' : 'light'}}iframe{border:0;width:100%;height:100%;display:block}</style><iframe title="Artifact preview" sandbox="allow-scripts" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'" srcdoc="${escaped}"></iframe>`
+  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${outerPolicy}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;height:100%;background:${background};color:${foreground};color-scheme:${dark ? 'dark' : 'light'}}iframe{border:0;width:100%;height:100%;display:block}</style><iframe title="Artifact preview" sandbox="allow-scripts" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'" srcdoc="${escaped}"></iframe>`
 }
 
 /** Fence arbitrary source without allowing embedded fences to become Markdown markup. */

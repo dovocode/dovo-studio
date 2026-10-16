@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import {
   ARTIFACT_MAX_BYTES,
   artifactReferences,
+  artifactPdfResponseSchema,
   compactActivityEvents,
   decode,
   artifactResponseSchema,
@@ -628,5 +629,50 @@ it('caches revision snapshots, checks scope on cache hits, and invalidates delet
   render.mockRejectedValueOnce(new Error('Browser unavailable'))
   expect((await f.post('snapshot', { taskId: f.taskId, id: retry.id })).status).toBe(500)
   expect((await f.post('snapshot', { taskId: f.taskId, id: retry.id })).status).toBe(200)
+  render.mockRestore()
+})
+
+it('exports the selected saved revision as PDF for paired devices and enforces artifact scope', async () => {
+  const f = await fixture()
+  const artifacts = f.runtime.services.artifacts
+  const saved = artifacts.write({
+    taskId: f.taskId,
+    title: '../Quarterly: report',
+    format: 'markdown',
+    content: '# Version one',
+  })
+  artifacts.write({
+    ...artifacts.read(f.taskId, saved.id),
+    expectedRevision: 1,
+    content: '# Version two',
+  })
+  const render = vi
+    .spyOn(f.runtime.services.browsers, 'artifactPdf')
+    .mockResolvedValue(Buffer.from('%PDF-1.7\nfixture'))
+  const input = { taskId: f.taskId, id: saved.id, revision: 1 }
+  const paired = 'paired-artifact-pdf-token-at-least-thirty-two-characters'
+  f.runtime.services.devices.add('Phone', paired)
+  const exported = await f.post('pdf', input, paired)
+  expect(exported.status).toBe(200)
+  const result = decode(artifactPdfResponseSchema, exported.value)
+  expect(result.mime).toBe('application/pdf')
+  expect(result.name).toBe('_Quarterly_ report.pdf')
+  expect(Buffer.from(result.data, 'base64').toString()).toBe('%PDF-1.7\nfixture')
+  expect(render).toHaveBeenCalledWith(
+    expect.objectContaining({ revision: 1, content: '# Version one' }),
+  )
+  expect((await f.post('pdf', { taskId: f.taskId, id: saved.id })).status).toBe(200)
+  expect(render).toHaveBeenLastCalledWith(
+    expect.objectContaining({ revision: 2, content: '# Version two' }),
+  )
+  expect((await f.post('pdf', { ...input, taskId: f.otherId })).status).toBe(404)
+  expect((await f.post('pdf', { ...input, revision: 99 })).status).toBe(404)
+  expect((await f.post('pdf', input, 'wrong-token')).status).toBe(401)
+  expect(render).toHaveBeenCalledTimes(2)
+  render.mockRejectedValueOnce(new Error('Browser unavailable'))
+  expect((await f.post('pdf', input)).status).toBe(500)
+  expect((await f.post('pdf', input)).status).toBe(200)
+  f.runtime.services.preferences.save({ enableArtifacts: false })
+  expect((await f.post('pdf', input)).status).toBe(403)
   render.mockRestore()
 })

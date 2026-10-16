@@ -38,7 +38,13 @@ work group is collapsed. Cards appear only at the message that produced that rev
 artifacts do not appear in the trailing activity area while their conversation history is unloaded.
 Mobile previews rebuild after WebView process termination. Both viewers support selecting artifacts
 and saved versions, preview/source switching and explicit refresh. Desktop can copy and download
-sources; mobile can share the selected version through the system share sheet.
+sources; mobile can share the selected version through the system share sheet. **Export PDF**
+exports the selected saved version, including older revisions, as a paginated PDF: documents render
+as formatted Markdown, code wraps on the page, and HTML/SVG preserve authored print styles. On
+mobile, choose **Export → Export PDF** to save or share the file. Export runs on the owning computer
+in the same isolated, networkless browser used for snapshots, so that computer must be connected and
+have Chromium available. Interactive artifacts export their saved initial state; hosted external
+links cannot be exported.
 
 The desktop left sidebar and mobile navigation also expose **Artifacts** when a connected computer
 has the feature enabled. This library lists artifacts across enabled computers, most recently
@@ -76,7 +82,8 @@ revision is limited to 100 MB of UTF-8 content. Deleting a thread removes all it
 revisions. Paired devices can read artifacts; creation and updates use the runtime's host credential
 and respect read-only thread permissions.
 
-Run `pnpm test:artifacts:browser` for sandbox and desktop/mobile viewer interaction checks. Run the
+Run `pnpm test:artifacts:browser` for sandbox and desktop/mobile viewer interaction checks, and
+`pnpm test:artifact-pdf:browser` for actual PDF rendering, pagination and print isolation. Run the
 runtime artifact and agent-tools tests for HTTP authorization, revision conflicts, persistence,
 thread scoping, retention and real provider MCP transport coverage. Browser checks also verify
 multi-computer library routing, lazy snapshots, copy/delete actions and failure recovery. Native

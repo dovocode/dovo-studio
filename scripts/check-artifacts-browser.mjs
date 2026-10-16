@@ -54,13 +54,13 @@ export const Modal=({children,visible=true})=>visible?<div role="dialog" style={
 export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,disabled,style})=><button onClick={onPress} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',color:'#e8e9ed',textAlign:'left',fontFamily:'system-ui',flexShrink:0,...webStyle(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const Image=({source,style})=><img src={source.uri} style={webStyle(style)}/>;export const Text=({children,style})=><span style={webStyle(style)}>{children}</span>;
 export const FlatList=({data,renderItem,ListEmptyComponent,contentContainerStyle})=><ScrollView contentContainerStyle={contentContainerStyle}>{data.length?data.map((item,index)=><React.Fragment key={index}>{renderItem({item})}</React.Fragment>):ListEmptyComponent}</ScrollView>;
-export const Alert={alert:()=>{}};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};
+export const Alert={alert:(...args)=>(window.artifactAlerts??=[]).push(args)};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};
 `,
   'react-native-safe-area-context': `import {View} from 'react-native';export const SafeAreaProvider=({children})=><View style={{flex:1,minHeight:0}}>{children}</View>;export const SafeAreaView=View;`,
   'react-native-webview': `import React,{useEffect} from 'react';export default ({source,onContentProcessDidTerminate,onRenderProcessGone})=>{useEffect(()=>{window.mobilePreviewMounts=(window.mobilePreviewMounts||0)+1},[]);window.terminateMobilePreview=()=>onContentProcessDidTerminate?.();window.crashMobilePreview=()=>onRenderProcessGone?.();return <iframe title="Mobile preview" sandbox="allow-scripts" srcDoc={source.html}/>;};`,
-  'expo-file-system': `export class File {};export const Paths={cache:''};`,
-  'expo-sharing': `export const isAvailableAsync=async()=>false;export const shareAsync=async()=>{};`,
-  'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
+  'expo-file-system': `export class File {constructor(path,name){this.uri='cache://'+name;this.exists=false}write(data){this.exists=true;(window.artifactFiles??={})[this.uri]=typeof data==='string'?data:Array.from(data)}delete(){this.exists=false;(window.deletedArtifactFiles??=[]).push(this.uri)}};export const Paths={cache:''};`,
+  'expo-sharing': `export const isAvailableAsync=async()=>true;export const shareAsync=async(uri,options)=>{(window.sharedArtifacts??=[]).push({uri,options,data:window.artifactFiles[uri]})};`,
+  'expo-crypto': `let id=0;export const randomUUID=()=> 'share-'+(++id);`,
   './text': `export {Text} from 'react-native';`,
   '../ui/content/text': `export {Text} from 'react-native';`,
   './markdown': `import React from 'react';export const Markdown=({text})=><p>{text}</p>;`,
@@ -311,6 +311,14 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       }
       window.artifactRequest = async (path, input) => {
         window.artifactCalls.push({ path, input })
+        if (path.endsWith('/pdf')) {
+          if (window.failArtifactPdf) throw Error('PDF generation failed')
+          return {
+            name: 'Notes.pdf',
+            mime: 'application/pdf',
+            data: btoa('%PDF-1.7 Selected revision ' + input.revision),
+          }
+        }
         if (path.endsWith('/list'))
           return {
             artifacts: window.artifactLinksOnly ? [] : [notes, interactive],
@@ -420,7 +428,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
           'Choose artifact',
           'Choose version · latest version',
           'View artifact source code',
-          'Share artifact',
+          'Export artifact',
           'Refresh artifact',
           'Close artifact preview',
         ].map((name) => view.getByRole('button', { name, exact: true }).boundingBox()),
@@ -449,6 +457,93 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       await view.getByText('Version 1', { exact: true }).click()
     }
     await view.getByText('Earlier notes', { exact: true }).last().waitFor()
+    const exportPdf = async () => {
+      if (ui.platform === 'mobile') {
+        await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+        await view.getByRole('button', { name: 'Export PDF', exact: true }).click()
+        await view
+          .waitForFunction(() => window.sharedArtifacts?.length === 1)
+          .catch(async (error) => {
+            throw new Error(
+              JSON.stringify(
+                await view.evaluate(() => ({
+                  calls: window.artifactCalls,
+                  alerts: window.artifactAlerts,
+                })),
+              ) + error.message,
+            )
+          })
+        const shared = await view.evaluate(() => window.sharedArtifacts[0])
+        assert.equal(shared.options.mimeType, 'application/pdf')
+        assert.equal(shared.options.UTI, 'com.adobe.pdf')
+        assert.ok(shared.uri.endsWith('Notes.pdf'))
+        assert.ok(Buffer.from(shared.data).toString().startsWith('%PDF-'))
+        assert.ok(
+          await view.evaluate(() =>
+            window.deletedArtifactFiles.includes(window.sharedArtifacts[0].uri),
+          ),
+        )
+        await view.getByRole('button', { name: 'Share source', exact: true }).click()
+        await view.waitForFunction(() => window.sharedArtifacts.length === 2)
+        assert.equal(await view.evaluate(() => window.sharedArtifacts[1].data), 'Earlier notes')
+        assert.equal(
+          await view.evaluate(() => window.sharedArtifacts[1].options.mimeType),
+          'text/markdown',
+        )
+      } else {
+        const [download] = await Promise.all([
+          view.waitForEvent('download'),
+          view.getByRole('button', { name: 'Export PDF', exact: true }).click(),
+        ])
+        assert.equal(download.suggestedFilename(), 'Notes.pdf')
+        assert.ok(
+          readFileSync(await download.path())
+            .toString()
+            .startsWith('%PDF-'),
+        )
+      }
+    }
+    await exportPdf()
+    const pdfRequest = await view.evaluate(() =>
+      window.artifactCalls.findLast((call) => call.path === '/api/artifacts/pdf'),
+    )
+    assert.deepEqual(pdfRequest.input, { taskId: 'thread', id: 'notes', revision: 1 })
+    await view.evaluate(() => {
+      window.failArtifactPdf = true
+    })
+    await view.getByRole('button', { name: 'Export PDF', exact: true }).click()
+    if (ui.platform === 'mobile') {
+      await view.waitForFunction(() =>
+        window.artifactAlerts?.some((args) => args.join(' ').includes('PDF generation failed')),
+      )
+      await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+    } else await view.getByText('PDF generation failed', { exact: true }).waitFor()
+    await view.evaluate(() => {
+      window.failArtifactPdf = false
+    })
+    assert.equal(
+      await view
+        .getByRole('button', {
+          name: ui.platform === 'mobile' ? 'Export artifact' : 'Export PDF',
+          exact: true,
+        })
+        .isDisabled(),
+      false,
+    )
+
+    // A failed render must release the action guard so the same revision can be retried.
+    if (ui.platform === 'mobile') {
+      await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+      await view.getByRole('button', { name: 'Export PDF', exact: true }).click()
+      await view.waitForFunction(() => window.sharedArtifacts.length === 3)
+      await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+    } else {
+      const [retry] = await Promise.all([
+        view.waitForEvent('download'),
+        view.getByRole('button', { name: 'Export PDF', exact: true }).click(),
+      ])
+      assert.equal(retry.suggestedFilename(), 'Notes.pdf')
+    }
     if (ui.platform === 'desktop') {
       await view.getByRole('button', { name: 'Expand artifact', exact: true }).click()
       await view.getByRole('dialog').waitFor()
@@ -1050,7 +1145,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
   }
   assert.deepEqual(pageErrors, [], 'Artifact interfaces must not raise browser errors')
   console.log(
-    'Artifacts: thread cards open beside chat, expanded versions, desktop/mobile galleries and filters, desktop sidebar detail, per-owner offline retention, re-pairing isolation, slow replies, remembered filters and selection, hosted links, thread and host isolation, interactive HTML/SVG, sandbox, lazy snapshots, versions, add to thread, deletion/cancellation/error recovery, copy and source views passed.',
+    'Artifacts: thread cards open beside chat, expanded versions, desktop/mobile galleries and filters, desktop sidebar detail, per-owner offline retention, re-pairing isolation, slow replies, remembered filters and selection, hosted links, thread and host isolation, interactive HTML/SVG, sandbox, lazy snapshots, versions, PDF downloads/mobile sharing/failure recovery, add to thread, deletion/cancellation/error recovery, copy and source views passed.',
   )
 } finally {
   await browser.close()

@@ -1,5 +1,5 @@
 import { SafeModal } from '../layout/safe-modal'
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View } from 'react-native'
 import { ArtifactWebView } from './artifact-web-view'
 import { InlineArtifact } from './inline-artifact'
@@ -8,6 +8,7 @@ import * as Sharing from 'expo-sharing'
 import * as Crypto from 'expo-crypto'
 import {
   artifactFile,
+  artifactPdfResponseSchema,
   artifactSourceMarkdown,
   artifactFormatLabels,
   artifactListSchema,
@@ -155,7 +156,7 @@ export function ArtifactBrowser({
   const error = listError || previewError
   const [source, setSource] = useState(false)
   const [sharing, setSharing] = useState(false)
-  const [picker, setPicker] = useState<'artifacts' | 'versions'>()
+  const [picker, setPicker] = useState<'artifacts' | 'versions' | 'export'>()
   useEffect(() => {
     let disposed = false
     setListError('')
@@ -210,20 +211,43 @@ export function ArtifactBrowser({
       disposed = true
     }
   }, [read, taskId, id, metadata?.revision, revision, connected, reload, selection])
-  const share = async () => {
-    if (!artifact || sharing) return
+  const sharingRequest = useRef(false)
+  const share = async (format: 'source' | 'pdf') => {
+    if (!artifact || sharingRequest.current) return
+    sharingRequest.current = true
     setSharing(true)
-    const file = artifactFile(artifact)
-    const directory = new File(Paths.cache, `artifact-${Crypto.randomUUID()}-${file.name}`)
+    let file: File | undefined
     try {
       if (!(await Sharing.isAvailableAsync()))
         throw new Error('Sharing is unavailable on this device')
-      directory.write(artifact.content)
-      await Sharing.shareAsync(directory.uri, { mimeType: file.mime, dialogTitle: artifact.title })
+      const result =
+        format === 'pdf'
+          ? await read(
+              '/api/artifacts/pdf',
+              {
+                taskId: artifact.taskId,
+                id: artifact.id,
+                revision: artifact.revision,
+              },
+              artifactPdfResponseSchema,
+            )
+          : { ...artifactFile(artifact), data: artifact.content }
+      file = new File(Paths.cache, `artifact-${Crypto.randomUUID()}-${result.name}`)
+      file.write(
+        format === 'pdf'
+          ? Uint8Array.from(atob(result.data), (char) => char.charCodeAt(0))
+          : result.data,
+      )
+      await Sharing.shareAsync(file.uri, {
+        mimeType: result.mime,
+        dialogTitle: artifact.title,
+        ...(format === 'pdf' ? { UTI: 'com.adobe.pdf' } : {}),
+      })
     } catch (cause) {
       Alert.alert('Could not share artifact', String(cause))
     } finally {
-      if (directory.exists) directory.delete()
+      if (file?.exists) file.delete()
+      sharingRequest.current = false
       setSharing(false)
     }
   }
@@ -300,9 +324,10 @@ export function ArtifactBrowser({
             />
             <ArtifactAction
               icon="share"
-              caption="Share"
-              label="Share artifact"
-              onPress={() => void share()}
+              caption="Export"
+              label="Export artifact"
+              selected={picker === 'export'}
+              onPress={() => setPicker('export')}
               disabled={!artifact || sharing}
             />
             <ArtifactAction
@@ -332,7 +357,23 @@ export function ArtifactBrowser({
             </View>
           )}
         </View>
-        {picker ? (
+        {picker === 'export' ? (
+          <ScrollView contentContainerStyle={{ padding: 24, gap: 16 }}>
+            <Text style={styles.muted}>Save or share the selected artifact version.</Text>
+            <Action
+              label={sharing ? 'Exporting…' : 'Export PDF'}
+              disabled={!artifact || !connected || sharing}
+              onPress={() => void share('pdf')}
+            />
+            <Action
+              label="Share source"
+              secondary
+              disabled={!artifact || sharing}
+              onPress={() => void share('source')}
+            />
+            <Action label="Back to preview" secondary onPress={() => setPicker(undefined)} />
+          </ScrollView>
+        ) : picker ? (
           <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
             <Action secondary label="Back to preview" onPress={() => setPicker(undefined)} />
             {picker === 'versions' && (
