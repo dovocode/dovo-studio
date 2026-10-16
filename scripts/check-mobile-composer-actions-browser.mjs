@@ -99,16 +99,16 @@ const built = await bundleBrowser(
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
 import {defaultTaskHarness} from '@dovo/protocol';
 import {Composer} from './src/tasks/composer/composer';import {MessageQueue} from './src/tasks/composer/message-queue';
-window.calls=[];window.navigations=[];window.alerts=[];
+window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
 function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
   const [text,setText]=useState('Continue the review');const [connected,setConnected]=useState(true);
   window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
   const snapshot={questions:[],workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'}],agents:[]}};
   const draft={text,ready:true,key:'draft',revision:text,update:setText};
-  window.runtime={connected,snapshot,activeId:'runtime',callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
+  window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
   window.conversation={send:mode=>window.calls.push({mode:mode??'queue'}),stop:()=>window.calls.push({mode:'stop'}),actions:{connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:false,hasInput:!!text,canSend:connected&&!!text,patch:async()=>{},threadScope:'runtime:task',pendingMessages:[]}};
-  return <Composer task={task} renderAbove={()=> <div>Conversation</div>} queuedMessages={<MessageQueue task={task}/>} onAsk={()=>window.calls.push({mode:'aside'})}/>;
+  return <Composer task={task} renderAbove={()=> <div>Conversation</div>} queuedMessages={<MessageQueue task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
     },
@@ -161,10 +161,47 @@ try {
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'edit')
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.expectedText), 'Check the tests')
   await page.getByRole('button', { name: 'Close', exact: true }).click()
-  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Offline draft')
-  await page.evaluate(() => window.setConnected(false))
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Explain this checkout')
+  await page.getByRole('button', { name: 'More message actions', exact: true }).click()
+  await page.getByRole('button', { name: 'Ask a side question', exact: true }).click()
+  await page.waitForFunction(() =>
+    window.calls.some((call) => call.path === '/api/tasks/side-chat/ask'),
+  )
+  assert.deepEqual(
+    await page.evaluate(
+      () => window.calls.find((call) => call.path === '/api/tasks/side-chat/ask').input,
+    ),
+    { id: 'task', chatId: 'side-1', question: 'Explain this checkout' },
+  )
+  assert.equal(await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(), '')
+  assert.deepEqual(await page.evaluate(() => window.calls.find((call) => call.mode === 'aside')), {
+    mode: 'aside',
+    chatId: 'side-1',
+  })
+  // The direct icon uses the same send action as the overflow entry.
+  await page.evaluate(() => window.setTask({ status: 'review' }))
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('From the icon')
+  await page.getByRole('button', { name: 'Ask a side question', exact: true }).click()
   await page.waitForFunction(
-    () => document.querySelector('[aria-label="Queue follow-up"]').disabled,
+    () => window.calls.filter((call) => call.path === '/api/tasks/side-chat/ask').length === 2,
+  )
+  await page.evaluate(() => {
+    window.failSideSave = true
+  })
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Keep on failure')
+  await page.getByRole('button', { name: 'Ask a side question', exact: true }).click()
+  await page.waitForFunction(() => window.alerts.some((alert) => alert[1] === 'Side save failed'))
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
+    'Keep on failure',
+  )
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Offline draft')
+  await page.evaluate(() => {
+    window.setTask({ status: 'running' })
+    window.setConnected(false)
+  })
+  await page.waitForFunction(
+    () => document.querySelector('[aria-label="Queue follow-up"]')?.disabled,
   )
   assert.equal(
     await page.getByRole('button', { name: 'Queue follow-up', exact: true }).isDisabled(),
@@ -176,7 +213,7 @@ try {
   )
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile composer: compact/queue/input order, split actions, steer and fork dismissal, queue editing and offline guards passed with native control adapters.',
+    'Mobile composer: compact/queue/input order, split actions, steer and fork dismissal, queue editing, immediate side-chat sending, failure recovery and offline guards passed with native control adapters.',
   )
 } finally {
   await browser.close()

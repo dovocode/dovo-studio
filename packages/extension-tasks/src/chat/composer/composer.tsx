@@ -13,6 +13,9 @@ import { AttachmentPicker } from './attachment-picker'
 import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
 import { useEffect, useRef, useState, useMemo, type ReactNode } from 'react'
+import { Schema } from 'effect'
+import { mutableStruct } from '@dovo/protocol'
+import { useCommittedCallback } from '../../detail/use-committed-callback'
 import { useComposerDraft } from './use-composer-draft'
 import { ComposerCommandDialog } from './composer-command-dialog'
 import type { ComposerCommandId } from './file-mentions'
@@ -61,8 +64,8 @@ export function Composer({
   queuedMessages?: ReactNode
   collapsed?: boolean
   onPending: (pending: PendingMessage | null) => void
-  /** Opens the side question dialog. */
-  onAside?: () => void
+  /** Opens side chats, selecting a newly sent question when provided. */
+  onAside?: (chatId?: string) => void
   codeReference?: CodeReference | null
   composerInsert?: { id: string; text: string } | null
   onComposerInsertApplied?: () => void
@@ -73,11 +76,72 @@ export function Composer({
     [submitBusy, setSending] = useApplicationState(false),
     [stopping, setStopping] = useApplicationState(false)
   const [machineMoving, setMachineMoving] = useApplicationState(false)
-  const sending = submitBusy || machineMoving
+  const [asideBusy, setAsideBusy] = useState(false)
+  const [asideCreating, setAsideCreating] = useState(false)
+  const asideRequest = useRef<'saving' | 'asking' | null>(null)
+  const sending = submitBusy || machineMoving || asideCreating
   const sendingRequest = useRef(false)
   const [fileDrag, setFileDrag] = useState(false)
   const attachments = useAttachments(task)
   const composerDraft = useComposerDraft(task, temporary)
+  const askAside = useCommittedCallback(async () => {
+    if (
+      !onAside ||
+      !connected ||
+      sendingRequest.current ||
+      asideRequest.current ||
+      sending ||
+      task.archived ||
+      task.archivedAt
+    )
+      return
+    const text = composerDraft.controller.text
+    if (!text.trim()) {
+      onAside()
+      return
+    }
+    if (text.length > 4000) {
+      setError('Side questions can contain up to 4,000 characters.')
+      return
+    }
+    asideRequest.current = 'saving'
+    setAsideBusy(true)
+    setAsideCreating(true)
+    setError('')
+    try {
+      // Persist the question before consuming the main draft. A failed ask stays retryable here.
+      const chat = await request(
+        '/api/tasks/side-chat/save',
+        { id: task.id, draft: text },
+        mutableStruct({ id: Schema.String }),
+      )
+      composerDraft.accept(text)
+      asideRequest.current = 'asking'
+      setAsideCreating(false)
+      onAside(chat.id)
+      await request(
+        '/api/tasks/side-chat/ask',
+        { id: task.id, chatId: chat.id, question: text },
+        mutableStruct({ answer: Schema.String }),
+      )
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      asideRequest.current = null
+      setAsideBusy(false)
+      setAsideCreating(false)
+    }
+  })
+  useEffect(() => {
+    if (!onAside) return
+    const handle = (event: Event) => {
+      if (!(event instanceof CustomEvent) || event.detail !== task.id) return
+      event.preventDefault()
+      void askAside()
+    }
+    window.addEventListener('dovo:ask-side-question', handle)
+    return () => window.removeEventListener('dovo:ask-side-question', handle)
+  }, [task.id, onAside, askAside])
   const host = useStudioHost()
   const forkAttempt = useRef<{ id: string; text: string; attachmentIds: string[] } | null>(null)
   const setDraft = composerDraft.update
@@ -246,8 +310,9 @@ export function Composer({
     const attachmentIds = attachments.files.map((f) => f.id)
     if (
       (!text && !attachmentIds.length) ||
-      machineMoving ||
+      sending ||
       sendingRequest.current ||
+      asideRequest.current === 'saving' ||
       stopping ||
       attachments.busy ||
       task.archivedAt ||
@@ -354,6 +419,7 @@ export function Composer({
     if (
       !connected ||
       sendingRequest.current ||
+      asideRequest.current === 'saving' ||
       sending ||
       stopping ||
       attachments.busy ||
@@ -434,9 +500,12 @@ export function Composer({
             {onAside && !firstMessage && (
               <IconButton
                 label="Ask a side question (⌘/Ctrl+;)"
+                type="button"
                 className="size-7"
-                disabled={!connected}
-                onClick={onAside}
+                disabled={
+                  !connected || sending || asideBusy || !!task.archived || !!task.archivedAt
+                }
+                onClick={() => void askAside()}
               >
                 <MessageCircleQuestion className="size-3.5" />
               </IconButton>

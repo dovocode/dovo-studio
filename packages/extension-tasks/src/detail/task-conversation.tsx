@@ -69,7 +69,7 @@ export function TaskConversation({
   revealMessage?: string
   onRevealHandled?: () => void
   /** Opens the side question dialog. */
-  onAside?: () => void
+  onAside?: (chatId?: string) => void
   visible: boolean
   codeReference?: CodeReference | null
   composerInsert?: { id: string; text: string } | null

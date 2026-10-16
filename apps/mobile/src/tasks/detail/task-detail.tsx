@@ -227,6 +227,7 @@ function TaskDetailContent({
     () => ({ sideChat: {}, file: null }),
   )
   const [asking, setAsking] = useApplicationState(false)
+  const [selectedSideChat, setSelectedSideChat] = useState<string>()
   const [editingInstructions, setEditingInstructions] = useApplicationState(false)
   const [editingApprovalRules, setEditingApprovalRules] = useApplicationState(false)
   const review = useAction()
@@ -1006,7 +1007,8 @@ function TaskDetailContent({
               key={task.id}
               task={task}
               onSelectRemote={startup?.temporary ? startup.onSelectRemote : undefined}
-              onAsk={() => {
+              onAsk={(chatId) => {
+                if (chatId) setSelectedSideChat(chatId)
                 Keyboard.dismiss()
                 setAsking(true)
               }}
@@ -1025,6 +1027,7 @@ function TaskDetailContent({
           {asking && (
             <SideQuestion
               task={task}
+              selectedChatId={selectedSideChat}
               drafts={detailDraft.sideChat}
               setDrafts={(update) =>
                 setDraftField(

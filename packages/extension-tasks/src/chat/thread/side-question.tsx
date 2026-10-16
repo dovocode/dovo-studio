@@ -34,14 +34,19 @@ export function SideQuestion({
   onAddToComposer,
   drafts,
   setDrafts,
+  selectedChatId,
 }: {
   task: Task
+  selectedChatId?: string
   drafts: Record<string, string>
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
   onAddToComposer: (text: string) => void
 }) {
   const { request, connected } = useWorkspace()
-  const [selected, setSelected] = useState('')
+  const [selected, setSelected] = useState(selectedChatId ?? '')
+  useEffect(() => {
+    if (selectedChatId) setSelected(selectedChatId)
+  }, [selectedChatId])
   const chats = task.sideChats ?? []
   const chat = chats.find((item) => item.id === selected) ?? chats[0]
   const [busy, setBusy] = useState(false)
@@ -201,7 +206,7 @@ export function SideQuestion({
         )}
       </div>
       <p className="px-4 py-2 text-xs text-muted-foreground">
-        Uses this thread as context. Your coding agent keeps working.
+        Uses this thread and reads its checkout. Your coding agent keeps working.
       </p>
       <Conversation
         key={chat?.id ?? 'empty'}

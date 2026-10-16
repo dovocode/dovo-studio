@@ -1,13 +1,17 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'
 import { AgentRegistry } from '../configuration/registry'
+import type { TaskCheckout } from '../../scm/tasks/task-checkout'
 import { TitleGeneration } from './title-generation'
 import { decode, taskSchema } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
 import type { AgentAdapter, AgentRun } from '../execution/types'
-function setup() {
+function setup(checkouts?: ConstructorParameters<typeof TitleGeneration>[3]) {
   const db = openDatabase(':memory:')
   const store = new WorkspaceStore(db)
   store.update((w) => ({
@@ -26,7 +30,7 @@ function setup() {
     ],
   }))
   const registry = new AgentRegistry()
-  const titles = new TitleGeneration(db, store, registry)
+  const titles = new TitleGeneration(db, store, registry, checkouts)
   return { db, store, registry, titles }
 }
 it('persists independent title settings and generates using a temporary read-only session', async () => {
@@ -351,4 +355,113 @@ it('organizes reviews with a request-local model without changing utility or cod
   expect(s.store.get().agents[0].model).toBe('task-model')
   await s.titles.dispose()
   s.db.close()
+})
+
+it('side chats read the existing task checkout without sharing the coding session or deleting files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-side-checkout-'))
+  await writeFile(join(directory, 'answer.txt'), 'Worktree-specific content')
+  const fileDirectory = vi.fn<TaskCheckout['fileDirectory']>(async () => directory)
+  const s = setup({ fileDirectory })
+  const task = decode(taskSchema, {
+    id: 'checkout-owner',
+    title: 'Worktree context',
+    repositoryId: 'repo',
+    agentId: 'harness',
+    status: 'running',
+    sessionId: 'main-session',
+    execution: 'worktree',
+    createdAt: new Date().toISOString(),
+    messages: [{ id: 'context', role: 'user', text: 'Explain our new feature' }],
+    files: [],
+    draft: '',
+    example: false,
+  })
+  s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
+  s.titles.save({ agentId: 'harness', model: '', reasoning: '' })
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    expect(input.cwd).toBe(directory)
+    expect(input.tools).toBeUndefined()
+    expect(input.agent.permission).toBe('read-only')
+    expect(input.agent.instructions).toContain('Never modify files')
+    expect(input.agent.instructions).not.toContain('Do not use tools')
+    expect(input.ephemeral).toBe(true)
+    expect(input.sessionId).toBeUndefined()
+    expect(input.taskId).toBeUndefined()
+    expect(input.prompt).toContain('Explain our new feature')
+    expect(await input.approve('Write', 'answer.txt')).toBe('deny')
+    input.onActivity('tool')
+    expect(input.signal.aborted).toBe(false)
+    input.onText(await readFile(join(input.cwd, 'answer.txt'), 'utf8'))
+  })
+  vi.spyOn(s.registry, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  try {
+    const chat = s.titles.saveSideChat({ id: task.id })
+    expect(
+      await runClientEffect(
+        s.titles.askSideChatEffect({
+          id: task.id,
+          chatId: chat.id,
+          question: 'What is in the checkout?',
+        }),
+      ),
+    ).toEqual({ answer: 'Worktree-specific content' })
+    expect(
+      await runClientEffect(
+        s.titles.askEffect({
+          id: task.id,
+          question: 'What is in the checkout?',
+        }),
+      ),
+    ).toEqual({ answer: 'Worktree-specific content' })
+    expect(fileDirectory.mock.calls).toEqual([[task.id], [task.id]])
+    expect(await readFile(join(directory, 'answer.txt'), 'utf8')).toBe('Worktree-specific content')
+    expect(s.store.task(task.id).sessionId).toBe('main-session')
+    expect(s.store.task(task.id).status).toBe('running')
+  } finally {
+    await s.titles.dispose()
+    s.db.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+it('fails a side-chat answer when its checkout is unavailable instead of using another directory', async () => {
+  const s = setup({
+    fileDirectory: async () => {
+      throw new Error('Checkout unavailable')
+    },
+  })
+  const task = decode(taskSchema, {
+    id: 'missing-checkout',
+    title: 'Missing checkout',
+    repositoryId: 'repo',
+    agentId: 'harness',
+    status: 'draft',
+    createdAt: new Date().toISOString(),
+    messages: [],
+    files: [],
+    draft: '',
+    example: false,
+  })
+  s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
+  s.titles.save({ agentId: 'harness', model: '', reasoning: '' })
+  const adapter = vi.spyOn(s.registry, 'get')
+  try {
+    const chat = s.titles.saveSideChat({ id: task.id, draft: 'Question' })
+    await expect(
+      runClientEffect(
+        s.titles.askSideChatEffect({
+          id: task.id,
+          chatId: chat.id,
+          question: 'Question',
+        }),
+      ),
+    ).rejects.toThrow('Checkout unavailable')
+    expect(adapter).not.toHaveBeenCalled()
+    expect(s.store.task(task.id).sideChats?.[0].messages[0]).toMatchObject({
+      question: 'Question',
+      status: 'failed',
+    })
+  } finally {
+    await s.titles.dispose()
+    s.db.close()
+  }
 })

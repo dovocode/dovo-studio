@@ -172,7 +172,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   )
   const fileReviews = new FileReviews({ store, git, checkouts, pullCache, reviewMarks })
   const memory = new Memory(db, store, preferences, checkouts)
-  const titles = new TitleGeneration(db, store, agents)
+  const titles = new TitleGeneration(db, store, agents, checkouts)
   const tasks = new Tasks(
       store,
       git,

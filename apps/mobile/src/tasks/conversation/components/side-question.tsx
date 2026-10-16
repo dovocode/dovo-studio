@@ -19,8 +19,10 @@ export function SideQuestion({
   onClose,
   drafts,
   setDrafts,
+  selectedChatId,
 }: {
   task: Task
+  selectedChatId?: string
   onClose: () => void
   drafts: Record<string, string>
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
@@ -34,7 +36,10 @@ export function SideQuestion({
   const [askErrors, setAskErrors] = useState<Record<string, string>>({})
   const [renaming, setRenaming] = useState(false)
   const [title, setTitle] = useState('')
-  const [selected, setSelected] = useState('')
+  const [selected, setSelected] = useState(selectedChatId ?? '')
+  useEffect(() => {
+    if (selectedChatId) setSelected(selectedChatId)
+  }, [selectedChatId])
   const pendingRequests = useRef(new Set<string>())
   const chats = task.sideChats ?? []
   const chat = chats.find((item) => item.id === selected) ?? chats[0]

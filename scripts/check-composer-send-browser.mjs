@@ -23,9 +23,9 @@ const built = await build({
     contents: `
 import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {MessageQueue} from './src/chat/thread/message-queue.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
-window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;
-const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[]}};return <WorkspaceHarness value={value}><><Composer task={workspace.tasks[0]} onPending={onPending} queuedMessages={<MessageQueue task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
+const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
+function App(){const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[]}};return <WorkspaceHarness value={value}><><Composer task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<MessageQueue task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -205,6 +205,69 @@ try {
     edit.input.expectedText !== 'Original queued input'
   )
     throw new Error('Queue editing corrupted the task or message identity: ' + JSON.stringify(edit))
+  // Exercise native desktop drag events through the real queue/composer boundary.
+  await page.evaluate(() =>
+    window.setTask((task) => ({
+      ...task,
+      queue: [
+        { id: 'first', role: 'user', text: 'First queued request' },
+        { id: 'second', role: 'user', text: 'Second queued request' },
+        { id: 'third', role: 'user', text: 'Third queued request' },
+        { id: 'fourth', role: 'user', text: 'Fourth queued request' },
+      ],
+    })),
+  )
+  const queued = page.locator('[aria-label="Queued follow-ups"]')
+  const drag = async (from, to, edge) => {
+    const target = queued.locator('li').nth(to - 1)
+    const bounds = await target.boundingBox()
+    await page
+      .getByRole('button', { name: `Drag queued message ${from} to reorder`, exact: true })
+      .dragTo(target, { targetPosition: { x: 20, y: edge === 'before' ? 2 : bounds.height - 2 } })
+  }
+  const queueOrder = () =>
+    page.evaluate(() => window.current.queue.map((message) => message.id).join(','))
+  const moves = () =>
+    page.evaluate(() =>
+      window.requests.filter(
+        (request) => request.path === '/api/tasks/queue' && request.input.action === 'move',
+      ),
+    )
+  await drag(3, 1, 'before')
+  if ((await queueOrder()) !== 'third,first,second,fourth')
+    throw Error('Dragging to the first position failed')
+  await drag(1, 4, 'after')
+  if ((await queueOrder()) !== 'first,second,fourth,third')
+    throw Error('Dragging to the end failed')
+  await drag(4, 1, 'after')
+  if ((await queueOrder()) !== 'first,third,second,fourth')
+    throw Error('Dragging to a middle position failed')
+  const moveRequests = await moves()
+  if (
+    moveRequests.length !== 3 ||
+    moveRequests[0].input.beforeMessageId !== 'first' ||
+    moveRequests[1].input.beforeMessageId !== null ||
+    moveRequests[2].input.beforeMessageId !== 'second'
+  )
+    throw Error(
+      'Drag sorting did not use one atomic request per drop: ' + JSON.stringify(moveRequests),
+    )
+  await drag(2, 1, 'after')
+  if ((await moves()).length !== 3) throw Error('Dropping in the same position sent a mutation')
+  await page.evaluate(() => {
+    window.failMove = true
+  })
+  await drag(3, 1, 'before')
+  await page.getByRole('alert').filter({ hasText: 'Move rejected' }).waitFor()
+  if ((await queueOrder()) !== 'first,third,second,fourth')
+    throw Error('Failed move changed the visible queue')
+  await page.evaluate(() => {
+    window.failMove = false
+  })
+  await page
+    .getByRole('button', { name: 'Drag queued message 1 to reorder', exact: true })
+    .dragTo(input)
+  if ((await moves()).length !== 4) throw Error('Canceled drag sent a mutation')
   await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
   await submit('Fork continuation', 'Fork')
   const forkId = await page.evaluate(() => window.requests.at(-1).input.forkId)
@@ -251,6 +314,7 @@ try {
   await page.getByText('Sending queue item', { exact: true }).waitFor()
   for (const index of [2, 3]) {
     for (const name of [
+      `Drag queued message ${index} to reorder`,
       `Edit queued message ${index}`,
       `Steer with queued message ${index}`,
       `Move queued message ${index} up`,
@@ -299,6 +363,119 @@ try {
     )
   )
     throw new Error('Composer reopened before message acceptance')
+  const mainRequestsBeforeAside = await page.evaluate(
+    () =>
+      window.requests.filter((request) =>
+        ['/api/tasks/message', '/api/tasks/steer', '/api/tasks/start-fork'].includes(request.path),
+      ).length,
+  )
+  // The side-chat action consumes the current draft only after saving it, leaving attachments.
+  await page.evaluate(() => {
+    window.setTask((task) => ({
+      ...task,
+      archived: false,
+      draftAttachments: [{ id: 'keep', name: 'keep.txt', type: 'text/plain' }],
+    }))
+  })
+  await input.fill('Explain this worktree')
+  const aside = page.getByRole('button', { name: 'Ask a side question (⌘/Ctrl+;)', exact: true })
+  await aside.click()
+  await page.waitForFunction(() => typeof window.sideSaved === 'function')
+  if ((await input.inputValue()) !== 'Explain this worktree')
+    throw Error('Side question cleared before persistence')
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent('dovo:ask-side-question', { detail: 'task', cancelable: true }),
+    )
+    window.sideSaved()
+    window.sideSaved = null
+  })
+  await page.waitForFunction(() => window.sideResponse !== null)
+  if ((await input.inputValue()) !== '') throw Error('Side send did not consume the saved draft')
+  await input.fill('A newer draft')
+  const sideAsk = await page.evaluate(() =>
+    window.requests.findLast((request) => request.path === '/api/tasks/side-chat/ask'),
+  )
+  if (
+    sideAsk.input.question !== 'Explain this worktree' ||
+    sideAsk.input.id !== 'task' ||
+    sideAsk.input.chatId !== 'side-0'
+  )
+    throw Error('Side question went to the wrong destination')
+  if (
+    (await page.evaluate(
+      () =>
+        window.requests.filter((request) => request.path === '/api/tasks/side-chat/save').length,
+    )) !== 1
+  )
+    throw Error('Duplicate side send')
+  if (
+    !(await page.evaluate(() => window.current.draftAttachments.some((file) => file.id === 'keep')))
+  )
+    throw Error('Side send consumed attachments')
+  await page.evaluate(() => {
+    window.sideResponse()
+    window.sideResponse = null
+  })
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Ask a side question (⌘/Ctrl+;)"]').disabled,
+  )
+  if ((await input.inputValue()) !== 'A newer draft')
+    throw Error('Side answer cleared newer typing')
+  // Keyboard dispatch targets the same action, using live text rather than a stale task snapshot.
+  await input.fill('Keyboard side question')
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent('dovo:ask-side-question', { detail: 'task', cancelable: true }),
+    ),
+  )
+  await page.waitForFunction(() => typeof window.sideSaved === 'function')
+  await page.evaluate(() => {
+    window.sideSaved()
+    window.sideSaved = null
+  })
+  await page.waitForFunction(() => window.sideResponse !== null)
+  if ((await input.inputValue()) !== '')
+    throw Error('Saved side question remained in the main composer')
+  await page.evaluate(() => {
+    window.sideResponse()
+    window.sideResponse = null
+  })
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Ask a side question (⌘/Ctrl+;)"]').disabled,
+  )
+  const saves = await page.evaluate(
+    () => window.requests.filter((request) => request.path === '/api/tasks/side-chat/save').length,
+  )
+  await aside.click()
+  if ((await page.evaluate(() => window.asides.at(-1))) !== null)
+    throw Error('Empty composer did not open side chats')
+  if (
+    (await page.evaluate(
+      () =>
+        window.requests.filter((request) => request.path === '/api/tasks/side-chat/save').length,
+    )) !== saves
+  )
+    throw Error('Empty composer created a chat')
+  await input.fill('Keep after side save failure')
+  await page.evaluate(() => {
+    window.failSideSave = true
+  })
+  await aside.click()
+  await page.getByText('Side save failed', { exact: true }).waitFor()
+  if (
+    (await page.evaluate(
+      () =>
+        window.requests.filter((request) =>
+          ['/api/tasks/message', '/api/tasks/steer', '/api/tasks/start-fork'].includes(
+            request.path,
+          ),
+        ).length,
+    )) !== mainRequestsBeforeAside
+  )
+    throw Error('Side-chat controls also submitted the main composer')
+  if ((await input.inputValue()) !== 'Keep after side save failure')
+    throw Error('Failed side save lost main draft')
   await page.evaluate(() =>
     window.setTask((task) => ({ ...task, archived: true, archivedAt: '2026-10-15T00:00:00Z' })),
   )
@@ -307,7 +484,7 @@ try {
     throw new Error('Archived thread can send without restoration')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Desktop send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing and fork dispatch with stable retry IDs passed.',
+    'Desktop send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch and immediate side-chat sending via icon and shortcut passed.',
   )
 } finally {
   await browser.close()

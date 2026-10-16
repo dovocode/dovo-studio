@@ -173,6 +173,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     if (compact && navigationSidebar?.setCollapsed) setListOpen(!navigationSidebar.collapsed)
   }, [compact, navigationSidebar?.collapsed, navigationSidebar?.setCollapsed])
   const [codeReference, setCodeReference] = useState<CodeReference | null>(null)
+  const [selectedSideChats, setSelectedSideChats] = useState<Record<string, string>>({})
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{
     taskId: string
@@ -643,7 +644,12 @@ export default function TasksView({ entityId }: StudioViewProps) {
   const { request } = store
   const [stopError, setStopError] = useApplicationState('')
   const [transcriptNotice, setTranscriptNotice] = useApplicationState('')
-  const setAsking = (open: boolean) => selectSurface(open ? 'side-chats' : 'chat', true)
+  const openSideChat = useCommittedCallback((key: string, chatId?: string) => {
+    if (chatId) setSelectedSideChats((current) => ({ ...current, [key]: chatId }))
+    setThreadSurfaces((current) => ({ ...current, [key]: 'side-chats' }))
+    // Saving a question can finish after the user has switched threads or runtimes.
+    if (key === threadKey) selectSurface('side-chats', true)
+  })
   const [searching, setSearching] = useApplicationState<TaskSearchMode | null>(null)
   // After opening a search result, scroll its message into view once the thread renders.
   const [revealMessage, setRevealMessage] = useApplicationState('')
@@ -709,7 +715,17 @@ export default function TasksView({ entityId }: StudioViewProps) {
         return run(() => setSplitId(''))
       // ⌘; (Ctrl+; elsewhere) asks a side question about the open task.
       if (mod && !e.altKey && !e.shiftKey && e.key === ';' && current.task)
-        return run(() => setAsking(true))
+        return run(() => {
+          const focusedThread =
+            e.target instanceof Element
+              ? e.target.closest<HTMLElement>('[data-task-conversation]')?.dataset.taskConversation
+              : undefined
+          const event = new CustomEvent('dovo:ask-side-question', {
+            detail: focusedThread ?? current.task!.id,
+            cancelable: true,
+          })
+          if (window.dispatchEvent(event)) current.selectSurface('side-chats', true)
+        })
       if (mod && !e.altKey && !e.shiftKey && key === 'n') return run(() => current.newThread())
       // Ctrl+O cycles how much of each turn shows: folded steps, every step, replies only.
       if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === 'o')
@@ -954,7 +970,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       setBrowserLink({ taskId: task.id, id: randomUUID(), url })
                       selectSurface('browser')
                     }}
-                    onAside={() => setAsking(true)}
+                    onAside={(chatId) => openSideChat(threadKey, chatId)}
                     composerInsert={composerInsert?.taskId === task.id ? composerInsert : null}
                     onComposerInsertApplied={() => setComposerInsert(null)}
                   />
@@ -1123,6 +1139,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 <SideQuestion
                   key={task.id}
                   task={task}
+                  selectedChatId={selectedSideChats[threadKey]}
                   drafts={sideChatDrafts[threadKey] ?? {}}
                   setDrafts={(update) =>
                     setSideChatDrafts((current) => {
@@ -1402,6 +1419,13 @@ export default function TasksView({ entityId }: StudioViewProps) {
                       onArtifact={openArtifact}
                       key={`split:${splitTask.id}`}
                       task={splitTask}
+                      onAside={(chatId) => {
+                        const key = taskCollectionKey(activeRuntimeId, splitTask.id)
+                        openSideChat(key, chatId)
+                        if (shortcuts.current.selectedKey !== threadKey) return
+                        setSelectedId(splitTask.id)
+                        setSplitId(task?.id ?? '')
+                      }}
                       visible
                       onBrowser={(url) => {
                         setBrowserLink({ taskId: splitTask.id, id: randomUUID(), url })

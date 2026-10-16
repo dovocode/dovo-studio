@@ -24,7 +24,8 @@ import {
   type Task,
   type Repository,
 } from '@dovo/protocol'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
+import { mutableStruct } from '@dovo/protocol'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
@@ -53,7 +54,7 @@ export function Composer({
   task: Task
   queuedMessages?: ReactNode
   renderAbove?: (setup: ReactNode) => ReactNode
-  onAsk?: () => void
+  onAsk?: (chatId?: string) => void
   onSelectRemote?: (runtimeId: string, repository: Repository, text: string) => Promise<void>
 }) {
   const { colors, styles } = useTheme()
@@ -89,7 +90,12 @@ export function Composer({
     attachmentIds: string[]
   } | null>(null)
   const [machineMoving, setMachineMoving] = useApplicationState(false)
-  const busy = actionBusy || machineMoving || forkAction.busy
+  const [asideCreating, setAsideCreating] = useState(false)
+  const [asideBusy, setAsideBusy] = useState(false)
+  const asideRequest = useRef(false)
+  const latestDraft = useRef(draft)
+  latestDraft.current = draft
+  const busy = actionBusy || machineMoving || forkAction.busy || asideCreating
   const [focused, setFocused] = useApplicationState(false),
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
@@ -108,7 +114,57 @@ export function Composer({
   )
   const type = useCallback((text: string) => draft.update(text, 'keyboard'), [draft.update])
   const meter = contextMeter(task)
-  const { callEffect: commandCall, activeId } = useRuntime()
+  const { call, callEffect: commandCall, activeId } = useRuntime()
+  const askAside = async () => {
+    if (
+      !onAsk ||
+      !connected ||
+      !draft.ready ||
+      busy ||
+      asideRequest.current ||
+      dictation.active ||
+      task.archived ||
+      task.archivedAt
+    )
+      return
+    const text = latestDraft.current.text
+    if (!text.trim()) {
+      onAsk()
+      return
+    }
+    if (text.length > 4000) {
+      Alert.alert('Side question too long', 'Side questions can contain up to 4,000 characters.')
+      return
+    }
+    asideRequest.current = true
+    setAsideBusy(true)
+    setAsideCreating(true)
+    try {
+      const chat = await call(
+        '/api/tasks/side-chat/save',
+        { id: task.id, draft: text },
+        mutableStruct({ id: Schema.String }),
+      )
+      if (latestDraft.current.key === draft.key && latestDraft.current.text === text)
+        draft.update('')
+      setAsideCreating(false)
+      onAsk(chat.id)
+      await call(
+        '/api/tasks/side-chat/ask',
+        { id: task.id, chatId: chat.id, question: text },
+        mutableStruct({ answer: Schema.String }),
+      )
+    } catch (cause) {
+      Alert.alert(
+        'Could not ask side question',
+        cause instanceof Error ? cause.message : String(cause),
+      )
+    } finally {
+      asideRequest.current = false
+      setAsideBusy(false)
+      setAsideCreating(false)
+    }
+  }
   const startFork = () => {
     const text = draft.text.trim()
     const attachmentIds = (actions.draftAttachments ?? []).map((file) => file.id)
@@ -670,8 +726,16 @@ export function Composer({
                 variant="plain"
                 icon="chat"
                 label="Ask a side question"
-                disabled={!connected}
-                onPress={onAsk}
+                disabled={
+                  !connected ||
+                  busy ||
+                  asideBusy ||
+                  !draft.ready ||
+                  dictation.active ||
+                  !!task.archived ||
+                  !!task.archivedAt
+                }
+                onPress={() => void askAside()}
               />
             )}
             {showFollowupActions && (
@@ -801,8 +865,16 @@ export function Composer({
             <Action
               secondary
               label="Ask a side question"
-              disabled={!connected}
-              onPress={() => actionsSheet.current?.dismiss(onAsk)}
+              disabled={
+                !connected ||
+                busy ||
+                asideBusy ||
+                !draft.ready ||
+                dictation.active ||
+                !!task.archived ||
+                !!task.archivedAt
+              }
+              onPress={() => actionsSheet.current?.dismiss(() => void askAside())}
             />
           )}
           {showFollowupActions && (

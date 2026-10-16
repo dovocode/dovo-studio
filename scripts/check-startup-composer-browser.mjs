@@ -95,6 +95,9 @@ for (const [path, names] of [
 ])
   mocks[path] = names.map((name) => `export const ${name}=()=>null;`).join('\n')
 
+mocks['./chat/thread/side-question'] =
+  `export const SideQuestion=({task,selectedChatId})=><div data-side-chat={selectedChatId??''} data-side-task={task.id}>Side question panel</div>;`
+
 // Exercise remote selection through the real TasksView/StartupDraft boundary.
 mocks['../chat/composer/composer-workspace'] = `
   import {useWorkspace} from '@dovo/studio-core';
@@ -125,6 +128,8 @@ const built = await build({
           window.requests.push({path,input});
           if(path==='/api/tasks/native-thread')return {entries:[{id:'native-prompt',role:'user',text:'Claude native prompt'},{id:'native-answer',role:'assistant',text:'Claude native answer'}]};
           if(path==='/api/tasks/title')return {title:'New task'};
+          if(path==='/api/tasks/side-chat/save'){if(window.delaySideSave)return new Promise(resolve=>{window.finishSideSave=()=>resolve({id:'side-'+input.id})});return {id:'side-'+input.id}};
+          if(path==='/api/tasks/side-chat/ask')return {answer:'Side answer'};
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:'message',role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
         };
@@ -288,6 +293,41 @@ try {
   await editor.waitFor()
   assert.equal(await editor.inputValue(), 'Next input')
   assert.equal(await editor.evaluate((element) => element === window.originalEditor), true)
+  // The shortcut was registered before this thread existed; it must use the current thread.
+  const sideTask = await page.locator('[data-thread-header]').getAttribute('data-thread-header')
+  await editor.fill('Shortcut from the current thread')
+  await page.keyboard.press('Control+;')
+  await page.waitForFunction(() =>
+    window.requests.some((request) => request.path === '/api/tasks/side-chat/ask'),
+  )
+  const sideRequest = await page.evaluate(() =>
+    window.requests.findLast((request) => request.path === '/api/tasks/side-chat/ask'),
+  )
+  assert.deepEqual(sideRequest.input, {
+    id: sideTask,
+    chatId: 'side-' + sideTask,
+    question: 'Shortcut from the current thread',
+  })
+  await page.locator('[data-side-chat="side-' + sideTask + '"]').waitFor()
+  assert.equal(await editor.inputValue(), '')
+  // A late save must not open the panel for a different thread after navigation.
+  await editor.fill('Question before switching threads')
+  await page.evaluate(() => {
+    window.delaySideSave = true
+  })
+  await page.keyboard.press('Control+;')
+  await page.waitForFunction(() => typeof window.finishSideSave === 'function')
+  await page.getByRole('button', { name: 'Existing · draft', exact: true }).click()
+  await page.waitForFunction(() =>
+    document.querySelector('[data-thread-header]')?.textContent.startsWith('Existing'),
+  )
+  await page.evaluate(() => window.finishSideSave())
+  await page.waitForFunction(
+    () =>
+      window.requests.filter((request) => request.path === '/api/tasks/side-chat/ask').length === 2,
+  )
+  assert.equal(await page.locator('[data-side-task]').count(), 0)
+  assert.ok((await page.locator('[data-thread-header]').textContent()).startsWith('Existing'))
   // Leaving an untouched new thread discards it without creating another persisted task.
   await page.evaluate(() => window.commands.get('tasks.new')())
   await page.waitForFunction(() => document.querySelector('textarea') !== window.originalEditor)
@@ -299,7 +339,7 @@ try {
   assert.equal(await page.evaluate(() => window.saved.length), count)
   assert.deepEqual(errors, [])
   console.log(
-    'Actual TasksView, StartupDraft, TaskConversation, Composer and ComposerEditor retain the textarea, focus and backward selection through persistence, routing, delayed hydration, sending and continued typing; untouched drafts still discard.',
+    'Actual TasksView, StartupDraft, TaskConversation, Composer and ComposerEditor retain the textarea, focus and backward selection through persistence, routing, delayed hydration, sending and continued typing; side-chat shortcuts target the current thread and late saves respect navigation; untouched drafts still discard.',
   )
 } finally {
   await browser.close()
