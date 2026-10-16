@@ -73,7 +73,7 @@ it('uses configured Git and gh executables literally in the supplied cwd', async
     })
     await writeFile(
       gh,
-      '#!/bin/sh\nprintf \'[{"number":1,"title":"Configured gh","url":"https://github.com/test/repo/pull/1","state":"OPEN","headRefName":"test"}]\'\n',
+      '#!/bin/sh\nif [ "$1 $2" = "auth token" ]; then printf "fixture-token"; exit 0; fi\nprintf \'[{"number":1,"title":"Configured gh","url":"https://github.com/test/repo/pull/1","state":"OPEN","headRefName":"test"}]\'\n',
       {
         mode: 0o755,
       },
