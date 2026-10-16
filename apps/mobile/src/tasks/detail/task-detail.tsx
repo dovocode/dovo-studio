@@ -66,6 +66,7 @@ import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 import { ScreenHeader, type HeaderAction } from '../../ui/layout/screen-header'
 import { Composer } from '../composer/composer'
+import { TaskFiles, type ThreadFileDraft } from '../files/task-files'
 import { TaskReview, type FileEditDraft } from './task-review'
 import { TerminalPane } from '../../terminal/terminal-pane'
 import { useTaskViewed } from './use-task-viewed'
@@ -175,6 +176,7 @@ export function TaskDetail({
 const threadDrafts = createDetailDrafts<{
   sideChat: Record<string, string>
   file: FileEditDraft | null
+  browsedFile: ThreadFileDraft | null
 }>()
 function TaskDetailContent({
   task,
@@ -226,7 +228,7 @@ function TaskDetailContent({
   const { draft: detailDraft, setField: setDraftField } = useDetailDraft(
     threadDrafts,
     detailDraftKey(connection, 'thread', activeId, task.id),
-    () => ({ sideChat: {}, file: null }),
+    () => ({ sideChat: {}, file: null, browsedFile: null }),
   )
   const [asking, setAsking] = useApplicationState(false)
   const [selectedSideChat, setSelectedSideChat] = useState<string>()
@@ -486,7 +488,7 @@ function TaskDetailContent({
       native.agent)
   const car = useCarMode()
   const [pane, setPane] = useApplicationState<
-    'chat' | 'diff' | 'terminal' | 'browser' | 'devices' | 'agents'
+    'chat' | 'diff' | 'files' | 'terminal' | 'browser' | 'devices' | 'agents'
   >('chat')
   // Keep Git controls reachable after committing, including push-only retries.
   const hasDiff =
@@ -561,7 +563,7 @@ function TaskDetailContent({
               style={{
                 minHeight: 44,
                 justifyContent: 'center',
-                width: Math.max(80, width - 244),
+                width: Math.max(80, width - 180),
                 minWidth: 0,
               }}
             >
@@ -599,6 +601,7 @@ function TaskDetailContent({
                 [
                   'chat',
                   ...(hasDiff ? ['diff' as const] : []),
+                  'files',
                   'terminal',
                   'browser',
                   'devices',
@@ -613,31 +616,30 @@ function TaskDetailContent({
                         ? pane === 'diff'
                           ? 'Back to chat'
                           : `Changes (${task.files.length})`
-                        : tab === 'terminal'
-                          ? 'Terminal'
-                          : tab === 'agents'
-                            ? 'Agents'
-                            : tab === 'devices'
-                              ? 'Devices'
-                              : 'Browser',
+                        : tab === 'files'
+                          ? 'Files'
+                          : tab === 'terminal'
+                            ? 'Terminal'
+                            : tab === 'agents'
+                              ? 'Agents'
+                              : tab === 'devices'
+                                ? 'Devices'
+                                : 'Browser',
                   icon:
                     tab === 'diff'
                       ? pane === 'diff'
                         ? 'chat'
                         : 'changes'
-                      : tab === 'browser'
-                        ? 'web'
-                        : tab === 'devices'
-                          ? 'device'
-                          : tab,
+                      : tab === 'files'
+                        ? 'folder'
+                        : tab === 'browser'
+                          ? 'web'
+                          : tab === 'devices'
+                            ? 'device'
+                            : tab,
                   selected: pane === tab,
-                  // Car mode keeps changes and terminals in the menu, out of sight.
-                  overflow:
-                    car ||
-                    tab === 'chat' ||
-                    tab === 'browser' ||
-                    tab === 'devices' ||
-                    tab === 'agents',
+                  // Keep one primary action beside the menu; car mode keeps every tool inside.
+                  overflow: car || tab !== 'diff',
                   onPress: () => {
                     Keyboard.dismiss()
                     setCheckpoint('')
@@ -657,6 +659,7 @@ function TaskDetailContent({
                     {
                       label: 'Project information',
                       icon: 'info',
+                      overflow: true,
                       selected: projectInfo,
                       onPress: () => {
                         Keyboard.dismiss()
@@ -668,6 +671,7 @@ function TaskDetailContent({
                           {
                             label: 'Linked PRs',
                             icon: 'pulls' as const,
+                            overflow: true,
                             onPress: () => {
                               Keyboard.dismiss()
                               setLinkedPulls(true)
@@ -1039,6 +1043,14 @@ function TaskDetailContent({
               }}
             />
           </View>
+          {pane === 'files' && (
+            <TaskFiles
+              key={`${activeId}:${task.id}`}
+              task={task}
+              draft={detailDraft.browsedFile}
+              onDraftChange={(draft) => setDraftField('browsedFile', draft)}
+            />
+          )}
           {pane === 'agents' && (
             <TaskAgents
               key={task.id}
