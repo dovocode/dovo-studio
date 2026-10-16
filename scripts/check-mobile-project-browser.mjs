@@ -38,13 +38,13 @@ const built = await build({
       const inventory={local:[scratch('scratch'),repo('local','Shared project','host/team/project')],remote:[scratch('remote-scratch'),repo('remote','Shared project','host/team/project'),repo('notes','Remote notes')],empty:[scratch('empty-scratch')]};
       window.choices=[];window.fail=false;
       function App(){
-        const [active,setActive]=useState('local'),[repository,setRepository]=useState('local'),[multiple,setMultiple]=useState(false),[remoteOnline,setRemoteOnline]=useState(true),[allow,setAllow]=useState(true);
-        window.update=changes=>{if('multiple' in changes)setMultiple(changes.multiple);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('allow' in changes)setAllow(changes.allow)};
+        const [active,setActive]=useState('local'),[repository,setRepository]=useState('local'),[multiple,setMultiple]=useState(false),[remoteOnline,setRemoteOnline]=useState(true),[allow,setAllow]=useState(true),[auto,setAuto]=useState(false),[autoEnabled,setAutoEnabled]=useState(false);
+        window.update=changes=>{if('autoEnabled' in changes)setAutoEnabled(changes.autoEnabled);if('multiple' in changes)setMultiple(changes.multiple);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('allow' in changes)setAllow(changes.allow)};
         const defaults={scopedSettings:{environment:{},shared:[{key:'project:host/team/project',updatedAt:1,changeId:'one',value:{taskDefaults:{defaultServerId:'remote'}}}]}};
         const overviews=(multiple?['local','remote','empty']:['local']).map(id=>({profile:{id,name:id+' server',nameIsCustom:true,connection:{address:'http://'+id,token:'test'}},connected:id==='local'||remoteOnline,snapshot:{defaults,workspace:{repositories:inventory[id]}}}));
         window.runtime={activeId:active,overviews,profile:overviews.find(entry=>entry.profile.id===active)?.profile};window.active=active;window.repository=repository;
-        return <FolderPicker repositories={inventory[active]} value={repository} allowMachineChange={allow}
-          onChange={async(id,target,runtimeId)=>{if(window.fail)throw Error('Fixture move failed');window.choices.push({id,runtimeId});setActive(runtimeId);setRepository(id)}}/>;
+        return <FolderPicker repositories={inventory[active]} value={repository} allowMachineChange={allow} autoProject={auto} onAuto={autoEnabled?async()=>{setAuto(true);setRepository(inventory[active].find(repo=>repo.kind==='scratch').id)}:undefined}
+          onChange={async(id,target,runtimeId,preserveAuto)=>{if(window.fail)throw Error('Fixture move failed');window.choices.push({id,runtimeId});if(!preserveAuto)setAuto(false);setActive(runtimeId);setRepository(id)}}/>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -193,6 +193,24 @@ try {
     id: 'added',
     runtimeId: 'local',
   })
+  await project.click()
+  assert.equal(await page.getByRole('button', { name: 'AUTO project', exact: true }).count(), 0)
+  await page.evaluate(() => window.update({ autoEnabled: true }))
+  await page.getByRole('button', { name: 'AUTO project', exact: true }).click()
+  assert.match(await project.textContent(), /AUTO/)
+  await page.evaluate(() => window.update({ autoEnabled: false }))
+  await project.filter({ hasText: 'AUTO (disabled)' }).waitFor()
+  assert.match(await project.textContent(), /AUTO \(disabled\)/)
+  assert.equal(await page.evaluate(() => window.active), 'local')
+  await project.click()
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'No project', exact: true })
+      .getAttribute('aria-pressed'),
+    'false',
+  )
+  await page.getByRole('button', { name: 'No project', exact: true }).click()
+  assert.match(await project.textContent(), /No project/)
   assert.deepEqual(errors, [])
   console.log(
     'Native FolderPicker with browser control adapters: project-first listing, grouped copies, pinned No project, preferred server, explicit server changes, offline fallback, retry and machine restrictions passed.',

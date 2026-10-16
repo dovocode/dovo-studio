@@ -26,6 +26,7 @@ export function createLauncherTask(
     id,
     title: text.trim().split('\n')[0].slice(0, 80) || 'New task',
     repositoryId: repository.id,
+    modelSelection: agent.modelSelection,
     agentId: agent.agentId ?? '',
     agentOverrides:
       agent.agentId && agent.harness
@@ -70,6 +71,7 @@ export function launcherDefaultAgent(
   const defaults = resolveTaskDefaults(snapshot.defaults, repository)
   const harness = defaults.harness
   return {
+    modelSelection: defaults.modelSelection,
     key: `harness:${harness.provider}`,
     name: harness.provider,
     provider: harness.provider,

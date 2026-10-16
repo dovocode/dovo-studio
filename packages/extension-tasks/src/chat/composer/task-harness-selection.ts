@@ -33,12 +33,13 @@ export function chooseTaskAgent(task: Task, agents: readonly Agent[], agentId: s
   const agent = agents.find((entry) => entry.id === agentId)
   if (!agent) throw new Error('This custom agent is no longer available. Choose another agent.')
   checkSelection(task, agents, agent.provider, agent.acpInstallationId)
-  if (task.agentId === agent.id) return task
+  if (task.agentId === agent.id && !task.modelSelection) return task
   return {
     ...task,
     agentId: agent.id,
     harness: decode(taskHarnessSchema, agent),
     harnessCustomized: true,
+    modelSelection: undefined,
     agentOverrides: undefined,
   }
 }
@@ -56,6 +57,7 @@ export function changeTaskHarness(
       ...task,
       harness: task.harness ?? null,
       harnessCustomized: true,
+      modelSelection: undefined,
       agentOverrides: {
         model: harness.model,
         reasoning: harness.reasoning ?? '',
@@ -73,5 +75,12 @@ export function changeTaskHarness(
           : {}),
       },
     }
-  return { ...task, harness, harnessCustomized: true, agentId: '', agentOverrides: undefined }
+  return {
+    ...task,
+    harness,
+    modelSelection: undefined,
+    harnessCustomized: true,
+    agentId: '',
+    agentOverrides: undefined,
+  }
 }

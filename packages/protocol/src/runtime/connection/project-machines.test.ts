@@ -64,6 +64,13 @@ it('moves only unsent text into destination defaults without execution state', (
     draft: 'Please build this',
     execution: 'worktree',
   })
+  const scratch = { ...repository, id: 'scratch', kind: 'scratch' as const }
+  expect(
+    taskMachineDraft({ ...task, autoProject: true, autoProjectExecution: 'worktree' }, scratch),
+  ).toMatchObject({ autoProject: true, autoProjectExecution: 'worktree', repositoryId: 'scratch' })
+  expect(
+    taskMachineDraft({ ...task, autoProject: true, autoProjectExecution: 'main' }, repository),
+  ).toMatchObject({ autoProject: undefined, autoProjectExecution: undefined })
   expect(() =>
     taskMachineDraft({ ...task, messages: [{ id: 'sent', role: 'user', text: 'go' }] }, repository),
   ).toThrow('first prompt')

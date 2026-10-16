@@ -30,6 +30,9 @@ export function StartupDraft({
   const [selection, setSelection] = useState<{
     runtimeId: string | null
     repositoryId: string
+    autoProject?: boolean
+    autoProjectExecution?: Task['autoProjectExecution']
+    modelSelection?: Task['modelSelection']
   } | null>(null)
   const [committedTask, setCommittedTask] = useState<Task | null>(null)
   const repository = store.workspace.repositories.find((item) =>
@@ -38,14 +41,26 @@ export function StartupDraft({
       : item.kind === 'scratch',
   )
   const initialTask = useMemo(
-    () =>
-      createTask({
+    () => ({
+      ...createTask({
         title: 'New task',
         objective: '',
         agentId: '',
         ...resolveTaskDefaults(store.snapshot?.defaults, repository),
         repositoryId: repository?.id ?? '',
+        autoProject: selection?.autoProject,
+        autoProjectExecution: selection?.autoProjectExecution,
+        ...(selection?.autoProject
+          ? {
+              modelSelection:
+                selection.modelSelection ?? store.snapshot?.autoProjectModelSelection ?? 'inherit',
+            }
+          : selection?.modelSelection
+            ? { modelSelection: selection.modelSelection }
+            : {}),
       }),
+      harnessCustomized: selection?.modelSelection ? true : undefined,
+    }),
     [store.activeRuntimeId, repository?.id],
   )
   // Once saved, repository updates must not create a replacement task/provider.
@@ -71,8 +86,20 @@ export function StartupDraft({
         onDraftChange={onDraftChange}
         renderThread={renderThread}
         temporary={!committedTask}
-        onSelectRemote={async (source, target) => {
-          setSelection({ runtimeId: source.runtimeId, repositoryId: target.id })
+        onSelectRemote={async (
+          source,
+          target,
+          autoProject,
+          autoProjectExecution,
+          modelSelection,
+        ) => {
+          setSelection({
+            runtimeId: source.runtimeId,
+            repositoryId: target.id,
+            autoProject,
+            autoProjectExecution,
+            modelSelection,
+          })
           await store.switchRuntime(source.runtimeId ?? '')
         }}
       />
@@ -93,7 +120,13 @@ function StartupComposer({
   renderThread?: (task: Task, workspaceControls: ReactNode, temporary: boolean) => ReactNode
   onDraftChange?: (task: Task | null, runtimeId: string | null) => void
   onBrowse?: () => void
-  onSelectRemote: (source: TaskSource, repository: Repository) => Promise<void>
+  onSelectRemote: (
+    source: TaskSource,
+    repository: Repository,
+    autoProject?: boolean,
+    autoProjectExecution?: Task['autoProjectExecution'],
+    modelSelection?: Task['modelSelection'],
+  ) => Promise<void>
 }) {
   const store = useWorkspace()
   const [switching, setSwitching] = useState(false)

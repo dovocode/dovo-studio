@@ -10,6 +10,7 @@ export type TaskPreview = Partial<
     | 'agentId'
     | 'harness'
     | 'harnessCustomized'
+    | 'modelSelection'
     | 'agentOverrides'
   >
 >

@@ -7,6 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   '@dovo/studio-core': `
     import {createContext,useContext,useState} from 'react';
+    import {decode,runtimeDefaultsSchema,defaultTaskHarness} from '@dovo/protocol';
     import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/context.ts';
     export const useRepositorySources=()=>[];
     export {useWorkspace} from '${root}packages/studio-core/src/workspace/context.ts';
@@ -20,12 +21,15 @@ const mocks = {
     export const useConfirmSettingsNavigation=()=>()=>window.allowSettings;
     export function WorkspaceProvider({children}) {
       const [runtimeId,setRuntimeId]=useState('mac');
+      const [defaults,setDefaults]=useState(null);
+      window.configureDefaults=value=>setDefaults(value===null?null:decode(runtimeDefaultsSchema,value));
+      window.defaultHarness=defaultTaskHarness('codex');
       const [spaces,setSpaces]=useState({mac:{tasks:[{id:'mac-a',draft:''},{id:'mac-b',draft:''}]},remote:{tasks:[{id:'remote-a',draft:''}]}});
       const switchRuntime=async id=>{if(window.holdSwitch){window.holdSwitch=false;await new Promise(resolve=>window.finishSwitch=resolve)}setRuntimeId(id);window.finishedSwitchId=id};
       window.switchRuntime=switchRuntime;window.spaces=spaces;
       const workspace=spaces[runtimeId];
       const runtimes=Object.entries(spaces).map(([id,workspace])=>({profile:{id,name:id,connection:{address:'http://'+id+'.lan',token:'fixture-token'}},connected:true,snapshot:{workspace}}));
-      const store={workspace,ready:true,connected:true,snapshot:null,storageError:null,syncError:null,pendingSync:false,runtimes,
+      const store={workspace,ready:true,connected:true,snapshot:defaults?{defaults}:null,storageError:null,syncError:null,pendingSync:false,runtimes,
         runtimeRegistry:{activeId:runtimeId,profiles:[{id:'mac'},{id:'remote'}]},activeRuntimeId:runtimeId,switchRuntime,
         setWorkspace:update=>setSpaces(current=>({...current,[runtimeId]:typeof update==='function'?update(current[runtimeId]):update}))};
       return <WorkspaceContext.Provider value={store}>{children}</WorkspaceContext.Provider>;
@@ -103,6 +107,50 @@ try {
       .getByRole('button', { name, exact: true })
       .click()
   await selected('fresh')
+  const setupBar = page.getByRole('button', { name: 'Set up defaults', exact: true })
+  await page.evaluate(() => window.configureDefaults({}))
+  await setupBar.waitFor()
+  await page.evaluate(() => window.configureDefaults({ configured: true }))
+  await setupBar.waitFor({ state: 'hidden' })
+  // Scoped defaults are configured even when the legacy wizard flag remains false.
+  await page.evaluate(() =>
+    window.configureDefaults({
+      configured: false,
+      scopedSettings: {
+        environment: { taskDefaults: { harness: window.defaultHarness } },
+        shared: [],
+      },
+    }),
+  )
+  assert.equal(await setupBar.count(), 0)
+  await page.evaluate(() =>
+    window.configureDefaults({
+      configured: false,
+      scopedSettings: {
+        environment: { taskDefaults: { permission: 'ask' } },
+        shared: [],
+      },
+    }),
+  )
+  await setupBar.waitFor()
+  await page.evaluate(() =>
+    window.configureDefaults({
+      configured: false,
+      scopedSettings: {
+        environment: {},
+        shared: [
+          {
+            key: 'global',
+            updatedAt: 1,
+            changeId: 'setup',
+            value: { taskDefaults: { harness: window.defaultHarness } },
+          },
+        ],
+      },
+    }),
+  )
+  await setupBar.waitFor({ state: 'hidden' })
+  await page.evaluate(() => window.configureDefaults(null))
   await page.getByRole('button', { name: 'Select mac-a', exact: true }).click()
   await selected('mac-a')
   await page.getByRole('textbox', { name: 'Message' }).fill('Unsent feedback')

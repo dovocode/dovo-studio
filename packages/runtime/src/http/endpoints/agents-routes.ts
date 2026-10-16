@@ -292,15 +292,28 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }))(),
         )
       }
-      if (method === 'POST' && path === '/api/agents/title-settings/read')
-        return yield* serviceResult(s.titles.read())
-      if (method === 'POST' && path === '/api/agents/title-settings/save') {
+      if (
+        method === 'POST' &&
+        (path === '/api/agents/title-settings/read' ||
+          path === '/api/agents/selection-settings/read')
+      )
+        return yield* serviceResult(
+          s.titles.read(
+            path.includes('selection-settings') ? 'auto-selection' : 'title-generation',
+          ),
+        )
+      if (
+        method === 'POST' &&
+        (path === '/api/agents/title-settings/save' ||
+          path === '/api/agents/selection-settings/save')
+      ) {
+        const document = path.includes('selection-settings') ? 'auto-selection' : 'title-generation'
         const raw = yield* serviceResult(body(request))
         const checked = raw !== null && typeof raw === 'object' && 'before' in raw && 'after' in raw
         if (checked) {
           const before = decode(titleGenerationSettingsSchema, raw.before)
           const after = decode(titleGenerationSettingsSchema, raw.after)
-          const current = s.titles.read()
+          const current = s.titles.read(document)
           if (isDeepStrictEqual(current, after))
             return yield* serviceResult(s.store.publicValue(current))
           if (!isDeepStrictEqual(current, before))
@@ -308,9 +321,9 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               409,
               'Title settings changed on another device. Reload before saving.',
             )
-          return yield* serviceResult(s.titles.save(after))
+          return yield* serviceResult(s.titles.save(after, document))
         }
-        return yield* serviceResult(s.titles.save(raw))
+        return yield* serviceResult(s.titles.save(raw, document))
       }
       if (method === 'POST' && path === '/api/tasks/draft-receive') {
         const input = decode(
@@ -558,6 +571,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           ok: true,
         })
       }
+      if (method === 'POST' && path === '/api/tasks/projects/select')
+        return yield* s.titles.selectProjectsEffect(yield* serviceResult(body(request)))
       if (method === 'POST' && path === '/api/tasks/title') {
         const input = yield* serviceResult(body(request))
         const taskInput = decodeResult(mutableStruct({ taskId: idSchema }), input)

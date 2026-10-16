@@ -42,6 +42,31 @@ export function TaskLauncherControls({
   const availability = useHarnessAvailability(repository.id, agents)
   return (
     <View style={{ gap: 12 }}>
+      {
+        <Choice
+          label="Model selection"
+          value={selection.modelSelection ?? 'fixed'}
+          disabled={disabled}
+          items={[
+            { id: 'fixed', name: 'Specific harness/model' },
+            { id: 'inherit', name: 'Inherit' },
+            ...(snapshot.smartModelSelectionEnabled === true
+              ? [
+                  { id: 'auto', name: 'AUTO' },
+                  { id: 'smart', name: 'SMART' },
+                ]
+              : []),
+          ]}
+          onChange={(mode) => {
+            if (!disabled && mode === 'fixed') {
+              onChange({ ...selection, modelSelection: undefined })
+              return
+            }
+            if (!disabled && (mode === 'inherit' || mode === 'auto' || mode === 'smart'))
+              onChange({ ...selection, modelSelection: mode, agentId: undefined })
+          }}
+        />
+      }
       <Choice
         label="Agent"
         value={taskHarnessSelection(task)}
@@ -83,7 +108,12 @@ export function TaskLauncherControls({
         disabled={disabled}
         onChange={(next) => {
           if (!disabled)
-            onChange({ ...selection, model: next.model, harness: decode(taskHarnessSchema, next) })
+            onChange({
+              ...selection,
+              modelSelection: undefined,
+              model: next.model,
+              harness: decode(taskHarnessSchema, next),
+            })
         }}
       />
       <Choice

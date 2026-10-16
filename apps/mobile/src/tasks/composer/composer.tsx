@@ -1,6 +1,6 @@
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FileDropTarget } from './file-drop-target'
-import { resolveTaskDefaults } from '@dovo/protocol'
+import { changeTaskProject, changeTaskAutoProject } from '@dovo/protocol'
 import { checkpointCanUndo } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { useModelCatalog } from '../../agents/use-model-catalog'
@@ -55,7 +55,13 @@ export function Composer({
   queuedMessages?: ReactNode
   renderAbove?: (setup: ReactNode) => ReactNode
   onAsk?: (chatId?: string) => void
-  onSelectRemote?: (runtimeId: string, repository: Repository, text: string) => Promise<void>
+  onSelectRemote?: (
+    runtimeId: string,
+    repository: Repository,
+    text: string,
+    autoProject?: boolean,
+    autoProjectExecution?: Task['autoProjectExecution'],
+  ) => Promise<void>
 }) {
   const { colors, styles } = useTheme()
 
@@ -83,6 +89,7 @@ export function Composer({
   const { modelName, catalog: modelCatalog } = useModelCatalog(agent)
   const { navigate } = useNavigation()
   const forkAction = useAction()
+  const checkoutAction = useAction()
   const forkAttempt = useRef<{
     scope: string
     id: string
@@ -95,7 +102,8 @@ export function Composer({
   const asideRequest = useRef(false)
   const latestDraft = useRef(draft)
   latestDraft.current = draft
-  const busy = actionBusy || machineMoving || forkAction.busy || asideCreating
+  const busy =
+    actionBusy || machineMoving || forkAction.busy || checkoutAction.busy || asideCreating
   const [focused, setFocused] = useApplicationState(false),
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
@@ -337,6 +345,48 @@ export function Composer({
             : dictation.state?.status === 'done'
               ? 'Dictation cleaned up'
               : ''
+  const selectProject = async (repository: Repository, autoProject?: boolean) => {
+    const next = {
+      ...(autoProject
+        ? changeTaskAutoProject(
+            task,
+            snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+            repository,
+            snapshot?.defaults,
+            snapshot?.workspace.agents,
+            snapshot?.autoProjectModelSelection ?? 'inherit',
+          )
+        : changeTaskProject(
+            task,
+            snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+            repository,
+            snapshot?.defaults,
+            snapshot?.workspace.agents,
+          )),
+      autoProject,
+      autoProjectExecution: autoProject ? task.autoProjectExecution : undefined,
+    }
+    const fields = [
+      'repositoryId',
+      'autoProject',
+      'autoProjectExecution',
+      'agentId',
+      'agentOverrides',
+      'harness',
+      'harnessCustomized',
+      'modelSelection',
+      'execution',
+      'setupCommand',
+      'worktreeFromOrigin',
+      'existingWorktreePath',
+      'worktreeBaseBranch',
+    ] as const
+    await patch(
+      Object.fromEntries(
+        fields.map((field) => [field, { before: task[field] ?? null, after: next[field] ?? null }]),
+      ),
+    )
+  }
   const setup =
     checkoutEditable ||
     (task.execution === 'worktree' && task.pullRequest && !task.checkoutBranch) ? (
@@ -349,31 +399,65 @@ export function Composer({
               disabled={busy || !draft.ready || attaching || dictation.active}
               onMoving={setMachineMoving}
               onSelectRemote={onSelectRemote}
-              onProjectChange={async (repository) => {
-                if (repository.id === task.repositoryId) return
-                const id = repository.id
-                const defaults = resolveTaskDefaults(snapshot?.defaults, repository)
-                await patch({
-                  repositoryId: { before: task.repositoryId, after: id },
-                  agentId: { before: task.agentId, after: '' },
-                  agentOverrides: { before: task.agentOverrides ?? null, after: null },
-                  harness: { before: task.harness ?? null, after: defaults.harness },
-                  harnessCustomized: { before: task.harnessCustomized ?? null, after: null },
-                  execution: { before: task.execution ?? null, after: defaults.execution },
-                  setupCommand: {
-                    before: task.setupCommand ?? null,
-                    after: defaults.setupCommand ?? null,
-                  },
-                  worktreeFromOrigin: {
-                    before: task.worktreeFromOrigin ?? null,
-                    after: defaults.worktreeFromOrigin,
-                  },
-                  existingWorktreePath: { before: task.existingWorktreePath ?? null, after: null },
-                  worktreeBaseBranch: { before: task.worktreeBaseBranch ?? null, after: null },
-                })
+              onAuto={async () => {
+                const repository = snapshot?.workspace.repositories.find(
+                  (repo) => repo.kind === 'scratch',
+                )
+                if (!repository) throw new Error('The private thread folder is unavailable.')
+                await selectProject(repository, true)
+              }}
+              onProjectChange={async (repository, preserveAuto) => {
+                if (repository.id === task.repositoryId && (preserveAuto || !task.autoProject))
+                  return
+                await selectProject(repository, preserveAuto ? task.autoProject : undefined)
               }}
             />
-            {hasGit && !dictation.active && (
+            {task.autoProject && snapshot?.autoProjectSelectionEnabled === true && (
+              <View
+                accessibilityLabel="AUTO checkout"
+                style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}
+              >
+                {(
+                  [
+                    { label: 'Project defaults', value: undefined },
+                    { label: 'New worktrees', value: 'worktree' },
+                    { label: 'Local checkouts', value: 'main' },
+                  ] as const
+                ).map(({ label, value }) => (
+                  <Pressable
+                    key={label}
+                    accessibilityRole="button"
+                    accessibilityLabel={label}
+                    accessibilityState={{
+                      selected: task.autoProjectExecution === value,
+                      disabled: busy,
+                    }}
+                    disabled={busy}
+                    onPress={() =>
+                      void checkoutAction.run(() =>
+                        patch({
+                          autoProjectExecution: {
+                            before: task.autoProjectExecution ?? null,
+                            after: value ?? null,
+                          },
+                        }),
+                      )
+                    }
+                    style={[
+                      styles.row,
+                      { padding: 10, borderRadius: 10, backgroundColor: colors.surface },
+                    ]}
+                  >
+                    <Icon
+                      name={task.autoProjectExecution === value ? 'check' : 'folder'}
+                      size={16}
+                    />
+                    <Text style={styles.text}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            {hasGit && !task.autoProject && !dictation.active && (
               <Pressable
                 testID="Checkout & branch"
                 accessibilityRole="button"
@@ -942,9 +1026,9 @@ export function Composer({
           <Action label="Done" onPress={() => setCheckout(false)} />
         </Sheet>
       )}
-      {!!(error || draft.error || attachmentPicker.error) && (
+      {!!(error || checkoutAction.error || draft.error || attachmentPicker.error) && (
         <Text accessibilityRole="alert" style={styles.error}>
-          {error || draft.error || attachmentPicker.error}
+          {error || checkoutAction.error || draft.error || attachmentPicker.error}
         </Text>
       )}
       {settings && <HarnessSettings task={task} onClose={() => setSettings(false)} />}

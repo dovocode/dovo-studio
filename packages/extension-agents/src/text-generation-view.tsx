@@ -9,6 +9,7 @@ export default function TextGenerationView({ entityId }: { entityId?: string }) 
       description="The model each computer uses to name new tasks and clean up dictation."
     >
       <TitleSettings />
+      <TitleSettings selection />
     </HostSettingsPage>
   )
 }

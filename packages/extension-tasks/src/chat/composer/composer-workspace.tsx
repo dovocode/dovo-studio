@@ -17,6 +17,7 @@ import {
 import {
   Button,
   ComposerWorkspaceBar,
+  ChoicePicker,
   Dialog,
   DialogContent,
   DialogTitle,
@@ -32,9 +33,15 @@ export function ComposerWorkspace({
   task: Task
   disabled: boolean
   onMachineMoving: (moving: boolean) => void
-  onSelectRemote?: (source: TaskSource, repository: Repository) => Promise<void>
+  onSelectRemote?: (
+    source: TaskSource,
+    repository: Repository,
+    autoProject?: boolean,
+    autoProjectExecution?: Task['autoProjectExecution'],
+    modelSelection?: Task['modelSelection'],
+  ) => Promise<void>
 }) {
-  const { workspace, setWorkspace, request, connected } = useWorkspace()
+  const { workspace, setWorkspace, request, connected, snapshot } = useWorkspace()
   const editable = canChangeTaskCheckout(task)
   const choosingBase =
     editable && task.execution === 'worktree' && !task.pullRequest && !task.existingWorktreePath
@@ -74,6 +81,36 @@ export function ComposerWorkspace({
       setBusy(false)
     }
   }
+  if (task.autoProject && editable && snapshot?.autoProjectSelectionEnabled === true)
+    return (
+      <ComposerWorkspaceBar>
+        <ComposerProject
+          task={task}
+          disabled={disabled}
+          onMoving={onMachineMoving}
+          onSelectRemote={onSelectRemote}
+        />
+        <ChoicePicker
+          aria-label="AUTO checkout"
+          className="h-6 w-auto gap-1.5 border-0 px-2 text-[0.6875rem] shadow-none"
+          value={task.autoProjectExecution ?? 'default'}
+          disabled={disabled || !connected}
+          onValueChange={(value) => {
+            if (value !== 'default' && value !== 'main' && value !== 'worktree') return
+            setWorkspace((w) =>
+              updateTask(w, task.id, (draft) => ({
+                ...draft,
+                autoProjectExecution: value === 'default' ? undefined : value,
+              })),
+            )
+          }}
+        >
+          <option value="default">Project defaults</option>
+          <option value="worktree">New worktrees</option>
+          <option value="main">Local checkouts</option>
+        </ChoicePicker>
+      </ComposerWorkspaceBar>
+    )
   if (repository?.kind)
     return (
       <ComposerWorkspaceBar>

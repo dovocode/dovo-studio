@@ -142,6 +142,70 @@ try {
   await page.getByRole('button', { name: 'Edit note-00', exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: /^Edit note-/ }).count(), 50)
   await page.evaluate(() => window.show('running'))
+  const auto = page.getByRole('switch', {
+    name: 'AUTO project selection (experimental)',
+    exact: true,
+  })
+  await auto.waitFor()
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="AUTO project selection (experimental)"]').disabled,
+  )
+  assert.equal(await auto.isChecked(), false)
+  await auto.click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[aria-label="AUTO project selection (experimental)"]')
+        .getAttribute('aria-checked') === 'true' &&
+      !document.querySelector('[aria-label="AUTO project selection (experimental)"]').disabled,
+  )
+  assert.equal(runtime.services.preferences.get().enableAutoProjectSelection, true)
+  const modelFlag = page.getByRole('switch', {
+    name: 'Automatic model selection (experimental)',
+    exact: true,
+  })
+  assert.equal(await modelFlag.isChecked(), false)
+  const projectModel = page.getByRole('combobox', { name: 'AUTO project mode model', exact: true })
+  await projectModel.waitFor()
+  assert.match(await projectModel.textContent(), /Inherit/)
+  await modelFlag.click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[aria-label="Automatic model selection (experimental)"]')
+        .getAttribute('aria-checked') === 'true' &&
+      !document.querySelector('[aria-label="Automatic model selection (experimental)"]').disabled,
+  )
+  await projectModel.click()
+  await page.getByRole('option', { name: 'SMART', exact: true }).click()
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="AUTO project mode model"]').disabled,
+  )
+  assert.equal(runtime.services.preferences.get().autoProjectModelSelection, 'smart')
+  await projectModel.click()
+  await page.getByRole('option', { name: 'Inherit', exact: true }).click()
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="AUTO project mode model"]').disabled,
+  )
+  await modelFlag.click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[aria-label="Automatic model selection (experimental)"]')
+        .getAttribute('aria-checked') === 'false' &&
+      !document.querySelector('[aria-label="Automatic model selection (experimental)"]').disabled,
+  )
+  assert.equal(runtime.services.preferences.get().enableSmartModelSelection, false)
+  assert.equal(runtime.services.preferences.get().autoProjectModelSelection, 'inherit')
+  await auto.click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[aria-label="AUTO project selection (experimental)"]')
+        .getAttribute('aria-checked') === 'false' &&
+      !document.querySelector('[aria-label="AUTO project selection (experimental)"]').disabled,
+  )
+  assert.equal(runtime.services.preferences.get().enableAutoProjectSelection, false)
   const web = page.getByRole('switch', {
     name: 'Always allow web requests on this computer',
     exact: true,

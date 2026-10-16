@@ -93,6 +93,8 @@ export class Tasks {
     memoryScopes: (taskId: string) => MemoryScope[] = () => [],
     private maxActiveChildAgents: () => number = () => 4,
     deviceHubEnabled: () => boolean = () => false,
+    private resolveModel: (id: string, text?: string) => Effect.Effect<void, RuntimeFailure> = () =>
+      Effect.void,
   ) {
     this.runner = new TaskTurnRunner(
       store,
@@ -773,24 +775,28 @@ export class Tasks {
     review = false,
     resumePaused = false,
   ) {
-    return runtimeOperation(() => {
-      this.queue.add(
-        id,
-        messageId,
-        text,
-        this.attachments.metadata(id, attachmentIds),
-        undefined,
-        review,
-        resumePaused && !this.running.has(id),
-        undefined,
-        { reopenSettled: resumePaused },
-      )
-      return (
-        this.store.taskSummary(id).queue?.some((message) => message.id === messageId) &&
-        !this.running.has(id) &&
-        !this.store.taskSummary(id).queuePaused
-      )
-    }).pipe(
+    return runtimeOperation(() => this.attachments.metadata(id, attachmentIds)).pipe(
+      Effect.tap(() => this.resolveModel(id, text)),
+      Effect.flatMap((attachments) =>
+        runtimeOperation(() => {
+          this.queue.add(
+            id,
+            messageId,
+            text,
+            attachments,
+            undefined,
+            review,
+            resumePaused && !this.running.has(id),
+            undefined,
+            { reopenSettled: resumePaused, unsnooze: true },
+          )
+          return (
+            this.store.taskSummary(id).queue?.some((message) => message.id === messageId) &&
+            !this.running.has(id) &&
+            !this.store.taskSummary(id).queuePaused
+          )
+        }),
+      ),
       Effect.flatMap((start) =>
         start
           ? this.startEffect(id).pipe(
@@ -891,7 +897,7 @@ export class Tasks {
           false,
           false,
           undefined,
-          { steering: true },
+          { steering: true, unsnooze: true },
         )
       )
         return null
@@ -899,6 +905,7 @@ export class Tasks {
       this.steering.set(id, token)
       this.store.updateTask(id, (task) => ({
         ...task,
+        snoozedUntil: null,
         queuePaused: nativeSteer ? task.queuePaused : true,
         queue: [
           ...(task.queue ?? [])
@@ -1013,7 +1020,8 @@ export class Tasks {
     return Effect.suspend(() => {
       if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
-      return runtimeOperation(() => this.store.task(id)).pipe(
+      return this.resolveModel(id).pipe(
+        Effect.flatMap(() => runtimeOperation(() => this.store.task(id))),
         Effect.flatMap((task) => {
           // The native boundary above yields. Admission must be rechecked in the
           // same synchronous turn that registers the worker with its executor.
@@ -2371,6 +2379,7 @@ export class Tasks {
     input: Pick<Task, 'title' | 'agentId' | 'repositoryId' | 'execution' | 'pullRequest'> & {
       objective: string
       harness?: Task['harness']
+      modelSelection?: Task['modelSelection']
       agentOverrides?: Task['agentOverrides']
       linkedCheckouts?: Task['linkedCheckouts']
       origin?: string
@@ -2384,6 +2393,9 @@ export class Tasks {
       ...input,
       execution: input.execution ?? defaults.execution,
       harness: input.harness ?? (input.agentId ? undefined : defaults.harness),
+      modelSelection:
+        input.modelSelection ??
+        (input.harness || input.agentId ? undefined : defaults.modelSelection),
       status: 'draft',
       createdAt: new Date().toISOString(),
       messages: input.objective.trim()

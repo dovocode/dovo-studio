@@ -85,7 +85,7 @@ it('uses Claude latest aliases when Codex is not available', async () => {
   expect(s.models).not.toHaveBeenCalled()
 })
 
-it('preserves explicit task and title choices, including intentionally empty title models', async () => {
+it('preserves explicit task and title harness/model choices', async () => {
   const s = await fixture(true)
   s.defaults.save({
     ...s.defaults.get(),
@@ -95,6 +95,7 @@ it('preserves explicit task and title choices, including intentionally empty tit
     ...defaultTaskHarness('claude'),
     id: 'custom',
     name: 'Custom',
+    model: 'custom-title',
   })
   s.titles.save(titles)
   await initializeAgentDefaults(s)
@@ -132,7 +133,11 @@ it('keeps user edits made while model discovery is pending', async () => {
       ...s.defaults.get(),
       harness: { ...defaultTaskHarness('claude'), model: 'user-selected' },
     })
-    s.titles.save({ agentId: '', model: 'user-title', reasoning: 'high' })
+    s.titles.save({
+      harness: { provider: 'claude', endpoint: '' },
+      model: 'user-title',
+      reasoning: 'high',
+    })
     return catalog
   })
   await initializeAgentDefaults(s)

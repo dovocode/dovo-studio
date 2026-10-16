@@ -25,11 +25,11 @@ const built = await build({
       window.selected=[];window.moving=[];window.fail=false;
       function App(){
         const [workspace,setWorkspace]=useState({tasks:[task],repositories:inventory.local,agents:[]});
-        const [multiple,setMultiple]=useState(false),[disabled,setDisabled]=useState(false),[online,setOnline]=useState(true),[active,setActive]=useState('local'),[remoteOnline,setRemoteOnline]=useState(true),[defaultServer,setDefaultServer]=useState(),[revision,setRevision]=useState(0);
+        const [multiple,setMultiple]=useState(false),[disabled,setDisabled]=useState(false),[online,setOnline]=useState(true),[active,setActive]=useState('local'),[remoteOnline,setRemoteOnline]=useState(true),[defaultServer,setDefaultServer]=useState(),[revision,setRevision]=useState(0),[autoEnabled,setAutoEnabled]=useState(false);
         const defaults={scopedSettings:{environment:{},shared:[{key:'project:github.com/team/project',updatedAt:1,changeId:'one',value:{taskDefaults:{defaultServerId:defaultServer}}}]}};
         const runtimes=multiple?profiles.map(profile=>({profile,connected:profile.id==='local'?online:profile.id==='remote'?remoteOnline:profile.id!=='offline',snapshot:{defaults,workspace:{repositories:inventory[profile.id],tasks:[],agents:[]}}})):[];
-        window.configure=changes=>{if('multiple' in changes)setMultiple(changes.multiple);if('disabled' in changes)setDisabled(changes.disabled);if('online' in changes)setOnline(changes.online);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('defaultServer' in changes)setDefaultServer(changes.defaultServer);setRevision(value=>value+1)};
-        window.store={workspace,setWorkspace,activeRuntimeId:active,connected:active==='local'?online:remoteOnline,runtimes,snapshot:{defaults},runtimeRegistry:{profiles},connection:{address:'http://'+active}};
+        window.configure=changes=>{if('autoEnabled' in changes)setAutoEnabled(changes.autoEnabled);if('multiple' in changes)setMultiple(changes.multiple);if('disabled' in changes)setDisabled(changes.disabled);if('online' in changes)setOnline(changes.online);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('defaultServer' in changes)setDefaultServer(changes.defaultServer);setRevision(value=>value+1)};
+        window.store={workspace,setWorkspace,activeRuntimeId:active,connected:active==='local'?online:remoteOnline,runtimes,snapshot:{defaults,autoProjectSelectionEnabled:autoEnabled},runtimeRegistry:{profiles},connection:{address:'http://'+active}};
         window.workspace=workspace;window.active=active;
         return <div data-revision={revision}><ComposerProject task={workspace.tasks[0]} disabled={disabled}
           onMoving={value=>window.moving.push(value)}
@@ -208,6 +208,29 @@ try {
   await panel.waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'scratch')
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
+
+  await trigger.click()
+  assert.equal(await page.getByRole('button', { name: 'AUTO project', exact: true }).count(), 0)
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => window.configure({ autoEnabled: true }))
+  // AUTO is local to the chosen machine and manual No project exits the mode.
+  await trigger.click()
+  await page.getByRole('button', { name: 'AUTO project', exact: true }).click()
+  assert.match(await trigger.textContent(), /AUTO/)
+  assert.equal(await page.evaluate(() => window.workspace.tasks[0].autoProject), true)
+  assert.equal(await page.evaluate(() => window.active), 'local')
+  assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
+  await server.click()
+  assert.equal(await serverPanel.getByRole('button').count(), 4)
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => window.configure({ autoEnabled: false }))
+  await trigger.filter({ hasText: 'AUTO (disabled)' }).waitFor()
+  assert.match(await trigger.textContent(), /AUTO \(disabled\)/)
+  await trigger.click()
+  assert.equal(await page.getByRole('button', { name: 'AUTO project', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'No project', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.workspace.tasks[0].autoProject), undefined)
+  assert.match(await trigger.textContent(), /No project/)
 
   await page.evaluate(() => window.configure({ multiple: false, online: false }))
   await trigger.click()

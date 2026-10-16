@@ -563,3 +563,50 @@ it('moves queued messages atomically, persists their order and rejects messages 
     db.close()
   }
 })
+
+it('unsnoozes accepted input without waking on background input, retries or rejected sends', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const snoozedUntil = '2099-01-01T00:00:00Z'
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'snoozed',
+          title: 'Snoozed',
+          repositoryId: '',
+          agentId: '',
+          status: 'review',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+          snoozedUntil,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    const submit = (id: string, steering = false) =>
+      queue.add('snoozed', id, 'Continue', [], undefined, false, false, undefined, {
+        unsnooze: true,
+        steering,
+      })
+    queue.add('snoozed', 'background', 'Agent result', [], undefined, false, false, 'child')
+    expect(store.task('snoozed').snoozedUntil).toBe(snoozedUntil)
+    for (const steering of [false, true]) {
+      const id = steering ? 'steer' : 'send'
+      expect(submit(id, steering)).toBe(true)
+      expect(new WorkspaceStore(db).task('snoozed').snoozedUntil).toBeNull()
+      store.updateTask('snoozed', (task) => ({ ...task, snoozedUntil }))
+      expect(submit(id, steering)).toBe(false)
+      expect(store.task('snoozed').snoozedUntil).toBe(snoozedUntil)
+    }
+    store.updateTask('snoozed', (task) => ({ ...task, archivedAt: '2026-10-01T00:00:00Z' }))
+    expect(() => submit('rejected')).toThrow('Restore')
+    expect(store.task('snoozed').snoozedUntil).toBe(snoozedUntil)
+  } finally {
+    db.close()
+  }
+})

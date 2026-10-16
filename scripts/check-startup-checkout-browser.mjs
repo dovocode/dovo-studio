@@ -5,7 +5,7 @@ const mocks = {
   '../../list/task-collection': `export const taskSources=store=>[{runtimeId:store.activeRuntimeId,name:'Selected machine',online:true,workspace:store.workspace,snapshot:null},...(store.otherSources??[]).filter(source=>source.runtimeId!==store.activeRuntimeId)];`,
   '@dovo/studio-core': `export const useStudioHost=()=>({navigate:()=>{}});export const WorkspaceScope=({children})=>children;export * from '@dovo/protocol';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export {WorkspaceContext as Context,useWorkspace} from '../studio-core/src/workspace/context';export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `export const ComposerWorkspaceBar=({children})=><div>{children}</div>;export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {Dialog,DialogContent,DialogTitle} from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';`,
+  '@dovo/studio-ui': `export {ChoicePicker} from './src/choice-picker';export const ComposerWorkspaceBar=({children})=><div>{children}</div>;export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {Dialog,DialogContent,DialogTitle} from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';`,
   '../chat/composer/composer': `import {useWorkspace,updateTask} from '@dovo/studio-core';export const Composer=({task,workspaceControls})=>{const store=useWorkspace();return <><input aria-label="Message" value={task.draft} onChange={e=>store.setWorkspace(w=>updateTask(w,task.id,t=>({...t,draft:e.target.value})))}/>{workspaceControls}</>};`,
   '../list/task-collection': `export const taskSources=store=>[{runtimeId:'machine',name:'Selected machine',online:true,workspace:store.workspace}];`,
   '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=()=>null;`,
@@ -15,7 +15,7 @@ const built = await build({
     contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Context} from '@dovo/studio-core';import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
 window.requests=[];window.commits=[];window.fleetRefreshes=0;
-function App(){const [runtimeId,setRuntimeId]=useState('machine');const [workspace,setWorkspace]=useState({tasks:[],repositories:[{id:'chat',kind:'scratch',name:'Temporary',path:'/scratch',branch:''},{id:'git',name:'Git project',path:'/git',branch:'main'},{id:'folder',kind:'folder',name:'Plain folder',path:'/folder',branch:''}]});window.saved=workspace.tasks;return <Context.Provider value={{workspace,setWorkspace,activeRuntimeId:runtimeId,runtimeRegistry:{profiles:[{id:'machine'},{id:'remote-machine'}]},otherSources:[{runtimeId:'remote-machine',name:'Remote machine',online:true,snapshot:null,workspace:{tasks:[],repositories:[{id:'remote-git',name:'Remote Git project',path:'/remote/git',branch:'main'}]}}],refreshRuntimes:async()=>{window.fleetRefreshes++;await new Promise(()=>{})},switchRuntime:async(id)=>{setRuntimeId(id);setWorkspace({tasks:[],repositories:[{id:'remote-chat',kind:'scratch',name:'Temporary',path:'/remote/scratch',branch:''},{id:'remote-git',name:'Remote Git project',path:'/remote/git',branch:'main'}]})},connected:true,flush:async()=>{},request:async(path,input)=>{window.requests.push({path,input});if(path==='/api/scm/branches')return {current:'main',revision:'one',originDefault:'refs/remotes/origin/main',branches:[{name:'main',ref:'refs/heads/main',remote:false,checkedOut:true},{name:'origin/main',ref:'refs/remotes/origin/main',remote:true,checkedOut:false},{name:'local-only',ref:'refs/heads/local-only',remote:false,checkedOut:false}]};if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/git/existing',branch:'feature',dirty:true}]};throw Error('Unexpected request '+path)}}}><StartupDraft onProject={()=>{}} onCommit={task=>window.commits.push(task)}/></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const [runtimeId,setRuntimeId]=useState('machine');const [workspace,setWorkspace]=useState({tasks:[],repositories:[{id:'chat',kind:'scratch',name:'Temporary',path:'/scratch',branch:''},{id:'git',name:'Git project',path:'/git',branch:'main'},{id:'folder',kind:'folder',name:'Plain folder',path:'/folder',branch:''}]});window.saved=workspace.tasks;return <Context.Provider value={{workspace,setWorkspace,activeRuntimeId:runtimeId,runtimeRegistry:{profiles:[{id:'machine'},{id:'remote-machine'}]},otherSources:[{runtimeId:'remote-machine',name:'Remote machine',online:true,snapshot:null,workspace:{tasks:[],repositories:[{id:'remote-chat',kind:'scratch',name:'Temporary',path:'/remote/scratch',branch:''},{id:'remote-git',name:'Remote Git project',path:'/remote/git',branch:'main'}]}}],refreshRuntimes:async()=>{window.fleetRefreshes++;await new Promise(()=>{})},switchRuntime:async(id)=>{setRuntimeId(id);setWorkspace({tasks:[],repositories:[{id:'remote-chat',kind:'scratch',name:'Temporary',path:'/remote/scratch',branch:''},{id:'remote-git',name:'Remote Git project',path:'/remote/git',branch:'main'}]})},connected:true,snapshot:{autoProjectSelectionEnabled:true},flush:async()=>{},request:async(path,input)=>{window.requests.push({path,input});if(path==='/api/scm/branches')return {current:'main',revision:'one',originDefault:'refs/remotes/origin/main',branches:[{name:'main',ref:'refs/heads/main',remote:false,checkedOut:true},{name:'origin/main',ref:'refs/remotes/origin/main',remote:true,checkedOut:false},{name:'local-only',ref:'refs/heads/local-only',remote:false,checkedOut:false}]};if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/git/existing',branch:'feature',dirty:true}]};throw Error('Unexpected request '+path)}}}><StartupDraft onProject={()=>{}} onCommit={task=>window.commits.push(task)}/></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: new URL('../packages/studio-ui/', import.meta.url).pathname,
     loader: 'tsx',
@@ -58,6 +58,25 @@ try {
     await page.getByRole('button', { name: 'Task project', exact: true }).click()
     await page.getByRole('button', { name, exact: true }).click()
   }
+  await chooseFolder('AUTO project')
+  const autoCheckout = page.getByRole('button', { name: 'AUTO checkout', exact: true })
+  await autoCheckout.click()
+  await page.getByRole('option', { name: 'New worktrees', exact: true }).click()
+  assert.match(await autoCheckout.innerText(), /New worktrees/)
+  // AUTO and checkout selection remain local until the draft is typed.
+  assert.equal(await page.evaluate(() => window.saved.length), 0)
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Update this project')
+  await page.waitForFunction(() => window.saved[0]?.autoProjectExecution === 'worktree')
+  assert.equal(await page.evaluate(() => window.saved[0].autoProject), true)
+  await autoCheckout.click()
+  await page.getByRole('option', { name: 'Local checkouts', exact: true }).click()
+  await page.waitForFunction(() => window.saved[0]?.autoProjectExecution === 'main')
+  await chooseFolder('No project')
+  assert.equal(await page.evaluate(() => window.saved[0].autoProject), undefined)
+  assert.equal(await page.evaluate(() => window.saved[0].autoProjectExecution), undefined)
+  // Start the existing blank-draft checkout scenarios in a fresh startup composer.
+  await page.setContent('<div id="app"></div>')
+  await page.addScriptTag({ content: built.outputFiles[0].text })
   await chooseFolder('Git project')
   await page.getByRole('button', { name: 'Working directory', exact: true }).waitFor()
   assert.match(
@@ -126,6 +145,22 @@ try {
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Remote draft')
   assert.equal(await page.evaluate(() => window.saved[0].repositoryId), 'remote-git')
   assert.equal(await page.evaluate(() => window.fleetRefreshes), 0)
+  await page.setContent('<div id="app"></div>')
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  await chooseFolder('AUTO project')
+  await autoCheckout.click()
+  await page.getByRole('option', { name: 'New worktrees', exact: true }).click()
+  await page.getByRole('button', { name: 'Task server', exact: true }).click()
+  await page.getByRole('button', { name: 'Remote machine', exact: true }).click()
+  assert.match(
+    await page.getByRole('button', { name: 'Task project', exact: true }).innerText(),
+    /AUTO/,
+  )
+  assert.match(await autoCheckout.innerText(), /New worktrees/)
+  assert.equal(await page.evaluate(() => window.saved.length), 0)
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Remote AUTO task')
+  await page.waitForFunction(() => window.saved[0]?.autoProjectExecution === 'worktree')
+  assert.equal(await page.evaluate(() => window.saved[0].repositoryId), 'remote-chat')
   assert.deepEqual(errors, [])
   console.log('Startup checkout controls and temporary draft persistence passed')
 } finally {

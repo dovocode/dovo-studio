@@ -1,5 +1,10 @@
 import { useApplicationState } from '@dovo/studio-core/state'
-import { decode, resolveScopedAgents } from '@dovo/protocol'
+import {
+  decode,
+  resolveScopedAgents,
+  canChangeTaskCheckout,
+  changeTaskModelSelection,
+} from '@dovo/protocol'
 import { memo, useMemo, useRef } from 'react'
 import {
   defaultTaskHarness,
@@ -84,6 +89,21 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
   return (
     <>
       <ComposerSettingsControls
+        automaticModesEnabled={snapshot?.smartModelSelectionEnabled === true}
+        modelSelection={task.modelSelection}
+        onSelectMode={
+          canChangeTaskCheckout(task) && !task.delegation
+            ? (mode) =>
+                save((current) =>
+                  changeTaskModelSelection(
+                    current,
+                    mode,
+                    workspace.repositories.find((repo) => repo.id === current.repositoryId),
+                    snapshot?.defaults,
+                  ),
+                )
+            : undefined
+        }
         repositoryId={task.repositoryId}
         agents={agents}
         selectedAgent={customAgent}

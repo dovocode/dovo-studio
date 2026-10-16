@@ -1,5 +1,5 @@
 import { permissionPolicyUIIssue } from '@dovo/studio-ui'
-import { randomUUID, checkpointCanUndo, taskForkResultSchema } from '@dovo/protocol'
+import { randomUUID, checkpointCanUndo, taskForkResultSchema, taskSchema } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -339,6 +339,14 @@ export function Composer({
     try {
       composerDraft.flush()
       await flush()
+      if (firstMessage && task.autoProject) {
+        const selected = await request(
+          '/api/tasks/projects/select',
+          { id: task.id, text: text || 'Work with the attached files' },
+          taskSchema,
+        )
+        setWorkspace((w) => updateTask(w, task.id, (current) => ({ ...current, ...selected })))
+      }
       if (firstMessage) {
         const summary =
           text ||
@@ -378,7 +386,8 @@ export function Composer({
           updateTask(w, task.id, (t) => ({
             ...t,
             messages: [...t.messages, pending.message],
-            ...(t.archived ? { archived: false, autoSettled: undefined, snoozedUntil: null } : {}),
+            snoozedUntil: null,
+            ...(t.archived ? { archived: false, autoSettled: undefined } : {}),
           })),
         )
       if (!attempt.current.accepted) composerDraft.accept(text)

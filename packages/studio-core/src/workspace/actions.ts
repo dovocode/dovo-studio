@@ -23,6 +23,9 @@ export function createTask(
     | 'worktreeFromOrigin'
     | 'setupCommand'
     | 'linkedCheckouts'
+    | 'autoProject'
+    | 'autoProjectExecution'
+    | 'modelSelection'
   > & {
     objective: string
     origin?: string
@@ -32,8 +35,11 @@ export function createTask(
     id: randomUUID(),
     title: input.title,
     repositoryId: input.repositoryId,
+    autoProject: input.autoProject,
+    autoProjectExecution: input.autoProjectExecution,
     agentId: input.agentId,
     harness: input.harness,
+    modelSelection: input.modelSelection ?? (input.autoProject ? 'inherit' : undefined),
     agentOverrides: input.agentOverrides,
     execution: input.execution,
     worktreeBaseBranch: input.worktreeBaseBranch,

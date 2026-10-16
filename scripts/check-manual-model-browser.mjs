@@ -114,10 +114,10 @@ const built = await build({
       window.host={navigate:target=>{window.navigations.push(target);window.setEntity(target.entityId)},registerCommand:command=>{window.commands.set(command.id,command.run);return ()=>window.commands.delete(command.id)}};
       const other=createTask({title:'Existing',objective:'',agentId:'',repositoryId:'scratch'});
       function App(){
-        const [entity,setEntity]=useState(),[revision,setRevision]=useState(0);
+        const [entity,setEntity]=useState(),[revision,setRevision]=useState(0),[experimental,setExperimental]=useState(true);window.setExperimental=setExperimental;
         const [workspace,setWorkspace]=useApplicationState({tasks:[other],agents:[],skills:[],mcpServers:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''},{id:'project',name:'Project with Sonnet default',path:'/project',branch:'main',taskDefaults:{harness:{provider:'claude',model:'sonnet',permission:'full-access',endpoint:'',instructions:''}}}]});
         window.setEntity=setEntity;window.saved=workspace.tasks;window.setWorkspace=setWorkspace;
-        const snapshot={workspace,questions:[],approvals:[],acpInstallations:[],permissionPolicySupported:true,defaults:{harness:{provider:window.defaultProvider,model:'default',permission:'full-access',endpoint:'',instructions:''}},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
+        const snapshot={smartModelSelectionEnabled:experimental,workspace,questions:[],approvals:[],acpInstallations:[],permissionPolicySupported:true,defaults:{harness:{provider:window.defaultProvider,model:'default',permission:'full-access',endpoint:'',instructions:''}},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
         window.hydrate=()=>setRevision(value=>value+1);
         const request=async(path,input)=>{
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
@@ -193,6 +193,25 @@ try {
     if (!fixture.selectBeforeTyping) await editor.fill('Use my chosen Claude model')
     if (fixture.launcher)
       assert.equal(await page.getByRole('combobox', { name: 'Server', exact: true }).count(), 0)
+    await page.evaluate(() => window.setExperimental(false))
+    await page.getByRole('button', { name: 'Choose agent and model' }).click()
+    await page.getByRole('button', { name: 'Inherit', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'AUTO', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'SMART', exact: true }).count(), 0)
+    await page.getByRole('button', { name: 'Inherit', exact: true }).click()
+    await page
+      .getByRole('button', { name: 'Choose agent and model' })
+      .filter({ hasText: 'Inherit' })
+      .waitFor()
+    await page.evaluate(() => window.setExperimental(true))
+    for (const mode of ['Inherit', 'AUTO', 'SMART']) {
+      await page.getByRole('button', { name: 'Choose agent and model' }).click()
+      await page.getByRole('button', { name: mode, exact: true }).click()
+      await page
+        .getByRole('button', { name: 'Choose agent and model' })
+        .filter({ hasText: mode })
+        .waitFor()
+    }
     await page.getByRole('button', { name: 'Choose agent and model' }).click()
     if (fixture.defaultProvider !== 'claude')
       await page.getByRole('button', { name: 'Claude models', exact: true }).click()

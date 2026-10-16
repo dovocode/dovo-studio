@@ -17,6 +17,7 @@ function setup(run: AgentAdapter['run']) {
   const store = new WorkspaceStore(db)
   const registry = new AgentRegistry()
   const titles = new TitleGeneration(db, store, registry)
+  titles.save({ harness: { provider: 'codex', endpoint: '' }, model: 'utility-model' })
   const lookup = vi
     .spyOn(registry, 'get')
     .mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })

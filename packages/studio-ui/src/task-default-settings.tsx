@@ -308,6 +308,31 @@ function TaskDefaultSettingsForm({
               </ChoicePicker>
             </SettingRow>
           )}
+          {(snapshot?.smartModelSelectionEnabled === true || draft.modelSelection === 'smart') && (
+            <SettingRow
+              label="Model selection"
+              description="SMART chooses a harness and model once from the first prompt. Inherit and AUTO are thread-only choices."
+              source={source('modelSelection')}
+            >
+              <ChoicePicker
+                aria-label="Default model selection"
+                value={draft.modelSelection ?? ''}
+                onValueChange={(value) =>
+                  change({
+                    ...draft,
+                    modelSelection:
+                      value === 'smart' ? 'smart' : value === 'fixed' ? 'fixed' : undefined,
+                  })
+                }
+              >
+                <option value="">Use inherited setting</option>
+                <option value="fixed">Configured harness and model</option>
+                <option value="smart" disabled={snapshot?.smartModelSelectionEnabled !== true}>
+                  SMART
+                </option>
+              </ChoicePicker>
+            </SettingRow>
+          )}
           <SettingRow
             label="Agent configuration"
             description={`${providerDisplayName((harness ?? inheritedHarness).provider)} · ${modelDisplayName((harness ?? inheritedHarness).model) || 'Provider default model'}`}

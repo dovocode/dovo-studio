@@ -26,12 +26,21 @@ export function FolderPicker({
   chatOnly = false,
   onMoving,
   stacked = false,
+  autoProject = false,
+  onAuto,
 }: {
+  autoProject?: boolean
+  onAuto?: () => Promise<void>
   stacked?: boolean
   repositories: readonly Repository[]
   value: string
   disabled?: boolean
-  onChange: (id: string, repository: Repository, runtimeId: string) => void | Promise<void>
+  onChange: (
+    id: string,
+    repository: Repository,
+    runtimeId: string,
+    preserveAuto?: boolean,
+  ) => void | Promise<void>
   onAdded?: (repository: Repository, runtimeId: string) => void
   chatOnly?: boolean
   allowMachineChange?: boolean
@@ -78,7 +87,7 @@ export function FolderPicker({
       ),
   )
   const locked = disabled || busy
-  const choose = async (repository: Repository, runtimeId: string) => {
+  const choose = async (repository: Repository, runtimeId: string, preserveAuto = false) => {
     if (
       locked ||
       repository.gitIdentityError ||
@@ -89,7 +98,7 @@ export function FolderPicker({
     onMoving?.(true)
     setError('')
     try {
-      await onChange(repository.id, repository, runtimeId)
+      await onChange(repository.id, repository, runtimeId, preserveAuto)
       setOpen(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -105,9 +114,11 @@ export function FolderPicker({
     const identityError =
       !preferred &&
       group.entries.find((entry) => entry.repository.gitIdentityError)?.repository.gitIdentityError
-    const selected = group.entries.some(
-      (entry) => entry.runtimeId === runtime.activeId && entry.repository.id === value,
-    )
+    const selected =
+      !autoProject &&
+      group.entries.some(
+        (entry) => entry.runtimeId === runtime.activeId && entry.repository.id === value,
+      )
     const serverCount = new Set(group.entries.map((entry) => entry.runtimeId)).size
     return (
       <Pressable
@@ -159,7 +170,15 @@ export function FolderPicker({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Folder"
-          accessibilityValue={{ text: selected ? label(selected) : 'Choose project' }}
+          accessibilityValue={{
+            text: autoProject
+              ? onAuto
+                ? 'AUTO'
+                : 'AUTO (disabled)'
+              : selected
+                ? label(selected)
+                : 'Choose project',
+          }}
           accessibilityState={{ disabled: locked, expanded: open && mode === 'projects' }}
           disabled={locked}
           onPress={() => show('projects')}
@@ -176,9 +195,18 @@ export function FolderPicker({
             },
           ]}
         >
-          <Icon name={selected?.kind === 'scratch' ? 'chat' : 'folder'} size={18} />
+          <Icon
+            name={autoProject ? 'magic' : selected?.kind === 'scratch' ? 'chat' : 'folder'}
+            size={18}
+          />
           <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
-            {selected ? label(selected) : 'Choose project'}
+            {autoProject
+              ? onAuto
+                ? 'AUTO'
+                : 'AUTO (disabled)'
+              : selected
+                ? label(selected)
+                : 'Choose project'}
           </Text>
           <Icon name="down" size={14} />
         </Pressable>
@@ -236,6 +264,28 @@ export function FolderPicker({
           {mode === 'projects' ? (
             <>
               {scratch && projectRow(scratch)}
+              {onAuto && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="AUTO project"
+                  accessibilityState={{ selected: autoProject, disabled: locked }}
+                  disabled={locked}
+                  onPress={() => {
+                    setBusy(true)
+                    void onAuto()
+                      .then(() => setOpen(false))
+                      .catch((cause: unknown) =>
+                        setError(cause instanceof Error ? cause.message : String(cause)),
+                      )
+                      .finally(() => setBusy(false))
+                  }}
+                  style={[styles.row, { padding: 12, minHeight: 48 }]}
+                >
+                  <Icon name="magic" size={18} />
+                  <Text style={[styles.text, { flex: 1 }]}>AUTO</Text>
+                  {autoProject && <Icon name="check" size={17} />}
+                </Pressable>
+              )}
               {!chatOnly && (
                 <SearchField
                   label="Search projects"
@@ -284,7 +334,9 @@ export function FolderPicker({
           ) : (
             <>
               <Text style={styles.muted}>
-                Run {selected?.kind === 'scratch' ? 'without a project' : selected?.name} on
+                {autoProject
+                  ? 'Select projects automatically on'
+                  : `Run ${selected?.kind === 'scratch' ? 'without a project' : selected?.name} on`}
               </Text>
               {sources.map((source) => {
                 const target = (
@@ -292,7 +344,7 @@ export function FolderPicker({
                     ? repositories
                     : (source.snapshot?.workspace.repositories ?? [])
                 ).find((item) =>
-                  selected?.kind === 'scratch'
+                  autoProject || selected?.kind === 'scratch'
                     ? item.kind === 'scratch'
                     : selected?.gitIdentity
                       ? item.gitIdentity === selected.gitIdentity
@@ -310,7 +362,7 @@ export function FolderPicker({
                       disabled: locked || unavailable,
                     }}
                     disabled={locked || unavailable}
-                    onPress={() => void choose(target, source.profile.id)}
+                    onPress={() => void choose(target, source.profile.id, true)}
                     style={[
                       styles.row,
                       {

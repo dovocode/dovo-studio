@@ -23,6 +23,7 @@ export const runtimeDefaultsSchema = mutableStruct({
   globalModelPreferences: Schema.optional(modelPreferencesSchema),
   modelPreferenceOverrides: Schema.optional(modelPreferencesSchema),
   modelPreferences: Schema.optional(modelPreferencesSchema),
+  modelSelection: projectTaskDefaultsSchema.fields.modelSelection,
   setupCommand: projectTaskDefaultsSchema.fields.setupCommand,
   execution: projectTaskDefaultsSchema.fields.execution,
   worktreeFromOrigin: projectTaskDefaultsSchema.fields.worktreeFromOrigin,
@@ -57,6 +58,7 @@ export function resolveTaskDefaults(
   const permission = defaults.permission ?? 'full-access'
   const policy = resolveDefaultPermissionPolicy(selected, defaults)
   return {
+    modelSelection: defaults.modelSelection === 'smart' ? ('smart' as const) : undefined,
     setupCommand: repository?.kind ? undefined : defaults.setupCommand,
     ...(defaults.submodules && !repository?.kind ? { submodules: defaults.submodules } : {}),
     harness: {

@@ -3,6 +3,8 @@ import { maxValue, minValue } from '../shared/schema.js'
 import { Schema, Effect, Struct } from 'effect'
 import { agentSchema, defaultTaskHarness, type Agent, type TaskHarness } from '../workspace.js'
 export const titleGenerationSettingsSchema = mutableStruct({
+  /** Only used by the AUTO/SMART selector settings. */
+  inheritTitleModel: Schema.optional(Schema.Boolean),
   harness: Schema.optional(
     agentSchema.mapFields(
       Struct.pick([

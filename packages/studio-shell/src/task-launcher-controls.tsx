@@ -44,6 +44,7 @@ export function TaskLauncherControls({
     const agentId = !standalone && same ? selection.agentId : undefined
     onChange({
       ...selection,
+      modelSelection: undefined,
       key: agentId ? `agent:${agentId}` : `harness:${harness.provider}`,
       name: agentId ? selection.name : harness.provider,
       agentId,
@@ -61,6 +62,12 @@ export function TaskLauncherControls({
   return (
     <>
       <ComposerSettingsControls
+        automaticModesEnabled={snapshot?.smartModelSelectionEnabled === true}
+        modelSelection={selection.modelSelection}
+        onSelectMode={async (mode) => {
+          onChange({ ...selection, modelSelection: mode, agentId: undefined })
+          return true
+        }}
         repositoryId={repository.id}
         value={value}
         disabled={disabled}

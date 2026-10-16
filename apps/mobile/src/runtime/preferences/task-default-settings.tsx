@@ -305,6 +305,28 @@ function TaskDefaultSettingsForm({
               {source('defaultServerId')}
             </>
           )}
+          {(snapshot?.smartModelSelectionEnabled === true || draft.modelSelection === 'smart') && (
+            <Choice
+              row
+              label="Model selection"
+              disabled={disabled}
+              value={draft.modelSelection ?? ''}
+              items={[
+                { id: '', name: 'Use inherited setting' },
+                { id: 'fixed', name: 'Configured harness and model' },
+                ...(snapshot?.smartModelSelectionEnabled === true
+                  ? [{ id: 'smart', name: 'SMART' }]
+                  : []),
+              ]}
+              onChange={(value) =>
+                change({
+                  ...draft,
+                  modelSelection:
+                    value === 'smart' ? 'smart' : value === 'fixed' ? 'fixed' : undefined,
+                })
+              }
+            />
+          )}
           <Choice
             row
             label="Agent configuration"

@@ -81,11 +81,17 @@ export function StartupThread({
                 temporary,
                 onBrowse,
                 onNewThread,
-                onSelectRemote: async (targetId, target, text) => {
+                onSelectRemote: async (
+                  targetId,
+                  target,
+                  text,
+                  autoProject,
+                  autoProjectExecution,
+                ) => {
                   const destination = runtime.overviews.find((item) => item.profile.id === targetId)
                   if (!destination?.connected) throw new Error('This computer is offline.')
                   const next = taskMachineDraft(
-                    { ...draft, draft: text },
+                    { ...draft, draft: text, autoProject, autoProjectExecution },
                     target,
                     destination.snapshot?.defaults,
                   )

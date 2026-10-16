@@ -6,6 +6,7 @@ import { clientTaskScope } from '@dovo/client-runtime'
 import {
   normalizeBranchPrefix,
   runtimePreferencesSchema,
+  taskModelSelectionSchema,
   memorySettingsSchema,
   memoryProjectsSchema,
   type MemoryScope,
@@ -170,6 +171,48 @@ export function RuntimePreferences() {
       )}
       {value && (
         <>
+          <Section title="Model selection (experimental)">
+            <SettingsSwitchRow
+              first
+              label="Automatic model selection (experimental)"
+              value={value.enableSmartModelSelection}
+              disabled={disabled || snapshot?.smartModelSelectionEnabled === undefined}
+              onValueChange={(enableSmartModelSelection) => save({ enableSmartModelSelection })}
+            />
+          </Section>
+          <Section title="Project selection (experimental)">
+            <SettingsSwitchRow
+              first
+              label="AUTO project selection (experimental)"
+              value={value.enableAutoProjectSelection}
+              disabled={disabled || snapshot?.autoProjectSelectionEnabled === undefined}
+              onValueChange={(enableAutoProjectSelection) => save({ enableAutoProjectSelection })}
+            />
+            {value.enableAutoProjectSelection && (
+              <Choice
+                label="AUTO project mode model"
+                value={value.autoProjectModelSelection}
+                disabled={disabled}
+                items={[
+                  { id: 'inherit', name: 'Inherit' },
+                  ...(value.enableSmartModelSelection
+                    ? [
+                        { id: 'auto', name: 'AUTO' },
+                        { id: 'smart', name: 'SMART' },
+                      ]
+                    : []),
+                ]}
+                onChange={(mode) =>
+                  save({ autoProjectModelSelection: decode(taskModelSelectionSchema, mode) })
+                }
+              />
+            )}
+
+            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+              Use the selector utility model to select primary and linked projects from the first
+              prompt on this computer.
+            </Text>
+          </Section>
           <Section title="Supervised mode">
             <SettingsSwitchRow
               first

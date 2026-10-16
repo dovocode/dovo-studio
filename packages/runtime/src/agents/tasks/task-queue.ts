@@ -42,7 +42,7 @@ export class TaskQueue {
     review = false,
     resumePaused = false,
     subagentResultId?: string,
-    options: { steering?: boolean; reopenSettled?: boolean } = {},
+    options: { steering?: boolean; reopenSettled?: boolean; unsnooze?: boolean } = {},
   ) {
     if (this.accepted(id, messageId, text, attachments)) return false
     const task = this.store.taskSummary(id)
@@ -56,6 +56,7 @@ export class TaskQueue {
       (t) => ({
         ...t,
         checkoutLocked: true,
+        ...(options.unsnooze ? { snoozedUntil: null } : {}),
         ...(t.archived && options.reopenSettled
           ? { archived: false, autoSettled: undefined, snoozedUntil: null }
           : {}),

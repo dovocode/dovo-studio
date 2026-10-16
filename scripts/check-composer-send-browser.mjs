@@ -25,7 +25,7 @@ const built = await build({
 import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {MessageQueue} from './src/chat/thread/message-queue.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';import {formatCodeReference} from './src/detail/code-reference';
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
-const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
+const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('AUTO needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
 function App(){const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[]}};return <WorkspaceHarness value={value}><><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<MessageQueue task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
@@ -83,6 +83,49 @@ try {
       previous,
     )
   }
+  await page.evaluate(() => window.setTask((task) => ({ ...task, autoProject: true })))
+  await input.fill('Update dashboard using API')
+  await page.evaluate(() => {
+    window.failAuto = true
+  })
+  await page.locator('button[type=submit]').click()
+  await page.getByText('Error: AUTO needs a project choice', { exact: true }).waitFor()
+  assert.equal(await input.inputValue(), 'Update dashboard using API')
+  assert.equal(
+    await page.evaluate(() =>
+      window.requests.some((request) => request.path === '/api/tasks/message'),
+    ),
+    false,
+  )
+  await page.evaluate(() => {
+    window.failAuto = false
+    window.requests = []
+  })
+  await page.locator('button[type=submit]').click()
+  await page.waitForFunction(() => window.response !== null)
+  assert.deepEqual(await page.evaluate(() => window.requests.map((request) => request.path)), [
+    '/api/tasks/projects/select',
+    '/api/tasks/title',
+    '/api/tasks/message',
+  ])
+  assert.equal(await page.evaluate(() => window.current.repositoryId), 'selected-project')
+  assert.equal(await page.evaluate(() => window.current.linkedCheckouts[0].repositoryId), 'api')
+  await page.evaluate(() => {
+    window.response()
+    window.response = null
+  })
+  await page.waitForFunction(() => !document.querySelector('textarea').readOnly)
+  await page.evaluate(() => {
+    window.setTask((task) => ({
+      ...task,
+      repositoryId: 'repo',
+      autoProject: undefined,
+      linkedCheckouts: [],
+      draft: '',
+    }))
+    window.requests = []
+    window.pending = null
+  })
   // Diff/file references are consumed at the source; a new composer must never replay them.
   await input.fill('Review this change')
   await page.evaluate(() => window.addReference('reference-1', window.reference))

@@ -242,3 +242,5 @@ export { pipelineGraphColumns } from './scm/work/pipeline-graph.js'
 export * from './scm/forges/source-identity.js'
 
 export * from './scm/work/pipeline-links.js'
+
+export * from './tasks/task-project-selection.js'

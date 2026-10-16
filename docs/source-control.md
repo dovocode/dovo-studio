@@ -83,6 +83,20 @@ independently of the task; a failure keeps the step name, and a manually edited 
 
 ## Linked projects and worktrees
 
+AUTO project selection is experimental and off by default. Enable **AUTO project selection
+(experimental)** in Settings → Running tasks on the selected computer.
+
+Before the first message, choose **AUTO** (the magic icon) in the project picker to infer the
+primary project and necessary linked projects from your prompt. Machine selection remains explicit:
+AUTO uses only registered projects on the selected computer, using their names, paths and Git
+identities. Choose **Project defaults**, **New worktrees**, or **Local checkouts** alongside AUTO;
+the checkout choice applies to the primary and linked Git projects, while folder projects always
+stay local. Choose a project manually to select an existing worktree or a specific base branch. It
+uses the selector utility model in Settings → Agents (inheriting the title model by default) and runs without tools. Clear matches
+start with the selected project's defaults; reference links are read-only and projects requiring
+changes receive edit access. Ambiguous selections or model failures keep the prompt unsent so you
+can choose a project manually or retry. General conversations stay in the private thread folder.
+
 In thread settings, **Linked projects** attaches up to twelve registered projects or checkouts on
 the thread's computer. Choose main checkout, an existing worktree, or a new worktree with optional
 base branch and branch name. New branch names receive a unique suffix. Links can be changed while
@@ -156,3 +170,25 @@ threads, existing-worktree selections, linked projects and saved linked checkpoi
 references. Cleanup keeps branches and never forces removal of uncommitted changes. Ignored local
 files, including `.worktreeinclude` copies, are deleted with removed checkouts. Dovo remembers
 managed checkout locations after the worktree folder changes or threads are deleted.
+
+## Experimental model selection
+
+Inherit is always available. Enable **Automatic model selection (experimental)** in the computer's
+Running tasks settings to enable AUTO and SMART. Before the first message, the model picker offers:
+
+- **Inherit**: use the primary project's exact harness/model defaults, falling back to system defaults.
+- **AUTO**: keep that default harness and choose an available model for the prompt's difficulty.
+- **SMART**: choose an available harness and model, preferring project/system defaults where suitable.
+
+The runtime resolves the choice once and saves the concrete harness/model for the thread.
+With AUTO project selection, projects resolve first. Hidden or disabled models are excluded.
+A failed or invalid selection preserves the pending mode and does not send the message.
+Only SMART can be saved as an automatic project or system task default.
+**AUTO project mode model** is a separate computer preference with Inherit, AUTO and SMART;
+it starts at Inherit and does not follow the ordinary task default mode. Choosing AUTO projects
+uses that preference, while preserving an explicitly selected AUTO or SMART model mode.
+
+Titles and dictation require an explicit utility harness and model in Agents settings.
+The **AUTO & SMART selector** inherits that title model by default. Set a separate utility
+harness/model there to use a different model for project selection and coding-model selection.
+Selection runs without tools and can choose only entries from the computer's discovered catalogs.

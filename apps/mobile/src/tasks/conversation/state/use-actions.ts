@@ -11,6 +11,7 @@ import { Schema, Effect } from 'effect'
 import {
   responses,
   generatedTitleSchema,
+  taskSchema,
   cleanedDictationSchema,
   resolveTaskAgent,
   canChangeTaskCheckout,
@@ -266,6 +267,13 @@ export function useConversationActions(task: Task) {
         },
       })
       yield* storedDraft.stageEffect(attempt)
+      if (firstMessage && task.autoProject) {
+        yield* callEffect(
+          '/api/tasks/projects/select',
+          { id: task.id, text: text || 'Work with the attached files' },
+          taskSchema,
+        )
+      }
       if (firstMessage) {
         const summary =
           text ||

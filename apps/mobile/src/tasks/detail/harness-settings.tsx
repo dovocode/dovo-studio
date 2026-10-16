@@ -1,4 +1,9 @@
-import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
+import {
+  selectPermissionPreset,
+  permissionPolicyLabel,
+  changeTaskModelSelection,
+  canChangeTaskCheckout,
+} from '@dovo/protocol'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { workspacePatchResultSchema } from '@dovo/protocol'
@@ -90,6 +95,73 @@ export function HarnessSettings({
   const controlsDisabled = busy || task.status === 'running' || !!task.archived || !connected
   const content = (
     <>
+      {canChangeTaskCheckout(task) && !task.delegation && (
+        <Choice
+          row
+          label="Model selection"
+          value={task.modelSelection ?? 'fixed'}
+          disabled={controlsDisabled}
+          items={[
+            { id: 'fixed', name: 'Specific harness/model' },
+            { id: 'inherit', name: 'Inherit' },
+            ...(snapshot?.smartModelSelectionEnabled === true
+              ? [
+                  { id: 'auto', name: 'AUTO' },
+                  { id: 'smart', name: 'SMART' },
+                ]
+              : []),
+          ]}
+          onChange={(value) => {
+            if (value === 'fixed') {
+              act(() =>
+                mobileWorkflow(function* () {
+                  yield* callEffect(
+                    '/api/workspace',
+                    {
+                      collection: 'tasks',
+                      id: task.id,
+                      changes: {
+                        modelSelection: { before: task.modelSelection ?? null, after: null },
+                      },
+                    },
+                    workspacePatchResultSchema,
+                  )
+                  onClose()
+                }),
+              )
+              return
+            }
+            if (value !== 'inherit' && value !== 'auto' && value !== 'smart') return
+            act(() =>
+              mobileWorkflow(function* () {
+                if (!profile) throw new Error('This computer is no longer saved.')
+                const next = changeTaskModelSelection(
+                  task,
+                  value,
+                  snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+                  snapshot?.defaults,
+                )
+                yield* callEffect(
+                  '/api/workspace',
+                  {
+                    collection: 'tasks',
+                    id: task.id,
+                    changes: {
+                      modelSelection: { before: task.modelSelection ?? null, after: value },
+                      harness: { before: task.harness ?? null, after: next.harness },
+                      agentId: { before: task.agentId, after: '' },
+                      agentOverrides: { before: task.agentOverrides ?? null, after: null },
+                      harnessCustomized: { before: task.harnessCustomized ?? null, after: null },
+                    },
+                  },
+                  workspacePatchResultSchema,
+                )
+                onClose()
+              }),
+            )
+          }}
+        />
+      )}
       <Choice
         row
         label="Agent"
@@ -248,6 +320,7 @@ export function HarnessSettings({
                   agentId: changes.agentId.after,
                   harness: changes.harness.after,
                   harnessCustomized: changes.harnessCustomized.after,
+                  modelSelection: undefined,
                   agentOverrides: changes.agentOverrides.after ?? undefined,
                 },
                 callEffect(

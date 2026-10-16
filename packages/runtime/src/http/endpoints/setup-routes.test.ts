@@ -263,3 +263,151 @@ it('rejects stale runtime default saves without overwriting independent title se
   expect(runtime.services.defaults.get().execution).toBe('worktree')
   expect(runtime.services.titles.read().model).toBe(selection.titles.model)
 })
+
+it('keeps AUTO selection off by default and publishes the per-computer opt-in', async () => {
+  const { runtime, options } = await setup()
+  const s = runtime.services
+  s.titles.save({ harness: { provider: 'codex', endpoint: '' }, model: 'title-model' })
+  s.store.update((w) => ({
+    ...w,
+    repositories: [{ id: 'project', kind: 'folder', name: 'Project', path: tmpdir(), branch: '' }],
+  }))
+  const task = s.tasks.create({
+    title: 'AUTO draft',
+    repositoryId: 'project',
+    agentId: '',
+    objective: '',
+  })
+  s.store.updateTask(task.id, (current) => ({ ...current, autoProject: true }))
+  const run = vi.fn<AgentAdapter['run']>(async (input) =>
+    input.onText(
+      JSON.stringify({ status: 'selected', repositoryId: 'project', links: [], reason: '' }),
+    ),
+  )
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const post = (path: string, input: unknown) =>
+    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${options.ownerToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    })
+  const snapshot = async () =>
+    decode(
+      snapshotSchema,
+      await (
+        await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, {
+          headers: { Authorization: `Bearer ${options.ownerToken}` },
+        })
+      ).json(),
+    )
+  expect(s.preferences.get().enableAutoProjectSelection).toBe(false)
+  expect((await snapshot()).autoProjectSelectionEnabled).toBe(false)
+  expect(
+    (await post('/api/tasks/projects/select', { id: task.id, text: 'Update Project' })).status,
+  ).toBe(403)
+  expect(run).not.toHaveBeenCalled()
+  expect(s.store.task(task.id).autoProject).toBe(true)
+  expect(
+    (await post('/api/runtime/preferences/save', { enableAutoProjectSelection: true })).status,
+  ).toBe(200)
+  expect((await snapshot()).autoProjectSelectionEnabled).toBe(true)
+  expect(
+    (await post('/api/tasks/projects/select', { id: task.id, text: 'Update Project' })).status,
+  ).toBe(200)
+  expect(run).toHaveBeenCalledOnce()
+  expect(s.store.task(task.id)).toMatchObject({ repositoryId: 'project', autoProject: undefined })
+  await post('/api/runtime/preferences/save', { enableAutoProjectSelection: false })
+  expect((await snapshot()).autoProjectSelectionEnabled).toBe(false)
+  expect(s.store.task(task.id).repositoryId).toBe('project')
+})
+
+it('resolves a SMART default before accepting the first message and keeps the concrete choice', async () => {
+  const { runtime, options } = await setup()
+  const s = runtime.services
+  s.preferences.save({ ...s.preferences.get(), enableSmartModelSelection: true })
+  s.titles.save({ harness: { provider: 'codex', endpoint: '' }, model: 'title-model' })
+  s.store.update((w) => ({
+    ...w,
+    repositories: [
+      {
+        id: 'project',
+        kind: 'folder',
+        name: 'Project',
+        path: tmpdir(),
+        branch: '',
+        taskDefaults: {
+          modelSelection: 'smart',
+          harness: { ...s.defaults.get().harness, provider: 'codex', model: 'project-model' },
+        },
+      },
+    ],
+  }))
+  const task = s.tasks.create({
+    title: 'SMART draft',
+    repositoryId: 'project',
+    agentId: '',
+    objective: '',
+  })
+  expect(task.modelSelection).toBe('smart')
+  let selections = 0
+  vi.spyOn(s.agents, 'get').mockImplementation(async (provider) => ({
+    probe: async () => ({ provider, available: provider === 'codex', detail: '' }),
+    models: async () => ({ models: [{ id: 'small', name: 'Small' }], reasoning: [] }),
+    run: async (input) => {
+      if (input.agent.model === 'title-model') {
+        selections++
+        const candidates = JSON.parse(input.prompt).candidates
+        input.onText(JSON.stringify({ id: candidates[0].id, reason: 'Simple task' }))
+      } else input.onText('Done')
+    },
+  }))
+  const send = (messageId: string) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/tasks/message`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${options.ownerToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id: task.id, messageId, text: 'Explain this project' }),
+    })
+  expect((await send('first')).status).toBe(200)
+  expect(s.store.task(task.id)).toMatchObject({ harness: { provider: 'codex', model: 'small' } })
+  expect(s.store.task(task.id).modelSelection).toBeUndefined()
+  expect((await send('first')).status).toBe(200)
+  expect(selections).toBe(1)
+})
+
+it('gates selector-model overrides while keeping explicit title settings available', async () => {
+  const { runtime, options } = await setup()
+  const post = (path: string, input: unknown) =>
+    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${options.ownerToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    })
+  const utility = { harness: { provider: 'codex', endpoint: '' }, model: 'selector-model' }
+  expect(runtime.services.preferences.get().enableSmartModelSelection).toBe(false)
+  expect((await post('/api/agents/selection-settings/save', utility)).status).toBe(403)
+  expect((await post('/api/agents/title-settings/save', { model: 'missing-harness' })).status).toBe(
+    400,
+  )
+  expect(
+    (await post('/api/agents/title-settings/save', { ...utility, model: 'title-model' })).status,
+  ).toBe(200)
+  const preferences = runtime.services.preferences
+  preferences.save({ ...preferences.get(), enableSmartModelSelection: true })
+  const inherited = await post('/api/agents/selection-settings/read', {})
+  expect(await inherited.json()).toMatchObject({ inheritTitleModel: true })
+  expect((await post('/api/agents/selection-settings/save', utility)).status).toBe(200)
+  expect(runtime.services.titles.read().model).toBe('title-model')
+  preferences.save({ ...preferences.get(), enableSmartModelSelection: false })
+  expect(
+    (await post('/api/agents/selection-settings/save', { inheritTitleModel: true })).status,
+  ).toBe(403)
+})

@@ -60,6 +60,7 @@ function EnvironmentTools() {
           <HarnessUpdates />
           <AcpRegistrySettings />
           <TitleSettings />
+          <TitleSettings selection />
         </>
       ) : (
         <Text style={styles.muted}>

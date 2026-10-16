@@ -1422,6 +1422,8 @@ export class WorkspaceStore {
             'title',
             'agentId',
             'repositoryId',
+            'autoProject',
+            'autoProjectExecution',
             'draft',
             'messages',
             'files',
@@ -1435,6 +1437,7 @@ export class WorkspaceStore {
             'agentOverrides',
             'harness',
             'harnessCustomized',
+            'modelSelection',
             'execution',
             'existingWorktreePath',
             'worktreeBaseBranch',
@@ -1471,6 +1474,9 @@ export class WorkspaceStore {
         (key === 'execution' ||
           key === 'existingWorktreePath' ||
           key === 'repositoryId' ||
+          key === 'autoProject' ||
+          key === 'autoProjectExecution' ||
+          (key === 'modelSelection' && merged.value != null) ||
           key === 'worktreeBaseBranch' ||
           key === 'worktreeFromOrigin' ||
           key === 'submodules' ||

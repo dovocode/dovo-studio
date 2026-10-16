@@ -18,6 +18,13 @@ export function taskMachineDraft(
     id: task.id,
     title: task.title,
     repositoryId: repository.id,
+    autoProject: repository.kind === 'scratch' ? task.autoProject : undefined,
+    autoProjectExecution:
+      repository.kind === 'scratch' && task.autoProject ? task.autoProjectExecution : undefined,
+    modelSelection:
+      task.modelSelection ??
+      (task.autoProject ? 'inherit' : resolveTaskDefaults(defaults, repository).modelSelection),
+    harnessCustomized: task.modelSelection ? task.harnessCustomized : undefined,
     agentId: '',
     status: 'draft',
     createdAt: task.createdAt,

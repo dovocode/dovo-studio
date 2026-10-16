@@ -93,7 +93,9 @@ export const agentSchema = mutableStruct({
 })
 export const taskHarnessSchema = agentPresetSchema.mapFields(Struct.omit(['id', 'name', 'icon']))
 export type TaskHarness = Schema.Schema.Type<typeof taskHarnessSchema>
+export const taskModelSelectionSchema = Schema.Literals(['inherit', 'auto', 'smart'])
 export const projectTaskDefaultsSchema = mutableStruct({
+  modelSelection: Schema.optional(Schema.Literals(['fixed', 'smart'])),
   /** Preferred paired server for this project; used only when that server has an online copy. */
   defaultServerId: Schema.optional(maxValue(minValue(Schema.String, 1), 500)),
   setupCommand: Schema.optional(maxValue(Schema.String, 20000)),
@@ -752,8 +754,13 @@ export const taskSchema = mutableStruct({
   snoozedUntil: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
   agentOverrides: Schema.optional(taskModelSchema),
   harness: Schema.optional(Schema.NullOr(taskHarnessSchema)),
-  /** Manual draft settings take precedence when choosing another project on the same computer. */
+  /** Explicit harness or model-mode choice; pending modes still resolve the target project defaults. */
   harnessCustomized: Schema.optional(Schema.Boolean),
+  /** Pending first-turn model selection; removed after resolution. */
+  modelSelection: Schema.optional(taskModelSelectionSchema),
+  /** Resolve projects on the selected runtime before the first prompt. */
+  autoProject: Schema.optional(Schema.Boolean),
+  autoProjectExecution: Schema.optional(executionSchema),
   queue: Schema.optional(mutableArray(queuedMessageSchema)),
   queuePaused: Schema.optional(Schema.Boolean),
   restartRecovery: Schema.optional(

@@ -8,7 +8,7 @@ const core = `export {titleGenerationSettingsSchema,modelCatalogSchema,providerS
 const ui = `export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {ModelSettings} from '${root}/packages/studio-ui/src/model-settings.tsx';`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {TitleSettings} from '${root}/packages/extension-agents/src/title-settings.tsx';window.documentSettings={harness:{provider:'codex',endpoint:'initial'},agentId:'',model:'',reasoning:''};window.reads=0;window.writes=[];window.workspace={connected:true,workspace:{agents:[]},snapshot:{defaults:{}},request:async(path,input)=>{if(path.endsWith('/read')){window.reads++;return structuredClone(window.documentSettings)}if(path.endsWith('/save')){if(JSON.stringify(input.before)!==JSON.stringify(window.documentSettings))throw Error('Title settings changed on another device. Reload before saving.');window.writes.push(input);window.documentSettings=structuredClone(input.after);return structuredClone(input.after)}if(path==='/api/agents/models')return {models:[]};throw Error(path)}};createRoot(document.getElementById('app')).render(<TitleSettings/>);`,
+    contents: `import {createRoot} from 'react-dom/client';import {TitleSettings} from '${root}/packages/extension-agents/src/title-settings.tsx';window.documentSettings={harness:{provider:'codex',endpoint:'initial'},agentId:'',model:'title-model',reasoning:''};window.reads=0;window.writes=[];window.workspace={connected:true,workspace:{agents:[]},snapshot:{defaults:{},smartModelSelectionEnabled:true},request:async(path,input)=>{if(path.endsWith('/read')){window.reads++;return structuredClone(window.documentSettings)}if(path.endsWith('/save')){if(JSON.stringify(input.before)!==JSON.stringify(window.documentSettings))throw Error('Title settings changed on another device. Reload before saving.');window.writes.push(input);window.documentSettings=structuredClone(input.after);return structuredClone(input.after)}if(path==='/api/agents/models')return {models:[]};throw Error(path)}};const app=createRoot(document.getElementById('app'));window.showSelection=()=>app.render(<TitleSettings key='selection' selection/>);app.render(<TitleSettings/>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -80,6 +80,25 @@ try {
   const write = await page.evaluate(() => window.writes.at(-1))
   assert.equal(write.before.harness.endpoint, 'remote edit')
   assert.equal(write.after.harness.endpoint, 'reconciled edit')
+  await page.evaluate(() => {
+    window.documentSettings = { inheritTitleModel: true, agentId: '', model: '', reasoning: '' }
+    window.showSelection()
+  })
+  await page.getByText('Uses the title harness and model.', { exact: false }).waitFor()
+  const provider = page.getByRole('button', { name: 'AUTO & SMART selector harness', exact: true })
+  await provider.click()
+  await page.getByRole('option', { name: 'Codex', exact: true }).click()
+  await page.getByRole('button', { name: 'Model', exact: true }).click()
+  await page.getByRole('option', { name: 'Custom model…', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Custom model ID' }).fill('selector-model')
+  await page.getByRole('button', { name: 'Save selection model', exact: true }).click()
+  await page.getByText('Selection model settings saved.', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.documentSettings.model), 'selector-model')
+  assert.equal(await page.evaluate(() => window.documentSettings.inheritTitleModel), false)
+  await provider.click()
+  await page.getByRole('option', { name: 'Inherit title model', exact: true }).click()
+  await page.getByRole('button', { name: 'Save selection model', exact: true }).click()
+  await page.waitForFunction(() => window.documentSettings.inheritTitleModel === true)
   assert.deepEqual(errors, [])
   console.log(
     'Title settings: conflict feedback, cancelled reload retains edits, confirmed reload refreshes baseline, and subsequent save passed.',

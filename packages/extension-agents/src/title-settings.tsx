@@ -20,7 +20,8 @@ import {
   type AgentDiscovery,
 } from '@dovo/studio-core'
 import { Button, ChoicePicker, FormField, ModelSettings, Input, Textarea } from '@dovo/studio-ui'
-export function TitleSettings() {
+export function TitleSettings({ selection = false }: { selection?: boolean }) {
+  const settingsPath = selection ? '/api/agents/selection-settings' : '/api/agents/title-settings'
   const { workspace, request, connected, snapshot } = useWorkspace()
   const installations = snapshot?.acpInstallations ?? []
   const [settings, setSettings] = useApplicationState<Settings | null>(null)
@@ -38,7 +39,7 @@ export function TitleSettings() {
     setError('')
     setSaved(false)
     setLoadError('')
-    void request('/api/agents/title-settings/read', {}, titleGenerationSettingsSchema)
+    void request(`${settingsPath}/read`, {}, titleGenerationSettingsSchema)
       .then((value) => {
         if (!stopped) {
           setSettings(value)
@@ -51,7 +52,7 @@ export function TitleSettings() {
     return () => {
       stopped = true
     }
-  }, [connected, request, reload])
+  }, [connected, request, reload, settingsPath])
   const loadModels = useCallback(
     (agent: AgentDiscovery) => request('/api/agents/models', agent, modelCatalogSchema),
     [request],
@@ -67,13 +68,24 @@ export function TitleSettings() {
     setSettings(next)
     setSaved(false)
   }
+  if (
+    selection &&
+    snapshot?.smartModelSelectionEnabled !== true &&
+    snapshot?.autoProjectSelectionEnabled !== true
+  )
+    return null
   return (
     <section className="rounded-xl border">
       <header className="border-b p-4">
-        <h2 className="text-sm font-semibold">Model for titles & dictation</h2>
+        <h2 className="text-sm font-semibold">
+          {selection
+            ? 'Model for AUTO & SMART selection (experimental)'
+            : 'Model for titles & dictation'}
+        </h2>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          This computer uses a quick model request to name new tasks and to tidy up mobile
-          dictation. Cleanup keeps your wording, language and code names.
+          {selection
+            ? 'Choose the utility model that selects projects, harnesses and coding models. By default it inherits the explicit title model.'
+            : 'Choose an explicit harness and model for task titles and dictation cleanup.'}
         </p>
       </header>
       <div className="p-4">
@@ -102,7 +114,7 @@ export function TitleSettings() {
               setError('')
               setSaved(false)
               void request(
-                '/api/agents/title-settings/save',
+                `${settingsPath}/save`,
                 { before: baseline, after: settings },
                 titleGenerationSettingsSchema,
               )
@@ -118,20 +130,29 @@ export function TitleSettings() {
             <fieldset disabled={busy || !connected} className="min-w-0 space-y-4">
               <FormField layout="settings" label="Provider">
                 <ChoicePicker
-                  aria-label="Titles & dictation provider"
+                  aria-label={
+                    selection ? 'AUTO & SMART selector harness' : 'Titles & dictation provider'
+                  }
                   value={
-                    settings.harness
-                      ? settings.harness.provider === 'acp' && settings.harness.acpInstallationId
-                        ? acpHarnessChoiceId(settings.harness.acpInstallationId)
-                        : `harness:${settings.harness.provider}`
-                      : settings.agentId
+                    selection && settings.inheritTitleModel
+                      ? 'title'
+                      : settings.harness
+                        ? settings.harness.provider === 'acp' && settings.harness.acpInstallationId
+                          ? acpHarnessChoiceId(settings.harness.acpInstallationId)
+                          : `harness:${settings.harness.provider}`
+                        : settings.agentId
                   }
                   onValueChange={(agentId) => {
+                    if (agentId === 'title') {
+                      edit({ ...settings, inheritTitleModel: true })
+                      return
+                    }
                     const installation = installations.find(
                       (item) => acpHarnessChoiceId(item.id) === agentId,
                     )
                     edit({
                       ...settings,
+                      inheritTitleModel: selection ? false : undefined,
                       agentId: installation || agentId.startsWith('harness:') ? '' : agentId,
                       harness: installation
                         ? acpInstallationHarness(installation)
@@ -146,7 +167,10 @@ export function TitleSettings() {
                     })
                   }}
                 >
-                  <option value="">Same provider as new tasks</option>
+                  <option value="" disabled>
+                    Choose a harness
+                  </option>
+                  {selection && <option value="title">Inherit title model</option>}
                   {providerSchema.literals.filter(supportsUtilities).map((provider) => (
                     <option key={provider} value={`harness:${provider}`}>
                       {providers[provider].short}
@@ -170,7 +194,7 @@ export function TitleSettings() {
                   {unsupported.length > 0 && `${unsupported.join(', ')} cannot generate titles.`}
                 </p>
               </FormField>
-              {settings.harness && (
+              {settings.harness && !(selection && settings.inheritTitleModel) && (
                 <details className="rounded-md border p-3">
                   <summary className="cursor-pointer text-xs text-muted-foreground">
                     Connection (optional)
@@ -218,7 +242,11 @@ export function TitleSettings() {
                   onChange={(agent) => edit(titleSettingsForHarness(agent))}
                 />
               )}
-              {harness ? (
+              {selection && settings.inheritTitleModel ? (
+                <p className="text-xs text-muted-foreground">
+                  Uses the title harness and model. Choose a harness above to override it.
+                </p>
+              ) : harness ? (
                 <ModelSettings
                   layout="settings"
                   preferences={snapshot?.defaults?.modelPreferences}
@@ -250,7 +278,9 @@ export function TitleSettings() {
                     : dirty
                       ? 'Unsaved changes'
                       : saved
-                        ? 'Title settings saved.'
+                        ? selection
+                          ? 'Selection model settings saved.'
+                          : 'Title settings saved.'
                         : 'No unsaved changes'}
                 </span>
                 <div className="flex gap-2">
@@ -266,8 +296,17 @@ export function TitleSettings() {
                       Discard changes
                     </Button>
                   )}
-                  <Button type="submit" disabled={!harness || !dirty}>
-                    {busy ? 'Saving…' : 'Save title settings'}
+                  <Button
+                    type="submit"
+                    disabled={
+                      !dirty ||
+                      (!(selection && settings.inheritTitleModel) &&
+                        (!harness ||
+                          !settings.model.trim() ||
+                          (!settings.harness && !settings.agentId)))
+                    }
+                  >
+                    {busy ? 'Saving…' : selection ? 'Save selection model' : 'Save title settings'}
                   </Button>
                 </div>
               </div>

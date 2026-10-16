@@ -38,6 +38,7 @@ export function environmentSettings(runtime: RuntimeDefaults | undefined): Scope
   return {
     taskDefaults: {
       harness: runtime.harness,
+      modelSelection: runtime.modelSelection,
       permission: runtime.permission,
       approvalPolicy: runtime.approvalPolicy,
       sandboxMode: runtime.sandboxMode,
@@ -345,6 +346,7 @@ export function settingsTargetAtScope<T extends SettingsTargetSource>(
 const taskDefaultFields = [
   { key: 'defaultServerId', label: 'Default server' },
   { key: 'harness', label: 'Agent, model & instructions' },
+  { key: 'modelSelection', label: 'Model selection' },
   { key: 'permission', label: 'Permissions' },
   { key: 'approvalPolicy', label: 'Approval policy' },
   { key: 'sandboxMode', label: 'Sandbox' },

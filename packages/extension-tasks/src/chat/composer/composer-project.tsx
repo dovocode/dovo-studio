@@ -8,10 +8,23 @@ import {
   type Task,
   type Repository,
 } from '@dovo/studio-core'
-import { taskProjectGroups, preferredProjectEntry, projectDefaultServer } from '@dovo/protocol'
+import {
+  changeTaskAutoProject,
+  taskProjectGroups,
+  preferredProjectEntry,
+  projectDefaultServer,
+} from '@dovo/protocol'
 import { Button, Input, Popover } from '@dovo/studio-ui'
 import { RepositoryDialog } from '@dovo/extension-scm/repository-dialog'
-import { Check, ChevronDown, Folder, LoaderCircle, Plus, MessageCircle } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  Folder,
+  LoaderCircle,
+  Plus,
+  MessageCircle,
+  WandSparkles,
+} from 'lucide-react'
 import { useRef, useState } from 'react'
 import { taskSources, type TaskSource } from '../../list/task-collection'
 import { moveTaskDraft } from './task-machine-selector'
@@ -26,7 +39,13 @@ export function ComposerProject({
   task: Task
   disabled: boolean
   onMoving?: (moving: boolean) => void
-  onSelectRemote?: (source: TaskSource, repository: Repository) => Promise<void>
+  onSelectRemote?: (
+    source: TaskSource,
+    repository: Repository,
+    autoProject?: boolean,
+    autoProjectExecution?: Task['autoProjectExecution'],
+    modelSelection?: Task['modelSelection'],
+  ) => Promise<void>
 }) {
   const search = useRef<HTMLInputElement>(null)
   const projects = useRef<HTMLDivElement>(null)
@@ -40,14 +59,19 @@ export function ComposerProject({
   const [error, setError] = useState('')
   const sources = taskSources(store)
   const current = sources.find((source) => source.runtimeId === store.activeRuntimeId)
+  const autoAvailable = store.snapshot?.autoProjectSelectionEnabled === true
   const multipleMachines = sources.length > 1
   const repository = store.workspace.repositories.find((item) => item.id === task.repositoryId)
   const editable =
     canChangeTaskCheckout(task) && !task.archivedAt && !task.pullRequest && !task.workItem
   const locked = disabled || busy || !editable || !!task.draftAttachments?.length
-  const choose = async (source: TaskSource, target: Repository) => {
+  const choose = async (source: TaskSource, target: Repository, preserveAuto = false) => {
     if (locked || !source.online || target.gitIdentityError) return
-    if (source.runtimeId === store.activeRuntimeId && target.id === task.repositoryId) {
+    if (
+      source.runtimeId === store.activeRuntimeId &&
+      target.id === task.repositoryId &&
+      (preserveAuto || !task.autoProject)
+    ) {
       setOpen(false)
       setServerOpen(false)
       return
@@ -58,18 +82,34 @@ export function ComposerProject({
     try {
       if (source.runtimeId === store.activeRuntimeId) {
         store.setWorkspace((workspace) =>
-          updateTask(workspace, task.id, (draft) =>
-            changeTaskProject(
+          updateTask(workspace, task.id, (draft) => ({
+            ...changeTaskProject(
               draft,
               workspace.repositories.find((item) => item.id === draft.repositoryId),
               target,
               store.snapshot?.defaults,
               workspace.agents,
             ),
-          ),
+            autoProject: preserveAuto ? task.autoProject : undefined,
+            autoProjectExecution: preserveAuto ? task.autoProjectExecution : undefined,
+          })),
         )
-      } else if (onSelectRemote) await onSelectRemote(source, target)
-      else await moveTaskDraft(store, host, task, source, target)
+      } else if (onSelectRemote)
+        await onSelectRemote(
+          source,
+          target,
+          preserveAuto ? task.autoProject : undefined,
+          preserveAuto ? task.autoProjectExecution : undefined,
+          task.harnessCustomized ? task.modelSelection : undefined,
+        )
+      else
+        await moveTaskDraft(
+          store,
+          host,
+          { ...task, autoProject: preserveAuto ? task.autoProject : undefined },
+          source,
+          target,
+        )
       setOpen(false)
       setServerOpen(false)
     } catch (cause) {
@@ -105,10 +145,12 @@ export function ComposerProject({
     const preferred = preferredProjectEntry(group.entries, store.activeRuntimeId)
     const defaultId = projectDefaultServer(group.entries)
     const defaultSource = sources.find((item) => item.runtimeId === defaultId)
-    const selected = group.entries.some(
-      ({ repository, runtimeId }) =>
-        runtimeId === store.activeRuntimeId && repository.id === task.repositoryId,
-    )
+    const selected =
+      !task.autoProject &&
+      group.entries.some(
+        ({ repository, runtimeId }) =>
+          runtimeId === store.activeRuntimeId && repository.id === task.repositoryId,
+      )
     const serverCount = new Set(group.entries.map((entry) => entry.runtimeId)).size
     return (
       <button
@@ -149,7 +191,7 @@ export function ComposerProject({
   }
   const serverRepository = (source: TaskSource) =>
     source.workspace.repositories.find((item) =>
-      repository?.kind === 'scratch'
+      task.autoProject || repository?.kind === 'scratch'
         ? item.kind === 'scratch'
         : repository?.gitIdentity
           ? item.gitIdentity === repository.gitIdentity
@@ -202,15 +244,21 @@ export function ComposerProject({
             aria-label="Task project"
             className="h-6 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
           >
-            {repository?.kind === 'scratch' ? (
+            {task.autoProject ? (
+              <WandSparkles className="size-3.5" />
+            ) : repository?.kind === 'scratch' ? (
               <MessageCircle className="size-3.5" />
             ) : (
               <Folder className="size-3.5" />
             )}
             <span className="max-w-32 truncate">
-              {repository?.kind === 'scratch'
-                ? 'No project'
-                : (repository?.name ?? 'Choose project')}
+              {task.autoProject
+                ? autoAvailable
+                  ? 'AUTO'
+                  : 'AUTO (disabled)'
+                : repository?.kind === 'scratch'
+                  ? 'No project'
+                  : (repository?.name ?? 'Choose project')}
             </span>
             <ChevronDown className="size-3" />
           </Button>
@@ -273,6 +321,39 @@ export function ComposerProject({
               }}
             >
               {scratch && <div className="mb-1 border-b pb-1">{projectRow(scratch)}</div>}
+              {autoAvailable &&
+                current?.workspace.repositories.some((repo) => repo.kind === 'scratch') && (
+                  <button
+                    type="button"
+                    aria-label="AUTO project"
+                    aria-pressed={!!task.autoProject}
+                    disabled={locked}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent"
+                    onClick={() => {
+                      const target = current.workspace.repositories.find(
+                        (repo) => repo.kind === 'scratch',
+                      )
+                      if (!target) return
+                      store.setWorkspace((workspace) =>
+                        updateTask(workspace, task.id, (draft) =>
+                          changeTaskAutoProject(
+                            draft,
+                            repository,
+                            target,
+                            store.snapshot?.defaults,
+                            workspace.agents,
+                            store.snapshot?.autoProjectModelSelection ?? 'inherit',
+                          ),
+                        ),
+                      )
+                      setOpen(false)
+                    }}
+                  >
+                    <WandSparkles className="size-4" />
+                    <span className="flex-1">AUTO</span>
+                    {task.autoProject && <Check className="size-4" />}
+                  </button>
+                )}
               <div className="max-h-64 overflow-y-auto">
                 {matches.map(projectRow)}
                 {!matches.length && (
@@ -341,7 +422,13 @@ export function ComposerProject({
               className="z-50 w-72 max-w-[calc(100vw-24px)] rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
             >
               <p className="px-2 pb-2 text-xs text-muted-foreground">
-                Run {repository?.kind === 'scratch' ? 'without a project' : repository?.name} on
+                {task.autoProject ? (
+                  'Select projects automatically on'
+                ) : (
+                  <>
+                    Run {repository?.kind === 'scratch' ? 'without a project' : repository?.name} on
+                  </>
+                )}
               </p>
               {sources
                 .flatMap((source) => {
@@ -356,7 +443,7 @@ export function ComposerProject({
                       aria-label={source.name}
                       aria-pressed={source.runtimeId === store.activeRuntimeId}
                       disabled={locked || !source.online || !!target.gitIdentityError}
-                      onClick={() => void choose(source, target)}
+                      onClick={() => void choose(source, target, true)}
                       className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
                     >
                       <RuntimeIcon

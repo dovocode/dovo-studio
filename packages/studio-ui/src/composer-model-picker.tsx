@@ -51,7 +51,13 @@ export function ComposerModelPicker({
   lockedProvider,
   lockedInstallationId,
   repositoryId,
+  modelSelection,
+  onSelectMode,
+  automaticModesEnabled = false,
 }: {
+  automaticModesEnabled?: boolean
+  modelSelection?: 'inherit' | 'auto' | 'smart'
+  onSelectMode?: (mode: 'inherit' | 'auto' | 'smart') => Promise<boolean>
   agents: readonly Agent[]
   selectedAgent?: Agent
   onSelectAgent: (agentId: string) => Promise<boolean>
@@ -325,11 +331,17 @@ export function ComposerModelPicker({
             customIcon={selectedAgent ? (selectedAgent.icon ?? 'bot') : undefined}
           />
           <span className="truncate">
-            {selectedAgent && `${selectedAgent.name} · `}
-            {selectedCatalog.modelName ||
-              value.model ||
-              acpHarnessName(value, installations) ||
-              providers[value.provider].short}
+            {modelSelection ? (
+              { inherit: 'Inherit', auto: 'AUTO', smart: 'SMART' }[modelSelection]
+            ) : (
+              <>
+                {selectedAgent && `${selectedAgent.name} · `}
+                {selectedCatalog.modelName ||
+                  value.model ||
+                  acpHarnessName(value, installations) ||
+                  providers[value.provider].short}
+              </>
+            )}
           </span>
           <ChevronDown className="size-3 text-muted-foreground" />
         </Button>
@@ -347,6 +359,23 @@ export function ComposerModelPicker({
             className="flex w-28 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r p-1.5"
             aria-label="Harnesses"
           >
+            {onSelectMode &&
+              (
+                ['inherit', ...(automaticModesEnabled ? (['auto', 'smart'] as const) : [])] as const
+              ).map((mode) => (
+                <Button
+                  key={mode}
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-xs"
+                  aria-pressed={modelSelection === mode}
+                  onClick={async () => {
+                    if (await onSelectMode(mode)) setOpen(false)
+                  }}
+                >
+                  {{ inherit: 'Inherit', auto: 'AUTO', smart: 'SMART' }[mode]}
+                </Button>
+              ))}
             <Button
               type="button"
               size="icon"

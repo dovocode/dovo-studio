@@ -1,6 +1,10 @@
 import { expect, it } from 'vite-plus/test'
 import {
   decode,
+  decodeResult,
+  projectTaskDefaultsSchema,
+  changeTaskModelSelection,
+  changeTaskAutoProject,
   defaultTaskHarness,
   resolveTaskDefaults,
   runtimeDefaultsSchema,
@@ -137,4 +141,56 @@ it('refuses to change the project after input was submitted', () => {
       runtime,
     ),
   ).toThrow('before sending input')
+})
+
+it.each(['inherit', 'auto', 'smart'] as const)(
+  'keeps pending %s selection through project choice and clears it on a manual model',
+  (mode) => {
+    const pending = changeTaskModelSelection(
+      { ...draft, harnessCustomized: true },
+      mode,
+      source,
+      runtime,
+    )
+    const selected = changeTaskProject(pending, source, target, runtime)
+    expect(selected.modelSelection).toBe(mode)
+    expect(selected.harness?.model).toBe('sonnet')
+    expect(selected.harnessCustomized).toBe(true)
+    expect(
+      changeTaskHarness(selected, [], { ...harness, model: 'opus' }).modelSelection,
+    ).toBeUndefined()
+    expect(() =>
+      changeTaskModelSelection({ ...selected, checkoutLocked: true }, mode, target, runtime),
+    ).toThrow('before sending input')
+  },
+)
+
+it('permits only SMART or a concrete configuration in task defaults', () => {
+  expect(decodeResult(projectTaskDefaultsSchema, { modelSelection: 'inherit' }).success).toBe(false)
+  expect(decodeResult(projectTaskDefaultsSchema, { modelSelection: 'auto' }).success).toBe(false)
+  const smart = {
+    ...target,
+    taskDefaults: { ...target.taskDefaults, modelSelection: 'smart' as const },
+  }
+  expect(resolveTaskDefaults(runtime, smart).modelSelection).toBe('smart')
+  expect(
+    resolveTaskDefaults(runtime, {
+      ...smart,
+      taskDefaults: { ...smart.taskDefaults, modelSelection: 'fixed' },
+    }).modelSelection,
+  ).toBeUndefined()
+})
+
+it('AUTO projects use their own model default and preserve explicit AUTO/SMART choices', () => {
+  const inheritedSmart = { ...draft, modelSelection: 'smart' as const }
+  expect(changeTaskAutoProject(inheritedSmart, source, source, runtime).modelSelection).toBe(
+    'inherit',
+  )
+  expect(changeTaskAutoProject(draft, source, source, runtime, [], 'auto').modelSelection).toBe(
+    'auto',
+  )
+  const smart = changeTaskModelSelection(draft, 'smart', source, runtime)
+  expect(changeTaskAutoProject(smart, source, source, runtime).modelSelection).toBe('smart')
+  const explicit = changeTaskHarness(draft, [], { ...harness, model: 'opus' })
+  expect(changeTaskAutoProject(explicit, source, source, runtime).modelSelection).toBe('inherit')
 })

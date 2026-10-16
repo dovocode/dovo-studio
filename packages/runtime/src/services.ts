@@ -1,3 +1,4 @@
+import { ModelSelection } from './agents/tasks/model-selection.js'
 import { runCredentials, type RunCredentials } from './auth/run-credentials.js'
 import { permissionPolicyReadOnly } from '@dovo/protocol'
 import { resolveTaskAgent } from '@dovo/protocol'
@@ -173,6 +174,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   const fileReviews = new FileReviews({ store, git, checkouts, pullCache, reviewMarks })
   const memory = new Memory(db, store, preferences, checkouts)
   const titles = new TitleGeneration(db, store, agents, checkouts)
+  const modelSelection = new ModelSelection(db, store, agents, titles, () =>
+    acpInstallations.list(),
+  )
   const tasks = new Tasks(
       store,
       git,
@@ -192,6 +196,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       (taskId) => memory.availableScopes(taskId),
       () => preferences.get().maxActiveChildAgents,
       () => deviceHosts.settings.get().enabled ?? false,
+      (id, text) => modelSelection.resolveEffect(id, text),
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git)
   const taskReviews = new TaskReviews(db, { store, tasks, git, checkouts, activity })

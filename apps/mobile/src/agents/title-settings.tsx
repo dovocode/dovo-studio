@@ -26,7 +26,8 @@ import { SettingsField as Field } from '../screens/settings-controls'
 import { SettingsAction as Action } from '../screens/settings-controls'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
-export function TitleSettings() {
+export function TitleSettings({ selection = false }: { selection?: boolean }) {
+  const settingsPath = selection ? '/api/agents/selection-settings' : '/api/agents/title-settings'
   const { styles } = useTheme()
 
   const { call, connected, snapshot, callEffect } = useRuntime(),
@@ -46,7 +47,7 @@ export function TitleSettings() {
     setSaved(false)
     if (connected)
       void runClientEffect(
-        callEffect('/api/agents/title-settings/read', {}, titleGenerationSettingsSchema)
+        callEffect(`${settingsPath}/read`, {}, titleGenerationSettingsSchema)
           .pipe(
             Effect.flatMap((value) =>
               nativeEffect(() => {
@@ -68,10 +69,16 @@ export function TitleSettings() {
     return () => {
       active = false
     }
-  }, [call, connected, retry])
+  }, [call, connected, retry, settingsPath])
   useEffect(() => {
     if (settings !== baseline) setSaved(false)
   }, [settings, baseline])
+  if (
+    selection &&
+    snapshot?.smartModelSelectionEnabled !== true &&
+    snapshot?.autoProjectSelectionEnabled !== true
+  )
+    return null
   if (!settings)
     return (
       <View style={{ gap: 12 }}>
@@ -105,25 +112,31 @@ export function TitleSettings() {
   }
   return (
     <View style={styles.card}>
-      <Text style={[styles.title, { fontWeight: '600' }]}>Titles & dictation</Text>
+      <Text style={[styles.title, { fontWeight: '600' }]}>
+        {selection ? 'AUTO & SMART selector (experimental)' : 'Titles & dictation'}
+      </Text>
       <Text style={styles.muted}>
-        This model names new tasks and lightly cleans up dictated text. Cleanup keeps your wording,
-        language and code names; it never sends a message.
+        {selection
+          ? 'Selects projects, harnesses and coding models. Inherits the explicit title model unless overridden.'
+          : 'Choose an explicit harness and model for task titles and dictation cleanup.'}
       </Text>
       <Choice
-        label="Title harness"
+        label={selection ? 'AUTO & SMART selector harness' : 'Title harness'}
         value={
-          settings.harness
-            ? settings.harness.provider === 'acp' && settings.harness.acpInstallationId
-              ? acpHarnessChoiceId(settings.harness.acpInstallationId)
-              : `harness:${settings.harness.provider}`
-            : settings.agentId
-              ? `agent:${settings.agentId}`
-              : 'default'
+          selection && settings.inheritTitleModel
+            ? 'title'
+            : settings.harness
+              ? settings.harness.provider === 'acp' && settings.harness.acpInstallationId
+                ? acpHarnessChoiceId(settings.harness.acpInstallationId)
+                : `harness:${settings.harness.provider}`
+              : settings.agentId
+                ? `agent:${settings.agentId}`
+                : 'default'
         }
         disabled={busy}
         items={[
-          { id: 'default', name: 'Default provider · separate model' },
+          { id: 'default', name: 'Choose a harness' },
+          ...(selection ? [{ id: 'title', name: 'Inherit title model' }] : []),
           ...(['codex', 'claude', 'opencode', 'copilot', 'cursor', 'acp'] as const).map(
             (provider) => ({
               id: `harness:${provider}`,
@@ -142,9 +155,14 @@ export function TitleSettings() {
             })),
         ]}
         onChange={(value) => {
+          if (value === 'title') {
+            setSettings({ ...settings, inheritTitleModel: true })
+            return
+          }
           const installation = installations.find((item) => acpHarnessChoiceId(item.id) === value)
           setSettings({
             ...settings,
+            inheritTitleModel: selection ? false : undefined,
             agentId: value.startsWith('agent:') ? value.slice(6) : '',
             harness: installation
               ? acpInstallationHarness(installation)
@@ -159,41 +177,45 @@ export function TitleSettings() {
           })
         }}
       />
-      {agent.provider === 'acp' && (
+      {!(selection && settings.inheritTitleModel) && agent.provider === 'acp' && (
         <AcpRegistry
           agent={agent}
           onChange={(agent) => setSettings(titleSettingsForHarness(agent))}
         />
       )}
-      <ModelSettings
-        serviceTier={false}
-        disabled={busy}
-        agent={agent}
-        onChange={(agent) =>
-          setSettings({
-            ...settings,
-            model: agent.model,
-            reasoning: agent.reasoning ?? '',
-          })
-        }
-      />
-      {settings.harness && (agent.provider === 'acp' || agent.provider === 'opencode') && (
-        <Field
-          label="Title harness endpoint"
-          editable={!busy}
-          value={settings.harness.endpoint}
-          onChangeText={(endpoint) =>
+      {!(selection && settings.inheritTitleModel) && (
+        <ModelSettings
+          serviceTier={false}
+          disabled={busy || (selection && !!settings.inheritTitleModel)}
+          agent={agent}
+          onChange={(agent) =>
             setSettings({
               ...settings,
-              harness: {
-                ...settings.harness!,
-                endpoint,
-              },
+              model: agent.model,
+              reasoning: agent.reasoning ?? '',
             })
           }
         />
       )}
-      {settings.harness?.provider === 'acp' && (
+      {settings.harness &&
+        !(selection && settings.inheritTitleModel) &&
+        (agent.provider === 'acp' || agent.provider === 'opencode') && (
+          <Field
+            label="Title harness endpoint"
+            editable={!busy}
+            value={settings.harness.endpoint}
+            onChangeText={(endpoint) =>
+              setSettings({
+                ...settings,
+                harness: {
+                  ...settings.harness!,
+                  endpoint,
+                },
+              })
+            }
+          />
+        )}
+      {!(selection && settings.inheritTitleModel) && settings.harness?.provider === 'acp' && (
         <Field
           label="Title ACP arguments"
           editable={!busy}
@@ -212,15 +234,20 @@ export function TitleSettings() {
       )}
       <Action
         wide
-        label={busy ? 'Saving…' : 'Save title settings'}
+        label={busy ? 'Saving…' : selection ? 'Save selection model' : 'Save title settings'}
         disabled={
-          !connected || busy || !baseline || JSON.stringify(settings) === JSON.stringify(baseline)
+          !connected ||
+          busy ||
+          !baseline ||
+          JSON.stringify(settings) === JSON.stringify(baseline) ||
+          (!(selection && settings.inheritTitleModel) &&
+            (!settings.model.trim() || (!settings.harness && !settings.agentId)))
         }
         onPress={() =>
           act(() =>
             mobileWorkflow(function* () {
               const saved = yield* callEffect(
-                '/api/agents/title-settings/save',
+                `${settingsPath}/save`,
                 { before: baseline, after: settings },
                 titleGenerationSettingsSchema,
               )
@@ -233,7 +260,9 @@ export function TitleSettings() {
       />
       {saved && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Title settings saved. Applies to new titles and dictation cleanup.
+          {selection
+            ? 'Selection model settings saved.'
+            : 'Title settings saved. Applies to new titles and dictation cleanup.'}
         </Text>
       )}
       {!!error && <Text style={styles.error}>{error}</Text>}

@@ -1333,3 +1333,56 @@ it('preserves advanced controls through storage and rejects clearing or widening
     db.close()
   }
 })
+
+it('persists AUTO preferences on drafts and locks them once input is submitted', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'auto',
+          title: 'New task',
+          repositoryId: 'repo',
+          agentId: '',
+          status: 'draft',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+        },
+      ],
+    }))
+    store.patch({
+      collection: 'tasks',
+      id: 'auto',
+      changes: {
+        autoProject: { before: null, after: true },
+        autoProjectExecution: { before: null, after: 'worktree' },
+      },
+    })
+    expect(new WorkspaceStore(db).task('auto')).toMatchObject({
+      autoProject: true,
+      autoProjectExecution: 'worktree',
+    })
+    store.updateTask('auto', (task) => ({ ...task, checkoutLocked: true }))
+    expect(() =>
+      store.patch({
+        collection: 'tasks',
+        id: 'auto',
+        changes: { autoProject: { before: true, after: null } },
+      }),
+    ).toThrow('before sending the first message')
+    expect(() =>
+      store.patch({
+        collection: 'tasks',
+        id: 'auto',
+        changes: { autoProjectExecution: { before: 'worktree', after: 'main' } },
+      }),
+    ).toThrow('before sending the first message')
+  } finally {
+    db.close()
+  }
+})

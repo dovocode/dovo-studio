@@ -137,6 +137,9 @@ export function selectedTaskHarness(
 export function taskHarnessChanges(task: Task, selection: string, agent: Agent) {
   const custom = selection.startsWith('agent:')
   return {
+    ...(task.modelSelection
+      ? { modelSelection: { before: task.modelSelection, after: null } }
+      : {}),
     agentId: {
       before: task.agentId,
       after: custom ? selection.slice(6) : '',
@@ -177,6 +180,8 @@ export function taskHarnessLabel(
   modelName?: string,
   harnessName?: string,
 ) {
+  if (task.modelSelection)
+    return { inherit: 'Inherit', auto: 'AUTO', smart: 'SMART' }[task.modelSelection]
   if (!agent) return 'Choose agent'
   const name = !task.agentId
     ? (acpHarnessName(agent, installations) ?? harnessNames[agent.provider])

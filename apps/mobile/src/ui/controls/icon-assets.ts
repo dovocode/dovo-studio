@@ -2,6 +2,7 @@
 import type { ImageSourcePropType } from 'react-native'
 import type { IconName } from './icon'
 export const iconAssets = {
+  magic: require('../../../assets/icons/magic.png'),
   agents: require('../../../assets/icons/agents.png'),
   expand: require('../../../assets/icons/expand.png'),
   collapse: require('../../../assets/icons/collapse.png'),

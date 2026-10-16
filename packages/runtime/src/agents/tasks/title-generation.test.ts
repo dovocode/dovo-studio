@@ -1,3 +1,4 @@
+import { RuntimePreferences } from '../../storage/runtime-preferences'
 import { expect, it, vi } from 'vite-plus/test'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -134,7 +135,7 @@ it('answers side questions in an ephemeral session without joining the task', as
     example: false,
   })
   s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
-  s.titles.save({ agentId: 'harness', model: '', reasoning: '' })
+  s.titles.save({ agentId: 'harness', model: 'utility-model', reasoning: '' })
   const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('The answer.'))
   vi.spyOn(s.registry, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
   try {
@@ -168,7 +169,7 @@ it('persists separate side chats, includes their history, and follows archive an
     example: false,
   })
   s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
-  s.titles.save({ agentId: 'harness', model: '', reasoning: '' })
+  s.titles.save({ agentId: 'harness', model: 'utility-model', reasoning: '' })
   const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Saved answer'))
   vi.spyOn(s.registry, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
   try {
@@ -298,7 +299,7 @@ it('cancels a deleted parent’s side request without recreating its saved data'
     example: false,
   })
   s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
-  s.titles.save({ agentId: 'harness', model: '', reasoning: '' })
+  s.titles.save({ agentId: 'harness', model: 'utility-model', reasoning: '' })
   const run = vi.fn<AgentAdapter['run']>(async (input) => {
     await new Promise<void>((_, reject) => {
       if (input.signal.aborted) reject(new Error('Cancelled'))
@@ -377,7 +378,7 @@ it('side chats read the existing task checkout without sharing the coding sessio
     example: false,
   })
   s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
-  s.titles.save({ agentId: 'harness', model: '', reasoning: '' })
+  s.titles.save({ agentId: 'harness', model: 'utility-model', reasoning: '' })
   const run = vi.fn<AgentAdapter['run']>(async (input) => {
     expect(input.cwd).toBe(directory)
     expect(input.tools).toBeUndefined()
@@ -442,7 +443,7 @@ it('fails a side-chat answer when its checkout is unavailable instead of using a
     example: false,
   })
   s.store.update((workspace) => ({ ...workspace, tasks: [task] }))
-  s.titles.save({ agentId: 'harness', model: '', reasoning: '' })
+  s.titles.save({ agentId: 'harness', model: 'utility-model', reasoning: '' })
   const adapter = vi.spyOn(s.registry, 'get')
   try {
     const chat = s.titles.saveSideChat({ id: task.id, draft: 'Question' })
@@ -465,3 +466,315 @@ it('fails a side-chat answer when its checkout is unavailable instead of using a
     s.db.close()
   }
 })
+
+function autoFixture() {
+  const s = setup()
+  new RuntimePreferences(s.db).save({ enableAutoProjectSelection: true })
+  s.store.update((w) => ({
+    ...w,
+    repositories: [
+      { id: 'scratch', kind: 'scratch', name: 'Private', path: '/scratch', branch: '' },
+      {
+        id: 'web',
+        name: 'Dashboard',
+        path: '/web',
+        branch: 'main',
+        taskDefaults: { execution: 'worktree' },
+      },
+      {
+        id: 'api',
+        name: 'Billing API',
+        path: '/api',
+        branch: 'main',
+        taskDefaults: { execution: 'worktree' },
+      },
+    ],
+  }))
+  s.store.patch({
+    collection: 'tasks',
+    id: 'auto',
+    changes: {},
+    create: decode(taskSchema, {
+      id: 'auto',
+      title: 'New task',
+      repositoryId: 'scratch',
+      autoProject: true,
+      agentId: '',
+      status: 'draft',
+      createdAt: '2026-10-16T00:00:00Z',
+      messages: [],
+      files: [],
+      draft: '',
+      example: false,
+    }),
+  })
+  s.titles.save({ agentId: 'harness', model: 'small-title-model' })
+  return s
+}
+it('selects primary and linked projects with the title model before creating any checkouts', async () => {
+  const s = autoFixture()
+  let captured: AgentRun | undefined
+  vi.spyOn(s.registry, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      captured = run
+      run.onText(
+        JSON.stringify({
+          status: 'selected',
+          repositoryId: 'web',
+          links: [{ repositoryId: 'api', access: 'read-only' }],
+          reason: 'Dashboard needs API reference',
+        }),
+      )
+    },
+  })
+  try {
+    const result = await runClientEffect(
+      s.titles.selectProjectsEffect({
+        id: 'auto',
+        text: 'Update the dashboard for the billing API',
+      }),
+    )
+    expect(result).toMatchObject({
+      repositoryId: 'web',
+      execution: 'worktree',
+      autoProject: undefined,
+      linkedCheckouts: [{ repositoryId: 'api', access: 'read-only', execution: 'worktree' }],
+      messages: [],
+    })
+    expect(captured?.agent.model).toBe('small-title-model')
+    expect(captured?.tools).toBe('none')
+    expect(captured?.prompt).toContain('Billing API')
+    expect(result.linkedCheckoutSetup).toBeUndefined()
+    expect(result.checkoutBranch).toBeUndefined()
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+it.each([
+  { status: 'ambiguous', repositoryId: null, links: [], reason: 'Which app?' },
+  { status: 'selected', repositoryId: 'unknown', links: [], reason: '' },
+  {
+    status: 'selected',
+    repositoryId: 'web',
+    links: [{ repositoryId: 'web', access: 'edit' }],
+    reason: '',
+  },
+  {
+    status: 'selected',
+    repositoryId: null,
+    links: [{ repositoryId: 'api', access: 'edit' }],
+    reason: '',
+  },
+  {
+    status: 'selected',
+    repositoryId: 'web',
+    links: [
+      { repositoryId: 'api', access: 'edit' },
+      { repositoryId: 'api', access: 'read-only' },
+    ],
+    reason: '',
+  },
+  { nonsense: true },
+])('preserves AUTO drafts when the selection is ambiguous or invalid: %j', async (selection) => {
+  const s = autoFixture()
+  vi.spyOn(s.registry, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => run.onText(JSON.stringify(selection)),
+  })
+  try {
+    const before = s.store.task('auto')
+    await expect(
+      runClientEffect(s.titles.selectProjectsEffect({ id: 'auto', text: 'Update the app' })),
+    ).rejects.toThrow(/AUTO/)
+    expect(s.store.task('auto')).toEqual(before)
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+it('keeps general conversations projectless and refuses a stale selection', async () => {
+  const s = autoFixture()
+  let changeDraft = false
+  vi.spyOn(s.registry, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (changeDraft) s.store.updateTask('auto', (task) => ({ ...task, autoProject: undefined }))
+      run.onText(
+        JSON.stringify({
+          status: 'selected',
+          repositoryId: null,
+          links: [],
+          reason: 'General question',
+        }),
+      )
+    },
+  })
+  try {
+    expect(
+      await runClientEffect(s.titles.selectProjectsEffect({ id: 'auto', text: 'Explain React' })),
+    ).toMatchObject({ repositoryId: 'scratch', autoProject: undefined, linkedCheckouts: [] })
+    s.store.updateTask('auto', (task) => ({ ...task, autoProject: true }))
+    changeDraft = true
+    await expect(
+      runClientEffect(s.titles.selectProjectsEffect({ id: 'auto', text: 'Explain React' })),
+    ).rejects.toThrow(/thread changed/)
+    expect(s.store.task('auto').repositoryId).toBe('scratch')
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+
+it.each(['main', 'worktree'] as const)(
+  'applies AUTO %s checkout choices to Git projects while folders stay local',
+  async (execution) => {
+    const s = autoFixture()
+    s.store.update((w) => ({
+      ...w,
+      repositories: [
+        ...w.repositories,
+        { id: 'docs', kind: 'folder', name: 'Docs', path: '/docs', branch: '' },
+      ],
+    }))
+    s.store.updateTask('auto', (task) => ({ ...task, autoProjectExecution: execution }))
+    vi.spyOn(s.registry, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) =>
+        run.onText(
+          JSON.stringify({
+            status: 'selected',
+            repositoryId: 'web',
+            links: [
+              { repositoryId: 'api', access: 'edit' },
+              { repositoryId: 'docs', access: 'read-only' },
+            ],
+            reason: '',
+          }),
+        ),
+    })
+    try {
+      const result = await runClientEffect(
+        s.titles.selectProjectsEffect({
+          id: 'auto',
+          text: 'Update billing and dashboard with docs as reference',
+        }),
+      )
+      expect(result.execution).toBe(execution)
+      expect(result.autoProjectExecution).toBeUndefined()
+      expect(result.linkedCheckouts).toMatchObject([
+        { repositoryId: 'api', execution },
+        { repositoryId: 'docs', execution: 'main' },
+      ])
+    } finally {
+      await s.titles.dispose()
+      await s.registry.dispose()
+      s.db.close()
+    }
+  },
+)
+
+it('rejects experimental AUTO while disabled, including disabling during selection', async () => {
+  const s = autoFixture()
+  const preferences = new RuntimePreferences(s.db)
+  preferences.save({ enableAutoProjectSelection: false })
+  const get = vi.spyOn(s.registry, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      preferences.save({ enableAutoProjectSelection: false })
+      run.onText(JSON.stringify({ status: 'selected', repositoryId: 'web', links: [], reason: '' }))
+    },
+  })
+  try {
+    const before = s.store.task('auto')
+    await expect(
+      runClientEffect(s.titles.selectProjectsEffect({ id: 'auto', text: 'Update dashboard' })),
+    ).rejects.toThrow(/experimental and disabled/)
+    expect(get).not.toHaveBeenCalled()
+    preferences.save({ enableAutoProjectSelection: true })
+    await expect(
+      runClientEffect(s.titles.selectProjectsEffect({ id: 'auto', text: 'Update dashboard' })),
+    ).rejects.toThrow(/experimental and disabled/)
+    expect(s.store.task('auto')).toEqual(before)
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+
+it('requires an explicit title harness/model and inherits it for selection unless overridden', async () => {
+  const s = setup()
+  new RuntimePreferences(s.db).save({ enableSmartModelSelection: true })
+  try {
+    expect(() => s.titles.save({ model: 'title-model' })).toThrow(
+      'explicit utility harness and model',
+    )
+    expect(() => s.titles.save({ agentId: 'harness' })).toThrow(
+      'explicit utility harness and model',
+    )
+    expect(s.titles.read('auto-selection')).toMatchObject({ inheritTitleModel: true })
+    s.titles.save({ agentId: 'harness', model: 'title-model' })
+    s.titles.save({ inheritTitleModel: true }, 'auto-selection')
+    const runs: AgentRun[] = []
+    vi.spyOn(s.registry, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        runs.push(run)
+        run.onText('{"id":"0","reason":"Suitable"}')
+      },
+    })
+    await runClientEffect(s.titles.selectModelEffect('{}'))
+    expect(runs[0].agent.model).toBe('title-model')
+    s.titles.save({ agentId: 'harness', model: 'selector-model' }, 'auto-selection')
+    await runClientEffect(s.titles.selectModelEffect('{}'))
+    expect(runs[1].agent.model).toBe('selector-model')
+    expect(s.titles.read().model).toBe('title-model')
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+
+it.each(['inherit', 'auto', 'smart'] as const)(
+  'AUTO projects use their separate %s model default instead of the ordinary SMART task default',
+  async (mode) => {
+    const s = autoFixture()
+    const preferences = new RuntimePreferences(s.db)
+    preferences.save({ ...preferences.get(), autoProjectModelSelection: mode })
+    s.store.updateTask('auto', (task) => ({
+      ...task,
+      modelSelection: 'smart',
+      harnessCustomized: undefined,
+    }))
+    vi.spyOn(s.registry, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        run.onText(
+          JSON.stringify({
+            status: 'selected',
+            repositoryId: 'web',
+            links: [{ repositoryId: 'api', access: 'edit' }],
+            reason: '',
+          }),
+        )
+      },
+    })
+    try {
+      const selected = await runClientEffect(
+        s.titles.selectProjectsEffect({ id: 'auto', text: 'Update dashboard and API' }),
+      )
+      expect(selected.modelSelection).toBe(mode)
+      expect(selected.linkedCheckouts).toMatchObject([{ repositoryId: 'api', access: 'edit' }])
+    } finally {
+      await s.titles.dispose()
+      await s.registry.dispose()
+      s.db.close()
+    }
+  },
+)

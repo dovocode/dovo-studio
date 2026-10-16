@@ -1,5 +1,5 @@
 import { resolveLinkTargets, type LinkTarget, type LinkOrigin } from '@dovo/studio-core/links'
-import { decodeWorkTarget, encodeWorkTarget } from '@dovo/protocol'
+import { configuredTaskHarness, decodeWorkTarget, encodeWorkTarget } from '@dovo/protocol'
 import { useLinkChooser } from './link-chooser'
 import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -715,7 +715,8 @@ function WorkbenchContent({
                 </div>
               </div>
               {connected &&
-                snapshot?.defaults?.configured === false &&
+                snapshot?.defaults &&
+                !configuredTaskHarness(snapshot.defaults) &&
                 target.viewId !== 'agents' && (
                   <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 border-t bg-card px-4 py-2">
                     <p className="text-xs text-muted-foreground">

@@ -122,7 +122,7 @@ export const runtimeExtension = defineStudioExtension(
       order: 4.2,
       settingsSection: 'computers',
       keywords:
-        'resume continue interrupted restart startup auto archive inactive keep awake sleep caffeinate child agents subagent concurrent parallel limit',
+        'resume continue interrupted restart startup auto project selection experimental archive inactive keep awake sleep caffeinate child agents subagent concurrent parallel limit',
       load: () => import('./running-tasks-view'),
     },
     {

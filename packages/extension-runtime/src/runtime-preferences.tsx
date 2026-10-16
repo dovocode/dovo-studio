@@ -3,6 +3,7 @@ import { Effect } from 'effect'
 import {
   normalizeBranchPrefix,
   runtimePreferencesSchema,
+  taskModelSelectionSchema,
   artifactRetentionChoices,
   artifactRetentionSchema,
   decode,
@@ -110,6 +111,59 @@ export function RunningTaskPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <SettingsGroup title="Model selection (experimental)">
+        <SettingRow
+          label="Automatic model selection (experimental)"
+          description="Enable AUTO and SMART model choices. Inherit is always available. Choices resolve once before the first turn."
+        >
+          <Toggle
+            label="Automatic model selection (experimental)"
+            checked={value?.enableSmartModelSelection ?? false}
+            disabled={disabled || snapshot?.smartModelSelectionEnabled === undefined}
+            onChange={(enableSmartModelSelection) => save({ enableSmartModelSelection })}
+          />
+        </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup title="Project selection (experimental)">
+        <SettingRow
+          label="AUTO project selection (experimental)"
+          description="Use the title model to select primary and linked projects from the first prompt on this computer."
+        >
+          <Toggle
+            label="AUTO project selection (experimental)"
+            checked={value?.enableAutoProjectSelection ?? false}
+            disabled={disabled || snapshot?.autoProjectSelectionEnabled === undefined}
+            onChange={(enableAutoProjectSelection) => save({ enableAutoProjectSelection })}
+          />
+        </SettingRow>
+        {value?.enableAutoProjectSelection && (
+          <SettingRow
+            label="AUTO project mode model"
+            description="Independent of normal task defaults. Inherit uses the selected project's harness/model; AUTO chooses a model within it; SMART chooses both."
+          >
+            <Select
+              value={value.autoProjectModelSelection}
+              disabled={disabled}
+              onValueChange={(mode) =>
+                save({ autoProjectModelSelection: decode(taskModelSelectionSchema, mode) })
+              }
+            >
+              <SelectTrigger aria-label="AUTO project mode model">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="inherit">Inherit</SelectItem>
+                <SelectItem value="auto" disabled={!value.enableSmartModelSelection}>
+                  AUTO
+                </SelectItem>
+                <SelectItem value="smart" disabled={!value.enableSmartModelSelection}>
+                  SMART
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        )}
+      </SettingsGroup>
       <SettingsGroup title="Supervised mode">
         <SettingRow
           label="Always allow web requests"

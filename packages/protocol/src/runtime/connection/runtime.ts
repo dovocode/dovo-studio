@@ -8,7 +8,12 @@ export const PAIRING_PROTOCOL_VERSION = 2
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { minValue, urlSchema, refine, maxValue } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
-import { workspaceSchema, providerSchema, taskSchema } from '../../workspace.js'
+import {
+  workspaceSchema,
+  providerSchema,
+  taskSchema,
+  taskModelSelectionSchema,
+} from '../../workspace.js'
 import { runtimeDefaultsSchema } from './runtime-setup.js'
 import { pendingQuestionSchema } from '../../conversation/workflow/questions.js'
 import { acpInstallationSchema } from '../../auth/acp-registry.js'
@@ -99,6 +104,9 @@ export const snapshotSchema = mutableStruct({
   allowWebRequests: Schema.optional(Schema.Boolean),
   artifactsEnabled: Schema.optional(Schema.Boolean),
   codeReviewsEnabled: Schema.optional(Schema.Boolean),
+  autoProjectSelectionEnabled: Schema.optional(Schema.Boolean),
+  smartModelSelectionEnabled: Schema.optional(Schema.Boolean),
+  autoProjectModelSelection: Schema.optional(taskModelSelectionSchema),
   scopedAgentsSupported: Schema.optional(Schema.Boolean),
   permissionPolicySupported: Schema.optional(Schema.Boolean),
   workspaceReconciliationSupported: Schema.optional(Schema.Boolean),
@@ -383,6 +391,16 @@ export const runtimePreferencesSchema = mutableStruct({
     Schema.withDecodingDefaultType(Effect.sync(() => 'forever' as const)),
   ),
   enableArtifacts: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
+  autoProjectModelSelection: taskModelSelectionSchema.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => 'inherit' as const)),
+  ),
+  enableSmartModelSelection: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
+  /** Experimental: infer primary and linked projects with the title model. */
+  enableAutoProjectSelection: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
   /** Experimental: enable independent agent reviews, findings and verification. */
   enableCodeReviews: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   /** Experimental: let agents hand PR feedback monitoring to this runtime. */

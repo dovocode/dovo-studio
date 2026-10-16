@@ -18,14 +18,22 @@ export function TaskMachineSelector({
   disabled,
   onMoving,
   onProjectChange,
+  onAuto,
   onSelectRemote,
 }: {
   task: Task
   text: string
   disabled: boolean
   onMoving: (moving: boolean) => void
-  onProjectChange: (repository: Repository) => Promise<void>
-  onSelectRemote?: (runtimeId: string, repository: Repository, text: string) => Promise<void>
+  onAuto: () => Promise<void>
+  onProjectChange: (repository: Repository, preserveAuto?: boolean) => Promise<void>
+  onSelectRemote?: (
+    runtimeId: string,
+    repository: Repository,
+    text: string,
+    autoProject?: boolean,
+    autoProjectExecution?: Task['autoProjectExecution'],
+  ) => Promise<void>
 }) {
   const runtime = useRuntime()
   const { navigate } = useNavigation()
@@ -36,6 +44,8 @@ export function TaskMachineSelector({
     <View style={{ gap: 4 }}>
       <FolderPicker
         stacked
+        autoProject={task.autoProject}
+        onAuto={runtime.snapshot?.autoProjectSelectionEnabled === true ? onAuto : undefined}
         value={task.repositoryId}
         repositories={runtime.snapshot?.workspace.repositories ?? []}
         disabled={
@@ -47,13 +57,19 @@ export function TaskMachineSelector({
           !!task.workItem
         }
         onMoving={onMoving}
-        onChange={async (_id, target, runtimeId) => {
+        onChange={async (_id, target, runtimeId, preserveAuto) => {
           if (runtimeId === runtime.activeId) {
-            await onProjectChange(target)
+            await onProjectChange(target, preserveAuto)
             return
           }
           if (onSelectRemote) {
-            await onSelectRemote(runtimeId, target, text)
+            await onSelectRemote(
+              runtimeId,
+              target,
+              text,
+              preserveAuto ? task.autoProject : undefined,
+              preserveAuto ? task.autoProjectExecution : undefined,
+            )
             return
           }
           const destination = runtime.overviews.find((entry) => entry.profile.id === runtimeId)
@@ -61,7 +77,7 @@ export function TaskMachineSelector({
           if (!destination?.connected || !origin || !repository)
             throw new Error('This machine or project is unavailable.')
           const next = taskMachineDraft(
-            { ...task, draft: text },
+            { ...task, draft: text, autoProject: preserveAuto ? task.autoProject : undefined },
             target,
             destination.snapshot?.defaults,
           )

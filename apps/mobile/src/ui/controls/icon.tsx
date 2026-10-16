@@ -1,4 +1,5 @@
 import {
+  WandSparkles,
   ArrowDown,
   ArrowUp,
   ArrowUpRight,
@@ -74,6 +75,7 @@ import {
 } from 'lucide-react-native'
 import { useTheme } from '../theme'
 const icons = {
+  magic: WandSparkles,
   agents: Users,
   expand: Maximize2,
   collapse: Minimize2,
