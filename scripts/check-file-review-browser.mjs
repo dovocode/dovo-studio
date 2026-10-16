@@ -10,7 +10,7 @@ const css=s=>{const v=flat(s);return {...v,paddingLeft:v.paddingLeft??v.paddingH
 const base={display:'flex',flexDirection:'column',boxSizing:'border-box',flexShrink:0,minHeight:0};
 export const View=({children,style})=><div style={{...base,...css(style)}}>{children}</div>;
 export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole} style={{display:'block',overflowWrap:'anywhere',...css(style)}}>{children}</span>;
-export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button disabled={disabled} aria-label={accessibilityLabel} role={accessibilityRole} aria-pressed={accessibilityState?.selected} onClick={onPress} style={{...base,padding:0,border:0,textAlign:'left',font:'inherit',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button disabled={disabled} aria-label={accessibilityLabel} role={accessibilityRole} aria-pressed={accessibilityState?.selected} aria-checked={accessibilityState?.checked} onClick={onPress} style={{...base,padding:0,border:0,textAlign:'left',font:'inherit',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const Switch=({value,onValueChange,accessibilityLabel,disabled})=><button role="switch" aria-label={accessibilityLabel} aria-checked={value} disabled={disabled} onClick={()=>onValueChange(!value)} style={{width:51,height:31,flexShrink:0}}>●</button>;
 export const TextInput=({value,onChangeText,accessibilityLabel,placeholder,style})=><input aria-label={accessibilityLabel} placeholder={placeholder} value={value} onChange={e=>onChangeText(e.target.value)} style={{boxSizing:'border-box',...css(style)}}/>;
 export const Modal=({visible,children})=>visible?createPortal(<div role="dialog" style={{position:'fixed',inset:0,zIndex:200,display:'flex'}}>{children}</div>,document.body):null;
@@ -60,6 +60,7 @@ const mocks = {
 mocks['./text'] = mocks['../../ui/content/text']
 mocks['../theme'] = mocks['../../ui/theme']
 mocks['../controls/icon'] = 'export const Icon=({name})=><span aria-hidden data-icon={name} />;'
+mocks['../../ui/controls/icon'] = mocks['../controls/icon']
 const bundle = await build({
   stdin: {
     contents: `import {createRoot} from 'react-dom/client';import {useMemo,useState} from 'react';import {useFiles} from 'test-store';import {changedFileFingerprint,reviewFileState,orderReviewFiles} from '@dovo/protocol';import {useFileReview as useDesktopReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';import {useFileReview as useMobileReview} from '${root}/apps/mobile/src/scm/review/use-file-review.ts';import {ReviewFiles,FileReviewControls} from '${root}/packages/studio-ui/src/review/file-review.tsx';import {OrganizeReview} from '${root}/packages/studio-ui/src/review/organize-review.tsx';import {MobileFileReview} from '${root}/apps/mobile/src/scm/review/file-review.tsx';import {MobileOrganizeReview} from '${root}/apps/mobile/src/scm/review/organize-review.tsx';
@@ -119,7 +120,7 @@ try {
   await page.waitForFunction(
     () =>
       document
-        .querySelector('[data-client="mobile"] [role="switch"][aria-label="File viewed"]')
+        .querySelector('[data-client="mobile"] [role="checkbox"][aria-label="File viewed"]')
         .getAttribute('aria-checked') === 'true',
   )
   await desktop.getByRole('button', { name: 'Next unviewed', exact: true }).click()
