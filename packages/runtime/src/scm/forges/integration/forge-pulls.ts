@@ -102,7 +102,7 @@ export class ForgePullRequests {
       (!connectionId && origin) ||
       projects.find((repo) => repo.forge?.connectionId === selected?.id)
     const cwd = project?.path ?? homedir()
-    const prepare = async () => {
+    const prepare = async (refresh = false) => {
       const validate = () => {
         if (selected && this.connections.get(selected.id).revision !== selected.revision)
           throw new HttpError(
@@ -130,12 +130,13 @@ export class ForgePullRequests {
         selected,
         ['url', target.url, project?.id, project?.forge],
         validate,
+        refresh,
       )
     }
     return {
-      identity: async (_refresh: boolean) => (await prepare()).destination,
-      sourceIdentity: async () => {
-        const { readerIdentity, destination } = await prepare()
+      identity: async (refresh: boolean) => (await prepare(refresh)).destination,
+      sourceIdentity: async (refresh = false) => {
+        const { readerIdentity, destination } = await prepare(refresh)
         return { readerIdentity, destination }
       },
       guard: async (input: { expectedReaderIdentity?: string; expectedDestination?: string }) =>
@@ -360,6 +361,7 @@ export class ForgePullRequests {
     return new PullRequests(this.git, {
       host: scope.host,
       repository: scope.repository,
+      viewerLogin: scope.viewerLogin,
       env: credential.env,
       token: async () => {
         scope.validate()
@@ -369,7 +371,7 @@ export class ForgePullRequests {
       validate: scope.validate,
     })
   }
-  async sourceContext(cwd: string): Promise<SourceContext> {
+  async sourceContext(cwd: string, refresh = false): Promise<SourceContext> {
     const repository = await this.boundRepository(cwd)
     const selected = repository?.forge
     let connection = selected ? this.connections.get(selected.connectionId) : undefined
@@ -409,6 +411,7 @@ export class ForgePullRequests {
       connection,
       [cwd, selected],
       validate,
+      refresh,
     )
   }
   private scopedAdapter(scope: SourceContext, cwd: string) {
@@ -434,6 +437,8 @@ export class ForgePullRequests {
       list: (cwd: string, state: 'open' | 'closed' | 'all', page: number, background = false) =>
         this.list(cwd, state, page, background, destination),
       detail: (cwd: string, number: number) => this.detail(cwd, number, destination),
+      nativeStack: (cwd: string, number: number, stackNumber: number) =>
+        this.nativeStack(cwd, number, stackNumber, destination),
       section: (cwd: string, number: number, section: PullDetailSection) =>
         this.section(cwd, number, section, destination),
       status: (cwd: string, number: number, background = false) =>
@@ -443,17 +448,17 @@ export class ForgePullRequests {
   }
   async identity(cwd: string, refresh = false) {
     if (forgePullTarget(cwd)) return this.urlTarget(cwd).identity(refresh)
-    return (await this.sourceContext(cwd)).destination
+    return (await this.sourceContext(cwd, refresh)).destination
   }
-  async sourceIdentity(cwd: string) {
-    const { readerIdentity, destination } = await this.sourceContext(cwd)
+  async sourceIdentity(cwd: string, refresh = false) {
+    const { readerIdentity, destination } = await this.sourceContext(cwd, refresh)
     return { readerIdentity, destination }
   }
   async guard(
     cwd: string,
-    input: { expectedDestination?: string; expectedReaderIdentity?: string },
+    input: { expectedDestination?: string; expectedReaderIdentity?: string; refresh?: boolean },
   ) {
-    const scope = await this.sourceContext(cwd)
+    const scope = await this.sourceContext(cwd, input.refresh === true)
     guardSource(scope, input)
     return scope
   }
@@ -466,6 +471,16 @@ export class ForgePullRequests {
   ) {
     const scope = await this.sourceContext(cwd)
     guardSource(scope, { expectedDestination })
+    return this.listInContext(cwd, state, page, background, scope)
+  }
+  async listInContext(
+    cwd: string,
+    state: 'open' | 'closed' | 'all',
+    page: number,
+    background: boolean,
+    scope: SourceContext,
+  ) {
+    scope.validate()
     const result = await (this.scopedAdapter(scope, cwd)?.list(state, page, background) ??
       this.scopedGithub(scope).list(cwd, state, page, background))
     scope.validate()
@@ -474,6 +489,19 @@ export class ForgePullRequests {
       destination: scope.destination,
       pulls: result.pulls.map((pull) => ({ ...pull, destination: scope.destination })),
     }
+  }
+  async nativeStack(
+    cwd: string,
+    number: number,
+    stackNumber: number,
+    expectedDestination?: string,
+  ) {
+    const scope = await this.sourceContext(cwd)
+    guardSource(scope, { expectedDestination })
+    if (scope.provider !== 'github') return undefined
+    const stack = await this.scopedGithub(scope).nativeStack(cwd, number, stackNumber)
+    scope.validate()
+    return stack
   }
   async status(cwd: string, number: number, background = false, expectedDestination?: string) {
     if (forgePullTarget(cwd))

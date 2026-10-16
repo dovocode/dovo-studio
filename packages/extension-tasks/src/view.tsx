@@ -869,23 +869,10 @@ export default function TasksView({ entityId }: StudioViewProps) {
         )}
         <div
           ref={workspacePane}
-          data-project-panel-frame
           className={cn('relative flex min-h-0 min-w-0 flex-1 overflow-hidden', native && 'hidden')}
         >
-          {!temporary && (
-            <TaskProjectPopover>
-              <TaskProjectPanel
-                key={taskCollectionKey(activeRuntimeId, task.id)}
-                task={task}
-                onPullLink={(url) => openPullPreview(task, url)}
-                onTerminal={showTerminal}
-                onSurface={(next) => {
-                  selectSurface(next)
-                }}
-              />
-            </TaskProjectPopover>
-          )}
           <div
+            data-project-panel-frame
             ref={(element) => {
               panes.current.chat = element
             }}
@@ -897,6 +884,19 @@ export default function TasksView({ entityId }: StudioViewProps) {
                 'hidden',
             )}
           >
+            {!temporary && (
+              <TaskProjectPopover>
+                <TaskProjectPanel
+                  key={taskCollectionKey(activeRuntimeId, task.id)}
+                  task={task}
+                  onPullLink={(url) => openPullPreview(task, url)}
+                  onTerminal={showTerminal}
+                  onSurface={(next) => {
+                    selectSurface(next)
+                  }}
+                />
+              </TaskProjectPopover>
+            )}
             {!temporary && !projectPanelOpen && !native && (
               <TaskWaitingPanel
                 onPullLink={(url) => openPullPreview(task, url)}

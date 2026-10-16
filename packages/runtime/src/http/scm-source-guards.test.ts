@@ -97,6 +97,7 @@ async function setup(provider: 'forgejo' | 'github' = 'forgejo') {
       githubWrites.push({ token, path: request.path })
       return JSON.stringify({ html_url: `https://github.com/${repository}/pull/7` })
     }
+    if (request.path.includes('/pulls?')) return JSON.stringify([{ ...pull(), merged_at: null }])
     if (request.path.endsWith('/pulls/7'))
       return JSON.stringify({
         ...pull(),
@@ -165,9 +166,16 @@ async function setup(provider: 'forgejo' | 'github' = 'forgejo') {
     },
     setAccount: (value: number) => {
       account = value
+      // Changing accounts changes the captured credential, not the user behind an unchanged token.
+      credential = `account-${value}`
+      s.forges.save({ ...s.forges.get(connection.id), token: credential })
+      bind()
     },
     rejectUser: () => {
       userFailure = true
+      credential = 'rejected-credential'
+      s.forges.save({ ...s.forges.get(connection.id), token: credential })
+      bind()
     },
     rejectPrivateRead: (status: 401 | 403) => {
       privateReadFailure = status
@@ -520,4 +528,26 @@ it('checks URL section destinations before returning cached PR data', async () =
   ).toBe(409)
   expect(f.githubReads.filter((path) => path.endsWith('/pulls/7'))).toHaveLength(1)
   expect((await f.call('pulls/detail', { ...input, section: 'stack' })).status).toBe(400)
+})
+
+it('reuses one verified context per list request and one account check across cached reads', async () => {
+  const f = await setup('github')
+  const identity = await f.identity()
+  const context = vi.spyOn(f.s.pulls, 'sourceContext')
+  const input = {
+    repositoryId: 'repo',
+    expectedReaderIdentity: identity.readerIdentity,
+    expectedDestination: identity.destination,
+  }
+  for (let index = 0; index < 2; index++) {
+    const response = await f.call('pulls/overview', input)
+    expect(response.status).toBe(200)
+  }
+  expect(context).toHaveBeenCalledTimes(2)
+  expect(f.githubReads.filter((path) => path === 'user')).toHaveLength(1)
+  expect(f.githubReads.filter((path) => path.includes('/pulls?'))).toHaveLength(1)
+  expect((await f.call('pulls/overview', { ...input, refresh: true })).status).toBe(200)
+  expect(context).toHaveBeenCalledTimes(3)
+  expect(f.githubReads.filter((path) => path === 'user')).toHaveLength(2)
+  expect(f.githubReads.filter((path) => path.includes('/pulls?'))).toHaveLength(2)
 })

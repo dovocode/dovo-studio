@@ -581,7 +581,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
             {!!unknownRelationships && (
               <p role="status" className="mb-3 px-2 text-xs text-amber-700 dark:text-amber-400">
                 Personal relationship data is unavailable for {unknownRelationships} loaded PRs.
-                Refresh or update their computer to include them in personal views.
+                Choose All PRs to see these results.
               </p>
             )}
             {!connected && (
@@ -610,7 +610,12 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
             {!hasDetail && !!pulls.length && (
               <div className="hidden items-center gap-3 border-b py-2 pl-10 pr-12 text-[0.625rem] font-medium text-muted-foreground @4xl/pr-list:flex">
                 <span className="flex-1">Pull request</span>
-                <span className="w-44">Checks & review</span>
+                {pulls.some(
+                  (pull) =>
+                    pull.checksState !== undefined ||
+                    pull.reviewDecision !== undefined ||
+                    !!pull.statusError,
+                ) && <span className="w-44">Checks & review</span>}
                 <span className="w-22 text-right">Updated</span>
               </div>
             )}

@@ -1,5 +1,11 @@
 import { expect, it } from 'vite-plus/test'
-import { pullStacks, pullHeadBranch, pullStackLabel, updatePullStackPrompt } from './pull-stack.js'
+import {
+  pullStacks,
+  pullOverviewStacks,
+  pullHeadBranch,
+  pullStackLabel,
+  updatePullStackPrompt,
+} from './pull-stack.js'
 import type { PullSummary } from './pulls.js'
 const pull = (
   number: number,
@@ -87,4 +93,42 @@ it('updates dependencies after retargeting and normalizes only valid same-projec
   const stack = pullStacks([pull(1, 'one', 'main'), pull(2, 'two', 'one')]).get(2)!
   expect(updatePullStackPrompt(stack)).toContain('--force-with-lease=<ref>:<expected-tip>')
   expect(updatePullStackPrompt(stack)).toContain('Do not merge or close any PR')
+})
+
+it('uses native positions and sizes across pages without inventing missing root or parent PRs', () => {
+  const native = {
+    nativeId: 99,
+    nativeNumber: 12,
+    position: 3,
+    size: 5,
+    baseRef: 'main',
+    complete: false,
+  }
+  const rows = pullOverviewStacks([pull(30, 'third', 'second', { stack: native })], false)
+  expect(rows[0]?.stack).toMatchObject(native)
+  expect(rows[0]?.stack?.rootNumber).toBeUndefined()
+  expect(rows[0]?.stack?.parentNumber).toBeUndefined()
+  expect(pullStackLabel(rows[0]!.stack!)).toBe('Stack 3/5')
+})
+it('links returned members of the same native stack and keeps unrelated inferred stacks separate', () => {
+  const native = { nativeId: 99, nativeNumber: 12, position: 1, size: 2, complete: false }
+  const rows = pullOverviewStacks(
+    [
+      pull(7, 'first', 'main', { stack: native }),
+      pull(8, 'second', 'retargeted', { stack: { ...native, position: 2 } }),
+      pull(9, 'third', 'second'),
+      pull(10, 'fourth', 'third'),
+    ],
+    true,
+  )
+  expect(rows[1]?.stack).toMatchObject({
+    rootNumber: 7,
+    parentNumber: 7,
+    position: 2,
+    size: 2,
+    complete: true,
+    nativeId: 99,
+  })
+  expect(rows[2]?.stack).toMatchObject({ rootNumber: 9, position: 1, size: 2 })
+  expect(rows[3]?.stack).toMatchObject({ rootNumber: 9, parentNumber: 9 })
 })

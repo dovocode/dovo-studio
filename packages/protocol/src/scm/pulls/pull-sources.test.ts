@@ -210,3 +210,68 @@ it('only hands a retained view to a verified reader of the same account', () => 
   expect(assignRemoteSources([same], options).selected).toEqual([same])
   expect(assignRemoteSources([unknown], { requireSameReader: true }).selected).toEqual([unknown])
 })
+
+it('chooses the same preferred server across clients, addresses, active runtimes and previous owners', () => {
+  const candidates = [
+    {
+      ...source('desktop-local'),
+      serverId: 'persistent-mac',
+      readerIdentity: 'work',
+      runtimeId: 'localhost',
+    },
+    {
+      ...source('desktop-remote'),
+      serverId: 'persistent-linux',
+      readerIdentity: 'work',
+      runtimeId: 'vpn-linux',
+    },
+  ]
+  const options = { sharedPreference: true, requireSameReader: true }
+  const desktop = assignRemoteSources(candidates, { ...options, preferredRuntimeId: 'localhost' })
+    .selected[0]!
+  const mobileCandidates = candidates
+    .map((candidate, index) => ({
+      ...candidate,
+      key: `mobile-${index}`,
+      runtimeId: `lan-${index}`,
+    }))
+    .reverse()
+  const mobile = assignRemoteSources(mobileCandidates, {
+    ...options,
+    preferredRuntimeId: 'lan-1',
+    previous: new Map([
+      [
+        'github.com/team/app',
+        mobileCandidates.find((candidate) => candidate.serverId !== desktop.serverId)!.key,
+      ],
+    ]),
+    previousReaderIdentities: new Map([['github.com/team/app', 'work']]),
+  }).selected[0]!
+  expect(mobile.serverId).toBe(desktop.serverId)
+  const offline = candidates.map((candidate) => ({
+    ...candidate,
+    connected: candidate.serverId !== desktop.serverId,
+  }))
+  const failedOver = assignRemoteSources(offline, {
+    ...options,
+    previous: new Map([['github.com/team/app', desktop.key]]),
+    previousReaderIdentities: new Map([['github.com/team/app', 'work']]),
+  })
+  expect(failedOver.selected[0]?.serverId).not.toBe(desktop.serverId)
+  const recovered = assignRemoteSources(candidates, {
+    ...options,
+    previous: failedOver.owners,
+    previousReaderIdentities: new Map([['github.com/team/app', 'work']]),
+  })
+  expect(recovered.selected[0]?.serverId).toBe(desktop.serverId)
+  const wrongAccount = offline.map((candidate) =>
+    candidate.connected ? { ...candidate, readerIdentity: 'personal' } : candidate,
+  )
+  expect(
+    assignRemoteSources(wrongAccount, {
+      ...options,
+      previous: new Map([['github.com/team/app', desktop.key]]),
+      previousReaderIdentities: new Map([['github.com/team/app', 'work']]),
+    }).selected.every((candidate) => !candidate.connected),
+  ).toBe(true)
+})

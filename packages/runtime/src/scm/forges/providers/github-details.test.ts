@@ -362,54 +362,46 @@ it('enriches full detail without losing review decisions, requested teams, or cl
   )
 })
 
-it('loads explicit-target list status through account transport without requiring a checkout', async () => {
+it('loads basic list rows and avatars in one account-scoped request without a checkout', async () => {
   const git = new GitService()
   const inspect = vi.spyOn(git, 'inspect').mockRejectedValue(new Error('Not a checkout'))
-  vi.spyOn(git, 'githubAccount').mockImplementation(async (args) =>
-    JSON.stringify(
-      args[3] === 'graphql'
-        ? {
-            data: {
-              viewer: { login: 'reviewer' },
-              repository: {
-                pr7: {
-                  additions: 12,
-                  deletions: 3,
-                  totalCommentsCount: 5,
-                  reviewDecision: 'APPROVED',
-                  statusCheckRollup: { state: 'SUCCESS' },
-                },
-              },
-            },
-          }
-        : [
-            {
-              number: 7,
-              title: 'Fix',
-              html_url: `${repo.url}/pull/7`,
-              state: 'open',
-              merged_at: null,
-              user: { login: 'dominic' },
-              updated_at: '2026-09-20T08:00:00Z',
-              head: { label: 'team:fix' },
-              base: { label: 'team:main' },
-              labels: [],
-            },
-          ],
-    ),
+  const run = vi.spyOn(git, 'githubAccount').mockResolvedValue(
+    JSON.stringify([
+      {
+        number: 7,
+        title: 'Fix',
+        html_url: `${repo.url}/pull/7`,
+        state: 'open',
+        merged_at: null,
+        user: { login: 'dominic', avatar_url: 'https://github.com/avatars/dominic' },
+        updated_at: '2026-09-20T08:00:00Z',
+        head: { label: 'team:fix' },
+        base: { label: 'team:main' },
+        labels: [],
+      },
+    ]),
   )
   const page = await new PullRequests(git, {
     host: repo.host,
     repository: repo.nameWithOwner,
   }).list('/not-a-checkout', 'open', 1)
   expect(page.pulls[0]).toMatchObject({
-    additions: 12,
-    deletions: 3,
-    commentCount: 5,
-    reviewDecision: 'APPROVED',
-    checksState: 'SUCCESS',
+    number: 7,
+    title: 'Fix',
+    author: 'dominic',
+    authorAvatarUrl: 'https://github.com/avatars/dominic',
+    head: 'team:fix',
+    base: 'team:main',
   })
-  expect(page.pulls[0].statusError).toBeUndefined()
+  expect(page.pulls[0].checksState).toBeUndefined()
+  expect(page.pulls[0].reviewDecision).toBeUndefined()
+  expect(run).toHaveBeenCalledTimes(1)
+  expect(run.mock.calls[0]?.[0]).toEqual([
+    'api',
+    '--hostname',
+    repo.host,
+    'repos/team/project/pulls?state=open&sort=updated&direction=desc&per_page=50&page=1',
+  ])
   expect(inspect).not.toHaveBeenCalled()
 })
 
@@ -515,4 +507,107 @@ it('uses only PR metadata and check summaries for background monitoring, without
   expect(detail.checks).toEqual([{ name: 'lint', status: 'FAILURE' }])
   expect(detail.comments).toEqual([])
   expect(detail.files).toEqual([])
+})
+
+it('retains native stack metadata and basic personal relationships in the single list response', async () => {
+  const git = new GitService()
+  const run = vi.spyOn(git, 'githubAccount').mockResolvedValue(
+    JSON.stringify([
+      {
+        number: 7,
+        title: 'Third change',
+        html_url: `${repo.url}/pull/7`,
+        state: 'open',
+        merged_at: null,
+        user: { login: 'dominic' },
+        updated_at: '2026-10-16',
+        head: { label: 'team:third' },
+        base: { label: 'team:second' },
+        labels: [],
+        stack: {
+          id: 99,
+          number: 12,
+          position: 3,
+          size: 5,
+          base: { ref: 'main', sha: 'a'.repeat(40) },
+        },
+        assignees: [{ login: 'reviewer' }],
+        requested_reviewers: [{ login: 'reviewer' }],
+        requested_teams: [],
+      },
+    ]),
+  )
+  const page = await new PullRequests(git, {
+    host: repo.host,
+    repository: repo.nameWithOwner,
+    viewerLogin: 'REVIEWER',
+  }).list('/repo', 'open', 1)
+  expect(run).toHaveBeenCalledTimes(1)
+  expect(page.pulls[0]).toMatchObject({
+    stack: {
+      nativeId: 99,
+      nativeNumber: 12,
+      position: 3,
+      size: 5,
+      baseRef: 'main',
+      complete: false,
+    },
+    viewerIsAuthor: false,
+    viewerIsAssigned: true,
+    viewerReviewRequested: true,
+  })
+  expect(page.pulls[0]?.stack?.rootNumber).toBeUndefined()
+})
+it('reads ordered native stack members in one targeted detail request', async () => {
+  const git = new GitService()
+  const run = vi.spyOn(git, 'githubAccount').mockResolvedValue(
+    JSON.stringify({
+      id: 99,
+      number: 12,
+      base: { ref: 'main' },
+      pull_requests: [
+        {
+          number: 6,
+          title: 'Base change',
+          html_url: `${repo.url}/pull/6`,
+          draft: false,
+          head: { ref: 'first' },
+          base: { ref: 'main' },
+        },
+        {
+          number: 7,
+          title: 'Child change',
+          html_url: `${repo.url}/pull/7`,
+          draft: true,
+          head: { ref: 'second' },
+          base: { ref: 'first' },
+        },
+      ],
+    }),
+  )
+  const pulls = new PullRequests(git, { host: repo.host, repository: repo.nameWithOwner })
+  const stack = await pulls.nativeStack('/repo', 7, 12)
+  expect(stack).toMatchObject({
+    nativeId: 99,
+    nativeNumber: 12,
+    rootNumber: 6,
+    parentNumber: 6,
+    position: 2,
+    size: 2,
+    complete: true,
+  })
+  expect(
+    stack?.members.map((member) => [member.number, member.parentNumber, member.depth]),
+  ).toEqual([
+    [6, undefined, 0],
+    [7, 6, 1],
+  ])
+  expect(run).toHaveBeenCalledTimes(1)
+  expect(run.mock.calls[0]?.[0]).toEqual([
+    'api',
+    '--hostname',
+    repo.host,
+    'repos/team/project/stacks/12',
+  ])
+  expect(await pulls.nativeStack('/repo', 8, 12)).toBeUndefined()
 })

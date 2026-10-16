@@ -68,13 +68,14 @@ export class ForgeWork {
   }
   private async target(
     repositoryId: string,
+    refresh = false,
   ): Promise<{ cwd: string; provider?: ForgeWorkProvider; scope?: SourceContext }> {
     const repo = this.store.get().repositories.find((v) => v.id === repositoryId)
     if (!repo) throw new HttpError(404, 'Project not found')
     if (repo.kind) throw new HttpError(400, 'This project does not use Git')
     let scope: SourceContext
     try {
-      scope = await this.pulls.sourceContext(repo.path)
+      scope = await this.pulls.sourceContext(repo.path, refresh)
     } catch (error) {
       const stderr = decodeResult(mutableStruct({ stderr: Schema.String }), error)
       const diagnostic = stderr.success ? stderr.data.stderr : errorMessage(error)
@@ -133,9 +134,10 @@ export class ForgeWork {
     }
   }
   async request(repositoryId: string, operation: string, input: unknown) {
-    if (decode(forgeWorkQuerySchema, input).jiraFilters !== undefined)
+    const query = decode(forgeWorkQuerySchema, input)
+    if (query.jiraFilters !== undefined)
       throw new HttpError(400, 'Jira filters require a Jira issue source')
-    const { cwd, provider, scope } = await this.target(repositoryId)
+    const { cwd, provider, scope } = await this.target(repositoryId, query.refresh === true)
     if (!provider || !scope) {
       if (operation === 'options')
         return decode(forgeWorkOptionsSchema, {

@@ -36,7 +36,19 @@ export function usePullReader(
     : forgePullTarget(repositoryId)?.identity
   const candidates = useSourceIdentities(
     [
-      ...(profile ? [{ key: originKey, profile, repositoryId, connectionId, connected }] : []),
+      ...(profile
+        ? [
+            {
+              key: originKey,
+              profile,
+              serverId: snapshot?.runtimeId,
+              runtimeId: profile.id,
+              repositoryId,
+              connectionId,
+              connected,
+            },
+          ]
+        : []),
       ...sources
         .filter(
           (source) =>
@@ -46,6 +58,7 @@ export function usePullReader(
         )
         .map((source) => ({
           ...source,
+          runtimeId: source.profile.id,
           key: projectContentIdentity(source),
           repositoryId: source.repository.id,
           connectionId: undefined,
@@ -63,12 +76,15 @@ export function usePullReader(
       ? mobileReaders.identity(projectContentIdentity(originSource))
       : undefined)
   const selected = assignRemoteSources(candidates, {
-    previous: new Map([['pull', originKey]]),
-    previousReaderIdentities: retained ? new Map([['pull', retained.readerIdentity]]) : undefined,
+    previous: new Map([[remote ?? 'pull', originKey]]),
+    previousReaderIdentities: retained
+      ? new Map([[remote ?? 'pull', retained.readerIdentity]])
+      : undefined,
     requireSameReader: true,
-    remote: () => 'pull',
+    sharedPreference: candidates.every((source) => !!source.serverId),
+    remote: () => remote ?? 'pull',
   }).selected[0]
-  const alternate = !connected && selected?.key !== originKey && retained ? selected : undefined
+  const alternate = selected?.key !== originKey && retained ? selected : undefined
   const alternateKey = alternate?.key
   const alternateProfile = alternate?.profile
   const alternateRepositoryId = alternate?.repositoryId

@@ -86,7 +86,7 @@ it('persists pages, coalesces requests, serves stale data immediately and retain
   expect(load).toHaveBeenCalledTimes(2)
   await reopened.dispose()
 })
-it('keeps refreshing repositories a client read in the background and stops when disposed', async () => {
+it('refreshes only on demand and stops spending provider reads after a client leaves', async () => {
   vi.useFakeTimers()
   const { cache, pulls, store } = setup()
   store.update((w) => ({
@@ -97,15 +97,17 @@ it('keeps refreshing repositories a client read in the background and stops when
     ],
   }))
   const load = vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
-  cache.start()
   await new Promise<void>((resolve) => setImmediate(resolve))
   await vi.advanceTimersByTimeAsync(300000)
   // Nothing was read by a client, so an idle runtime spends no GitHub calls.
   expect(load).not.toHaveBeenCalled()
   await Effect.runPromise(cache.overviewEffect('/repo', 'open', 1))
   expect(load).toHaveBeenCalledWith('/repo', 'open', 1, false)
-  await vi.advanceTimersByTimeAsync(300000)
-  await vi.waitFor(() => expect(load).toHaveBeenCalledWith('/repo', 'open', 1, true))
+  await vi.advanceTimersByTimeAsync(30 * 60_000)
+  expect(load).toHaveBeenCalledTimes(1)
+  // Returning to the overview serves saved data immediately and refreshes on demand.
+  expect((await Effect.runPromise(cache.overviewEffect('/repo', 'open', 1))).stale).toBe(true)
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
   expect(load.mock.calls.every(([path]) => path === '/repo')).toBe(true)
   await cache.dispose()
   await vi.advanceTimersByTimeAsync(300000)
@@ -216,7 +218,6 @@ it('does not bypass freshness when background watching follows a foreground refr
     repositories: [{ id: 'repo', name: 'Repo', path: '/repo', branch: 'main' }],
   }))
   const load = vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
-  cache.start()
   await vi.advanceTimersByTimeAsync(30000)
   await cache.list('/repo', 'open', 1)
   await vi.advanceTimersByTimeAsync(30000)
@@ -336,7 +337,7 @@ it('shares upstream requests across worktrees for the same repository and accoun
   await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(3))
   expect((await cache.list('/other-account', 'open', 1)).stale).toBe(false)
 })
-it('detects stacks across cached pages, decorates overviews, and clears dependencies after retargeting', async () => {
+it('keeps overview reads to one page and discovers full stacks only for details', async () => {
   const { cache, pulls } = setup()
   const summary = (number: number, head: string, base: string) => ({
     number,
@@ -358,17 +359,12 @@ it('detects stacks across cached pages, decorates overviews, and clears dependen
     hasMore: page === 1,
   }))
   const page = await Effect.runPromise(cache.overviewEffect('/repo', 'open', 1))
-  expect(page.pulls[0]?.stack).toMatchObject({
-    position: 2,
-    size: 2,
-    parentNumber: 1,
-    complete: true,
-  })
-  expect(list).toHaveBeenCalledTimes(2)
+  expect(page.pulls[0]?.stack).toBeUndefined()
+  expect(list).toHaveBeenCalledTimes(1)
   const stack = await cache.stack('/repo', 2)
   expect(stack.stack?.members.map((pull) => pull.number)).toEqual([1, 2])
   const all = await Effect.runPromise(cache.overviewEffect('/repo', 'all', 1))
-  expect(all.pulls[0]?.stack?.parentNumber).toBe(1)
+  expect(all.pulls[0]?.stack).toBeUndefined()
   expect(list).toHaveBeenCalledTimes(3)
   const detail: PullDetail = {
     pull: {
@@ -406,6 +402,44 @@ it('detects stacks across cached pages, decorates overviews, and clears dependen
   const refreshed = await Effect.runPromise(cache.overviewEffect('/repo', 'open', 1, true))
   expect(refreshed.pulls.every((pull) => !pull.stack)).toBe(true)
 })
+it.each([
+  ['open', 1, false, true],
+  ['open', 1, true, false],
+  ['open', 2, false, false],
+  ['all', 1, false, false],
+] as const)(
+  'infers stacks from a single %s page %s (hasMore %s)',
+  async (state, number, hasMore, complete) => {
+    const { cache, pulls } = setup()
+    const list = vi.spyOn(pulls, 'list').mockResolvedValue({
+      page: number,
+      hasMore,
+      pulls: [1, 2].map((number) => ({
+        number,
+        title: `PR ${number}`,
+        url: `https://github.com/a/b/pull/${number}`,
+        state: 'open',
+        draft: false,
+        author: 'dev',
+        updatedAt: '2026-10-02',
+        labels: [],
+        head: `branch-${number}`,
+        base: number === 1 ? 'main' : 'branch-1',
+      })),
+    })
+    const page = await Effect.runPromise(cache.overviewEffect('/repo', state, number))
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(list).toHaveBeenCalledWith('/repo', state, number, false)
+    expect(page.pulls[0]?.stack).toMatchObject({ rootNumber: 1, position: 1, size: 2, complete })
+    expect(page.pulls[1]?.stack).toMatchObject({
+      rootNumber: 1,
+      parentNumber: 1,
+      position: 2,
+      size: 2,
+      complete,
+    })
+  },
+)
 it('marks stack data partial when a later page fails instead of claiming a complete stack', async () => {
   const { cache, pulls } = setup()
   vi.spyOn(pulls, 'list').mockImplementation(async (_cwd, _state, page) => {
@@ -564,4 +598,36 @@ it('migrates persisted checkout aliases so writes invalidate pre-upgrade caches'
   cleanup.push(() => reopened.dispose())
   reopened.invalidate('/legacy-worktree')
   expect((await cache.list('/repo', 'open', 1)).stale).toBe(true)
+})
+
+it('loads native stack details without scanning PR pages, reuses the cache and invalidates it on writes', async () => {
+  const { cache, pulls } = setup()
+  const list = vi.spyOn(pulls, 'list')
+  const native = vi.spyOn(pulls, 'nativeStack').mockResolvedValue({
+    rootNumber: 6,
+    parentNumber: 6,
+    position: 2,
+    size: 2,
+    nativeId: 99,
+    nativeNumber: 12,
+    complete: true,
+    members: [6, 7].map((number, index) => ({
+      number,
+      title: `PR ${number}`,
+      url: `https://github.com/team/project/pull/${number}`,
+      draft: false,
+      head: `branch-${index}`,
+      base: index ? 'branch-0' : 'main',
+      depth: index,
+    })),
+  })
+  for (let index = 0; index < 2; index++) {
+    const result = await Effect.runPromise(cache.stackEffect('/repo', 7, false, undefined, 12))
+    expect(result.stack).toMatchObject({ nativeId: 99, position: 2, size: 2 })
+  }
+  expect(native).toHaveBeenCalledTimes(1)
+  expect(list).not.toHaveBeenCalled()
+  cache.invalidate('/repo', 7)
+  await Effect.runPromise(cache.stackEffect('/repo', 7, true, undefined, 12))
+  expect(native).toHaveBeenCalledTimes(2)
 })

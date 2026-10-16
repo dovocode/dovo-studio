@@ -12,6 +12,7 @@ import {
   pullLineCommentSchema,
   pullLineCommentResponse,
   pullPageSchema,
+  pullStackSchema,
   pullDetailSchema,
   type PullComment,
   type PullDetailSection,
@@ -22,6 +23,7 @@ import {
 import { errorMessage } from '../../errors.js'
 import {
   restPull,
+  restStack,
   restDetail,
   restComment,
   restReview,
@@ -71,6 +73,7 @@ export class PullRequests {
       host: string
       repository: string
       profile?: string
+      viewerLogin?: string
       env?: Record<string, string>
       token?: (cwd: string) => Promise<string | undefined>
       onUnauthorized?: () => void
@@ -242,22 +245,60 @@ export class PullRequests {
         background,
       ),
     )
-    const statuses = await pullStatuses(
-      this.git,
-      cwd,
-      repo.host,
-      repo.nameWithOwner,
-      pulls.map((p) => p.number),
-      (args) => this.run(cwd, args, background),
-    )
+    const viewer = this.target?.viewerLogin?.toLowerCase()
     return decode(pullPageSchema, {
-      pulls: pulls.map((p) => ({
-        ...summary(p),
-        provider: 'github',
-        ...statuses.get(p.number),
-      })),
+      pulls: pulls.map((p) => {
+        const authored = viewer ? p.user?.login.toLowerCase() === viewer : undefined
+        const assigned = viewer
+          ? p.assignees?.some((user) => user.login.toLowerCase() === viewer)
+          : undefined
+        const requested =
+          viewer && p.requested_reviewers?.some((user) => user.login.toLowerCase() === viewer)
+            ? true
+            : viewer && p.requested_reviewers && p.requested_teams?.length === 0
+              ? false
+              : undefined
+        return {
+          ...summary(p),
+          provider: 'github',
+          viewerIsAuthor: authored,
+          viewerIsAssigned: assigned,
+          viewerReviewRequested: requested,
+          // A list cannot disprove participation through a previous review/comment.
+          viewerIsInvolved: authored || assigned || requested ? true : undefined,
+        }
+      }),
       hasMore: pulls.length === 50,
       page,
+    })
+  }
+  async nativeStack(cwd: string, number: number, stackNumber: number) {
+    const repo = await this.location(cwd)
+    const stack = decode(
+      restStack,
+      await this.json(cwd, ['api', '--hostname', repo.host, `${repo.path}/stacks/${stackNumber}`]),
+    )
+    const index = stack.pull_requests.findIndex((pull) => pull.number === number)
+    if (index < 0) return undefined // The PR was removed from this stack since the overview read.
+    return decode(pullStackSchema, {
+      nativeId: stack.id,
+      nativeNumber: stack.number,
+      baseRef: stack.base.ref,
+      rootNumber: stack.pull_requests[0]!.number,
+      position: index + 1,
+      size: stack.pull_requests.length,
+      parentNumber: stack.pull_requests[index - 1]?.number,
+      complete: true,
+      members: stack.pull_requests.map((pull, index) => ({
+        number: pull.number,
+        title: pull.title,
+        url: pull.html_url,
+        head: pull.head.ref,
+        base: pull.base.ref,
+        draft: pull.draft,
+        parentNumber: stack.pull_requests[index - 1]?.number,
+        depth: index,
+      })),
     })
   }
   async comment(cwd: string, value: unknown) {

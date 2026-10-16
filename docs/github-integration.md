@@ -38,11 +38,15 @@ request. Conditional requests reuse responses that GitHub reports unchanged, whi
 against the quota.
 
 Dovo namespaces PR caches by repository, host, active account and an opaque fingerprint of relevant
-token environment variables. Successful account checks are reused for up to ten minutes. Explicit
-refresh rechecks the account immediately; use it after `gh auth switch`. Failed authentication does
-not reuse a previously authenticated identity.
+token environment variables. Successful account checks share a runtime-private, credential-keyed
+cache for up to ten minutes, including concurrent identity discovery and reads of other
+repositories. Every request still captures its credential and validates the project/connection
+binding; changed credentials or connection revisions cannot reuse another account's verification.
+Explicit refresh rechecks the account immediately; use it after `gh auth switch`. Authentication
+rejection invalidates all contexts sharing that verification, and failed account checks are never
+cached.
 
-GitHub list queries report the account's remaining GraphQL quota, which every call on that host and
+GitHub responses update the account's remaining API quota, which every call on that host and
 credential shares. Background refreshes pause when less than ten percent remains, keeping the rest
 for the PR screens and actions; cached data stays available until the reset.
 
@@ -85,17 +89,26 @@ Reading through another computer does not move comments, edits, merges, task cre
 it. Those actions retain the original runtime and destination and remain unavailable while that
 runtime is offline. GitHub credentials stay on each runtime.
 
-Each routed read, including later pages, verifies the reader's freshly discovered account and
-destination. If a saved source is rebound to another repository without changing its source scope,
-automatic recovery stops rather than relabeling that repository's data as the original project.
-Refresh the project's binding or explicitly choose its source to accept the new binding.
+Each routed read, including later pages, checks the reader's captured credential and verified
+account and destination; an unchanged credential can reuse the account verification described above.
+If a saved source is rebound to another repository without changing its source scope, automatic
+recovery stops rather than relabeling that repository's data as the original project. Refresh the
+project's binding or explicitly choose its source to accept the new binding.
 
-The combined PR list, the issue views and computer summaries read each remote repository through one
-connected computer, including when several checkouts or worktrees point at it. The computer this
-client is connected to reads the remotes it has; other remotes spread across the connected computers
-so no single computer answers for everything. An owner keeps its remotes until it disconnects, and a
-remote that moves keeps its last loaded rows until the new computer answers. The remote host is part
-of the identity, so forks and repositories on different hosts remain separate.
+The PR clients and desktop issue/pipeline views read each remote repository through one connected
+computer, including when several checkouts or worktrees point at it. When sources advertise
+persistent runtime IDs, clients use the same deterministic preference per remote, independent of
+their active computer, address or discovery order. Replicas must match the retained verified forge
+account. The same preference is used again after the preferred computer recovers; while it is
+unavailable, a verified same-account alternate serves reads. Older runtimes retain the previous
+client-local routing. A remote that moves keeps its last loaded rows until the new reader answers.
+The remote host is part of the identity, so forks and repositories on different hosts remain
+separate.
+
+This is shared placement, not a distributed lease: clients with different reachable server sets can
+choose different readers. Thread-owned watches also remain on their owning runtime. Dovo does not
+require a coordination service, move credentials between computers, or move writes to a read
+replica.
 
 Choose a specific project in the PR filter to use that checkout and its configured account. PR rows
 keep that source's personal relationship flags; flags from different accounts are never combined.
@@ -106,10 +119,20 @@ attention controls; its badge counts active non-default controls while collapsed
 pictures appear beside author names in the list and details, with initials when an image is missing
 or fails to load. Avatars use the forge-provided URL without extra API reads.
 
-The clients coordinate these listing reads. A runtime refreshes a checkout's open PR list in the
-background only while a client read it within the last 30 minutes, so idle repositories cost no
-GitHub calls. Each runtime still watches its own tasks' linked PRs for status changes and automatic
-settlement; that watching counts as background work for the quota reserve above.
+GitHub PR overviews use one basic list request per project/page, including author avatar URLs. They
+use GitHub's native stack ID, number, position, size and base directly from that response. Parent
+links are shown only when those members are present on the page. Branch inference remains available
+for non-native stacks and older GitHub servers. Checks and review decisions load in PR details;
+native stack details use one targeted stack endpoint instead of scanning PR list pages. Author,
+assignment and direct review-request filters use basic response fields and the verified login. Team
+review requests and participation that cannot be established from that response remain unknown.
+
+Desktop and mobile automatically refresh only page one; **Load more** fetches subsequent pages on
+demand. The runtime list cache returns saved data immediately and refreshes expired entries on
+request. There is no independent background list timer: closing the view or moving its reader stops
+that client's listing demand. Each runtime still watches its own tasks' linked PRs for status
+changes and automatic settlement; those watches share local caches and count as background work for
+the quota reserve above.
 
 ## Permissions
 

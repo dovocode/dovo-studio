@@ -264,6 +264,7 @@ export function useSourceReaders<T extends Source>(
       previous: previous.owners,
       previousReaderIdentities: previous.identities,
       requireSameReader: true,
+      sharedPreference: enriched.every((source) => !!source.serverId),
       preferredRuntimeId: activeRuntimeId,
       remote,
     })

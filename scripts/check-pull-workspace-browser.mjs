@@ -28,7 +28,7 @@ const built = await build({
   stdin: {
     loader: 'tsx',
     resolveDir: root,
-    contents: `import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';import {SidebarHeaderLayout,HeaderFallback,TooltipProvider} from '@dovo/studio-ui';import {pullFileFingerprint} from '@dovo/protocol';import {createRoot} from 'react-dom/client';import {PullDetail} from '${root}/packages/extension-scm/src/pulls/detail/detail.tsx';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';
+    contents: `import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';import {SidebarHeaderLayout,HeaderFallback,TooltipProvider} from '@dovo/studio-ui';import {pullFileFingerprint,pullOverviewStacks} from '@dovo/protocol';import {createRoot} from 'react-dom/client';import {PullDetail} from '${root}/packages/extension-scm/src/pulls/detail/detail.tsx';import View from '${root}/packages/extension-scm/src/pulls/list/view.tsx';
 const pull={number:7,title:'Improve pull request reviews',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'dominic',authorAvatarUrl:'https://avatars.example/dominic.png',updatedAt:'2026-10-04',head:'feature',base:'main',labels:['feature'],checksState:'SUCCESS',reviewDecision:'REVIEW_REQUIRED',additions:24,deletions:8,commentCount:3,viewerIsAuthor:true,viewerIsAssigned:true,viewerIsInvolved:true,viewerReviewRequested:true};
 window.pulls=[pull,{...pull,number:8,url:'https://github.com/team/project/pull/8',title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,url:'https://github.com/team/project/pull/9',title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
 window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project'}};
@@ -45,7 +45,7 @@ window.store.request = async (path, input, ...rest) => {
   if (path.endsWith('/set')) { const file = files.find(file => file.path === input.path); if (!file || file.fingerprint !== input.fingerprint || file.version !== input.version) throw new Error('File changed'); Object.assign(file,{viewed:input.viewed,version:file.version+1}); }
   return {files:files.map(file=>({...file})), groups:[{label:'src',basis:'folder',paths:files.map(file=>file.path)}]};
 };
-const rootView=createRoot(document.getElementById('app'));window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showDestination=(tab,fragment)=>rootView.render(<main className="studio flex flex-col" style={{height:'100vh'}}><PullDetail key={tab+fragment} repositoryId="repo" number={7} initialTab={tab} initialFragment={fragment} onBack={()=>{}} onChanged={()=>{}}/></main>);window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);rootView.render(<TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio dark" data-platform="darwin"><HeaderFallback><TitleBar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div className="studio-body"><nav className="studio-navigation" aria-label="Main navigation"/><main className="studio-main"><View/></main></div></div></SidebarHeaderLayout></TooltipProvider>);`,
+const rootView=createRoot(document.getElementById('app'));window.showBasicList=(complete=true,native=false)=>{window.pullError=undefined;window.source.repository.name='Project';const basic={number:7,title:'Base change',url:pull.url,state:'open',draft:false,author:pull.author,authorAvatarUrl:pull.authorAvatarUrl,updatedAt:pull.updatedAt,head:'feature',base:'main',labels:[]};window.pulls=[basic,{...basic,number:8,url:'https://github.com/team/project/pull/8',title:'Dependent change',head:'child',base:'feature'}];if(native)window.pulls=[{...window.pulls[1],stack:{nativeId:99,nativeNumber:12,position:3,size:5,baseRef:'main',complete:false}}];window.pulls=pullOverviewStacks(window.pulls,complete);rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><View key={'basic-'+complete+'-'+native}/></main></div></div>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showDestination=(tab,fragment)=>rootView.render(<main className="studio flex flex-col" style={{height:'100vh'}}><PullDetail key={tab+fragment} repositoryId="repo" number={7} initialTab={tab} initialFragment={fragment} onBack={()=>{}} onChanged={()=>{}}/></main>);window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);rootView.render(<TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio dark" data-platform="darwin"><HeaderFallback><TitleBar platform="darwin" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div className="studio-body"><nav className="studio-navigation" aria-label="Main navigation"/><main className="studio-main"><View/></main></div></div></SidebarHeaderLayout></TooltipProvider>);`,
   },
   bundle: true,
   write: false,
@@ -453,6 +453,43 @@ try {
   await page.waitForFunction(
     () => document.querySelector('#pr-tab-checks')?.getAttribute('aria-selected') === 'true',
   )
+  // Basic list data must show dependencies without inventing unloaded status signals.
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.evaluate(() => window.showBasicList())
+  await list.getByRole('button', { name: 'All PRs', exact: true }).click()
+  const backToList = page.getByRole('button', { name: 'Back to PRs', exact: true })
+  if (await backToList.isVisible()) await backToList.click()
+  await row('Base change').getByText('Stack 1/2 · #7', { exact: true }).waitFor()
+  await row('Base change').getByText('Base PR', { exact: true }).waitFor()
+  await row('Dependent change').getByText('Stack 2/2 · #7', { exact: true }).waitFor()
+  await row('Dependent change').getByText('#7 → #8', { exact: true }).waitFor()
+  assert.doesNotMatch(await row('Dependent change').innerText(), /No checks|No review|approved/i)
+  assert.equal(
+    await row('Dependent change')
+      .locator('div.grid')
+      .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length),
+    2,
+    'Basic rows must not reserve an empty status column',
+  )
+  assert.equal(await list.getByText('Checks & review', { exact: true }).count(), 0)
+  const basicAvatar = row('Base change').locator('img')
+  await basicAvatar.evaluate((element) => element.decode())
+  await noOverflow()
+  await page.screenshot({ path: '/tmp/dovo-pull-basic-stacks-desktop.png' })
+  await page.evaluate(() => window.showBasicList(false))
+  await row('Dependent change').getByText('Stack · partial · #7', { exact: true }).waitFor()
+  for (const width of [760, 360]) {
+    await page.setViewportSize({ width, height: 800 })
+    await noOverflow()
+    await row('Dependent change').getByText('#7 → #8', { exact: true }).waitFor()
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.evaluate(() => window.showBasicList(false, true))
+  await row('Dependent change').getByText('Stack 3/5 · Stack #12', { exact: true }).waitFor()
+  await row('Dependent change').getByText('onto main', { exact: true }).waitFor()
+  assert.doesNotMatch(await row('Dependent change').innerText(), /Base PR|undefined|#7 → #8/)
+  await noOverflow()
+  await page.screenshot({ path: '/tmp/dovo-pull-native-stack-desktop.png' })
   assert.deepEqual(errors, [])
   console.log(
     'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts and embedded previews passed.',

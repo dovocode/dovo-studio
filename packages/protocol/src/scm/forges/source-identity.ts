@@ -17,6 +17,7 @@ export type ForgeSourceIdentity = typeof forgeSourceIdentitySchema.Type
 export const forgeSourceIdentityQuerySchema = refine(
   mutableStruct({
     repositoryId: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
+    refresh: Schema.optional(Schema.Boolean),
     connectionId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
     jiraSourceId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   }),

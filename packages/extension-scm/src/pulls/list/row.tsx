@@ -34,6 +34,8 @@ export function PullRow({
   selectionCount?: number
 }) {
   const [error, setError] = useApplicationState('')
+  const hasStatus =
+    pull.checksState !== undefined || pull.reviewDecision !== undefined || !!pull.statusError
   const copy = async (text: string) => {
     setError('')
     try {
@@ -120,7 +122,7 @@ export function PullRow({
                 <Icon aria-hidden className={`mt-0.5 size-4 shrink-0 ${stateColor}`} />
                 <span className="sr-only">{pullState(pull).label}</span>
                 <div
-                  className={`grid min-w-0 flex-1 gap-x-3 ${compact ? '' : '@4xl/pr-list:grid-cols-[minmax(0,1fr)_11rem_5.5rem]'}`}
+                  className={`grid min-w-0 flex-1 gap-x-3 ${compact ? '' : hasStatus ? '@4xl/pr-list:grid-cols-[minmax(0,1fr)_11rem_5.5rem]' : '@4xl/pr-list:grid-cols-[minmax(0,1fr)_5.5rem]'}`}
                 >
                   <div className="min-w-0">
                     <div className="flex items-start gap-2">
@@ -163,15 +165,33 @@ export function PullRow({
                       </time>
                       {pull.stack && (
                         <span
-                          className="inline-flex shrink-0 items-center gap-1 text-violet-700 dark:text-violet-400"
+                          className="inline-flex flex-wrap items-center gap-1.5 rounded-md border border-violet-500/20 bg-violet-500/5 px-2 py-1 text-violet-700 dark:text-violet-400"
                           title={
-                            pull.stack.parentNumber
-                              ? `Depends on PR #${pull.stack.parentNumber}`
-                              : 'Base of this PR stack'
+                            pull.stack.nativeId
+                              ? 'Native GitHub stack'
+                              : pull.stack.complete
+                                ? 'Stack inferred from branch dependencies'
+                                : 'Partial stack inferred from this page; open details for the full stack'
                           }
                         >
                           <Layers className="size-3" aria-hidden />
-                          {pullStackLabel(pull.stack)}
+                          <span>
+                            {pullStackLabel(pull.stack)}
+                            {pull.stack.nativeNumber
+                              ? ` · Stack #${pull.stack.nativeNumber}`
+                              : pull.stack.rootNumber
+                                ? ` · #${pull.stack.rootNumber}`
+                                : ''}
+                          </span>
+                          <span className="font-mono">
+                            {pull.stack.parentNumber
+                              ? `#${pull.stack.parentNumber} → #${pull.number}`
+                              : pull.stack.position === 1
+                                ? 'Base PR'
+                                : pull.stack.baseRef
+                                  ? `onto ${pull.stack.baseRef}`
+                                  : ''}
+                          </span>
                         </span>
                       )}
                       {pull.state === 'open' && !pull.draft && pull.viewerReviewRequested && (
@@ -234,13 +254,19 @@ export function PullRow({
                       )}
                     </div>
                   </div>
-                  <div
-                    className={`mt-2 flex flex-wrap gap-x-3 gap-y-1 ${compact ? '' : '@4xl/pr-list:mt-0 @4xl/pr-list:flex-col @4xl/pr-list:justify-center'}`}
-                    title={pullNextStep(pull).label}
-                  >
-                    <Signal signal={pullChecks(pull)} />
-                    <Signal signal={pullReview(pull)} />
-                  </div>
+                  {hasStatus && (
+                    <div
+                      className={`mt-2 flex flex-wrap gap-x-3 gap-y-1 ${compact ? '' : '@4xl/pr-list:mt-0 @4xl/pr-list:flex-col @4xl/pr-list:justify-center'}`}
+                      title={pullNextStep(pull).label}
+                    >
+                      {(pull.checksState !== undefined || pull.statusError) && (
+                        <Signal signal={pullChecks(pull)} />
+                      )}
+                      {(pull.reviewDecision !== undefined || pull.statusError) && (
+                        <Signal signal={pullReview(pull)} />
+                      )}
+                    </div>
+                  )}
                   {!compact && (
                     <time
                       className="hidden self-center text-right text-xs text-muted-foreground @4xl/pr-list:block"

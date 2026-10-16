@@ -12,7 +12,7 @@ import {
   type PullPage,
 } from '@dovo/protocol'
 import { useApplicationState } from '../../../runtime/state/application-state'
-import { refreshFirstPage, shouldSweepWorkPages } from '../../work/collection-pages'
+import { refreshFirstPage } from '../../work/collection-pages'
 import { useRuntime } from '../../../runtime/connection/provider'
 import {
   collectionSources,
@@ -90,6 +90,7 @@ export function usePulls(repositoryId: string, state: string) {
       previous: readers.owners,
       previousReaderIdentities: readers.readerIdentities,
       requireSameReader: true,
+      sharedPreference: identified.every((source) => !!source.serverId),
       preferredRuntimeId: activeId,
     },
   )
@@ -157,7 +158,6 @@ export function usePulls(repositoryId: string, state: string) {
   const [busy, setBusy] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
   const forceNext = useRef(false)
-  const fullSweepAt = useRef(new Map<string, number>())
   const sourceState = useRef('')
   const generation = useRef(0)
   const moreRef = useRef<(id: string) => Promise<void>>(async () => {})
@@ -294,32 +294,19 @@ export function usePulls(repositoryId: string, state: string) {
             const invalidated = pullListRevision(cache, entry.repository.id)
             const refresh = forced || !!invalidated
             const previous = pagesRef.current[entry.key]
-            const sweepKey = JSON.stringify([projectContentIdentity(entry), remoteState])
-            const lastSweep = fullSweepAt.current.get(sweepKey) ?? Date.now()
-            if (!fullSweepAt.current.has(sweepKey)) fullSweepAt.current.set(sweepKey, lastSweep)
-            const sweeping =
-              !refresh &&
-              !!previous &&
-              (shouldSweepWorkPages(previous.page, lastSweep, Date.now()) ||
-                (previous.page > 1 && !previous.firstPageIds))
-            if (sweeping) fullSweepAt.current.set(sweepKey, Date.now())
             const response = yield* request(entry, {
               repositoryId: entry.repository.id,
               state: remoteState,
               page: 1,
-              refresh: refresh || !!sweeping,
+              refresh,
             })
-            let page: Page = {
+            const page: Page = {
               ...response,
               ...metadata(entry),
               error: response.refreshError,
               stale: !!response.stale || !!response.refreshError,
               firstPageIds: response.pulls.map((pull) => String(pull.number)),
-              ...(previous?.page > 1 &&
-              previous.firstPageIds &&
-              !refresh &&
-              !sweeping &&
-              response.hasMore
+              ...(previous?.page > 1 && previous.firstPageIds && !refresh && response.hasMore
                 ? {
                     page: previous.page,
                     hasMore: previous.hasMore,
@@ -332,38 +319,6 @@ export function usePulls(repositoryId: string, state: string) {
                     ),
                   }
                 : {}),
-            }
-            for (
-              let number = 2;
-              sweeping && number <= previous.page && page.hasMore && !page.stale;
-              number++
-            ) {
-              const next = yield* request(entry, {
-                repositoryId: entry.repository.id,
-                state: remoteState,
-                page: number,
-                refresh: true,
-              })
-              page = {
-                ...next,
-                ...metadata(entry),
-                firstPageIds: page.firstPageIds,
-                stale: page.stale || next.stale || !!next.refreshError,
-                error: page.error || next.refreshError,
-                pulls: [
-                  ...new Map(
-                    [...page.pulls, ...next.pulls].map((pull) => [pull.number, pull]),
-                  ).values(),
-                ],
-              }
-            }
-            if (sweeping && page.stale) {
-              update(entry.key, {
-                ...previous,
-                stale: true,
-                error: page.error,
-              })
-              return
             }
             update(entry.key, page)
             if (!page.stale && !page.error)
@@ -424,11 +379,6 @@ export function usePulls(repositoryId: string, state: string) {
           }
           update(id, page)
           yield* save(entry, page)
-          if (!next.stale && !next.refreshError)
-            fullSweepAt.current.set(
-              JSON.stringify([projectContentIdentity(entry), remoteState]),
-              Date.now(),
-            )
         }).pipe(
           Effect.catch((error) =>
             Effect.sync(() => update(id, { ...previous, error: error.message })),

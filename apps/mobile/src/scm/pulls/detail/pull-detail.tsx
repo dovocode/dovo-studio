@@ -48,6 +48,7 @@ import { pullActionOptions } from '../list/pull-action-options'
 import { LineComment } from './line-comment'
 import { formatDateTime } from '../../../ui/content/format-date'
 import { invalidatePullList } from '../list/pull-list-invalidation'
+import { AuthorAvatar } from '../author-avatar'
 import { useSheetNavigation } from '../../../ui/layout/sheet'
 import {
   createDetailDrafts,
@@ -399,6 +400,7 @@ export function PullDetail({
                     <PullRequestIcon state={detail.pull.state} draft={detail.pull.draft} />
                     <Signal signal={pullState(detail.pull)} emphasis />
                     <Text style={styles.muted}>·</Text>
+                    <AuthorAvatar author={detail.pull.author} url={detail.pull.authorAvatarUrl} />
                     <Text
                       style={[
                         styles.muted,

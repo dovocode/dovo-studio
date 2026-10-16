@@ -193,7 +193,6 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         services.pushNotifications.start()
         services.jobs.startScheduler()
         services.tasks.startScheduler()
-        services.pullCache.start()
         services.mcpApps.start()
         housekeeping.start()
         taskPulls.start()

@@ -25,6 +25,7 @@ export function useRepositorySources() {
         .filter((repository) => !repository.kind)
         .map((repository) => ({
           profile: entry.profile,
+          serverId: entry.snapshot?.runtimeId,
           repository,
           runtimeName,
           connected: active ? connected : entry.connected,
@@ -34,13 +35,15 @@ export function useRepositorySources() {
   return useMemo(() => {
     const sources: {
       profile: RuntimeProfile
+      serverId?: string
       repository: Repository
       runtimeName: string
       connected: boolean
     }[] = JSON.parse(descriptors)
-    return sources.map(({ profile, repository, runtimeName, connected }) => ({
+    return sources.map(({ profile, serverId, repository, runtimeName, connected }) => ({
       key: repositorySourceKey(profile.id, repository.id),
       runtimeId: profile.id,
+      ...(serverId ? { serverId } : {}),
       runtimeName,
       profile,
       repository,

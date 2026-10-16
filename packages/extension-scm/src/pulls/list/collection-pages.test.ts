@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import type { PullPage } from '@dovo/studio-core'
-import { refreshPageCount, refreshPullPage } from './collection-pages'
+import { refreshPullPage } from './collection-pages'
 
 const page = (numbers: number[], number: number, hasMore = true): PullPage => ({
   pulls: numbers.map((id) => ({
@@ -43,12 +43,4 @@ it('drops later rows when page one is complete or refresh is forced', () => {
   const forced = refreshPullPage(previous, page([4], 1), true)
   expect(forced.page).toBe(1)
   expect(forced.pulls.map((pull) => pull.number)).toEqual([4])
-})
-
-it('rebuilds legacy pages once and refreshes loaded pages on a slower cadence', () => {
-  const previous = { ...page([1, 2, 3], 3), firstPageIds: ['1'] }
-  expect(refreshPageCount(previous, false, 1000, 119999)).toBe(1)
-  expect(refreshPageCount(previous, false, 1000, 121000)).toBe(3)
-  expect(refreshPageCount({ ...previous, firstPageIds: undefined }, false, 1000, 2000)).toBe(3)
-  expect(refreshPageCount(previous, true, 1000, 121000)).toBe(1)
 })

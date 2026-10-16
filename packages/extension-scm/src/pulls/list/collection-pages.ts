@@ -2,16 +2,6 @@ import type { PullPage } from '@dovo/studio-core'
 
 export type CachedPullPage = PullPage & { firstPageIds?: string[] }
 
-export function refreshPageCount(
-  previous: CachedPullPage | undefined,
-  force: boolean,
-  lastFullSweep: number,
-  now: number,
-) {
-  if (force || !previous || previous.page <= 1) return 1
-  return !previous.firstPageIds || now - lastFullSweep >= 120000 ? previous.page : 1
-}
-
 /** Keep explicitly loaded later pages while replacing rows that used to be on page one. */
 export function refreshPullPage(
   previous: CachedPullPage | undefined,

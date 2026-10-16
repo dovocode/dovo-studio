@@ -21,6 +21,28 @@ export const restPull = mutableStruct({
   base: mutableStruct({
     label: Schema.String,
   }),
+  stack: Schema.optional(
+    Schema.NullOr(
+      mutableStruct({
+        base: mutableStruct({ ref: Schema.String, sha: Schema.String }),
+        id: Schema.optional(
+          Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
+        ),
+        number: Schema.optional(
+          Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
+        ),
+        position: Schema.optional(
+          Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
+        ),
+        size: Schema.optional(
+          Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
+        ),
+      }),
+    ),
+  ),
+  requested_reviewers: Schema.optional(mutableArray(mutableStruct({ login: Schema.String }))),
+  requested_teams: Schema.optional(mutableArray(mutableStruct({ slug: Schema.String }))),
+  assignees: Schema.optional(mutableArray(mutableStruct({ login: Schema.String }))),
   labels: mutableArray(
     mutableStruct({
       name: Schema.String,
@@ -120,9 +142,41 @@ export function summary(p: Schema.Schema.Type<typeof restPull>) {
     draft: p.draft ?? false,
     author: p.user?.login ?? 'Deleted user',
     authorAvatarUrl: p.user?.avatar_url || undefined,
+    stack:
+      p.stack?.id && p.stack.position && p.stack.size && p.stack.position <= p.stack.size
+        ? {
+            nativeId: p.stack.id,
+            nativeNumber: p.stack.number,
+            position: p.stack.position,
+            size: p.stack.size,
+            baseRef: p.stack.base.ref,
+            complete: false,
+            rootNumber: p.stack.position === 1 ? p.number : undefined,
+          }
+        : undefined,
     updatedAt: p.updated_at,
     head: p.head.label,
     base: p.base.label,
     labels: p.labels.map((l) => l.name),
   }
 }
+
+/** Native stack details are ordered bottom-to-top by GitHub. */
+export const restStack = mutableStruct({
+  id: Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
+  number: Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
+  base: mutableStruct({ ref: Schema.String }),
+  pull_requests: mutableArray(
+    mutableStruct({
+      number: Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThan(0)),
+      ),
+      title: Schema.String,
+      html_url: Schema.String,
+      draft: Schema.Boolean,
+      head: mutableStruct({ ref: Schema.String }),
+      base: mutableStruct({ ref: Schema.String }),
+    }),
+  ),
+})

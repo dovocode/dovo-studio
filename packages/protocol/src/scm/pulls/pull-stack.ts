@@ -6,14 +6,18 @@ const number = Schema.Number.pipe(
   Schema.check(Schema.isGreaterThan(0)),
 )
 export const pullStackSummarySchema = mutableStruct({
-  rootNumber: number,
+  rootNumber: Schema.optional(number),
   position: number,
   size: number,
   parentNumber: Schema.optional(number),
+  nativeId: Schema.optional(number),
+  nativeNumber: Schema.optional(number),
+  baseRef: Schema.optional(Schema.String),
   complete: Schema.Boolean,
 })
 export const pullStackSchema = mutableStruct({
   ...pullStackSummarySchema.fields,
+  rootNumber: number,
   members: mutableArray(
     mutableStruct({
       number,
@@ -109,12 +113,48 @@ export function pullStacks(pulls: readonly PullSummary[], complete = true): Map<
   }
   return result
 }
+/** Decorate a list page without fetching any other pages or inventing missing native links. */
+export function pullOverviewStacks(
+  pulls: readonly PullSummary[],
+  complete: boolean,
+): PullSummary[] {
+  const inferred = pullStacks(
+    pulls.filter((pull) => !pull.stack?.nativeId),
+    complete,
+  )
+  return pulls.map((pull) => {
+    const native = pull.stack
+    if (!native?.nativeId) {
+      const stack = inferred.get(pull.number)
+      return { ...pull, stack: stack ? stackSummary(stack) : undefined }
+    }
+    const members = pulls.filter(
+      (member) =>
+        member.stack?.nativeId === native.nativeId &&
+        repositoryKey(member.url) === repositoryKey(pull.url),
+    )
+    const root = members.find((member) => member.stack?.position === 1)
+    const parent = members.find((member) => member.stack?.position === native.position - 1)
+    return {
+      ...pull,
+      stack: {
+        ...native,
+        rootNumber: root?.number,
+        parentNumber: parent?.number,
+        complete: complete && members.length === native.size,
+      },
+    }
+  })
+}
+
 export function stackSummary(stack: PullStack): PullStackSummary {
   const { members: _members, ...summary } = stack
   return summary
 }
 export function pullStackLabel(stack: PullStackSummary) {
-  return stack.complete ? `Stack ${stack.position}/${stack.size}` : 'Stack · partial'
+  return stack.complete || stack.nativeId
+    ? `Stack ${stack.position}/${stack.size}`
+    : 'Stack · partial'
 }
 /** Existing GitHub labels are qualified; create APIs accept plain base branches. */
 export function pullHeadBranch(pull: Pick<PullSummary, 'head' | 'url'>): string | null {

@@ -84,13 +84,26 @@ to learn the reset time, with a conservative fallback if unavailable. Other appl
 servers using the same GitHub account share GitHub's quota; the local limiter does not coordinate
 different machines.
 
+GitHub overviews use one basic PR list request per project and page. Author avatars come from that
+response. Checks and review details load when a PR is opened. Desktop and mobile refresh only page
+one automatically; additional pages load on demand through **Load more**. Account/source
+verification remains separate from list data reads, with successful verification shared for the same
+captured credential for up to ten minutes and rechecked on explicit refresh or credential changes.
+PR clients rank persistent server IDs consistently to prefer the same reader across devices;
+verified same-account failover remains available. List caches refresh only on demand, without an
+independent server background timer. Thread-owned watches remain active on their own runtimes.
+
 ## Stacked pull requests
 
 Desktop and mobile show a stack icon and position when an open PR targets the head branch of a
 unique open parent PR in the same repository. PR details show the dependency tree and let you open
 other members. Fork-qualified branches remain distinct; ambiguous parents and cycles are excluded.
-The overview and detail views reuse up to ten pages of cached open PRs. Incomplete or stale catalogs
-are explicitly marked as partial. Thread indicators use the background watcher's available catalog.
+Overviews prefer native GitHub stack metadata from the requested list page, with no extra requests
+for status enrichment or stack discovery. Native positions and total sizes remain accurate across
+pages; missing parent/root PR numbers are never invented. Native stack details use the targeted
+stack endpoint. Branch inference remains the fallback for other stacks and older GitHub servers;
+incomplete inferred catalogs are marked partial, and details may inspect up to ten cached open-PR
+pages. Thread indicators use the background watcher's available catalog.
 
 **Stack a PR** opens creation with the parent branch selected. You can also choose a parent in the
 creation form. Submission verifies that the parent is still open and its head commit and branch have

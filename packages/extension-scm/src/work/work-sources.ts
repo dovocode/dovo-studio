@@ -49,6 +49,7 @@ export function useIssueSources(includeJira: boolean, deduplicate = true): WorkS
           const runtimeName = runtimeComputerName(entry)
           return sources.map((jira) => ({
             profile: entry.profile,
+            serverId: entry.snapshot?.runtimeId,
             jira,
             projectLinks: Object.fromEntries(
               (saved?.jiraIssueLinks ?? [])
@@ -69,6 +70,7 @@ export function useIssueSources(includeJira: boolean, deduplicate = true): WorkS
   const sources = useMemo((): WorkSource[] => {
     const jira: {
       profile: RuntimeProfile
+      serverId?: string
       jira: JiraSource
       projectLinks: Record<string, string>
       runtimeName: string
@@ -82,9 +84,10 @@ export function useIssueSources(includeJira: boolean, deduplicate = true): WorkS
           repositoryId: source.repository.id,
         },
       })),
-      ...jira.map(({ profile, jira, projectLinks, runtimeName, connected }) => ({
+      ...jira.map(({ profile, serverId, jira, projectLinks, runtimeName, connected }) => ({
         key: jiraSourceKey(profile.id, jira.id),
         runtimeId: profile.id,
+        serverId,
         runtimeName,
         profile,
         jira,

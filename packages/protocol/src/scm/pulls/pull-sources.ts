@@ -87,6 +87,7 @@ export function assignRemoteSources<
     connected: boolean
     runtimeId?: string
     readerIdentity?: string
+    serverId?: string
   },
 >(
   sources: readonly T[],
@@ -95,6 +96,8 @@ export function assignRemoteSources<
     /** Verified identity of the previously selected reader, indexed by remote key. */
     previousReaderIdentities?: ReadonlyMap<string, string>
     requireSameReader?: boolean
+    /** All clients rank the persisted server IDs identically, independent of active runtime. */
+    sharedPreference?: boolean
     preferredRuntimeId?: string | null
     remote?: (source: T) => string
   } = {},
@@ -122,6 +125,32 @@ export function assignRemoteSources<
     const previousSource = candidates.find((candidate) => candidate.key === previous)
     const previousIdentity =
       options.previousReaderIdentities?.get(key) ?? previousSource?.readerIdentity
+    if (options.sharedPreference) {
+      const eligible = online.filter(
+        (candidate) =>
+          !options.requireSameReader ||
+          !previous ||
+          (previousIdentity
+            ? candidate.readerIdentity === previousIdentity
+            : candidate.key === previous),
+      )
+      // Rendezvous placement spreads repositories without depending on discovery order or client IDs.
+      const score = (source: T) => {
+        const identity = JSON.stringify([key, source.serverId ?? computer(source)])
+        let hash = 2166136261
+        for (let index = 0; index < identity.length; index++)
+          hash = Math.imul(hash ^ identity.charCodeAt(index), 16777619)
+        return hash >>> 0
+      }
+      const chosen = eligible.reduce<T | undefined>(
+        (best, candidate) => (!best || score(candidate) > score(best) ? candidate : best),
+        undefined,
+      )
+      if (chosen) {
+        own(key, chosen)
+        continue
+      }
+    }
     if (options.requireSameReader && previous) {
       const eligible = candidates.filter(
         (candidate) => previousIdentity && candidate.readerIdentity === previousIdentity,

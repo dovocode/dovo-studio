@@ -1,12 +1,19 @@
-import { pullStacks, stackSummary, type PullDetail, type PullSummary } from '@dovo/protocol'
+import {
+  pullStacks,
+  pullOverviewStacks,
+  stackSummary,
+  type PullDetail,
+  type PullSummary,
+} from '@dovo/protocol'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode, decodeResult } from '@dovo/protocol'
 import { retainUnavailableSections } from './cached-detail.js'
 import type Database from 'better-sqlite3'
 import { Effect, Fiber, Layer, ManagedRuntime, Schema } from 'effect'
-import { startPolling, runClientEffect } from '@dovo/client-runtime'
+import { runClientEffect } from '@dovo/client-runtime'
 import {
   pullPageSchema,
+  pullStackSchema,
   pullDetailSchema,
   pullRevision,
   type PullDetailSection,
@@ -21,8 +28,6 @@ import {
   runtimeFailure,
   type RuntimeFailure,
 } from '../../errors.js'
-/** Keep refreshing a checkout this long after a client last read its pull requests. */
-const DEMAND_WINDOW = 30 * 60_000
 const rowSchema = mutableStruct({
   value: Schema.String,
   updated: Schema.Number.pipe(Schema.check(Schema.isFinite())),
@@ -34,6 +39,11 @@ type PullReader = {
     page: number,
     background?: boolean,
   ) => ReturnType<PullRequests['list']>
+  nativeStack?: (
+    cwd: string,
+    number: number,
+    stackNumber: number,
+  ) => ReturnType<PullRequests['nativeStack']>
   detail: (cwd: string, number: number) => ReturnType<PullRequests['detail']>
   section?: (
     cwd: string,
@@ -49,16 +59,12 @@ export class PullCache {
   private invalidated = new Set<string>()
   private failedAt = new Map<string, number>()
   private errors = new Map<string, string>()
-  private scheduler?: ReturnType<typeof startPolling>
   private stopped = false
   private scopes = new Map<string, string>()
-  /** Checkouts a client read recently. Only these refresh in the background; task watching
-   * reads its own pull requests, so idle repositories cost no GitHub calls. */
-  private demanded = new Map<string, number>()
   constructor(
     private db: Database.Database,
     private pulls: PullReader & { forDestination?: (destination: string) => PullReader },
-    private store: WorkspaceStore,
+    _store: WorkspaceStore,
     private identity?: (cwd: string, refresh: boolean) => Promise<string>,
     private onDetail?: (detail: PullDetail) => void,
   ) {
@@ -218,10 +224,15 @@ export class PullCache {
     force = false,
     background = false,
     expectedScope?: string,
+    source?: { identity: () => Promise<string>; reader: PullReader },
   ) {
     return Effect.gen({ self: this }, function* () {
-      const identify = this.identity
-      const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+      const identify = source?.identity ?? this.identity
+      const scope = identify
+        ? yield* runtimeOperation(() =>
+            identify(cwd, force && !background && expectedScope === undefined),
+          )
+        : cwd
       if (expectedScope !== undefined && scope !== expectedScope)
         throw new HttpError(
           409,
@@ -232,24 +243,17 @@ export class PullCache {
         JSON.stringify(['list', scope, state, page]),
         pullPageSchema,
         async () => {
-          const result = await (this.pulls.forDestination?.(scope) ?? this.pulls).list(
-            cwd,
-            state,
-            page,
-            background,
-          )
+          const result = await (
+            source?.reader ??
+            this.pulls.forDestination?.(scope) ??
+            this.pulls
+          ).list(cwd, state, page, background)
           this.validateDestination(result, scope)
           return result
         },
         force,
       )
     })
-  }
-  noteDemand(cwd: string) {
-    this.demanded.set(cwd, Date.now())
-    if (this.demanded.size > 500)
-      for (const [key, at] of this.demanded)
-        if (Date.now() - at >= DEMAND_WINDOW) this.demanded.delete(key)
   }
   /** Reuse bounded, credential-scoped list caches instead of loading every PR detail. */
   stackCatalogEffect(
@@ -293,29 +297,70 @@ export class PullCache {
     page: number,
     force = false,
     expectedScope?: string,
+    source?: { identity: () => Promise<string>; reader: PullReader },
   ) {
     return Effect.gen({ self: this }, function* () {
-      this.noteDemand(cwd)
-      const result = yield* this.listEffect(cwd, state, page, force, false, expectedScope)
-      if (state === 'closed') return result
-      const catalog = yield* this.stackCatalogEffect(
-        cwd,
-        force,
-        state === 'open' && page === 1 ? result : undefined,
-        expectedScope ?? result.destination,
+      // Decorate only this page; overview reads must not fetch a stack catalog.
+      const result = yield* this.listEffect(cwd, state, page, force, false, expectedScope, source)
+      const pulls = pullOverviewStacks(
+        result.pulls,
+        state === 'open' && page === 1 && !result.hasMore && !result.stale && !result.refreshError,
       )
-      const stacks = pullStacks(catalog.pulls, catalog.complete)
       return {
         ...result,
-        pulls: result.pulls.map((pull) => {
-          const stack = pull.state === 'open' ? stacks.get(pull.number) : undefined
-          return { ...pull, stack: stack ? stackSummary(stack) : undefined }
-        }),
+        pulls,
       }
     })
   }
-  stackEffect(cwd: string, number: number, force = false, expectedScope?: string) {
+  stackEffect(
+    cwd: string,
+    number: number,
+    force = false,
+    expectedScope?: string,
+    nativeNumber?: number,
+  ) {
     return Effect.gen({ self: this }, function* () {
+      if (nativeNumber) {
+        const identify = this.identity
+        const scope = identify ? yield* runtimeOperation(() => identify(cwd, false)) : cwd
+        if (expectedScope !== undefined && scope !== expectedScope)
+          throw new HttpError(
+            409,
+            'This integration reader account or destination changed. Refresh before continuing.',
+          )
+        const reader = this.pulls.forDestination?.(scope) ?? this.pulls
+        const read = reader.nativeStack
+        if (read) {
+          const result = yield* Effect.result(
+            this.readEffect(
+              JSON.stringify(['native-stack', scope, number, nativeNumber]),
+              mutableStruct({
+                stack: Schema.optional(pullStackSchema),
+                cachedAt: Schema.optional(Schema.String),
+                stale: Schema.optional(Schema.Boolean),
+                refreshError: Schema.optional(Schema.String),
+              }),
+              async () => ({ stack: await read.call(reader, cwd, number, nativeNumber) }),
+              force,
+              undefined,
+              60_000,
+            ),
+          )
+          if (result._tag === 'Failure') {
+            if (this.rejectCachedFallback(result.failure)) return yield* Effect.fail(result.failure)
+            return {
+              stack: undefined,
+              warning: `Native stack unavailable: ${errorMessage(result.failure)}`,
+            }
+          }
+          return {
+            stack: result.success.stack,
+            warning: result.success.stale
+              ? (result.success.refreshError ?? 'Stack information is cached.')
+              : undefined,
+          }
+        }
+      }
       const catalog = yield* this.stackCatalogEffect(cwd, force, undefined, expectedScope)
       return {
         stack: pullStacks(catalog.pulls, catalog.complete).get(number),
@@ -328,7 +373,6 @@ export class PullCache {
   }
   detailWithStackEffect(cwd: string, number: number, force = false, expectedScope?: string) {
     return Effect.gen({ self: this }, function* () {
-      this.noteDemand(cwd)
       const detail = yield* this.detailEffect(cwd, number, force, expectedScope)
       if (detail.pull.state !== 'open')
         return { ...detail, stack: undefined, pull: { ...detail.pull, stack: undefined } }
@@ -337,11 +381,15 @@ export class PullCache {
         number,
         force,
         expectedScope ?? detail.destination,
+        detail.pull.stack?.nativeNumber,
       )
       return {
         ...detail,
         stack,
-        pull: { ...detail.pull, stack: stack ? stackSummary(stack) : undefined },
+        pull: {
+          ...detail.pull,
+          stack: stack ? stackSummary(stack) : warning ? detail.pull.stack : undefined,
+        },
         warnings: [...detail.warnings, ...(warning ? [warning] : [])],
       }
     })
@@ -358,7 +406,9 @@ export class PullCache {
   detailEffect(cwd: string, number: number, force = false, expectedScope?: string) {
     return Effect.gen({ self: this }, function* () {
       const identify = this.identity
-      const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+      const scope = identify
+        ? yield* runtimeOperation(() => identify(cwd, force && expectedScope === undefined))
+        : cwd
       if (expectedScope !== undefined && scope !== expectedScope)
         throw new HttpError(
           409,
@@ -396,9 +446,10 @@ export class PullCache {
     source?: { identity: () => Promise<string>; reader: PullReader },
   ): Effect.Effect<PullDetail, RuntimeFailure> {
     return Effect.gen({ self: this }, function* () {
-      this.noteDemand(cwd)
       const identify = source?.identity ?? this.identity
-      const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+      const scope = identify
+        ? yield* runtimeOperation(() => identify(cwd, force && expectedScope === undefined))
+        : cwd
       if (expectedScope !== undefined && scope !== expectedScope)
         throw new HttpError(
           409,
@@ -416,12 +467,15 @@ export class PullCache {
             )
             if (detail.pull.state !== 'open') return detail
             const { stack, warning } = await runClientEffect(
-              this.stackEffect(cwd, number, force, scope),
+              this.stackEffect(cwd, number, force, scope, detail.pull.stack?.nativeNumber),
             )
             return {
               ...detail,
               stack,
-              pull: { ...detail.pull, stack: stack ? stackSummary(stack) : undefined },
+              pull: {
+                ...detail.pull,
+                stack: stack ? stackSummary(stack) : warning ? detail.pull.stack : undefined,
+              },
               warnings: warning ? [warning] : [],
             }
           }
@@ -450,7 +504,7 @@ export class PullCache {
     return runClientEffect(
       Effect.gen({ self: this }, function* () {
         const identify = this.identity
-        const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+        const scope = identify ? yield* runtimeOperation(() => identify(cwd, false)) : cwd
         this.rememberScope(cwd, scope)
         return yield* this.readEffect(
           JSON.stringify(['feedback', scope, number]),
@@ -473,7 +527,7 @@ export class PullCache {
     return runClientEffect(
       Effect.gen({ self: this }, function* () {
         const identify = this.identity
-        const scope = identify ? yield* runtimeOperation(() => identify(cwd, force)) : cwd
+        const scope = identify ? yield* runtimeOperation(() => identify(cwd, false)) : cwd
         this.rememberScope(cwd, scope)
         return yield* this.readEffect(
           JSON.stringify(['status', scope, number]),
@@ -513,7 +567,8 @@ export class PullCache {
             ((parsed.data[0] === 'section' ||
               parsed.data[0] === 'detail' ||
               parsed.data[0] === 'status' ||
-              parsed.data[0] === 'feedback') &&
+              parsed.data[0] === 'feedback' ||
+              parsed.data[0] === 'native-stack') &&
               (number === undefined || parsed.data[2] === number)))
         )
       } catch {
@@ -553,47 +608,9 @@ export class PullCache {
     }
     for (const key of this.pending.keys()) if (matches(key)) this.invalidated.add(key)
   }
-  start() {
-    if (this.scheduler || this.stopped) return
-    const tick = Effect.gen({ self: this }, function* () {
-      const repos = yield* runtimeOperation(() =>
-        this.store
-          .get()
-          .repositories.filter(
-            (repository) =>
-              Date.now() - (this.demanded.get(repository.path) ?? -Infinity) < DEMAND_WINDOW,
-          ),
-      )
-      yield* Effect.forEach(
-        repos,
-        (repository) =>
-          Effect.gen({ self: this }, function* () {
-            yield* this.listEffect(repository.path, 'open', 1, false, true).pipe(Effect.result)
-            // Include stale-cache refreshes before admitting another repository.
-            const pending = [...this.pending].filter(([key]) => {
-              try {
-                return JSON.parse(key)[1] === (this.scopes.get(repository.path) ?? repository.path)
-              } catch {
-                return false
-              }
-            })
-            yield* Effect.forEach(pending, ([, fiber]) => Fiber.await(fiber), { discard: true })
-          }),
-        { concurrency: 3, discard: true },
-      )
-    })
-    this.scheduler = startPolling(tick, {
-      interval: 300_000,
-      immediate: false,
-      onError: (error) => console.error('Pull cache refresh failed', error),
-    })
-  }
   disposeEffect() {
     return Effect.gen({ self: this }, function* () {
       this.stopped = true
-      const scheduler = this.scheduler
-      if (scheduler) yield* runtimeOperation(() => scheduler.stop())
-      this.scheduler = undefined
       yield* Effect.forEach(this.pending.values(), (fiber) => Fiber.await(fiber), { discard: true })
       yield* runtimeOperation(() => this.executor.dispose())
     }).pipe(Effect.uninterruptible)

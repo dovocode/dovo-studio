@@ -149,7 +149,7 @@ function TaskListRowView({
         height: 22,
         borderRadius: 5,
         overflow: 'hidden',
-        backgroundColor: icon ? colors.accent : projectIconColor(repository),
+        backgroundColor: icon ? 'transparent' : projectIconColor(repository),
         alignItems: 'center',
         justifyContent: 'center',
       }}

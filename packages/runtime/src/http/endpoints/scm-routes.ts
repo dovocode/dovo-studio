@@ -227,7 +227,9 @@ export function scmRoute(request: IncomingMessage, path: string) {
           return decode(
             forgeSourceIdentitySchema,
             yield* serviceResult(
-              s.pulls.urlTarget(input.repositoryId, input.connectionId).sourceIdentity(),
+              s.pulls
+                .urlTarget(input.repositoryId, input.connectionId)
+                .sourceIdentity(input.refresh),
             ),
           )
         if (input.repositoryId && !repo) throw new HttpError(404, 'Repository not found')
@@ -236,7 +238,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(
             input.jiraSourceId
               ? s.forgeWork.sourceIdentityJira(input.jiraSourceId)
-              : s.pulls.sourceIdentity(repo!.path),
+              : s.pulls.sourceIdentity(repo!.path, input.refresh),
           ),
         )
       }
@@ -411,8 +413,10 @@ export function scmRoute(request: IncomingMessage, path: string) {
           if (!target) throw new HttpError(400, 'Invalid PR target')
           const pulls = s.pulls.urlTarget(target.url, input.connectionId)
           const urlScope =
-            input.expectedReaderIdentity !== undefined || input.expectedDestination !== undefined
-              ? yield* serviceResult(pulls.sourceIdentity())
+            input.expectedReaderIdentity !== undefined ||
+            input.expectedDestination !== undefined ||
+            input.refresh === true
+              ? yield* serviceResult(pulls.sourceIdentity(input.refresh === true))
               : undefined
           if (
             urlScope &&
@@ -494,7 +498,9 @@ export function scmRoute(request: IncomingMessage, path: string) {
           ? yield* serviceResult(s.checkouts.directory(input.taskId))
           : repo.path
         const readScope =
-          input.expectedReaderIdentity !== undefined || input.expectedDestination !== undefined
+          input.expectedReaderIdentity !== undefined ||
+          input.expectedDestination !== undefined ||
+          input.refresh === true
             ? yield* serviceResult(s.pulls.guard(cwd, input))
             : undefined
         if (path === '/api/scm/action-state') {
@@ -626,7 +632,9 @@ export function scmRoute(request: IncomingMessage, path: string) {
         }
         if (path === '/api/scm/pulls/task')
           return yield* createPullTaskEffect(s, repo.id, cwd, input)
-        if (path === '/api/scm/pulls/overview')
+        if (path === '/api/scm/pulls/overview') {
+          const scope =
+            readScope ?? (yield* serviceResult(s.pulls.sourceContext(cwd, input.refresh === true)))
           return yield* s.pullCache.overviewEffect(
             cwd,
             decode(
@@ -658,8 +666,20 @@ export function scmRoute(request: IncomingMessage, path: string) {
               withDefault(Schema.Boolean, () => false),
               input.refresh,
             ),
-            readScope?.destination,
+            scope.destination,
+            {
+              identity: async () => {
+                scope.validate()
+                return scope.destination
+              },
+              reader: {
+                ...s.pulls.forDestination(scope.destination),
+                list: (_cwd, state, page, background = false) =>
+                  s.pulls.listInContext(cwd, state, page, background, scope),
+              },
+            },
           )
+        }
         if (path === '/api/scm/pulls/detail' && input.section !== undefined) {
           const scope = readScope ?? (yield* serviceResult(s.pulls.sourceContext(cwd)))
           return yield* s.pullCache.sectionEffect(

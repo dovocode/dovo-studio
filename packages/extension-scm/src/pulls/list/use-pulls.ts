@@ -17,7 +17,7 @@ import {
   verifySourceReader,
   chooseSourceReader,
 } from '../../connections/source-readers'
-import { refreshPageCount, refreshPullPage, type CachedPullPage } from './collection-pages'
+import { refreshPullPage, type CachedPullPage } from './collection-pages'
 type PullSource = RepositorySource & {
   reader: RepositorySource & { readerIdentity?: string }
   destination?: string
@@ -89,7 +89,6 @@ export function usePulls(state: string, repositoryId = '') {
   const [busy, setBusy] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
   const forceNext = useRef(false)
-  const fullSweepAt = useRef(new Map<string, number>())
   const generation = useRef(0)
   const lastState = useRef(state)
   const moreRef = useRef<(key: string) => Promise<void>>(async () => {})
@@ -98,9 +97,6 @@ export function usePulls(state: string, repositoryId = '') {
     const current = ++generation.current
     const previousPages = pagesRef.current
     const sameState = lastState.current === remoteState
-    const sweepKeys = new Set(sources.map((source) => JSON.stringify([source.scope, remoteState])))
-    for (const key of fullSweepAt.current.keys())
-      if (!sweepKeys.has(key)) fullSweepAt.current.delete(key)
     const semaphore = Effect.runSync(Semaphore.make(1))
     const commands = clientTaskScope()
     const update = (source: PullSource, page: CachedPullPage, error?: string) => {
@@ -200,40 +196,10 @@ export function usePulls(state: string, repositoryId = '') {
         (source) =>
           Effect.gen(function* () {
             const previous = pagesRef.current[source.key]
-            const sweepKey = JSON.stringify([source.scope, remoteState])
-            const lastSweep = fullSweepAt.current.get(sweepKey) ?? Date.now()
-            if (!fullSweepAt.current.has(sweepKey)) fullSweepAt.current.set(sweepKey, lastSweep)
-            // Rebuild older saved pages once; sweep later pages every two minutes.
-            const count = refreshPageCount(previous, refresh, lastSweep, Date.now())
-            let page: CachedPullPage = { pulls: [], page: 0, hasMore: true }
-            for (let number = 1; number <= count && page.hasMore; number++) {
-              const response = yield* readPage(source, {
-                state: remoteState,
-                page: number,
-                refresh,
-              })
-              if (number === 1)
-                page =
-                  count === 1
-                    ? refreshPullPage(previous, response, refresh)
-                    : refreshPullPage(undefined, response, refresh)
-              else
-                page = {
-                  ...response,
-                  firstPageIds: page.firstPageIds,
-                  stale: page.stale || response.stale,
-                  refreshError: page.refreshError || response.refreshError,
-                  pulls: [
-                    ...new Map(
-                      [...page.pulls, ...response.pulls].map((pull) => [pull.number, pull]),
-                    ).values(),
-                  ],
-                }
-            }
+            const response = yield* readPage(source, { state: remoteState, page: 1, refresh })
+            const page = refreshPullPage(previous, response, refresh)
             update(source, page, page.refreshError)
             yield* save(source, page)
-            if (count > 1 && !page.stale && !page.refreshError)
-              fullSweepAt.current.set(sweepKey, Date.now())
           }).pipe(
             Effect.catch((error) =>
               Effect.sync(() =>
@@ -287,8 +253,6 @@ export function usePulls(state: string, repositoryId = '') {
           }
           update(source, page, page.refreshError)
           yield* save(source, page)
-          if (!page.stale && !page.refreshError)
-            fullSweepAt.current.set(JSON.stringify([source.scope, remoteState]), Date.now())
         }).pipe(
           Effect.catch((error) => Effect.sync(() => update(source, previous, error.message))),
           Effect.ensuring(

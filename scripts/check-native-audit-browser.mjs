@@ -10,6 +10,7 @@ const controls = `
 import {useEffect,useImperativeHandle,useRef} from 'react';
 const flat=s=>Object.assign({},...(Array.isArray(s)?s.flat(Infinity):[s]));
 export const View=({children,style,accessibilityLabel,onLayout,ref})=>{const node=useRef(null);useImperativeHandle(ref,()=>({measureLayout:(parent,done)=>done(0,120)}));useEffect(()=>{onLayout?.({nativeEvent:{layout:{y:120}}})},[onLayout]);return <div ref={node} aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>};
+export const Image=({source,style,onError,accessibilityLabel})=><img src={source.uri} style={style} onError={onError} alt={accessibilityLabel}/>;
 export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole==='alert'?'alert':undefined} style={{display:'block',...flat(style)}}>{children}</span>;
 export const Pressable=({children,onPress,disabled,style,accessibilityLabel,accessibilityRole,accessibilityState,testID})=><button role={accessibilityRole} aria-label={accessibilityLabel} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} disabled={disabled} onClick={onPress} style={flat(typeof style==='function'?style({pressed:false}):style)}>{children}</button>;
 export const ScrollView=({children,ref,contentContainerStyle,style,testID})=>{useImperativeHandle(ref,()=>({scrollTo:input=>window.scrolls.push(input)}));return <div data-testid={testID} style={{...flat(style),...flat(contentContainerStyle)}}>{children}</div>};

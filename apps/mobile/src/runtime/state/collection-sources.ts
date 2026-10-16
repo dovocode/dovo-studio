@@ -4,6 +4,7 @@ import { runtimeComputerName } from '@dovo/protocol'
 export type ProjectSource = {
   key: string
   profile: RuntimeProfile
+  serverId?: string
   repository: Repository
   connected: boolean
   computerName: string
@@ -19,6 +20,7 @@ export function collectionSources(overviews: RuntimeOverview[]): ProjectSource[]
       .map((repository) => ({
         key: projectSourceKey(entry.profile.id, repository.id),
         profile: entry.profile,
+        serverId: entry.snapshot?.runtimeId,
         repository,
         connected: entry.connected,
         computerName: runtimeComputerName(entry),
@@ -29,8 +31,9 @@ export function collectionSources(overviews: RuntimeOverview[]): ProjectSource[]
 // Live snapshots update every second. Reload collections only when their actual source changes.
 export const collectionSourceIdentity = (sources: ProjectSource[]) =>
   JSON.stringify(
-    sources.map(({ key, profile, repository, connected, computerName }) => ({
+    sources.map(({ key, profile, serverId, repository, connected, computerName }) => ({
       key,
+      serverId,
       connection: profile.connection,
       name: computerName,
       connected,

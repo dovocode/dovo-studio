@@ -1,4 +1,5 @@
 import { PullRequestIcon } from '../ui/content/pull-request-icon'
+import { AuthorAvatar } from '../scm/pulls/author-avatar'
 import { uniquePulls } from '@dovo/protocol'
 import { AddPullsToThread } from '../scm/pulls/list/add-to-thread'
 import type { PullSummary } from '@dovo/protocol'
@@ -338,7 +339,7 @@ export default function PullsScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: marked.includes(`${p.sourceKey}-${p.number}`) }}
-            accessibilityLabel={`${p.runtimeName}${p.online ? '' : ', offline'}, ${p.repositoryName}, PR ${p.number}. ${p.title}. ${pullState(p).label}. ${pullChecks(p).label}. ${pullReview(p).label}. ${p.head} into ${p.base}. ${p.state === 'open' ? pullNextStep(p).label : ''}`}
+            accessibilityLabel={`${p.runtimeName}${p.online ? '' : ', offline'}, ${p.repositoryName}, PR ${p.number}. ${p.title}. ${pullState(p).label}. ${p.checksState !== undefined || p.statusError ? pullChecks(p).label + '. ' : ''}${p.reviewDecision !== undefined || p.statusError ? pullReview(p).label + '. ' : ''} ${p.head} into ${p.base}. ${p.state === 'open' ? pullNextStep(p).label : ''}`}
             onPress={() => {
               const key = `${p.sourceKey}-${p.number}`
               if (marked.length)
@@ -426,7 +427,8 @@ export default function PullsScreen() {
                 ]}
               >
                 {p.repositoryName} · #{p.number}
-                {p.stack ? ` · ${pullStackLabel(p.stack)}` : ''} · {p.runtimeName}
+                {' · '}
+                {p.runtimeName}
                 {!p.online ? ' · Offline' : ''}
               </Text>
               <Text style={styles.muted}>{formatShortDate(p.updatedAt)}</Text>
@@ -454,13 +456,44 @@ export default function PullsScreen() {
               </Text>
               <Icon name="next" size={12} color={colors.muted} />
             </View>
-            <Text numberOfLines={1} style={styles.muted}>
-              {p.author} · {p.head} → {p.base}
-            </Text>
-            <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
-              <Signal signal={pullChecks(p)} />
-              <Signal signal={pullReview(p)} />
+            <View style={[styles.row, { flexWrap: 'nowrap', gap: 6 }]}>
+              <AuthorAvatar author={p.author} url={p.authorAvatarUrl} />
+              <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
+                {p.author} · {p.head} → {p.base}
+              </Text>
             </View>
+            {p.stack && (
+              <View style={[styles.row, { gap: 6, paddingVertical: 4 }]}>
+                <Icon name="stack" size={14} color={colors.accent} />
+                <Text style={[styles.muted, { color: colors.accent }]}>
+                  {pullStackLabel(p.stack)}
+                  {p.stack.nativeNumber
+                    ? ` · Stack #${p.stack.nativeNumber}`
+                    : p.stack.rootNumber
+                      ? ` · #${p.stack.rootNumber}`
+                      : ''}
+                </Text>
+                <Text style={styles.muted}>
+                  {p.stack.parentNumber
+                    ? `#${p.stack.parentNumber} → #${p.number}`
+                    : p.stack.position === 1
+                      ? 'Base PR'
+                      : p.stack.baseRef
+                        ? `onto ${p.stack.baseRef}`
+                        : ''}
+                </Text>
+              </View>
+            )}
+            {(p.checksState !== undefined || p.reviewDecision !== undefined || p.statusError) && (
+              <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
+                {(p.checksState !== undefined || p.statusError) && (
+                  <Signal signal={pullChecks(p)} />
+                )}
+                {(p.reviewDecision !== undefined || p.statusError) && (
+                  <Signal signal={pullReview(p)} />
+                )}
+              </View>
+            )}
             {!!p.labels.length && (
               <Text numberOfLines={2} style={styles.muted}>
                 {p.labels.slice(0, 3).join(' · ')}
