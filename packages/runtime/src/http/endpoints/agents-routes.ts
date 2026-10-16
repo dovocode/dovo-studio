@@ -713,10 +713,12 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               'steer',
               'up',
               'down',
+              'move',
               'pause',
               'resume',
             ]),
             messageId: Schema.optional(idSchema),
+            beforeMessageId: Schema.optional(Schema.NullOr(idSchema)),
             text: Schema.optional(maxValue(Schema.String, 120000)),
             expectedText: Schema.optional(maxValue(Schema.String, 120000)),
             runId: Schema.optional(idSchema),
@@ -730,6 +732,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               'Choose a queued message and provide its new and original text',
             )
           s.tasks.queue.edit(input.id, input.messageId, input.text, input.expectedText)
+        } else if (input.action === 'move') {
+          if (!input.messageId || input.beforeMessageId === undefined)
+            throw new HttpError(400, 'Choose a queued message and its destination')
+          s.tasks.queue.move(input.id, input.messageId, input.beforeMessageId)
         } else if (input.action === 'steer') {
           if (!input.runId)
             throw new HttpError(

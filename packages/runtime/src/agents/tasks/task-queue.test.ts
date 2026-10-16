@@ -492,3 +492,74 @@ it('atomically reopens the settled family on explicit send, including attachment
     db.close()
   }
 })
+
+it('moves queued messages atomically, persists their order and rejects messages or destinations that started', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'sortable',
+          title: 'Sortable',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: 'Keep this draft',
+          example: false,
+          queuePaused: true,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    const attachment = {
+      id: '00000000-0000-0000-0000-000000000000',
+      name: 'note.txt',
+      mime: 'text/plain',
+      size: 1,
+    }
+    queue.add('sortable', 'first', 'First')
+    queue.add('sortable', 'second', 'Second')
+    queue.add('sortable', 'third', '', [attachment])
+    // A newly queued message must survive a move made from an older client snapshot.
+    queue.add('sortable', 'fourth', 'Fourth')
+    const receipt = store.taskSubmission('sortable', 'third')
+    queue.move('sortable', 'third', 'first')
+    expect(store.task('sortable').queue?.map((message) => message.id)).toEqual([
+      'third',
+      'first',
+      'second',
+      'fourth',
+    ])
+    queue.move('sortable', 'first', null)
+    queue.move('sortable', 'second', 'second')
+    queue.move('sortable', 'second', 'fourth')
+    const persisted = new WorkspaceStore(db).task('sortable')
+    expect(persisted.queue?.map((message) => message.id)).toEqual([
+      'third',
+      'second',
+      'fourth',
+      'first',
+    ])
+    expect(persisted.queue?.[0].attachments).toEqual([attachment])
+    expect(persisted).toMatchObject({
+      draft: 'Keep this draft',
+      queuePaused: true,
+      checkoutLocked: true,
+    })
+    expect(store.taskSubmission('sortable', 'third')).toBe(receipt)
+    queue.take('sortable')
+    const remaining = store.task('sortable').queue
+    expect(() => queue.move('sortable', 'third', 'second')).toThrow(
+      'already started or was removed',
+    )
+    expect(() => queue.move('sortable', 'first', 'third')).toThrow('queue changed while dragging')
+    expect(store.task('sortable').queue).toEqual(remaining)
+  } finally {
+    db.close()
+  }
+})

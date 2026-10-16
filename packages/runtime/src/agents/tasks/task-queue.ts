@@ -130,6 +130,23 @@ export class TaskQueue {
         : undefined,
     )
   }
+  move(id: string, messageId: string, beforeMessageId: string | null) {
+    const queue = [...(this.store.taskSummary(id).queue ?? [])]
+    const index = queue.findIndex((message) => message.id === messageId)
+    if (index < 0) throw new HttpError(409, 'This message already started or was removed')
+    if (beforeMessageId !== null && !queue.some((message) => message.id === beforeMessageId))
+      throw new HttpError(409, 'The queue changed while dragging. Try again.')
+    if (messageId === beforeMessageId) return
+    const [message] = queue.splice(index, 1)
+    const target =
+      beforeMessageId === null
+        ? queue.length
+        : queue.findIndex((item) => item.id === beforeMessageId)
+    if (target === index) return
+    queue.splice(target, 0, message)
+    this.store.updateTask(id, (task) => ({ ...task, queue, checkoutLocked: true }))
+    this.activity?.add('queue', id, 'Queue reordered', { messageId, beforeMessageId })
+  }
   change(id: string, action: 'remove' | 'restore' | 'up' | 'down' | 'pause', messageId?: string) {
     const task = this.store.taskSummary(id)
     if (action === 'pause') {

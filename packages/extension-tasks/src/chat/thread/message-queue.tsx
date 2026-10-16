@@ -1,6 +1,7 @@
 import type { PendingMessage } from '@dovo/protocol'
+import type { DragEvent } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { ArrowUp, ArrowDown, CornerUpRight, Pencil, X } from 'lucide-react'
+import { ArrowUp, ArrowDown, CornerUpRight, GripVertical, Pencil, X } from 'lucide-react'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import {
   Button,
@@ -9,7 +10,6 @@ import {
   QueueSectionTrigger,
   QueueList,
   QueueItem,
-  QueueItemIndicator,
   QueueItemContent,
 } from '@dovo/studio-ui'
 export function MessageQueue({
@@ -28,11 +28,31 @@ export function MessageQueue({
     expectedText: string
   } | null>(null)
   const queue = task.queue ?? []
+  const [dragging, setDragging] = useApplicationState<{ taskId: string; messageId: string } | null>(
+    null,
+  )
+  const [dropTarget, setDropTarget] = useApplicationState<{
+    messageId: string
+    edge: 'before' | 'after'
+  } | null>(null)
+  const pendingIds = new Set(pending?.map((item) => item.message.id))
+  const confirmed = queue.filter((message) => !pendingIds.has(message.id))
+  const canMove = (id: string) =>
+    connected && !busy && confirmed.length > 1 && confirmed.some((message) => message.id === id)
+  const draggingHere = dragging?.taskId === task.id && canMove(dragging.messageId)
+  const clearDrag = () => {
+    setDragging(null)
+    setDropTarget(null)
+  }
+  const edgeAt = (event: DragEvent<HTMLLIElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+  }
   const queuedPending = pending?.find((item) => item.destination === 'queue')
   const act = async (
     action: string,
     messageId?: string,
-    edit?: { text: string; expectedText: string },
+    edit?: { text?: string; expectedText?: string; beforeMessageId?: string | null },
   ) => {
     setBusy(true)
     setError('')
@@ -44,7 +64,13 @@ export function MessageQueue({
           action,
           runId: action === 'steer' ? task.activeRunId : undefined,
           messageId,
-          ...(edit ? { text: edit.text, expectedText: edit.expectedText } : {}),
+          ...(edit
+            ? {
+                text: edit.text,
+                expectedText: edit.expectedText,
+                beforeMessageId: edit.beforeMessageId,
+              }
+            : {}),
         },
         responses.ok,
       )
@@ -79,10 +105,82 @@ export function MessageQueue({
             {queue[0]?.text || queue[0]?.attachments?.map((file) => file.name).join(', ')}
           </span>
         </QueueSectionTrigger>
-        <QueueList className="mt-0">
+        <QueueList
+          className="mt-0"
+          onDragLeave={(event) => {
+            if (
+              !event.currentTarget.contains(
+                event.relatedTarget instanceof Node ? event.relatedTarget : null,
+              )
+            )
+              setDropTarget(null)
+          }}
+        >
           {queue.map((message, index) => (
-            <QueueItem key={message.id}>
-              <QueueItemIndicator />
+            <QueueItem
+              key={message.id}
+              className={[
+                'relative',
+                draggingHere && dragging.messageId === message.id ? 'opacity-40' : '',
+                draggingHere && dropTarget?.messageId === message.id
+                  ? dropTarget.edge === 'before'
+                    ? 'before:pointer-events-none before:absolute before:inset-x-2 before:top-0 before:border-t-2 before:border-primary'
+                    : 'after:pointer-events-none after:absolute after:inset-x-2 after:bottom-0 after:border-b-2 after:border-primary'
+                  : '',
+              ].join(' ')}
+              onDragOver={(event) => {
+                if (!draggingHere) return
+                if (!canMove(message.id) || dragging.messageId === message.id) {
+                  setDropTarget(null)
+                  return
+                }
+                event.preventDefault()
+                event.dataTransfer.dropEffect = 'move'
+                setDropTarget({ messageId: message.id, edge: edgeAt(event) })
+              }}
+              onDrop={(event) => {
+                if (!draggingHere) return
+                event.preventDefault()
+                event.stopPropagation()
+                const source = confirmed.findIndex((item) => item.id === dragging.messageId)
+                const target = confirmed.findIndex((item) => item.id === message.id)
+                const edge = edgeAt(event)
+                clearDrag()
+                if (target < 0 || source === target) return
+                const beforeMessageId =
+                  edge === 'before' ? message.id : (confirmed[target + 1]?.id ?? null)
+                if (
+                  beforeMessageId === dragging.messageId ||
+                  beforeMessageId === (confirmed[source + 1]?.id ?? null)
+                )
+                  return
+                void act('move', dragging.messageId, { beforeMessageId })
+              }}
+            >
+              <IconButton
+                type="button"
+                label={`Drag queued message ${index + 1} to reorder`}
+                className="size-5 cursor-grab text-muted-foreground/60 active:cursor-grabbing"
+                disabled={!canMove(message.id)}
+                draggable={canMove(message.id)}
+                onDragStart={(event) => {
+                  if (!canMove(message.id)) {
+                    event.preventDefault()
+                    return
+                  }
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('application/x-dovo-queued-message', message.id)
+                  event.dataTransfer.setDragImage(
+                    event.currentTarget.closest('li') ?? event.currentTarget,
+                    12,
+                    12,
+                  )
+                  setDragging({ taskId: task.id, messageId: message.id })
+                }}
+                onDragEnd={clearDrag}
+              >
+                <GripVertical size={12} />
+              </IconButton>
               <QueueItemContent title={message.text}>
                 {message.text || message.attachments?.map((f) => f.name).join(', ')}
                 {message.text && message.attachments?.length
