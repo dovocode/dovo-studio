@@ -1,3 +1,4 @@
+import type { RuntimeSnapshot } from '../runtime/connection/runtime.js'
 import type { TaskSummary } from './task-summary.js'
 import { canChangeTaskCheckout, type Agent, type Task, type Repository } from '../workspace.js'
 import { resolveTaskDefaults, type RuntimeDefaults } from '../runtime/connection/runtime-setup.js'
@@ -81,4 +82,17 @@ export function changeTaskAutoProject<T extends Task | TaskSummary>(
     autoProject: true,
     autoProjectExecution: task.autoProjectExecution,
   }
+}
+
+/** New unscoped threads use AUTO only when this computer has enabled the experiment. */
+export function defaultTaskProjectSelection(
+  snapshot:
+    | Pick<RuntimeSnapshot, 'autoProjectSelectionEnabled' | 'autoProjectModelSelection'>
+    | null
+    | undefined,
+  repository: Repository | undefined,
+): Pick<Task, 'autoProject' | 'modelSelection'> {
+  return snapshot?.autoProjectSelectionEnabled && repository?.kind === 'scratch'
+    ? { autoProject: true, modelSelection: snapshot.autoProjectModelSelection ?? 'inherit' }
+    : {}
 }

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   createTask,
+  defaultTaskProjectSelection,
   resolveTaskDefaults,
   TemporaryTaskWorkspace,
   useWorkspace,
@@ -41,6 +42,10 @@ export function StartupDraft({
       ? item.id === selection.repositoryId
       : item.kind === 'scratch',
   )
+  const autoProject =
+    selection?.runtimeId === store.activeRuntimeId
+      ? selection.autoProject
+      : defaultTaskProjectSelection(store.snapshot, repository).autoProject
   const initialTask = useMemo(
     () => ({
       ...createTask({
@@ -49,13 +54,13 @@ export function StartupDraft({
         agentId: '',
         ...resolveTaskDefaults(store.snapshot?.defaults, repository),
         repositoryId: repository?.id ?? '',
-        autoProject: selection?.autoProject,
+        autoProject,
         autoProjectExecution: selection?.autoProjectExecution,
         modelSelectionDifficulty: selection?.modelSelectionDifficulty,
-        ...(selection?.autoProject
+        ...(autoProject
           ? {
               modelSelection:
-                selection.modelSelection ?? store.snapshot?.autoProjectModelSelection ?? 'inherit',
+                selection?.modelSelection ?? store.snapshot?.autoProjectModelSelection ?? 'inherit',
             }
           : selection?.modelSelection
             ? { modelSelection: selection.modelSelection }

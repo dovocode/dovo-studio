@@ -174,6 +174,10 @@ managed checkout locations after the worktree folder changes or threads are dele
 
 ## Experimental model selection
 
+When automatic project selection is enabled on a computer, new threads and quick launchers start in
+AUTO if no specific project is selected. Explicit project choices, including No project, override
+that default. Existing threads keep their selection.
+
 Inherit is always available. Enable **Automatic model selection (experimental)** in the computer's
 Running tasks settings to enable AUTO and SMART. Before the first message, the model picker offers:
 

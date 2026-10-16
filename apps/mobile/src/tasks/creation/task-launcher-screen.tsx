@@ -38,6 +38,9 @@ export function TaskLauncherScreen() {
   const [runtimeId, setRuntimeId] = useApplicationState(activeId ?? '')
   const [snapshot, setSnapshot] = useApplicationState<RuntimeSnapshot | null>(null)
   const [repositoryId, setRepositoryId] = useApplicationState('')
+  const [projectMode, setProjectMode] = useApplicationState<'auto' | 'manual' | undefined>(
+    undefined,
+  )
   const [selection, setSelection] = useApplicationState<LauncherAgent | null>(null)
   const [loadedRuntimeId, setLoadedRuntimeId] = useApplicationState('')
   const [text, setText] = useApplicationState(() =>
@@ -87,11 +90,19 @@ export function TaskLauncherScreen() {
       current = false
     }
   }, [ready, runtimeId, profiles, readRuntime, refreshRuntime, retry])
+  const autoProject =
+    snapshot?.autoProjectSelectionEnabled === true &&
+    projectMode !== 'manual' &&
+    snapshot.workspace.repositories.some(
+      (repository) => repository.id === repositoryId && repository.kind === 'scratch',
+    )
   useEffect(() => {
     if (attempt.current) return
     const repository = snapshot?.workspace.repositories.find((entry) => entry.id === repositoryId)
-    setSelection(snapshot && repository ? launcherDefaultAgent(snapshot, repository) : null)
-  }, [snapshot, repositoryId])
+    setSelection(
+      snapshot && repository ? launcherDefaultAgent(snapshot, repository, autoProject) : null,
+    )
+  }, [snapshot, repositoryId, autoProject])
   const selectedRepository = snapshot?.workspace.repositories.find(
     (entry) => entry.id === repositoryId,
   )
@@ -112,7 +123,10 @@ export function TaskLauncherScreen() {
     try {
       if (!attempt.current && snapshot && profile && repository && agent)
         attempt.current = {
-          task: createLauncherTask(snapshot, repository, agent, text, randomUUID()),
+          task: {
+            ...createLauncherTask(snapshot, repository, agent, text, randomUUID()),
+            autoProject: autoProject || undefined,
+          },
           profile,
           messageId: randomUUID(),
           text: text.trim(),
@@ -174,9 +188,24 @@ export function TaskLauncherScreen() {
                 <FolderPicker
                   key={runtimeId}
                   value={repositoryId}
+                  autoProject={autoProject}
+                  onAuto={
+                    snapshot?.autoProjectSelectionEnabled
+                      ? async () => {
+                          const scratch = snapshot.workspace.repositories.find(
+                            (repository) => repository.kind === 'scratch',
+                          )
+                          if (scratch) {
+                            setProjectMode('auto')
+                            setRepositoryId(scratch.id)
+                          }
+                        }
+                      : undefined
+                  }
                   repositories={snapshot?.workspace.repositories ?? []}
                   disabled={locked}
-                  onChange={(id, _repository, machineId) => {
+                  onChange={(id, _repository, machineId, auto) => {
+                    setProjectMode(auto ? 'auto' : 'manual')
                     setRuntimeId(machineId)
                     setRepositoryId(id)
                   }}

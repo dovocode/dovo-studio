@@ -26,7 +26,14 @@ function fixture(failingPath: string) {
       failed = true
       throw new Error('Response lost')
     }
-    return decode(schema, path === '/api/workspace' ? { revision: 1 } : { ok: true })
+    return decode(
+      schema,
+      path === '/api/workspace'
+        ? { revision: 1 }
+        : path === '/api/tasks/projects/select'
+          ? { ...attempt.task, autoProject: undefined, repositoryId: 'selected-project' }
+          : { ok: true },
+    )
   }
   return { attempt, calls, request }
 }
@@ -51,5 +58,28 @@ it('reuses the identical creation payload if creating the draft loses its acknow
   expect(attempt.created).toBe(false)
   await dispatchLauncherTask(attempt, request)
   expect(calls.mock.calls[0]).toEqual(calls.mock.calls[1])
+  expect(calls.mock.calls.filter(([path]) => path === '/api/tasks/message')).toHaveLength(1)
+})
+
+it('resolves AUTO projects before sending and retains selection when submission is retried', async () => {
+  const { attempt, calls, request } = fixture('/api/tasks/message')
+  attempt.task.autoProject = true
+  await expect(dispatchLauncherTask(attempt, request)).rejects.toThrow('Response lost')
+  expect(calls.mock.calls.map(([path]) => path)).toEqual([
+    '/api/workspace',
+    '/api/tasks/projects/select',
+    '/api/tasks/message',
+  ])
+  expect(attempt.task.repositoryId).toBe('selected-project')
+  await dispatchLauncherTask(attempt, request)
+  expect(calls.mock.calls.filter(([path]) => path === '/api/tasks/projects/select')).toHaveLength(1)
+})
+it('keeps the AUTO prompt pending and sends nothing if project selection fails', async () => {
+  const { attempt, calls, request } = fixture('/api/tasks/projects/select')
+  attempt.task.autoProject = true
+  await expect(dispatchLauncherTask(attempt, request)).rejects.toThrow('Response lost')
+  expect(calls.mock.calls.some(([path]) => path === '/api/tasks/message')).toBe(false)
+  expect(attempt.task.autoProject).toBe(true)
+  await dispatchLauncherTask(attempt, request)
   expect(calls.mock.calls.filter(([path]) => path === '/api/tasks/message')).toHaveLength(1)
 })

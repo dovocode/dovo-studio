@@ -108,7 +108,7 @@ mocks['../chat/composer/composer-workspace'] = `
   import {useWorkspace} from '@dovo/studio-core';
   export const ComposerWorkspace=({task,onSelectRemote})=>{
     const store=useWorkspace();
-    return <div data-composer-project={task.repositoryId}><button onClick={()=>onSelectRemote({runtimeId:store.activeRuntimeId==='mac'?'remote':'mac'}, {id:store.activeRuntimeId==='mac'?'remote-project':'local-project'})}>Switch project server</button></div>;
+    return <div data-composer-project={task.repositoryId} data-auto-project={!!task.autoProject} data-model-selection={task.modelSelection}><button onClick={()=>onSelectRemote({runtimeId:store.activeRuntimeId==='mac'?'remote':'mac'}, {id:store.activeRuntimeId==='mac'?'remote-project':'local-project'})}>Switch project server</button></div>;
   };
 `
 
@@ -126,7 +126,7 @@ const built = await build({
         const repositories=id=>[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''},{id:id==='mac'?'local-project':'remote-project',name:'Shared project',path:'/project',branch:'main'}];
         const [workspace,setWorkspace]=useState({tasks:[other],agents:[],skills:[],mcpServers:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]});
         window.setEntity=setEntity;window.saved=workspace.tasks;window.setWorkspace=setWorkspace;
-        const snapshot={questions:[],approvals:[],defaults:{},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
+        const snapshot={autoProjectSelectionEnabled:true,autoProjectModelSelection:"smart",questions:[],approvals:[],defaults:{},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
         window.hydrate=()=>setRevision(value=>value+1);
         const request=async(path,input)=>{
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
@@ -180,6 +180,14 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const editor = page.getByLabel('Message task', { exact: true })
   await editor.waitFor()
+  assert.equal(
+    await page.locator('[data-composer-project]').getAttribute('data-auto-project'),
+    'true',
+  )
+  assert.equal(
+    await page.locator('[data-composer-project]').getAttribute('data-model-selection'),
+    'smart',
+  )
   assert.equal(await page.evaluate(() => window.saved.length), 1)
   await page.getByRole('button', { name: 'Switch project server' }).click()
   await page.waitForFunction(
@@ -192,6 +200,10 @@ try {
     () =>
       document.querySelector('[data-composer-project]')?.dataset.composerProject ===
       'local-project',
+  )
+  assert.equal(
+    await page.locator('[data-composer-project]').getAttribute('data-auto-project'),
+    'false',
   )
   await editor.fill('abcdef')
   await editor.evaluate((element) => {

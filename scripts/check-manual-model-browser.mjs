@@ -117,7 +117,7 @@ const built = await build({
         const [entity,setEntity]=useState(),[revision,setRevision]=useState(0),[experimental,setExperimental]=useState(true);window.setExperimental=setExperimental;
         const [workspace,setWorkspace]=useApplicationState({tasks:[other],agents:[],skills:[],mcpServers:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''},{id:'project',name:'Project with Sonnet default',path:'/project',branch:'main',taskDefaults:{harness:{provider:'claude',model:'sonnet',permission:'full-access',endpoint:'',instructions:''}}}]});
         window.setEntity=setEntity;window.saved=workspace.tasks;window.setWorkspace=setWorkspace;
-        const snapshot={smartModelSelectionEnabled:experimental,workspace,questions:[],approvals:[],acpInstallations:[],permissionPolicySupported:true,defaults:{harness:{provider:window.defaultProvider,model:'default',permission:'full-access',endpoint:'',instructions:''}},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
+        const snapshot={autoProjectSelectionEnabled:!!window.autoProjects,smartModelSelectionEnabled:experimental,workspace,questions:[],approvals:[],acpInstallations:[],permissionPolicySupported:true,defaults:{harness:{provider:window.defaultProvider,model:'default',permission:'full-access',endpoint:'',instructions:''}},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
         window.hydrate=()=>setRevision(value=>value+1);
         const request=async(path,input)=>{
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
@@ -168,6 +168,13 @@ try {
     { defaultProvider: 'codex', selectBeforeTyping: true },
     { defaultProvider: 'claude', selectBeforeTyping: true, selectProject: true },
     { defaultProvider: 'claude', selectBeforeTyping: true, selectProject: true, launcher: true },
+    {
+      defaultProvider: 'claude',
+      selectBeforeTyping: true,
+      selectProject: true,
+      launcher: true,
+      autoProjects: true,
+    },
     { defaultProvider: 'claude', selectBeforeTyping: true, launcher: true, invalidRuntime: true },
   ]) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
@@ -184,12 +191,28 @@ try {
     await page.evaluate((fixture) => {
       window.defaultProvider = fixture.defaultProvider
       window.launcher = fixture.launcher
+      window.autoProjects = fixture.autoProjects
       window.invalidRuntime = fixture.invalidRuntime
     }, fixture)
     await page.addScriptTag({ content: built.outputFiles[0].text })
     const editor = page.getByLabel(fixture.launcher ? 'Task prompt' : 'Message task', {
       exact: true,
     })
+    if (fixture.autoProjects) {
+      const projects = page.getByRole('combobox', { name: 'Project', exact: true })
+      await page.waitForFunction(
+        () => document.querySelector('select[aria-label="Project"]')?.value === 'auto-project',
+      )
+      await page
+        .getByRole('button', { name: 'Choose agent and model' })
+        .filter({ hasText: 'Inherit' })
+        .waitFor()
+      await projects.selectOption({ label: 'No project' })
+      assert.notEqual(await projects.inputValue(), 'auto-project')
+      await projects.selectOption('auto-project')
+      await projects.selectOption({ label: 'Project with Sonnet default' })
+      assert.notEqual(await projects.inputValue(), 'auto-project')
+    }
     if (!fixture.selectBeforeTyping) await editor.fill('Use my chosen Claude model')
     if (fixture.launcher)
       assert.equal(await page.getByRole('combobox', { name: 'Server', exact: true }).count(), 0)

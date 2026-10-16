@@ -71,6 +71,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
   const [runtimeId, setRuntimeId] = useState(activeRuntimeId ?? '')
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null)
   const [repositoryId, setRepositoryId] = useState('')
+  const [projectMode, setProjectMode] = useState<'auto' | 'manual' | undefined>()
   const [selection, setSelection] = useState<LauncherAgent | null>(null)
   const [loadedRuntimeId, setLoadedRuntimeId] = useState('')
   const [text, setText] = useState('')
@@ -110,7 +111,10 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
           setRepositoryId((id) =>
             next.workspace.repositories.some((repository) => repository.id === id)
               ? id
-              : (next.workspace.repositories[0]?.id ?? ''),
+              : (next.workspace.repositories.find((repository) => repository.kind === 'scratch')
+                  ?.id ??
+                next.workspace.repositories[0]?.id ??
+                ''),
           )
           setLoadedRuntimeId(runtimeId)
         },
@@ -125,6 +129,12 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
       current = false
     }
   }, [open, runtimeId, runtimeRegistry.profiles, readRuntime, refresh])
+  const autoProject =
+    snapshot?.autoProjectSelectionEnabled === true &&
+    projectMode !== 'manual' &&
+    snapshot.workspace.repositories.some(
+      (repository) => repository.id === repositoryId && repository.kind === 'scratch',
+    )
   useEffect(() => {
     if (attempt.current) return
     if (loadedRuntimeId !== runtimeId) manualSelection.current = false
@@ -134,10 +144,10 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
       repository
         ? manualSelection.current && previous
           ? previous
-          : launcherDefaultAgent(snapshot, repository)
+          : launcherDefaultAgent(snapshot, repository, autoProject)
         : null,
     )
-  }, [snapshot, repositoryId, loadedRuntimeId, runtimeId])
+  }, [snapshot, repositoryId, loadedRuntimeId, runtimeId, autoProject])
   const selectionIssue = selection?.harness
     ? permissionPolicyUIIssue(selection.harness, snapshot?.permissionPolicySupported === true)
     : undefined
@@ -157,6 +167,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
         attempt.current = {
           task: {
             ...createLauncherTask(snapshot, repository, agent, text, randomUUID()),
+            autoProject: autoProject || undefined,
             harnessCustomized: manualSelection.current || undefined,
           },
           profile,
@@ -295,9 +306,20 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
               <select
                 aria-label="Project"
                 className={selectClass}
-                value={selectedGroup?.key ?? ''}
+                value={autoProject ? 'auto-project' : (selectedGroup?.key ?? '')}
                 disabled={locked || !projectGroups.length}
                 onChange={(event) => {
+                  if (event.target.value === 'auto-project') {
+                    const scratch = snapshot?.workspace.repositories.find(
+                      (repository) => repository.kind === 'scratch',
+                    )
+                    if (scratch) {
+                      setProjectMode('auto')
+                      setRepositoryId(scratch.id)
+                    }
+                    return
+                  }
+                  setProjectMode('manual')
                   const group = projectGroups.find((group) => group.key === event.target.value)
                   const preferred = group && preferredProjectEntry(group.entries, runtimeId)
                   if (preferred) {
@@ -309,6 +331,10 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
                 <option value="" disabled>
                   {loading ? 'Loading projects…' : 'Choose a project'}
                 </option>
+                {snapshot?.autoProjectSelectionEnabled &&
+                  snapshot.workspace.repositories.some(
+                    (repository) => repository.kind === 'scratch',
+                  ) && <option value="auto-project">AUTO</option>}
                 {projectGroups.map((group) => (
                   <option
                     key={group.key}

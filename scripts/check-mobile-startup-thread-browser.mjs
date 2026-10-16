@@ -18,7 +18,7 @@ const mocks = {
 }
 const built = await build({
   stdin: {
-    contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {RuntimeContext} from '../../runtime/connection/provider';import {StartupThread} from './src/tasks/creation/startup-thread';window.requests=[];window.commits=[];window.failure='';window.failCreate=false;function App(){const [version,setVersion]=useState(0);const overviews=['a','b'].map(id=>({profile:{id,name:id,connection:{address:'http://'+id}},connected:true,snapshot:{workspace:{tasks:[],agents:[],repositories:[{id:'chat-'+id,kind:'scratch',name:'Chat',path:'/scratch',branch:''}]}}}));return <RuntimeContext.Provider value={{activeId:'a',overviews,request:(runtimeId,path,input)=>Effect.tryPromise({try:async()=>{window.requests.push({runtimeId,path,input});if(path==='/api/workspace'&&window.holdCreate)await new Promise(resolve=>window.releaseCreate=resolve);if(path==='/api/workspace'&&window.failCreate){window.failCreate=false;throw Error('Creation failed')}return {revision:1,ok:true}},catch:e=>e})}}><button onClick={()=>setVersion(v=>v+1)}>New thread</button><StartupThread key={version} taskId={'thread-'+version} runtimeId="a" onNewThread={()=>setVersion(v=>v+1)} onBrowse={()=>window.browsed=true} onCommit={(runtimeId,id)=>window.commits.push({runtimeId,id})}/></RuntimeContext.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {RuntimeContext} from '../../runtime/connection/provider';import {StartupThread} from './src/tasks/creation/startup-thread';window.requests=[];window.commits=[];window.failure='';window.failCreate=false;function App(){const [version,setVersion]=useState(0);const overviews=['a','b'].map(id=>({profile:{id,name:id,connection:{address:'http://'+id}},connected:true,snapshot:{autoProjectSelectionEnabled:true,autoProjectModelSelection:'smart',workspace:{tasks:[],agents:[],repositories:[{id:'chat-'+id,kind:'scratch',name:'Chat',path:'/scratch',branch:''}]}}}));return <RuntimeContext.Provider value={{activeId:'a',overviews,request:(runtimeId,path,input)=>Effect.tryPromise({try:async()=>{window.requests.push({runtimeId,path,input});if(path==='/api/workspace'&&window.holdCreate)await new Promise(resolve=>window.releaseCreate=resolve);if(path==='/api/workspace'&&window.failCreate){window.failCreate=false;throw Error('Creation failed')}return {revision:1,ok:true}},catch:e=>e})}}><button onClick={()=>setVersion(v=>v+1)}>New thread</button><StartupThread key={version} taskId={'thread-'+version} runtimeId="a" onNewThread={()=>setVersion(v=>v+1)} onBrowse={()=>window.browsed=true} onCommit={(runtimeId,id)=>window.commits.push({runtimeId,id})}/></RuntimeContext.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: new URL('../apps/mobile/', import.meta.url).pathname,
     loader: 'tsx',
   },
@@ -52,6 +52,8 @@ try {
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByText('What would you like to work on?').waitFor()
+  assert.equal(await page.evaluate(() => window.task.autoProject), true)
+  assert.equal(await page.evaluate(() => window.task.modelSelection), 'smart')
   const original = await page.evaluate(() => window.task.id)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.waitForFunction(() => window.task.setupCommand === 'pnpm install')
@@ -83,6 +85,7 @@ try {
   assert.equal(await page.getByLabel('Message').inputValue(), 'Remote draft')
   assert.deepEqual(await page.evaluate(() => window.requests), [])
   assert.equal(await page.evaluate(() => window.task.repositoryId), 'remote')
+  assert.equal(await page.evaluate(() => !!window.task.autoProject), false)
   await page.evaluate(() => {
     window.failCreate = true
   })

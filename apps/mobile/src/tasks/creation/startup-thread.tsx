@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { View } from 'react-native'
-import { resolveTaskDefaults, taskMachineDraft, type Task } from '@dovo/protocol'
+import {
+  defaultTaskProjectSelection,
+  resolveTaskDefaults,
+  taskMachineDraft,
+  type Task,
+} from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
@@ -45,6 +50,7 @@ export function StartupThread({
     (repository
       ? {
           ...resolveTaskDefaults(entry?.snapshot?.defaults, repository),
+          ...defaultTaskProjectSelection(entry?.snapshot, repository),
           id,
           title: 'New thread',
           repositoryId: repository.id,

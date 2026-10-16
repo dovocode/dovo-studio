@@ -68,11 +68,14 @@ export function createLauncherTask(
 export function launcherDefaultAgent(
   snapshot: RuntimeSnapshot,
   repository: Repository,
+  autoProject = false,
 ): LauncherAgent {
   const defaults = resolveTaskDefaults(snapshot.defaults, repository)
   const harness = defaults.harness
   return {
-    modelSelection: defaults.modelSelection,
+    modelSelection: autoProject
+      ? (snapshot.autoProjectModelSelection ?? 'inherit')
+      : defaults.modelSelection,
     key: `harness:${harness.provider}`,
     name: harness.provider,
     provider: harness.provider,

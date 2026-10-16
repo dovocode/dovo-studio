@@ -1,7 +1,7 @@
 import { Schema } from 'effect'
 import { mutableStruct } from '../shared/schema.js'
 import { responses } from '../runtime/connection/runtime.js'
-import type { Task } from '../workspace.js'
+import { taskSchema, type Task } from '../workspace.js'
 import type { RuntimeProfile } from '../runtime/connection/runtime-fleet.js'
 export type LauncherRequest = <T extends Schema.Codec<unknown, unknown>>(
   profile: RuntimeProfile,
@@ -28,6 +28,14 @@ export async function dispatchLauncherTask(attempt: LauncherAttempt, request: La
       'PATCH',
     )
     attempt.created = true
+  }
+  if (attempt.task.autoProject) {
+    attempt.task = await request(
+      attempt.profile,
+      '/api/tasks/projects/select',
+      { id: attempt.task.id, text: attempt.text },
+      taskSchema,
+    )
   }
   await request(
     attempt.profile,

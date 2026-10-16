@@ -1,6 +1,7 @@
 import { expect, it } from 'vite-plus/test'
 import {
   decode,
+  defaultTaskProjectSelection,
   decodeResult,
   projectTaskDefaultsSchema,
   changeTaskModelSelection,
@@ -193,4 +194,21 @@ it('AUTO projects use their own model default and preserve explicit AUTO/SMART c
   expect(changeTaskAutoProject(smart, source, source, runtime).modelSelection).toBe('smart')
   const explicit = changeTaskHarness(draft, [], { ...harness, model: 'opus' })
   expect(changeTaskAutoProject(explicit, source, source, runtime).modelSelection).toBe('inherit')
+})
+
+it('defaults unscoped new threads to AUTO only on enabled computers', () => {
+  expect(defaultTaskProjectSelection(undefined, source)).toEqual({})
+  expect(defaultTaskProjectSelection({ autoProjectSelectionEnabled: false }, source)).toEqual({})
+  expect(defaultTaskProjectSelection({ autoProjectSelectionEnabled: true }, target)).toEqual({})
+  expect(defaultTaskProjectSelection({ autoProjectSelectionEnabled: true }, undefined)).toEqual({})
+  expect(defaultTaskProjectSelection({ autoProjectSelectionEnabled: true }, source)).toEqual({
+    autoProject: true,
+    modelSelection: 'inherit',
+  })
+  expect(
+    defaultTaskProjectSelection(
+      { autoProjectSelectionEnabled: true, autoProjectModelSelection: 'smart' },
+      source,
+    ),
+  ).toEqual({ autoProject: true, modelSelection: 'smart' })
 })
