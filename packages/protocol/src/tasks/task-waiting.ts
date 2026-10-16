@@ -32,6 +32,7 @@ export const taskWaitingSchema = mutableStruct({
       url: Schema.String,
       status: Schema.String,
       checkedAt: Schema.String,
+      lastSuccessAt: Schema.optional(Schema.String),
       pausedReason: Schema.optional(Schema.String),
       error: Schema.optional(Schema.String),
     }),

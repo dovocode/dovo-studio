@@ -17,7 +17,7 @@ import {
 import { compareTasks, isSnoozed } from '@dovo/studio-core'
 import { SidebarHeader, ChoicePicker } from '@dovo/studio-ui'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
-import { Plus, Search, ChevronDown } from 'lucide-react'
+import { Plus, Search, ChevronDown, Monitor } from 'lucide-react'
 import {
   useCallback,
   useDeferredValue,
@@ -717,71 +717,87 @@ export function TaskList({
       aria-label="Task sidebar"
     >
       <SidebarHeader />
-      <div className="shrink-0 space-y-1.5 px-2 pt-3 pb-1">
-        <div className="flex items-center gap-1">
-          <div className="relative min-w-0 flex-1 text-sm">
+      <div className="shrink-0 space-y-1.5 border-b border-border/40 px-3 pt-3 pb-2">
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
             <Search
               aria-hidden="true"
-              className="absolute left-2 top-2 size-3 text-muted-foreground"
+              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70"
             />
             <Input
               aria-label="Search threads"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search threads"
-              className="h-8 border-transparent bg-transparent pl-7 shadow-none focus:border-border"
+              placeholder="Search threads…"
+              className="h-8 rounded-lg border-border/50 bg-background/40 pl-8 text-xs shadow-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus-visible:border-ring md:text-xs"
             />
           </div>
-          <SectionOrderDialog />
-          <ProjectsMenu
-            compact
-            allDevices
-            value={projectId}
-            onChange={onProjectChange}
-            disabled={busy}
-          />
           <Button
             size="icon"
             variant="ghost"
-            className="size-8 shrink-0"
+            className="size-8 shrink-0 rounded-lg bg-accent/50 text-foreground/80 hover:bg-accent hover:text-foreground"
             aria-label="New thread"
             title="New thread"
             onClick={onNewThread}
             disabled={busy}
           >
-            <Plus size={17} aria-hidden="true" />
+            <Plus className="size-4" aria-hidden="true" />
           </Button>
         </div>
-      </div>
-      {(sources.length > 1 || environment) && (
-        <div className="px-2 pb-1">
-          <ChoicePicker
-            aria-label="Filter threads by environment"
-            className="h-7 w-full rounded-sm bg-transparent px-2 text-xs text-muted-foreground"
-            value={environment}
-            onValueChange={(value) => {
-              setEnvironment(value)
-              scrollTop.current = 0
-              if (scroll.current) scroll.current.scrollTop = 0
-            }}
-          >
-            <option value="">All environments</option>
-            {environment &&
-              !sources.some((source) => JSON.stringify(source.runtimeId) === environment) && (
-                <option value={environment}>Unavailable environment</option>
-              )}
-            {sources.map((source) => (
-              <option
-                key={JSON.stringify(source.runtimeId)}
-                value={JSON.stringify(source.runtimeId)}
+        <div
+          className="flex min-w-0 items-center gap-1"
+          role="group"
+          aria-label="Thread filters and organization"
+        >
+          {sources.length > 1 || environment ? (
+            <div className="relative min-w-0 flex-1">
+              <Monitor
+                aria-hidden="true"
+                className="pointer-events-none absolute left-2 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+              <ChoicePicker
+                aria-label="Filter threads by computer"
+                className="h-7 w-full rounded-md border-transparent bg-transparent pl-7 pr-2 text-xs text-muted-foreground shadow-none hover:bg-accent/40 hover:text-foreground"
+                value={environment}
+                onValueChange={(value) => {
+                  setEnvironment(value)
+                  scrollTop.current = 0
+                  if (scroll.current) scroll.current.scrollTop = 0
+                }}
               >
-                {source.name}
-                {source.online ? '' : ' · Offline'}
-              </option>
-            ))}
-          </ChoicePicker>
+                <option value="">All computers</option>
+                {environment &&
+                  !sources.some((source) => JSON.stringify(source.runtimeId) === environment) && (
+                    <option value={environment}>Unavailable computer</option>
+                  )}
+                {sources.map((source) => (
+                  <option
+                    key={JSON.stringify(source.runtimeId)}
+                    value={JSON.stringify(source.runtimeId)}
+                  >
+                    {source.name}
+                    {source.online ? '' : ' · Offline'}
+                  </option>
+                ))}
+              </ChoicePicker>
+            </div>
+          ) : (
+            <span className="min-w-0 flex-1 px-1 text-xs font-medium text-muted-foreground">
+              Threads
+            </span>
+          )}
+          <div className="flex shrink-0 items-center gap-0.5 [&_button]:size-7 [&_button]:text-muted-foreground [&_button:hover]:text-foreground">
+            <SectionOrderDialog />
+            <ProjectsMenu
+              compact
+              allDevices
+              value={projectId}
+              onChange={onProjectChange}
+              disabled={busy}
+            />
+          </div>
         </div>
-      )}
+      </div>
       {(error || actionError || searchError) && (
         <p role="alert" className="px-3 pb-2 text-xs text-destructive">
           {error || actionError || searchError}

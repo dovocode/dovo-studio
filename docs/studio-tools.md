@@ -13,9 +13,22 @@ its own toggle; all five default to off.
 | Diagnostics    | studio_diagnostics | Read runtime health and paginated activity, optionally scoped to a thread/run                                                         |
 
 The discovery tool, studio_discover, accompanies any enabled part. It returns project IDs/defaults
-and configured agents/models. Pass repositoryId for project-scoped agents and agentId for its
-available model catalog. IDs refer to this runtime. Existing browser and Device Hub tools remain
+and configured agents/models, plus the computers already paired in the local Studio app. Pass
+`runtimeId` from `computers` to discovery, threads, automations, browsers or diagnostics to select a
+paired computer; omit it (or use `local`) for this computer. Pass repositoryId for project-scoped
+agents and agentId for its available model catalog. Project, thread, browser and run IDs and
+pagination cursors belong to the selected computer. Existing browser and Device Hub tools remain
 independently available.
+
+Keep Studio open and connected to its local runtime to make its saved computer pairings available.
+This also works while viewing another computer in Studio, provided the local runtime remains
+connected. Studio renews a private, in-memory pairing registration every 15 seconds; registrations
+expire after 45 seconds without renewal. Tokens stay private and are never returned by discovery.
+Removing a saved connection updates the registration. Tools must be enabled on both the calling and
+destination runtime; scoped agents retain their read-only access, enabled parts and permission
+ceilings at the destination. Both runtimes must support paired Studio forwarding; older destination
+runtimes reject the dedicated forwarding endpoint before any tool action executes. HTTP LAN/VPN
+addresses remain supported. UI interaction has no computer selector and cannot be forwarded.
 
 Most tools accept a command object containing an action and its arguments. Thread creation makes a
 draft. Use resume to execute its initial prompt, or send to add a prompt and start. Use a stable

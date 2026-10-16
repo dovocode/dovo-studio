@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{Effect}from'effect';import{StudioToolsBridge}from'${root}packages/studio-shell/src/studio-tools-bridge';import{StudioToolsPreferences}from'${root}packages/extension-runtime/src/runtime-preferences';window.studio={connected:true,connection:window.connection,snapshot:{studioTools:{ui:true}},requestEffect:(path,input,schema)=>Effect.tryPromise({try:async()=>{const response=await fetch(window.connection.address+path,{method:'POST',headers:{Authorization:'Bearer '+window.connection.token,'Content-Type':'application/json'},body:JSON.stringify(input)});if(!response.ok)throw new Error(await response.text());return await response.json()},catch:error=>error instanceof Error?error:new Error(String(error))})};function App(){const[text,setText]=useState(''),[saved,setSaved]=useState('');return <><StudioToolsBridge/><h1>Studio tools fixture</h1><StudioToolsPreferences/><label>Prompt<textarea aria-label="Prompt" value={text} onChange={event=>setText(event.target.value)}/></label><button data-save-prompt onClick={()=>setSaved(text)}>Save prompt</button><output>{saved}</output><div data-studio-human-only><button onClick={()=>window.approved=true}>Approve test gate</button></div></>}createRoot(document.getElementById('app')).render(<App/>);`,
+      contents: `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{Effect}from'effect';import{StudioToolsBridge}from'${root}packages/studio-shell/src/studio-tools-bridge';import{StudioPairedComputersBridge}from'${root}packages/studio-shell/src/studio-paired-computers-bridge';import{StudioToolsPreferences}from'${root}packages/extension-runtime/src/runtime-preferences';window.studio={connected:true,connection:window.connection,snapshot:{studioTools:{ui:true,threads:true}},runtimeRegistry:{profiles:[window.paired]},runtimes:[],requestEffect:(path,input,schema)=>Effect.tryPromise({try:async()=>{const response=await fetch(window.connection.address+path,{method:'POST',headers:{Authorization:'Bearer '+window.connection.token,'Content-Type':'application/json'},body:JSON.stringify(input)});if(!response.ok)throw new Error(await response.text());return await response.json()},catch:error=>error instanceof Error?error:new Error(String(error))})};function App(){const[revision,setRevision]=useState(0);window.refreshStudio=()=>setRevision(value=>value+1);const[text,setText]=useState(''),[saved,setSaved]=useState('');return <><StudioToolsBridge/><StudioPairedComputersBridge/><h1>Studio tools fixture</h1><StudioToolsPreferences/><label>Prompt<textarea aria-label="Prompt" value={text} onChange={event=>setText(event.target.value)}/></label><button data-save-prompt onClick={()=>setSaved(text)}>Save prompt</button><output>{saved}</output><div data-studio-human-only><button onClick={()=>window.approved=true}>Approve test gate</button></div></>}createRoot(document.getElementById('app')).render(<App/>);`,
       resolveDir: root + 'packages/studio-core',
       loader: 'tsx',
     },
@@ -51,6 +51,23 @@ assert.ok(address && typeof address !== 'string')
 const pageURL = `http://127.0.0.1:${address.port}`
 const owner = 'studio-browser-owner-token-at-least-32-characters'
 const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: owner, port: 0 })
+const remote = await startRuntime({
+  databasePath: ':memory:',
+  ownerToken: 'remote-studio-browser-owner-token-at-least-32-characters',
+  port: 0,
+})
+remote.services.preferences.save({
+  enableStudioThreads: true,
+  enableStudioBrowsers: true,
+  enableStudioDiagnostics: true,
+})
+const pairedToken = randomUUID()
+remote.services.devices.add('Paired Studio', pairedToken)
+const paired = {
+  id: 'paired-computer',
+  name: 'Paired computer',
+  connection: { address: `http://127.0.0.1:${remote.port}`, token: pairedToken },
+}
 const s = runtime.services
 s.preferences.save({
   enableStudioUI: true,
@@ -95,11 +112,11 @@ const token = s.runCredentials.issue(
   new AbortController().signal,
 )
 const origin = `http://127.0.0.1:${runtime.port}`
-async function call(part, command, expected = 200) {
+async function call(part, command, expected = 200, runtimeId) {
   const result = await fetch(origin + '/api/studio/tools', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ taskId, parentRunId: runId, part, command }),
+    body: JSON.stringify({ taskId, parentRunId: runId, part, command, runtimeId }),
   })
   const body = await result.json()
   assert.equal(result.status, expected, JSON.stringify(body))
@@ -109,10 +126,11 @@ const browser = await chromium.launch()
 try {
   const page = await browser.newPage()
   await page.addInitScript(
-    (connection) => {
-      window.connection = connection
+    (value) => {
+      window.connection = value.connection
+      window.paired = value.paired
     },
-    { address: origin, token: owner },
+    { connection: { address: origin, token: owner }, paired },
   )
   await page.goto(pageURL)
   await page.getByRole('heading', { name: 'Studio Tools (experimental)' }).waitFor()
@@ -188,6 +206,31 @@ try {
   await call('browsers', { action: 'close', id: opened.id })
   await call('browsers', { action: 'snapshot', id: opened.id }, 404)
   await call('browsers', { action: 'close', id: second.id })
+  const discovery = await call('discover', {})
+  assert.ok(discovery.computers.some((computer) => computer.id === paired.id))
+  assert.ok(!JSON.stringify(discovery).includes(pairedToken))
+  await call('diagnostics', { action: 'health' }, 200, paired.id)
+  await call('ui', { action: 'list' }, 403, paired.id)
+  const remoteBrowser = await call(
+    'browsers',
+    { action: 'open', url: pageURL + '/remote' },
+    200,
+    paired.id,
+  )
+  assert.ok(remoteBrowser.image)
+  assert.ok(
+    (await remote.services.browsers.studioList()).some(
+      (session) => session.id === remoteBrowser.id,
+    ),
+  )
+  assert.ok(!(await s.browsers.studioList()).some((session) => session.id === remoteBrowser.id))
+  await call('browsers', { action: 'close', id: remoteBrowser.id }, 200, paired.id)
+  await page.evaluate(() => {
+    window.studio.runtimeRegistry = { profiles: [] }
+    window.refreshStudio()
+  })
+  await page.waitForTimeout(100)
+  await call('diagnostics', { action: 'health' }, 404, paired.id)
   await page.getByRole('switch', { name: 'UI interaction', exact: true }).click()
   await page.waitForFunction(
     () =>
@@ -201,5 +244,6 @@ try {
 } finally {
   await browser.close()
   await runtime.close()
+  await remote.close()
   await new Promise((resolve) => ui.close(resolve))
 }

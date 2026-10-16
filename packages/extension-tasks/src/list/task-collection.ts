@@ -88,16 +88,20 @@ export function collectTasks(sources: readonly TaskSource[]): TaskEntry[] {
     )
     return source.workspace.tasks
       .filter((task) => !task.example)
-      .map((task) => ({
-        key: taskCollectionKey(source.runtimeId, task.id),
-        task,
-        source,
-        needsInput: input.has(task.id),
-        projectKey: taskCollectionKey(source.runtimeId, task.repositoryId),
-        projectName:
-          source.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.name ??
-          'No project',
-      }))
+      .map((task) => {
+        const repository = source.workspace.repositories.find(
+          (repo) => repo.id === task.repositoryId,
+        )
+        return {
+          key: taskCollectionKey(source.runtimeId, task.id),
+          task,
+          source,
+          needsInput: input.has(task.id),
+          projectKey: taskCollectionKey(source.runtimeId, task.repositoryId),
+          projectName:
+            repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'No project'),
+        }
+      })
   })
 }
 

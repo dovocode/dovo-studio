@@ -42,7 +42,7 @@ window.initialTasks=[running,parent,child,
   ...Array.from({length:300},(_,i)=>finished('task-'+i,'Thread '+i,(i+2)*60000)),
   ...Array.from({length:120},(_,i)=>finished('settled-'+i,'Settled thread '+i,(i+400)*60000,{archived:true}))];
 // Snapshot retention keeps unchanged collections identical; the fixture does the same.
-const repositories=[{id:'repo',name:'Project',path:'/project',branch:'main'}],agents=[],automations=[];
+const repositories=[{id:'repo',name:'Project',path:'/project',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:'stale-branch'}],agents=[],automations=[];
 const baseSnapshot={revision:1,questions:[],approvals:[],terminals:[],runs:[],devices:[],pendingDevices:[],acpInstallations:[]};
 const fail=async()=>{throw new Error('The sidebar check does not send runtime requests')};
 const actions={request:fail,readRuntime:fail,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},previewTask:fail,setWorkspace:()=>{},activeRuntimeId:'local',connection:{address:'http://local',token:'token'},runtimeRegistry:{version:1,activeId:'local',profiles:[]}};
@@ -386,6 +386,31 @@ try {
     () => window.references.filter((reference) => reference.deref() !== undefined).length,
   )
   assert.ok(retained <= 2, `${retained} removed tasks survived garbage collection`)
+  // General conversations never imply a Git checkout, even with stale branch metadata.
+  await page.evaluate(() =>
+    window.publish([
+      {
+        ...window.tasks[0],
+        id: 'general',
+        repositoryId: 'scratch',
+        title: 'General conversation',
+        execution: 'worktree',
+        checkoutBranch: 'stale-branch',
+        archived: false,
+        archivedAt: undefined,
+      },
+    ]),
+  )
+  const general = page.getByRole('button', { name: /General conversation/ }).first()
+  await general.waitFor()
+  assert.ok((await general.textContent()).includes('General'))
+  assert.equal(await general.locator('svg.lucide-message-circle').count(), 1)
+  assert.equal(await general.locator('svg.lucide-git-branch, svg.lucide-git-fork').count(), 0)
+  assert.ok(!/stale-branch|Local checkout|No project/.test(await general.textContent()))
+  await general.hover()
+  const tooltip = page.getByRole('tooltip')
+  await tooltip.waitFor()
+  assert.ok(!/stale-branch|Unknown branch|No project/.test(await tooltip.textContent()))
   assert.deepEqual(errors, [])
   console.log(
     `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero pill renders for 30 large child-payload updates and one render for visible activity; selector isolation, latest-entry commands, subagent navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,

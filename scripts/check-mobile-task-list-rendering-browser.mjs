@@ -38,7 +38,7 @@ const stubs = [
   { path: 'react-native', contents: controls },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=({color,accessibilityLabel})=><svg aria-label={accessibilityLabel} style={{color}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as Pin,Icon as Save};`,
+    contents: `const Icon=({color,accessibilityLabel})=><svg aria-label={accessibilityLabel} style={{color}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as Pin,Icon as Save};`,
   },
   {
     path: '@dovo/protocol',
@@ -173,7 +173,7 @@ const base={repositoryId:'repo',agentId:'agent',draft:'',files:[],example:false,
 const running={...base,id:'running',title:'Running task',status:'running',createdAt:iso(0)};
 const child={...base,id:'child',title:'Child task',status:'running',delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'}};
 const parent={...base,id:'parent',title:'Parent task',subagents:[{id:'child',taskId:'child',source:'dovo',name:'Child agent',provider:'codex',status:'working',startedAt:iso(0),updatedAt:iso(0)}]};
-window.snapshot={revision:1,owner:false,runtimeInstanceId:'fixture',workspace:{version:1,runtimeAddress:'',repositories:[{id:'repo',name:'Project',path:'/project',branch:'main'}],agents:[{id:'agent',name:'Agent',provider:'codex',model:'fixture',instructions:'',permission:'ask',endpoint:''}],automations:[],tasks:[running,parent,child,...Array.from({length:100},(_,index)=>({...base,id:'task-'+index,title:'Task '+index,createdAt:iso(index*1000+200000)}))]},questions:[],approvals:[],terminals:[],runs:[],devices:[],pendingDevices:[],acpInstallations:[]};
+window.snapshot={revision:1,owner:false,runtimeInstanceId:'fixture',workspace:{version:1,runtimeAddress:'',repositories:[{id:'repo',name:'Project',path:'/project',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:'stale-branch'}],agents:[{id:'agent',name:'Agent',provider:'codex',model:'fixture',instructions:'',permission:'ask',endpoint:''}],automations:[],tasks:[running,parent,child,...Array.from({length:100},(_,index)=>({...base,id:'task-'+index,title:'Task '+index,createdAt:iso(index*1000+200000)}))]},questions:[],approvals:[],terminals:[],runs:[],devices:[],pendingDevices:[],acpInstallations:[]};
 window.rowRenders={};window.alerts=[];window.requests=[];window.navigations=[];
 window.navigation={focused:true,navigate:(...args)=>window.navigations.push(args),setDetail:()=>{},openWork:()=>{}};
 window.fetch=async(url,options)=>{
@@ -407,6 +407,21 @@ try {
   await page.evaluate(() => window.publish({ 'task-1': { archived: false } }))
   await page.getByTestId('Task task-1 actions').waitFor()
   assert.ok((await page.getByTestId('Task task-1').textContent()).includes('Project'))
+  await page.evaluate(() =>
+    window.publish({
+      'task-5': { repositoryId: 'scratch', execution: 'worktree', checkoutBranch: 'stale-branch' },
+    }),
+  )
+  const general = page.getByTestId('Task task-5')
+  assert.ok((await general.textContent()).includes('General'))
+  assert.ok(!/stale-branch|Project checkout|No project/.test(await general.textContent()))
+  assert.ok(!/Local checkout|Worktree/.test(await general.getAttribute('aria-label')))
+  await page.getByRole('button', { name: 'Details task-5', exact: true }).click()
+  const generalDetails = page.getByRole('dialog', { name: 'Task details' })
+  await generalDetails.waitFor()
+  assert.ok((await generalDetails.textContent()).includes('General'))
+  assert.ok(!/stale-branch|Project checkout|No project/.test(await generalDetails.textContent()))
+  await page.getByRole('button', { name: 'Close details', exact: true }).click()
   assert.deepEqual(errors, [])
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',

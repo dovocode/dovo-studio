@@ -76,10 +76,14 @@ export function studioToolDefinitions(enabled: StudioTools): StudioTool[] {
     tools.push({
       name: 'studio_discover',
       description:
-        'Discover enabled Studio Tools parts, project IDs/defaults and configured agents/models on this runtime. Read-only; no credentials or settings mutation.',
+        'Discover local and paired computers, enabled Studio Tools parts, project IDs/defaults and configured agents/models. Omit runtimeId to list computers; pass a returned computer ID to inspect it. IDs belong to the selected computer. Read-only; no credentials or settings mutation.',
       inputSchema: {
         type: 'object',
         properties: {
+          runtimeId: {
+            type: 'string',
+            description: 'Computer ID from studio_discover; omit for this computer.',
+          },
           repositoryId: {
             type: 'string',
             description: 'Optional project to resolve scoped agent configurations.',
@@ -93,10 +97,19 @@ export function studioToolDefinitions(enabled: StudioTools): StudioTool[] {
     })
   for (const definition of definitions)
     if (enabled[definition.part]) {
-      const document = Schema.toJsonSchemaDocument(mutableStruct({ command: definition.schema }))
+      const document = Schema.toJsonSchemaDocument(
+        mutableStruct({
+          command: definition.schema,
+          ...(definition.part === 'ui' ? {} : { runtimeId: Schema.optional(Schema.String) }),
+        }),
+      )
       tools.push({
         name: 'studio_' + definition.part,
-        description: definition.description,
+        description:
+          definition.description +
+          (definition.part === 'ui'
+            ? ''
+            : ' Pass runtimeId from studio_discover to target a paired computer; omit for this computer. All IDs and cursors belong to the selected computer.'),
         inputSchema: { ...document.schema, type: 'object', $defs: document.definitions },
       })
     }

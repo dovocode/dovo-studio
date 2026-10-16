@@ -109,7 +109,7 @@ export function SettingsNav({
     <nav
       style={sidebarVisible ? undefined : { display: 'none' }}
       aria-label="Settings sections"
-      className="studio-side-panel flex shrink-0 flex-col border-b bg-sidebar/60 px-4 py-3 md:w-52 md:gap-5 md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-5 lg:w-64"
+      className="studio-side-panel flex min-h-0 shrink-0 flex-col border-b bg-sidebar/60 px-4 py-3 md:w-52 md:gap-5 md:overflow-hidden md:border-b-0 md:border-r md:px-3 md:py-5 lg:w-64"
     >
       <SidebarHeader />
       <div className="md:hidden">
@@ -126,7 +126,7 @@ export function SettingsNav({
           )}
         </ChoicePicker>
       </div>
-      <div className="hidden px-1 md:block">
+      <div className="hidden shrink-0 px-1 md:block">
         <h1 className="mb-3 px-1 text-base font-semibold tracking-tight">Settings</h1>
         {/* Buttons and inputs inherit their font size (see studio-ui styles). */}
         <div className="relative text-[0.8125rem]">
@@ -157,78 +157,89 @@ export function SettingsNav({
           )}
         </div>
       </div>
-      {headings.map(([section, label]) => {
-        const items = matches
-          .filter((view) => (view.settingsSection ?? 'more') === section)
-          .sort((a, b) => a.order - b.order)
-        if (!items.length) return null
-        return (
-          <div key={section} className="hidden space-y-1 text-sm md:block">
-            <h2 className="px-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
-              {label}
-            </h2>
-            {items.map((view) => {
-              const Icon = icons[view.id] ?? Settings2
-              const active = activeId === view.id
-              const kind = view.settingsScope && view.settingsScope !== 'device'
-              const Storage = kind ? storage[view.settingsScope ?? 'device'].icon : null
-              return (
-                <button
-                  key={view.id}
-                  type="button"
-                  aria-current={active ? 'page' : undefined}
-                  onClick={() => select(view.id)}
-                  className={`group flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[0.8125rem] transition-colors ${
-                    active
-                      ? 'bg-accent/70 font-medium text-foreground'
-                      : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-                  }`}
-                >
-                  <Icon
-                    size={16}
-                    strokeWidth={1.7}
-                    aria-hidden="true"
-                    className={active ? 'text-primary' : 'text-muted-foreground/70'}
-                  />
-                  <span className="min-w-0 flex-1 py-1.5 leading-snug">{view.title}</span>
-                  {Storage && view.settingsScope && (
-                    <Storage
-                      size={12}
-                      aria-label={storage[view.settingsScope].label}
-                      className={`shrink-0 ${view.settingsScope === 'inherited' ? 'text-primary/70' : 'text-muted-foreground/60'}`}
-                    />
-                  )}
-                  {active && (
-                    <ChevronRight size={13} aria-hidden="true" className="text-muted-foreground" />
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        )
-      })}
-      {!matches.length && (
-        <p role="status" className="hidden px-2 text-xs text-muted-foreground md:block">
-          No settings match “{query}”.
-        </p>
-      )}
       <div
-        aria-label="Inherited settings target"
-        className="mt-auto hidden space-y-2 border-t px-2 pt-4 text-[11px] leading-relaxed text-muted-foreground md:block"
+        role="region"
+        aria-label="Settings navigation"
+        tabIndex={0}
+        className="hidden min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring md:flex"
       >
-        <p className="flex items-center gap-1.5">
-          <Layers className="size-3 text-primary/70" aria-hidden="true" />
-          Shared settings target
-        </p>
-        <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
-          {project} · {computer}
-        </p>
-        <p>
-          {settingsScopeLabels[scope]} level, kept while you move between pages. Pages marked{' '}
-          <Layers className="inline size-3 align-[-2px]" aria-hidden="true" /> use it;{' '}
-          <Monitor className="inline size-3 align-[-2px]" aria-hidden="true" /> pages save per
-          computer; other pages save on this device.
-        </p>
+        {headings.map(([section, label]) => {
+          const items = matches
+            .filter((view) => (view.settingsSection ?? 'more') === section)
+            .sort((a, b) => a.order - b.order)
+          if (!items.length) return null
+          return (
+            <div key={section} className="hidden space-y-1 text-sm md:block">
+              <h2 className="px-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
+                {label}
+              </h2>
+              {items.map((view) => {
+                const Icon = icons[view.id] ?? Settings2
+                const active = activeId === view.id
+                const kind = view.settingsScope && view.settingsScope !== 'device'
+                const Storage = kind ? storage[view.settingsScope ?? 'device'].icon : null
+                return (
+                  <button
+                    key={view.id}
+                    type="button"
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => select(view.id)}
+                    className={`group flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[0.8125rem] transition-colors ${
+                      active
+                        ? 'bg-accent/70 font-medium text-foreground'
+                        : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                    }`}
+                  >
+                    <Icon
+                      size={16}
+                      strokeWidth={1.7}
+                      aria-hidden="true"
+                      className={active ? 'text-primary' : 'text-muted-foreground/70'}
+                    />
+                    <span className="min-w-0 flex-1 py-1.5 leading-snug">{view.title}</span>
+                    {Storage && view.settingsScope && (
+                      <Storage
+                        size={12}
+                        aria-label={storage[view.settingsScope].label}
+                        className={`shrink-0 ${view.settingsScope === 'inherited' ? 'text-primary/70' : 'text-muted-foreground/60'}`}
+                      />
+                    )}
+                    {active && (
+                      <ChevronRight
+                        size={13}
+                        aria-hidden="true"
+                        className="text-muted-foreground"
+                      />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )
+        })}
+        {!matches.length && (
+          <p role="status" className="hidden px-2 text-xs text-muted-foreground md:block">
+            No settings match “{query}”.
+          </p>
+        )}
+        <div
+          aria-label="Inherited settings target"
+          className="mt-auto hidden space-y-2 border-t px-2 pt-4 text-[11px] leading-relaxed text-muted-foreground md:block"
+        >
+          <p className="flex items-center gap-1.5">
+            <Layers className="size-3 text-primary/70" aria-hidden="true" />
+            Shared settings target
+          </p>
+          <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
+            {project} · {computer}
+          </p>
+          <p>
+            {settingsScopeLabels[scope]} level, kept while you move between pages. Pages marked{' '}
+            <Layers className="inline size-3 align-[-2px]" aria-hidden="true" /> use it;{' '}
+            <Monitor className="inline size-3 align-[-2px]" aria-hidden="true" /> pages save per
+            computer; other pages save on this device.
+          </p>
+        </div>
       </div>
     </nav>
   )

@@ -163,9 +163,18 @@ export function TaskWaitingPanel({
             }}
           >
             <Icon name="preview" size={16} color={colors.muted} />
-            <Text numberOfLines={1} style={styles.text}>
-              {item.project} · {item.label}
-            </Text>
+            <View style={{ flexShrink: 1 }}>
+              <Text numberOfLines={1} style={styles.text}>
+                {item.project} · {item.label}
+              </Text>
+              {item.kind === 'pipeline' && (
+                <Text numberOfLines={1} style={[styles.muted, { fontSize: 10 }]}>
+                  {item.lastSuccessAt
+                    ? `Last successful poll ${new Date(item.lastSuccessAt).toLocaleString()}`
+                    : 'No recorded successful poll'}
+                </Text>
+              )}
+            </View>
           </Pressable>
           <Pressable
             accessibilityRole="button"

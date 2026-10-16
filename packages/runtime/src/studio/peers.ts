@@ -1,0 +1,132 @@
+import { createHash } from 'node:crypto'
+import { Schema } from 'effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import {
+  decode,
+  studioPeerRegistrationSchema,
+  runtimeRequestEffect,
+  RuntimeRequestError,
+  noStudioTools,
+} from '@dovo/protocol'
+import type { Services } from '../services.js'
+import { HttpError } from '../errors.js'
+import { requireStudioPart, studioReadAction, studioTool, type StudioPolicy } from './tools.js'
+
+type Registration = typeof studioPeerRegistrationSchema.Type
+type Session = Registration & { deviceId: string; seen: number; authorize: () => void }
+const instances = new WeakMap<Services, StudioPeers>()
+export function studioPeers(s: Services) {
+  let peers = instances.get(s)
+  if (!peers) instances.set(s, (peers = new StudioPeers()))
+  return peers
+}
+/** Pairings stay in memory while the local Studio client is connected. */
+export class StudioPeers {
+  private sessions = new Map<string, Session>()
+  register(deviceId: string, value: unknown, authorize: () => void) {
+    authorize()
+    const input = decode(studioPeerRegistrationSchema, value)
+    if (
+      input.peers.some((peer) => peer.id === 'local') ||
+      new Set(input.peers.map((peer) => peer.id)).size !== input.peers.length
+    )
+      throw new HttpError(400, 'Paired computer IDs must be unique and cannot be local')
+    const existing = [...this.sessions.values()].find(
+      (session) => session.sessionId === input.sessionId,
+    )
+    if (existing && existing.deviceId !== deviceId)
+      throw new HttpError(403, 'Pairing session belongs to another device')
+    this.list()
+    if (!this.sessions.has(deviceId) && this.sessions.size >= 32)
+      throw new HttpError(429, 'Too many Studio pairing sessions')
+    this.sessions.set(deviceId, { ...input, deviceId, seen: Date.now(), authorize })
+    return { ok: true }
+  }
+  list() {
+    const peers = new Map<string, Registration['peers'][number]>()
+    for (const [id, session] of this.sessions) {
+      try {
+        if (Date.now() - session.seen > 45000) throw new Error('Disconnected')
+        session.authorize()
+      } catch {
+        this.sessions.delete(id)
+        continue
+      }
+      for (const peer of session.peers) peers.set(peer.id, peer)
+    }
+    return [...peers.values()]
+  }
+}
+export async function routedStudioTool(
+  s: Services,
+  taskId: string,
+  part: string,
+  command: unknown,
+  runtimeId: string | undefined,
+  authorize: () => void,
+  policy?: StudioPolicy,
+  signal?: AbortSignal,
+) {
+  authorize()
+  requireStudioPart(s, part, policy)
+  const input = decode(Schema.Record(Schema.String, Schema.Unknown), command)
+  if (policy?.readOnly && !studioReadAction(part, input.action))
+    throw new HttpError(403, 'This agent has read-only Studio Tools access')
+  if (runtimeId && part === 'ui')
+    throw new HttpError(403, 'Studio UI interaction stays on this machine')
+  if (!runtimeId || runtimeId === 'local') {
+    const result = await studioTool(s, taskId, part, command, authorize, policy)
+    if (part !== 'discover') return result
+    return {
+      ...decode(Schema.Record(Schema.String, Schema.Unknown), result),
+      computers: [
+        { id: 'local', name: 'This computer', local: true },
+        ...studioPeers(s)
+          .list()
+          .map(({ id, name }) => ({ id, name, local: false })),
+      ],
+    }
+  }
+  const peer = studioPeers(s)
+    .list()
+    .find((peer) => peer.id === runtimeId)
+  if (!peer)
+    throw new HttpError(
+      404,
+      'Paired computer unavailable. Open Studio on this computer and refresh its saved connections.',
+    )
+  const forwardedPolicy = policy && {
+    permissions: policy.permissions,
+    readOnly: policy.readOnly,
+    studioTools: { ...(policy.studioTools ?? noStudioTools()), ui: false },
+  }
+  const scope = createHash('sha256')
+    .update(JSON.stringify([s.runtimeId, taskId]))
+    .digest('hex')
+  try {
+    const result = await runClientEffect(
+      runtimeRequestEffect(
+        peer.connection,
+        peer.connection.address,
+        '/api/studio/forward',
+        { taskId: `paired:${scope}`, part, command, policy: forwardedPolicy },
+        Schema.Unknown,
+        'POST',
+        120000,
+      ),
+      signal,
+    )
+    authorize()
+    requireStudioPart(s, part, policy)
+    return result
+  } catch (error) {
+    if (error instanceof RuntimeRequestError) {
+      const message =
+        error.status === 404 && error.message === 'Endpoint not found'
+          ? 'Update this paired runtime to use cross-computer Studio Tools.'
+          : error.message
+      throw new HttpError(error.status ?? 502, `Paired computer ${peer.name}: ${message}`)
+    }
+    throw error
+  }
+}

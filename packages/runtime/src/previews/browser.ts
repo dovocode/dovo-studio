@@ -59,6 +59,10 @@ type Session = {
     }
   >
   touching: boolean
+  sharpTimer?: ReturnType<typeof setTimeout>
+  sharpVersion: number
+  capturingSharpFrame?: boolean
+  capturingFrames?: number
   stateTimer?: ReturnType<typeof setTimeout>
   listeners: Set<Listener>
   visibleListeners: Set<Listener>
@@ -332,6 +336,7 @@ export class RemoteBrowsers {
           touch: true,
         },
         touching: false,
+        sharpVersion: 0,
         listeners: new Set(),
         visibleListeners: new Set(),
         queue: Promise.resolve(),
@@ -392,8 +397,15 @@ export class RemoteBrowsers {
       page.on('framenavigated', (frame) => {
         if (frame === page.mainFrame()) this.scheduleState(session)
       })
-      page.on('domcontentloaded', () => this.scheduleState(session))
-      page.on('load', () => this.scheduleState(session))
+      page.on('domcontentloaded', () => {
+        this.scheduleSharpFrame(session)
+        session.loading = false
+        this.scheduleState(session)
+      })
+      page.on('load', () => {
+        this.scheduleSharpFrame(session)
+        this.scheduleState(session)
+      })
       page.on('crash', () => {
         this.emit(session, {
           type: 'error',
@@ -402,6 +414,7 @@ export class RemoteBrowsers {
       })
       page.once('close', () => {
         void release().catch((error) => this.report(session, error))
+        clearTimeout(session.sharpTimer)
         clearTimeout(session.idle)
         clearTimeout(session.stateTimer)
         this.sessions.delete(taskId)
@@ -500,6 +513,59 @@ export class RemoteBrowsers {
       session.statePending = false
     }
   }
+  private async sharpFrame(session: Session) {
+    // Screenshot emulation may briefly change screencast geometry. Suppress those
+    // transient frames and publish the completed image with the CSS viewport size.
+    session.capturingFrames = (session.capturingFrames ?? 0) + 1
+    try {
+      return await session.page.screenshot({
+        type: 'jpeg',
+        quality: 90,
+        scale: 'device',
+        timeout: 3000,
+      })
+    } finally {
+      session.capturingFrames--
+    }
+  }
+  private scheduleSharpFrame(session: Session) {
+    clearTimeout(session.sharpTimer)
+    const version = ++session.sharpVersion
+    if (!session.visibleListeners.size || session.page.isClosed()) return
+    session.sharpTimer = setTimeout(() => {
+      session.sharpTimer = undefined
+      const size = session.page.viewportSize()
+      if (!size || session.queued || !session.visibleListeners.size || session.capturingSharpFrame)
+        return
+      session.capturingSharpFrame = true
+      void this.sharpFrame(session)
+        .then((data) => {
+          const current = session.page.viewportSize()
+          if (
+            version !== session.sharpVersion ||
+            !session.visibleListeners.size ||
+            current?.width !== size.width ||
+            current.height !== size.height
+          )
+            return
+          session.frame = { type: 'frame', data, ...size }
+          this.emit(session, session.frame)
+        })
+        .catch((error) => {
+          // The live stream remains usable if an optional detail capture times out.
+          session.logs.push({
+            time: new Date().toISOString(),
+            kind: 'capture:warning',
+            message: String(redact(errorMessage(error))).slice(0, 2000),
+          })
+          if (session.logs.length > 100) session.logs.shift()
+        })
+        .finally(() => {
+          session.capturingSharpFrame = false
+          if (version !== session.sharpVersion) this.scheduleSharpFrame(session)
+        })
+    }, 150)
+  }
   private scheduleState(session: Session) {
     if (session.stateTimer) return
     session.stateTimer = setTimeout(() => {
@@ -518,6 +584,7 @@ export class RemoteBrowsers {
     if (session.frame) listener(session.frame)
     try {
       await this.syncStream(session)
+      this.scheduleSharpFrame(session)
       await this.state(session)
     } catch (error) {
       session.listeners.delete(listener)
@@ -553,6 +620,7 @@ export class RemoteBrowsers {
     if (visible) session.visibleListeners.add(listener)
     else session.visibleListeners.delete(listener)
     await this.syncStream(session)
+    this.scheduleSharpFrame(session)
     if (visible && session.frame) listener(session.frame)
   }
   private syncStream(session: Session) {
@@ -566,11 +634,19 @@ export class RemoteBrowsers {
             height: 1920,
           },
           onFrame: (frame) => {
+            if (session.capturingFrames) return
+            const viewport = session.page.viewportSize()
+            if (
+              !viewport ||
+              frame.viewportWidth !== viewport.width ||
+              frame.viewportHeight !== viewport.height
+            )
+              return
             session.frame = {
               type: 'frame',
               data: frame.data,
-              width: frame.viewportWidth,
-              height: frame.viewportHeight,
+              width: viewport.width,
+              height: viewport.height,
             }
             this.emit(session, session.frame)
           },
@@ -601,6 +677,8 @@ export class RemoteBrowsers {
       if (dialog) await (input.accept ? dialog.accept(input.text) : dialog.dismiss())
       return
     }
+    clearTimeout(session.sharpTimer)
+    session.sharpVersion++
     const previous = session.pendingInput
     if (previous && previous.authorize === authorize) {
       if (input.type === 'scroll' && previous.input.type === 'scroll') {
@@ -655,22 +733,24 @@ export class RemoteBrowsers {
         try {
           if (url)
             await page.goto(url, {
-              waitUntil: 'domcontentloaded',
+              waitUntil: 'commit',
             })
           if (input.type === 'back')
             await page.goBack({
-              waitUntil: 'domcontentloaded',
+              waitUntil: 'commit',
             })
           if (input.type === 'forward')
             await page.goForward({
-              waitUntil: 'domcontentloaded',
+              waitUntil: 'commit',
             })
           if (input.type === 'reload')
             await page.reload({
-              waitUntil: 'domcontentloaded',
+              waitUntil: 'commit',
             })
-        } finally {
+        } catch (error) {
           session.loading = false
+          throw error
+        } finally {
           this.scheduleState(session)
         }
       } else if (input.type === 'resize') {
@@ -682,14 +762,10 @@ export class RemoteBrowsers {
         })
         // Chromium may suppress identical screencast pixels (for example a scrolled
         // blank area). A resize must still publish its new geometry immediately.
-        const data = await page.screenshot({
-          type: 'jpeg',
-          quality: 85,
-          scale: Math.max(input.width, input.height) > 960 ? 'css' : 'device',
-        })
+        const data = await this.sharpFrame(session)
         session.frame = {
           type: 'frame',
-          data: data,
+          data,
           width: input.width,
           height: input.height,
         }
@@ -722,8 +798,13 @@ export class RemoteBrowsers {
             button: input.button,
           })
       } else if (input.type === 'scroll') {
-        await page.mouse.move(input.x, input.y)
-        await page.mouse.wheel(input.deltaX, input.deltaY)
+        await session.cdp.send('Input.dispatchMouseEvent', {
+          type: 'mouseWheel',
+          x: input.x,
+          y: input.y,
+          deltaX: input.deltaX,
+          deltaY: input.deltaY,
+        })
       } else if (input.type === 'text') await page.keyboard.insertText(input.text)
       else if (input.type === 'key') await page.keyboard.press(input.key)
       if (input.type !== 'scroll' && !(input.type === 'pointer' && input.phase !== 'up'))
@@ -734,6 +815,7 @@ export class RemoteBrowsers {
       .catch((error) => this.report(session, error))
       .finally(() => {
         session.queued--
+        this.scheduleSharpFrame(session)
       })
     await operation
   }
@@ -812,6 +894,7 @@ export class RemoteBrowsers {
       )
       .finally(() => {
         session.queued--
+        this.scheduleSharpFrame(session)
       })
     return operation
   }

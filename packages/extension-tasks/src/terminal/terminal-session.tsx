@@ -185,7 +185,7 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
     }
   }, [terminalFontFamily, terminalFontSize, id, connection, request, active, setFontError])
   return (
-    <div className={active ? 'relative min-h-0 flex-1' : 'hidden'}>
+    <div className={active ? 'relative min-h-0 min-w-0 flex-1 overflow-hidden' : 'hidden'}>
       <div ref={container} className="h-full p-2" />
       {(error || fontError) && (
         <p role="alert" className="absolute bottom-0 bg-card p-2 text-xs text-destructive">

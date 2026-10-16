@@ -94,7 +94,10 @@ export function TerminalPane({
     )
   }, [connected, shellReady, taskId, sessions, focusId, visible])
   return (
-    <section className="flex h-full min-h-0 flex-col bg-[#0d0e10]" aria-label="Terminal">
+    <section
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#0d0e10]"
+      aria-label="Terminal"
+    >
       {!!task?.linkedCheckouts?.length && (
         <ChoicePicker
           aria-label="New terminal checkout"

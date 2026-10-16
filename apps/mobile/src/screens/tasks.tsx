@@ -269,7 +269,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             ({ runtimeId, repository }) =>
               [
                 JSON.stringify([runtimeId, repository.id]),
-                { key: group.key, name: group.name },
+                { key: group.key, name: repository.kind === 'scratch' ? 'General' : group.name },
               ] as const,
           ),
         ),
@@ -776,7 +776,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         <Sheet title="Task details" onClose={() => setDetails('')}>
           <Text style={styles.title}>{detail.task.title}</Text>
           <Text style={styles.muted}>
-            {detail.projectName} · {detail.task.checkoutBranch ?? 'Project checkout'}
+            {detail.projectName}
+            {rowData.get(detail.key)?.owner.repository?.kind !== 'scratch' &&
+              ` · ${detail.task.checkoutBranch ?? 'Project checkout'}`}
           </Text>
           <Text style={styles.muted}>
             {detail.runtimeName} ·{' '}

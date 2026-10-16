@@ -24,6 +24,7 @@ import {
   FilePenLine,
   GitFork,
   MessageCircleQuestion,
+  MessageCircle,
   Save,
   type LucideIcon,
   CircleCheck,
@@ -86,6 +87,13 @@ function TaskRowView({
   const agent = resolveTaskAgent(task, owner.agents)
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const repository = owner.repositories.find((r) => r.id === task.repositoryId)
+  const general = repository?.kind === 'scratch'
+  const projectName = general ? 'General' : (repository?.name ?? 'No project')
+  const projectIcon = general ? (
+    <MessageCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+  ) : (
+    <ProjectIcon repository={repository} className="size-4 shrink-0" />
+  )
   const latest = task.turns?.at(-1)
   const provider =
     task.status === 'running'
@@ -159,7 +167,7 @@ function TaskRowView({
             disabled={disabled}
           >
             {compact ? (
-              <ProjectIcon repository={repository} className="size-4 shrink-0" />
+              projectIcon
             ) : (
               <span
                 className={cn(
@@ -168,15 +176,15 @@ function TaskRowView({
                     'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                 )}
               >
-                <ProjectIcon repository={repository} className="size-4" />
+                {projectIcon}
                 <span
                   className="min-w-0 flex-1 truncate"
                   title={`${statusDetail} · ${agentDetail}`}
                 >
-                  {repository?.name ?? 'No project'}
+                  {projectName}
                 </span>
                 {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-                {task.execution === 'worktree' && (
+                {!general && task.execution === 'worktree' && (
                   <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
                 )}
                 <span
@@ -207,8 +215,13 @@ function TaskRowView({
             </span>
             {!compact && (
               <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
-                <GitBranch className="size-3 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
+                {!general && (
+                  <>
+                    <GitBranch className="size-3 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
+                  </>
+                )}
+                {general && <span className="min-w-0 flex-1" />}
                 {!!linkedPulls.length && (
                   <span
                     className={cn(
@@ -258,17 +271,23 @@ function TaskRowView({
           <p className="mb-3 text-sm font-medium leading-5">{task.title}</p>
           <div className="space-y-2 text-xs text-muted-foreground">
             <p className="flex items-center gap-2">
-              <FolderGit2 className="size-3 shrink-0" />
-              {repository?.name ?? 'No project'}
+              {general ? (
+                <MessageCircle className="size-3 shrink-0" />
+              ) : (
+                <FolderGit2 className="size-3 shrink-0" />
+              )}
+              {projectName}
             </p>
             <p className="flex items-center gap-2 break-all">
               <RuntimeIcon icon={owner.runtimeIcon} className="size-3 shrink-0" />
               {host ?? 'Unknown host'}
             </p>
-            <p className="flex items-center gap-2 break-all">
-              <GitBranch className="size-3 shrink-0" />
-              {branch || 'Unknown branch'}
-            </p>
+            {!general && (
+              <p className="flex items-center gap-2 break-all">
+                <GitBranch className="size-3 shrink-0" />
+                {branch || 'Unknown branch'}
+              </p>
+            )}
             <p className="flex items-center gap-2">
               {provider ? (
                 <AgentAvatar provider={provider} customIcon={customIcon} className="size-4" />

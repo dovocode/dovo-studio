@@ -234,9 +234,16 @@ below.
 
 The viewer receives binary JPEG frames with at most two frames awaiting a paint acknowledgement.
 Both ends replace obsolete pending frames instead of building a backlog. Image decoding happens
-asynchronously, painting follows animation frames, and the canvas backing store is reused. Older
-viewers retain the JSON frame fallback. Scroll, pointer movement and resize input are coalesced
-while preserving action order. Browser state sampling does not block its input queue.
+asynchronously and frames are painted immediately after decoding; the canvas backing store is
+reused. After input settles for 150 ms, a quality-90 JPEG from the 2× compositor surface sharpens
+text without continuously sending large images. Capture runs outside the input queue; obsolete
+stills are rejected when input or viewport geometry changes. Live frames retain the lighter
+quality-85 stream. CSS viewport coordinates stay separate from image pixel dimensions. Older viewers
+retain the JSON frame fallback. Scroll, pointer movement and resize input are coalesced while
+preserving action order. Wheel events go directly to the compositor with their target coordinates,
+avoiding a redundant mouse move. Browser state sampling does not block its input queue. Interactive
+navigation releases the queue at document commit rather than waiting for scripts; agent browser
+commands retain their document-ready behavior.
 
 `node scripts/benchmark-remote-browser.mjs` measures the host input queue against a local fixture.
 The 60-event scrolling burst previously left 984–1167 ms of queued work; after these changes it left

@@ -88,6 +88,8 @@ try {
           project: 'Project',
           url: 'https://github.com/team/project/actions/runs/8',
           status: 'blocked',
+          checkedAt: '2026-10-16T12:01:00Z',
+          lastSuccessAt: '2026-10-16T12:00:00Z',
           error: 'Waiting for approval',
         },
       ]
@@ -103,6 +105,7 @@ try {
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.getByRole('button', { name: 'Stop watching PR #7', exact: true }).waitFor()
     assert.match(await page.locator('#app').innerText(), /Waiting for approval/)
+    if (mobile) assert.match(await page.locator('#app').innerText(), /Last successful poll/)
     const link = page.getByRole('link', {
       name: mobile ? 'Open PR #7' : 'Project · PR #7',
       exact: true,

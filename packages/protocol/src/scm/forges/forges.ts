@@ -81,6 +81,21 @@ export type ForgeConnection = Schema.Schema.Type<typeof forgeConnectionSchema>
 export const forgeConnectionsSchema = mutableStruct({
   connections: mutableArray(forgeConnectionSchema),
 })
+export const githubConnectionCheckQuerySchema = mutableStruct({
+  connectionId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  repositoryId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  refresh: Schema.optional(Schema.Boolean),
+})
+export const githubConnectionCheckSchema = mutableStruct({
+  status: Schema.Literals(['verified', 'failed']),
+  stage: Schema.Literals(['discovery', 'account', 'repository', 'actions']),
+  host: Schema.String,
+  login: Schema.optional(Schema.String),
+  repository: Schema.optional(Schema.String),
+  checkedAt: Schema.String,
+  message: Schema.String,
+})
+export type GithubConnectionCheck = Schema.Schema.Type<typeof githubConnectionCheckSchema>
 export const forgeCliProfileQuerySchema = mutableStruct({
   provider: forgeProviderSchema,
   baseUrl: serverURL,

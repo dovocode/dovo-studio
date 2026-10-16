@@ -58,6 +58,10 @@ export function taskListProjection(
   for (const next of aggregateRuntimeTasks(overviews, now, true)) {
     const source = sources.get(next.runtimeId)
     if (!source) throw new Error('Task owner is missing from the list projection')
+    const repository = source.snapshot?.workspace.repositories.find(
+      (repository) => repository.id === next.task.repositoryId,
+    )
+    if (repository?.kind === 'scratch') next.projectName = 'General'
     const prior = previous.get(next.key)
     const row =
       prior &&
@@ -73,9 +77,7 @@ export function taskListProjection(
     const nextOwner: TaskListOwner = {
       profile: source.profile,
       runtimeIcon: source.snapshot?.runtimeIcon,
-      repository: source.snapshot?.workspace.repositories.find(
-        (repository) => repository.id === next.task.repositoryId,
-      ),
+      repository,
       agents: source.snapshot?.workspace.agents ?? noAgents,
       acpInstallations: installations.get(source.profile.id) ?? noInstallations,
     }

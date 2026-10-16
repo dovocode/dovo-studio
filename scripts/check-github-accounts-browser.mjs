@@ -23,7 +23,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode,forgeConnectionSchema,forgeConnectionInputSchema} from '@dovo/protocol';import ${mobile ? 'Connections' : '{ForgeConnections as Connections}'} from '${root}/${mobile ? 'apps/mobile/src/scm/connections/connections' : 'packages/extension-scm/src/connections/forge-connections'}.tsx';let id=0;crypto.randomUUID=()=> '00000000-0000-4000-8000-'+String(++id).padStart(12,'0');window.saved=[];const request=async(path,input)=>{if(path.endsWith('cli-profiles/read'))return {profiles:[{id:'personal',name:'personal',active:true},{id:'work',name:'work'}]};if(path.endsWith('connections/read'))return {connections:window.saved};if(path.endsWith('connections/save')){const value=decode(forgeConnectionInputSchema,input);const result=decode(forgeConnectionSchema,{...value,id:crypto.randomUUID(),revision:crypto.randomUUID()});window.saved.push(result);return result};throw Error(path)};const source={profile:{id:'host',name:'Host',connection:{address:'http://host.local',token:'fixture'}},name:'Host',connected:true};window.runtime={connection:source.profile.connection,workspace:{repositories:[]},snapshot:{workspace:{repositories:[]}},overviews:[source],connected:true,request,read:request,callEffect:(path,input)=>Effect.tryPromise(()=>request(path,input)),readEffect:(path,input)=>Effect.tryPromise(()=>request(path,input))};createRoot(document.getElementById('app')).render(<Connections/>);`,
+        contents: `import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode,forgeConnectionSchema,forgeConnectionInputSchema,RuntimeRequestError} from '@dovo/protocol';import ${mobile ? 'Connections' : '{ForgeConnections as Connections}'} from '${root}/${mobile ? 'apps/mobile/src/scm/connections/connections' : 'packages/extension-scm/src/connections/forge-connections'}.tsx';let id=0;crypto.randomUUID=()=> '00000000-0000-4000-8000-'+String(++id).padStart(12,'0');window.saved=[];window.connectionChecks=[];window.checkFailure=false;const request=async(path,input)=>{if(path.endsWith('connections/github/read')){if(window.diagnosticsUnavailable)throw new RuntimeRequestError({kind:'response',status:404,message:'Not found'});window.connectionChecks.push(input);return {status:window.checkFailure?'failed':'verified',stage:input.repositoryId?'repository':'account',host:'github.com',login:input.repositoryId?'project-user':'runtime-user',repository:input.repositoryId?'team/app':undefined,checkedAt:'2026-10-16T18:00:00Z',message:window.checkFailure?'GitHub rejected this token. Check its expiry.':input.repositoryId?'Account verified · Repository readable.':'Account verified.'}};if(path.endsWith('cli-profiles/read'))return {profiles:[{id:'personal',name:'personal',active:true},{id:'work',name:'work'}]};if(path.endsWith('connections/read'))return {connections:window.saved};if(path.endsWith('connections/save')){const value=decode(forgeConnectionInputSchema,input);const result=decode(forgeConnectionSchema,{...value,id:crypto.randomUUID(),revision:crypto.randomUUID()});window.saved.push(result);return result};throw Error(path)};const source={profile:{id:'host',name:'Host',connection:{address:'http://host.local',token:'fixture'}},name:'Host',connected:true};window.runtime={connection:source.profile.connection,workspace:{repositories:[{id:'automatic',name:'Automatic project',path:'/checkout',branch:'main'},{id:'folder',name:'Plain folder',path:'/folder',kind:'folder',branch:'main'}]},snapshot:{workspace:{repositories:[]}},overviews:[source],connected:true,request,read:request,callEffect:(path,input)=>Effect.tryPromise(()=>request(path,input)),readEffect:(path,input)=>Effect.tryPromise(()=>request(path,input))};const root=createRoot(document.getElementById('app'));window.render=()=>root.render(<Connections/>);window.render();`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -62,6 +62,58 @@ try {
     page.on('pageerror', (error) => errors.push(error.message))
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
+    if (!mobile) {
+      const automatic = page.getByRole('article', {
+        name: 'Automatic GitHub CLI connection',
+        exact: true,
+      })
+      await automatic.getByText('@runtime-user · github.com').waitFor()
+      assert.equal(await automatic.getByText('Projects using automatic detection (1)').count(), 1)
+      assert.equal(await automatic.getByText('Plain folder', { exact: true }).count(), 0)
+      assert.equal(
+        await page.evaluate(() => window.connectionChecks.some((input) => input.repositoryId)),
+        false,
+      )
+      const project = page.getByLabel('Automatic connection for Automatic project', { exact: true })
+      await project.getByRole('button', { name: 'Test project connection' }).click()
+      await project.getByText('@project-user · github.com').waitFor()
+      assert.deepEqual(await page.evaluate(() => window.connectionChecks.at(-1)), {
+        connectionId: undefined,
+        repositoryId: 'automatic',
+        refresh: true,
+      })
+      await page.evaluate(() => {
+        window.checkFailure = true
+      })
+      await automatic.getByRole('button', { name: 'Test connection', exact: true }).click()
+      await automatic.getByRole('alert').filter({ hasText: 'GitHub rejected this token' }).waitFor()
+      await automatic.getByText(/Last successful check/).waitFor()
+      await page.evaluate(() => {
+        window.checkFailure = false
+      })
+      await automatic.getByRole('button', { name: 'Test connection', exact: true }).click()
+      await automatic.getByText('@runtime-user · github.com').waitFor()
+      await page.evaluate(() => {
+        window.runtime.connected = false
+        window.render()
+      })
+      await automatic
+        .getByText('Computer offline · Reconnect to verify this connection.')
+        .first()
+        .waitFor()
+      assert.equal(
+        await automatic.getByRole('button', { name: 'Test connection', exact: true }).isDisabled(),
+        true,
+      )
+      await page.evaluate(() => {
+        window.runtime.connected = true
+        window.render()
+      })
+      await automatic.getByText('@runtime-user · github.com').waitFor()
+      console.log(
+        'Desktop shows automatic projects, verifies contextual accounts, recovers from errors and disables offline tests',
+      )
+    }
     const add = () =>
       page
         .getByRole('button', { name: mobile ? 'Connect account' : 'Add connection', exact: true })
@@ -114,6 +166,46 @@ try {
     await save()
     await page.waitForFunction(() => window.saved.length === 3)
     assert.equal(await page.evaluate(() => window.saved[2].tokenEnv), 'WORK_GH_TOKEN')
+    if (!mobile) {
+      await page.evaluate(() => {
+        window.runtime.workspace.repositories.push({
+          id: 'bound',
+          name: 'Bound project',
+          path: '/bound',
+          branch: 'main',
+          forge: {
+            connectionId: window.saved[1].id,
+            repository: 'team/app',
+            revision: window.saved[1].revision,
+          },
+        })
+        window.render()
+      })
+      const bound = page.getByLabel('Connection for Bound project', { exact: true })
+      await bound.getByText('Bound project · team/app').waitFor()
+      await bound.getByRole('button', { name: 'Test project connection' }).click()
+      await bound.getByText('@project-user · github.com').waitFor()
+      assert.deepEqual(await page.evaluate(() => window.connectionChecks.at(-1)), {
+        connectionId: await page.evaluate(() => window.saved[1].id),
+        repositoryId: 'bound',
+        refresh: true,
+      })
+      const automatic = page.getByRole('article', {
+        name: 'Automatic GitHub CLI connection',
+        exact: true,
+      })
+      await page.evaluate(() => {
+        window.diagnosticsUnavailable = true
+      })
+      await automatic.getByRole('button', { name: 'Test connection', exact: true }).click()
+      await automatic
+        .getByRole('alert')
+        .filter({ hasText: 'update this computer’s runtime' })
+        .waitFor()
+      console.log(
+        'Desktop lists explicitly linked projects and explains unsupported runtime diagnostics',
+      )
+    }
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'} saves wrapper selectors, named gh accounts and token references`,

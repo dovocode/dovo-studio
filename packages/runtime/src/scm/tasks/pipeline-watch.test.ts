@@ -121,7 +121,7 @@ it('adds explicit runs, preserves existing watches and delivers each completion 
   await f.watch(['9'])
   await f.watch(['7'])
   expect((await f.status()).watches).toHaveLength(3)
-  expect(f.read).toHaveBeenCalledWith('repo', 'pipelines/detail', { id: '7', refresh: true })
+  expect(f.read).toHaveBeenCalledWith('repo', 'pipelines/detail', { id: '7', refresh: true }, false)
   await f.s.pipelineWatch.tick()
   expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
   f.read.mockImplementation(async (_repo, _operation, input) => detail(runId(input), 'failure'))
@@ -410,7 +410,12 @@ it('isolates colliding run IDs across repositories and scopes stop/status withou
   f.read.mockClear().mockResolvedValue(detail('7', 'failure'))
   await f.s.pipelineWatch.tick()
   expect(f.read).toHaveBeenCalledTimes(1)
-  expect(f.read).toHaveBeenCalledWith('linked', 'pipelines/detail', { id: '7', refresh: true })
+  expect(f.read).toHaveBeenCalledWith(
+    'linked',
+    'pipelines/detail',
+    { id: '7', refresh: true },
+    true,
+  )
   expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
   await expect(
     f.s.pipelineWatch.command({
@@ -696,11 +701,16 @@ it('reads all job pages for registration and detects early failures beyond the f
       },
     ],
   })
-  expect(f.read).toHaveBeenCalledWith('repo', 'pipelines/detail', {
-    id: '7',
-    cursor: '3',
-    refresh: true,
-  })
+  expect(f.read).toHaveBeenCalledWith(
+    'repo',
+    'pipelines/detail',
+    {
+      id: '7',
+      cursor: '3',
+      refresh: true,
+    },
+    false,
+  )
   failed = true
   await f.s.pipelineWatch.tick()
   await f.s.pipelineWatch.tick()
@@ -770,4 +780,23 @@ it('shows read-only monitoring as paused without leaving the thread in Waiting',
   )
   f.s.store.update((workspace) => ({ ...workspace, agents: f.f.workspace.agents }))
   expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
+})
+
+it('polls with background quota and retains last success when a later poll fails', async () => {
+  const f = await setup()
+  await f.watch()
+  const registered = (await f.status()).watches[0]!
+  expect(registered.lastSuccessAt).toBe(registered.checkedAt)
+  f.read.mockClear()
+  await f.s.pipelineWatch.tick()
+  expect(f.read).toHaveBeenCalledWith('repo', 'pipelines/detail', { id: '7', refresh: true }, true)
+  const success = (await f.status()).watches[0]!
+  f.read.mockRejectedValue(new Error('Background quota reserved for interactive work'))
+  await f.s.pipelineWatch.tick()
+  const failed = (await f.status()).watches[0]!
+  expect(failed.error).toContain('quota reserved')
+  expect(failed.lastSuccessAt).toBe(success.lastSuccessAt)
+  f.read.mockResolvedValue(detail())
+  await f.s.pipelineWatch.tick()
+  expect((await f.status()).watches[0]!.error).toBeUndefined()
 })

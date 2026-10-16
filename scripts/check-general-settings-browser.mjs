@@ -186,6 +186,47 @@ try {
     await page.locator('.studio-titlebar-brand img, .studio-titlebar-brand svg').count(),
     0,
   )
+  // The brand, title and search stay in place while only the settings links scroll.
+  await page.setViewportSize({ width: 1280, height: 420 })
+  const navigation = page.getByRole('region', { name: 'Settings navigation', exact: true })
+  const settingsSidebar = page.getByRole('navigation', { name: 'Settings sections', exact: true })
+  const brandBefore = await page.locator('.studio-titlebar').boundingBox()
+  const searchBefore = await page
+    .getByRole('textbox', { name: 'Search settings', exact: true })
+    .boundingBox()
+  const titleBefore = await settingsSidebar
+    .getByRole('heading', { name: 'Settings', exact: true })
+    .boundingBox()
+  await navigation.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+  })
+  assert.ok(
+    await navigation.evaluate((element) => element.scrollTop > 0),
+    'Settings links actually scroll',
+  )
+  assert.deepEqual(
+    await page.locator('.studio-titlebar').boundingBox(),
+    brandBefore,
+    'Sidebar brand stays fixed',
+  )
+  assert.deepEqual(
+    await page.getByRole('textbox', { name: 'Search settings', exact: true }).boundingBox(),
+    searchBefore,
+    'Settings search stays fixed',
+  )
+  assert.deepEqual(
+    await settingsSidebar.getByRole('heading', { name: 'Settings', exact: true }).boundingBox(),
+    titleBefore,
+    'Settings title stays fixed',
+  )
+  await navigation.getByLabel('Inherited settings target').waitFor({ state: 'visible' })
+  await page.getByRole('textbox', { name: 'Search settings', exact: true }).fill('General')
+  await settingsSidebar.getByRole('button', { name: 'General', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
+  await navigation.evaluate((element) => {
+    element.scrollTop = 0
+  })
+  await page.setViewportSize({ width: 1280, height: 900 })
   await screenshot('general-dark')
   await page.evaluate(async () => {
     document.documentElement.dataset.theme = 'light'

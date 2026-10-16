@@ -14,7 +14,7 @@ const profileSchema = mutableStruct({
   cloud_id: minValue(Schema.String, 1),
   account_id: Schema.optional(Schema.String),
   auth_type: Schema.optional(Schema.String),
-  token: Schema.Unknown,
+  token: Schema.optional(Schema.Unknown),
 })
 const configSchema = mutableStruct({
   version: Schema.Number,
@@ -119,13 +119,13 @@ export function jiraConfigRoot(
   os = platform(),
   homeDirectory = homedir(),
 ) {
-  const configured = env.ACLI_CONFIG_DIR
+  const configured = env.ACLI_CONFIG_DIR || undefined
   const root =
     configured ??
     (os === 'win32'
       ? (env.APPDATA ?? join(homeDirectory, 'AppData', 'Roaming'))
       : os === 'darwin'
-        ? join(homeDirectory, 'Library', 'Application Support')
+        ? join(homeDirectory, '.config')
         : (env.XDG_CONFIG_HOME ?? join(homeDirectory, '.config')))
   if (!isAbsolute(root))
     throw new HttpError(
@@ -205,7 +205,8 @@ export async function captureJiraContext(
       if (
         current.current_profile !== config.current_profile ||
         !updated ||
-        !updated.token ||
+        (profile.token !== undefined && !updated.token) ||
+        (profile.token === undefined && updated.token !== undefined) ||
         !sameAccount(updated, profile)
       )
         throw new Error('Changed configuration')
@@ -224,6 +225,9 @@ export async function captureJiraContext(
     try {
       if (selected) {
         const updated = await currentProfile()
+        // Native credential stores keep the token outside YAML. ACLI renews it in
+        // that store; retaining a second credential document would add no value.
+        if (updated.token === undefined) return
         // ACLI stores its encrypted token as YAML !!binary. Without the binary tag,
         // Buffer.toJSON turns it into a map that ACLI cannot authenticate with.
         const state = {
@@ -297,7 +301,11 @@ export async function captureJiraContext(
       const state = decode(renewalSchema, JSON.parse(await readFile(stateFile, 'utf8')) as unknown)
       if (state.fingerprint === fingerprint) {
         const refreshed = decode(profileSchema, parse(state.profile) as unknown)
-        if (!refreshed.token || !sameAccount(refreshed, profile))
+        if (
+          (profile.token !== undefined && !refreshed.token) ||
+          (profile.token === undefined && refreshed.token !== undefined) ||
+          !sameAccount(refreshed, profile)
+        )
           throw new HttpError(
             409,
             'The retained Jira credential does not match this account. Sign in again and refresh.',

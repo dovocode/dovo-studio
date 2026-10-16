@@ -27,7 +27,9 @@ import { runtimeDiagnostics } from '../http/diagnostics.js'
 import { agentBrowserCommandSchema } from '../previews/agent-browser.js'
 import { studioSessions } from './ui-sessions.js'
 
-export function requireStudioPart(s: Services, part: string, policy?: RunPolicy) {
+export type StudioPolicy = Pick<RunPolicy, 'permissions' | 'readOnly' | 'studioTools'>
+
+export function requireStudioPart(s: Services, part: string, policy?: StudioPolicy) {
   const enabled = enabledStudioTools(s.preferences.get())
   const setting = studioToolSettings.find((setting) => setting.part === part)
   const allowed =
@@ -53,14 +55,14 @@ export function studioReadAction(part: string, action: unknown) {
 function withinPolicy(
   s: Services,
   task: Pick<Task, 'id' | 'agentId' | 'harness' | 'agentOverrides'>,
-  policy?: RunPolicy,
+  policy?: StudioPolicy,
 ) {
   if (!policy) return
   const agent = resolveTaskAgent(task, s.store.get().agents)
   if (!agent || !permissionPolicyWithinCeiling(policy.permissions, agent))
     throw new HttpError(403, 'Target thread or automation exceeds this agent’s permissions')
 }
-function validateFlow(s: Services, flow: Automation, policy?: RunPolicy) {
+function validateFlow(s: Services, flow: Automation, policy?: StudioPolicy) {
   for (const node of flow.nodes) {
     if (node.data.kind !== 'task') continue
     const defaults = s.store.taskDefaults(node.data.repositoryId)
@@ -100,7 +102,7 @@ export async function studioTool(
   part: string,
   value: unknown,
   authorize: () => void,
-  policy?: RunPolicy,
+  policy?: StudioPolicy,
 ) {
   const check = () => {
     authorize()

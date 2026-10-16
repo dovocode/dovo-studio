@@ -64,6 +64,7 @@ const postReadPaths = new Set([
   '/api/scm/work/pipelines/definitions',
   '/api/scm/jira/projects/read',
   '/api/scm/connections/read',
+  '/api/scm/connections/github/read',
   '/api/scm/cli-profiles/read',
   '/api/scm/repositories/forge/read',
   '/api/scm/repositories/forge/inspect',

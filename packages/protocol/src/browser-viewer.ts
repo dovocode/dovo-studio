@@ -255,6 +255,7 @@ function connect(url: string) {
   type Frame = { width: number; height: number; blob: Blob; sequence?: number }
   let pendingFrame: Frame | undefined
   let rendering = false
+  let hasFrame = false
   const acknowledge = (frame: Frame) => {
     if (frame.sequence && next.readyState === WebSocket.OPEN)
       next.send(JSON.stringify({ type: 'frameAck', sequence: frame.sequence }))
@@ -271,8 +272,8 @@ function connect(url: string) {
         try {
           const image = await decodeImage(current.blob)
           try {
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
             if (socket !== next || next.readyState !== WebSocket.OPEN) continue
+            hasFrame = true
             const resized = width !== current.width || height !== current.height
             width = current.width
             height = current.height
@@ -282,6 +283,7 @@ function connect(url: string) {
             if (canvas.height !== image.height) canvas.height = image.height
             canvas.dataset.viewportWidth = String(width)
             canvas.dataset.viewportHeight = String(height)
+            drawing.imageSmoothingQuality = 'high'
             drawing.drawImage(image.source, 0, 0)
             if (resized || canvas.hidden) layoutCanvas()
             canvas.hidden = !currentUrl || currentUrl === 'about:blank'
@@ -320,7 +322,8 @@ function connect(url: string) {
         back.disabled = !message.back
         forward.disabled = !message.forward
         empty.hidden = currentUrl !== 'about:blank'
-        if (!empty.hidden) canvas.hidden = true
+        canvas.hidden = !empty.hidden || !hasFrame
+        if (!canvas.hidden) layoutCanvas()
         keyboard.title = message.editable ? 'Type into focused field' : 'Keyboard'
         document.title = message.title || 'Host browser'
         if (!window.ReactNativeWebView)

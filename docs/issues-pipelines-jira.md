@@ -304,6 +304,13 @@ an uncertain write fails, refresh before submitting again to avoid duplicates.
 Provider and CLI contract fixtures cover source identity, writes and task creation. Live account
 permissions and enterprise-specific policies still require validation against your own hosts.
 
-ACLI credentials remain encrypted in Dovo's private account snapshot. The renewal cache preserves
-YAML `!!binary` token values; older Buffer-map entries are restored from their exact bytes without
-reverting to an older token or changing the global CLI login.
+Inline ACLI credentials remain encrypted in Dovo's private account snapshot. The renewal cache
+preserves YAML `!!binary` token values; older Buffer-map entries are restored from their exact bytes
+without reverting to an older token or changing the global CLI login.
+
+On macOS, ACLI's default configuration root is `~/.config`, so Dovo reads
+`~/.config/acli/jira_config.yaml`, rather than the macOS Application Support directory. A nonempty
+`ACLI_CONFIG_DIR` overrides the root. Profiles backed by the native credential store do not need a
+`token` field in YAML: Dovo isolates the selected account metadata and ACLI uses its credential
+store. Inline encrypted-token profiles retain their existing private renewal cache. Account/site
+checks and the isolated-configuration capability probe apply to both.

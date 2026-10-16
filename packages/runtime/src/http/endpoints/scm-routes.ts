@@ -22,6 +22,8 @@ import {
   pullHeadBranch,
 } from '@dovo/protocol'
 import { gitActionState } from '../../scm/git/action-state.js'
+import { checkGithubConnection } from '../../scm/forges/integration/github-connection-check.js'
+import { githubConnectionCheckQuerySchema } from '@dovo/protocol'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
 import {
   repositoryFolderSchema,
@@ -294,6 +296,13 @@ export function scmRoute(request: IncomingMessage, path: string) {
           ),
         )
       }
+      if (method === 'POST' && path === '/api/scm/connections/github/read')
+        return yield* serviceResult(
+          checkGithubConnection(
+            s,
+            decode(githubConnectionCheckQuerySchema, yield* serviceResult(body(request))),
+          ),
+        )
       if (method === 'POST' && path === '/api/scm/connections/read')
         return yield* serviceResult({
           connections: s.forges.list(),

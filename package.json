@@ -77,6 +77,7 @@
     "test:device-host-settings:browser": "node scripts/check-device-host-settings-browser.mjs",
     "test:mobile-device-hosts:browser": "node apps/mobile/scripts/check-device-hosts.mjs",
     "test:title-settings:browser": "node scripts/check-title-settings-browser.mjs",
+    "test:terminal-layout:browser": "node scripts/check-terminal-layout-browser.mjs",
     "test:terminal-fonts:browser": "node scripts/build-mobile-terminal.mjs && node scripts/check-terminal-fonts-browser.mjs",
     "test:appearance:browser": "pnpm --filter @dovo/web build && node scripts/check-appearance-browser.mjs",
     "test:ux-polish:browser": "node scripts/check-ux-polish-browser.mjs",

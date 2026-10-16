@@ -64,6 +64,7 @@ export async function startStudioMcp() {
       const result = await post('/api/studio/tools', {
         taskId: 'studio-integration',
         part,
+        runtimeId: 'runtimeId' in parsed ? parsed.runtimeId : undefined,
         command: part === 'discover' ? parsed : 'command' in parsed ? parsed.command : undefined,
       })
       if (

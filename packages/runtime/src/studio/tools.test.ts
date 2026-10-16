@@ -1,5 +1,8 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
+import { createServer } from 'node:http'
+import { once } from 'node:events'
+import { studioPeers } from './peers.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import {
@@ -78,8 +81,8 @@ async function setup(
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     })
-  const post = (part: string, command: unknown) =>
-    raw('/api/studio/tools', { taskId: parent.id, parentRunId: runId, part, command })
+  const post = (part: string, command: unknown, runtimeId?: string) =>
+    raw('/api/studio/tools', { taskId: parent.id, parentRunId: runId, part, command, runtimeId })
   return { s, runtime, origin, parent, runId, token, post, raw, flags }
 }
 function flow(): Automation {
@@ -251,11 +254,14 @@ it('rejects thread and automation permission escalation before persisting change
   expect(s.store.get().automations).toHaveLength(0)
 })
 it('exposes only selected tools over the actual MCP transport', async () => {
-  const { runtime, parent, runId, token, flags } = await setup({
+  const source = await setup({
     ...noStudioTools(),
     threads: true,
     diagnostics: true,
   })
+  const { runtime, parent, runId, token, flags } = source
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
   const config = taskToolsServer(
     parent.id,
     runtime.port,
@@ -296,6 +302,26 @@ it('exposes only selected tools over the actual MCP transport', async () => {
       .isError,
   ).not.toBe(true)
   expect((await client.callTool({ name: 'studio_discover', arguments: {} })).isError).not.toBe(true)
+  const remoteCreated = await client.callTool({
+    name: 'studio_threads',
+    arguments: {
+      runtimeId: pairing.peer.id,
+      command: {
+        action: 'create',
+        title: 'Scoped remote MCP draft',
+        repositoryId: 'repo',
+        agentId: 'agent',
+      },
+    },
+  })
+  expect(remoteCreated.isError).not.toBe(true)
+  expect(target.s.store.get().tasks.some((task) => task.title === 'Scoped remote MCP draft')).toBe(
+    true,
+  )
+  expect(source.s.store.get().tasks.some((task) => task.title === 'Scoped remote MCP draft')).toBe(
+    false,
+  )
+
   expect(
     (
       await client.callTool({
@@ -307,7 +333,10 @@ it('exposes only selected tools over the actual MCP transport', async () => {
 })
 
 it('serves external MCP clients with live toggles and revocable paired-device authentication', async () => {
-  const { s, origin } = await setup({ ...noStudioTools(), threads: true })
+  const source = await setup({ ...noStudioTools(), threads: true })
+  const { s, origin } = source
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
   const token = randomUUID()
   const device = s.devices.add('External agent', token)
   const client = new Client({ name: 'external-agent', version: '1' })
@@ -343,6 +372,24 @@ it('serves external MCP clients with live toggles and revocable paired-device au
   })
   expect(created.isError).not.toBe(true)
   expect(s.store.get().tasks.some((task) => task.title === 'External draft')).toBe(true)
+  const remoteCreated = await client.callTool({
+    name: 'studio_threads',
+    arguments: {
+      runtimeId: pairing.peer.id,
+      command: {
+        action: 'create',
+        title: 'External remote MCP draft',
+        repositoryId: 'repo',
+        agentId: 'agent',
+      },
+    },
+  })
+  expect(remoteCreated.isError).not.toBe(true)
+  expect(
+    target.s.store.get().tasks.some((task) => task.title === 'External remote MCP draft'),
+  ).toBe(true)
+  expect(s.store.get().tasks.some((task) => task.title === 'External remote MCP draft')).toBe(false)
+
   s.preferences.save({ enableStudioThreads: false, enableStudioDiagnostics: true })
   expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
     'studio_diagnostics',
@@ -372,4 +419,157 @@ it('serves external MCP clients with live toggles and revocable paired-device au
   expect((await client.listTools()).tools.some((tool) => tool.name === 'studio_ui')).toBe(true)
   s.devices.revoke(device)
   await expect(client.listTools()).rejects.toThrow(/401/)
+})
+
+async function pairComputers(
+  source: Awaited<ReturnType<typeof setup>>,
+  target: Awaited<ReturnType<typeof setup>>,
+) {
+  const token = randomUUID()
+  const deviceId = target.s.devices.add('Paired Studio', token)
+  const sessionId = randomUUID()
+  const register = (peers: unknown[]) =>
+    fetch(source.origin + '/api/studio/peers', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer studio-tools-test-owner-token-at-least-32-chars',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sessionId, peers }),
+    })
+  const peer = {
+    id: 'other-computer',
+    name: 'Other computer',
+    connection: { address: target.origin, token },
+  }
+  expect((await register([peer])).status).toBe(200)
+  return { register, peer, deviceId, token }
+}
+it('routes non-UI tools to a selected paired runtime over HTTP without exposing credentials', async () => {
+  const source = await setup()
+  const target = await setup()
+  target.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repo) => ({ ...repo, name: 'Remote project' })),
+  }))
+  const pairing = await pairComputers(source, target)
+  const discovery = await source.post('discover', {})
+  const listed = await discovery.text()
+  expect(listed).toContain('other-computer')
+  expect(listed).not.toContain(pairing.token)
+  expect(listed).not.toContain(target.origin)
+  const remote = await source.post('discover', {}, pairing.peer.id)
+  expect(await remote.text()).toContain('Remote project')
+  const created = await source.post(
+    'threads',
+    { action: 'create', title: 'Remote draft', repositoryId: 'repo', agentId: 'agent' },
+    pairing.peer.id,
+  )
+  expect(created.status).toBe(200)
+  expect(target.s.store.get().tasks.some((task) => task.title === 'Remote draft')).toBe(true)
+  expect(source.s.store.get().tasks.some((task) => task.title === 'Remote draft')).toBe(false)
+  expect((await source.post('automations', { action: 'list' }, pairing.peer.id)).status).toBe(200)
+  expect((await source.post('browsers', { action: 'list' }, pairing.peer.id)).status).toBe(200)
+  expect((await source.post('diagnostics', { action: 'health' }, pairing.peer.id)).status).toBe(200)
+  expect((await source.post('ui', { action: 'list' }, pairing.peer.id)).status).toBe(403)
+  expect((await source.post('threads', { action: 'list' }, 'unknown')).status).toBe(404)
+  target.s.preferences.save({ enableStudioThreads: false })
+  expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(403)
+  target.s.preferences.save({ enableStudioThreads: true })
+  target.s.devices.revoke(pairing.deviceId)
+  const revoked = await source.post('threads', { action: 'list' }, pairing.peer.id)
+  expect(revoked.status).toBe(401)
+  expect(await revoked.text()).not.toContain(pairing.token)
+  expect((await pairing.register([])).status).toBe(200)
+  expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(404)
+})
+it('preserves run read-only access and permission ceilings across paired computers', async () => {
+  const reader = await setup(undefined, true)
+  const target = await setup()
+  const pairing = await pairComputers(reader, target)
+  expect((await reader.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(200)
+  expect(
+    (
+      await reader.post(
+        'threads',
+        { action: 'create', title: 'Forbidden', repositoryId: 'repo', agentId: 'agent' },
+        pairing.peer.id,
+      )
+    ).status,
+  ).toBe(403)
+  expect((await reader.post('browsers', { action: 'open' }, pairing.peer.id)).status).toBe(403)
+  expect((await reader.raw('/api/studio/peers', { sessionId: 'forged', peers: [] })).status).toBe(
+    403,
+  )
+  expect(
+    (
+      await reader.raw('/api/studio/forward', {
+        taskId: reader.parent.id,
+        part: 'threads',
+        command: { action: 'list' },
+      })
+    ).status,
+  ).toBe(403)
+  const source = await setup()
+  await pairComputers(source, target)
+  target.s.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({ ...agent, permission: 'full-access' })),
+  }))
+  expect(
+    (
+      await source.post(
+        'threads',
+        { action: 'create', title: 'Too powerful', repositoryId: 'repo', agentId: 'agent' },
+        pairing.peer.id,
+      )
+    ).status,
+  ).toBe(403)
+  source.s.preferences.save({ enableStudioThreads: false })
+  expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(403)
+})
+
+it('rejects older paired runtimes before attempting an unscoped tool action', async () => {
+  const source = await setup()
+  const paths: string[] = []
+  const legacy = createServer((request, response) => {
+    paths.push(request.url ?? '')
+    response.writeHead(404, { 'Content-Type': 'application/json' })
+    response.end(JSON.stringify({ error: 'Endpoint not found' }))
+  })
+  legacy.listen(0, '127.0.0.1')
+  await once(legacy, 'listening')
+  cleanups.push(
+    () =>
+      new Promise<void>((resolve, reject) =>
+        legacy.close((error) => (error ? reject(error) : resolve())),
+      ),
+  )
+  const address = legacy.address()
+  if (!address || typeof address === 'string') throw new Error('Missing legacy runtime address')
+  studioPeers(source.s).register(
+    'owner',
+    {
+      sessionId: 'legacy',
+      peers: [
+        {
+          id: 'legacy',
+          name: 'Legacy',
+          connection: {
+            address: `http://127.0.0.1:${address.port}`,
+            token: 'legacy-pairing-token-at-least-32-chars',
+          },
+        },
+      ],
+    },
+    () => {},
+  )
+  const response = await source.post(
+    'threads',
+    { action: 'create', title: 'Must not execute', repositoryId: 'repo', agentId: 'agent' },
+    'legacy',
+  )
+  expect(response.status).toBe(404)
+  expect(await response.text()).toContain('Update this paired runtime')
+  expect(paths).toEqual(['/api/studio/forward'])
 })

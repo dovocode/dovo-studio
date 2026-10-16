@@ -1,5 +1,7 @@
 import { requireLocalStudioUI } from '../studio/local-ui.js'
 import { studioTool } from '../studio/tools.js'
+import { studioPeers, routedStudioTool } from '../studio/peers.js'
+import { studioForwardPolicySchema } from '@dovo/protocol'
 import { studioSessions } from '../studio/ui-sessions.js'
 import { studioUIPollSchema } from '@dovo/protocol'
 import { isRunToken } from '../auth/run-credentials.js'
@@ -359,22 +361,55 @@ export function route(
         )
         return yield* serviceResult({ app: s.mcpApps.read(taskId, id) })
       }
-      if (method === 'POST' && path === '/api/studio/tools') {
+      if (method === 'POST' && path === '/api/studio/peers') {
+        requireLocalStudioUI(request.socket.remoteAddress)
+        return studioPeers(s).register(
+          device.id,
+          yield* serviceResult(body(request, 256 * 1024)),
+          () => {
+            s.devices.authenticate(token)
+          },
+        )
+      }
+      if (method === 'POST' && (path === '/api/studio/tools' || path === '/api/studio/forward')) {
         const input = decode(
-          mutableStruct({ taskId: idSchema, part: Schema.String, command: Schema.Unknown }),
+          mutableStruct({
+            taskId: idSchema,
+            part: Schema.String,
+            command: Schema.Unknown,
+            runtimeId: Schema.optional(idSchema),
+            policy: Schema.optional(studioForwardPolicySchema),
+          }),
           yield* serviceResult(body(request)),
         )
-        if (input.part === 'ui') requireLocalStudioUI(request.socket.remoteAddress)
+        const authorize = () => {
+          authenticateRuntimeOperation(s, token)
+        }
+        // Separate endpoint prevents older runtimes silently ignoring a forwarded permission ceiling.
+        if (path === '/api/studio/forward') {
+          if (input.runtimeId || input.part === 'ui')
+            throw new HttpError(403, 'Forwarded Studio calls cannot target UI or another computer')
+          return yield* serviceResult(
+            studioTool(s, input.taskId, input.part, input.command, authorize, input.policy),
+          )
+        }
+        if (input.policy)
+          throw new HttpError(400, 'Forwarding policies require the paired forwarding endpoint')
+        if (input.part === 'ui') {
+          requireLocalStudioUI(request.socket.remoteAddress)
+          if (input.runtimeId)
+            throw new HttpError(403, 'Studio UI interaction stays on this machine')
+        }
         return yield* serviceResult(
-          studioTool(
+          routedStudioTool(
             s,
             input.taskId,
             input.part,
             input.command,
-            () => {
-              authenticateRuntimeOperation(s, token)
-            },
+            input.runtimeId,
+            authorize,
             run,
+            run?.signal,
           ),
         )
       }

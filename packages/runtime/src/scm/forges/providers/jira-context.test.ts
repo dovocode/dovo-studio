@@ -27,7 +27,7 @@ const configSchema = mutableStruct({
       account_id: Schema.String,
       cloud_id: Schema.String,
       auth_type: Schema.String,
-      token: Schema.String,
+      token: Schema.optional(Schema.String),
     }),
   ),
 })
@@ -212,8 +212,13 @@ it('uses supported configuration roots without changing the process-wide account
   expect(jiraConfigRoot({ XDG_CONFIG_HOME: join(tmpdir(), 'xdg') }, 'linux', fixtureHome)).toBe(
     join(tmpdir(), 'xdg'),
   )
-  expect(jiraConfigRoot({}, 'darwin', fixtureHome)).toBe(
-    join(fixtureHome, 'Library', 'Application Support'),
+  expect(jiraConfigRoot({}, 'darwin', fixtureHome)).toBe(join(fixtureHome, '.config'))
+  // ACLI ignores XDG_CONFIG_HOME on macOS, unlike the Linux configuration root.
+  expect(jiraConfigRoot({ XDG_CONFIG_HOME: '/other' }, 'darwin', fixtureHome)).toBe(
+    join(fixtureHome, '.config'),
+  )
+  expect(jiraConfigRoot({ ACLI_CONFIG_DIR: '' }, 'darwin', fixtureHome)).toBe(
+    join(fixtureHome, '.config'),
   )
   expect(jiraConfigRoot({ APPDATA: join(tmpdir(), 'appdata') }, 'win32', fixtureHome)).toBe(
     join(tmpdir(), 'appdata'),
@@ -331,15 +336,16 @@ it('loads a retained renewal before the first authenticated status command', asy
   const authenticatedTokens: string[] = []
   f.run.mockImplementation(async (cmd, args, input, cwd, env, timeout) => {
     const result = await run(cmd, args, input, cwd, env, timeout)
-    if (args.includes('auth'))
-      authenticatedTokens.push(
-        decode(
-          configSchema,
-          parse(
-            await readFile(join(env!.ACLI_CONFIG_DIR!, 'acli', 'jira_config.yaml'), 'utf8'),
-          ) as unknown,
-        ).profiles[0]!.token,
-      )
+    if (args.includes('auth')) {
+      const token = decode(
+        configSchema,
+        parse(
+          await readFile(join(env!.ACLI_CONFIG_DIR!, 'acli', 'jira_config.yaml'), 'utf8'),
+        ) as unknown,
+      ).profiles[0]!.token
+      if (token === undefined) throw new Error('Expected an inline token')
+      authenticatedTokens.push(token)
+    }
     return result
   })
   const jira = new JiraWork('acli', { site: 'https://first.atlassian.net', project: 'TEAM' }, f.run)
@@ -523,4 +529,62 @@ it('preserves encrypted YAML binary tokens across renewed contexts and repairs t
   expect(decode(binaryProfile, parse(repaired.profile)).token).toEqual(renewedToken)
   expect(repaired.profile).toContain('!!binary')
   expect(await readFile(f.file, 'utf8')).toBe(source)
+})
+
+it('uses native credential-store profiles without requiring or persisting an inline token', async () => {
+  const f = await setup()
+  const keychain = {
+    ...original,
+    profiles: original.profiles.map(({ site, email, account_id, cloud_id, auth_type }) => ({
+      site,
+      email,
+      account_id,
+      cloud_id,
+      auth_type,
+    })),
+  }
+  const source = stringify(keychain)
+  await writeFile(f.file, source)
+  const first = await captureJiraContext('acli', f.run)
+  cleanup.push(first.close)
+  expect(
+    await f.run('acli', ['jira', 'auth', 'status'], undefined, undefined, first.env),
+  ).toContain('first@example.com')
+  await expect(first.accountId('https://first.atlassian.net', 'first@example.com')).resolves.toBe(
+    'account-first',
+  )
+  const revision = first.revision?.()
+  await first.close()
+  expect(
+    (await readdir(join(f.root, 'acli', 'dovo-jira-accounts'))).filter((name) =>
+      name.endsWith('.json'),
+    ),
+  ).toEqual([])
+  const second = await captureJiraContext('acli', f.run)
+  cleanup.push(second.close)
+  await expect(second.accountId('https://first.atlassian.net', 'first@example.com')).resolves.toBe(
+    'account-first',
+  )
+  await expect(
+    second.accountId('https://second.atlassian.net', 'first@example.com'),
+  ).rejects.toThrow('account changed')
+  expect(second.revision?.()).toBe(revision)
+  await second.close()
+  expect(await readFile(f.file, 'utf8')).toBe(source)
+})
+
+it('rejects removal of an inline token instead of silently changing credential storage', async () => {
+  const f = await setup()
+  const context = await captureJiraContext('acli', f.run)
+  cleanup.push(context.close)
+  const altered = decode(configSchema, parse(stringify(original)))
+  delete altered.profiles[0]!.token
+  await writeFile(
+    join(context.env.ACLI_CONFIG_DIR!, 'acli', 'jira_config.yaml'),
+    stringify(altered),
+  )
+  await expect(
+    context.accountId('https://first.atlassian.net', 'first@example.com'),
+  ).rejects.toThrow('configuration changed')
+  await expect(context.close()).rejects.toThrow('configuration changed')
 })

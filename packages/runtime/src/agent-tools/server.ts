@@ -664,6 +664,7 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
         taskId: task,
         parentRunId,
         part,
+        runtimeId: input.runtimeId,
         command: part === 'discover' ? input : input.command,
       })
       if (

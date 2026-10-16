@@ -9,6 +9,33 @@ binding.
 
 ## Connect a host
 
+In Studio’s **Settings → Source control**, each computer shows its automatic GitHub CLI connection
+as well as saved connections. The automatic section lists Git projects without an explicit forge
+binding; folders and scratch projects are excluded. Saved GitHub connections list their explicitly
+linked projects. Automatic detection does not create a saved connection or change GitHub CLI’s
+active account.
+
+Opening the page verifies the account in the runtime’s default context, reusing the existing
+credential-keyed account verification cache. **Test connection** forces fresh account verification.
+**Test project connection** also resolves that checkout’s effective account and checks repository
+and Actions read access. Project checks run only when requested, so opening settings does not fetch
+every project’s repository. Checkout-specific CLI configuration can select a different account from
+the runtime default. Successful checks show the login, host, repository when applicable and check
+time; a later failed check retains the last successful check time while the view remains open.
+
+Authentication, permissions/organization SSO, repository discovery, network and rate-limit failures
+have recovery guidance. Account verification alone does not establish repository access, and a
+readable repository does not establish write permission or satisfaction of branch rules. Checks use
+credentials on their owning runtime and never switch a global login or perform provider writes.
+
+Project connection tests also request one Actions run using the same captured credential. Repository
+access and Actions read access are reported separately; successful read access does not promise
+rerun/cancel permissions. Automatic pipeline list/detail reads and thread-owned polling preserve the
+GitHub quota reserve for interactive use. Explicit UI refresh and initial watch registration remain
+interactive. Watch status retains `lastSuccessAt` across failures separately from the last check
+time; desktop and mobile waiting panels expose the last successful pipeline poll. Existing persisted
+watches without this field show no recorded success until a poll succeeds.
+
 Install Git and GitHub CLI on the runtime machine, then authenticate as the account you want Dovo to
 use:
 

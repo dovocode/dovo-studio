@@ -43,6 +43,7 @@ const stateSchema = z.object({
   notifiedStatus: z.string().optional(),
   startedAt: z.string(),
   checkedAt: z.string(),
+  lastSuccessAt: z.string().optional(),
   error: z.string().optional(),
 })
 type State = z.infer<typeof stateSchema>
@@ -191,7 +192,7 @@ export class PipelineWatch {
       throw new HttpError(403, 'Pipeline watching is disabled for read-only threads')
     return task
   }
-  private async detail(repositoryId: string, runId: string, refresh = false) {
+  private async detail(repositoryId: string, runId: string, refresh = false, background = false) {
     // IDs go only to the project's configured forge, never an agent-supplied URL.
     const jobs = new Map<string, ForgePipelineDetail['jobs'][number]>()
     const cursors = new Set<string>()
@@ -201,11 +202,12 @@ export class PipelineWatch {
     do {
       detail = decode(
         forgePipelineDetailSchema,
-        await this.s.forgeWork.request(repositoryId, 'pipelines/detail', {
-          id: runId,
-          refresh,
-          ...(cursor ? { cursor } : {}),
-        }),
+        await this.s.forgeWork.request(
+          repositoryId,
+          'pipelines/detail',
+          { id: runId, refresh, ...(cursor ? { cursor } : {}) },
+          background,
+        ),
       )
       if (detail.stale || detail.refreshError)
         throw new HttpError(503, detail.refreshError ?? 'Waiting for fresh pipeline details')
@@ -327,6 +329,7 @@ export class PipelineWatch {
           notifiedStatus: attentionRequired(detail.run.status) ? detail.run.status : undefined,
           startedAt: existing?.status === 'watching' ? existing.startedAt : now,
           checkedAt: now,
+          lastSuccessAt: now,
         }
       })
       const active = new Set(
@@ -394,7 +397,7 @@ export class PipelineWatch {
           const readKey = JSON.stringify([state.repositoryId, state.runId])
           let reading = reads.get(readKey)
           if (!reading) {
-            reading = this.detail(state.repositoryId, state.runId, true)
+            reading = this.detail(state.repositoryId, state.runId, true, true)
             reads.set(readKey, reading)
           }
           const detail = await reading
@@ -423,6 +426,7 @@ export class PipelineWatch {
             attempt: detail.run.attempt,
             notifiedStatus: attentionRequired(detail.run.status) ? detail.run.status : undefined,
             checkedAt: new Date().toISOString(),
+            lastSuccessAt: new Date().toISOString(),
             error: undefined,
             status: finished ? 'completed' : 'watching',
           }

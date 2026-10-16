@@ -69,6 +69,7 @@ export class ForgeWork {
   private async target(
     repositoryId: string,
     refresh = false,
+    background = false,
   ): Promise<{ cwd: string; provider?: ForgeWorkProvider; scope?: SourceContext }> {
     const repo = this.store.get().repositories.find((v) => v.id === repositoryId)
     if (!repo) throw new HttpError(404, 'Project not found')
@@ -122,7 +123,7 @@ export class ForgeWork {
               { timeout: 60000, maxBuffer: 32 * 1024 * 1024 },
               repo.path,
               scope.github,
-              false,
+              background && (options?.method ?? 'GET') === 'GET',
               options?.body === undefined ? undefined : JSON.stringify(options.body),
             )
             return result.trim() ? (JSON.parse(result) as unknown) : null
@@ -133,11 +134,15 @@ export class ForgeWork {
       ),
     }
   }
-  async request(repositoryId: string, operation: string, input: unknown) {
+  async request(repositoryId: string, operation: string, input: unknown, background?: boolean) {
     const query = decode(forgeWorkQuerySchema, input)
     if (query.jiraFilters !== undefined)
       throw new HttpError(400, 'Jira filters require a Jira issue source')
-    const { cwd, provider, scope } = await this.target(repositoryId, query.refresh === true)
+    const { cwd, provider, scope } = await this.target(
+      repositoryId,
+      query.refresh === true && background !== true,
+      background ?? (operation.startsWith('pipelines/') && !query.refresh),
+    )
     if (!provider || !scope) {
       if (operation === 'options')
         return decode(forgeWorkOptionsSchema, {

@@ -2,6 +2,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { validationMessages, parseAgentEnvironment, formatAgentEnvironment } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { CliProfilePicker } from './cli-profile-picker'
+import { GithubConnectionStatus } from './github-connection-status'
 import { useEffect, useRef } from 'react'
 import { Link2, Plus } from 'lucide-react'
 import {
@@ -469,6 +470,7 @@ function ConnectionsContent({
   const [busy, setBusy] = useApplicationState(false)
   const [failure, setFailure] = useApplicationState('')
   const running = useRef(false)
+  const automaticProjects = workspace.repositories.filter((repo) => !repo.forge && !repo.kind)
   if (editing)
     return (
       <ConnectionForm
@@ -486,7 +488,7 @@ function ConnectionsContent({
   return (
     <section className="grid gap-3" aria-label="Source control connections">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">Saved connections on this computer.</p>
+        <p className="text-xs text-muted-foreground">Connections on this computer.</p>
         <Button size="sm" disabled={!connected || busy} onClick={() => setEditing('new')}>
           <Plus className="size-4" />
           Add connection
@@ -502,10 +504,40 @@ function ConnectionsContent({
           Loading connections…
         </p>
       )}
+      <article
+        className="grid gap-3 rounded-lg border bg-card p-4"
+        aria-label="Automatic GitHub CLI connection"
+      >
+        <div>
+          <h3 className="text-sm font-medium">Automatic GitHub CLI</h3>
+          <p className="text-xs text-muted-foreground">
+            Runtime default · No saved connection required.
+          </p>
+        </div>
+        <GithubConnectionStatus automatic />
+        <div className="grid gap-3 border-t pt-3">
+          <p className="text-xs font-medium">
+            Projects using automatic detection ({automaticProjects.length})
+          </p>
+          {!automaticProjects.length && (
+            <p className="text-xs text-muted-foreground">No projects use automatic detection.</p>
+          )}
+          {automaticProjects.map((repo) => (
+            <div
+              key={repo.id}
+              className="grid gap-2"
+              aria-label={`Automatic connection for ${repo.name}`}
+            >
+              <p className="break-words text-xs font-medium">{repo.name}</p>
+              <GithubConnectionStatus key={`${repo.id}:${repo.path}`} repositoryId={repo.id} />
+            </div>
+          ))}
+        </div>
+      </article>
       {!loading && connected && !connections.length && !error && (
         <p className="py-4 text-sm text-muted-foreground">
-          Connect a provider to browse repositories and manage pull requests, issues and pipelines.
-          Existing GitHub projects continue using the runtime’s GitHub CLI login.
+          No saved connections. Add one to select a specific account or another provider. Projects
+          using automatic GitHub CLI detection are shown above.
         </p>
       )}
       <div className={connections.length ? 'divide-y rounded-lg border bg-card px-4' : undefined}>
@@ -522,8 +554,8 @@ function ConnectionsContent({
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {linked.length
-                    ? `${linked.length} linked project${linked.length === 1 ? '' : 's'} · Unlink projects before removing`
-                    : 'No linked projects'}{' '}
+                    ? `${linked.length} explicitly linked project${linked.length === 1 ? '' : 's'} · Unlink projects before removing`
+                    : 'No explicitly linked projects'}{' '}
                   ·{' '}
                   {connection.credential === 'gh'
                     ? `GitHub CLI${connection.cliProfile ? ` · ${connection.cliProfile}` : ''}`
@@ -535,6 +567,30 @@ function ConnectionsContent({
                           ? `CLI · ${connection.cliProfile || connection.cliTool || 'az'}`
                           : 'Token saved'}
                 </p>
+                {connection.provider === 'github' && (
+                  <div className="mt-3 grid gap-3">
+                    <GithubConnectionStatus
+                      key={connection.revision}
+                      connectionId={connection.id}
+                    />
+                    {linked.map((repo) => (
+                      <div
+                        key={repo.id}
+                        className="grid gap-2 border-t pt-3"
+                        aria-label={`Connection for ${repo.name}`}
+                      >
+                        <p className="break-words text-xs font-medium">
+                          {repo.name} · {repo.forge?.repository}
+                        </p>
+                        <GithubConnectionStatus
+                          key={`${connection.revision}:${repo.path}:${repo.forge?.repository}`}
+                          connectionId={connection.id}
+                          repositoryId={repo.id}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex flex-wrap gap-1">
                 <Button

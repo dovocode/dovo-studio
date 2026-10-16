@@ -21,6 +21,7 @@ import {
   GitBranch,
   GitFork,
   MessageCircleQuestion,
+  MessageCircle,
   Pin,
   Save,
   type LucideIcon,
@@ -123,7 +124,9 @@ function TaskListRowView({
   const status = taskRowStatus(task, row.needsInput, row.online, now)
   const done = showTaskDone(task, row.needsInput, now)
   const failed = !row.needsInput && !done && status.startsWith('Failed')
-  const worktree = task.execution === 'worktree'
+  const general = repository?.kind === 'scratch'
+  const projectName = general ? 'General' : row.projectName || 'No project'
+  const worktree = !general && task.execution === 'worktree'
   // "Review · 23m" → state "Review" and a right-aligned age "23m".
   const [state, age] = /^(.*) · (now|\d+[mhd])$/.exec(status)?.slice(1) ?? [status, '']
   const working = task.status === 'running' && !row.needsInput
@@ -145,7 +148,11 @@ function TaskListRowView({
   const compact = task.archived || !!task.archivedAt
   const readOpacity = hasUnreadTaskActivity(task) ? 1 : 0.4
 
-  const projectBadge = (
+  const projectBadge = general ? (
+    <View style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
+      <MessageCircle size={18} color={colors.muted} />
+    </View>
+  ) : (
     <View
       style={{
         width: 22,
@@ -199,7 +206,7 @@ function TaskListRowView({
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={`${task.pinned ? 'Pinned, ' : ''}${row.projectName}, ${task.title}, ${status}, ${worktree ? 'Worktree' : 'Local checkout'}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
+          accessibilityLabel={`${task.pinned ? 'Pinned, ' : ''}${projectName}, ${task.title}, ${status}, ${general ? 'Conversation' : worktree ? 'Worktree' : 'Local checkout'}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
           accessibilityHint={
             car
               ? 'Open conversation.'
@@ -264,7 +271,7 @@ function TaskListRowView({
               >
                 {projectBadge}
                 <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
-                  {row.projectName || 'No project'}
+                  {projectName}
                 </Text>
                 {task.pinned && <Pin size={12} color={colors.muted} />}
                 {worktree && <GitFork size={12} color={colors.muted} />}
@@ -283,10 +290,15 @@ function TaskListRowView({
               <View
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6, opacity: readOpacity }}
               >
-                <GitBranch size={12} color={colors.muted} />
-                <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
-                  {branch}
-                </Text>
+                {!general && (
+                  <>
+                    <GitBranch size={12} color={colors.muted} />
+                    <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
+                      {branch}
+                    </Text>
+                  </>
+                )}
+                {general && <View style={{ flex: 1 }} />}
                 {showDevice && !car && (
                   <DeviceLabel
                     runtimeIcon={owner.runtimeIcon}

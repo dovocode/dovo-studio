@@ -333,3 +333,28 @@ it('starts a fresh post-write read while the pre-write read is still pending', a
   await expect(before).resolves.toMatchObject({ stale: true })
   expect(db.prepare('SELECT count(*) AS count FROM forge_work_cache').get()).toEqual({ count: 1 })
 })
+
+it('reserves GitHub quota for automatic pipeline reads while explicit refreshes stay interactive', async () => {
+  const { service, git } = setup()
+  const api = vi.spyOn(git, 'githubAccount')
+  api.mockImplementation(async (args) =>
+    args.includes('user')
+      ? JSON.stringify({ id: 1, login: 'fixture-account' })
+      : JSON.stringify({ workflow_runs: [] }),
+  )
+  await service.request('repo', 'pipelines/list', {})
+  const background = api.mock.calls.find(([args]) =>
+    args.some((arg) => arg.includes('actions/runs')),
+  )
+  expect(background?.[4]).toBe(true)
+  api.mockClear()
+  await service.request('repo', 'pipelines/list', { refresh: true })
+  expect(
+    api.mock.calls.find(([args]) => args.some((arg) => arg.includes('actions/runs')))?.[4],
+  ).toBe(false)
+  api.mockClear()
+  await service.request('repo', 'pipelines/list', { refresh: true }, true)
+  expect(
+    api.mock.calls.find(([args]) => args.some((arg) => arg.includes('actions/runs')))?.[4],
+  ).toBe(true)
+})

@@ -11,6 +11,10 @@ const { chromium } = require('playwright')
 const { WebSocket } = require('ws')
 const token = randomBytes(32).toString('base64url')
 const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+let releaseSlowScript
+const slowScript = new Promise((resolve) => {
+  releaseSlowScript = resolve
+})
 const captured = []
 const errors = []
 const site = createServer(async (request, response) => {
@@ -20,18 +24,27 @@ const site = createServer(async (request, response) => {
     captured.push(Buffer.concat(chunks).toString())
     response.end('ok')
   } else if (request.url === '/viewer') {
-    response.setHeader('Content-Type', 'text/html')
+    response.setHeader('Content-Type', 'text/html; charset=utf-8')
     response.end(remoteBrowserHtml)
   } else if (request.url === '/shell') {
-    response.setHeader('Content-Type', 'text/html')
+    response.setHeader('Content-Type', 'text/html; charset=utf-8')
     response.end(
       '<style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0}</style><iframe title="Host browser" sandbox="allow-scripts allow-forms" src="/viewer"></iframe>',
     )
+  } else if (request.url === '/slow-page') {
+    response.setHeader('Content-Type', 'text/html; charset=utf-8')
+    response.end(
+      '<h1>Interactive before scripts finish</h1><script src="/slow-script.js"></script>',
+    )
+  } else if (request.url === '/slow-script.js') {
+    await slowScript
+    response.setHeader('Content-Type', 'text/javascript')
+    response.end('window.scriptFinished=true')
   } else if (request.url === '/second') {
-    response.setHeader('Content-Type', 'text/html')
+    response.setHeader('Content-Type', 'text/html; charset=utf-8')
     response.end('<h1>Second page</h1><a href="/">Home</a>')
   } else {
-    response.setHeader('Content-Type', 'text/html')
+    response.setHeader('Content-Type', 'text/html; charset=utf-8')
     response.end(
       `<!doctype html><title>Remote browser test</title><style>body{margin:0;background:#f2f5ff;color:#111;font:18px system-ui;height:2200px}input,button,a{position:absolute;left:20px;width:260px;height:44px;box-sizing:border-box}input{top:60px;font-size:18px}button{top:120px}a{top:180px}h1{margin:8px 20px;font-size:24px}#bottom{position:absolute;top:1700px}</style><h1>Host-only browser fixture</h1><input aria-label="Fixture input" oninput="fetch('/capture',{method:'POST',body:this.value})"><button onclick="fetch('/capture',{method:'POST',body:'clicked'})">Click on the host</button><a href="/second">Second page</a><div id="bottom">Scrolled on the host</div><script>for(const type of ['touchstart','touchmove','touchend'])addEventListener(type,()=>fetch('/capture',{method:'POST',body:type}),{passive:true});addEventListener('scroll',()=>fetch('/capture',{method:'POST',body:'scroll:'+scrollY}));</script>`,
     )
@@ -96,9 +109,6 @@ try {
   assert.equal((await closed)[0], 1008)
   console.log('Authentication, one-time tickets and revocation passed')
   browser = await chromium.launch({
-    executablePath:
-      process.env.DOVO_BROWSER_EXECUTABLE ||
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     headless: true,
     chromiumSandbox: true,
   })
@@ -142,7 +152,9 @@ try {
   const canvas = viewer.locator('canvas')
   await canvas.waitFor({ state: 'visible' })
   await until(async () => (await canvas.getAttribute('data-viewport-width')) === '1024')
+  await until(async () => (await canvas.getAttribute('width')) === '2048')
   const clickAt = async (x, y) => {
+    await canvas.waitFor({ state: 'visible' })
     const bounds = await canvas.boundingBox()
     const w = Number(await canvas.getAttribute('data-viewport-width'))
     const h = Number(await canvas.getAttribute('data-viewport-height'))
@@ -281,7 +293,8 @@ try {
   // Deterministically reproduce Chromium's document-replacement race on the real session.
   // Internal access is confined to this integration test; no production test hooks are needed.
   const host = runtime.services.browsers
-  const session = await host.sessions.get('browser-task')
+  const [sessionId, sessionPromise] = [...host.sessions.entries()][0]
+  const session = await sessionPromise
   const originalSend = session.cdp.send.bind(session.cdp)
   const messages = []
   const listener = (message) => messages.push(message)
@@ -313,6 +326,7 @@ try {
   await host.state(session)
   console.log('Navigation replacement retains state; unexpected failures remain visible')
 
+  await viewer.getByLabel('Browser options', { exact: true }).click()
   await viewer.getByLabel('Viewport', { exact: true }).selectOption('phone')
   await until(async () => (await canvas.getAttribute('data-viewport-width')) === '390')
   await viewer.getByRole('button', { name: 'Rotate viewport' }).click()
@@ -330,16 +344,56 @@ try {
     'Canvas click, hardware/mobile typing, Back/Forward, scrolling, viewport and reconnect passed',
   )
   await mkdir('work/design/remote-browser', { recursive: true })
-  await clickAt(100, 100)
+  await clickAt(350, 300)
   await page.mouse.wheel(0, -4000)
   await until(() => captured.at(-1) === 'scroll:0')
   await viewer.getByLabel('Viewport', { exact: true }).selectOption('fill')
   await until(async () => (await canvas.getAttribute('data-viewport-width')) === '1024')
+  await viewer.getByLabel('Browser options', { exact: true }).click()
+  await until(async () =>
+    canvas.evaluate(
+      (target) =>
+        target.width === 2 * Number(target.dataset.viewportWidth) &&
+        target.height === 2 * Number(target.dataset.viewportHeight),
+    ),
+  )
   await page.screenshot({ path: 'work/design/remote-browser/desktop.png' })
   await page.setViewportSize({ width: 393, height: 852 })
+  await viewer.getByLabel('Browser options', { exact: true }).click()
   await viewer.getByLabel('Viewport', { exact: true }).selectOption('fill')
+  await viewer.getByLabel('Browser options', { exact: true }).click()
   await until(async () => (await canvas.getAttribute('data-viewport-width')) === '393')
+  await until(async () =>
+    canvas.evaluate(
+      (target) =>
+        target.width === 2 * Number(target.dataset.viewportWidth) &&
+        target.height === 2 * Number(target.dataset.viewportHeight),
+    ),
+  )
   await page.screenshot({ path: 'work/design/remote-browser/mobile-canvas.png' })
+  const navigationStart = performance.now()
+  let navigationTimeout
+  try {
+    await Promise.race([
+      (async () => {
+        await host.input(sessionId, { type: 'navigate', url: `${base}/slow-page` })
+        await host.input(sessionId, { type: 'key', key: 'Escape' })
+      })(),
+      new Promise((_, reject) => {
+        navigationTimeout = setTimeout(
+          () => reject(new Error('Input blocked behind page scripts')),
+          1500,
+        )
+      }),
+    ])
+    console.log(
+      `Navigation and queued input completed before blocked script in ${Math.round(performance.now() - navigationStart)}ms`,
+    )
+  } finally {
+    clearTimeout(navigationTimeout)
+    releaseSlowScript()
+  }
+  await viewer.getByLabel('Browser options', { exact: true }).click()
   await viewer.getByRole('button', { name: 'Close browser session' }).click()
   // This isolated viewer does not include the app wrapper; call its corresponding endpoint.
   await call('/api/previews/browser/close', { taskId: 'browser-task' })
@@ -382,6 +436,7 @@ try {
   }
   throw error
 } finally {
+  releaseSlowScript()
   await browser?.close()
   await runtime.close()
   await new Promise((resolve) => site.close(resolve))
