@@ -63,6 +63,7 @@ async function bundle(contents) {
     '@dovo/studio-ui': controls,
     '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',
     'react-native': controls,
+    'react-native-gesture-handler': controls,
     'lucide-react-native': 'export * from "lucide-react";',
     'expo-router': 'export const router={push:()=>{}};',
     './use-task-search': 'export const useTaskSearch=()=>({keys:new Set(),error:""});',
