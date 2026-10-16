@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
@@ -638,4 +638,82 @@ it('places agent terminal commands in the current assistant message without crea
   expect(
     conversationToolsByMessage(s.store.task(task.id), recentTools(events)).get('assistant'),
   ).toHaveLength(1)
+})
+
+it('browses working and linked folders, previews images without Git, and enforces linked write access', async () => {
+  const { f, s, call } = await setup()
+  const linked = join(f.directory, 'linked-folder')
+  await mkdir(linked)
+  await writeFile(join(linked, 'linked.txt'), 'linked original')
+  const { default: sharp } = await import('sharp')
+  await writeFile(
+    join(linked, 'pixel.png'),
+    await sharp({ create: { width: 2, height: 2, channels: 3, background: 'red' } })
+      .png()
+      .toBuffer(),
+  )
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      ...workspace.repositories,
+      { id: 'linked', name: 'Linked folder', path: linked, branch: '', kind: 'folder' },
+    ],
+  }))
+  const task = s.tasks.create({
+    title: 'Browse',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  s.store.updateTask(task.id, (task) => ({
+    ...task,
+    linkedCheckouts: [
+      { id: 'link', repositoryId: 'linked', execution: 'main', access: 'read-only' },
+    ],
+  }))
+  const input = { id: task.id, checkoutId: 'link', path: 'linked.txt' }
+  const listing = await call('/api/tasks/files/list', input)
+  expect(listing.status).toBe(200)
+  expect(listing.body.files).toContain('linked.txt')
+  expect((await call('/api/tasks/files/read', input)).body.contents).toBe('linked original')
+  expect((await call('/api/tasks/files/read', { ...input, path: '../hello.txt' })).status).toBe(400)
+  expect((await call('/api/tasks/files/list', { ...input, checkoutId: 'missing' })).status).toBe(
+    404,
+  )
+  const preview = await call('/api/tasks/files/preview', { ...input, path: 'pixel.png' })
+  expect(preview.status).toBe(200)
+  expect(preview.body.after).toMatchObject({
+    kind: 'image',
+    image: expect.stringContaining('data:image/png;base64,'),
+  })
+  const write = { ...input, contents: 'edited', expectedContents: 'linked original' }
+  expect((await call('/api/tasks/files/write', write)).status).toBe(403)
+  s.store.updateTask(task.id, (task) => ({
+    ...task,
+    linkedCheckouts: task.linkedCheckouts?.map((link) => ({ ...link, access: 'edit' })),
+  }))
+  expect(
+    (await call('/api/tasks/files/write', { ...write, expectedContents: 'stale' })).status,
+  ).toBe(409)
+  expect(await readFile(join(linked, 'linked.txt'), 'utf8')).toBe('linked original')
+  expect((await call('/api/tasks/files/write', write)).status).toBe(200)
+  expect(await readFile(join(linked, 'linked.txt'), 'utf8')).toBe('edited')
+  const worktreeTask = s.tasks.create({
+    title: 'Working folder',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Inspect files',
+    execution: 'worktree',
+  })
+  const cwd = await s.checkouts.directory(worktreeTask.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  s.store.updateTask(worktreeTask.id, (task) => ({ ...task, status: 'done' }))
+  await writeFile(join(cwd, 'worktree-only.txt'), 'worktree contents')
+  expect((await call('/api/tasks/files/list', { id: worktreeTask.id })).body.files).toContain(
+    'worktree-only.txt',
+  )
+  expect(
+    (await call('/api/tasks/files/read', { id: worktreeTask.id, path: 'worktree-only.txt' })).body
+      .contents,
+  ).toBe('worktree contents')
 })

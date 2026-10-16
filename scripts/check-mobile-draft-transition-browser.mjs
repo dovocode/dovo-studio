@@ -73,8 +73,9 @@ const mocks = {
   '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
   '../../ui/layout/sheet': `import {useImperativeHandle} from 'react';export const Sheet=({children,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section>{children}</section>};export const useSheetNavigation=()=>navigate=>navigate();`,
   '../../ui/theme': `export const useTheme=()=>({colors:{},styles:{}});`,
-  '../../ui/layout/screen-header': `export const ScreenHeader=({title,buttons,leading,hidden,onBack,gestureEnabled})=>{window.headerGestures=gestureEnabled;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{title}{buttons?.filter(b=>!b.overflow||b.label==='Copy conversation'||b.label==='Chat'||b.label==='Agents').map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
+  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,buttons,leading,hidden,onBack,gestureEnabled})=>{const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
   '../../ui/content/markdown': `export const Markdown=({text})=><p data-native-prose>{text}</p>;`,
+  '../files/task-files': 'export const TaskFiles=()=>null;',
   './task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
   '../../ui/content/clipboard': `export const copyText=async text=>{(window.mobileCopies??=[]).push(text);return 'copied'};`,
   '../../ui/content/artifacts': `export const ArtifactBrowser=()=>null;`,
@@ -348,6 +349,7 @@ try {
       false,
     )
   })
+  await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
   await page.getByRole('button', { name: 'Project information', exact: true }).click()
   await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Close project information', exact: true }).click()
@@ -569,6 +571,7 @@ try {
       true,
     )
   })
+  await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
   const copyButton = page.getByRole('button', { name: 'Copy conversation', exact: true })
   await copyButton.click()
   await page.waitForFunction(() => window.mobileCopies.length === 1)
@@ -585,7 +588,11 @@ try {
   await page.evaluate(() => window.setFocused(false))
   await page.waitForFunction(() => window.mobileCopySignal.aborted)
   await page.evaluate(() => window.finishMobileCopy())
-  await page.waitForFunction(() => !document.querySelector('header button:disabled'))
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('header button')].some(
+      (button) => button.textContent === 'Copy conversation' && !button.disabled,
+    ),
+  )
   assert.equal(await page.evaluate(() => window.mobileCopies.length), 1)
   await page.evaluate(() => {
     window.setFocused(true)

@@ -20,7 +20,9 @@ import { minValue, maxValue, decode } from '@dovo/protocol'
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { createFilePreview } from '../../scm/git/file-preview.js'
+import { constants } from 'node:fs'
+import { open, readFile, stat, writeFile } from 'node:fs/promises'
 import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
 import { searchRegistry } from '../../agents/catalogs/registry.js'
 import { ModelCatalogCache, configuredModelCatalogKey } from '../../agents/catalogs/model-cache.js'
@@ -968,12 +970,14 @@ export function agentsRoute(request: IncomingMessage, path: string) {
       if (
         method === 'POST' &&
         (path === '/api/tasks/files/list' ||
+          path === '/api/tasks/files/preview' ||
           path === '/api/tasks/files/read' ||
           path === '/api/tasks/files/write')
       ) {
         const input = decode(
           mutableStruct({
             id: idSchema,
+            checkoutId: Schema.optional(idSchema),
             path: Schema.optional(maxValue(minValue(Schema.String, 1), 4000)),
             contents: Schema.optional(maxValue(Schema.String, 1024 * 1024)),
             expectedContents: Schema.optional(maxValue(Schema.String, 1024 * 1024)),
@@ -981,10 +985,19 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         const task = s.store.taskSummary(input.id)
-        const repo = s.store.get().repositories.find((item) => item.id === task.repositoryId)
+        const link = input.checkoutId
+          ? task.linkedCheckouts?.find((link) => link.id === input.checkoutId)
+          : undefined
+        if (input.checkoutId && !link) throw new HttpError(404, 'Linked checkout not found')
+        if (path === '/api/tasks/files/write' && link?.access === 'read-only')
+          throw new HttpError(403, 'This linked project is read-only')
+        const repo = s.store
+          .get()
+          .repositories.find((item) => item.id === (link?.repositoryId ?? task.repositoryId))
         if (!repo) throw new HttpError(404, 'Repository not found')
-        const cwd =
-          canChangeTaskCheckout(task) && repo.kind !== 'scratch'
+        const cwd = link
+          ? yield* serviceResult(s.checkouts.selectedDirectory(input.id, link.id))
+          : canChangeTaskCheckout(task) && repo.kind !== 'scratch'
             ? repo.path
             : yield* serviceResult(s.checkouts.directory(input.id))
         if (path === '/api/tasks/files/list')
@@ -995,6 +1008,39 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         const details = yield* serviceResult(stat(filename))
         if (!details.isFile()) throw new HttpError(400, 'Choose a regular file')
+        if (path === '/api/tasks/files/preview') {
+          const handle = yield* serviceResult(
+            open(filename, constants.O_RDONLY | constants.O_NOFOLLOW),
+          )
+          try {
+            const info = yield* serviceResult(handle.stat())
+            return yield* serviceResult(
+              createFilePreview(
+                input.path,
+                {
+                  after: { hash: 'working', size: info.size, mode: '100644' },
+                },
+                async (_hash, limit) => {
+                  const buffer = Buffer.alloc(Math.min(info.size, limit))
+                  let total = 0
+                  while (total < buffer.length) {
+                    const { bytesRead } = await handle.read(
+                      buffer,
+                      total,
+                      buffer.length - total,
+                      total,
+                    )
+                    if (!bytesRead) break
+                    total += bytesRead
+                  }
+                  return buffer.subarray(0, total)
+                },
+              ),
+            )
+          } finally {
+            yield* serviceResult(handle.close())
+          }
+        }
         const maxBytes = path === '/api/tasks/files/write' ? 1024 * 1024 : 100 * 1024 * 1024
         if (details.size > maxBytes)
           throw new HttpError(
