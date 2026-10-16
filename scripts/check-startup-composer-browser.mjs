@@ -24,6 +24,7 @@ const mocks = {
   '@dovo/studio-ui': `
 export {permissionPolicyUIIssue} from './src/permission-policy-fields';
 export * as Popover from '@radix-ui/react-popover';
+export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 export const SidebarHeader=()=>null;
 export {PullRequestIcon,pullRequestIconTone} from '${new URL('../packages/studio-ui/src/pull-request-icon.tsx', import.meta.url).pathname}';
 import {useState as useSidebarState} from 'react';export const useLeftSidebar=initial=>useSidebarState(initial);export const useNavigationSidebar=()=>null;export const HeaderContent=({children})=>children;

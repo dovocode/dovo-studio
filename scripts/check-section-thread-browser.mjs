@@ -24,7 +24,8 @@ const mocks = {
       const switchRuntime=async id=>{if(window.holdSwitch){window.holdSwitch=false;await new Promise(resolve=>window.finishSwitch=resolve)}setRuntimeId(id);window.finishedSwitchId=id};
       window.switchRuntime=switchRuntime;window.spaces=spaces;
       const workspace=spaces[runtimeId];
-      const store={workspace,ready:true,connected:true,snapshot:null,storageError:null,syncError:null,pendingSync:false,runtimes:[],
+      const runtimes=Object.entries(spaces).map(([id,workspace])=>({profile:{id,name:id,connection:{address:'http://'+id+'.lan',token:'fixture-token'}},connected:true,snapshot:{workspace}}));
+      const store={workspace,ready:true,connected:true,snapshot:null,storageError:null,syncError:null,pendingSync:false,runtimes,
         runtimeRegistry:{activeId:runtimeId,profiles:[{id:'mac'},{id:'remote'}]},activeRuntimeId:runtimeId,switchRuntime,
         setWorkspace:update=>setSpaces(current=>({...current,[runtimeId]:typeof update==='function'?update(current[runtimeId]):update}))};
       return <WorkspaceContext.Provider value={store}>{children}</WorkspaceContext.Provider>;

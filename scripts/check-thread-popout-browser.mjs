@@ -42,6 +42,7 @@ createRoot(document.getElementById('app')).render(<Workbench extensions={extensi
     conditions: ['development'],
     alias: {
       '@dovo/studio-core': root + 'packages/studio-core/src/index.ts',
+      '@dovo/studio-core/links': root + 'packages/studio-core/src/links/index.ts',
       '@dovo/studio-core/state': root + 'packages/studio-core/src/runtime/application-state.ts',
       '@dovo/studio-ui/runtime-icon': root + 'packages/studio-ui/src/runtime-icon.tsx',
       '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts',
