@@ -45,6 +45,8 @@ export type ReviewDiffProps = {
   before?: string
   after?: string
   focusedLine?: number
+  /** When provided, wrapping is controlled by the containing file toolbar. */
+  wrapLines?: boolean
   onLinePress?: (line: number, side: 'additions' | 'deletions') => void
   annotations?: { line: number; side: 'additions' | 'deletions'; text: string }[]
 }

@@ -104,22 +104,35 @@ export function LinkBrowser() {
         <Sheet
           ref={picker}
           title="Open link"
+          presentation="dialog"
           busy={pending.busy}
           onClose={() => controller.dismissed(pending.request)}
         >
-          <Text numberOfLines={3}>{pending.request.url}</Text>
+          <View style={{ backgroundColor: colors.surface, borderRadius: 12, padding: 12 }}>
+            <Text selectable style={{ color: colors.text, fontSize: 14, lineHeight: 20 }}>
+              {pending.request.url}
+            </Text>
+          </View>
           {pending.request.actions.map((action) => (
             <Action
               key={action.id}
               label={action.label}
               secondary
+              wide
               disabled={pending.busy || action.disabled}
               onPress={() =>
                 controller.select(pending.request, action.id, () => picker.current?.dismiss())
               }
             />
           ))}
-          {!!pending.error && <Text accessibilityRole="alert">{pending.error}</Text>}
+          {!!pending.error && (
+            <Text
+              accessibilityRole="alert"
+              style={{ color: colors.error, fontSize: 14, lineHeight: 20 }}
+            >
+              {pending.error}
+            </Text>
+          )}
         </Sheet>
       )}
       <SafeModal visible={url !== null} animationType="slide" onRequestClose={() => setUrl(null)}>
@@ -133,7 +146,10 @@ export function LinkBrowser() {
             }}
           >
             <Action label="Close" secondary onPress={() => setUrl(null)} />
-            <Text numberOfLines={1} style={{ flex: 1, marginLeft: 16 }}>
+            <Text
+              numberOfLines={1}
+              style={{ flex: 1, marginLeft: 16, color: colors.text, fontSize: 14, lineHeight: 20 }}
+            >
               {url}
             </Text>
           </View>

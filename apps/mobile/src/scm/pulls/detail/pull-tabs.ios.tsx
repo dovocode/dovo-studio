@@ -15,7 +15,7 @@ export function PullTabs({
   const { mode: appearanceMode } = useTheme()
 
   return (
-    <View style={{ paddingHorizontal: 16, paddingVertical: 4 }}>
+    <View style={{ paddingHorizontal: 12, paddingVertical: 0 }}>
       <Host
         ignoreSafeArea="all"
         matchContents={{ vertical: true }}

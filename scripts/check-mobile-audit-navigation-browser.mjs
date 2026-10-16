@@ -11,7 +11,7 @@ const flat=s=>Array.isArray(s)?Object.assign({},...s.map(flat)):s??{};
 const css=s=>{const v=flat(s);return {...v,paddingLeft:v.paddingLeft??v.paddingHorizontal,paddingRight:v.paddingRight??v.paddingHorizontal,paddingTop:v.paddingTop??v.paddingVertical,paddingBottom:v.paddingBottom??v.paddingVertical}};
 const base={display:'flex',flexDirection:'column',boxSizing:'border-box',flexShrink:0,minHeight:0};
 export const View=({children,style,testID})=><div data-testid={testID} style={{...base,...css(style)}}>{children}</div>;
-export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityRole})=><button aria-label={accessibilityLabel} role={accessibilityRole} disabled={disabled} onClick={onPress} style={{...base,padding:0,border:0,background:'transparent',font:'inherit',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button aria-checked={accessibilityState?.checked} aria-label={accessibilityLabel} role={accessibilityRole} disabled={disabled} onClick={onPress} style={{...base,padding:0,border:0,background:'transparent',font:'inherit',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const Text=({children,style})=>{const v=css(style);return <span style={{display:'block',...v,fontSize:(v.fontSize??14)*window.fontScale,lineHeight:v.lineHeight?v.lineHeight*window.fontScale+'px':undefined}}>{children}</span>};
 export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><button role="switch" aria-label={accessibilityLabel} aria-checked={value} disabled={disabled} onClick={()=>onValueChange(!value)} style={{width:51,height:31,flexShrink:0}}>●</button>;
 export const Modal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
@@ -33,7 +33,7 @@ const root=createRoot(document.getElementById('app'));
 window.events=[];
 window.renderHeader=options=>flushSync(()=>root.render(<ScreenBackContext.Provider value={options.context?()=>window.events.push('context'):null}><ScreenHeader title="Start a task" onBack={options.explicit?()=>window.events.push('explicit'):undefined} leading={options.leading?<button>Custom leading</button>:undefined} hidden={options.hidden}/></ScreenBackContext.Provider>));
 const files=[{path:'first.ts',viewed:false},{path:'second.ts',viewed:true},{path:'last.ts',viewed:false}];
-function Review(){const [selected,setSelected]=useState('second.ts');return <MobileFileReview files={files} groups={[]} selected={selected} onSelect={path=>{window.events.push(path);setSelected(path)}} related={false} onRelatedChange={()=>{}} onViewed={value=>window.events.push(value)} navigationDisabled={window.navigationDisabled} onRetry={()=>{}}/>}
+function Review(){const [selected,setSelected]=useState('second.ts'),[wrap,setWrap]=useState(false);return <MobileFileReview files={files} groups={[]} selected={selected} onSelect={path=>{window.events.push(path);setSelected(path)}} related={false} onRelatedChange={()=>{}} onViewed={value=>window.events.push(value)} navigationDisabled={window.navigationDisabled} wrapLines={wrap} onWrapLinesChange={setWrap} onRetry={()=>{}}/>}
 window.renderReview=()=>flushSync(()=>root.render(<Review/>));
 `,
     },
@@ -70,6 +70,12 @@ window.renderReview=()=>flushSync(()=>root.render(<Review/>));
       path: './sheet',
       importer: mobile + 'src/ui/layout/',
       contents: `export const useInsideSheet=()=>window.inSheet;export const Sheet=({children})=>children;`,
+    },
+    {
+      path: '../../ui/controls/icon',
+      importer: mobile,
+      contents:
+        'export const Icon=({size=20})=><span style={{width:size,height:size,flexShrink:0}}/>;',
     },
     { path: '../../ui/theme', importer: mobile, contents: theme },
     { path: '../theme', importer: mobile + 'src/ui/', contents: theme },
@@ -169,17 +175,21 @@ try {
         )
         assert.ok(geometry.height >= 44)
       }
-      if (scale >= 2) {
-        const previous = await page
-          .getByRole('button', { name: 'Previous file', exact: true })
-          .boundingBox()
-        const unviewed = await page
-          .getByRole('button', { name: 'Next unviewed', exact: true })
-          .boundingBox()
-        assert.ok(unviewed.y >= previous.y + previous.height, 'Text action must wrap below arrows')
-      }
+      const viewed = await page.getByRole('checkbox', { name: 'File viewed' }).boundingBox()
+      const wrap = await page.getByRole('switch', { name: 'Wrap diff lines' }).boundingBox()
+      assert.ok(wrap.x + wrap.width <= width - 16 + 1)
+      assert.ok(wrap.height >= 44 && viewed.height >= 44)
+      if (scale === 1)
+        assert.equal(viewed.y, wrap.y, 'Viewed, navigation and wrapping share one toolbar')
     }
   }
+  await page.getByRole('checkbox', { name: 'File viewed' }).click()
+  assert.equal(await page.evaluate(() => window.events.at(-1)), false)
+  await page.getByRole('switch', { name: 'Wrap diff lines' }).click()
+  assert.equal(
+    await page.getByRole('switch', { name: 'Wrap diff lines' }).getAttribute('aria-checked'),
+    'true',
+  )
   await page.getByRole('button', { name: 'Previous file', exact: true }).click()
   assert.equal(await page.evaluate(() => window.events.at(-1)), 'first.ts')
   await page.getByRole('button', { name: 'Next file', exact: true }).click()

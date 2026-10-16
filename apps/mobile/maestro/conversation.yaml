@@ -77,7 +77,8 @@ appId: com.dovo.studio
     direction: DOWN
 - tapOn:
     id: Turn changes · 1 file
-- assertVisible: Snapshot diff for this turn. Select Current changes to edit files.
+- assertVisible:
+    id: Change history
 - assertVisible: '.*checkpoint-fixture.txt.*'
 - takeScreenshot: dovo-assistant-checkpoint
 - tapOn: Task tools

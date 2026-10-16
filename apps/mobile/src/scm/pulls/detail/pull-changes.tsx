@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRuntime } from '../../../runtime/connection/provider'
 import {
   createDetailDrafts,
@@ -10,9 +10,12 @@ import { pullFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/pr
 import { useFileReview } from '../../review/use-file-review'
 import { MobileOrganizeReview } from '../../review/organize-review'
 import { MobileFileReview } from '../../review/file-review'
-import { View, useWindowDimensions } from 'react-native'
+import { Pressable, View, useWindowDimensions } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import { pullFilePatch, type PullDetail } from '@dovo/protocol'
+import { Sheet } from '../../../ui/layout/sheet'
+import { Icon } from '../../../ui/controls/icon'
+import { pullFragment } from './pull-destination'
 import { Action } from '../../../ui/controls/action'
 import { useTheme } from '../../../ui/theme'
 import { DiffView } from '../../../tasks/preview/diff-view'
@@ -33,6 +36,7 @@ export function PullChanges({
   initialPath,
   fragment,
   onAnchor,
+  viewportHeight,
 }: {
   detail: PullDetail
   active?: boolean
@@ -43,10 +47,15 @@ export function PullChanges({
   initialPath?: string
   fragment?: string
   onAnchor?: (node: View) => void
+  viewportHeight?: number
 }) {
   const { colors, styles } = useTheme()
 
   const { height } = useWindowDimensions()
+  const [wrapLines, setWrapLines] = useState(false)
+  const [options, setOptions] = useState(false)
+  const [feedbackPath, setFeedbackPath] = useState('')
+  const [controlsHeight, setControlsHeight] = useState(88)
   const fingerprints = useMemo(
     () => new Map(detail.files.map((file) => [file.path, pullFileFingerprint(file, detail.pull)])),
     [detail.files, detail.pull],
@@ -93,6 +102,17 @@ export function PullChanges({
   )
   const file =
     files.find((file) => file.path === selected || file.previousPath === selected) ?? files[0]
+  const comments = detail.comments.filter(
+    (comment) =>
+      comment.kind === 'inline' &&
+      (comment.path === file?.path || comment.path === file?.previousPath),
+  )
+  const linkedComment = fragment
+    ? comments.find((comment) => pullFragment(comment.url) === fragment)
+    : undefined
+  useEffect(() => {
+    if (linkedComment && file) setFeedbackPath(file.path)
+  }, [linkedComment?.id, fragment, file?.path])
   if (!file) return <Text style={styles.muted}>No changed files returned.</Text>
   const reason = file.attributes?.generated
     ? 'Generated file'
@@ -100,81 +120,96 @@ export function PullChanges({
       ? 'Vendored file'
       : ''
   const collapsed = !!reason && !expanded.has(file.path)
+  const feedbackOpen = feedbackPath === file.path
+  const canComment =
+    !!onLineComment &&
+    !file.attributes?.binary &&
+    !collapsed &&
+    !!file.patch &&
+    !!detail.capabilities?.actions.includes('inline-comment')
+  // The parent measures its viewport after the navigation and primary-action bars.
+  const codeHeight = Math.max(
+    200,
+    (viewportHeight ?? height * 0.75) -
+      controlsHeight -
+      (comments.length || canComment ? 44 : 0) -
+      24,
+  )
   return (
     <View
       style={{
-        gap: 10,
+        gap: 4,
       }}
     >
-      <MobileOrganizeReview review={review} onOrganized={() => setRelated(true)} />
-      <MobileFileReview
-        files={files.map((file) => ({
-          path: file.path,
-          viewed: file.viewed,
-          additions: file.additions ?? 0,
-          deletions: file.deletions ?? 0,
-        }))}
-        groups={review.progress?.groups ?? []}
-        related={related}
-        onRelatedChange={setRelated}
-        selected={file.path}
-        onSelect={setSelected}
-        onViewed={(viewed) =>
-          review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
-        }
-        disabled={
-          !review.ready ||
-          !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
-        }
-        busy={review.busy}
-        error={review.error}
-        onRetry={review.reload}
-      />
-      <Text selectable style={styles.muted}>
-        {file.previousPath ? `Renamed from ${file.previousPath} · ` : ''}
-        <Text
-          style={{
-            color: colors.success,
-          }}
-        >
-          {file.additions === null ? '' : `+${file.additions}`}
-        </Text>{' '}
-        <Text
-          style={{
-            color: colors.error,
-          }}
-        >
-          {file.deletions === null ? '' : `−${file.deletions}`}
-        </Text>
-      </Text>
-      {reason && !file.attributes?.binary && (
-        <>
-          <Text style={styles.muted}>{reason} · marked in .gitattributes</Text>
-          <Action
-            secondary
-            label={collapsed ? 'Show changes' : 'Hide changes'}
-            onPress={() =>
-              (() => {
-                const next = new Set(expanded)
-                if (collapsed) next.add(file.path)
-                else next.delete(file.path)
-                setField('expanded', [...next])
-              })()
+      <View
+        testID="PR file controls"
+        onLayout={({ nativeEvent }) => setControlsHeight(nativeEvent.layout.height)}
+        style={{ gap: 4 }}
+      >
+        <View style={{ paddingHorizontal: 12 }}>
+          <MobileFileReview
+            files={files.map((file) => ({
+              path: file.path,
+              viewed: file.viewed,
+              additions: file.additions ?? undefined,
+              deletions: file.deletions ?? undefined,
+            }))}
+            groups={review.progress?.groups ?? []}
+            related={related}
+            onRelatedChange={setRelated}
+            selected={file.path}
+            wrapLines={wrapLines}
+            onWrapLinesChange={setWrapLines}
+            onSelect={setSelected}
+            onViewed={(viewed) =>
+              review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
             }
+            disabled={
+              !review.ready ||
+              !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+            }
+            busy={review.busy}
+            error={review.error}
+            onRetry={review.reload}
+            onOptions={() => setOptions(true)}
           />
-        </>
-      )}
+        </View>
+        {file.previousPath && (
+          <Text selectable style={[styles.muted, { paddingHorizontal: 12 }]}>
+            Renamed from {file.previousPath}
+          </Text>
+        )}
+        {reason && !file.attributes?.binary && (
+          <>
+            <Text style={styles.muted}>{reason} · marked in .gitattributes</Text>
+            <Action
+              secondary
+              label={collapsed ? 'Show changes' : 'Hide changes'}
+              onPress={() =>
+                (() => {
+                  const next = new Set(expanded)
+                  if (collapsed) next.add(file.path)
+                  else next.delete(file.path)
+                  setField('expanded', [...next])
+                })()
+              }
+            />
+          </>
+        )}
+      </View>
       {file.attributes?.binary ? (
         <Text style={styles.muted}>Text diff disabled by .gitattributes (binary or -diff).</Text>
       ) : collapsed ? null : file.patch ? (
         <View
+          testID="PR code viewport"
           style={{
-            height: Math.max(280, Math.min(600, height * 0.55)),
+            height: codeHeight,
           }}
         >
           <DiffView
             key={file.path}
             patch={pullFilePatch(file)}
+            wrapLines={wrapLines}
             path={file.path}
             previousPath={file.previousPath}
           />
@@ -182,36 +217,55 @@ export function PullChanges({
       ) : (
         <Text style={styles.muted}>No text patch available. Open this PR on its server.</Text>
       )}
-      <Text
-        accessibilityRole="header"
-        style={[
-          styles.muted,
-          {
-            fontWeight: '600',
-            marginTop: 6,
-          },
-        ]}
-      >
-        Feedback on this file
-      </Text>
-      {onLineComment &&
-        !file.attributes?.binary &&
-        !collapsed &&
-        file.patch &&
-        detail.capabilities?.actions.includes('inline-comment') && (
-          <Action secondary label="Comment on line" onPress={() => onLineComment(file.path)} />
-        )}
-      <PullComments
-        comments={detail.comments.filter(
-          (c) => c.kind === 'inline' && (c.path === file.path || c.path === file.previousPath),
-        )}
-        onOpen={onOpen}
-        fragment={fragment}
-        onAnchor={onAnchor}
-        onAction={onAction}
-        capabilities={detail.capabilities}
-        fileBaseURL={detail.fileBaseUrl}
-      />
+      {(!!comments.length || canComment) && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 12,
+            minHeight: 44,
+          }}
+        >
+          {!!comments.length && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Feedback on this file (${comments.length})`}
+              accessibilityState={{ expanded: feedbackOpen }}
+              onPress={() => setFeedbackPath(feedbackOpen ? '' : file.path)}
+              style={{ flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+            >
+              <Icon name={feedbackOpen ? 'down' : 'next'} size={14} color={colors.muted} />
+              <Text style={styles.muted}>Feedback ({comments.length})</Text>
+            </Pressable>
+          )}
+          {canComment && (
+            <Action
+              secondary
+              label="Comment on line"
+              icon="chat"
+              onPress={() => onLineComment?.(file.path)}
+            />
+          )}
+        </View>
+      )}
+      {feedbackOpen && (
+        <View style={{ paddingHorizontal: 12 }}>
+          <PullComments
+            comments={comments}
+            onOpen={onOpen}
+            fragment={fragment}
+            onAnchor={onAnchor}
+            onAction={onAction}
+            capabilities={detail.capabilities}
+            fileBaseURL={detail.fileBaseUrl}
+          />
+        </View>
+      )}
+      {options && (
+        <Sheet title="File actions" presentation="dialog" onClose={() => setOptions(false)}>
+          <MobileOrganizeReview review={review} onOrganized={() => setRelated(true)} />
+        </Sheet>
+      )}
     </View>
   )
 }

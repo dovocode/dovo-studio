@@ -17,7 +17,7 @@ export function PullTabs({
       horizontal
       showsHorizontalScrollIndicator={false}
       style={{ flexGrow: 0, flexShrink: 0 }}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 4 }}
+      contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 0 }}
     >
       <View
         style={{
@@ -36,7 +36,7 @@ export function PullTabs({
             accessibilityState={{ selected: item.id === value }}
             onPress={() => onChange(item.id)}
             style={({ pressed }) => ({
-              paddingHorizontal: 14,
+              paddingHorizontal: 10,
               minHeight: 44,
               alignItems: 'center',
               justifyContent: 'center',
@@ -50,7 +50,7 @@ export function PullTabs({
           >
             <Text
               style={{
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: '600',
                 color: item.id === value ? colors.text : colors.muted,
               }}

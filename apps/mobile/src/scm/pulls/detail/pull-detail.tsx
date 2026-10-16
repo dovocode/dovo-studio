@@ -21,7 +21,7 @@ import { usePullDetail } from './use-pull-detail'
 import { Markdown } from '../../../ui/content/markdown'
 import { router } from 'expo-router'
 import { pipelineRunsHref } from '../../../shell/source-route'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import {
@@ -115,6 +115,7 @@ export function PullDetail({
     }
   }, [readEffect, repositoryId, connected])
   const body = useRef<ScrollView>(null)
+  const [bodyHeight, setBodyHeight] = useState<number>()
   const content = useRef<View>(null)
   const navigateAfterSheet = useSheetNavigation()
   const { draft: navigation, setField } = useDetailDraft(
@@ -274,6 +275,8 @@ export function PullDetail({
       {urlTarget && !!accounts.length && (
         <Choice
           label="Source account"
+          compact
+          row
           value={account ?? detail?.pull.connectionId ?? ''}
           onChange={setAccount}
           items={accounts.map((account) => ({ id: account.id, name: account.name }))}
@@ -332,7 +335,12 @@ export function PullDetail({
           <ScrollView
             ref={body}
             testID="PR detail content"
-            contentContainerStyle={styles.content}
+            onLayout={({ nativeEvent }) => setBodyHeight(nativeEvent.layout.height)}
+            contentContainerStyle={{
+              paddingHorizontal: tab === 'changes' ? 0 : 12,
+              paddingVertical: 8,
+              gap: 8,
+            }}
             refreshControl={
               readConnected ? (
                 <RefreshControl
@@ -343,7 +351,7 @@ export function PullDetail({
               ) : undefined
             }
           >
-            <View ref={content} collapsable={false} style={{ gap: 12 }}>
+            <View ref={content} collapsable={false} style={{ gap: 8 }}>
               {!!fragment && !destination?.comment && (
                 <Text style={styles.muted}>
                   This linked section is not available in the loaded PR. Use the server action to
@@ -375,7 +383,7 @@ export function PullDetail({
               <View
                 style={{
                   display: tab === 'overview' ? 'flex' : 'none',
-                  gap: 20,
+                  gap: 12,
                 }}
               >
                 <View
@@ -389,8 +397,8 @@ export function PullDetail({
                     style={[
                       styles.title,
                       {
-                        fontSize: 22,
-                        lineHeight: 28,
+                        fontSize: 20,
+                        lineHeight: 26,
                       },
                     ]}
                   >
@@ -666,6 +674,7 @@ export function PullDetail({
                     key={`${repositoryId}:${detail.pull.number}`}
                     repositoryId={repositoryId}
                     detail={detail}
+                    viewportHeight={bodyHeight}
                     initialPath={destination?.path}
                     fragment={fragment}
                     onAnchor={tab === 'changes' ? scrollToAnchor : undefined}

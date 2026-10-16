@@ -8,6 +8,7 @@ import {
   Platform,
   useWindowDimensions,
 } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import type { ReviewDiffProps } from './diff-lines'
@@ -30,6 +31,7 @@ export function DiffView({
   focusedLine,
   onLinePress,
   annotations = [],
+  wrapLines,
 }: ReviewDiffProps) {
   const { colors, styles, code, syntaxTheme } = useTheme()
   const codeColors = code
@@ -47,7 +49,9 @@ export function DiffView({
   const { width, fontScale } = useWindowDimensions()
   const car = useCarMode()
   const textScale = fontScale * (car ? carZoom : 1)
-  const [wrap, setWrap] = useState(false)
+  const insets = useSafeAreaInsets()
+  const [localWrap, setWrap] = useState(false)
+  const wrap = wrapLines ?? localWrap
   const plainRows = useMemo(() => diffRows(patch), [patch])
   const languages = useMemo(
     () => diffLanguages(patch, path, previousPath),
@@ -181,24 +185,28 @@ export function DiffView({
       maxToRenderPerBatch={40}
       windowSize={7}
       style={{ flex: 1, width: wrap ? '100%' : contentWidth }}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     />
   )
   return (
     <View style={{ flex: 1, minHeight: 0, backgroundColor: codeColors.background }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gap: 8,
-          paddingHorizontal: 12,
-          minHeight: 44,
-          backgroundColor: colors.surface,
-        }}
-      >
-        <Text style={styles.muted}>Wrap lines</Text>
-        <Switch accessibilityLabel="Wrap diff lines" value={wrap} onValueChange={setWrap} />
-      </View>
+      {wrapLines === undefined && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: 8,
+            paddingHorizontal: 12,
+            minHeight: 44,
+            backgroundColor: colors.surface,
+          }}
+        >
+          <Text style={styles.muted}>Wrap lines</Text>
+          <Switch accessibilityLabel="Wrap diff lines" value={wrap} onValueChange={setWrap} />
+        </View>
+      )}
       {syntax?.error && (
         <Text accessibilityRole="alert" style={[styles.muted, { color: codeColors.muted }]}>
           {syntax.error}

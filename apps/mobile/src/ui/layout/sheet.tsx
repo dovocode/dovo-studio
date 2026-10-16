@@ -30,7 +30,7 @@ import {
   presentationDetents,
   presentationDragIndicator,
 } from '@expo/ui/swift-ui/modifiers'
-import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
+import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../content/text'
 import { Action } from '../controls/action'
 import { IconButton } from '../controls/icon-button'
@@ -57,6 +57,7 @@ export function Sheet({
   scrollable = true,
   footer,
   headerAction,
+  presentation = 'sheet',
 }: {
   title: string
   ref?: Ref<SheetHandle>
@@ -64,6 +65,7 @@ export function Sheet({
   onClose: () => void
   busy?: boolean
   scrollable?: boolean
+  presentation?: 'sheet' | 'dialog'
   footer?: ReactNode
   headerAction?: { label: string; icon: IconName; onPress: () => void; disabled?: boolean }
 }) {
@@ -113,6 +115,67 @@ export function Sheet({
       <SheetNavigationContext.Provider value={navigate}>{children}</SheetNavigationContext.Provider>
     </SheetContext.Provider>
   )
+  if (presentation === 'dialog')
+    return (
+      <SafeModal
+        visible={presented}
+        transparent
+        presentationStyle="overFullScreen"
+        animationType="fade"
+        onRequestClose={close}
+        onDismiss={finishClose}
+        contentStyle={{ backgroundColor: 'transparent' }}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <Pressable
+            accessibilityLabel={`Dismiss ${title}`}
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={close}
+            style={{ position: 'absolute', inset: 0, backgroundColor: '#00000080' }}
+          />
+          <View
+            role="dialog"
+            accessibilityLabel={title}
+            accessibilityViewIsModal
+            style={{
+              width: '100%',
+              maxWidth: 440,
+              maxHeight: '85%',
+              backgroundColor: colors.elevated,
+              borderColor: colors.border,
+              borderWidth: 1,
+              borderRadius: 24,
+              padding: 20,
+              gap: 12,
+              boxShadow: '0 12px 40px #00000040',
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text accessibilityRole="header" style={[styles.title, { flex: 1 }]}>
+                {title}
+              </Text>
+              {headerAction && (
+                <IconButton {...headerAction} disabled={busy || !!headerAction.disabled} />
+              )}
+              <Action label="Close" secondary disabled={busy} onPress={close} />
+            </View>
+            {scrollable ? (
+              <ScrollView
+                style={{ flexGrow: 0, flexShrink: 1 }}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ gap: 12 }}
+              >
+                {content}
+              </ScrollView>
+            ) : (
+              content
+            )}
+            {footer}
+          </View>
+        </View>
+      </SafeModal>
+    )
   if (Platform.OS === 'ios')
     return (
       <Host

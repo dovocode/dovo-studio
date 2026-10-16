@@ -51,7 +51,9 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Alert,
+  BackHandler,
   Keyboard,
+  Platform,
   View,
   useWindowDimensions,
 } from 'react-native'
@@ -500,6 +502,19 @@ function TaskDetailContent({
     if (pane === 'diff' && !hasDiff) setPane('chat')
   }, [pane, hasDiff])
   const [expandedPreview, setExpandedPreview] = useApplicationState(false)
+  const backToChat = () => {
+    Keyboard.dismiss()
+    setExpandedPreview(false)
+    setPane('chat')
+  }
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !focused || native || pane !== 'diff') return
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      setPane('chat')
+      return true
+    })
+    return () => back.remove()
+  }, [focused, native, pane])
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [renaming, setRenaming] = useApplicationState(false)
   const [artifactsOpen, setArtifactsOpen] = useState(false)
@@ -568,9 +583,15 @@ function TaskDetailContent({
           )
         }
         hidden={!!native || ((pane === 'browser' || pane === 'devices') && expandedPreview)}
-        gestureEnabled={pane !== 'browser' && pane !== 'devices'}
-        onBack={pane === 'browser' || pane === 'devices' ? onBack : undefined}
-        leading={<Action secondary label="Back" onPress={onBack} />}
+        gestureEnabled={pane !== 'browser' && pane !== 'devices' && pane !== 'diff'}
+        onBack={
+          pane === 'diff'
+            ? backToChat
+            : pane === 'browser' || pane === 'devices'
+              ? onBack
+              : undefined
+        }
+        leading={<Action secondary label="Back" onPress={pane === 'diff' ? backToChat : onBack} />}
         buttons={
           startup?.temporary
             ? [{ label: 'New thread', icon: 'add', onPress: startup.onNewThread }]
@@ -589,7 +610,9 @@ function TaskDetailContent({
                     tab === 'chat'
                       ? 'Chat'
                       : tab === 'diff'
-                        ? `Changes (${task.files.length})`
+                        ? pane === 'diff'
+                          ? 'Back to chat'
+                          : `Changes (${task.files.length})`
                         : tab === 'terminal'
                           ? 'Terminal'
                           : tab === 'agents'
@@ -599,7 +622,9 @@ function TaskDetailContent({
                               : 'Browser',
                   icon:
                     tab === 'diff'
-                      ? 'changes'
+                      ? pane === 'diff'
+                        ? 'chat'
+                        : 'changes'
                       : tab === 'browser'
                         ? 'web'
                         : tab === 'devices'
@@ -618,7 +643,7 @@ function TaskDetailContent({
                     setCheckpoint('')
                     setExpandedPreview(false)
                     if (tab === 'terminal') setTerminalId('')
-                    setPane(tab)
+                    setPane(tab === 'diff' && pane === 'diff' ? 'chat' : tab)
                   },
                 }))
                 .concat(

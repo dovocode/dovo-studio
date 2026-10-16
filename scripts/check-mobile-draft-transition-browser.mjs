@@ -34,6 +34,8 @@ const mocks = {
     export const ScrollView=({children})=><div>{children}</div>;
     export const ActivityIndicator=()=> <span>Loading</span>;
     export const Keyboard={dismiss:()=>{}};
+    export const Platform={get OS(){return window.os??'ios'}};
+    export const BackHandler={addEventListener:(name,handler)=>{window.hardwareBack=handler;return{remove:()=>{window.hardwareBack=undefined}}}};
     export const Alert={alert:()=>{}};
     export const AccessibilityInfo={announceForAccessibility:()=>{}};
     export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};
@@ -69,9 +71,9 @@ const mocks = {
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
   '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
-  '../../ui/layout/sheet': `export const Sheet=()=>null;export const useSheetNavigation=()=>navigate=>navigate();`,
+  '../../ui/layout/sheet': `import {useImperativeHandle} from 'react';export const Sheet=({children,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section>{children}</section>};export const useSheetNavigation=()=>navigate=>navigate();`,
   '../../ui/theme': `export const useTheme=()=>({colors:{},styles:{}});`,
-  '../../ui/layout/screen-header': `export const ScreenHeader=({title,buttons,leading,hidden})=>hidden?null:<header>{leading}{title}{buttons?.filter(b=>!b.overflow||b.label==='Copy conversation'||b.label==='Chat'||b.label==='Agents').map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>;`,
+  '../../ui/layout/screen-header': `export const ScreenHeader=({title,buttons,leading,hidden,onBack,gestureEnabled})=>{window.headerGestures=gestureEnabled;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{title}{buttons?.filter(b=>!b.overflow||b.label==='Copy conversation'||b.label==='Chat'||b.label==='Agents').map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
   '../../ui/content/markdown': `export const Markdown=({text})=><p data-native-prose>{text}</p>;`,
   './task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
   '../../ui/content/clipboard': `export const copyText=async text=>{(window.mobileCopies??=[]).push(text);return 'copied'};`,
@@ -417,13 +419,39 @@ try {
       files: [{ path: 'changed.ts', before: 'old', after: 'new', viewed: false }],
     })
   })
+  await input.fill('Keep my chat draft')
+  await input.evaluate((element) => {
+    window.diffInput = element
+  })
   await page.getByRole('button', { name: 'Changes (1)', exact: true }).click()
   await page.locator('[data-git-controls]').waitFor()
+  // Returning from a thread diff must keep the same thread and composer mounted.
+  const diffRoute = await page.evaluate(() => window.params)
+  await page.evaluate(() => {
+    window.os = 'ios'
+  })
+  assert.equal(await page.evaluate(() => window.headerGestures), false)
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.params), diffRoute)
+  assert.equal(await input.evaluate((element) => element === window.diffInput), true)
+  assert.equal(await input.inputValue(), 'Keep my chat draft')
+  await page.getByRole('button', { name: 'Changes (1)', exact: true }).click()
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await page.getByRole('button', { name: 'Changes (1)', exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.params), diffRoute)
+  await page.evaluate(() => {
+    window.os = 'android'
+  })
+  await page.getByRole('button', { name: 'Changes (1)', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.hardwareBack()), true)
+  await page.getByRole('button', { name: 'Changes (1)', exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.hardwareBack), undefined)
+  await page.getByRole('button', { name: 'Changes (1)', exact: true }).click()
   await page.getByRole('button', { name: 'More actions', exact: true }).click()
   await page.getByRole('button', { name: 'Edit file', exact: true }).click()
   const fileDraft = page.getByRole('textbox', { name: 'changed.ts', exact: true })
   await fileDraft.fill('Keep my unsaved file edit')
-  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
   await page.getByRole('button', { name: 'Changes (1)', exact: true }).click()
   assert.equal(await fileDraft.inputValue(), 'Keep my unsaved file edit')
   await page.evaluate(() =>
@@ -441,7 +469,7 @@ try {
   )
   assert.equal(await fileDraft.inputValue(), 'Keep my unsaved file edit')
   await page.evaluate(() => window.publish('b', { ...window.created, status: 'done', files: [] }))
-  await page.getByRole('button', { name: 'Changes (0)', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).waitFor()
   assert.equal(await fileDraft.inputValue(), 'Keep my unsaved file edit')
   await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
   await page.getByText('No changed files.', { exact: true }).waitFor()

@@ -5,6 +5,7 @@ import type { ReviewGroup, FileTreeEntry } from '@dovo/protocol'
 import { MobileFileTree, MobileFileTypeIcon } from '../../ui/content/file-tree'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
+import { Icon } from '../../ui/controls/icon'
 import { useTheme } from '../../ui/theme'
 export type ReviewListFile = FileTreeEntry & { viewed: boolean }
 export function MobileFileReview({
@@ -20,6 +21,9 @@ export function MobileFileReview({
   navigationDisabled = false,
   error = '',
   onRetry,
+  wrapLines,
+  onWrapLinesChange,
+  onOptions,
 }: {
   files: ReviewListFile[]
   groups: ReviewGroup[]
@@ -33,6 +37,9 @@ export function MobileFileReview({
   navigationDisabled?: boolean
   error?: string
   onRetry: () => void
+  wrapLines?: boolean
+  onWrapLinesChange?: (value: boolean) => void
+  onOptions?: () => void
 }) {
   const { colors, styles } = useTheme()
   const insets = useSafeAreaInsets()
@@ -59,51 +66,77 @@ export function MobileFileReview({
     }
   }
   return (
-    <View style={{ gap: 6 }}>
+    <View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Browse changed files"
+        accessibilityValue={{ text: `${file?.path ?? ''}. ${index + 1} of ${files.length}` }}
         disabled={navigationDisabled}
         onPress={() => setOpen(true)}
         style={{
-          minHeight: 48,
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: 10,
-          padding: 10,
+          minHeight: 44,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
           opacity: navigationDisabled ? 0.5 : 1,
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {file && <MobileFileTypeIcon path={file.path} />}
-          <Text
-            numberOfLines={1}
-            style={{ color: colors.text, fontSize: 14, fontWeight: '600', flex: 1 }}
-          >
-            {file?.path ?? 'Browse changed files'}
-          </Text>
-        </View>
-        <Text style={styles.muted}>
-          {index >= 0 ? `${index + 1} of ${files.length} · ` : ''}
-          {files.filter((file) => file.viewed).length} viewed · Find files
+        {file && <MobileFileTypeIcon path={file.path} />}
+        <Text
+          numberOfLines={1}
+          ellipsizeMode="head"
+          style={{ color: colors.text, fontSize: 13, fontWeight: '600', flex: 1, minWidth: 0 }}
+        >
+          {file?.path ?? 'Browse changed files'}
         </Text>
+        {file?.additions !== undefined && (
+          <Text numberOfLines={1} style={{ color: colors.success, fontSize: 12, flexShrink: 1 }}>
+            +{file.additions}
+          </Text>
+        )}
+        {file?.deletions !== undefined && (
+          <Text numberOfLines={1} style={{ color: colors.error, fontSize: 12, flexShrink: 1 }}>
+            −{file.deletions}
+          </Text>
+        )}
+        <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 12, flexShrink: 1 }}>
+          {index >= 0 ? `${index + 1}/${files.length}` : files.length}
+        </Text>
+        <Icon name="down" size={12} color={colors.muted} />
       </Pressable>
       <View style={[styles.row, { justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 }}>
-          <Switch
-            accessibilityLabel="File viewed"
-            value={file?.viewed ?? false}
-            disabled={disabled || busy || !file}
-            onValueChange={onViewed}
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityLabel="File viewed"
+          accessibilityState={{
+            checked: file?.viewed ?? false,
+            disabled: disabled || busy || !file,
+          }}
+          disabled={disabled || busy || !file}
+          onPress={() => onViewed(!file?.viewed)}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            minHeight: 44,
+            opacity: disabled || busy || !file ? 0.45 : pressed ? 0.6 : 1,
+          })}
+        >
+          <Icon
+            name={file?.viewed ? 'checkCircle' : 'circle'}
+            size={18}
+            color={file?.viewed ? colors.accent : colors.muted}
           />
-          <Text style={{ color: colors.text, fontSize: 14 }}>{busy ? 'Saving…' : 'Viewed'}</Text>
-        </View>
+          <Text style={{ color: file?.viewed ? colors.accent : colors.muted, fontSize: 12 }}>
+            {busy ? 'Saving…' : 'Viewed'}
+          </Text>
+        </Pressable>
         <View
           style={{
             flexDirection: 'row',
             flexWrap: 'wrap',
             maxWidth: '100%',
-            gap: 16,
+            gap: 0,
             alignItems: 'center',
           }}
         >
@@ -130,11 +163,39 @@ export function MobileFileReview({
           <Action
             secondary
             label="Next unviewed"
+            icon="moveDown"
             disabled={navigationDisabled || !nextUnviewed}
             onPress={() => {
               if (nextUnviewed) select(nextUnviewed.path)
             }}
           />
+          {wrapLines !== undefined && onWrapLinesChange && (
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityLabel="Wrap diff lines"
+              accessibilityState={{ checked: wrapLines }}
+              onPress={() => onWrapLinesChange(!wrapLines)}
+              style={({ pressed }) => ({
+                minWidth: 44,
+                minHeight: 44,
+                paddingHorizontal: 6,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: pressed ? 0.6 : 1,
+              })}
+            >
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: '600',
+                  color: wrapLines ? colors.accent : colors.muted,
+                }}
+              >
+                Wrap
+              </Text>
+            </Pressable>
+          )}
+          {onOptions && <Action secondary label="File actions" icon="more" onPress={onOptions} />}
         </View>
       </View>
       {!!error && (
@@ -163,6 +224,9 @@ export function MobileFileReview({
             </Text>
             <Action secondary label="Close" onPress={() => setOpen(false)} />
           </View>
+          <Text style={styles.muted}>
+            {files.filter((file) => file.viewed).length} of {files.length} viewed
+          </Text>
           <TextInput
             accessibilityLabel="Search changed files"
             placeholder="Search files…"

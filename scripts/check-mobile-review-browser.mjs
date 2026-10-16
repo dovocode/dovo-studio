@@ -53,7 +53,11 @@ const built = await bundleBrowser(
         export const Pressable=({children,accessibilityLabel,onPress,disabled,style})=><button style={style} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;
         export const Switch=({value,onValueChange})=><input type="checkbox" checked={value} onChange={e=>onValueChange(e.target.checked)}/>;
         export const Platform={OS:'ios'};export const useWindowDimensions=()=>({width:360,fontScale:window.diffFontScale??1});
-        export const FlatList=forwardRef(({data,renderItem,keyExtractor,style},ref)=>{window.diffListWidth=style.width;useImperativeHandle(ref,()=>({scrollToIndex:input=>window.scrollTarget=input,scrollToOffset:()=>{}}));return <div>{data.map((item,index)=><div key={keyExtractor(item,index)}>{renderItem({item})}</div>)}</div>});`,
+        export const FlatList=forwardRef(({data,renderItem,keyExtractor,style,contentContainerStyle,scrollIndicatorInsets},ref)=>{window.diffListWidth=style.width;window.diffBottomPadding=contentContainerStyle.paddingBottom;window.diffIndicatorBottom=scrollIndicatorInsets.bottom;useImperativeHandle(ref,()=>({scrollToIndex:input=>window.scrollTarget=input,scrollToOffset:()=>{}}));return <div>{data.map((item,index)=><div key={keyExtractor(item,index)}>{renderItem({item})}</div>)}</div>});`,
+    },
+    {
+      path: 'react-native-safe-area-context',
+      contents: 'export const useSafeAreaInsets=()=>({top:59,bottom:34});',
     },
     {
       path: './text',
@@ -104,6 +108,26 @@ try {
   assert.equal(await page.getByText('Check persistence', { exact: true }).isVisible(), true)
   await page.waitForFunction(() => window.scrollTarget)
   assert.equal(await page.evaluate(() => window.scrollTarget.index), 2)
+  assert.equal(await page.evaluate(() => window.diffBottomPadding), 46)
+  assert.equal(await page.evaluate(() => window.diffIndicatorBottom), 34)
+  // A containing toolbar owns wrapping without leaving a duplicate row above the code.
+  await page.evaluate(() => {
+    window.diffOptions.wrapLines = true
+    window.renderDiff()
+  })
+  await page.waitForFunction(() => window.diffListWidth === '100%')
+  assert.equal(await page.getByRole('checkbox').count(), 0)
+  await page.evaluate(() => {
+    window.diffOptions.wrapLines = false
+    window.renderDiff()
+  })
+  await page.waitForFunction(() => typeof window.diffListWidth === 'number')
+  assert.equal(await page.getByRole('checkbox').count(), 0)
+  await page.evaluate(() => {
+    delete window.diffOptions.wrapLines
+    window.renderDiff()
+  })
+  await page.getByRole('checkbox').waitFor()
   const originalWidth = await page.evaluate(() => window.diffListWidth)
   await page.evaluate(() => {
     window.diffFontScale = 2

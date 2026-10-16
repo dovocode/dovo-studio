@@ -12,8 +12,7 @@ const stubs = [
   },
   {
     path: 'react-native',
-    contents:
-      'export const View=({children})=><div>{children}</div>;export const useWindowDimensions=()=>({height:800});',
+    contents: `import {useEffect} from 'react';export const View=({children,style,testID,onLayout})=>{useEffect(()=>{if(testID==='PR file controls')onLayout?.({nativeEvent:{layout:{height:88}}})},[testID]);return <div data-testid={testID} style={style}>{children}</div>};export const Pressable=({children,onPress,accessibilityLabel,accessibilityState})=><button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} onClick={onPress}>{children}</button>;export const useWindowDimensions=()=>({height:800});`,
   },
   {
     path: '../../../ui/content/text',
@@ -39,13 +38,13 @@ const stubs = [
   {
     path: '../../review/organize-review',
     importer: mobile,
-    contents: 'export const MobileOrganizeReview=()=>null;',
+    contents: 'export const MobileOrganizeReview=()=> <button>Organize review</button>;',
   },
   {
     path: '../../review/file-review',
     importer: mobile,
     contents:
-      'export const MobileFileReview=({files,selected,onSelect})=><select aria-label="Changed file" value={selected} onChange={event=>onSelect(event.target.value)}>{files.map(file=><option key={file.path} value={file.path}>{file.path}</option>)}</select>;',
+      'export const MobileFileReview=({files,selected,onSelect,onOptions})=><><button onClick={onOptions}>File actions</button><select aria-label="Changed file" value={selected} onChange={event=>onSelect(event.target.value)}>{files.map(file=><option key={file.path} value={file.path}>{file.path}</option>)}</select></>;',
   },
   {
     path: '../../../tasks/preview/diff-view',
@@ -53,7 +52,19 @@ const stubs = [
     contents:
       "import {useEffect} from 'react';export const DiffView=({patch})=>{useEffect(()=>{window.diffMounts++},[]);return <pre data-diff>{patch}</pre>};",
   },
-  { path: './pull-comments', importer: mobile, contents: 'export const PullComments=()=>null;' },
+  {
+    path: './pull-comments',
+    importer: mobile,
+    contents:
+      'export const PullComments=({comments})=><div>{comments.map(comment=><p key={comment.id}>{comment.body}</p>)}</div>;',
+  },
+  { path: '../../../ui/controls/icon', importer: mobile, contents: 'export const Icon=()=>null;' },
+  {
+    path: '../../../ui/layout/sheet',
+    importer: mobile,
+    contents:
+      'export const Sheet=({title,children,onClose})=><div role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close</button></div>;',
+  },
 ]
 const bundle = await bundleBrowser(
   {
@@ -63,7 +74,7 @@ const bundle = await bundleBrowser(
       contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {PullChanges} from '${mobile}/scm/pulls/detail/pull-changes.tsx';
 window.diffMounts=0;
 const files=['binary.dat','generated.ts','vendor.ts','normal.ts'].map((path,index)=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new',attributes:{binary:index===0,generated:index===1,vendored:index===2}}));
-function App(){const [current,setCurrent]=useState(files);window.clearGenerated=()=>setCurrent(prior=>prior.map(file=>({...file,attributes:{...file.attributes,generated:false}})));return <PullChanges repositoryId="repo" detail={{pull:{number:7,headSha:'a'.repeat(40),baseSha:'b'.repeat(40)},files:current,comments:[],capabilities:{actions:['inline-comment']}}} onOpen={()=>{}} onLineComment={()=>{}}/>}createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const [current,setCurrent]=useState(files),[fragment,setFragment]=useState('');window.openLinkedComment=()=>setFragment('#discussion_r7');window.clearGenerated=()=>setCurrent(prior=>prior.map(file=>({...file,attributes:{...file.attributes,generated:false}})));return <PullChanges viewportHeight={640} fragment={fragment} repositoryId="repo" detail={{pull:{number:7,headSha:'a'.repeat(40),baseSha:'b'.repeat(40)},files:current,comments:[{id:'inline',kind:'inline',path:'normal.ts',url:'https://github.com/o/r/pull/7#discussion_r7',body:'Inline feedback'}],capabilities:{actions:['inline-comment']}}} onOpen={()=>{}} onLineComment={()=>{}}/>}createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -103,6 +114,27 @@ try {
   await files.selectOption('normal.ts')
   await page.locator('[data-diff]').waitFor()
   assert.equal(await page.locator('[data-diff]').count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'Organize review', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'File actions', exact: true }).click()
+  await page.getByRole('dialog', { name: 'File actions' }).waitFor()
+  await page.getByRole('button', { name: 'Organize review', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  const feedback = page.getByRole('button', { name: 'Feedback on this file (1)', exact: true })
+  assert.equal(await feedback.getAttribute('aria-expanded'), 'false')
+  assert.equal(await page.getByText('Inline feedback', { exact: true }).count(), 0)
+  assert.equal(
+    await page.getByTestId('PR code viewport').evaluate((node) => node.style.height),
+    '484px',
+  )
+  await feedback.click()
+  await page.getByText('Inline feedback', { exact: true }).waitFor()
+  await feedback.click()
+  assert.equal(await page.getByText('Inline feedback', { exact: true }).count(), 0)
+  await page.evaluate(() => window.openLinkedComment())
+  await page.getByText('Inline feedback', { exact: true }).waitFor()
+  await feedback.click()
+  assert.equal(await feedback.getAttribute('aria-expanded'), 'false')
+
   await files.selectOption('generated.ts')
   await page.getByRole('button', { name: 'Show changes', exact: true }).click()
   await page.locator('[data-diff]').waitFor()
