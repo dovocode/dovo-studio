@@ -221,3 +221,5 @@ export async function startRuntime(options: RuntimeOptions): Promise<{
 export { acquireProcessLock } from './storage/process-lock.js'
 
 export { initializeAgentDefaults } from './agents/configuration/automatic-defaults.js'
+
+export { startStudioMcp } from './studio/mcp.js'

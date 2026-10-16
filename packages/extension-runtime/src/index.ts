@@ -79,6 +79,18 @@ export const runtimeExtension = defineStudioExtension(
       load: () => import('./pull-request-settings-view'),
     },
     {
+      id: 'studio-tools-settings',
+      navigationGroup: 'settings',
+      settingsScope: 'computer',
+      title: 'Studio Tools',
+      icon: 'runtime',
+      order: 3.6,
+      settingsSection: 'coding',
+      keywords:
+        'experimental agent tools threads automations browsers ui interaction diagnostics debug',
+      load: () => import('./studio-tools-settings-view'),
+    },
+    {
       id: 'artifact-settings',
       navigationGroup: 'settings',
       settingsScope: 'computer',

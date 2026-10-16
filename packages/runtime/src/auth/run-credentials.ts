@@ -1,4 +1,4 @@
-import { nativeAgentWorking } from '@dovo/protocol'
+import { type StudioTools, nativeAgentWorking } from '@dovo/protocol'
 import type { MemoryScope, SandboxMode, PermissionPolicy } from '@dovo/protocol'
 import { mkdtempSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -18,6 +18,7 @@ export interface RunPolicy {
   pipelineWatching: boolean
   pullRequestWatching: boolean
   deviceHub: boolean
+  studioTools?: StudioTools
   memoryScopes: MemoryScope[]
 }
 type Credential = RunPolicy & {
@@ -59,6 +60,7 @@ export class RunCredentials {
     expiryTimer.unref()
     this.grants.set(hashSecret(token), {
       ...policy,
+      studioTools: policy.studioTools && { ...policy.studioTools },
       permissions: { ...policy.permissions },
       readOnly: policy.readOnly || policy.sandboxMode === 'read-only',
       memoryScopes: [...policy.memoryScopes],

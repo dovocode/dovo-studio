@@ -1,3 +1,4 @@
+import { redact } from '../storage/activity.js'
 import { browserScript } from './browser-script.js'
 import { decode } from '@dovo/protocol'
 import { join } from 'node:path'
@@ -45,6 +46,7 @@ type QueuedInput = {
   operation?: Promise<void>
 }
 type Session = {
+  logs: { time: string; kind: string; message: string }[]
   release: () => Promise<void>
   page: Page
   cdp: CDPSession
@@ -314,6 +316,7 @@ export class RemoteBrowsers {
       page.setDefaultTimeout(10000)
       page.setDefaultNavigationTimeout(20000)
       const session: Session = {
+        logs: [],
         release,
         page,
         cdp: await context.newCDPSession(page),
@@ -337,6 +340,23 @@ export class RemoteBrowsers {
         streaming: false,
         stream: Promise.resolve(),
       }
+      const log = (kind: string, message: string) => {
+        session.logs.push({
+          time: new Date().toISOString(),
+          kind,
+          message: String(redact(message)).slice(0, 2000),
+        })
+        if (session.logs.length > 100) session.logs.shift()
+      }
+      page.on('console', (message) => log('console:' + message.type(), message.text()))
+      page.on('pageerror', (error) => log('pageerror', error.message))
+      page.on('requestfailed', (request) =>
+        log('network', request.method() + ' ' + request.url() + ' ' + request.failure()?.errorText),
+      )
+      page.on('response', (response) => {
+        if (response.status() >= 400) log('http', response.status() + ' ' + response.url())
+      })
+
       page.on('dialog', (dialog) => {
         session.dialog = dialog
         this.emit(
@@ -717,16 +737,23 @@ export class RemoteBrowsers {
       })
     await operation
   }
-  /** Agent sessions have no access to persistent user profiles or runtime credentials. */
-  async agentCommand(taskId: string, command: AgentBrowserCommand, authorize: () => void) {
+  /** Default task sessions are isolated. Studio Tools may explicitly attach to an existing tab. */
+  async agentCommand(
+    taskId: string,
+    command: AgentBrowserCommand,
+    authorize: () => void,
+    resourceId?: string,
+  ) {
     authorize()
-    const resource = `agent-browser:${taskId}`
+    const resource = resourceId ?? `agent-browser:${taskId}`
+    if (resourceId && !this.sessions.has(resourceId))
+      throw new HttpError(404, 'Browser session not found')
     if (command.action === 'close') {
       await this.close(resource)
       return { ok: true as const }
     }
     const profile = `agent-${createHash('sha256').update(taskId).digest('hex')}`
-    await this.open(resource, taskId, profile, undefined, true)
+    if (!resourceId) await this.open(resource, taskId, profile, undefined, true)
     const session = await this.sessions.get(resource)
     if (!session) throw new HttpError(404, 'Agent browser session expired. Retry the command.')
     if (session.queued >= 100)
@@ -787,6 +814,24 @@ export class RemoteBrowsers {
         session.queued--
       })
     return operation
+  }
+  async studioList() {
+    return Promise.all(
+      [...this.sessions].map(async ([id, pending]) => {
+        const session = await pending
+        return {
+          id,
+          taskId: this.owners.get(id),
+          url: session.page.url(),
+          title: await session.page.title(),
+        }
+      }),
+    )
+  }
+  async studioLogs(id: string) {
+    const pending = this.sessions.get(id)
+    if (!pending) throw new HttpError(404, 'Browser session not found')
+    return { entries: [...(await pending).logs] }
   }
   async closeTask(taskId: string) {
     await Promise.all(

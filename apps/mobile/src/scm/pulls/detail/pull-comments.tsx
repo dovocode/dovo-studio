@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { type ComponentRef, useEffect, useRef, type ReactNode } from 'react'
 import { pullFragment } from './pull-destination'
 import { Markdown } from '../../../ui/content/markdown'
 import { Platform, Pressable, View } from 'react-native'
@@ -19,9 +19,9 @@ function CommentAnchor({
   children: ReactNode
   url: string
   fragment?: string
-  onAnchor?: (node: View) => void
+  onAnchor?: (node: ComponentRef<typeof View>) => void
 }) {
-  const node = useRef<View>(null)
+  const node = useRef<ComponentRef<typeof View>>(null)
   const { colors } = useTheme()
   useEffect(() => {
     if (fragment && pullFragment(url) === fragment && node.current) onAnchor?.(node.current)
@@ -53,7 +53,7 @@ export function PullComments({
   fileBaseURL?: string
   onAction?: (target: PullActionTarget) => void
   fragment?: string
-  onAnchor?: (node: View) => void
+  onAnchor?: (node: ComponentRef<typeof View>) => void
   capabilities?: ForgeCapabilities
 }) {
   const { colors, styles } = useTheme()

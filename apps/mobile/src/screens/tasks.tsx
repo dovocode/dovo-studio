@@ -553,7 +553,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           },
         ]}
         ListHeaderComponent={
-          car ? null : (
+          car ? undefined : (
             <View
               style={{
                 gap: 8,

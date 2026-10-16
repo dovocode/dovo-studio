@@ -127,8 +127,24 @@ it('previews UTF-8 text when the bounded MIME sample ends inside a multibyte cha
   const contents = 'a'.repeat(8191) + '😀 unicode source'
   await writeFile(join(directory, 'unicode.txt'), contents)
   const { url } = decode(taskFileShareSchema, await (await share('unicode.txt')).json())
-  expect(await (await fetch(origin + url)).text()).toContain('title="File preview"')
+  expect(await (await fetch(origin + url)).text()).toContain('aria-label="File preview"')
   expect(await (await fetch(origin + url + '?content=1')).text()).toBe(contents)
+})
+
+it('escapes Markdown previews while preserving original text and streamed UTF-8', async () => {
+  const { directory, origin, share } = await setup()
+  const contents = '\n# Notes\n' + 'a'.repeat(65524) + '😀 <script>alert("x")</script>&\n'
+  await writeFile(join(directory, 'notes.md'), contents)
+  const { url } = decode(taskFileShareSchema, await (await share('notes.md')).json())
+  const page = await fetch(origin + url)
+  expect(page.headers.get('content-type')).toBe('text/html; charset=utf-8')
+  const html = await page.text()
+  expect(html).toContain('background:white;color:black;color-scheme:only light')
+  expect(html).toContain('<pre><code>\n# Notes\n')
+  expect(html).toContain('😀 &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&amp;')
+  expect(html).not.toContain('<script>')
+  expect(await (await fetch(origin + url + '?content=1')).text()).toBe(contents)
+  expect(await (await fetch(origin + url + '?download=1')).text()).toBe(contents)
 })
 
 it('supports byte ranges for media without exposing unauthorized files', async () => {

@@ -213,6 +213,7 @@ export function RunDetails({
               <Button
                 size="sm"
                 disabled={disabled}
+                data-studio-human-only
                 onClick={() => void actions.review(run.id, true)}
               >
                 Approve & continue
@@ -221,6 +222,7 @@ export function RunDetails({
                 size="sm"
                 variant="ghost"
                 disabled={disabled}
+                data-studio-human-only
                 onClick={() => void actions.review(run.id, false)}
               >
                 Reject

@@ -117,6 +117,7 @@ export function RunControls({ task }: { task: Task }) {
         <div
           key={approval.id}
           data-approval-id={approval.id}
+          data-studio-human-only
           className="mx-auto max-w-[var(--chat-max)] rounded-lg border bg-card p-3"
         >
           <p className="mb-1 text-[0.6875rem] text-muted-foreground">

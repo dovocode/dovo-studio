@@ -3,7 +3,7 @@ import { nativeEffect } from '../../runtime/state/native-effect'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { clientScopeKey, RequestScope, runClientEffect } from '@dovo/client-runtime'
-import { useEffect, useRef } from 'react'
+import { type ComponentRef, useEffect, useRef } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { directoryPageSchema, type DirectoryPage } from '@dovo/protocol'
@@ -40,7 +40,7 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
   const { read, connected, profile, snapshot, readEffect } = useRuntime()
   const requests = useRef(new RequestScope())
   const editingPath = useRef(false)
-  const breadcrumbScroll = useRef<ScrollView>(null)
+  const breadcrumbScroll = useRef<ComponentRef<typeof ScrollView>>(null)
   const [location, setLocation] = useApplicationState<Location>({
     path: initialPath,
     hidden: false,

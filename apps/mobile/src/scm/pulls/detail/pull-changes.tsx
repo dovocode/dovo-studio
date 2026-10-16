@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type ComponentRef, useEffect, useMemo, useState } from 'react'
 import { useRuntime } from '../../../runtime/connection/provider'
 import {
   createDetailDrafts,
@@ -46,7 +46,7 @@ export function PullChanges({
   onLineComment?: (path: string) => void
   initialPath?: string
   fragment?: string
-  onAnchor?: (node: View) => void
+  onAnchor?: (node: ComponentRef<typeof View>) => void
   viewportHeight?: number
 }) {
   const { colors, styles } = useTheme()

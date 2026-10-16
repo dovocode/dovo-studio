@@ -244,3 +244,5 @@ export * from './scm/forges/source-identity.js'
 export * from './scm/work/pipeline-links.js'
 
 export * from './tasks/task-project-selection.js'
+
+export * from './runtime/studio-tools.js'

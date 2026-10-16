@@ -26,7 +26,9 @@ import {
   type LucideIcon,
 } from 'lucide-react-native'
 import { Icon } from '../../ui/controls/icon'
-import { Image, Pressable, View } from 'react-native'
+import { Image, View } from 'react-native'
+// Keep row presses in the pan recognizer's native gesture system so swipes cancel taps.
+import { Pressable } from 'react-native-gesture-handler'
 import { Text } from '../../ui/content/text'
 import {
   projectIcon,

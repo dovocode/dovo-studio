@@ -66,7 +66,7 @@ it('checks the installed adapters without contacting an update registry or runni
   expect(diagnostics.find((item) => item.id === 'cursor-sdk')).toMatchObject({
     available: true,
     kind: 'sdk',
-    installedVersion: '1.0.36',
+    installedVersion: '1.0.37',
     provider: 'cursor',
   })
   expect(diagnostics.filter((item) => item.kind === 'sdk').every((item) => item.available)).toBe(

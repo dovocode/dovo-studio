@@ -1,3 +1,5 @@
+import { studioToolDefinitions } from '../studio/tool-definitions.js'
+import { studioToolsSchema, noStudioTools } from '@dovo/protocol'
 import { deviceHubAgentInstructions } from './device-guidance.js'
 import { readFileSync } from 'node:fs'
 import { terminalInputFrames } from '@dovo/client-runtime'
@@ -53,6 +55,10 @@ const deviceTools = new Set([
   'simulator_button',
   'simulator_gesture',
 ])
+const studioTools = decode(
+  studioToolsSchema,
+  JSON.parse(process.env.DOVO_STUDIO_TOOLS ?? JSON.stringify(noStudioTools())),
+)
 const artifactsEnabled = process.env.DOVO_TASK_ARTIFACTS_ENABLED === '1'
 const pipelineWatchingEnabled = process.env.DOVO_TASK_PIPELINE_WATCHING_ENABLED === '1'
 const pullRequestWatchingEnabled = process.env.DOVO_TASK_PR_WATCHING_ENABLED === '1'
@@ -152,6 +158,7 @@ const tools: Array<
     inputSchema: JSONSchema.JSONSchema & { type: 'object' }
   }
 > = [
+  ...studioToolDefinitions(studioTools),
   {
     name: 'browser',
     description:
@@ -645,6 +652,36 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
   try {
     if (!deviceHubEnabled && deviceTools.has(name)) throw new Error('Device Hub is disabled')
     const input = decode(args, arguments_ ?? {})
+    if (
+      name === 'studio_discover' ||
+      (name.startsWith('studio_') &&
+        Object.keys(studioTools).some((part) => name === 'studio_' + part))
+    ) {
+      const part = name === 'studio_discover' ? 'discover' : name.slice('studio_'.length)
+      if (!studioToolDefinitions(studioTools).some((tool) => tool.name === name))
+        throw new Error('Studio Tools part is disabled')
+      const result = await post('/api/studio/tools', {
+        taskId: task,
+        parentRunId,
+        part,
+        command: part === 'discover' ? input : input.command,
+      })
+      if (
+        result &&
+        typeof result === 'object' &&
+        'image' in result &&
+        typeof result.image === 'string'
+      ) {
+        const { image, ...details } = result
+        return {
+          content: [
+            { type: 'text' as const, text: JSON.stringify(details) },
+            { type: 'image' as const, mimeType: 'image/png', data: image },
+          ],
+        }
+      }
+      return text(result)
+    }
     switch (name) {
       case 'memory_list':
       case 'memory_read':

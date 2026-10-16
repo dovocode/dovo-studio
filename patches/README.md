@@ -14,10 +14,35 @@ checked-in patches on install; version-based `pnpm audit` still lists their orig
 - **sprintf-js 1.1.3 — GHSA-hp3w-g68c-fv3c:** clamp numeric `e`, `f`, `g` precision to ECMAScript's
   valid native formatter range (maximum 100; minimum 1 for `g`). Ordinary formatting is unchanged;
   excessive precision produces bounded output rather than a native range failure.
-- **decode-uri-component 0.2.2 — GHSA-vcc3-ghjq-m6fr:** the existing patch backports upstream
-  0.5.0's malformed percent/UTF-8 parser while preserving the CommonJS and plus-decoding API.
 
 Run `node --test scripts/packaging/security-backports.test.mjs` for adversarial RSA signatures,
 nested patterns and excessive numeric precision. Replace backports with compatible upstream fixes
 when available, then rerun these regressions and the package checks. Do not suppress audit findings
 without checking the applied patch and its fixture.
+
+# Compatibility patches and version constraints
+
+- **react-native-enriched-markdown 1.1.1:** retain streaming render coalescing, live accessibility
+  geometry and query predicate evaluation. Verify with
+  `node scripts/check-mobile-markdown-highlighting.mjs`.
+- **react-native-webview 14.0.1:** its declaration defaults extra props to `undefined`, making
+  `WebViewProps & P` resolve to `never`. Default to `unknown` so normal props and typed refs work.
+  The workspace mobile typecheck exercises the consumers; runtime behavior is unchanged.
+- **@mcp-ui/legacy:** keep the alias on client 5.17.3. Client 7 removed the legacy HTML/Remote DOM
+  renderer; modern MCP apps already use `@modelcontextprotocol/ext-apps`. Verify both formats with
+  `pnpm test:mcp-apps:browser`.
+- **web-tree-sitter:** keep 0.25.10 because 0.27 removed support for the legacy WASM dynamic-linking
+  metadata used by `tree-sitter-wasms`. Upgrade together with compatible grammar binaries, then run
+  the review ordering and source-analysis tests.
+- **iOS scenes:** use Expo 58's `ExpoAppSceneDelegate` for native startup and lifecycle forwarding.
+  Dovo's scene plugin only seeds the cold-start quick-action URL before React starts. Run
+  `expo prebuild --no-install --platform ios` to verify generated projects.
+- **Mobile React and AsyncStorage:** use Expo 58's recommended versions; `expo install --check`
+  validates the native dependency set. Desktop/web React can update independently.
+
+Expo 58 removes the dependency on decode-uri-component 0.2.2, so its security backport is retired.
+The remaining version-based audit reports are covered by the security regressions above.
+
+Vite Plus 1.2's forced task caching causes native compiler/esbuild subprocesses to fail with
+`spawn EINVAL` on Node 26/Linux. Build and typecheck explicitly disable task caching while retaining
+Vite Plus task ordering; restore caching after upstream supports these subprocesses.

@@ -76,7 +76,7 @@ it('fails the turn when recording an SDK event fails instead of letting the SDK 
 it('ends an admitted turn if the SDK host disconnects', async () => {
   const f = await fixture()
   await expect(f.adapter.run({ ...f.run, prompt: 'disconnect' })).rejects.toThrow(
-    /Copilot|CLI server|closed|disposed/i,
+    /Copilot|CLI server|closed|disposed|not connected/i,
   )
 }, 20000)
 it('disables all tools for utilities and injects MCP only into coding sessions', async () => {

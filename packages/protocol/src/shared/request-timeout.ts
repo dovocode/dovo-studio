@@ -1,6 +1,14 @@
 export const REPOSITORY_CLONE_TIMEOUT_MS = 300_000
 
 export function runtimeRequestTimeout(path: string, input?: unknown) {
+  if (path === '/api/studio/session') return 30000
+  if (path === '/api/studio/tools') {
+    if (input && typeof input === 'object' && 'part' in input) {
+      if (input.part === 'threads') return 900000
+      if (input.part === 'browsers' || input.part === 'discover') return 120000
+    }
+    return 30000
+  }
   // Restoring a task checkout can run five-minute setup before pushing.
   if (path === '/api/scm/push')
     return input && typeof input === 'object' && 'taskId' in input && input.taskId ? 900000 : 300000

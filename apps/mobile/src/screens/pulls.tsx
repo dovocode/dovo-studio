@@ -531,7 +531,7 @@ export default function PullsScreen() {
                   : 'Your saved pull requests will appear here when available.'}
               </Text>
             </View>
-          ) : null
+          ) : undefined
         }
         ListFooterComponent={
           <View

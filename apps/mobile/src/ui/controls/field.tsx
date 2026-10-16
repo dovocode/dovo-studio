@@ -2,7 +2,7 @@ import { TextInput, View, type TextInputProps } from 'react-native'
 import { Text } from '../content/text'
 import { useTheme } from '../theme'
 import { Icon } from './icon'
-import type { Ref } from 'react'
+import type { ComponentRef, Ref } from 'react'
 
 export function SearchField({ label, style, ...props }: TextInputProps & { label: string }) {
   const { colors } = useTheme()
@@ -61,7 +61,7 @@ export function Field({
   hideLabel?: boolean
   error?: string
   hint?: string
-  inputRef?: Ref<TextInput>
+  inputRef?: Ref<ComponentRef<typeof TextInput>>
 }) {
   const { colors, styles } = useTheme()
 

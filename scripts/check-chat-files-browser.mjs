@@ -462,6 +462,35 @@ try {
     await page.locator('body').evaluate((element) => element.scrollWidth <= window.innerWidth),
     true,
   )
+  const markdown = '\n# Readable notes\n\nKeep <script>literal markup</script> as text.\n'
+  await writeFile(join(directory, 'notes.md'), markdown)
+  const markdownShare = await fetch(origin + '/api/tasks/files/share', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId: 'task', path: 'notes.md' }),
+  })
+  assert.equal(markdownShare.status, 200)
+  const markdownURL = (await markdownShare.json()).url
+  for (const colorScheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme })
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 844 })
+      await page.goto(origin + markdownURL)
+      const preview = page.locator('main[aria-label="File preview"]')
+      await preview.locator('pre').waitFor()
+      assert.equal(await preview.locator('pre').textContent(), markdown)
+      assert.equal(
+        await preview.locator('pre').evaluate((element) => getComputedStyle(element).color),
+        'rgb(0, 0, 0)',
+      )
+      assert.equal(
+        await preview.evaluate((element) => getComputedStyle(element).backgroundColor),
+        'rgb(255, 255, 255)',
+      )
+      assert.equal(await preview.locator('script').count(), 0)
+    }
+  }
+  await page.emulateMedia({ colorScheme: 'light' })
   await writeFile(join(directory, 'demo.webm'), Buffer.from(media.video, 'base64'))
   const videoShare = await fetch(origin + '/api/tasks/files/share', {
     method: 'POST',

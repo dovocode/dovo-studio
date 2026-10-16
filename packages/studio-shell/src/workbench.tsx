@@ -1,3 +1,4 @@
+import { StudioToolsBridge } from './studio-tools-bridge'
 import { resolveLinkTargets, type LinkTarget, type LinkOrigin } from '@dovo/studio-core/links'
 import { configuredTaskHarness, decodeWorkTarget, encodeWorkTarget } from '@dovo/protocol'
 import { useLinkChooser } from './link-chooser'
@@ -579,6 +580,7 @@ function WorkbenchContent({
     }))
   return (
     <StudioHostProvider api={api}>
+      <StudioToolsBridge />
       <SidebarHeaderLayout
         collapsible={
           inSettings ||
