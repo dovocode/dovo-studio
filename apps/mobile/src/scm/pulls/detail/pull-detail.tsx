@@ -21,7 +21,7 @@ import { usePullDetail } from './use-pull-detail'
 import { Markdown } from '../../../ui/content/markdown'
 import { router } from 'expo-router'
 import { pipelineRunsHref } from '../../../shell/source-route'
-import { useEffect, useRef, useState } from 'react'
+import { type ComponentRef, useEffect, useRef, useState } from 'react'
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import {
@@ -114,9 +114,9 @@ export function PullDetail({
       active = false
     }
   }, [readEffect, repositoryId, connected])
-  const body = useRef<ScrollView>(null)
+  const body = useRef<ComponentRef<typeof ScrollView>>(null)
   const [bodyHeight, setBodyHeight] = useState<number>()
-  const content = useRef<View>(null)
+  const content = useRef<ComponentRef<typeof View>>(null)
   const navigateAfterSheet = useSheetNavigation()
   const { draft: navigation, setField } = useDetailDraft(
     pullNavigation,
@@ -173,7 +173,7 @@ export function PullDetail({
     if (destination && destination.tab !== tab) setTab(destination.tab)
     if (destination?.tab === 'changes') setChangesOpened(true)
   }, [destination?.tab, tab])
-  const scrollToAnchor = (node: View) => {
+  const scrollToAnchor = (node: ComponentRef<typeof View>) => {
     if (!content.current || anchored.current) return
     node.measureLayout(content.current, (_x, y) => {
       if (anchored.current) return

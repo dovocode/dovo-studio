@@ -34,6 +34,7 @@ const preferences={computerRefresh:'manual',globalAgentPresets:[],retiredGlobalA
 export const useMobilePreferences=()=>preferences;export const readMobilePreferences=()=>preferences;export const updateMobilePreferences=()=>{};export const preferencesReady=Promise.resolve();export const useCarMode=()=>false;
 `
 const stubs = [
+  { path: 'react-native-gesture-handler', contents: controls },
   { path: 'react-native', contents: controls },
   {
     path: 'lucide-react-native',

@@ -1,3 +1,4 @@
+import { noStudioTools, type StudioTools } from '@dovo/protocol'
 import { runCredentials } from '../../auth/run-credentials.js'
 import type { MemoryScope } from '@dovo/protocol'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
@@ -95,6 +96,7 @@ export class Tasks {
     deviceHubEnabled: () => boolean = () => false,
     private resolveModel: (id: string, text?: string) => Effect.Effect<void, RuntimeFailure> = () =>
       Effect.void,
+    studioTools: () => StudioTools = noStudioTools,
   ) {
     this.runner = new TaskTurnRunner(
       store,
@@ -111,6 +113,7 @@ export class Tasks {
       pipelineWatchingEnabled,
       memoryScopes,
       deviceHubEnabled,
+      studioTools,
     )
     this.runner.setLinkedCheckouts(checkouts.linked)
     this.runner.setNativeSessions((taskId, sessionId, control, directories) => {

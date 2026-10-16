@@ -1,4 +1,9 @@
-import { RuntimeBackups, restoreRuntimeBackup, exportRuntimeRecovery } from '@dovo/runtime'
+import {
+  RuntimeBackups,
+  restoreRuntimeBackup,
+  exportRuntimeRecovery,
+  startStudioMcp,
+} from '@dovo/runtime'
 import { spawn } from 'node:child_process'
 import { parseArgs } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -54,7 +59,7 @@ async function main() {
       'This server is managed by Homebrew, mise or an archive install. Finish active work, stop the server, upgrade with your package manager, then run dovo-server start. Your data directory is preserved.',
     )
   if (values.help) {
-    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | doctor | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove> [options]
+    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | studio-tools | doctor | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove> [options]
   --data-dir <directory>    Workspace data directory (default: ~/.dovo)
   --host <host>             Setup: 0.0.0.0, an IP, local, tailscale, or netbird
   --port <number>           Setup: fixed port (default: 51464)
@@ -88,6 +93,7 @@ Build first: pnpm --filter @dovo/api... -r build`
       'stop',
       'restart',
       'pair',
+      'studio-tools',
       'doctor',
       'backup',
       'backups',
@@ -103,6 +109,10 @@ Build first: pnpm --filter @dovo/api... -r build`
         !['install', 'status', 'restart', 'update', 'remove', 'run'].includes(args[0])))
   )
     throw new Error(`Invalid command. Run ${cliName} --help.`)
+  if (command === 'studio-tools') {
+    await startStudioMcp()
+    return
+  }
   if (
     command !== 'setup' &&
     !(command === 'service' && args[0] === 'install') &&

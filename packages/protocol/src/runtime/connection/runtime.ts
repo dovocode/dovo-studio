@@ -1,3 +1,4 @@
+import { studioToolsSchema } from '../studio-tools.js'
 import { runtimeIconSchema } from './runtime-icon.js'
 import { memorySettingsSchema } from '../memory.js'
 import { browserProfilesSchema, defaultBrowserProfiles } from '../previews/browser-profiles.js'
@@ -102,6 +103,7 @@ export const providerStatusSchema = mutableStruct({
 export const snapshotSchema = mutableStruct({
   /** Computer-wide web approval rule, derived from its persisted preferences. */
   allowWebRequests: Schema.optional(Schema.Boolean),
+  studioTools: Schema.optional(studioToolsSchema),
   artifactsEnabled: Schema.optional(Schema.Boolean),
   codeReviewsEnabled: Schema.optional(Schema.Boolean),
   autoProjectSelectionEnabled: Schema.optional(Schema.Boolean),
@@ -409,6 +411,19 @@ export const runtimePreferencesSchema = mutableStruct({
   ),
   /** Experimental: let agents hand pipeline run monitoring to this runtime. */
   enablePipelineWatching: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
+  enableStudioThreads: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
+  enableStudioAutomations: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
+  enableStudioBrowsers: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
+  ),
+  enableStudioUI: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
+  enableStudioDiagnostics: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
   browserProfiles: browserProfilesSchema.pipe(

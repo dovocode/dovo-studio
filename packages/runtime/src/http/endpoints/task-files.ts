@@ -199,6 +199,7 @@ export async function serveTaskFile(
     response.setHeader('Referrer-Policy', 'no-referrer')
     response.setHeader('X-Content-Type-Options', 'nosniff')
     if (!url.searchParams.has('content') && !url.searchParams.has('download')) {
+      const plainText = mime === 'text/plain'
       const pdf = mime === 'application/pdf'
       const nonce = newSecret()
       response.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -215,16 +216,29 @@ export async function serveTaskFile(
         : mime.startsWith('audio/')
           ? 'audio'
           : undefined
-      const content = pdf
-        ? pdfPreviewHTML(nonce, url.pathname)
-        : media
-          ? `<${media} controls playsinline preload="metadata" style="width:100%;max-height:80dvh" src="${preview}"></${media}>`
-          : previewable
-            ? `<iframe ${sandboxed ? 'sandbox' : ''} title="File preview" src="${preview}"></iframe>`
-            : '<p>This file has no browser preview. Download the original to open it.</p>'
-      response.end(
-        `<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHTML(basename(target))}</title><style>body{margin:0;font:14px system-ui;background:#111;color:#eee}header{padding:16px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}a{color:#8acfff}nav{display:flex;gap:8px;align-items:center;padding:12px;flex-wrap:wrap}button{padding:8px}canvas{display:block;margin:12px auto;background:white}iframe{width:100%;height:calc(100dvh - 72px);border:0;background:white}p{padding:16px}</style><header><strong>${escapeHTML(basename(target))}</strong><a href="${download}" download>Download original</a><span>Temporary preview · 15 minutes</span></header>${content}</html>`,
-      )
+      const content = plainText
+        ? '<main class="text-preview" aria-label="File preview"><pre><code>'
+        : pdf
+          ? pdfPreviewHTML(nonce, url.pathname)
+          : media
+            ? `<${media} controls playsinline preload="metadata" style="width:100%;max-height:80dvh" src="${preview}"></${media}>`
+            : previewable
+              ? `<iframe ${sandboxed ? 'sandbox' : ''} title="File preview" src="${preview}"></iframe>`
+              : '<p>This file has no browser preview. Download the original to open it.</p>'
+      const page = `<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHTML(basename(target))}</title><style>body{margin:0;font:14px system-ui;background:#111;color:#eee}header{padding:16px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}a{color:#8acfff}nav{display:flex;gap:8px;align-items:center;padding:12px;flex-wrap:wrap}button{padding:8px}canvas{display:block;margin:12px auto;background:white}iframe{width:100%;height:calc(100dvh - 72px);border:0;background:white}.text-preview{min-height:calc(100dvh - 72px);background:white;color:black;color-scheme:only light}.text-preview pre{margin:0;padding:16px;white-space:pre-wrap;overflow-wrap:anywhere}p{padding:16px}</style><header><strong>${escapeHTML(basename(target))}</strong><a href="${download}" download>Download original</a><span>Temporary preview · 15 minutes</span></header>${content}`
+      if (plainText) {
+        // Own the text document's colors instead of relying on the browser's text viewer.
+        // Decode incrementally so UTF-8 characters spanning stream chunks stay intact.
+        const source = handle.createReadStream({ start: 0, autoClose: false, encoding: 'utf8' })
+        await pipeline(
+          (async function* () {
+            yield page
+            for await (const chunk of source) yield escapeHTML(String(chunk))
+            yield '</code></pre></main></html>'
+          })(),
+          response,
+        )
+      } else response.end(page + '</html>')
       return
     }
     const download = url.searchParams.has('download')

@@ -1,3 +1,4 @@
+import { enabledStudioTools } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import { Effect } from 'effect'
@@ -208,6 +209,7 @@ export function runtimeSnapshot(
       taskBehaviorSupported: true,
       threadBehaviorSupported: true,
       worktreeDeletionOverrideSupported: true,
+      studioTools: enabledStudioTools(preferences),
       artifactsEnabled: preferences.enableArtifacts,
       codeReviewsEnabled: preferences.enableCodeReviews,
       autoProjectModelSelection: preferences.autoProjectModelSelection,

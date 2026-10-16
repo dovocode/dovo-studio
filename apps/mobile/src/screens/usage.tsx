@@ -136,7 +136,7 @@ export default function UsageScreen() {
         initialNumToRender={10}
         contentContainerStyle={[styles.content, { paddingTop: 8, gap: 0 }]}
         ListEmptyComponent={
-          view === 'limits' ? null : (
+          view === 'limits' ? undefined : (
             <Text style={[styles.muted, { paddingVertical: 16 }]}>
               No turns in this period. Try the last 30 days or run a new task.
             </Text>

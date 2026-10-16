@@ -4,6 +4,7 @@ import { SettingsGroup, SettingsSwitchRow } from '../../screens/settings-group'
 import { Effect } from 'effect'
 import { clientTaskScope } from '@dovo/client-runtime'
 import {
+  studioToolSettings,
   normalizeBranchPrefix,
   runtimePreferencesSchema,
   taskModelSelectionSchema,
@@ -364,6 +365,22 @@ export function RuntimePreferences() {
                 queues stay paused; settling or archiving cancels watches.
               </Text>
             </View>
+          </Section>
+          <Section title="Studio Tools (experimental)">
+            {studioToolSettings.map(({ key, label, description }) => (
+              <View key={key} style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
+                  label={label}
+                  value={value?.[key] ?? false}
+                  disabled={disabled}
+                  onValueChange={(enabled) => save({ [key]: enabled })}
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  {description}
+                </Text>
+              </View>
+            ))}
           </Section>
           <Section title="Artifacts">
             <View style={{ gap: 6 }}>

@@ -24,7 +24,7 @@ try {
   const filename = 'CodeBlockHighlighter.cpp'
   copyFileSync(join(highlight, filename), join(source, filename))
   const patch = fileURLToPath(
-    new URL('../patches/react-native-enriched-markdown@1.1.0.patch', import.meta.url),
+    new URL('../patches/react-native-enriched-markdown@1.1.1.patch', import.meta.url),
   )
   const args = ['apply', '--include=cpp/highlight/CodeBlockHighlighter.cpp', patch]
   const alreadyPatched = spawnSync('git', [...args, '--reverse', '--check'], {

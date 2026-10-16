@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react'
 import { Effect } from 'effect'
 import {
+  studioToolSettings,
   normalizeBranchPrefix,
   runtimePreferencesSchema,
   taskModelSelectionSchema,
@@ -655,5 +656,29 @@ function ChildAgentLimit({
         )}
       </div>
     </SettingRow>
+  )
+}
+
+export function StudioToolsPreferences() {
+  const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
+  return (
+    <>
+      <SettingsGroup
+        title="Studio Tools (experimental)"
+        description="Choose which parts of this computer agents can use. Changes apply immediately to active tools; newly enabled tools appear on the next agent turn. All parts are disabled by default. UI interaction controls live desktop/web sessions on this machine only (localhost)."
+      >
+        {studioToolSettings.map(({ key, label, description }) => (
+          <SettingRow key={key} label={label} description={description}>
+            <Toggle
+              label={label}
+              checked={value?.[key] ?? false}
+              disabled={disabled}
+              onChange={(enabled) => save({ [key]: enabled })}
+            />
+          </SettingRow>
+        ))}
+      </SettingsGroup>
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
+    </>
   )
 }

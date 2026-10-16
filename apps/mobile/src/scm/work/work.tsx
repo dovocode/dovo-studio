@@ -588,7 +588,7 @@ export function WorkScreen({
                       : 'Refresh after CI starts, or check the PR on its server.'}
               </Text>
             </View>
-          ) : null
+          ) : undefined
         }
         ListFooterComponent={
           <View

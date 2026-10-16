@@ -659,7 +659,7 @@ export function Conversation({
             <View style={{ flex: 1 }}>
               <TaskEmptyState onBrowse={onBrowse} setup={setup} />
             </View>
-          ) : null
+          ) : undefined
         }
         ListFooterComponent={
           <View style={{ padding: 12, alignItems: 'center' }}>

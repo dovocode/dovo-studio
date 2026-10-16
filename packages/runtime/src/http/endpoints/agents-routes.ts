@@ -1,3 +1,4 @@
+import type { Services } from '../../services.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
 import { runtimeOperation } from '../../errors.js'
 import { approvalDecisionSchema, linkedCheckoutsSchema } from '@dovo/protocol'
@@ -437,114 +438,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
-        // Missing deletes are successful retries after a lost response.
-        if (action === 'delete' && !s.store.get().tasks.some((task) => task.id === id))
-          return yield* serviceResult({
-            ok: true,
-          })
-        const ids = taskFamilyIds(s.store.get().tasks, id)
-        const requireIdle = () => {
-          for (const taskId of ids) {
-            s.tasks.requireIdle(taskId)
-            s.jobs.requireTaskIdle(taskId)
-          }
-          if (
-            action !== 'restore' &&
-            s.terminals.list().some((terminal) => ids.has(terminal.taskId) && !terminal.exited)
-          )
-            throw new HttpError(
-              409,
-              'Close this thread’s and its child agents’ terminals before archiving or deleting it.',
-            )
-        }
-        requireIdle()
-        if (action !== 'restore') {
-          for (const taskId of ids) {
-            const cleanup = yield* serviceResult(
-              Promise.allSettled([
-                s.browsers.closeTask(taskId),
-                s.simulators.closeTask(taskId),
-                s.deviceHosts.closeTask(taskId),
-                s.agents.releaseTask(taskId),
-              ]),
-            )
-            for (const result of cleanup) if (result.status === 'rejected') throw result.reason
-          }
-          const latestIds = taskFamilyIds(s.store.get().tasks, id)
-          if (latestIds.size !== ids.size || [...latestIds].some((taskId) => !ids.has(taskId)))
-            throw new HttpError(409, 'This thread’s child agents changed. Refresh and retry.')
-          requireIdle()
-        }
-        if (action !== 'restore') for (const taskId of ids) s.titles.cancelSideChats(taskId)
-        if (action === 'delete') {
-          const cleanup = removeWorktrees ?? s.preferences.get().removeWorktreesOnThreadDelete
-          // Retain older checkout identities before their owning threads disappear, even when cleanup is off.
-          const worktrees = (yield* listWorktreesEffect(s)).worktrees
-          const candidates = cleanup
-            ? worktrees.filter((entry) => entry.threadIds.some((threadId) => ids.has(threadId)))
-            : []
-          // Listing involves Git I/O; make sure the family is unchanged and idle before deletion.
-          const currentIds = taskFamilyIds(s.store.get().tasks, id)
-          if (currentIds.size !== ids.size || [...currentIds].some((taskId) => !ids.has(taskId)))
-            throw new HttpError(409, 'This thread’s child agents changed. Refresh and retry.')
-          requireIdle()
-          for (const terminal of s.terminals.list())
-            if (ids.has(terminal.taskId)) yield* serviceResult(s.terminals.close(terminal.id))
-          s.store.transaction(() => {
-            for (const taskId of ids) {
-              s.db.prepare('DELETE FROM activity WHERE scope = ?').run(taskId)
-            }
-            s.store.update((workspace) => ({
-              ...workspace,
-              tasks: workspace.tasks.filter((task) => !ids.has(task.id)),
-            }))
-          })
-          yield* serviceResult(s.attachments.prune())
-          for (const entry of candidates) {
-            if (
-              entry.dirty ||
-              entry.threadIds.some((threadId) =>
-                s.store.get().tasks.some((task) => task.id === threadId),
-              )
-            )
-              continue
-            const result = yield* Effect.result(
-              s.tasks.withCheckoutMutationEffect(
-                entry.path,
-                removeWorktreeEffect(s, entry.path, true),
-              ),
-            )
-            if (result._tag === 'Failure') {
-              console.error(`Could not remove orphaned worktree ${entry.path}`, result.failure)
-              s.activity.add(
-                'command',
-                entry.path,
-                'Worktree kept: cleanup after thread deletion failed',
-              )
-            }
-          }
-        } else {
-          const now = new Date().toISOString()
-          s.store.update((workspace) => ({
-            ...workspace,
-            tasks: workspace.tasks.map((task) =>
-              ids.has(task.id)
-                ? {
-                    ...task,
-                    archived: action === 'archive',
-                    autoSettled: undefined,
-                    archivedAt: action === 'archive' ? (task.archivedAt ?? now) : undefined,
-                    snoozedUntil: null,
-                    quotaContinuation: undefined,
-                    updatedAt: now,
-                  }
-                : task,
-            ),
-          }))
-        }
-        return yield* serviceResult({
-          ok: true,
-        })
+        return yield* taskLifecycle(s, id, action, removeWorktrees)
       }
       if (method === 'POST' && path === '/api/tasks/viewed') {
         const { id, turnId, viewed, expectedRevision } = decode(
@@ -1208,3 +1102,123 @@ export function agentsRoute(request: IncomingMessage, path: string) {
   )
 }
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
+
+export function taskLifecycle(
+  s: Services,
+  id: string,
+  action: 'archive' | 'restore' | 'delete',
+  removeWorktrees?: boolean,
+) {
+  return routeProgram(
+    Effect.gen(function* () {
+      // Missing deletes are successful retries after a lost response.
+      if (action === 'delete' && !s.store.get().tasks.some((task) => task.id === id))
+        return yield* serviceResult({
+          ok: true,
+        })
+      const ids = taskFamilyIds(s.store.get().tasks, id)
+      const requireIdle = () => {
+        for (const taskId of ids) {
+          s.tasks.requireIdle(taskId)
+          s.jobs.requireTaskIdle(taskId)
+        }
+        if (
+          action !== 'restore' &&
+          s.terminals.list().some((terminal) => ids.has(terminal.taskId) && !terminal.exited)
+        )
+          throw new HttpError(
+            409,
+            'Close this thread’s and its child agents’ terminals before archiving or deleting it.',
+          )
+      }
+      requireIdle()
+      if (action !== 'restore') {
+        for (const taskId of ids) {
+          const cleanup = yield* serviceResult(
+            Promise.allSettled([
+              s.browsers.closeTask(taskId),
+              s.simulators.closeTask(taskId),
+              s.deviceHosts.closeTask(taskId),
+              s.agents.releaseTask(taskId),
+            ]),
+          )
+          for (const result of cleanup) if (result.status === 'rejected') throw result.reason
+        }
+        const latestIds = taskFamilyIds(s.store.get().tasks, id)
+        if (latestIds.size !== ids.size || [...latestIds].some((taskId) => !ids.has(taskId)))
+          throw new HttpError(409, 'This thread’s child agents changed. Refresh and retry.')
+        requireIdle()
+      }
+      if (action !== 'restore') for (const taskId of ids) s.titles.cancelSideChats(taskId)
+      if (action === 'delete') {
+        const cleanup = removeWorktrees ?? s.preferences.get().removeWorktreesOnThreadDelete
+        // Retain older checkout identities before their owning threads disappear, even when cleanup is off.
+        const worktrees = (yield* listWorktreesEffect(s)).worktrees
+        const candidates = cleanup
+          ? worktrees.filter((entry) => entry.threadIds.some((threadId) => ids.has(threadId)))
+          : []
+        // Listing involves Git I/O; make sure the family is unchanged and idle before deletion.
+        const currentIds = taskFamilyIds(s.store.get().tasks, id)
+        if (currentIds.size !== ids.size || [...currentIds].some((taskId) => !ids.has(taskId)))
+          throw new HttpError(409, 'This thread’s child agents changed. Refresh and retry.')
+        requireIdle()
+        for (const terminal of s.terminals.list())
+          if (ids.has(terminal.taskId)) yield* serviceResult(s.terminals.close(terminal.id))
+        s.store.transaction(() => {
+          for (const taskId of ids) {
+            s.db.prepare('DELETE FROM activity WHERE scope = ?').run(taskId)
+          }
+          s.store.update((workspace) => ({
+            ...workspace,
+            tasks: workspace.tasks.filter((task) => !ids.has(task.id)),
+          }))
+        })
+        yield* serviceResult(s.attachments.prune())
+        for (const entry of candidates) {
+          if (
+            entry.dirty ||
+            entry.threadIds.some((threadId) =>
+              s.store.get().tasks.some((task) => task.id === threadId),
+            )
+          )
+            continue
+          const result = yield* Effect.result(
+            s.tasks.withCheckoutMutationEffect(
+              entry.path,
+              removeWorktreeEffect(s, entry.path, true),
+            ),
+          )
+          if (result._tag === 'Failure') {
+            console.error(`Could not remove orphaned worktree ${entry.path}`, result.failure)
+            s.activity.add(
+              'command',
+              entry.path,
+              'Worktree kept: cleanup after thread deletion failed',
+            )
+          }
+        }
+      } else {
+        const now = new Date().toISOString()
+        s.store.update((workspace) => ({
+          ...workspace,
+          tasks: workspace.tasks.map((task) =>
+            ids.has(task.id)
+              ? {
+                  ...task,
+                  archived: action === 'archive',
+                  autoSettled: undefined,
+                  archivedAt: action === 'archive' ? (task.archivedAt ?? now) : undefined,
+                  snoozedUntil: null,
+                  quotaContinuation: undefined,
+                  updatedAt: now,
+                }
+              : task,
+          ),
+        }))
+      }
+      return yield* serviceResult({
+        ok: true,
+      })
+    }),
+  )
+}

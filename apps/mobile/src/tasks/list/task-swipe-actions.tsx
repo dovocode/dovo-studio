@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Pressable, View } from 'react-native'
-import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import { View } from 'react-native'
+import { Gesture, GestureDetector, Pressable } from 'react-native-gesture-handler'
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,

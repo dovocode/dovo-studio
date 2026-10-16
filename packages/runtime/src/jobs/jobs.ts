@@ -147,6 +147,11 @@ export class Jobs {
       .slice(0, 100)
       .map((run) => decode(jobRunSchema, run))
   }
+  detail(id: string) {
+    const run = this.runs.get(id)
+    if (!run) throw new HttpError(404, 'Automation run not found')
+    return { ...decode(jobRunSchema, run), flow: structuredClone(run.flow) }
+  }
   private write(run: StoredRun) {
     this.db
       .prepare(

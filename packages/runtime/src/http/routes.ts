@@ -1,3 +1,7 @@
+import { requireLocalStudioUI } from '../studio/local-ui.js'
+import { studioTool } from '../studio/tools.js'
+import { studioSessions } from '../studio/ui-sessions.js'
+import { studioUIPollSchema } from '@dovo/protocol'
 import { isRunToken } from '../auth/run-credentials.js'
 import {
   authorizeRunEndpoint,
@@ -354,6 +358,34 @@ export function route(
           yield* serviceResult(body(request, 4096)),
         )
         return yield* serviceResult({ app: s.mcpApps.read(taskId, id) })
+      }
+      if (method === 'POST' && path === '/api/studio/tools') {
+        const input = decode(
+          mutableStruct({ taskId: idSchema, part: Schema.String, command: Schema.Unknown }),
+          yield* serviceResult(body(request)),
+        )
+        if (input.part === 'ui') requireLocalStudioUI(request.socket.remoteAddress)
+        return yield* serviceResult(
+          studioTool(
+            s,
+            input.taskId,
+            input.part,
+            input.command,
+            () => {
+              authenticateRuntimeOperation(s, token)
+            },
+            run,
+          ),
+        )
+      }
+      if (method === 'POST' && path === '/api/studio/session') {
+        requireLocalStudioUI(request.socket.remoteAddress)
+        const input = decode(studioUIPollSchema, yield* serviceResult(body(request, 256 * 1024)))
+        return yield* serviceResult(
+          studioSessions(s).poll(device.id, input, () => {
+            s.devices.authenticate(token)
+          }),
+        )
       }
       if (method === 'GET' && path === '/api/mutations/status')
         return { version: 1, acknowledgements: true, workspaceMutations: 1 }

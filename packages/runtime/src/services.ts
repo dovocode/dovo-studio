@@ -1,3 +1,4 @@
+import { enabledStudioTools } from '@dovo/protocol'
 import { ModelSelection } from './agents/tasks/model-selection.js'
 import { runCredentials, type RunCredentials } from './auth/run-credentials.js'
 import { permissionPolicyReadOnly } from '@dovo/protocol'
@@ -197,6 +198,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       () => preferences.get().maxActiveChildAgents,
       () => deviceHosts.settings.get().enabled ?? false,
       (id, text) => modelSelection.resolveEffect(id, text),
+      () => enabledStudioTools(preferences.get()),
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git)
   const taskReviews = new TaskReviews(db, { store, tasks, git, checkouts, activity })

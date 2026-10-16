@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useRef } from 'react'
+import { type ComponentRef, memo, useCallback, useLayoutEffect, useRef } from 'react'
 import type { TextInput, TextInputProps } from 'react-native'
 import { Field } from '../../ui/controls/field'
 import { useTheme } from '../../ui/theme'
@@ -24,7 +24,7 @@ export const ComposerField = memo(function ComposerField({
 }) {
   const { styles } = useTheme()
 
-  const input = useRef<TextInput>(null)
+  const input = useRef<ComponentRef<typeof TextInput>>(null)
   const initial = useRef(value)
   const nativeText = useRef(value)
   const appliedRevision = useRef(revision)

@@ -1,3 +1,4 @@
+import { requireStudioPart, studioReadAction } from '../studio/tools.js'
 import { decode, permissionPolicyWithinCeiling, resolveTaskAgent } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { Services } from '../services.js'
@@ -5,6 +6,7 @@ import { HttpError } from '../errors.js'
 import { isRunToken } from './run-credentials.js'
 
 const allowed = new Set([
+  '/api/studio/tools',
   '/api/subagents/spawn',
   '/api/subagents/list',
   '/api/subagents/read',
@@ -74,6 +76,13 @@ export function authorizeRunRoute(
     !ownsRun
   )
     denied()
+  if (path === '/api/studio/tools') {
+    if (!ownsRun) denied()
+    const part = typeof input.part === 'string' ? input.part : ''
+    requireStudioPart(s, part, grant)
+    if (grant.readOnly && !studioReadAction(part, record(input.command).action)) denied()
+    return grant
+  }
   if (path.startsWith('/api/subagents/')) {
     if (path === '/api/subagents/spawn') {
       const parent = resolveTaskAgent(s.store.taskSummary(grant.taskId), s.store.get().agents)

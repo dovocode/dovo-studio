@@ -1,3 +1,4 @@
+import { noStudioTools, type StudioTools } from '@dovo/protocol'
 import {
   decode,
   mcpServerSchema,
@@ -22,6 +23,7 @@ export function taskToolsServer(
   deviceHubEnabled = false,
   sandboxMode?: SandboxMode,
   credentialFile?: string,
+  studioTools: StudioTools = noStudioTools(),
 ): McpServer {
   const localHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const urlHost = localHost.includes(':') ? `[${localHost}]` : localHost
@@ -38,6 +40,7 @@ export function taskToolsServer(
     envValues: {
       ELECTRON_RUN_AS_NODE: '1',
       DOVO_TASK_ID: taskId,
+      DOVO_STUDIO_TOOLS: JSON.stringify(studioTools),
       ...(parentRunId ? { DOVO_TASK_RUN_ID: parentRunId } : {}),
       DOVO_TASK_URL: `http://${urlHost}:${port}`,
       ...(credentialFile

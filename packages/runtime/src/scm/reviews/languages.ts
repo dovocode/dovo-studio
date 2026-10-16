@@ -145,7 +145,7 @@ function phpInclude(node: Node): { suffix: string; anchored: boolean } | undefin
   }
   if (
     ['string', 'encapsed_string'].includes(node.type) &&
-    children.every((child) => child.type === 'string_value')
+    children.every((child) => ['string_value', 'string_content'].includes(child.type))
   )
     return { suffix: node.text.slice(1, -1), anchored: false }
   if (node.type === 'binary_expression' && node.children.some((child) => child?.type === '.')) {

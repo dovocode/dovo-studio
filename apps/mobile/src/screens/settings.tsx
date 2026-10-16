@@ -153,7 +153,7 @@ export default function SettingsScreen() {
           path: '/settings/devices',
           local: true,
           keywords:
-            'pair runtime devices network address tailscale netbird shell commands installations accounts titles dictation worktrees logs memory notes artifacts retention experimental code review findings verification approval pr pull requests pipeline pipelines watcher child agents subagent concurrent limit',
+            'pair runtime devices network address tailscale netbird shell commands installations accounts titles dictation worktrees logs memory notes artifacts retention experimental Studio Tools threads automations browsers ui diagnostics debug code review findings verification approval pr pull requests pipeline pipelines watcher child agents subagent concurrent limit',
         },
         {
           title: 'Device previews',
