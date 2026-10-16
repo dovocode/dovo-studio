@@ -75,7 +75,16 @@ export function MessageQueue({ task }: { task: Task }) {
   return (
     <View
       style={{
-        paddingHorizontal: 16,
+        marginHorizontal: 12,
+        marginBottom: -16,
+        paddingBottom: 16,
+        paddingHorizontal: 10,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+        borderWidth: 1,
+        borderBottomWidth: 0,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
       }}
     >
       {!!queue.length && (
@@ -92,15 +101,18 @@ export function MessageQueue({ task }: { task: Task }) {
             flexDirection: 'row',
             alignItems: 'center',
             gap: 8,
+            paddingVertical: 4,
             opacity: pressed ? 0.55 : 1,
           })}
         >
           <Icon name="jobs" size={15} color={colors.muted} />
           <Text
+            numberOfLines={1}
             style={[
               styles.muted,
               {
                 flex: 1,
+                fontSize: 12,
               },
             ]}
           >

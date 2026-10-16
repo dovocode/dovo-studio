@@ -224,14 +224,16 @@ try {
         const canvasContext = canvas.getContext('2d')
         if (!canvasContext) throw new Error('Contrast checks require a canvas context')
         // Let Chromium resolve color-mix/oklab and composite translucent read titles.
-        const rgba = (color, backdrop) => {
+        const rgba = (color, backdrop, opacity = 1) => {
           canvasContext.clearRect(0, 0, 1, 1)
           if (backdrop) {
             canvasContext.fillStyle = backdrop
             canvasContext.fillRect(0, 0, 1, 1)
           }
+          canvasContext.globalAlpha = opacity
           canvasContext.fillStyle = color
           canvasContext.fillRect(0, 0, 1, 1)
+          canvasContext.globalAlpha = 1
           return [...canvasContext.getImageData(0, 0, 1, 1).data]
         }
         const luminance = (color) => {
@@ -241,22 +243,28 @@ try {
             .map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4))
           return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722
         }
-        const ratio = (color) => {
-          const a = luminance(rgba(color, background)),
+        const ratio = (color, opacity = 1) => {
+          const a = luminance(rgba(color, background, opacity)),
             b = luminance(rgba(background))
           return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
         }
         return {
           title: ratio(getComputedStyle(title).color),
           titleAlpha: rgba(getComputedStyle(title).color)[3] / 255,
-          metadata: ratio(getComputedStyle(context).color),
+          metadata: ratio(
+            getComputedStyle(context).color,
+            Number(getComputedStyle(context).opacity),
+          ),
+          metadataOpacity: [...button.querySelectorAll('.studio-thread-card-context')].map((row) =>
+            Number(getComputedStyle(row).opacity),
+          ),
           weight: getComputedStyle(title).fontWeight,
         }
       })
       assert.equal(contrast.titleAlpha, unread ? 1 : 0.4)
       if (unread) assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
-      // Shared CSS owns metadata color; keep its readability part of the audit contract.
-      assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
+      assert.deepEqual(contrast.metadataOpacity, unread ? [1, 1] : [0.4, 0.4])
+      if (unread) assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
       contrasts.push({ mode, unread, ...contrast })
     }
   }
@@ -266,6 +274,7 @@ try {
     assert.equal(read.weight, '500')
     assert.equal(unread.weight, read.weight)
     assert.ok(unread.title > read.title)
+    assert.ok(unread.metadata > read.metadata)
   }
   console.log(
     'Task contrast measurements (with root-owned metadata CSS):',

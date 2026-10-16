@@ -1,7 +1,8 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import { useRuntime } from '../../runtime/connection/provider'
 
-export type LinkOrigin = { runtimeId?: string; repositoryId?: string; jiraSourceId?: string }
+import type { LinkOrigin } from '@dovo/studio-core/links'
+export type { LinkOrigin } from '@dovo/studio-core/links'
 const Origin = createContext<LinkOrigin>({})
 
 export function LinkOriginProvider({

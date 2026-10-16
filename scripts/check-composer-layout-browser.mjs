@@ -18,6 +18,7 @@ const mocks = {
     export const useStudioHost=()=>({navigate:()=>{}});
     export const useResolvedTheme=()=> 'dark';
     const preferences={sendWith:'enter',themePalette:'dovo',markdownComposerPreview:false,followUp:'queue',confirmStop:false};
+    window.setFollowUp=value=>{preferences.followUp=value};
     export const useAppPreferences=()=>preferences;
     export const readAppPreferences=()=>preferences;
   `,
@@ -36,6 +37,7 @@ const built = await build({
       import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
       import {ChatThread} from '../extension-tasks/src/chat/thread/chat-thread';
       import {Composer} from '../extension-tasks/src/chat/composer/composer';
+      import {MessageQueue} from '../extension-tasks/src/chat/thread/message-queue';
       const repositories=[
         {id:'scratch',kind:'scratch',name:'Thread folder',path:'/private/thread',branch:''},
         {id:'git',name:'dovo-studio',path:'/repo',branch:'main',gitIdentity:'github.com/dovo/studio'},
@@ -72,7 +74,7 @@ const built = await build({
         const value={workspace,setWorkspace,snapshot:{workspace,defaults,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{}};
         const visiblePending=pending?[pending]:[];
         const displayed=task&&{...task,messages:pending?.destination==='thread'&&!task.messages.some(m=>m.id===pending.message.id)?[...task.messages,pending.message]:task.messages};
-        return <Context.Provider value={value}>{settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?<><ChatThread task={displayed} pending={visiblePending}/><Composer key={task.id} task={task} onPending={setPending}/></>:<StartupDraft onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
+        return <Context.Provider value={value}>{settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?<><ChatThread task={displayed} pending={visiblePending}/><Composer key={task.id} task={task} onPending={setPending} queuedMessages={<MessageQueue task={task}/>}/></>:<StartupDraft onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
       }
       createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
     `,
@@ -217,6 +219,68 @@ try {
         await page.screenshot({ path: screenshots + '/' + device.name + '-task-started.png' })
     }
   }
+  // The queue mirrors the inset project strip, with compaction outside both surfaces.
+  await page.evaluate(() =>
+    window.setTask({
+      repositoryId: 'git',
+      status: 'running',
+      draft: 'Continue the review',
+      contextUsage: { used: 190000, limit: 200000, updatedAt: new Date().toISOString() },
+      queue: [
+        {
+          id: 'queued-layout',
+          role: 'user',
+          text: 'Review the remaining files and verify the changes',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }),
+  )
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    const compact = await page
+      .getByRole('button', { name: 'Compact context', exact: true })
+      .boundingBox()
+    const queue = await page.locator('[aria-label="Queued follow-ups"] summary').boundingBox()
+    const queueStrip = await page.locator('[aria-label="Queued follow-ups"]').boundingBox()
+    const composer = await page.locator('.studio-composer').boundingBox()
+    const project = await page
+      .getByRole('group', { name: 'Project and checkout', exact: true })
+      .boundingBox()
+    assert.ok(compact.y + compact.height <= queue.y)
+    assert.ok(queue.height <= 32, JSON.stringify(queue))
+    assert.ok(
+      Math.abs(queueStrip.x - project.x) < 1 && Math.abs(queueStrip.width - project.width) < 1,
+    )
+    assert.ok(
+      Math.abs(queue.y + queue.height - composer.y) < 2,
+      JSON.stringify({ queue, composer }),
+    )
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+      false,
+    )
+    assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Steer agent', exact: true }).count(), 0)
+    await page.getByRole('button', { name: 'More message actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Steer agent' }).waitFor()
+    await page.getByRole('menuitem', { name: 'Fork', exact: true }).waitFor()
+    if (screenshots) await page.screenshot({ path: screenshots + '/queue-split-' + width + '.png' })
+    await page.keyboard.press('Escape')
+  }
+  await page.evaluate(() => {
+    window.setFollowUp('steer')
+    window.setTask({})
+  })
+  await page.getByRole('button', { name: 'Steer agent', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'More message actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Queue follow-up' }).waitFor()
+  assert.equal(await page.getByRole('menuitem', { name: 'Steer agent' }).count(), 0)
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => {
+    window.setFollowUp('queue')
+    window.setTask({ queue: [], contextUsage: undefined })
+  })
   // A transcript with unloaded history must keep its loading/error path, not show a new-task hero.
   await page.evaluate(() =>
     window.setTask({ status: 'draft', messages: [], historyBefore: 'earlier' }),

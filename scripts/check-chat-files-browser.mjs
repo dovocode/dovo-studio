@@ -142,7 +142,7 @@ try {
   const desktop = page.locator('[data-client="desktop"]')
   await desktop.getByRole('img', { name: 'Screenshot' }).waitFor()
   assert.equal(await desktop.getByText('[blocked]', { exact: false }).count(), 0)
-  await desktop.getByRole('button', { name: 'Website', exact: true }).waitFor()
+  await desktop.getByRole('link', { name: 'Website', exact: true }).waitFor()
   await desktop.getByRole('button', { name: 'Source', exact: true }).click()
   await page.getByRole('dialog').locator('iframe').waitFor()
   const sharesBeforeRefresh = await page.evaluate(

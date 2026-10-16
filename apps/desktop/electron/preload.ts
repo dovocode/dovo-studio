@@ -100,6 +100,19 @@ contextBridge.exposeInMainWorld('dovo', {
       return () => ipcRenderer.removeListener('input-preview:open-thread', handler)
     },
   },
+  onOpenLink: (listener: (url: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url)
+    ipcRenderer.on('links:open', handler)
+    void ipcRenderer
+      .invoke('links:ready', true)
+      .catch((error: unknown) => console.error('Could not register link receiver:', error))
+    return () => {
+      ipcRenderer.removeListener('links:open', handler)
+      void ipcRenderer
+        .invoke('links:ready', false)
+        .catch((error: unknown) => console.error('Could not release link receiver:', error))
+    }
+  },
   openBrowserLink: (url: string): Promise<void> => ipcRenderer.invoke('links:browser', url),
   openExternalLink: (url: string): Promise<void> => ipcRenderer.invoke('links:external', url),
   appInfo: ipcRenderer.sendSync('app:info'),

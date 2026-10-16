@@ -67,10 +67,11 @@ export interface StudioHostApi {
   openPullLink?: (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => boolean
   /** A handoff is valid only while its initiating view and navigation are still current. */
   taskNavigationGuard?: () => () => boolean
-  chooseLink?: (
+  openLink?: (url: string, options?: import('./links').LinkOptions) => void
+  getLinkActions?: (
     url: string,
-    options?: { details?: 'pull' | 'pipeline'; browser?: boolean; signal?: AbortSignal },
-  ) => Promise<'browser' | 'details' | 'external' | 'cancel'>
+    options?: import('./links').LinkOptions,
+  ) => import('./links').LinkAction[]
   openBrowserLink?: (url: string) => Promise<void>
   openPipelineLink?: (
     url: string,

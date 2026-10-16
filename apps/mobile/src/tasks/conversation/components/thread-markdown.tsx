@@ -28,7 +28,7 @@ function plainMessageMarkdown(text: string) {
 export function ThreadMarkdown({
   plainText = false,
   ...props
-}: Omit<ComponentProps<typeof Markdown>, 'onLinkLongPress'> & {
+}: Omit<ComponentProps<typeof Markdown>, 'onLinkLongPress' | 'onLinkPress'> & {
   plainText?: boolean
 }) {
   const { styles } = useTheme()
@@ -96,6 +96,9 @@ export function ThreadMarkdown({
           }
           text={markdown}
           variant={plainText ? 'chat' : props.variant}
+          onLinkPress={(url) => {
+            if (!choose(url)) open(url)
+          }}
           onLinkLongPress={
             hasPullLink
               ? (url) => {

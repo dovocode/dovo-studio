@@ -1,6 +1,14 @@
-import { appLinkChoices } from './app-link-target'
+import { linkTargetHref } from './app-link-target'
+import {
+  resolveLinkTargets,
+  linkActions,
+  useLinkController,
+  type LinkAction as RouterAction,
+} from '@dovo/studio-core/links'
+import * as Clipboard from 'expo-clipboard'
+import { previewUrl } from '@dovo/protocol'
 import { useLinkOrigin, type LinkOrigin } from './link-origin'
-import { router } from 'expo-router'
+import { router, usePathname } from 'expo-router'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Sheet, useSheetNavigation, type SheetHandle } from '../layout/sheet'
 import { SafeModal } from '../layout/safe-modal'
@@ -11,12 +19,7 @@ import WebView from 'react-native-webview'
 import { Text } from './text'
 import { useTheme } from '../theme'
 
-export type LinkAction = {
-  label: string
-  disabled?: boolean
-  signal?: AbortSignal
-  run: () => Promise<unknown>
-}
+export type LinkAction = Omit<RouterAction, 'id' | 'kind'>
 let showLink: ((url: string, origin?: LinkOrigin, actions?: LinkAction[]) => void) | undefined
 
 export async function openAppLink(
@@ -25,7 +28,12 @@ export async function openAppLink(
   origin?: LinkOrigin,
   actions?: LinkAction[],
 ): Promise<void> {
-  if (external || !/^https?:\/\//i.test(url)) return Linking.openURL(url)
+  if (!/^https?:\/\//i.test(url)) {
+    if (!/^(mailto|tel|sms|dovo):/i.test(url)) throw new Error('Unsupported link address')
+    return Linking.openURL(url)
+  }
+  previewUrl(url)
+  if (external) return Linking.openURL(url)
   if (!showLink) throw new Error('The link chooser is unavailable')
   showLink(url, origin, actions)
 }
@@ -48,96 +56,70 @@ export function useOpenAppLink(taskId?: string, repositoryId?: string, jiraSourc
 export function LinkBrowser() {
   const { colors } = useTheme()
 
-  const { overviews } = useRuntime()
-  const [pending, setPending] = useState<{
-    url: string
-    origin?: LinkOrigin
-    actions?: LinkAction[]
-  } | null>(null)
+  const { overviews, activeId } = useRuntime()
+  const pathname = usePathname()
+  const { controller, pending } = useLinkController()
+  useEffect(() => {
+    controller.cancel()
+  }, [controller, activeId, pathname])
   const picker = useRef<SheetHandle>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const choices = pending ? appLinkChoices(pending.url, overviews, pending.origin) : []
   const [url, setUrl] = useState<string | null>(null)
+  const owner = useRef(overviews)
+  owner.current = overviews
   useEffect(() => {
     const show = (url: string, origin?: LinkOrigin, actions?: LinkAction[]) => {
-      setBusy(false)
-      setError('')
-      setPending({ url, origin, actions })
+      controller.open({
+        url,
+        origin,
+        onError: (cause) => Alert.alert('Could not open link', String(cause)),
+        actions: linkActions(
+          url,
+          resolveLinkTargets(url, owner.current, origin),
+          {
+            details: (target) => router.push(linkTargetHref(target)),
+            browser: setUrl,
+            external: (target) => Linking.openURL(target),
+            copy: (target) => Clipboard.setStringAsync(target),
+          },
+          actions?.map((action, index) => ({
+            ...action,
+            id: `thread:${index}`,
+            kind: 'thread',
+            keepOpen: true,
+          })),
+        ),
+      })
     }
     showLink = show
     return () => {
       if (showLink === show) showLink = undefined
     }
-  }, [])
+  }, [controller])
   useEffect(() => {
-    if (!pending) return
-    const signals =
-      pending.actions?.flatMap((action) => (action.signal ? [action.signal] : [])) ?? []
-    const cancel = () => setPending((current) => (current === pending ? null : current))
-    if (signals.some((signal) => signal.aborted)) cancel()
-    for (const signal of signals) signal.addEventListener('abort', cancel, { once: true })
-    return () => {
-      for (const signal of signals) signal.removeEventListener('abort', cancel)
-    }
+    if (pending?.closing) picker.current?.dismiss()
   }, [pending])
   return (
     <>
       {pending && (
-        <Sheet ref={picker} title="Open link" busy={busy} onClose={() => setPending(null)}>
-          <Text numberOfLines={3}>{pending.url}</Text>
-          {choices.map((choice, index) => (
+        <Sheet
+          ref={picker}
+          title="Open link"
+          busy={pending.busy}
+          onClose={() => controller.dismissed(pending.request)}
+        >
+          <Text numberOfLines={3}>{pending.request.url}</Text>
+          {pending.request.actions.map((action) => (
             <Action
-              key={`${choice.runtimeId}:${index}`}
-              secondary
-              label={`${choice.href.pathname.includes('/pulls/pr/') ? 'Open PR details' : choice.href.pathname.includes('/pulls/pipeline/') ? 'Open pipeline details' : 'Open issue details'}${choices.length > 1 ? ` · ${choice.label}` : ''}`}
-              onPress={() => picker.current?.dismiss(() => router.push(choice.href))}
-            />
-          ))}
-          <Action
-            label="Open in Dovo browser"
-            secondary
-            onPress={() => {
-              const target = pending.url
-              picker.current?.dismiss(() => setUrl(target))
-            }}
-          />
-          <Action
-            label="Open in external browser"
-            secondary
-            onPress={() => {
-              const target = pending.url
-              picker.current?.dismiss(() => {
-                void Linking.openURL(target).catch((cause: unknown) =>
-                  Alert.alert('Could not open link', String(cause)),
-                )
-              })
-            }}
-          />
-          {pending.actions?.map((action) => (
-            <Action
-              key={action.label}
+              key={action.id}
               label={action.label}
-              disabled={busy || action.disabled}
-              onPress={() => {
-                if (action.signal?.aborted) return
-                setBusy(true)
-                setError('')
-                void action
-                  .run()
-                  .then(() => {
-                    if (!action.signal?.aborted) picker.current?.dismiss()
-                  })
-                  .catch((cause: unknown) => {
-                    if (!action.signal?.aborted) setError(String(cause))
-                  })
-                  .finally(() => {
-                    if (!action.signal?.aborted) setBusy(false)
-                  })
-              }}
+              secondary
+              disabled={pending.busy || action.disabled}
+              onPress={() =>
+                controller.select(pending.request, action.id, () => picker.current?.dismiss())
+              }
             />
           ))}
-          {!!error && <Text accessibilityRole="alert">{error}</Text>}
+          {!!pending.error && <Text accessibilityRole="alert">{pending.error}</Text>}
         </Sheet>
       )}
       <SafeModal visible={url !== null} animationType="slide" onRequestClose={() => setUrl(null)}>

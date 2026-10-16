@@ -23,6 +23,9 @@ const markdownControls = {
   table: false,
   mermaid: { copy: true, download: true, fullscreen: true, panZoom: true },
 }
+// The workbench owns link destinations and confirmation; keep real anchors so
+// its thread and application click handlers can present the single chooser.
+const markdownLinkSafety = { enabled: false }
 export function Message({
   from,
   className,
@@ -123,6 +126,7 @@ export const MessageResponse = memo(function MessageResponse({
     className: 'studio-markdown min-w-0 max-w-full',
     plugins: markdownPlugins,
     controls: markdownControls,
+    linkSafety: markdownLinkSafety,
     codeBlockMaxHeight: 400,
     tableMaxHeight: 400,
     lineNumbers: false,

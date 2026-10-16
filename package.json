@@ -84,7 +84,7 @@
     "test:mobile-models:browser": "node scripts/check-mobile-models-browser.mjs",
     "test:mobile-thread-rendering:browser": "node scripts/check-mobile-thread-rendering.mjs",
     "test:conversation-history:browser": "node scripts/check-conversation-history-browser.mjs",
-    "test:mobile-composer:browser": "node scripts/check-mobile-composer-browser.mjs",
+    "test:mobile-composer:browser": "node scripts/check-mobile-composer-browser.mjs && node scripts/check-mobile-composer-actions-browser.mjs",
     "test:mobile-appearance:browser": "node scripts/check-mobile-appearance-browser.mjs",
     "test:mobile-settings-layout:browser": "node scripts/check-mobile-settings-layout-browser.mjs",
     "test:mobile-energy:browser": "node scripts/check-mobile-energy-browser.mjs",

@@ -1,10 +1,5 @@
-import {
-  forgePullTarget,
-  pullRepositoryIdentity,
-  decodeWorkTarget,
-  githubPipelineTarget,
-  encodeWorkTarget,
-} from '@dovo/protocol'
+import { resolveLinkTargets, type LinkTarget, type LinkOrigin } from '@dovo/studio-core/links'
+import { decodeWorkTarget, encodeWorkTarget } from '@dovo/protocol'
 import { useLinkChooser } from './link-chooser'
 import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -25,7 +20,6 @@ import {
   SettingsTargetProvider,
   WorkspaceProvider,
   useWorkspace,
-  useRepositorySources,
   type StudioCommand,
   type StudioExtension,
   type StudioHostApi,
@@ -57,6 +51,7 @@ type WorkbenchProps = {
   extensions: readonly StudioExtension[]
   pickDirectory?: StudioHostApi['pickDirectory']
   browser?: StudioHostApi['browser']
+  onOpenLink?: (listener: (url: string) => void) => () => void
   openBrowserLink?: StudioHostApi['openBrowserLink']
   openExternalLink?: StudioHostApi['openExternalLink']
   desktopPlatform?: DesktopPlatform
@@ -152,6 +147,7 @@ function WorkbenchContent({
   browser,
   openBrowserLink,
   openExternalLink,
+  onOpenLink,
   appInfo,
   desktopPlatform,
   updates,
@@ -332,101 +328,99 @@ function WorkbenchContent({
     },
     [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
   )
-  const repositorySources = useRepositorySources()
-  const { chooseLink, dialog: linkDialog } = useLinkChooser()
-  const linkContext = useRef({ repositorySources, tasks: workspace.tasks })
-  linkContext.current = { repositorySources, tasks: workspace.tasks }
-  const openPullLink = useCallback(
-    (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => {
-      const { repositorySources, tasks } = linkContext.current
-      const pull = forgePullTarget(
-        url,
-        repositorySources.map((source) => ({
-          identity: pullRepositoryIdentity(source.repository),
-        })),
-      )
-      if (!pull) return false
-      const { target } = settingsNavigation.current
-      const integrationOrigin = target.pullTarget ?? decodeWorkTarget(target.entityId)
-      const runtimeId =
-        origin?.runtimeId ??
-        integrationOrigin?.runtimeId ??
-        (target.viewId === 'tasks' ? currentRuntime.current : undefined)
-      const repositoryId =
-        origin?.repositoryId ??
-        integrationOrigin?.repositoryId ??
-        (target.viewId === 'tasks'
-          ? tasks.find((task) => task.id === target.entityId)?.repositoryId
-          : undefined)
-      const matches = repositorySources.filter(
-        (source) => pullRepositoryIdentity(source.repository) === pull.identity,
-      )
-      const contextual = matches.find(
-        (source) => source.runtimeId === runtimeId && source.repository.id === repositoryId,
-      )
-      const sameRuntime = matches.filter((source) => source.runtimeId === runtimeId)
-      const source =
-        contextual ??
-        (sameRuntime.length === 1 ? sameRuntime[0] : matches.length === 1 ? matches[0] : undefined)
+  const openLinkTarget = (destination: LinkTarget) => {
+    if (destination.kind === 'pull') {
       navigate({
         viewId: 'pulls',
-        entityId: pull.navigationUrl,
-        ...(source || runtimeId
-          ? {
-              pullTarget: {
-                runtimeId: source?.runtimeId ?? runtimeId ?? '',
-                repositoryId: source?.repository.id,
-                number: pull.number,
-                url: pull.navigationUrl,
-                tab: pull.tab,
-                fragment: pull.fragment,
-              },
-            }
-          : {}),
+        entityId: destination.navigationUrl,
+        pullTarget: {
+          runtimeId: destination.runtimeId,
+          repositoryId: destination.repositoryId,
+          number: destination.number,
+          url: destination.navigationUrl,
+          tab: destination.tab,
+          fragment: destination.fragment,
+        },
       })
-      return true
-    },
-    [navigate],
-  )
-  const resolvePipelineLink = useCallback(
-    (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => {
-      const run = githubPipelineTarget(url)
-      if (!run) return undefined
-      const matches = linkContext.current.repositorySources.filter(
-        (source) => pullRepositoryIdentity(source.repository) === run.identity,
-      )
-      const { target } = settingsNavigation.current
-      const integration = target.pullTarget ?? decodeWorkTarget(target.entityId)
-      const runtimeId = origin?.runtimeId ?? integration?.runtimeId ?? currentRuntime.current
-      const repositoryId =
-        origin?.repositoryId ??
-        integration?.repositoryId ??
-        linkContext.current.tasks.find((task) => task.id === target.entityId)?.repositoryId
-      const sameRuntime = matches.filter((source) => source.runtimeId === runtimeId)
-      const source =
-        sameRuntime.find((source) => source.repository.id === repositoryId) ??
-        (sameRuntime.length === 1 ? sameRuntime[0] : matches.length === 1 ? matches[0] : undefined)
-      return source ? { run, source } : undefined
-    },
-    [],
-  )
-  const openPipelineLink = useCallback(
-    (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => {
-      const match = resolvePipelineLink(url, origin)
-      if (!match) return false
-      const { run, source } = match
+    } else
       navigate({
-        viewId: 'pipelines',
+        viewId:
+          destination.kind === 'pipeline'
+            ? 'pipelines'
+            : destination.kind === 'jira'
+              ? 'jira'
+              : 'issues',
         entityId: encodeWorkTarget({
-          runtimeId: source.runtimeId,
-          repositoryId: source.repository.id,
-          id: run.id,
-          url: run.url,
+          runtimeId: destination.runtimeId,
+          repositoryId: destination.repositoryId,
+          jiraSourceId: destination.jiraSourceId,
+          id: destination.itemId,
+          url: destination.url,
         }),
       })
+  }
+  const linkOrigin = (): LinkOrigin => {
+    const integration = target.pullTarget ?? decodeWorkTarget(target.entityId)
+    return {
+      runtimeId: integration?.runtimeId ?? runtimeRegistry.activeId ?? undefined,
+      repositoryId:
+        integration?.repositoryId ??
+        (target.viewId === 'tasks'
+          ? workspace.tasks.find((task) => task.id === target.entityId)?.repositoryId
+          : undefined),
+      jiraSourceId:
+        integration && 'jiraSourceId' in integration ? integration.jiraSourceId : undefined,
+    }
+  }
+  const linkTargets = (url: string, origin: LinkOrigin) =>
+    resolveLinkTargets(
+      url,
+      runtimes.map((entry) =>
+        entry.profile.id === runtimeRegistry.activeId && snapshot
+          ? { ...entry, snapshot: { ...snapshot, workspace } }
+          : entry,
+      ),
+      origin,
+    )
+  const {
+    openLink,
+    getLinkActions,
+    cancel: cancelLink,
+    dialog: linkDialog,
+  } = useLinkChooser({
+    origin: linkOrigin,
+    targets: linkTargets,
+    details: openLinkTarget,
+    browser: openBrowserLink,
+    external: (url) =>
+      openExternalLink ? openExternalLink(url) : window.open(url, '_blank', 'noopener,noreferrer'),
+    onError: (cause) => setSwitchError(cause instanceof Error ? cause.message : String(cause)),
+  })
+  useEffect(() => {
+    cancelLink()
+  }, [navigationKey, runtimeRegistry.activeId, cancelLink])
+  useEffect(() => onOpenLink?.(openLink), [onOpenLink, openLink])
+  const linkContext = useRef({ origin: linkOrigin, targets: linkTargets, details: openLinkTarget })
+  linkContext.current = { origin: linkOrigin, targets: linkTargets, details: openLinkTarget }
+  const openResolvedLink = useCallback(
+    (kind: 'pull' | 'pipeline', url: string, origin?: LinkOrigin) => {
+      const context = linkContext.current
+      const owner = { ...context.origin(), ...origin }
+      const targets = context.targets(url, owner).filter((target) => target.kind === kind)
+      if (!targets.length) return false
+      if (targets.length === 1) context.details(targets[0])
+      else openLink(url, { origin: owner })
       return true
     },
-    [navigate, resolvePipelineLink],
+    [openLink],
+  )
+  const openPullLink = useCallback(
+    (url: string, origin?: LinkOrigin) => openResolvedLink('pull', url, origin),
+    [openResolvedLink],
+  )
+  const openPipelineLink = useCallback(
+    (url: string, origin?: LinkOrigin) => openResolvedLink('pipeline', url, origin),
+    [openResolvedLink],
   )
   const taskNotice = useTaskNotifications(
     openNotification,
@@ -462,7 +456,8 @@ function WorkbenchContent({
       registerCommand,
       pickDirectory,
       browser,
-      chooseLink,
+      openLink,
+      getLinkActions,
       openBrowserLink,
       openExternalLink,
       openPullLink,
@@ -480,7 +475,8 @@ function WorkbenchContent({
       registerCommand,
       pickDirectory,
       browser,
-      chooseLink,
+      openLink,
+      getLinkActions,
       openBrowserLink,
       openExternalLink,
       openPullLink,
@@ -679,30 +675,7 @@ function WorkbenchContent({
                 if (!/^https?:\/\//i.test(anchor.href)) return
                 event.preventDefault()
                 const url = anchor.href
-                const details = forgePullTarget(
-                  url,
-                  repositorySources.map((source) => ({
-                    identity: pullRepositoryIdentity(source.repository),
-                  })),
-                )
-                  ? 'pull'
-                  : resolvePipelineLink(url)
-                    ? 'pipeline'
-                    : undefined
-                void chooseLink(url, { details, browser: !!openBrowserLink })
-                  .then(async (destination) => {
-                    if (destination === 'details') {
-                      if (details === 'pull') openPullLink(url)
-                      else openPipelineLink(url)
-                    } else if (destination === 'browser') await openBrowserLink?.(url)
-                    else if (destination === 'external') {
-                      if (openExternalLink) await openExternalLink(url)
-                      else window.open(url, '_blank', 'noopener,noreferrer')
-                    }
-                  })
-                  .catch((cause: unknown) =>
-                    setSwitchError(cause instanceof Error ? cause.message : String(cause)),
-                  )
+                openLink(url)
               }}
             >
               {linkDialog}

@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
 const controls = `
 import {forwardRef,useImperativeHandle} from 'react';
-export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;
+export const View=({children,accessibilityLabel,style})=><div aria-label={accessibilityLabel} style={{opacity:(Array.isArray(style)?Object.assign({},...style):style)?.opacity}}>{children}</div>;
 export const Text=({children,accessibilityRole,style})=><span role={accessibilityRole} style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;
 export const Image=()=>null;
 export const ScrollView=View;
@@ -341,6 +341,18 @@ try {
     })
     assert.equal(style.opacity, 0.4, palette.name + ' read title must be dimmed')
     assert.equal(style.weight, '500')
+    const metadataOpacity = () =>
+      title.evaluate((element) =>
+        [
+          element.parentElement.previousElementSibling,
+          element.parentElement.nextElementSibling,
+        ].map((row) => Number(getComputedStyle(row).opacity)),
+      )
+    assert.deepEqual(
+      await metadataOpacity(),
+      [0.4, 0.4],
+      palette.name + ' read metadata must match the title',
+    )
     await page.evaluate(() => window.publish({ 'task-0': { status: 'running' } }))
     const unreadStyle = await title.evaluate((element) => {
       const style = getComputedStyle(element)
@@ -348,6 +360,11 @@ try {
     })
     assert.equal(unreadStyle.opacity, 1, palette.name + ' unread title must stay opaque')
     assert.equal(unreadStyle.weight, style.weight)
+    assert.deepEqual(
+      await metadataOpacity(),
+      [1, 1],
+      palette.name + ' unread metadata must stay opaque',
+    )
     const background = luminance(
       'rgb(' +
         palette.card

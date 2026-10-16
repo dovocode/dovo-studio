@@ -12,7 +12,7 @@ import {
 import { AttachmentPicker } from './attachment-picker'
 import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo, type ReactNode } from 'react'
 import { useComposerDraft } from './use-composer-draft'
 import { ComposerCommandDialog } from './composer-command-dialog'
 import type { ComposerCommandId } from './file-mentions'
@@ -29,9 +29,17 @@ import {
   CornerUpRight,
   Minimize2,
   GitBranchPlus,
+  ChevronDown,
 } from 'lucide-react'
 import { useWorkspace, useStudioHost, updateTask, responses, type Task } from '@dovo/studio-core'
-import { Button, IconButton, ComposerSurface, ComposerSubmit, cn } from '@dovo/studio-ui'
+import {
+  Button,
+  IconButton,
+  ComposerSurface,
+  ComposerSubmit,
+  DropdownMenu,
+  cn,
+} from '@dovo/studio-ui'
 import { ComposerHarnessControls } from './composer-harness-controls'
 import { ComposerWorkspace } from './composer-workspace'
 import type { CodeReference } from '../../detail/code-reference'
@@ -44,11 +52,13 @@ export function Composer({
   composerInsert,
   onComposerInsertApplied,
   workspaceControls,
+  queuedMessages,
   temporary = false,
 }: {
   task: Task
   temporary?: boolean
   workspaceControls?: import('react').ReactNode
+  queuedMessages?: ReactNode
   collapsed?: boolean
   onPending: (pending: PendingMessage | null) => void
   /** Opens the side question dialog. */
@@ -406,6 +416,7 @@ export function Composer({
           </Button>
         </div>
       )}
+      {queuedMessages}
       <ComposerSurface
         collapsed={collapsed}
         controls={
@@ -437,108 +448,107 @@ export function Composer({
               />
             )}
 
-            {task.status === 'running' && hasInput && !pendingQuestion && (
-              <>
-                {task.repositoryId &&
-                  !workspace.repositories.find((repo) => repo.id === task.repositoryId)?.kind && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-8 gap-1.5 px-2 text-[0.6875rem]"
-                      aria-label="Fork"
-                      title="Continue this conversation in a new worktree from the latest commit"
-                      disabled={
-                        !connected ||
-                        sending ||
-                        stopping ||
-                        attachments.busy ||
-                        !!task.archived ||
-                        !!task.archivedAt
-                      }
-                      onClick={() => void startFork()}
-                    >
-                      <GitBranchPlus className="size-3.5" /> Fork
-                    </Button>
-                  )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-8 gap-1.5 px-2 text-[0.6875rem]"
-                  title={
-                    other === 'steer'
-                      ? 'Steer agent (Alt+Enter): send guidance to the active turn; other harnesses interrupt and resume'
-                      : 'Queue follow-up (Alt+Enter): send after the current turn finishes'
+            {!pendingQuestion && (task.status !== 'running' || hasInput) && (
+              <div className="flex shrink-0 items-center" role="group" aria-label="Send message">
+                <ComposerSubmit
+                  busy={sending}
+                  className={
+                    task.status === 'running'
+                      ? 'h-8 w-auto gap-1.5 rounded-l-md rounded-r-none bg-muted px-2 text-[0.6875rem] text-foreground hover:bg-accent'
+                      : undefined
                   }
-                  aria-label={other === 'steer' ? 'Steer agent' : 'Queue follow-up'}
+                  title={
+                    steerFirst
+                      ? 'Steer agent (Enter)'
+                      : task.status === 'running'
+                        ? 'Queue follow-up (Enter)'
+                        : 'Send message (Enter)'
+                  }
+                  aria-label={
+                    steerFirst
+                      ? 'Steer agent'
+                      : task.status === 'running'
+                        ? 'Queue follow-up'
+                        : connected
+                          ? 'Send to agent'
+                          : 'Save message to task'
+                  }
                   disabled={
                     !!policyIssue ||
-                    !connected ||
+                    (!composerDraft.hasText && !attachments.files.length) ||
                     sending ||
                     stopping ||
                     attachments.busy ||
-                    task.archived ||
-                    (!composerDraft.hasText && !attachments.files.length)
+                    !!task.archivedAt ||
+                    (!!connection && !connected) ||
+                    (firstMessage && (!connected || !task.repositoryId || !agent))
                   }
-                  onClick={() => void send(other)}
                 >
-                  {other === 'steer' ? (
-                    <>
-                      <CornerUpRight className="size-3.5" /> Steer
-                    </>
+                  {sending ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : steerFirst ? (
+                    <CornerUpRight className="size-4" />
+                  ) : task.status === 'running' ? (
+                    <ListPlus className="size-4" />
                   ) : (
-                    <>
-                      <ListPlus className="size-3.5" /> Queue
-                    </>
+                    <ArrowUp className="size-4" />
                   )}
-                </Button>
-              </>
-            )}
-            {!pendingQuestion && (task.status !== 'running' || hasInput) && (
-              <ComposerSubmit
-                busy={sending}
-                className={
-                  task.status === 'running'
-                    ? 'h-8 w-auto gap-1.5 rounded-md bg-muted px-2 text-[0.6875rem] text-foreground hover:bg-accent'
-                    : undefined
-                }
-                title={
-                  steerFirst
-                    ? 'Steer agent (Enter)'
-                    : task.status === 'running'
-                      ? 'Queue follow-up (Enter)'
-                      : 'Send message (Enter)'
-                }
-                aria-label={
-                  steerFirst
-                    ? 'Steer agent'
-                    : task.status === 'running'
-                      ? 'Queue follow-up'
-                      : connected
-                        ? 'Send to agent'
-                        : 'Save message to task'
-                }
-                disabled={
-                  !!policyIssue ||
-                  (!composerDraft.hasText && !attachments.files.length) ||
-                  sending ||
-                  stopping ||
-                  attachments.busy ||
-                  !!task.archivedAt ||
-                  (!!connection && !connected) ||
-                  (firstMessage && (!connected || !task.repositoryId || !agent))
-                }
-              >
-                {sending ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : steerFirst ? (
-                  <CornerUpRight className="size-4" />
-                ) : task.status === 'running' ? (
-                  <ListPlus className="size-4" />
-                ) : (
-                  <ArrowUp className="size-4" />
+                  {task.status === 'running' && (steerFirst ? 'Steer' : 'Queue')}
+                </ComposerSubmit>
+                {task.status === 'running' && (
+                  <DropdownMenu.Root>
+                    <DropdownMenu.Trigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        aria-label="More message actions"
+                        title="Other ways to send this message"
+                        className="h-8 w-6 rounded-l-none rounded-r-md border-l border-border/60 bg-muted p-0 hover:bg-accent"
+                        disabled={
+                          !connected || sending || stopping || attachments.busy || !!task.archivedAt
+                        }
+                      >
+                        <ChevronDown className="size-3" />
+                      </Button>
+                    </DropdownMenu.Trigger>
+                    <DropdownMenu.Portal>
+                      <DropdownMenu.Content
+                        side="top"
+                        align="end"
+                        sideOffset={6}
+                        className="z-50 min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
+                      >
+                        <DropdownMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                          disabled={!!policyIssue || !!task.archived}
+                          onSelect={() => void send(other)}
+                        >
+                          {other === 'steer' ? (
+                            <CornerUpRight className="size-3.5" />
+                          ) : (
+                            <ListPlus className="size-3.5" />
+                          )}
+                          {other === 'steer' ? 'Steer agent' : 'Queue follow-up'}
+                          <span className="ml-auto text-[0.625rem] text-muted-foreground">
+                            Alt+Enter
+                          </span>
+                        </DropdownMenu.Item>
+                        {task.repositoryId &&
+                          !workspace.repositories.find((repo) => repo.id === task.repositoryId)
+                            ?.kind && (
+                            <DropdownMenu.Item
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+                              disabled={!!task.archived}
+                              onSelect={() => void startFork()}
+                            >
+                              <GitBranchPlus className="size-3.5" /> Fork
+                            </DropdownMenu.Item>
+                          )}
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Portal>
+                  </DropdownMenu.Root>
                 )}
-                {task.status === 'running' && (steerFirst ? 'Steer' : 'Queue')}
-              </ComposerSubmit>
+              </div>
             )}
             {task.status === 'running' && (
               <Button

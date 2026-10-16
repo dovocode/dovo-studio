@@ -9,6 +9,7 @@
     "./themes": "./src/themes.ts",
     "./code-themes": "./src/code-themes.ts",
     "./theme-catalog": "./src/theme-catalog.ts",
+    "./links": "./src/links/index.ts",
     "./state": "./src/runtime/application-state.ts",
     "./testing": "./src/testing.ts"
   },

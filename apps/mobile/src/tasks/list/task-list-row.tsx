@@ -141,6 +141,7 @@ function TaskListRowView({
   const icon = projectIcon(repository)
   const StatusIcon = statusIcons[state]
   const compact = task.archived || !!task.archivedAt
+  const readOpacity = hasUnreadTaskActivity(task) ? 1 : 0.4
 
   const projectBadge = (
     <View
@@ -169,7 +170,7 @@ function TaskListRowView({
       style={{
         flex: 1,
         color: colors.text,
-        opacity: hasUnreadTaskActivity(task) ? 1 : 0.4,
+        opacity: readOpacity,
         fontSize: 17,
         lineHeight: 22,
         fontWeight: '500',
@@ -256,6 +257,7 @@ function TaskListRowView({
                   gap: 8,
                   minHeight: 32,
                   paddingRight: car ? 0 : 32,
+                  opacity: readOpacity,
                 }}
               >
                 {projectBadge}
@@ -276,7 +278,9 @@ function TaskListRowView({
               <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
                 {title}
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, opacity: readOpacity }}
+              >
                 <GitBranch size={12} color={colors.muted} />
                 <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 13 }]}>
                   {branch}

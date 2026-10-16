@@ -188,6 +188,7 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
       path: 'react-native-enriched-markdown',
       contents: `export const EnrichedMarkdownText=({markdown,onLinkPress})=>!/[\\[]/.test(markdown)?<div style={{whiteSpace:"pre-wrap"}}>{markdown}</div>:<div>{[...markdown.matchAll(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g)].map((match,index)=><button key={index} onClick={()=>onLinkPress({url:match[2]})}>{match[1]}</button>)}</div>;`,
     },
+    { path: 'expo-clipboard', contents: 'export const setStringAsync=async()=>{};' },
     { path: 'react-native-webview', contents: 'export default ()=>null;' },
     {
       path: 'react-native-safe-area-context',
@@ -195,7 +196,7 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
     },
     {
       path: 'expo-router',
-      contents: `export const router={push:href=>window.nav.push(href),canGoBack:()=>true,back:()=>window.nav.push('back'),replace:href=>window.nav.push(href)};`,
+      contents: `export const usePathname=()=>'/pull';export const router={push:href=>window.nav.push(href),canGoBack:()=>true,back:()=>window.nav.push('back'),replace:href=>window.nav.push(href)};`,
     },
     {
       path: 'expo-crypto',

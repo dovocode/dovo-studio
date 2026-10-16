@@ -58,23 +58,28 @@ export function MessageQueue({
   if (!queue.length && !editing) return null
   return (
     <div
-      className="mx-auto w-full max-w-[var(--chat-max)] px-5 text-xs"
+      className="relative mx-auto -mb-3 w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] text-xs"
       aria-label="Queued follow-ups"
     >
-      <Queue open>
-        <QueueSectionTrigger>
-          {queue.length} queued ·{' '}
-          {queuedPending
-            ? queuedPending.state === 'failed'
-              ? 'Send failed'
-              : queuedPending.state === 'saved'
-                ? 'Saved for reconnect'
-                : 'Sending…'
-            : task.queuePaused
-              ? 'Paused'
-              : 'Runs after this turn'}
+      <Queue className="rounded-b-none rounded-t-xl border-b-0 bg-muted/15 p-0 pb-3 shadow-none">
+        <QueueSectionTrigger className="min-h-7 rounded-b-none rounded-t-xl bg-transparent px-2 py-1 text-[0.6875rem] font-normal">
+          <span className="shrink-0">
+            {queue.length} queued ·{' '}
+            {queuedPending
+              ? queuedPending.state === 'failed'
+                ? 'Send failed'
+                : queuedPending.state === 'saved'
+                  ? 'Saved for reconnect'
+                  : 'Sending…'
+              : task.queuePaused
+                ? 'Paused'
+                : 'Runs after this turn'}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-left text-muted-foreground/70">
+            {queue[0]?.text || queue[0]?.attachments?.map((file) => file.name).join(', ')}
+          </span>
         </QueueSectionTrigger>
-        <QueueList>
+        <QueueList className="mt-0">
           {queue.map((message, index) => (
             <QueueItem key={message.id}>
               <QueueItemIndicator />
@@ -207,12 +212,12 @@ export function MessageQueue({
         >
           {task.queuePaused ? 'Resume queue' : 'Pause queue'}
         </Button>
+        {error && (
+          <p role="alert" className="px-2 py-1 text-destructive">
+            {error}
+          </p>
+        )}
       </Queue>
-      {error && (
-        <p role="alert" className="py-1 text-destructive">
-          {error}
-        </p>
-      )}
     </div>
   )
 }

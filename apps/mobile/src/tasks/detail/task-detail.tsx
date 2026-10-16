@@ -862,6 +862,7 @@ function TaskDetailContent({
             }}
           >
             <Composer
+              queuedMessages={<MessageQueue task={task} />}
               renderAbove={(setup) => (
                 <Conversation onBrowse={startup?.onBrowse} setup={setup}>
                   {preparation ? (
@@ -1000,7 +1001,6 @@ function TaskDetailContent({
                   />
                   <ReviewFindings task={task} onOpen={() => setPane('diff')} />
                   <ReviewComments task={task} />
-                  <MessageQueue task={task} />
                 </Conversation>
               )}
               key={task.id}

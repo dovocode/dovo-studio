@@ -20,7 +20,8 @@ async function bundle(contents, mobile = false) {
     '../../connections/source-picker': `export const SourcePicker=()=>null;`,
     'react-native': controls,
     'react-native-webview': `export default function WebView(){return null}`,
-    'expo-router': `export const router={push:href=>window.routes.push(href)};`,
+    'expo-clipboard': `export const setStringAsync=async()=>{};`,
+    'expo-router': `export const usePathname=()=>'/pull';export const router={push:href=>window.routes.push(href)};`,
   }
   const output = await build({
     stdin: { contents, loader: 'tsx', resolveDir: root },

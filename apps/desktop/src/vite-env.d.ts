@@ -9,6 +9,7 @@ interface Window {
     appInfo: NonNullable<import('@dovo/studio-core').StudioHostApi['appInfo']>
     platform: 'darwin' | 'win32' | 'linux'
     windowsRuntime?: import('@dovo/protocol').WindowsRuntimeBridge
+    onOpenLink: (listener: (url: string) => void) => () => void
     openBrowserLink: NonNullable<import('@dovo/studio-core').StudioHostApi['openBrowserLink']>
     openExternalLink: NonNullable<import('@dovo/studio-core').StudioHostApi['openExternalLink']>
     browser: import('@dovo/protocol').BrowserBridge

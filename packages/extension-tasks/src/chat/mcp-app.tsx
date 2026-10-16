@@ -15,8 +15,19 @@ import html from '../../../studio-ui/mcp-apps/host.json'
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)) : {}
 export const McpAppView = memo(function McpAppView({ reference }: { reference: McpAppReference }) {
-  const { request, connected, activeRuntimeId, connection } = useWorkspace()
-  const { chooseLink, openPullLink } = useStudioHost()
+  const { request, connected, activeRuntimeId, connection, workspace } = useWorkspace()
+  const { openLink } = useStudioHost()
+  const linkOrigin = useRef<{ runtimeId?: string; repositoryId?: string }>({})
+  linkOrigin.current = {
+    runtimeId: activeRuntimeId ?? undefined,
+    repositoryId: workspace.tasks.find((task) => task.id === reference.taskId)?.repositoryId,
+  }
+  const linkOperation = useRef<AbortController | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    linkOperation.current = controller
+    return () => controller.abort()
+  }, [activeRuntimeId, reference.taskId, reference.id])
   const theme = useResolvedTheme()
   const frame = useRef<HTMLIFrameElement>(null)
   const [app, setApp] = useState<McpApp>()
@@ -183,9 +194,8 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
           const url = object(value.params).url
           if (typeof url !== 'string' || !['http:', 'https:'].includes(new URL(url).protocol))
             throw new Error('Unsupported app link')
-          if (openPullLink?.(url)) return {}
-          if (chooseLink) await chooseLink(url)
-          else if (window.confirm(`Open ${url}?`)) window.open(url, '_blank', 'noopener,noreferrer')
+          if (!openLink) throw new Error('The link chooser is unavailable')
+          openLink(url, { origin: linkOrigin.current, signal: linkOperation.current?.signal })
           return {}
         }
         if (
@@ -229,7 +239,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     }
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
-  }, [app, theme, connected, request, chooseLink, openPullLink, reference.id, reference.taskId])
+  }, [app, theme, connected, request, openLink, reference.id, reference.taskId])
   return (
     <div
       className={

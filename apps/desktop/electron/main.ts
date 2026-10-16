@@ -18,7 +18,7 @@ import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
 import { registerRemoteUpdates } from './remote-updates.js'
 import { registerBrowser } from './browser.js'
-import { offerLink, openExternalLink, openBrowserLink } from './links.js'
+import { setLinkReceiver, offerLink, openExternalLink, openBrowserLink } from './links.js'
 import {
   startLocalRuntime,
   stopLocalRuntime,
@@ -278,6 +278,11 @@ app.on('second-instance', () => {
   window?.focus()
 })
 
+ipcMain.handle('links:ready', (event, ready: unknown) => {
+  requireTrustedRenderer(event, rendererPath)
+  if (typeof ready !== 'boolean') throw new Error('Expected link receiver readiness')
+  setLinkReceiver(event.sender, ready)
+})
 ipcMain.handle('links:browser', async (event, url: unknown) => {
   requireTrustedRenderer(event, rendererPath)
   const window = BrowserWindow.fromWebContents(event.sender)

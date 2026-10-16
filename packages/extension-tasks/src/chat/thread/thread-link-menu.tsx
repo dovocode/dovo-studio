@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
+import type { LinkOptions } from '@dovo/studio-core/links'
 import { ContextMenu } from '@dovo/studio-ui'
-import { threadPullLink, githubPipelineTarget, pullRepositoryIdentity } from '@dovo/protocol'
-import { useStudioHost, useWorkspace } from '@dovo/studio-core'
+import { threadPullLink } from '@dovo/protocol'
+import { useStudioHost } from '@dovo/studio-core'
 import type { Task } from '@dovo/studio-core'
 
 const itemClass =
@@ -11,7 +12,8 @@ const itemClass =
 export function ThreadLinkMenu({
   children,
   onBrowser,
-  onPullLink,
+  onDetails,
+  runtimeId,
   onLinkPull,
   linked,
   task,
@@ -24,10 +26,11 @@ export function ThreadLinkMenu({
 }: {
   children: ReactNode
   onBrowser?: (url: string) => void
-  onPullLink: (url: string) => boolean
+  onDetails?: LinkOptions['details']
+  runtimeId?: string
   onLinkPull?: (url: string) => void
   linked: (url: string) => boolean
-  task: Pick<Task, 'id' | 'messages'>
+  task: Pick<Task, 'id' | 'messages'> & { repositoryId?: string }
   onSearch: () => void
   onCopyThread: () => Promise<void>
   copying?: boolean
@@ -35,25 +38,24 @@ export function ThreadLinkMenu({
   onBookmark: (id: string, bookmarked: boolean) => Promise<void>
   canBookmark: (id: string) => boolean
 }) {
-  const { openExternalLink, openBrowserLink, openPipelineLink } = useStudioHost()
-  const { workspace } = useWorkspace()
+  const { getLinkActions } = useStudioHost()
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
   const [selection, setSelection] = useState('')
   const [messageId, setMessageId] = useState('')
   const message = task.messages.find((item) => item.id === messageId)
   const pull = threadPullLink(url)
-  const pipeline = githubPipelineTarget(url)
-  const hasPipeline =
-    pipeline &&
-    openPipelineLink &&
-    workspace.repositories.some(
-      (repository) => pullRepositoryIdentity(repository) === pipeline.identity,
-    )
-  const perform = (action: () => Promise<void>) => {
-    void action().catch((cause: unknown) =>
-      setError(cause instanceof Error ? cause.message : String(cause)),
-    )
+  const actions = url
+    ? (getLinkActions?.(url, {
+        origin: { runtimeId, repositoryId: task.repositoryId },
+        details: onDetails,
+        browser: onBrowser,
+      }) ?? [])
+    : []
+  const perform = (action: () => unknown) => {
+    void Promise.resolve()
+      .then(action)
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
   }
   return (
     <ContextMenu.Root>
@@ -87,57 +89,16 @@ export function ThreadLinkMenu({
           className="z-[100] min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
           collisionPadding={8}
         >
-          {pull && (
+          {actions.map((action) => (
             <ContextMenu.Item
+              key={action.id}
               className={itemClass}
-              onSelect={() => {
-                if (!onPullLink(pull.url)) onBrowser?.(pull.url)
-              }}
+              disabled={action.disabled}
+              onSelect={() => perform(action.run)}
             >
-              Open PR details
+              {action.label}
             </ContextMenu.Item>
-          )}
-          {hasPipeline && (
-            <ContextMenu.Item
-              className={itemClass}
-              onSelect={() => {
-                if (!openPipelineLink(url))
-                  setError('Select a repository source in Pipelines to open this run.')
-              }}
-            >
-              Open pipeline details
-            </ContextMenu.Item>
-          )}
-          {url && (onBrowser || openBrowserLink) && (
-            <ContextMenu.Item
-              className={itemClass}
-              onSelect={() => {
-                if (onBrowser) onBrowser(url)
-                else if (openBrowserLink) perform(() => openBrowserLink(url))
-              }}
-            >
-              Open in Dovo browser
-            </ContextMenu.Item>
-          )}
-          {url && (
-            <ContextMenu.Item
-              className={itemClass}
-              onSelect={() => {
-                if (openExternalLink) perform(() => openExternalLink(url))
-                else window.open(url, '_blank', 'noopener,noreferrer')
-              }}
-            >
-              Open in default browser
-            </ContextMenu.Item>
-          )}
-          {url && (
-            <ContextMenu.Item
-              className={itemClass}
-              onSelect={() => perform(() => navigator.clipboard.writeText(url))}
-            >
-              Copy link
-            </ContextMenu.Item>
-          )}
+          ))}
           {pull && onLinkPull && (
             <>
               <ContextMenu.Separator className="my-1 h-px bg-border" />

@@ -1,13 +1,11 @@
 import { useConversationHistory } from './use-conversation-history'
 import { ChatMessage } from './chat-message'
 import { TaskEmptyState } from '../../task-creation/task-empty-state'
+import type { LinkTarget } from '@dovo/studio-core/links'
 import { DeferredTurn } from './deferred-turn'
 import { TurnWindow, TurnWindowContext } from './turn-window'
 import {
   threadPullLink,
-  forgePullTarget,
-  githubPipelineTarget,
-  pullRepositoryIdentity,
   unassignedConversationTools,
   conversationMessageTurns,
   conversationToolsByMessage,
@@ -80,15 +78,18 @@ export function ChatThread({
   onReadingHistory?: () => void
   active?: boolean
 }) {
-  const { request, connected, workspace, connection } = useWorkspace()
+  const { request, connected, workspace, connection, activeRuntimeId } = useWorkspace()
   const linkScope = JSON.stringify([connection?.address, connection?.token, liveTask.id])
   const [recentScope, setRecentScope] = useState('')
   const onRecentReady = useCallback(() => setRecentScope(linkScope), [linkScope])
   const history = useConversationHistory(liveTask, recentScope === linkScope)
   const task = history.task
   const turnWindow = useMemo(() => new TurnWindow(), [linkScope])
-  const { chooseLink, openPullLink, openPipelineLink, openExternalLink, openBrowserLink } =
-    useStudioHost()
+  const { openLink, openPullLink } = useStudioHost()
+  const openLinkDetails = (target: LinkTarget) =>
+    target.kind === 'pull' &&
+    target.runtimeId === activeRuntimeId &&
+    (onPullLink?.(target.navigationUrl) ?? false)
   const [linkError, setLinkError] = useState('')
   const [selectedPull, setSelectedPull] = useState<{ scope: string; url: string } | null>(null)
   const pull = selectedPull?.scope === linkScope ? threadPullLink(selectedPull.url) : null
@@ -391,7 +392,7 @@ export function ChatThread({
       )}
       <ThreadLinkMenu
         key={linkScope}
-        task={task}
+        task={{ ...task, repositoryId: fullTask?.repositoryId }}
         onSearch={() => {
           setSearchOpen(true)
           requestAnimationFrame(() => searchInput.current?.focus())
@@ -409,7 +410,8 @@ export function ChatThread({
         }}
         onManagePulls={onManagePulls}
         onBrowser={onBrowser}
-        onPullLink={(url) => onPullLink?.(url) || openPullLink?.(url) || false}
+        onDetails={openLinkDetails}
+        runtimeId={activeRuntimeId ?? undefined}
         onLinkPull={
           fullTask
             ? (url) => {
@@ -439,47 +441,24 @@ export function ChatThread({
               return
             const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
             if (!(anchor instanceof HTMLAnchorElement) || !/^https?:\/\//i.test(anchor.href)) return
-            if (!chooseLink) return
+            if (!openLink) return
             event.preventDefault()
             event.stopPropagation()
             const url = anchor.href
             setLinkError('')
-            const details = forgePullTarget(
-              url,
-              workspace.repositories.map((repository) => ({
-                identity: pullRepositoryIdentity(repository),
-              })),
-            )
-              ? 'pull'
-              : githubPipelineTarget(url) &&
-                  workspace.repositories.some(
-                    (repository) =>
-                      pullRepositoryIdentity(repository) === githubPipelineTarget(url)?.identity,
-                  )
-                ? 'pipeline'
-                : undefined
-            void chooseLink(url, {
-              details,
-              browser: !!onBrowser || !!openBrowserLink,
-              signal: linkOperation.current?.signal,
-            })
-              .then(async (destination) => {
-                if (destination === 'browser') {
-                  if (onBrowser) onBrowser(url)
-                  else await openBrowserLink?.(url)
-                } else if (destination === 'details') {
-                  if (details === 'pull') {
-                    if (!onPullLink?.(url)) openPullLink?.(url)
-                  } else if (!openPipelineLink?.(url, { repositoryId: fullTask?.repositoryId }))
-                    throw new Error('Select a repository source in Pipelines to open this run.')
-                } else if (destination === 'external') {
-                  if (openExternalLink) await openExternalLink(url)
-                  else window.open(url, '_blank', 'noopener,noreferrer')
-                }
+            try {
+              openLink(url, {
+                origin: {
+                  runtimeId: activeRuntimeId ?? undefined,
+                  repositoryId: fullTask?.repositoryId,
+                },
+                details: openLinkDetails,
+                browser: onBrowser,
+                signal: linkOperation.current?.signal,
               })
-              .catch((cause: unknown) =>
-                setLinkError(cause instanceof Error ? cause.message : String(cause)),
-              )
+            } catch (cause) {
+              setLinkError(cause instanceof Error ? cause.message : String(cause))
+            }
           }}
         >
           <ConversationHistory

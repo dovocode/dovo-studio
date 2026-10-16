@@ -292,7 +292,6 @@ export function TaskConversation({
       {onCodeReview && <CodeReviewCard task={task} onOpen={onCodeReview} visible={visible} />}
       <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />
       <ReviewCommentsTray task={task} className="px-5 pb-2" />
-      <MessageQueue task={queueTask} pending={visiblePending} />
       <div ref={composer} onFocusCapture={() => setComposerCollapsed(false)}>
         <Composer
           collapsed={collapseComposerOnScroll && composerCollapsed}
@@ -300,6 +299,7 @@ export function TaskConversation({
           task={task}
           temporary={temporary}
           workspaceControls={workspaceControls}
+          queuedMessages={<MessageQueue task={queueTask} pending={visiblePending} />}
           onPending={onPending}
           onAside={onAside}
           codeReference={codeReference}

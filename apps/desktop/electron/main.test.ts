@@ -77,6 +77,7 @@ vi.mock('./browser.js', () => ({
   })),
 }))
 vi.mock('./links.js', () => ({
+  setLinkReceiver: vi.fn<typeof import('./links.js').setLinkReceiver>(),
   offerLink: vi.fn<(...args: unknown[]) => Promise<void>>(),
   openExternalLink: vi.fn<(url: string) => Promise<void>>(),
 }))
@@ -120,6 +121,9 @@ it('opens the recovery UI and registers updates when the installed runtime is in
 it('rejects untrusted senders before returning runtime credentials or activating extensions', async () => {
   await import('./main')
   for (const channel of [
+    'links:ready',
+    'links:browser',
+    'links:external',
     'runtime:connection',
     'runtime:list-extensions',
     'runtime:activate',
@@ -301,4 +305,17 @@ it('verifies recovery before telling the user that the previous environment was 
     fixture.start.mockReset()
     fixture.start.mockRejectedValue(new Error('Runtime protocol is incompatible'))
   }
+})
+
+it('registers only validated link receiver readiness from the trusted owning renderer', async () => {
+  await import('./main')
+  const { setLinkReceiver } = await import('./links.js')
+  const handler = fixture.handlers.get('links:ready')
+  if (!handler) throw new Error('Missing link receiver handler')
+  const event = trustedEvent()
+  handler(event, true)
+  expect(setLinkReceiver).toHaveBeenCalledWith(event.sender, true)
+  handler(event, false)
+  expect(setLinkReceiver).toHaveBeenCalledWith(event.sender, false)
+  expect(() => handler(event, 'true')).toThrow('Expected link receiver readiness')
 })

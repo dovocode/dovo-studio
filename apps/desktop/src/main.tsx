@@ -37,6 +37,7 @@ createRoot(root).render(
           desktopPlatform={window.dovo?.platform}
           pickDirectory={window.dovo?.pickDirectory}
           browser={window.dovo?.browser}
+          onOpenLink={window.dovo?.onOpenLink}
           openBrowserLink={window.dovo?.openBrowserLink}
           openExternalLink={window.dovo?.openExternalLink}
           inputPreview={threadWindow ? undefined : window.dovo?.inputPreview}

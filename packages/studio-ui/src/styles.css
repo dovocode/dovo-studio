@@ -1086,7 +1086,12 @@ a.studio-project-row:hover {
   display: none;
 }
 
-/* Keep secondary thread details readable in both read and unread cards. */
+/* Secondary thread details follow the title’s read/unread emphasis, keeping their hues. */
 .studio-thread-card-context {
   color: var(--muted-foreground);
+  opacity: 0.4;
+}
+
+[data-unread] .studio-thread-card-context {
+  opacity: 1;
 }

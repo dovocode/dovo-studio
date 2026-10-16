@@ -1,72 +1,99 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { StudioHostApi } from '@dovo/studio-core'
+import { useCallback, useEffect, useRef } from 'react'
+import {
+  linkActions,
+  useLinkController,
+  type LinkOptions,
+  type LinkOrigin,
+  type LinkTarget,
+} from '@dovo/studio-core/links'
 import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@dovo/studio-ui'
-import { ExternalLink, GitPullRequest, Globe, Workflow } from 'lucide-react'
+import { Copy, ExternalLink, GitPullRequest, Globe } from 'lucide-react'
 
-type ChooseLink = NonNullable<StudioHostApi['chooseLink']>
-type Destination = Awaited<ReturnType<ChooseLink>>
-export function useLinkChooser() {
-  const [pending, setPending] = useState<{
-    url: string
-    options: Parameters<ChooseLink>[1]
-  } | null>(null)
-  const resolve = useRef<((choice: Destination) => void) | undefined>(undefined)
-  const finish = useCallback((choice: Destination) => {
-    const done = resolve.current
-    resolve.current = undefined
-    setPending(null)
-    done?.(choice)
+type Adapters = {
+  origin: () => LinkOrigin
+  targets: (url: string, origin: LinkOrigin) => LinkTarget[]
+  details: (target: LinkTarget) => unknown
+  browser?: (url: string) => unknown
+  external: (url: string) => unknown
+  onError: (error: unknown) => void
+}
+export function useLinkChooser(adapters: Adapters) {
+  const latest = useRef(adapters)
+  latest.current = adapters
+  const { controller, pending } = useLinkController()
+  const getLinkActions = useCallback((url: string, options?: LinkOptions) => {
+    const host = latest.current
+    const origin = { ...host.origin(), ...options?.origin }
+    return linkActions(
+      url,
+      host.targets(url, origin),
+      {
+        details: (target) => options?.details?.(target) || host.details(target),
+        browser: options?.browser ?? host.browser,
+        external: host.external,
+        copy: (url) => navigator.clipboard.writeText(url),
+      },
+      options?.actions,
+    )
   }, [])
-  useEffect(() => () => resolve.current?.('cancel'), [])
-  useEffect(() => {
-    const signal = pending?.options?.signal
-    if (!signal) return
-    const cancel = () => finish('cancel')
-    if (signal.aborted) cancel()
-    else signal.addEventListener('abort', cancel, { once: true })
-    return () => signal.removeEventListener('abort', cancel)
-  }, [pending, finish])
-  const chooseLink = useCallback<ChooseLink>(
-    (url, options) =>
-      new Promise((done) => {
-        resolve.current?.('cancel')
-        resolve.current = done
-        setPending({ url, options })
-      }),
-    [],
+  const openLink = useCallback(
+    (url: string, options?: LinkOptions) => {
+      controller.open({
+        url,
+        signal: options?.signal,
+        onError: latest.current.onError,
+        actions: getLinkActions(url, options),
+      })
+    },
+    [controller, getLinkActions],
   )
+  const cancel = useCallback(() => controller.cancel(), [controller])
+  useEffect(() => {
+    if (pending?.closing) controller.dismissed(pending.request)
+  }, [pending, controller])
   return {
-    chooseLink,
+    openLink,
+    cancel,
+    getLinkActions,
     dialog: pending && (
       <Dialog
         open
         onOpenChange={(open) => {
-          if (!open) finish('cancel')
+          if (!open) controller.dismissed(pending.request)
         }}
       >
         <DialogContent className="max-w-sm">
           <DialogTitle>Open link</DialogTitle>
-          <DialogDescription className="break-all text-xs">{pending.url}</DialogDescription>
-          {pending.options?.details && (
-            <Button variant="outline" className="justify-start" onClick={() => finish('details')}>
-              {pending.options.details === 'pull' ? (
+          <DialogDescription className="break-all text-xs">{pending.request.url}</DialogDescription>
+          {pending.request.actions.map((action) => (
+            <Button
+              key={action.id}
+              variant="outline"
+              className="justify-start"
+              disabled={pending.busy || action.disabled}
+              onClick={() =>
+                controller.select(pending.request, action.id, () =>
+                  controller.dismissed(pending.request),
+                )
+              }
+            >
+              {action.kind === 'browser' ? (
+                <Globe className="size-4" />
+              ) : action.kind === 'copy' ? (
+                <Copy className="size-4" />
+              ) : action.kind === 'details' ? (
                 <GitPullRequest className="size-4" />
               ) : (
-                <Workflow className="size-4" />
+                <ExternalLink className="size-4" />
               )}
-              {pending.options.details === 'pull' ? 'Open PR details' : 'Open pipeline details'}
+              {action.label}
             </Button>
+          ))}
+          {pending.error && (
+            <p role="alert" className="text-xs text-destructive">
+              {pending.error}
+            </p>
           )}
-          {pending.options?.browser !== false && (
-            <Button variant="outline" className="justify-start" onClick={() => finish('browser')}>
-              <Globe className="size-4" />
-              Open in Dovo browser
-            </Button>
-          )}
-          <Button variant="outline" className="justify-start" onClick={() => finish('external')}>
-            <ExternalLink className="size-4" />
-            Open in external browser
-          </Button>
         </DialogContent>
       </Dialog>
     ),

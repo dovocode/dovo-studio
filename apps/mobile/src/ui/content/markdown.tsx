@@ -239,6 +239,7 @@ export const Markdown = memo(function Markdown({
   preserveLineBreaks = false,
   variant = 'default',
   onLinkLongPress,
+  onLinkPress,
   taskId,
   onUseTemplate,
 }: {
@@ -249,6 +250,7 @@ export const Markdown = memo(function Markdown({
   fileBaseURL?: string
   preserveLineBreaks?: boolean
   variant?: 'default' | 'chat'
+  onLinkPress?: (url: string) => void
   onLinkLongPress?: (url: string) => void
 }) {
   const { connection, connected } = useRuntime()
@@ -386,6 +388,7 @@ export const Markdown = memo(function Markdown({
             flavor="github"
             markdownStyle={style}
             selectable
+            enableLinkPreview={false}
             allowFontScaling
             lineBreakStrategyIOS="standard"
             enableTaskListItemToggle={false}
@@ -414,6 +417,10 @@ export const Markdown = memo(function Markdown({
                 void runClientEffect(
                   nativeEffect(() =>
                     navigateAfterSheet(() => {
+                      if (onLinkPress) {
+                        onLinkPress(target)
+                        return
+                      }
                       void openAppLink(target, false, origin).catch((error: unknown) =>
                         Alert.alert('Could not open link', String(error)),
                       )
@@ -428,28 +435,23 @@ export const Markdown = memo(function Markdown({
                 Alert.alert('Desktop link', 'Open this file or link on your desktop.')
               }
             }}
-            onLinkLongPress={
-              onLinkLongPress
-                ? ({ url }) => {
-                    if (
-                      taskId &&
-                      !baseURL &&
-                      !fileBaseURL &&
-                      localMarkdownPath(url) !== undefined
-                    ) {
-                      void previewFile(url).catch((error: unknown) =>
-                        Alert.alert(
-                          'Could not preview file',
-                          error instanceof Error ? error.message : String(error),
-                        ),
-                      )
-                      return
-                    }
-                    const target = resolveMarkdownLink(url, baseURL, fileBaseURL)
-                    if (target) onLinkLongPress(target)
-                  }
-                : undefined
-            }
+            onLinkLongPress={({ url }) => {
+              if (taskId && !baseURL && !fileBaseURL && localMarkdownPath(url) !== undefined) {
+                void previewFile(url).catch((error: unknown) =>
+                  Alert.alert('Could not preview file', String(error)),
+                )
+                return
+              }
+              const target = resolveMarkdownLink(url, baseURL, fileBaseURL)
+              if (!target) return
+              navigateAfterSheet(() => {
+                if (onLinkLongPress) onLinkLongPress(target)
+                else
+                  void openAppLink(target, false, origin).catch((error: unknown) =>
+                    Alert.alert('Could not open link', String(error)),
+                  )
+              })
+            }}
           />
         ),
       )}

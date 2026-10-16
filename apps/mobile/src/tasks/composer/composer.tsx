@@ -48,8 +48,10 @@ export function Composer({
   onAsk,
   onSelectRemote,
   renderAbove,
+  queuedMessages,
 }: {
   task: Task
+  queuedMessages?: ReactNode
   renderAbove?: (setup: ReactNode) => ReactNode
   onAsk?: () => void
   onSelectRemote?: (runtimeId: string, repository: Repository, text: string) => Promise<void>
@@ -93,7 +95,6 @@ export function Composer({
     [checkout, setCheckout] = useApplicationState(false)
   const selection = useRef<DraftSelection | undefined>(undefined)
   const [caret, setCaret] = useState(0)
-  const [toolbarWidth, setToolbarWidth] = useState(0)
   const [moreActions, setMoreActions] = useState(false)
   const actionsSheet = useRef<SheetHandle>(null)
   const focus = useCallback(() => setFocused(true), [setFocused])
@@ -250,9 +251,6 @@ export function Composer({
   const showFollowupActions =
     showOptions && !dictation.active && task.status === 'running' && hasInput
   const showFork = hasGit && !!task.repositoryId
-  // Measure the toolbar itself: split views and safe-area insets can reduce its width.
-  const overflowActions =
-    showFollowupActions && toolbarWidth < (5 + Number(hasSideQuestion) + Number(showFork)) * 44
   const canDictate = draft.ready && !busy && !task.archivedAt && !attaching
   const listening = dictation.isRecording || dictation.isStarting
   const dictationStatus = dictation.isStarting
@@ -370,6 +368,7 @@ export function Composer({
     return (
       <>
         {renderAbove?.(null)}
+        {queuedMessages}
         <View
           style={[
             styles.content,
@@ -387,6 +386,7 @@ export function Composer({
     return (
       <>
         {renderAbove?.(null)}
+        {queuedMessages}
         <CarComposer task={task} onType={() => setTyping(true)} />
       </>
     )
@@ -447,6 +447,7 @@ export function Composer({
         </Pressable>
       )}
       {!renderAbove && setup}
+      {queuedMessages}
       <Glass
         style={{
           borderRadius: 26,
@@ -542,7 +543,6 @@ export function Composer({
           </View>
           <View
             testID="Composer toolbar"
-            onLayout={({ nativeEvent }) => setToolbarWidth(nativeEvent.layout.width)}
             pointerEvents="box-none"
             style={[
               {
@@ -665,7 +665,7 @@ export function Composer({
                     }
               }
             />
-            {hasSideQuestion && !overflowActions && (
+            {hasSideQuestion && !showFollowupActions && (
               <IconButton
                 variant="plain"
                 icon="chat"
@@ -675,7 +675,15 @@ export function Composer({
               />
             )}
             {showFollowupActions && (
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: 12,
+                }}
+              >
                 <IconButton
                   variant="plain"
                   icon="queue"
@@ -683,33 +691,18 @@ export function Composer({
                   disabled={!canSend || busy}
                   onPress={() => send()}
                 />
-                {!overflowActions && (
-                  <IconButton
-                    variant="plain"
-                    icon="steer"
-                    label="Steer agent"
-                    disabled={!canSend || busy}
-                    onPress={() => send('steer')}
-                  />
-                )}
-                {showFork && !overflowActions && (
-                  <IconButton
-                    variant="plain"
-                    icon="changes"
-                    label="Fork"
-                    disabled={!canSend || busy}
-                    onPress={startFork}
-                  />
-                )}
+                <View style={{ width: 1, height: 20, backgroundColor: colors.border }} />
+                <IconButton
+                  variant="plain"
+                  icon="down"
+                  label="More message actions"
+                  disabled={!canSend || busy}
+                  onPress={() => {
+                    Keyboard.dismiss()
+                    setMoreActions(true)
+                  }}
+                />
               </View>
-            )}
-            {overflowActions && (
-              <IconButton
-                variant="plain"
-                icon="more"
-                label="More message actions"
-                onPress={() => setMoreActions(true)}
-              />
             )}
             <IconButton
               variant="filled"
