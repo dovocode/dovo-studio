@@ -128,6 +128,86 @@ try {
   if (shown.url !== 'http://runtime.local:3000/')
     throw new Error('HTTP LAN navigation changed: ' + shown.url)
   if (shown.viewport?.width !== 390) throw new Error('Responsive viewport stopped working')
+  // Disclosures in the retained conversation and hidden dialogs must not hide the native page.
+  await page.evaluate(() => {
+    const retained = document.createElement('div')
+    retained.id = 'retained-chat'
+    retained.hidden = true
+    retained.innerHTML =
+      '<details open><summary>Tool output</summary>Done</details><div role="dialog">Closed dialog</div>'
+    document.body.append(retained)
+    const details = document.createElement('details')
+    details.id = 'sidebar-details'
+    details.open = true
+    details.style.cssText = 'position:fixed;left:0;top:0;width:20px;height:20px'
+    details.innerHTML = '<summary>Info</summary>Project info'
+    document.body.append(details)
+  })
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  if (
+    (
+      await page.evaluate(() =>
+        window.calls.filter((call) => ['show', 'hide'].includes(call.action)).at(-1),
+      )
+    ).action !== 'show'
+  )
+    throw new Error('Unrelated disclosures or hidden dialogs blacked out the native browser')
+  await page.evaluate(() => {
+    document.getElementById('retained-chat').remove()
+    document.getElementById('sidebar-details').remove()
+  })
+  // Real overlays must still hide the native layer, then restore it without navigation.
+  const nativeAction = async (action) => {
+    await page.waitForFunction(
+      (action) =>
+        window.calls.filter((call) => ['show', 'hide'].includes(call.action)).at(-1)?.action ===
+        action,
+      action,
+    )
+  }
+  for (const role of ['menu', 'listbox', 'dialog']) {
+    await page.evaluate((role) => {
+      const overlay = document.createElement('div')
+      overlay.id = 'browser-overlay'
+      overlay.setAttribute('role', role)
+      overlay.style.cssText = 'position:fixed;inset:100px 10px 10px;background:black;z-index:100'
+      document.body.append(overlay)
+    }, role)
+    await nativeAction('hide')
+    // Changing hidden alone must be observed, including when an overlay stays mounted.
+    await page.evaluate(() => {
+      document.getElementById('browser-overlay').hidden = true
+    })
+    await nativeAction('show')
+    await page.evaluate(() => {
+      document.getElementById('browser-overlay').hidden = false
+    })
+    await nativeAction('hide')
+    await page.evaluate(() => document.getElementById('browser-overlay').remove())
+    await nativeAction('show')
+  }
+  await page.evaluate(() => {
+    const modal = document.createElement('div')
+    modal.id = 'modal'
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-modal', 'true')
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:20px;height:20px'
+    document.body.append(modal)
+  })
+  await nativeAction('hide')
+  await page.evaluate(() => document.getElementById('modal').remove())
+  await nativeAction('show')
+  // The browser's own floating container must hide the native layer while dragging.
+  await page.getByRole('region', { name: 'Browser previews' }).evaluate((element) => {
+    element.setAttribute('data-preview-dragging', 'true')
+  })
+  await nativeAction('hide')
+  await page.getByRole('region', { name: 'Browser previews' }).evaluate((element) => {
+    element.removeAttribute('data-preview-dragging')
+  })
+  await nativeAction('show')
   // Streaming text elsewhere on the page must not resend identical native view bounds.
   const beforeStreaming = await page.evaluate(
     () => window.calls.filter((call) => call.action === 'show').length,
@@ -222,7 +302,7 @@ try {
   )
     throw new Error(JSON.stringify({ calls, errors }))
   console.log(
-    'Compact toolbar, hidden single-tab strip, Enter navigation, HTTP LAN addresses, browser options, plus menu, mixed tab strip, remote indicators, title updates, retained sessions, per-tab local/remote profile choices, profile switching, and scoped close passed.',
+    'Compact toolbar, native browser visibility with retained chat and real overlays, hidden single-tab strip, Enter navigation, HTTP LAN addresses, browser options, plus menu, mixed tab strip, remote indicators, title updates, retained sessions, per-tab local/remote profile choices, profile switching, and scoped close passed.',
   )
 } finally {
   await browser.close()

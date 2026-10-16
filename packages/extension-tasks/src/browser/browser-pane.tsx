@@ -372,9 +372,31 @@ function BrowserContent({
       frame = undefined
       if (!alive) return
       const rect = slot.current?.getBoundingClientRect()
-      const obscured = document.querySelector(
-        'details[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-preview-dragging="true"], [data-inline-artifact] [data-preview-overlay="true"]',
-      )
+      // Native views sit above the DOM. Hide them for visible overlays, but not
+      // for disclosures retained in the hidden chat or panels elsewhere in the window.
+      const obscured =
+        rect &&
+        [
+          ...document.querySelectorAll<HTMLElement>(
+            'details[open], dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-preview-dragging="true"], [data-inline-artifact] [data-preview-overlay="true"]',
+          ),
+        ].some((element) => {
+          if (
+            (element.contains(slot.current) &&
+              !element.matches('[data-preview-dragging="true"]')) ||
+            !element.checkVisibility({ visibilityProperty: true })
+          )
+            return false
+          const overlay = element.getBoundingClientRect()
+          if (!overlay.width || !overlay.height) return false
+          if (element.matches('dialog[open], [aria-modal="true"]')) return true
+          return (
+            overlay.left < rect.right &&
+            overlay.right > rect.left &&
+            overlay.top < rect.bottom &&
+            overlay.bottom > rect.top
+          )
+        })
       const command =
         rect && rect.width > 0 && rect.height > 0 && !obscured
           ? {
@@ -420,7 +442,16 @@ function BrowserContent({
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['open', 'style', 'class', 'data-preview-dragging', 'data-preview-overlay'],
+      attributeFilter: [
+        'open',
+        'hidden',
+        'style',
+        'class',
+        'role',
+        'aria-modal',
+        'data-preview-dragging',
+        'data-preview-overlay',
+      ],
     })
     window.addEventListener('resize', schedule)
     window.addEventListener('scroll', schedule, true)
