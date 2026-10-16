@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vite-plus/test'
+import type { GithubResponseInfo } from './github-rate-limit'
 import {
   GithubApiError,
   GithubCredentials,
@@ -241,4 +242,128 @@ it('invalidates credentials on 401 before reading an interrupted body and does n
   await expect(
     transport.send(parseGithubApiArgs(['api', 'private/repository']), 'private-token'),
   ).rejects.toThrow('GitHub API HTTP 403')
+})
+
+it('observes quota per page, conditional responses and GraphQL costs without exposing request secrets', async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      reply(
+        { ok: true },
+        {
+          headers: {
+            etag: '"one"',
+            'x-ratelimit-resource': 'core',
+            'x-ratelimit-limit': '5000',
+            'x-ratelimit-remaining': '4999',
+            'x-ratelimit-reset': '2000000000',
+            'x-ratelimit-used': '1',
+          },
+        },
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(null, {
+        status: 304,
+        headers: {
+          'x-ratelimit-resource': 'core',
+          'x-ratelimit-limit': '5000',
+          'x-ratelimit-remaining': '4999',
+          'x-ratelimit-reset': '2000000000',
+        },
+      }),
+    )
+    .mockResolvedValueOnce(
+      reply({
+        data: {
+          rateLimit: { limit: 5000, remaining: 4990, resetAt: '2033-05-18T03:33:20Z', cost: 10 },
+        },
+      }),
+    )
+  const transport = new GithubTransport(fetcher)
+  const onResponse = vi.fn<(info: GithubResponseInfo) => void>()
+  await transport.send(parseGithubApiArgs(['api', 'user']), 'secret-token', { onResponse })
+  await transport.send(parseGithubApiArgs(['api', 'user']), 'secret-token', { onResponse })
+  await transport.send(
+    parseGithubApiArgs([
+      'api',
+      'graphql',
+      '-f',
+      'query=query{rateLimit{cost limit remaining resetAt}}',
+    ]),
+    'secret-token',
+    { onResponse },
+  )
+  expect(onResponse.mock.calls.map(([info]) => info)).toEqual([
+    {
+      resource: 'core',
+      status: 200,
+      cached: false,
+      used: 1,
+      quota: { limit: 5000, remaining: 4999, resetAt: 2000000000000 },
+    },
+    {
+      resource: 'core',
+      status: 304,
+      cached: true,
+      used: undefined,
+      quota: { limit: 5000, remaining: 4999, resetAt: 2000000000000 },
+    },
+    {
+      resource: 'graphql',
+      status: 200,
+      cached: false,
+      used: undefined,
+      cost: 10,
+      quota: { limit: 5000, remaining: 4990, resetAt: 2000000000000 },
+    },
+  ])
+  expect(JSON.stringify(onResponse.mock.calls)).not.toContain('secret-token')
+})
+it('recognizes HTTP 200 GraphQL RATE_LIMIT errors with structured reset metadata', async () => {
+  const onResponse = vi.fn<(info: GithubResponseInfo) => void>()
+  const transport = new GithubTransport(
+    vi.fn<typeof fetch>().mockResolvedValue(
+      reply(
+        { errors: [{ type: 'RATE_LIMIT', message: 'API rate limit exceeded' }] },
+        {
+          headers: {
+            'x-ratelimit-resource': 'graphql',
+            'x-ratelimit-limit': '5000',
+            'x-ratelimit-remaining': '0',
+            'x-ratelimit-reset': '2000000000',
+          },
+        },
+      ),
+    ),
+  )
+  await expect(
+    transport.send(parseGithubApiArgs(['api', 'graphql']), 'token', { onResponse }),
+  ).rejects.toMatchObject({
+    status: 429,
+    rateLimit: { resource: 'graphql', secondary: false, resetAt: 2000000000000 },
+  })
+  expect(onResponse).toHaveBeenCalledOnce()
+})
+it('does not use the primary reset for a secondary limit', async () => {
+  const transport = new GithubTransport(
+    vi.fn<typeof fetch>().mockResolvedValue(
+      reply(
+        { message: 'secondary rate limit' },
+        {
+          status: 403,
+          headers: {
+            'x-ratelimit-resource': 'core',
+            'x-ratelimit-remaining': '4000',
+            'x-ratelimit-reset': '2000000000',
+            'retry-after': '2',
+          },
+        },
+      ),
+    ),
+  )
+  await expect(transport.send(parseGithubApiArgs(['api', 'user']), 'token')).rejects.toMatchObject({
+    retryAfter: 2,
+    rateLimit: { secondary: true, retryAfter: 2, resetAt: undefined },
+  })
 })

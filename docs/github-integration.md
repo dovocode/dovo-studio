@@ -46,9 +46,25 @@ Explicit refresh rechecks the account immediately; use it after `gh auth switch`
 rejection invalidates all contexts sharing that verification, and failed account checks are never
 cached.
 
-GitHub responses update the account's remaining API quota, which every call on that host and
-credential shares. Background refreshes pause when less than ten percent remains, keeping the rest
-for the PR screens and actions; cached data stays available until the reset.
+GitHub response headers update separate REST (core) and GraphQL budgets for each host and actual
+credential. CLI repository/PR reads share the GraphQL budget with API calls. An exhausted GraphQL
+budget does not pause REST pipeline requests; secondary limits still pause both. Dovo honors the
+response's reset time or Retry-After, reads only the failed resource's reset from `/rate_limit` when
+neither is available, and uses a one-minute pause if GitHub cannot report a reset. HTTP 200 GraphQL
+rate-limit errors are handled too. Background refreshes pause below ten percent (at least 50
+requests/points), keeping capacity for interactive reads and actions. Cached data stays available.
+
+Checkout repository discovery shares concurrent reads and reuses successful metadata for ten
+minutes. Changes to Git configuration, branch, credential, CLI environment or executable invalidate
+it. Unchanged metadata remains usable during a rate-limit pause. Account verification and binding
+checks still apply on every source-context read. Refreshing pipeline data reuses this metadata
+instead of rediscovering the same repository through GraphQL.
+
+Completed GitHub API command activity includes the endpoint, method, foreground/background flag and
+each response's quota resource, remaining balance, reset, cumulative usage and conditional-cache hit
+when GitHub reports them. Status-summary GraphQL queries also request their cost. These extra
+diagnostics contain no tokens, request bodies or query variables; they identify which operations
+consume quota without issuing additional API requests.
 
 ## Loading and caching PR details
 

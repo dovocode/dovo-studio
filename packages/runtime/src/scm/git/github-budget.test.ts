@@ -1,8 +1,9 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { GithubBudget } from './github-budget'
+import { GithubApiError } from './github-transport'
 
 afterEach(() => vi.useRealTimers())
-it('stops all reads and writes for an exhausted account until its actual reset, without blocking another account', async () => {
+it('stops core reads and writes for an exhausted account until its actual reset, without blocking another account', async () => {
   vi.useFakeTimers()
   const budget = new GithubBudget()
   const reset = Math.floor(Date.now() / 1000) + 120
@@ -80,7 +81,10 @@ it('pauses background refreshes below the reserve while interactive calls contin
     JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 400, resetAt } } }),
   )
   await expect(
-    budget.run('account', async () => 'refreshed', quota, { background: true }),
+    budget.run('account', async () => 'refreshed', quota, {
+      background: true,
+      resource: 'graphql',
+    }),
   ).rejects.toMatchObject({ status: 429 })
   await expect(budget.run('account', async () => 'ready', quota)).resolves.toBe('ready')
   // An older window's reading never hides the current balance.
@@ -91,15 +95,138 @@ it('pauses background refreshes below the reserve while interactive calls contin
     }),
   )
   await expect(
-    budget.run('account', async () => 'refreshed', quota, { background: true }),
+    budget.run('account', async () => 'refreshed', quota, {
+      background: true,
+      resource: 'graphql',
+    }),
   ).rejects.toMatchObject({ status: 429 })
   budget.observeGraphql(
     'account',
-    JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 4000, resetAt } } }),
+    JSON.stringify({
+      data: {
+        rateLimit: {
+          limit: 5000,
+          remaining: 4000,
+          resetAt: new Date(Date.parse(resetAt) + 3600000).toISOString(),
+        },
+      },
+    }),
   )
   await expect(
-    budget.run('account', async () => 'refreshed', quota, { background: true }),
+    budget.run('account', async () => 'refreshed', quota, {
+      background: true,
+      resource: 'graphql',
+    }),
   ).resolves.toBe('refreshed')
   budget.observeGraphql('account', 'not json')
   expect(quota).not.toHaveBeenCalled()
+})
+
+it.each(['core', 'graphql'])(
+  'isolates the %s primary quota and uses its exact reset, ignoring other exhausted buckets',
+  async (resource) => {
+    vi.useFakeTimers()
+    const budget = new GithubBudget()
+    const reset = Math.floor(Date.now() / 1000) + 10
+    const quota = vi.fn<() => Promise<string>>(async () =>
+      JSON.stringify({
+        resources: {
+          [resource]: { remaining: 0, reset },
+          [resource === 'core' ? 'graphql' : 'core']: { remaining: 0, reset: reset + 3600 },
+        },
+      }),
+    )
+    await expect(
+      budget.run(
+        'account',
+        async () => {
+          throw new Error('API rate limit exceeded')
+        },
+        quota,
+        { resource },
+      ),
+    ).rejects.toMatchObject({ status: 429 })
+    await expect(
+      budget.run('account', async () => 'REST or GraphQL still available', quota, {
+        resource: resource === 'core' ? 'graphql' : 'core',
+      }),
+    ).resolves.toContain('available')
+    await vi.advanceTimersByTimeAsync(10_001)
+    await expect(budget.run('account', async () => 'ready', quota, { resource })).resolves.toBe(
+      'ready',
+    )
+  },
+)
+it('uses authoritative response resets without a probe, and recovers unknown primary limits after a minute', async () => {
+  vi.useFakeTimers()
+  const budget = new GithubBudget()
+  const quota = vi.fn<() => Promise<string>>(async () => '{}')
+  await expect(
+    budget.run(
+      'account',
+      async () => {
+        throw new GithubApiError(403, 'GitHub rate limit', undefined, {
+          secondary: false,
+          resource: 'graphql',
+          resetAt: Date.now() + 5000,
+        })
+      },
+      quota,
+      { resource: 'graphql' },
+    ),
+  ).rejects.toMatchObject({ status: 429 })
+  expect(quota).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(5001)
+  await expect(
+    budget.run('account', async () => 'ready', quota, { resource: 'graphql' }),
+  ).resolves.toBe('ready')
+  await expect(
+    budget.run(
+      'account',
+      async () => {
+        throw new Error('rate limit exceeded')
+      },
+      quota,
+    ),
+  ).rejects.toMatchObject({ status: 429 })
+  await vi.advanceTimersByTimeAsync(60001)
+  await expect(budget.run('account', async () => 'ready', quota)).resolves.toBe('ready')
+})
+it('keeps secondary cooldowns shared across resources and honors short retry-after values', async () => {
+  vi.useFakeTimers()
+  const budget = new GithubBudget()
+  const quota = vi.fn<() => Promise<string>>(async () => '{}')
+  await expect(
+    budget.run(
+      'account',
+      async () => {
+        throw new Error('secondary rate limit, retry-after: 2')
+      },
+      quota,
+      { resource: 'graphql' },
+    ),
+  ).rejects.toMatchObject({ status: 429 })
+  await expect(budget.run('account', async () => 'ready', quota)).rejects.toMatchObject({
+    status: 429,
+  })
+  await vi.advanceTimersByTimeAsync(2001)
+  await expect(budget.run('account', async () => 'ready', quota)).resolves.toBe('ready')
+  expect(quota).not.toHaveBeenCalled()
+})
+it('tracks REST reserves and ignores out-of-order readings without pausing GraphQL', async () => {
+  const budget = new GithubBudget()
+  const quota = vi.fn<() => Promise<string>>(async () => '{}')
+  const resetAt = Date.now() + 60000
+  budget.observe('account', { limit: 5000, remaining: 100, resetAt }, 'core')
+  budget.observe('account', { limit: 5000, remaining: 4000, resetAt }, 'core')
+  await expect(
+    budget.run('account', async () => 'ready', quota, { background: true }),
+  ).rejects.toMatchObject({ status: 429 })
+  await expect(
+    budget.run('account', async () => 'ready', quota, { background: true, resource: 'graphql' }),
+  ).resolves.toBe('ready')
+  budget.observe('account', { limit: 5000, remaining: 5000, resetAt: resetAt + 3600000 }, 'core')
+  await expect(
+    budget.run('account', async () => 'ready', quota, { background: true }),
+  ).resolves.toBe('ready')
 })

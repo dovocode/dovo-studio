@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto'
 import { exec, ProcessError } from '../../process.js'
+import {
+  githubResponseInfo,
+  githubGraphqlInfo,
+  type GithubResponseInfo,
+  type GithubRateLimit,
+} from './github-rate-limit.js'
 
 /** A GitHub request described the way call sites already do: as `gh api` arguments. The
  * transport sends it to GitHub's API itself; `gh` only mints the token (see GithubCredentials). */
@@ -19,6 +25,7 @@ export class GithubApiError extends Error {
     readonly status: number,
     message: string,
     readonly retryAfter?: number,
+    readonly rateLimit?: GithubRateLimit,
   ) {
     super(message)
   }
@@ -153,7 +160,11 @@ export class GithubTransport {
   async send(
     request: GithubApiRequest,
     token: string,
-    options: { onUnauthorized?: () => void; maxBytes?: number } = {},
+    options: {
+      onUnauthorized?: () => void
+      maxBytes?: number
+      onResponse?: (info: GithubResponseInfo) => void
+    } = {},
   ): Promise<string> {
     const pages: string[] = []
     let total = 0
@@ -198,16 +209,28 @@ export class GithubTransport {
           `Could not reach ${request.host}: ${error instanceof Error ? error.message : String(error)}`,
         )
       }
+      const info = githubResponseInfo(response, request.graphql)
       if (response.status === 401) options.onUnauthorized?.()
       let text: string
       try {
         text = await responseText(response, Math.min(RESPONSE_BYTES, limit - total))
       } catch (error) {
+        options.onResponse?.(info)
         // Authentication/permission rejection remains authoritative even when its
         // body is interrupted. A 502 here would incorrectly permit private cache fallback.
         if (!response.ok) throw githubError(response, '')
         throw error
       }
+      const graphql = request.graphql ? githubGraphqlInfo(text) : undefined
+      if (graphql?.quota) info.quota = graphql.quota
+      if (graphql?.cost !== undefined) info.cost = graphql.cost
+      options.onResponse?.(info)
+      if (response.ok && graphql?.limited)
+        throw new GithubApiError(429, 'GitHub GraphQL rate limit reached', undefined, {
+          resource: 'graphql',
+          secondary: graphql.secondary,
+          resetAt: graphql.secondary ? undefined : info.quota?.resetAt,
+        })
       const linkHeader: string | null =
         response.status === 304 && cached
           ? (response.headers.get('link') ?? cached.link)
@@ -272,18 +295,28 @@ function githubError(response: Response, text: string) {
   const reset = response.headers.get('x-ratelimit-reset')
   const limited =
     response.status === 429 ||
-    (response.status === 403 && (remaining === '0' || /rate limit/i.test(detail)))
+    (response.status === 403 &&
+      (remaining === '0' || /rate limit|abuse detection|too many requests/i.test(detail)))
   if (limited) {
-    const seconds = retryAfter
-      ? Number(retryAfter)
-      : reset
-        ? Math.max(1, Number(reset) - Math.floor(Date.now() / 1000))
-        : undefined
-    const secondary = /secondary|abuse/i.test(detail)
+    const retry = retryAfter === null ? undefined : Number(retryAfter)
+    const seconds = retry !== undefined && Number.isFinite(retry) ? Math.max(0, retry) : undefined
+    const secondary =
+      /secondary|abuse/i.test(detail) || (response.status === 429 && remaining !== '0')
+    const resetAt =
+      reset !== null && Number.isFinite(Number(reset)) ? Number(reset) * 1000 : undefined
+    const effective =
+      seconds ??
+      (!secondary && resetAt !== undefined ? Math.max(0, (resetAt - Date.now()) / 1000) : undefined)
     return new GithubApiError(
       response.status,
-      `GitHub ${secondary ? 'secondary rate limit' : 'rate limit'} (HTTP ${response.status})${seconds ? ` retry-after: ${seconds}` : ''}`,
-      seconds,
+      `GitHub ${secondary ? 'secondary rate limit' : 'rate limit'} (HTTP ${response.status})${effective !== undefined ? ` retry-after: ${effective}` : ''}`,
+      effective,
+      {
+        resource: response.headers.get('x-ratelimit-resource') ?? undefined,
+        secondary,
+        resetAt: secondary ? undefined : resetAt,
+        retryAfter: seconds,
+      },
     )
   }
   return new GithubApiError(response.status, `GitHub API HTTP ${response.status}`)

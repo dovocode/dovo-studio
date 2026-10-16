@@ -9,6 +9,7 @@ import { folderOpenCommand, launchDesktop } from './open-folder.js'
 import type { RepositoryOpenTarget } from '@dovo/protocol'
 import type { FilePreviewMetadata } from '@dovo/protocol'
 import { GithubBudget } from './github-budget.js'
+import type { GithubResponseInfo } from './github-rate-limit.js'
 import { GithubCredentials, GithubTransport, parseGithubApiArgs } from './github-transport.js'
 import { gitRemoteIdentity } from '@dovo/protocol'
 import { defaultShell, shellArguments } from '../../terminal/shell.js'
@@ -63,6 +64,14 @@ export class GitService {
     const request = parseGithubApiArgs(args, input)
     const audited = [this.settings().gh, ...args]
     this.audit?.(cwd, audited)
+    const responses: GithubResponseInfo[] = []
+    const diagnostics = {
+      host: request.host,
+      method: request.method,
+      endpoint: request.path,
+      background,
+      responses,
+    }
     try {
       const token = await this.githubCredentials.token(request.host, cwd, env)
       const key = createHash('sha256')
@@ -74,12 +83,15 @@ export class GitService {
           beforeDispatch?.()
           const text = await this.githubTransport.send(request, token, {
             maxBytes,
+            onResponse: (info) => {
+              responses.push(info)
+              if (info.quota) this.githubBudget.observe(key, info.quota, info.resource)
+            },
             onUnauthorized: () => {
               this.githubCredentials.invalidate(request.host, cwd, env)
               onUnauthorized?.()
             },
           })
-          if (request.graphql) this.githubBudget.observeGraphql(key, text)
           return text
         },
         () =>
@@ -87,16 +99,16 @@ export class GitService {
             parseGithubApiArgs(['api', '--hostname', request.host, 'rate_limit']),
             token,
           ),
-        { background },
+        { background, resource: request.graphql ? 'graphql' : 'core' },
       )
-      this.audit?.(cwd, audited, {})
+      this.audit?.(cwd, audited, { github: diagnostics })
       return result
     } catch (error) {
-      this.audit?.(cwd, audited, { error: errorMessage(error) })
+      this.audit?.(cwd, audited, { error: errorMessage(error), github: diagnostics })
       throw error
     }
   }
-  private githubRequest(
+  private async githubRequest(
     cwd: string,
     args: string[],
     timeout: number,
@@ -106,6 +118,7 @@ export class GitService {
     input?: string,
     onUnauthorized?: () => void,
     beforeDispatch?: () => void,
+    discoveredHost?: string,
   ) {
     if (args[0] === 'api')
       return this.githubApiRequest(
@@ -126,37 +139,37 @@ export class GitService {
         ? args[repoIndex + 1]?.split('/')[0]
         : undefined
     const host =
-      (hostIndex >= 0 ? args[hostIndex + 1] : repositoryHost) ?? env.GH_HOST ?? 'github.com'
+      (hostIndex >= 0 ? args[hostIndex + 1] : repositoryHost) ??
+      discoveredHost ??
+      env.GH_HOST ??
+      'github.com'
+    // Local authentication commands must remain usable even while an API bucket is exhausted.
+    if (args[0] === 'auth') {
+      beforeDispatch?.()
+      return this.run(cwd, this.settings().gh, args, timeout, maxBuffer, env)
+    }
+    const token = await this.githubCredentials.token(host, cwd, env)
     const key = createHash('sha256')
-      .update(
-        JSON.stringify([
-          host,
-          env.GH_CONFIG_DIR,
-          env.GH_TOKEN,
-          env.GITHUB_TOKEN,
-          env.GH_ENTERPRISE_TOKEN,
-          env.GITHUB_ENTERPRISE_TOKEN,
-        ]),
-      )
+      .update(JSON.stringify([host, token]))
       .digest('hex')
     return this.githubBudget.run(
       key,
       async () => {
         beforeDispatch?.()
-        const result = await this.run(cwd, this.settings().gh, args, timeout, maxBuffer, env)
+        const result = await this.run(cwd, this.settings().gh, args, timeout, maxBuffer, {
+          ...env,
+          GH_TOKEN: token,
+          GH_ENTERPRISE_TOKEN: token,
+        })
         if (args.includes('graphql')) this.githubBudget.observeGraphql(key, result)
         return result
       },
       () =>
-        this.run(
-          cwd,
-          this.settings().gh,
-          ['api', '--hostname', host, 'rate_limit'],
-          20000,
-          1024 * 1024,
-          env,
+        this.githubTransport.send(
+          parseGithubApiArgs(['api', '--hostname', host, 'rate_limit']),
+          token,
         ),
-      { background },
+      { background, resource: 'graphql' },
     )
   }
   constructor(
@@ -166,6 +179,13 @@ export class GitService {
       args: string[],
       result?: {
         error?: string
+        github?: {
+          host: string
+          method: string
+          endpoint: string
+          background: boolean
+          responses: GithubResponseInfo[]
+        }
       },
     ) => void,
     private forgeAuthorization?: (
@@ -1348,20 +1368,107 @@ export class GitService {
       this.nonInteractive(),
     )
   }
+  private githubRepositories = new Map<
+    string,
+    { expires: number; pending: boolean; result: Promise<string> }
+  >()
   async github(path: string, args: string[], background = false) {
-    const { path: cwd } = await this.inspect(path)
-    return this.githubRequest(
-      cwd,
-      args,
-      60000,
-      32 * 1024 * 1024,
-      {
-        ...processEnvironment(),
-        ...(await this.githubEnvironment(cwd)),
+    const { path: cwd, branch } = await this.inspect(path)
+    const env: NodeJS.ProcessEnv = {
+      ...processEnvironment(),
+      ...(await this.githubEnvironment(cwd)),
+    }
+    const load = (host?: string) =>
+      this.githubRequest(
+        cwd,
+        args,
+        60000,
+        32 * 1024 * 1024,
+        env,
+        background,
+        undefined,
+        undefined,
+        undefined,
+        host,
+      )
+    if (args[0] === 'api' || args[0] === 'auth') return load()
+    // Resolve CLI credentials on the checkout's host, including non-origin and resolved remotes.
+    // Discovery keys include effective Git config, environment, executable and credential;
+    // none of their values enter diagnostics.
+    const config = await this.command(cwd, ['config', '--null', '--list'])
+    const configured = config.split('\0')
+    const remotes = configured.filter((value) => /^remote\..+\.url\n/.test(value))
+    const resolved = configured
+      .find((value) => /^remote\..+\.gh-resolved\nbase$/.test(value))
+      ?.split('\n')[0]
+      ?.replace(/\.gh-resolved$/, '.url')
+    const preferred =
+      remotes.find((value) => value.startsWith(`${resolved}\n`)) ??
+      remotes.find((value) => value.startsWith('remote.origin.url\n'))
+    const hosts = [
+      ...new Set(
+        remotes
+          .map((value) => gitRemoteIdentity(value.split('\n')[1] ?? '')?.split('/')[0])
+          .filter((host) => host !== undefined),
+      ),
+    ]
+    const selectedRemote = preferred ?? (hosts.length === 1 ? remotes[0] : undefined)
+    // Ask Git to apply url.*.insteadOf rewrites before choosing a credential host.
+    const remoteName = selectedRemote?.split('\n')[0]?.slice('remote.'.length, -'.url'.length)
+    const effectiveRemote = remoteName
+      ? await this.command(cwd, ['remote', 'get-url', remoteName])
+      : undefined
+    const override = env.GH_REPO
+    const host =
+      (override
+        ? (gitRemoteIdentity(override)?.split('/')[0] ??
+          (override.split('/').length === 3 ? override.split('/')[0] : undefined))
+        : undefined) ??
+      env.GH_HOST ??
+      (effectiveRemote ? gitRemoteIdentity(effectiveRemote)?.split('/')[0] : undefined) ??
+      (preferred ? gitRemoteIdentity(preferred.split('\n')[1] ?? '')?.split('/')[0] : undefined) ??
+      (hosts.length === 1 ? hosts[0] : undefined) ??
+      'github.com'
+    if (args.join(' ') !== 'repo view --json nameWithOwner,url') return load(host)
+    const token = await this.githubCredentials.token(host, cwd, env)
+    const key = createHash('sha256')
+      .update(JSON.stringify([cwd, branch, config, env, token, this.settings().gh]))
+      .digest('hex')
+    const cached = this.githubRepositories.get(key)
+    if (cached && (cached.pending || cached.expires > Date.now())) return cached.result
+    const result = load(host)
+      .then((text) => {
+        decode(
+          mutableStruct({ nameWithOwner: Schema.String, url: Schema.String }),
+          JSON.parse(text),
+        )
+        return text
+      })
+      .catch((error: unknown) => {
+        // Unchanged local configuration and credentials still identify the same checkout.
+        // Retain that metadata during throttling so REST pipeline reads can continue.
+        if (cached && error instanceof HttpError && error.status === 429) return cached.result
+        throw error
+      })
+    const entry = { expires: Date.now() + 600_000, pending: true, result }
+    this.githubRepositories.set(key, entry)
+    if (this.githubRepositories.size > 256)
+      for (const [oldKey, old] of this.githubRepositories) {
+        if (!old.pending) this.githubRepositories.delete(oldKey)
+        if (this.githubRepositories.size <= 256) break
+      }
+    result.then(
+      () => {
+        entry.pending = false
+        entry.expires = Date.now() + 600_000
       },
-      background,
+      () => {
+        if (this.githubRepositories.get(key) === entry) this.githubRepositories.delete(key)
+      },
     )
+    return result
   }
+
   /** Capture the actual credential once so identity verification and dispatch use the same login. */
   async githubCredential(
     cwd: string,

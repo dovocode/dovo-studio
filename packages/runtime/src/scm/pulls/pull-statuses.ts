@@ -92,7 +92,7 @@ export async function pullStatuses(
     )
     .join(' ')
   // rateLimit keeps the shared budget current without separate quota probes.
-  const query = `query($owner:String!,$name:String!){viewer{login} rateLimit{limit remaining resetAt} repository(owner:$owner,name:$name){${fields}}}`
+  const query = `query($owner:String!,$name:String!){viewer{login} rateLimit{cost limit remaining resetAt} repository(owner:$owner,name:$name){${fields}}}`
   try {
     const response = decode(
       mutableStruct({
