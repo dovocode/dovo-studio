@@ -29,7 +29,7 @@ import { mutableStruct } from '@dovo/protocol'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
-import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
+import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -101,8 +101,6 @@ export function Composer({
     [checkout, setCheckout] = useApplicationState(false)
   const selection = useRef<DraftSelection | undefined>(undefined)
   const [caret, setCaret] = useState(0)
-  const [moreActions, setMoreActions] = useState(false)
-  const actionsSheet = useRef<SheetHandle>(null)
   const focus = useCallback(() => setFocused(true), [setFocused])
   const blur = useCallback(() => setFocused(false), [setFocused])
   const select = useCallback(
@@ -307,6 +305,23 @@ export function Composer({
   const showFollowupActions =
     showOptions && !dictation.active && task.status === 'running' && hasInput
   const showFork = hasGit && !!task.repositoryId
+  const sideQuestionAction = hasSideQuestion && (
+    <IconButton
+      variant="plain"
+      icon="chat"
+      label="Ask a side question"
+      disabled={
+        !connected ||
+        busy ||
+        asideBusy ||
+        !draft.ready ||
+        dictation.active ||
+        !!task.archived ||
+        !!task.archivedAt
+      }
+      onPress={() => void askAside()}
+    />
+  )
   const canDictate = draft.ready && !busy && !task.archivedAt && !attaching
   const listening = dictation.isRecording || dictation.isStarting
   const dictationStatus = dictation.isStarting
@@ -596,6 +611,8 @@ export function Composer({
                 onPress={Keyboard.dismiss}
               />
             )}
+            {/* Stay at the row's trailing edge when the keyboard button disappears on blur. */}
+            {showFollowupActions && sideQuestionAction}
           </View>
           <View
             testID="Composer toolbar"
@@ -721,31 +738,12 @@ export function Composer({
                     }
               }
             />
-            {hasSideQuestion && !showFollowupActions && (
-              <IconButton
-                variant="plain"
-                icon="chat"
-                label="Ask a side question"
-                disabled={
-                  !connected ||
-                  busy ||
-                  asideBusy ||
-                  !draft.ready ||
-                  dictation.active ||
-                  !!task.archived ||
-                  !!task.archivedAt
-                }
-                onPress={() => void askAside()}
-              />
-            )}
+            {!showFollowupActions && sideQuestionAction}
             {showFollowupActions && (
               <View
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  borderRadius: 12,
                 }}
               >
                 <IconButton
@@ -755,17 +753,22 @@ export function Composer({
                   disabled={!canSend || busy}
                   onPress={() => send()}
                 />
-                <View style={{ width: 1, height: 20, backgroundColor: colors.border }} />
                 <IconButton
                   variant="plain"
-                  icon="down"
-                  label="More message actions"
+                  icon="steer"
+                  label="Steer agent"
                   disabled={!canSend || busy}
-                  onPress={() => {
-                    Keyboard.dismiss()
-                    setMoreActions(true)
-                  }}
+                  onPress={() => send('steer')}
                 />
+                {showFork && (
+                  <IconButton
+                    variant="plain"
+                    icon="changes"
+                    label="Fork"
+                    disabled={!canSend || busy}
+                    onPress={startFork}
+                  />
+                )}
               </View>
             )}
             <IconButton
@@ -858,44 +861,6 @@ export function Composer({
             />
           )}
         </View>
-      )}
-      {moreActions && (
-        <Sheet ref={actionsSheet} title="Message actions" onClose={() => setMoreActions(false)}>
-          {hasSideQuestion && (
-            <Action
-              secondary
-              label="Ask a side question"
-              disabled={
-                !connected ||
-                busy ||
-                asideBusy ||
-                !draft.ready ||
-                dictation.active ||
-                !!task.archived ||
-                !!task.archivedAt
-              }
-              onPress={() => actionsSheet.current?.dismiss(() => void askAside())}
-            />
-          )}
-          {showFollowupActions && (
-            <>
-              <Action
-                secondary
-                label="Steer agent"
-                disabled={!canSend || busy}
-                onPress={() => actionsSheet.current?.dismiss(() => send('steer'))}
-              />
-              {showFork && (
-                <Action
-                  secondary
-                  label="Fork"
-                  disabled={!canSend || busy}
-                  onPress={() => actionsSheet.current?.dismiss(startFork)}
-                />
-              )}
-            </>
-          )}
-        </Sheet>
       )}
       {checkout && checkoutEditable && hasGit && (
         <Sheet title="Checkout & branch" onClose={() => setCheckout(false)}>

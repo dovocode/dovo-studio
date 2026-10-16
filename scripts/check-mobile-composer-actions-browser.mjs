@@ -135,19 +135,27 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('button', { name: 'Queue follow-up', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
-  assert.equal(await page.getByRole('button', { name: 'Steer agent', exact: true }).count(), 0)
-  assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).count(), 0)
+  assert.equal(
+    await page.getByRole('button', { name: 'More message actions', exact: true }).count(),
+    0,
+  )
+  const inlineActions = []
+  for (const name of ['Queue follow-up', 'Steer agent', 'Fork', 'Stop']) {
+    const bounds = await page.getByRole('button', { name, exact: true }).boundingBox()
+    assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44)
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320)
+    inlineActions.push(bounds)
+  }
+  assert.ok(inlineActions.every((bounds) => bounds.y === inlineActions[0].y))
   const compact = await page
     .getByRole('button', { name: 'Compact context', exact: true })
     .boundingBox()
   const queue = await page.getByRole('button', { name: /1 queued messages/ }).boundingBox()
   const input = await page.getByRole('textbox', { name: 'Message', exact: true }).boundingBox()
   assert.ok(compact.y + compact.height <= queue.y && queue.y + queue.height <= input.y)
-  await page.getByRole('button', { name: 'More message actions', exact: true }).click()
   await page.getByRole('button', { name: 'Steer agent', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'steer' })
   assert.equal(await page.getByRole('dialog', { name: 'Message actions' }).count(), 0)
-  await page.getByRole('button', { name: 'More message actions', exact: true }).click()
   await page.getByRole('button', { name: 'Fork', exact: true }).click()
   await page.waitForFunction(() => window.navigations.length === 1)
   assert.deepEqual(await page.evaluate(() => window.navigations[0]), ['tasks', 'fork', 'runtime'])
@@ -162,7 +170,6 @@ try {
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.expectedText), 'Check the tests')
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Explain this checkout')
-  await page.getByRole('button', { name: 'More message actions', exact: true }).click()
   await page.getByRole('button', { name: 'Ask a side question', exact: true }).click()
   await page.waitForFunction(() =>
     window.calls.some((call) => call.path === '/api/tasks/side-chat/ask'),
@@ -178,7 +185,7 @@ try {
     mode: 'aside',
     chatId: 'side-1',
   })
-  // The direct icon uses the same send action as the overflow entry.
+  // The side-chat icon sends immediately for both running and idle threads.
   await page.evaluate(() => window.setTask({ status: 'review' }))
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('From the icon')
   await page.getByRole('button', { name: 'Ask a side question', exact: true }).click()
@@ -208,12 +215,19 @@ try {
     true,
   )
   assert.equal(
-    await page.getByRole('button', { name: 'More message actions', exact: true }).isDisabled(),
+    await page.getByRole('button', { name: 'Steer agent', exact: true }).isDisabled(),
     true,
   )
+  assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).isDisabled(), true)
+  assert.equal(
+    await page.getByRole('button', { name: 'Ask a side question', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => window.setTask({ repositoryId: undefined }))
+  assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile composer: compact/queue/input order, split actions, steer and fork dismissal, queue editing, immediate side-chat sending, failure recovery and offline guards passed with native control adapters.',
+    'Mobile composer: compact/queue/input order, inline 44pt actions at 320px, steer and fork dispatch, queue editing, immediate side-chat sending, failure recovery and offline guards passed with native control adapters.',
   )
 } finally {
   await browser.close()
