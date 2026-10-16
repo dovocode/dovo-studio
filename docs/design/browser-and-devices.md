@@ -90,6 +90,33 @@ cannot start a live preview until they are ready.
 
 Existing Android emulator and iOS simulator live controls remain available.
 
+### Agent device controls
+
+Device Hub exposes the same task-scoped tools across agent harnesses and local/remote hosts:
+
+- `device` handles screenshots, capability discovery, installed apps, launch/relaunch, stop,
+  uninstall and deep links. Stop/uninstall require `bundleId`. Uninstall also removes app data.
+  `deep-link` accepts an absolute app URL without changing HTTP-only browser navigation; physical
+  iOS also requires the destination app's `bundleId`.
+- `simulator_tap`, `simulator_swipe`, `simulator_text`, `simulator_key`, `simulator_button` and
+  `simulator_gesture` work with physical devices as well as simulators. Coordinates and pinch radii
+  are screenshot pixels. Gestures include double tap, long press, drag and pinch.
+- Keyboard input accepts keys such as Enter/Backspace and shortcuts such as `Control+a` on Android
+  or `Meta+a` on iOS. Device buttons cover Home, Back, app switcher, lock and volume.
+- Complete gestures execute in the owning host's input queue. Held touches are released on
+  cancellation or failure, and long gestures recheck authorization as they progress.
+
+Use `device` with `action: capabilities` to inspect limits before choosing a control. True
+multi-touch pinch works on Android emulators and iOS simulators with a recent idb_companion.
+Physical devices lack multi-touch injection through the current transports; a managed
+XCTest/WebDriverAgent or UiAutomator2 runner would be needed to extend them. iOS app switching also
+requires a runner that supports system gestures. iOS Back performs the standard left-edge gesture,
+so apps must support that gesture. iOS simulators expose volume buttons but no mute button. Physical
+Android text entry supports basic Latin text. No runner is installed automatically.
+
+Read-only agents can inspect screenshots, app lists and capabilities, but cannot send input or
+manage apps. Both runtimes must support the new commands when controlling a remote device host.
+
 On mobile, **Expand preview** hides the task header, mode picker and browser toolbars while
 retaining a visible **Show controls** button. The canvas stays mounted, so expanding does not
 reconnect or reset the page. Safe-area insets protect the controls around the notch and home

@@ -4,7 +4,7 @@ import sharp from 'sharp'
 import type { PreviewDevice } from '@dovo/protocol'
 import type { NativeSimulator } from './simulator-native.js'
 import { androidTool } from './devices.js'
-import { androidScreenSize, nativePreparation } from './simulator-native.js'
+import { androidScreenSize, androidKeys, nativePreparation } from './simulator-native.js'
 import { HttpError } from '../errors.js'
 
 const exec = promisify(execFile)
@@ -43,21 +43,6 @@ export async function physicalAndroid(
   const shellInput = (args: string[]) => command(['shell', 'input', ...args]).then(() => undefined)
   const swipe = (from: { x: number; y: number }, to: { x: number; y: number }, ms: number) =>
     shellInput(['swipe', `${from.x}`, `${from.y}`, `${to.x}`, `${to.y}`, `${ms}`])
-  const keys: Record<string, number> = {
-    Home: 3,
-    GoHome: 3,
-    GoBack: 4,
-    Enter: 66,
-    Backspace: 67,
-    Delete: 112,
-    Tab: 61,
-    Escape: 111,
-    Space: 62,
-    ArrowLeft: 21,
-    ArrowRight: 22,
-    ArrowUp: 19,
-    ArrowDown: 20,
-  }
   return {
     screenPoints: () => ({ width: width / 2, height: height / 2 }),
     start(publish, report) {
@@ -99,8 +84,40 @@ export async function physicalAndroid(
       }
       return stop
     },
-    async input(input) {
-      if (input.type === 'pointer') {
+    async input(input, authorize, signal) {
+      authorize?.()
+      signal?.throwIfAborted()
+      if (input.type === 'gesture') {
+        if (input.gesture !== 'long-press' && input.gesture !== 'drag')
+          throw new HttpError(409, 'This gesture is unavailable through Android’s ADB transport.')
+        const from = point(input.x, input.y)
+        const to = input.gesture === 'drag' ? point(input.endX, input.endY) : from
+        try {
+          await command(
+            [
+              'shell',
+              'input',
+              input.gesture === 'drag' ? 'draganddrop' : 'swipe',
+              `${from.x}`,
+              `${from.y}`,
+              `${to.x}`,
+              `${to.y}`,
+              `${Math.round(input.durationMs)}`,
+            ],
+            signal,
+          )
+        } catch (error) {
+          try {
+            await shellInput(['motionevent', 'UP', `${to.x}`, `${to.y}`])
+          } catch (releaseError) {
+            throw new AggregateError(
+              [error, releaseError],
+              'Android gesture failed and its touch could not be released.',
+            )
+          }
+          throw error
+        }
+      } else if (input.type === 'pointer') {
         const at = point(input.x, input.y)
         if (input.phase === 'down') down = at
         else if (input.phase === 'up' && down) {
@@ -116,11 +133,8 @@ export async function physicalAndroid(
         await swipe(from, to, 250)
       } else if (input.type === 'back') await shellInput(['keyevent', '4'])
       else if (input.type === 'key') {
-        const key =
-          keys[input.key] ??
-          (/^[a-z]$/i.test(input.key) ? input.key.toLowerCase().charCodeAt(0) - 68 : undefined)
-        if (key === undefined) throw new HttpError(400, 'This Android key is not supported.')
-        await shellInput(['keyevent', `${key}`])
+        const codes = androidKeys(input.key)
+        await shellInput([codes.length > 1 ? 'keycombination' : 'keyevent', ...codes.map(String)])
       } else if (input.type === 'text') {
         if (!/^[\x20-\x7e]+$/.test(input.text) || input.text.includes('%s'))
           throw new HttpError(400, 'This Android keyboard supports basic Latin text only.')

@@ -1,7 +1,8 @@
 import { physicalDevice } from './physical-device.js'
 import { physicalAndroid } from './physical-android.js'
 import { randomUUID } from 'node:crypto'
-import type { PreviewDevice, RemoteBrowserInput } from '@dovo/protocol'
+import type { PreviewDevice, SimulatorInput } from '@dovo/protocol'
+import { controlNativeDevice } from './device-controls.js'
 import { previewDevices } from './devices.js'
 import { iosSimulator, androidSimulator, type NativeSimulator } from './simulator-native.js'
 import type { BrowserFrame, BrowserOutput } from './browser.js'
@@ -27,7 +28,7 @@ type Session = {
   closed: boolean
   queue: Promise<void>
   queued: number
-  move?: { input: RemoteBrowserInput; authorize: () => void; promise?: Promise<void> }
+  move?: { input: SimulatorInput; authorize: () => void; promise?: Promise<void> }
 }
 type Entry = {
   foreignOwner?: string
@@ -179,6 +180,7 @@ export class SimulatorPreviews {
           : device.platform === 'ios'
             ? iosSimulator(device, assertCurrent, signal)
             : androidSimulator(device, assertCurrent, signal))
+        driver = controlNativeDevice(driver, device)
       }
       return {
         device,
@@ -267,12 +269,14 @@ export class SimulatorPreviews {
       }
     }
   }
-  async input(id: string, input: RemoteBrowserInput, authorize: () => void, signal?: AbortSignal) {
+  async input(id: string, input: SimulatorInput, authorize: () => void, signal?: AbortSignal) {
     this.provider?.authorize?.()
     const session = await this.get(id).pending
     if (session.closed) throw new HttpError(404, 'Simulator preview closed')
     if (input.type === 'resize' || input.type === 'status') return
-    if (!['pointer', 'key', 'text', 'scroll', 'back'].includes(input.type))
+    if (
+      !['pointer', 'key', 'text', 'scroll', 'back', 'gesture', 'device-button'].includes(input.type)
+    )
       throw new HttpError(400, 'Unsupported simulator action')
     if (
       input.type === 'pointer' &&

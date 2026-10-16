@@ -15,7 +15,9 @@ message HIDEvent {
  message Action { Touch touch=1; Button button=2; Key key=3; }
  message Press { Action action=1; int32 direction=2; }
  message Swipe { Point start=1; Point end=2; double delta=5; double duration=6; }
- Press press=1; Swipe swipe=2;
+ message Delay { double duration=1; }
+ message Pinch { Point center=1; double scale=2; double duration=3; double radius=4; }
+ Press press=1; Swipe swipe=2; Delay delay=3; Pinch pinch=4;
 }
 message VideoRequest {
  message Start { string file_path=1; uint64 fps=2; int32 format=3; double compression_quality=4; double scale_factor=5; }

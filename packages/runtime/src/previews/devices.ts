@@ -1,5 +1,6 @@
 import { appleDeviceCommand } from './apple-device-command.js'
-import { deviceApps, launchDeviceApp } from './device-app-actions.js'
+import { deviceApps, launchDeviceApp, manageDeviceApp } from './device-app-actions.js'
+import { deviceControls } from './device-controls.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
@@ -10,7 +11,12 @@ import { constants } from 'node:fs'
 import { emulatorEndpoint } from './simulator-native.js'
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { Schema } from 'effect'
-import { previewUrl, type PreviewDevice, type previewActionSchema } from '@dovo/protocol'
+import {
+  deviceDeepLink,
+  previewUrl,
+  type PreviewDevice,
+  type previewActionSchema,
+} from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 const exec = promisify(execFile)
 const run = async (file: string, args: string[], signal?: AbortSignal) =>
@@ -428,6 +434,50 @@ export async function previewDeviceAction(
     const device = (await previewDevices()).devices.find((d) => d.id === input.id)
     assertCurrent()
     if (!device) throw new HttpError(404, 'Device is no longer available. Refresh the device list.')
+    if (input.action === 'capabilities') return { ok: true as const, ...deviceControls(device) }
+    if (input.action === 'stop' || input.action === 'uninstall') {
+      if (!input.bundleId) throw new HttpError(400, 'Select an app by bundleId.')
+      return manageDeviceApp(device, input.bundleId, input.action, signal, assertCurrent)
+    }
+    if (input.action === 'deep-link') {
+      if (device.state !== 'booted') throw new HttpError(409, 'Start or connect this device first.')
+      const url = deviceDeepLink(input.url ?? '')
+      if (device.platform === 'android') {
+        const output = await command(await androidTool('adb'), [
+          '-s',
+          device.runtime,
+          'shell',
+          'am',
+          'start',
+          '-a',
+          'android.intent.action.VIEW',
+          '-d',
+          `'${url.replaceAll("'", "'\\''")}'`,
+          ...(input.bundleId ? ['-p', input.bundleId] : []),
+        ])
+        if (/^(?:Error:|Exception)/m.test(output))
+          throw new HttpError(409, `Android could not open this deep link: ${output}`)
+      } else if (device.kind !== 'physical')
+        await command('xcrun', ['simctl', 'openurl', device.id.slice(4), url])
+      else {
+        if (!input.bundleId)
+          throw new HttpError(400, 'Deep links on physical iOS require the destination bundleId.')
+        await command('xcrun', [
+          'devicectl',
+          'device',
+          'process',
+          'launch',
+          '--device',
+          device.runtime,
+          '--timeout',
+          '15',
+          '--payload-url',
+          url,
+          input.bundleId,
+        ])
+      }
+      return { ok: true as const }
+    }
     if (['devicehub', 'accessibility', 'screen-recording'].includes(input.action)) {
       if (process.platform !== 'darwin' || device.platform !== 'ios')
         throw new HttpError(409, 'Device Hub requires Xcode 27 on a Mac.')

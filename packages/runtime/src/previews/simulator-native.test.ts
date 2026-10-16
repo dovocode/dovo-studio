@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { androidScreenSize, MinicapFrames } from './simulator-native'
+import { androidScreenSize, androidKeys, asciiKey, MinicapFrames } from './simulator-native'
 it('assembles fragmented native video packets and multiple frames without JPEG parsing', () => {
   const header = Buffer.alloc(24)
   header[0] = 1
@@ -30,4 +30,20 @@ it('reads the Android display size, preferring an override', () => {
     height: 1600,
   })
   expect(androidScreenSize('error: device offline')).toBeUndefined()
+})
+it('maps Android navigation and keyboard chords consistently on phones and emulators', () => {
+  expect(androidKeys('AppSwitch')).toEqual([187])
+  expect(androidKeys('Control+a')).toEqual([113, 29])
+  expect(androidKeys('A')).toEqual([59, 29])
+  expect(androidKeys('Shift+A')).toEqual([59, 29])
+  expect(androidKeys('+')).toEqual([59, 70])
+  expect(androidKeys('9')).toEqual([16])
+  expect(androidKeys('Control+Shift+?')).toEqual([113, 59, 76])
+  expect(() => androidKeys('Unknown+a')).toThrow('not supported')
+})
+
+it('only treats single characters as iOS keyboard characters', () => {
+  expect(asciiKey('+')).toEqual({ code: 46, shift: true })
+  expect(asciiKey('A')).toEqual({ code: 4, shift: true })
+  for (const value of ['', '12', 'Control+', 'Unknown']) expect(asciiKey(value)).toBeUndefined()
 })

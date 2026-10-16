@@ -22,8 +22,16 @@ const mocked = vi.hoisted(() => ({
   rpc: vi.fn<() => void>(),
   probe: vi.fn<() => true>(),
   ready: vi.fn<() => Promise<void>>(),
-  describe: vi.fn<() => Promise<object>>(),
-  hid: vi.fn<() => PassThrough>(),
+  describe: vi.fn<(...args: unknown[]) => Promise<object>>(),
+  hid: vi.fn<
+    (
+      method: string,
+      request: string,
+      response: string,
+      schema: unknown,
+      done: (error: Error | null) => void,
+    ) => PassThrough
+  >(),
   close: vi.fn<() => void>(),
 }))
 vi.mock('node:fs/promises', async (original) => ({
@@ -141,7 +149,11 @@ beforeEach(() => {
   mocked.describe.mockResolvedValue({
     targetDescription: { udid: 'qa', screenDimensions: { widthPoints: 400, heightPoints: 800 } },
   })
-  mocked.hid.mockImplementation(() => new PassThrough({ objectMode: true }))
+  mocked.hid.mockImplementation((_method, _request, _response, _schema, done) => {
+    const stream = new PassThrough({ objectMode: true })
+    stream.on('finish', () => done(null))
+    return stream
+  })
   mocked.probe.mockReturnValue(true)
   vi.spyOn(process, 'kill').mockImplementation(mocked.probe)
   vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
@@ -152,6 +164,172 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.resetAllMocks()
   vi.unstubAllEnvs()
+})
+
+it('sends native iOS pinch parameters and waits for delivery acknowledgment', async () => {
+  const native = processDouble()
+  mocked.spawn.mockReturnValue(native.child)
+  const delivered = deferred<void>()
+  const events: unknown[] = []
+  mocked.hid.mockImplementation((_method, _request, _response, _schema, done) => {
+    const stream = new PassThrough({ objectMode: true })
+    stream.on('data', (value: unknown) => events.push(value))
+    stream.on('finish', () => void delivered.promise.then(() => done(null)))
+    return stream
+  })
+  const driver = await iosSimulator(ios)
+  let completed = false
+  const pending = driver
+    .input({
+      type: 'gesture',
+      gesture: 'pinch',
+      x: 200,
+      y: 400,
+      startRadius: 20,
+      endRadius: 80,
+      durationMs: 500,
+    })
+    .then(() => {
+      completed = true
+    })
+  try {
+    await vi.waitFor(() => expect(events).toHaveLength(1))
+    expect(events).toEqual([
+      { pinch: { center: { x: 200, y: 400 }, scale: 4, radius: 20, duration: 0.5 } },
+    ])
+    expect(completed).toBe(false)
+    delivered.resolve()
+    await pending
+    expect(completed).toBe(true)
+  } finally {
+    delivered.resolve()
+    await driver.close()
+  }
+})
+
+it('reports rejected native pinch delivery and allows another input stream', async () => {
+  const native = processDouble()
+  mocked.spawn.mockReturnValue(native.child)
+  const driver = await iosSimulator(ios)
+  mocked.hid.mockImplementationOnce((_method, _request, _response, _schema, done) => {
+    const stream = new PassThrough({ objectMode: true })
+    stream.on('finish', () => done(new Error('Unsupported pinch')))
+    return stream
+  })
+  try {
+    await expect(
+      driver.input({
+        type: 'gesture',
+        gesture: 'pinch',
+        x: 200,
+        y: 400,
+        startRadius: 20,
+        endRadius: 80,
+        durationMs: 500,
+      }),
+    ).rejects.toThrow('recent idb_companion')
+    await driver.input({ type: 'key', key: 'Home' })
+    expect(mocked.hid).toHaveBeenCalledTimes(2)
+  } finally {
+    await driver.close()
+  }
+})
+
+it('releases physical Android touches when a native gesture fails', async () => {
+  const driver = await physicalAndroid(androidPhone)
+  const failure = new Error('ADB disconnected')
+  mocked.execute.mockRejectedValueOnce(failure)
+  try {
+    await expect(
+      driver.input({
+        type: 'gesture',
+        gesture: 'drag',
+        x: 10,
+        y: 20,
+        endX: 50,
+        endY: 70,
+        durationMs: 300,
+      }),
+    ).rejects.toBe(failure)
+    expect(mocked.execute).toHaveBeenLastCalledWith(
+      '/mock/adb',
+      ['-s', 'emulator-5554', 'shell', 'input', 'motionevent', 'UP', '100', '140'],
+      expect.anything(),
+    )
+  } finally {
+    await driver.close()
+  }
+})
+
+it('sends simultaneous Android pinch contacts and releases both on cancellation', async () => {
+  const driver = await androidSimulator(android)
+  const controller = new AbortController()
+  const pending = driver.input(
+    {
+      type: 'gesture',
+      gesture: 'pinch',
+      x: 200,
+      y: 400,
+      startRadius: 20,
+      endRadius: 80,
+      durationMs: 50,
+    },
+    undefined,
+    controller.signal,
+  )
+  const rejected = pending.catch((error: unknown) => error)
+  await vi.waitFor(() =>
+    expect(mocked.describe.mock.calls.some(([method]) => method === 'sendTouch')).toBe(true),
+  )
+  controller.abort()
+  try {
+    expect(await rejected).toMatchObject({ name: 'AbortError' })
+    const events = mocked.describe.mock.calls
+      .filter(([method]) => method === 'sendTouch')
+      .map(([, , , input]) => input)
+    expect(events[0]).toEqual({
+      touches: [
+        { x: 360, y: 800, identifier: 0, pressure: 1 },
+        { x: 440, y: 800, identifier: 1, pressure: 1 },
+      ],
+    })
+    expect(events.at(-1)).toEqual({
+      touches: [
+        { x: 360, y: 800, identifier: 0, pressure: 0 },
+        { x: 440, y: 800, identifier: 1, pressure: 0 },
+      ],
+    })
+  } finally {
+    await driver.close()
+  }
+})
+
+it('uses native ADB long-press and drag commands for physical Android phones', async () => {
+  const driver = await physicalAndroid(androidPhone)
+  try {
+    await driver.input({ type: 'gesture', gesture: 'long-press', x: 10, y: 20, durationMs: 700 })
+    expect(mocked.execute).toHaveBeenLastCalledWith(
+      '/mock/adb',
+      ['-s', 'emulator-5554', 'shell', 'input', 'swipe', '20', '40', '20', '40', '700'],
+      expect.anything(),
+    )
+    await driver.input({
+      type: 'gesture',
+      gesture: 'drag',
+      x: 10,
+      y: 20,
+      endX: 50,
+      endY: 70,
+      durationMs: 300,
+    })
+    expect(mocked.execute).toHaveBeenLastCalledWith(
+      '/mock/adb',
+      ['-s', 'emulator-5554', 'shell', 'input', 'draganddrop', '20', '40', '100', '140', '300'],
+      expect.anything(),
+    )
+  } finally {
+    await driver.close()
+  }
 })
 
 it.each(['aborted', 'revoked'] as const)(

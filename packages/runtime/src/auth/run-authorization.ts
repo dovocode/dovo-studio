@@ -120,7 +120,9 @@ export function authorizeRunRoute(
       path !== '/api/previews/devices' &&
       !(
         path === '/api/previews/action' &&
-        (input.action === 'screenshot' || input.action === 'apps')
+        (input.action === 'screenshot' ||
+          input.action === 'apps' ||
+          input.action === 'capabilities')
       )
     )
       denied()

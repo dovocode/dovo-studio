@@ -17,6 +17,19 @@ export function previewUrl(input: string, runtimeAddress?: string): string {
     url.hostname = new URL(runtimeAddress).hostname
   return url.href
 }
+export function deviceDeepLink(input: string): string {
+  const value = input.trim()
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(value) || /\p{Cc}/u.test(value))
+    throw new Error('Use an absolute app deep link or HTTP/HTTPS URL.')
+  const url = new URL(value)
+  if (
+    ['javascript:', 'data:', 'file:', 'vbscript:', 'intent:'].includes(url.protocol) ||
+    url.username ||
+    url.password
+  )
+    throw new Error('Use an app deep link or HTTP/HTTPS URL without credentials.')
+  return url.href
+}
 export const previewPresets = [
   {
     id: 'fill',
@@ -80,6 +93,10 @@ export const previewActionSchema = mutableStruct({
     'landscape',
     'light',
     'dark',
+    'capabilities',
+    'deep-link',
+    'stop',
+    'uninstall',
   ]),
   url: Schema.optional(maxValue(Schema.String, 4096)),
   bundleId: Schema.optional(
@@ -91,6 +108,8 @@ export const previewActionSchema = mutableStruct({
 export const previewResultSchema = mutableStruct({
   ok: Schema.Literal(true),
   image: Schema.optional(Schema.String),
+  controls: Schema.optional(mutableArray(Schema.String)),
+  limitations: Schema.optional(mutableArray(Schema.String)),
   apps: Schema.optional(
     mutableArray(
       mutableStruct({

@@ -51,9 +51,14 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
       devices: [],
       diagnostics: [],
     })
+    const png = Buffer.alloc(24)
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png)
+    png.writeUInt32BE(1179, 16)
+    png.writeUInt32BE(2556, 20)
+    const screenshotData = png.toString('base64')
     const action = vi
       .spyOn(previews, 'previewDeviceAction')
-      .mockResolvedValue({ ok: true, image: 'data:image/png;base64,aGVsbG8=' })
+      .mockResolvedValue({ ok: true, image: `data:image/png;base64,${screenshotData}` })
     runtime.services.preferences.save({ enableArtifacts: true })
     const server = taskToolsServer(
       'task',
@@ -180,7 +185,13 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
       name: 'device',
       arguments: { id: 'ios:test', action: 'screenshot' },
     })
-    expect(screenshot.content).toEqual([{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }])
+    expect(screenshot.content).toEqual([
+      {
+        type: 'text',
+        text: JSON.stringify({ width: 1179, height: 2556, coordinateSpace: 'screenshot pixels' }),
+      },
+      { type: 'image', data: screenshotData, mimeType: 'image/png' },
+    ])
     expect(action).toHaveBeenCalledWith(
       { taskId: 'task', id: 'ios:test', action: 'screenshot' },
       undefined,
@@ -391,7 +402,104 @@ it('allows device discovery and preview opening to finish through the MCP transp
   }
 }, 15000)
 
-it('taps the point corresponding to a full-resolution iOS screenshot', async () => {
+it('routes Android swipes as one native gesture on the owning device session', async () => {
+  const requests: Array<{ path: string; input: unknown }> = []
+  const http = createServer(async (request, response) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    requests.push({
+      path: request.url ?? '',
+      input: JSON.parse(Buffer.concat(chunks).toString()),
+    })
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end(
+      JSON.stringify(
+        request.url === '/api/previews/simulator/open' ? { id: 'session' } : { ok: true },
+      ),
+    )
+  })
+  await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
+  const address = http.address()
+  if (!address || typeof address === 'string') throw new Error('Expected a TCP listener')
+  const config = taskToolsServer(
+    'task',
+    address.port,
+    'test-token',
+    '127.0.0.1',
+    false,
+    false,
+    undefined,
+    false,
+    false,
+    [],
+    true,
+  )
+  const transport = new StdioClientTransport({
+    command: config.command,
+    args: config.args,
+    env: { ...config.envValues },
+    stderr: 'ignore',
+  })
+  const client = new Client({ name: 'swipe-test', version: '1' })
+  const coordinates = { startX: 600, startY: 1000, endX: 200, endY: 400 }
+  try {
+    await client.connect(transport)
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('simulator_swipe')
+    for (const id of [
+      'android:emulator',
+      'remote:host:android:emulator',
+      'physical-android:phone',
+      'remote:host:physical-android:phone',
+    ]) {
+      requests.length = 0
+      const result = await client.callTool({
+        name: 'simulator_swipe',
+        arguments: { id, ...coordinates },
+      })
+      expect(result.isError).not.toBe(true)
+      expect(requests).toEqual([
+        { path: '/api/previews/simulator/open', input: { taskId: 'task', id } },
+        {
+          path: '/api/previews/simulator/input',
+          input: {
+            taskId: 'task',
+            id: 'session',
+            input: { type: 'scroll', x: 300, y: 500, deltaX: 200, deltaY: 300 },
+          },
+        },
+      ])
+    }
+    requests.length = 0
+    const reversed = await client.callTool({
+      name: 'simulator_swipe',
+      arguments: { id: 'android:emulator', startX: 200, startY: 400, endX: 600, endY: 1000 },
+    })
+    expect(reversed.isError).not.toBe(true)
+    expect(requests.at(-1)?.input).toMatchObject({
+      input: { type: 'scroll', x: 100, y: 200, deltaX: -200, deltaY: -300 },
+    })
+    requests.length = 0
+    for (const arguments_ of [
+      { id: 'android:emulator', ...coordinates, startX: -1 },
+      { id: 'android:emulator', ...coordinates, endY: 3841 },
+      { id: 'android:emulator', startX: 100, startY: 100, endX: 200 },
+      { id: 'not-a-device', ...coordinates },
+    ]) {
+      expect(
+        (await client.callTool({ name: 'simulator_swipe', arguments: arguments_ })).isError,
+      ).toBe(true)
+    }
+    expect(requests.some((request) => request.path === '/api/previews/simulator/input')).toBe(false)
+  } finally {
+    await client.close()
+    await transport.close()
+    await new Promise<void>((resolve, reject) =>
+      http.close((error) => (error ? reject(error) : resolve())),
+    )
+  }
+})
+
+it('maps taps and both swipe endpoints from full-resolution iOS screenshots', async () => {
   const token = 'task-tools-owner-token-at-least-thirty-two-characters'
   const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
   runtime.services.deviceHosts.settings.save({ enabled: true, hosts: [] })
@@ -474,6 +582,44 @@ it('taps the point corresponding to a full-resolution iOS screenshot', async () 
       { type: 'pointer', phase: 'down', pointerType: 'touch', button: 'left', x: 200, y: 400 },
       { type: 'pointer', phase: 'up', pointerType: 'touch', button: 'left', x: 200, y: 400 },
     ])
+    input.mockClear()
+    const screenshots = vi.mocked(previews.previewDeviceAction)
+    screenshots.mockClear()
+    const swipe = await client.callTool({
+      name: 'simulator_swipe',
+      arguments: { id: 'ios:test', startX: 600, startY: 1800, endX: 300, endY: 600 },
+    })
+    expect(swipe.isError).not.toBe(true)
+    expect(input.mock.calls.map(([value]) => value)).toEqual([
+      { type: 'scroll', x: 200, y: 600, deltaX: 100, deltaY: 400 },
+    ])
+    expect(screenshots).toHaveBeenCalledTimes(1)
+    input.mockClear()
+    const hold = await client.callTool({
+      name: 'simulator_gesture',
+      arguments: { id: 'ios:test', gesture: 'long-press', x: 600, y: 1200, durationMs: 50 },
+    })
+    expect(hold.isError).not.toBe(true)
+    expect(input.mock.calls.map(([value]) => value)).toEqual([
+      { type: 'pointer', phase: 'down', pointerType: 'touch', button: 'left', x: 200, y: 400 },
+      { type: 'pointer', phase: 'up', pointerType: 'touch', button: 'left', x: 200, y: 400 },
+    ])
+    input.mockClear()
+    for (const [name, arguments_] of [
+      ['simulator_key', { id: 'ios:test', key: 'Meta+a' }],
+      ['simulator_button', { id: 'ios:test', button: 'home' }],
+    ] as const) {
+      expect((await client.callTool({ name, arguments: arguments_ })).isError).not.toBe(true)
+    }
+    expect(input.mock.calls.map(([value]) => value)).toEqual([
+      { type: 'key', key: 'Meta+a' },
+      { type: 'key', key: 'Home' },
+    ])
+    for (const action of ['capabilities', 'deep-link', 'stop', 'uninstall'])
+      expect(
+        (await client.listTools()).tools.find((tool) => tool.name === 'device')?.inputSchema
+          .properties?.action,
+      ).toMatchObject({ enum: expect.arrayContaining([action]) })
   } finally {
     await client.close()
     await transport?.close()
@@ -524,6 +670,8 @@ it('keeps read-only providers from sending task terminal or device input', async
         })
       ).isError,
     ).toBe(true)
+    for (const name of ['simulator_key', 'simulator_button', 'simulator_gesture'])
+      expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain(name)
     expect(
       (
         await client.callTool({
@@ -547,6 +695,14 @@ it('keeps read-only providers from sending task terminal or device input', async
     expect(
       (await client.callTool({ name: 'device', arguments: { id: 'ios:test', action: 'boot' } }))
         .isError,
+    ).toBe(true)
+    expect(
+      (
+        await client.callTool({
+          name: 'simulator_swipe',
+          arguments: { id: 'android:test', startX: 100, startY: 500, endX: 100, endY: 100 },
+        })
+      ).isError,
     ).toBe(true)
   } finally {
     await client.close()
@@ -1288,6 +1444,10 @@ it('keeps device tools hidden while Device Hub is off', async () => {
       'device_install',
       'device_forward',
       'simulator_tap',
+      'simulator_swipe',
+      'simulator_key',
+      'simulator_button',
+      'simulator_gesture',
       'simulator_text',
     ])
       expect(names).not.toContain(name)

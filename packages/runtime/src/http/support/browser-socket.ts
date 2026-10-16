@@ -4,6 +4,7 @@ import {
   encodeBrowserFrame,
   remoteBrowserFrameAckSchema,
   remoteBrowserInputSchema,
+  simulatorInputSchema,
 } from '@dovo/protocol'
 import type { BrowserFrame, BrowserOutput } from '../../previews/browser.js'
 import type { Services } from '../../services.js'
@@ -129,7 +130,9 @@ export function attachBrowserSocket(
         windowStart = Date.now()
       }
       if (++count > 200) throw new Error('Too many browser commands')
-      const input = decode(remoteBrowserInputSchema, value)
+      const input = simulatorId
+        ? decode(simulatorInputSchema, value)
+        : decode(remoteBrowserInputSchema, value)
       if (input.type === 'visibility' && !simulatorId) {
         visible = input.visible
         if (visible) for (const sequence of inFlight.keys()) inFlight.set(sequence, Date.now())
@@ -137,7 +140,17 @@ export function attachBrowserSocket(
       const operation =
         input.type === 'visibility' && !simulatorId
           ? services.browsers.visibility(resourceId, send, input.visible)
-          : source.input(resourceId, input, authorize)
+          : simulatorId
+            ? (foreignAuthorize ? services.hostSimulators : services.simulators).input(
+                resourceId,
+                input,
+                authorize,
+              )
+            : services.browsers.input(
+                resourceId,
+                decode(remoteBrowserInputSchema, value),
+                authorize,
+              )
       void operation.catch((error) => {
         send({
           type: 'error',

@@ -10,7 +10,7 @@ import {
   minValue,
   maxValue,
   previewActionSchema,
-  remoteBrowserInputSchema,
+  simulatorInputSchema,
   deviceHostInstallSchema,
   deviceHostForwardSchema,
 } from '@dovo/protocol'
@@ -238,7 +238,7 @@ export async function deviceHostRoute(
     ['/api/device-host/input', '/api/device-host/close', '/api/device-host/release'].includes(path)
   ) {
     const input = decode(
-      mutableStruct({ ...sessionSchema.fields, input: Schema.optional(remoteBrowserInputSchema) }),
+      mutableStruct({ ...sessionSchema.fields, input: Schema.optional(simulatorInputSchema) }),
       await body(request, 128 * 1024),
     )
     const scope = foreignDeviceScope(pairedDeviceId, input.taskId)

@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import type { ExecFileOptions } from 'node:child_process'
 import * as files from 'node:fs/promises'
 import { basename } from 'node:path'
-import { previewDevices } from './devices'
+import { previewDevices, previewDeviceAction } from './devices'
 import * as native from './simulator-native'
 
 const command = vi.hoisted(() =>
@@ -156,4 +156,94 @@ it('reports missing local Android tools with remote Hub guidance while keeping A
   expect(result.diagnostics).toContainEqual(expect.stringContaining('adb is missing on this host'))
   expect(result.diagnostics).toContainEqual(expect.stringContaining('authorized remote host'))
   expect(command.mock.calls.every(([file]) => file === 'xcrun')).toBe(true)
+})
+
+it('opens native deep links with the correct platform transport and destination app', async () => {
+  setup()
+  command.mockImplementation(async (file, args) => {
+    if (args.includes('openurl') || args.includes('start') || args.includes('launch'))
+      return { stdout: '', stderr: '' }
+    return respond(file, args)
+  })
+  const url = 'dovo://thread/123?runtime=http%3A%2F%2Fhost%3A8081'
+  await previewDeviceAction({ taskId: 'task', id: 'ios:sim', action: 'deep-link', url })
+  expect(command).toHaveBeenLastCalledWith(
+    'xcrun',
+    ['simctl', 'openurl', 'sim', url],
+    expect.anything(),
+  )
+  await previewDeviceAction({
+    taskId: 'task',
+    id: 'physical-ios:phone',
+    action: 'deep-link',
+    url,
+    bundleId: 'com.dovo.app',
+  })
+  expect(command).toHaveBeenLastCalledWith(
+    'xcrun',
+    [
+      'devicectl',
+      'device',
+      'process',
+      'launch',
+      '--device',
+      'phone',
+      '--timeout',
+      '15',
+      '--payload-url',
+      url,
+      'com.dovo.app',
+    ],
+    expect.anything(),
+  )
+  await previewDeviceAction({
+    taskId: 'task',
+    id: 'physical-android:usb',
+    action: 'deep-link',
+    url,
+    bundleId: 'com.dovo.app',
+  })
+  expect(command).toHaveBeenLastCalledWith(
+    expect.any(String),
+    [
+      '-s',
+      'usb',
+      'shell',
+      'am',
+      'start',
+      '-a',
+      'android.intent.action.VIEW',
+      '-d',
+      "'" + url + "'",
+      '-p',
+      'com.dovo.app',
+    ],
+    expect.anything(),
+  )
+})
+
+it('reports failed Android deep links and requires a target app on physical iOS', async () => {
+  setup()
+  command.mockImplementation(async (file, args) => {
+    if (args.includes('start'))
+      return { stdout: 'Error: Activity not started, unable to resolve Intent', stderr: '' }
+    return respond(file, args)
+  })
+  await expect(
+    previewDeviceAction({
+      taskId: 'task',
+      id: 'physical-android:usb',
+      action: 'deep-link',
+      url: 'missing://app',
+    }),
+  ).rejects.toThrow('could not open')
+  await expect(
+    previewDeviceAction({
+      taskId: 'task',
+      id: 'physical-ios:phone',
+      action: 'deep-link',
+      url: 'missing://app',
+    }),
+  ).rejects.toThrow('bundleId')
+  expect(command.mock.calls.some(([, args]) => args.includes('launch'))).toBe(false)
 })

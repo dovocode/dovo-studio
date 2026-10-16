@@ -166,7 +166,7 @@ it('allows read-only browser/device reads and cleanup but blocks mutations and t
     ).toBe(200)
   expect((await post('/api/previews/devices', { taskId })).status).toBe(200)
   expect(devices).toHaveBeenCalledWith(taskId, undefined, true)
-  for (const name of ['screenshot', 'apps'])
+  for (const name of ['screenshot', 'apps', 'capabilities'])
     expect(
       (await post('/api/previews/action', { taskId, id: 'ios:test', action: name })).status,
     ).toBe(200)
@@ -181,6 +181,9 @@ it('allows read-only browser/device reads and cleanup but blocks mutations and t
   for (const [path, input] of [
     ['/api/previews/browser/agent', { command: { action: 'evaluate', script: '1' } }],
     ['/api/previews/action', { id: 'ios:test', action: 'launch' }],
+    ['/api/previews/action', { id: 'ios:test', action: 'stop', bundleId: 'com.example' }],
+    ['/api/previews/action', { id: 'ios:test', action: 'uninstall', bundleId: 'com.example' }],
+    ['/api/previews/action', { id: 'ios:test', action: 'deep-link', url: 'example://test' }],
     ['/api/previews/simulator/open', { id: 'ios:test' }],
     ['/api/device-hosts/install', { id: 'ios:test', artifactPath: '/tmp/app' }],
     ['/api/device-hosts/forward', {}],

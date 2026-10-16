@@ -21,6 +21,7 @@ it('preserves case and modifiers without pressing duplicate keys', () => {
   expect(physicalKeys('Meta+a')).toEqual([227, 4])
   expect(physicalKeys('Shift+A')).toEqual([225, 4])
   expect(physicalKeys('Enter')).toEqual([40])
+  expect(physicalKeys('+')).toEqual([225, 46])
   expect(() => physicalKeys('Unknown+a')).toThrow('This physical device key is not supported')
   expect(() => physicalKeys('Unrecognized')).toThrow('This physical device key is not supported')
 })

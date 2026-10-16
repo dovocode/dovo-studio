@@ -5,6 +5,41 @@ import * as discovery from './devices'
 
 afterEach(() => vi.restoreAllMocks())
 
+it('forwards a complete remote gesture once instead of sending timed pointer events over the network', async () => {
+  const device = {
+    id: 'remote:host:ios:qa',
+    name: 'Remote iPhone',
+    platform: 'ios' as const,
+    state: 'booted' as const,
+    runtime: 'iOS',
+  }
+  const input = vi.fn<native.NativeSimulator['input']>().mockResolvedValue(undefined)
+  const sessions = new SimulatorPreviews({
+    devices: async () => ({ devices: [device] }),
+    driver: async () => ({
+      input,
+      start: () => () => {},
+      release: async () => {},
+      close: async () => {},
+    }),
+  })
+  try {
+    const { id } = await sessions.open('task', device.id)
+    const gesture = {
+      type: 'gesture' as const,
+      gesture: 'long-press' as const,
+      x: 20,
+      y: 30,
+      durationMs: 600,
+    }
+    await sessions.input(id, gesture, () => {})
+    expect(input).toHaveBeenCalledTimes(1)
+    expect(input.mock.calls[0]?.[0]).toEqual(gesture)
+  } finally {
+    await sessions.dispose()
+  }
+})
+
 it('merges waiting wheel input without crossing a tap or controller boundary', async () => {
   let release = () => {}
   const gate = new Promise<void>((resolve) => {

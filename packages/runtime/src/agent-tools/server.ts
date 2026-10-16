@@ -10,6 +10,9 @@ import {
   previewResultSchema,
   deviceHostInstallSchema,
   deviceHostForwardSchema,
+  deviceGestureSchema,
+  deviceButtonSchema,
+  remoteBrowserInputSchema,
   runtimeRequestTimeout,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -19,7 +22,7 @@ import type { JSONSchema } from 'zod/v4/core'
 import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { WebSocket } from 'ws'
-import { screenshotPoint } from './screenshot-point.js'
+import { screenshotPoint, screenshotSize } from './screenshot-point.js'
 
 const taskId = process.env.DOVO_TASK_ID
 const address = process.env.DOVO_TASK_URL
@@ -44,7 +47,11 @@ const deviceTools = new Set([
   'device_install',
   'device_forward',
   'simulator_tap',
+  'simulator_swipe',
   'simulator_text',
+  'simulator_key',
+  'simulator_button',
+  'simulator_gesture',
 ])
 const artifactsEnabled = process.env.DOVO_TASK_ARTIFACTS_ENABLED === '1'
 const pipelineWatchingEnabled = process.env.DOVO_TASK_PIPELINE_WATCHING_ENABLED === '1'
@@ -343,7 +350,7 @@ const tools: Array<
   {
     name: 'device',
     description:
-      'Use Device Hub on the owning local/remote host to boot, launch/relaunch apps, inspect installed apps or capture native screenshots. Works with physical phones and simulators; no local adb/idb is needed. Screenshots are returned as images. Use the exact devices ID.',
+      'Use Device Hub on the owning local/remote host for capabilities, app listing, launch/relaunch/stop/uninstall, deep links, boot/shutdown, appearance and screenshots. stop/uninstall require bundleId; deep-link requires url and physical iOS also requires bundleId. capabilities reports platform limits. Screenshots are returned as images. Use the exact devices ID; no local adb/idb is needed.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -362,6 +369,10 @@ const tools: Array<
             'landscape',
             'light',
             'dark',
+            'capabilities',
+            'deep-link',
+            'stop',
+            'uninstall',
           ],
         },
         url: { type: 'string' as const },
@@ -509,6 +520,71 @@ const tools: Array<
               y: { type: 'number' as const },
             },
             required: ['id', 'x', 'y'],
+          },
+        },
+        {
+          name: 'simulator_swipe',
+          description:
+            'Swipe a local or authorized remote device from startX,startY to endX,endY in screenshot pixels. Use the exact ID from devices. Works on Android/iOS emulators and physical devices.',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              id: { type: 'string' as const },
+              startX: { type: 'number' as const },
+              startY: { type: 'number' as const },
+              endX: { type: 'number' as const },
+              endY: { type: 'number' as const },
+            },
+            required: ['id', 'startX', 'startY', 'endX', 'endY'],
+          },
+        },
+        {
+          name: 'simulator_key',
+          description:
+            'Press a keyboard key or shortcut on a local or authorized remote iOS/Android device. Examples: Enter, Backspace, Tab, ArrowDown, Control+a (Android), Meta+a (iOS). Use simulator_button for device navigation.',
+          inputSchema: {
+            type: 'object' as const,
+            properties: { id: { type: 'string' as const }, key: { type: 'string' as const } },
+            required: ['id', 'key'],
+          },
+        },
+        {
+          name: 'simulator_button',
+          description:
+            'Press a device navigation or hardware button through Device Hub. iOS back uses the left-edge navigation gesture; app switching requires Android and iOS simulators have no mute button. Use device capabilities for limits.',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              id: { type: 'string' as const },
+              button: {
+                type: 'string' as const,
+                enum: ['home', 'back', 'app-switcher', 'lock', 'volume-up', 'volume-down', 'mute'],
+              },
+            },
+            required: ['id', 'button'],
+          },
+        },
+        {
+          name: 'simulator_gesture',
+          description:
+            'Perform an atomic double-tap, long-press, drag or pinch on the owning device host. Coordinates and pinch radii are screenshot pixels. Drag requires endX/endY and holds before moving. Pinch requires startRadius/endRadius and works on simulators (iOS requires recent idb_companion); physical phones require a multi-touch automation runner. durationMs is optional, 50–5000ms.',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              id: { type: 'string' as const },
+              gesture: {
+                type: 'string' as const,
+                enum: ['double-tap', 'long-press', 'drag', 'pinch'],
+              },
+              x: { type: 'number' as const },
+              y: { type: 'number' as const },
+              endX: { type: 'number' as const },
+              endY: { type: 'number' as const },
+              startRadius: { type: 'number' as const },
+              endRadius: { type: 'number' as const },
+              durationMs: { type: 'number' as const, minimum: 50, maximum: 5000 },
+            },
+            required: ['id', 'gesture', 'x', 'y'],
           },
         },
         {
@@ -709,10 +785,14 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             'landscape',
             'light',
             'dark',
+            'capabilities',
+            'deep-link',
+            'stop',
+            'uninstall',
           ].includes(action)
         )
           throw new Error('Unsupported device action')
-        if (action !== 'screenshot' && action !== 'apps') writable()
+        if (!['screenshot', 'apps', 'capabilities'].includes(action)) writable()
         const result = decode(
           previewResultSchema,
           await post('/api/previews/action', {
@@ -729,6 +809,13 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
           return {
             content: [
               {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  ...screenshotSize(result.image),
+                  coordinateSpace: 'screenshot pixels',
+                }),
+              },
+              {
                 type: 'image' as const,
                 data: result.image.replace(/^data:image\/png;base64,/, ''),
                 mimeType: 'image/png',
@@ -738,6 +825,10 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
         return text(result)
       }
       case 'simulator_tap':
+      case 'simulator_swipe':
+      case 'simulator_gesture':
+      case 'simulator_key':
+      case 'simulator_button':
       case 'simulator_text': {
         writable()
         const id = string(input.id, 'id')
@@ -760,19 +851,73 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
               input: { type: 'text', text: string(input.value, 'value') },
             }),
           )
-        const screenshotX = number(input.x, 'x')
-        const screenshotY = number(input.y, 'y')
-        let point = { x: screenshotX / 2, y: screenshotY / 2 }
+        if (name === 'simulator_key' || name === 'simulator_button')
+          return text(
+            await post('/api/previews/simulator/input', {
+              taskId: task,
+              id: opened.id,
+              input:
+                name === 'simulator_key'
+                  ? decode(remoteBrowserInputSchema, { type: 'key', key: input.key })
+                  : decode(deviceButtonSchema, { type: 'device-button', button: input.button }),
+            }),
+          )
+        const start =
+          name === 'simulator_swipe'
+            ? { x: number(input.startX, 'startX'), y: number(input.startY, 'startY') }
+            : { x: number(input.x, 'x'), y: number(input.y, 'y') }
+        const end =
+          name === 'simulator_swipe' || (name === 'simulator_gesture' && input.gesture === 'drag')
+            ? { x: number(input.endX, 'endX'), y: number(input.endY, 'endY') }
+            : start
+        let toPoint = (x: number, y: number) => ({ x: x / 2, y: y / 2 })
         if (/(?:^|:)(?:ios|physical-ios):/.test(id)) {
-          if (!opened.screenPoints) throw new Error('Simulator point dimensions are unavailable')
+          const screenPoints = opened.screenPoints
+          if (!screenPoints) throw new Error('Simulator point dimensions are unavailable')
           const screenshot = decode(
             previewResultSchema,
             await post('/api/previews/action', { taskId: task, id, action: 'screenshot' }),
           )
-          if (!screenshot.image) throw new Error('Simulator screenshot is unavailable')
-          point = screenshotPoint(screenshot.image, opened.screenPoints, screenshotX, screenshotY)
+          const image = screenshot.image
+          if (!image) throw new Error('Simulator screenshot is unavailable')
+          toPoint = (x, y) => screenshotPoint(image, screenPoints, x, y)
         }
-        const { x, y } = point
+        const { x, y } = toPoint(start.x, start.y)
+        if (name === 'simulator_gesture') {
+          const target = toPoint(end.x, end.y)
+          const radius = (value: unknown, field: string) => toPoint(number(value, field), 0).x
+          const gesture = decode(deviceGestureSchema, {
+            type: 'gesture',
+            gesture: input.gesture,
+            x,
+            y,
+            durationMs: input.durationMs ?? (input.gesture === 'long-press' ? 600 : 300),
+            ...(input.gesture === 'drag' ? { endX: target.x, endY: target.y } : {}),
+            ...(input.gesture === 'pinch'
+              ? {
+                  startRadius: radius(input.startRadius, 'startRadius'),
+                  endRadius: radius(input.endRadius, 'endRadius'),
+                }
+              : {}),
+          })
+          return text(
+            await post('/api/previews/simulator/input', {
+              taskId: task,
+              id: opened.id,
+              input: gesture,
+            }),
+          )
+        }
+        if (name === 'simulator_swipe') {
+          const target = toPoint(end.x, end.y)
+          return text(
+            await post('/api/previews/simulator/input', {
+              taskId: task,
+              id: opened.id,
+              input: { type: 'scroll', x, y, deltaX: x - target.x, deltaY: y - target.y },
+            }),
+          )
+        }
         await post('/api/previews/simulator/input', {
           taskId: task,
           id: opened.id,

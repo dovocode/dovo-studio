@@ -76,6 +76,7 @@ export * from './scm/work/work-navigation.js'
 export * from './scm/work/work-presentation.js'
 export * from './runtime/previews/previews.js'
 export * from './runtime/previews/remote-browser.js'
+export * from './runtime/previews/device-input.js'
 export * from './runtime/previews/browser-frames.js'
 
 export * from './scm/forges/issue-edit.js'

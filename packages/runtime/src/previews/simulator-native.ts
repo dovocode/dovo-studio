@@ -8,7 +8,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Schema } from 'effect'
-import type { PreviewDevice, RemoteBrowserInput } from '@dovo/protocol'
+import type { PreviewDevice, SimulatorInput } from '@dovo/protocol'
 import type { BrowserFrame } from './browser.js'
 import { SimulatorRpc } from './simulator-rpc.js'
 import { androidProtocol, iosProtocol } from './simulator-protocols.js'
@@ -24,7 +24,7 @@ async function loadSharp() {
 export interface NativeSimulator {
   screenPoints?: () => { width: number; height: number }
   start(frame: (frame: BrowserFrame) => void, error: (error: Error) => void): () => void
-  input(input: RemoteBrowserInput, authorize?: () => void, signal?: AbortSignal): Promise<void>
+  input(input: SimulatorInput, authorize?: () => void, signal?: AbortSignal): Promise<void>
   release(): Promise<void>
   close(): Promise<void>
 }
@@ -73,6 +73,89 @@ const pixels = maxValue(
   8192,
 )
 const bytes = Schema.instanceOf(Uint8Array)
+
+export function deviceKeyParts(key: string) {
+  const prefix = /^(?:(?:Control|Meta|Alt|Shift)\+)*/.exec(key)?.[0] ?? ''
+  return { parts: prefix ? prefix.slice(0, -1).split('+') : [], final: key.slice(prefix.length) }
+}
+export function androidKeys(name: string): number[] {
+  const keyCodes: Record<string, number> = {
+    Home: 3,
+    GoHome: 3,
+    GoBack: 4,
+    AppSwitch: 187,
+    Lock: 26,
+    VolumeUp: 24,
+    VolumeDown: 25,
+    Mute: 164,
+    Enter: 66,
+    Backspace: 67,
+    Delete: 112,
+    Tab: 61,
+    Escape: 111,
+    Space: 62,
+    ArrowLeft: 21,
+    ArrowRight: 22,
+    ArrowUp: 19,
+    ArrowDown: 20,
+    End: 123,
+    PageUp: 92,
+    PageDown: 93,
+    Control: 113,
+    Meta: 117,
+    Shift: 59,
+    Alt: 57,
+  }
+  const { parts, final } = deviceKeyParts(name)
+  const punctuation: Record<string, [number, boolean]> = {
+    ',': [55, false],
+    '<': [55, true],
+    '.': [56, false],
+    '>': [56, true],
+    '`': [68, false],
+    '~': [68, true],
+    '-': [69, false],
+    _: [69, true],
+    '=': [70, false],
+    '+': [70, true],
+    '[': [71, false],
+    '{': [71, true],
+    ']': [72, false],
+    '}': [72, true],
+    '\\': [73, false],
+    '|': [73, true],
+    ';': [74, false],
+    ':': [74, true],
+    "'": [75, false],
+    '"': [75, true],
+    '/': [76, false],
+    '?': [76, true],
+    ' ': [62, false],
+    '!': [8, true],
+    '@': [9, true],
+    '#': [10, true],
+    $: [11, true],
+    '%': [12, true],
+    '^': [13, true],
+    '&': [14, true],
+    '*': [15, true],
+    '(': [16, true],
+    ')': [7, true],
+  }
+  const symbol = punctuation[final]
+  const code =
+    keyCodes[final] ??
+    symbol?.[0] ??
+    (/^[a-z]$/i.test(final)
+      ? final.toLowerCase().charCodeAt(0) - 68
+      : /^\d$/.test(final)
+        ? Number(final) + 7
+        : undefined)
+  const modifiers = parts.map((part) => keyCodes[part])
+  if (code === undefined || modifiers.some((value) => value === undefined))
+    throw new HttpError(400, 'This Android key is not supported.')
+  return [...new Set([...modifiers, ...(/^[A-Z]$/.test(final) || symbol?.[1] ? [59] : []), code])]
+}
 
 // idb's MINICAP output has a bounded header and length-prefixed JPEG frames.
 // This is framing only; JPEG decoding/dimensions are handled by libvips.
@@ -168,6 +251,7 @@ export function asciiKey(char: string):
       shift: boolean
     }
   | undefined {
+  if (char.length !== 1) return undefined
   if (/^[a-z]$/i.test(char))
     return {
       code: char.toLowerCase().charCodeAt(0) - 93,
@@ -260,19 +344,48 @@ export async function iosSimulator(
         }
       | undefined
     let hidError: Error | null = null
-    const hid = rpc.writeStream('hid', 'idb.HIDEvent', 'idb.Empty', empty, (error) => {
-      hidError = error
-    })
-    hid.on('error', (error) => {
-      hidError = error
-    })
+    let hid: ReturnType<SimulatorRpc['writeStream']> | undefined
+    let hidDone: Promise<void> | undefined
+    const openHid = () => {
+      if (hid) return hid
+      hidError = null
+      let stream: ReturnType<SimulatorRpc['writeStream']> | undefined
+      const done = new Promise<void>((resolve, reject) => {
+        stream = rpc.writeStream('hid', 'idb.HIDEvent', 'idb.Empty', empty, (error) => {
+          hidError = error
+          if (error) reject(error)
+          else resolve()
+        })
+      })
+      if (!stream) throw new Error('Could not open simulator input stream')
+      hidDone = done
+      hid = stream
+      stream.on('error', (error) => {
+        hidError = error
+      })
+      done.catch(() => undefined)
+      return stream
+    }
+    const finishHid = async () => {
+      if (!hid) return
+      try {
+        hid.end()
+        await hidDone
+      } finally {
+        hid = undefined
+        hidDone = undefined
+      }
+    }
     const write = (event: object) =>
       new Promise<void>((resolve, reject) => {
+        const stream = openHid()
         if (hidError) {
           reject(hidError)
           return
         }
-        hid.write(event, (error: Error | null | undefined) => (error ? reject(error) : resolve()))
+        stream.write(event, (error: Error | null | undefined) =>
+          error ? reject(error) : resolve(),
+        )
       })
     const key = async (code: number, down: boolean) =>
       write({
@@ -306,7 +419,7 @@ export async function iosSimulator(
     }
     let stop: (() => void) | undefined
     return {
-      screenPoints: () => ({ width: size.widthPoints, height: size.heightPoints }),
+      screenPoints: () => ({ width, height }),
       start(publish, report) {
         const parser = new MinicapFrames()
         const stream = rpc.duplex(
@@ -426,37 +539,59 @@ export async function iosSimulator(
                 if (value.shift) await key(225, false)
               }
         } else if (input.type === 'key') {
-          if (input.key === 'Home') {
+          const buttons: Record<string, number> = { Home: 1, Lock: 2, VolumeUp: 6, VolumeDown: 7 }
+          if (buttons[input.key] !== undefined) {
             await write({
               press: {
                 direction: 0,
                 action: {
                   button: {
-                    button: 1,
+                    button: buttons[input.key],
                   },
                 },
               },
             })
+            await write({ delay: { duration: 0.08 } })
             await write({
               press: {
                 direction: 1,
                 action: {
                   button: {
-                    button: 1,
+                    button: buttons[input.key],
                   },
                 },
               },
             })
+            await finishHid()
           } else {
-            const parts = input.key.split('+'),
-              final = parts.pop() ?? ''
-            const code = specialKeys[final] ?? asciiKey(final)?.code
+            const { parts, final } = deviceKeyParts(input.key)
+            const character = asciiKey(final)
+            const code = specialKeys[final] ?? character?.code
+            if (character?.shift && !parts.includes('Shift')) parts.push('Shift')
             if (code === undefined) throw new Error('This simulator key is not supported')
             for (const modifier of parts)
               if (specialKeys[modifier]) await key(specialKeys[modifier], true)
             await press(code)
             for (const modifier of parts.reverse())
               if (specialKeys[modifier]) await key(specialKeys[modifier], false)
+          }
+        } else if (input.type === 'gesture' && input.gesture === 'pinch') {
+          if (touch) throw new HttpError(409, 'Release the active touch before pinching.')
+          await write({
+            pinch: {
+              center: { x: input.x, y: input.y },
+              scale: input.endRadius / input.startRadius,
+              radius: input.startRadius,
+              duration: input.durationMs / 1000,
+            },
+          })
+          try {
+            await finishHid()
+          } catch (error) {
+            throw new HttpError(
+              409,
+              `Native simulator pinch requires a recent idb_companion with multi-touch support. ${error instanceof Error ? error.message : String(error)}`,
+            )
           }
         } else if (input.type === 'scroll') {
           await write({
@@ -478,7 +613,7 @@ export async function iosSimulator(
       async close() {
         stop?.()
         await release().catch((error) => console.warn('Could not release simulator touch', error))
-        hid.end()
+        hid?.end()
         rpc.close()
         await stopChild(child)
         await rm(directory, {
@@ -606,38 +741,8 @@ export async function androidSimulator(
       refreshToken()
       return rpc.unary(method, type, 'android.emulation.control.Empty', request, empty)
     }
-    const keyCodes: Record<string, number> = {
-      Home: 3,
-      GoHome: 3,
-      GoBack: 4,
-      Enter: 66,
-      Backspace: 67,
-      Delete: 112,
-      Tab: 61,
-      Escape: 111,
-      Space: 62,
-      ArrowLeft: 21,
-      ArrowRight: 22,
-      ArrowUp: 19,
-      ArrowDown: 20,
-      End: 123,
-      PageUp: 92,
-      PageDown: 93,
-      Control: 113,
-      Meta: 117,
-      Shift: 59,
-      Alt: 57,
-    }
     const key = async (name: string) => {
-      const codes = name
-        .split('+')
-        .map(
-          (part) =>
-            keyCodes[part] ??
-            (/^[a-z]$/i.test(part) ? part.toLowerCase().charCodeAt(0) - 68 : undefined),
-        )
-      if (codes.some((code) => code === undefined))
-        throw new Error('This emulator key is not supported')
+      const codes = androidKeys(name)
       // gRPC keyboard events require hw.keyboard=yes. Software input works for
       // touch-only AVDs too; framebuffer and gesture streaming remain native gRPC.
       await execute(
@@ -797,7 +902,7 @@ export async function androidSimulator(
         }
         return stop
       },
-      async input(input) {
+      async input(input, authorize, signal) {
         if (input.type === 'pointer') {
           if (!width || !height || (input.phase === 'move' && !touching)) return
           touching = input.phase !== 'up'
@@ -820,6 +925,36 @@ export async function androidSimulator(
               windowsHide: true,
               timeout: 10000,
               maxBuffer: 1024 * 1024,
+            })
+          }
+        } else if (input.type === 'gesture' && input.gesture === 'pinch') {
+          if (!width || !height || touching)
+            throw new HttpError(409, 'Wait for an idle emulator screen.')
+          const touches = (radius: number, pressure: number) =>
+            [-1, 1].map((direction, identifier) => ({
+              x: Math.round(Math.max(0, Math.min(width - 1, (input.x + direction * radius) * 2))),
+              y: Math.round(Math.max(0, Math.min(height - 1, input.y * 2))),
+              identifier,
+              pressure,
+            }))
+          let radius = input.startRadius
+          try {
+            await unary('sendTouch', 'android.emulation.control.TouchEvent', {
+              touches: touches(radius, 1),
+            })
+            const steps = Math.max(2, Math.ceil(input.durationMs / 25))
+            for (let step = 1; step <= steps; step++) {
+              await new Promise((resolve) => setTimeout(resolve, input.durationMs / steps))
+              authorize?.()
+              signal?.throwIfAborted()
+              radius = input.startRadius + ((input.endRadius - input.startRadius) * step) / steps
+              await unary('sendTouch', 'android.emulation.control.TouchEvent', {
+                touches: touches(radius, 1),
+              })
+            }
+          } finally {
+            await unary('sendTouch', 'android.emulation.control.TouchEvent', {
+              touches: touches(radius, 0),
             })
           }
         } else if (input.type === 'scroll') {

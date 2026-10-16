@@ -49,7 +49,7 @@ import {
   previewActionSchema,
   browserProfilesResultSchema,
   remoteBrowserOpenSchema,
-  remoteBrowserInputSchema,
+  simulatorInputSchema,
 } from '@dovo/protocol'
 import { hostname } from 'node:os'
 import { trackRequest } from './support/request-activity.js'
@@ -532,7 +532,7 @@ export function route(
       }
       if (method === 'POST' && path === '/api/previews/simulator/input') {
         const { taskId, id, input } = decode(
-          mutableStruct({ taskId: idSchema, id: idSchema, input: remoteBrowserInputSchema }),
+          mutableStruct({ taskId: idSchema, id: idSchema, input: simulatorInputSchema }),
           yield* serviceResult(body(request)),
         )
         s.store.taskSummary(taskId)

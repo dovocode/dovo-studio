@@ -66,6 +66,7 @@ it.skipIf(process.platform !== 'darwin')(
       ]),
     )
     const driver = await opening
+    expect(driver.screenPoints?.()).toEqual({ width: 2, height: 2 })
     const frame = vi.fn<(frame: BrowserFrame) => void>()
     driver.start(frame, (error) => {
       throw error

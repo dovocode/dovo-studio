@@ -14,6 +14,7 @@ import { Schema } from 'effect'
 import type { PreviewDevice } from '@dovo/protocol'
 import {
   asciiKey,
+  deviceKeyParts,
   specialKeys,
   nativePreparation,
   type NativeSimulator,
@@ -97,8 +98,7 @@ export function physicalPoint(x: number, y: number, width: number, height: numbe
   }
 }
 export function physicalKeys(key: string): number[] {
-  const parts = key.split('+'),
-    final = parts.pop() ?? ''
+  const { parts, final } = deviceKeyParts(key)
   const character = asciiKey(final)
   const code = specialKeys[final] ?? (final.length === 1 ? character?.code : undefined)
   const modifiers = parts.map(
@@ -432,6 +432,10 @@ export async function physicalDevice(
       type: 'release',
     })
   return {
+    screenPoints() {
+      if (!lastFrame) throw new Error('Wait for the device screen before sending input')
+      return { width: lastFrame.width, height: lastFrame.height }
+    },
     start(frame, error) {
       frameListener = frame
       errorListener = error
