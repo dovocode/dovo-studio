@@ -207,6 +207,10 @@ describe('authenticated runtime', () => {
       port: 0,
     })
     cleanups.push(() => runtime.close())
+    runtime.services.titles.save({
+      harness: { provider: 'codex', endpoint: '' },
+      model: 'utility-model',
+    })
     const run = vi.fn<AgentAdapter['run']>(async (input) => input.onText('Fix usePulls.'))
     vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
       run,

@@ -212,6 +212,10 @@ it.each([false, true])(
       ...(external ? { external: { enabled: true, host: '0.0.0.0', port: address.port } } : {}),
     })
     cleanups.push(() => runtime.close())
+    runtime.services.titles.save({
+      harness: { provider: 'codex', endpoint: '' },
+      model: 'utility-model',
+    })
     let entered = () => {}
     const started = new Promise<void>((resolve) => {
       entered = resolve
