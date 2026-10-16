@@ -55,7 +55,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   './detail/resizable-sidebar':
     'export const ResizableSidebar=({children,className})=><div className={className}>{children}</div>;',
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
-  './detail/task-header': `export const TaskHeader=({task,onSurface})=><header data-thread-header={task.id}>{task.title}<button onClick={()=>onSurface('agents')}>Agents</button></header>;`,
+  './detail/task-header': `export const TaskHeader=({task,onSurface})=><header data-thread-header={task.id}>{task.title}<button onClick={()=>onSurface('agents')}>Agents</button><button onClick={()=>onSurface('changes')}>Show diff fixture</button><button onClick={()=>onSurface('files')}>Show file fixture</button></header>;`,
   './detail/task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
   '../chat/thread/chat-thread': `export const ChatThread=({task})=><div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
@@ -94,6 +94,11 @@ for (const [path, names] of [
   ['../chat/composer/composer-workspace', ['ComposerWorkspace']],
 ])
   mocks[path] = names.map((name) => `export const ${name}=()=>null;`).join('\n')
+
+mocks['./review/review-pane'] =
+  `export const ReviewPane=({onReference})=><button onClick={()=>onReference('Selected diff reference')}>Add diff reference to composer</button>;`
+mocks['./detail/task-files'] =
+  `export const TaskFiles=({onReference})=><button onClick={()=>onReference('Selected file reference')}>Add file reference to composer</button>;`
 
 mocks['./chat/thread/side-question'] =
   `export const SideQuestion=({task,selectedChatId})=><div data-side-chat={selectedChatId??''} data-side-task={task.id}>Side question panel</div>;`
@@ -337,9 +342,61 @@ try {
     () => !document.querySelector('[aria-current=true]')?.textContent.includes('New task'),
   )
   assert.equal(await page.evaluate(() => window.saved.length), count)
+  // Exercise both reference producers through the actual TasksView → conversation → composer.
+  const existingId = await page.locator('[data-thread-header]').getAttribute('data-thread-header')
+  const switchThread = async (id) => {
+    await page.evaluate((id) => window.setEntity(id), id)
+    await page.waitForFunction(
+      (id) => document.querySelector('[data-thread-header]')?.dataset.threadHeader === id,
+      id,
+    )
+  }
+  await page.evaluate(
+    (id) =>
+      window.setWorkspace((current) => ({
+        ...current,
+        tasks: current.tasks.map((task) =>
+          task.id === id
+            ? { ...task, files: [{ path: 'src/example.ts', before: 'old', after: 'new' }] }
+            : task,
+        ),
+      })),
+    existingId,
+  )
+  for (const kind of ['diff', 'file']) {
+    await editor.fill('Review selected code')
+    await page.getByRole('button', { name: `Show ${kind} fixture`, exact: true }).click()
+    await page
+      .getByRole('button', { name: `Add ${kind} reference to composer`, exact: true })
+      .click()
+    const expected = `Review selected code\n\nSelected ${kind} reference`
+    await page.waitForFunction(
+      (expected) => document.querySelector('textarea')?.value === expected,
+      expected,
+    )
+    await switchThread(sideTask)
+    assert.ok(
+      !(await editor.inputValue()).includes(`Selected ${kind} reference`),
+      'Reference leaked into another thread',
+    )
+    await switchThread(existingId)
+    assert.equal(
+      await editor.inputValue(),
+      expected,
+      'Reference was added again on returning to the thread',
+    )
+    await editor.fill('')
+    await switchThread(sideTask)
+    await switchThread(existingId)
+    assert.equal(
+      await editor.inputValue(),
+      '',
+      'Deleted code reference came back after switching threads',
+    )
+  }
   assert.deepEqual(errors, [])
   console.log(
-    'Actual TasksView, StartupDraft, TaskConversation, Composer and ComposerEditor retain the textarea, focus and backward selection through persistence, routing, delayed hydration, sending and continued typing; side-chat shortcuts target the current thread and late saves respect navigation; untouched drafts still discard.',
+    'Actual TasksView, StartupDraft, TaskConversation, Composer and ComposerEditor retain the textarea, focus and backward selection through persistence, routing, delayed hydration, sending and continued typing; side-chat shortcuts target the current thread and late saves respect navigation; untouched drafts still discard; diff and file references are inserted once and stay deleted across thread switches.',
   )
 } finally {
   await browser.close()

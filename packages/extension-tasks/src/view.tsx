@@ -69,7 +69,6 @@ import { ReviewPane } from './review/review-pane'
 import { TaskFiles } from './detail/task-files'
 import { useLiveRefresh } from './detail/live-refresh'
 import { useCommittedCallback } from './detail/use-committed-callback'
-import type { CodeReference } from './detail/code-reference'
 import { TerminalPane } from './terminal/terminal-pane'
 import {
   collectTasks,
@@ -172,7 +171,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
   useEffect(() => {
     if (compact && navigationSidebar?.setCollapsed) setListOpen(!navigationSidebar.collapsed)
   }, [compact, navigationSidebar?.collapsed, navigationSidebar?.setCollapsed])
-  const [codeReference, setCodeReference] = useState<CodeReference | null>(null)
   const [selectedSideChats, setSelectedSideChats] = useState<Record<string, string>>({})
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{
@@ -371,7 +369,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
     if (task.files.length >= 3 || lines >= 50) selectSurface('changes')
   }, [preferences.proactivePanels, task, historyLoaded, threadKey, threadSurfaces])
   const addCodeReference = useCommittedCallback((taskId: string, text: string) => {
-    setCodeReference({ taskId, id: randomUUID(), text })
+    setComposerInsert({ taskId, id: randomUUID(), text })
     selectSurface('chat', true)
   })
   useLayoutEffect(() => {
@@ -956,7 +954,6 @@ export default function TasksView({ entityId }: StudioViewProps) {
                     workspaceControls={workspaceControls}
                     revealMessage={revealMessage}
                     onRevealHandled={revealHandled}
-                    codeReference={codeReference?.taskId === task.id ? codeReference : null}
                     visible={!native && !listOpen && (!compact || surface === 'chat')}
                     onReview={() => selectSurface(hasDiff ? 'changes' : 'files')}
                     onCodeReview={(finding) => {

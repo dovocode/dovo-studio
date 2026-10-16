@@ -25,7 +25,6 @@ import {
 import { ChatThread } from '../chat/thread/chat-thread'
 import { Composer } from '../chat/composer/composer'
 import { TaskEmptyState } from '../task-creation/task-empty-state'
-import type { CodeReference } from './code-reference'
 import { PreparationProgress } from '../chat/thread/preparation-progress'
 import { ReviewCommentsTray } from '../chat/thread/review-comments-tray'
 import { PlanApproval } from '../chat/thread/plan-approval'
@@ -49,7 +48,6 @@ export function TaskConversation({
   onRevealHandled,
   onAside,
   visible,
-  codeReference,
   composerInsert,
   onComposerInsertApplied,
   temporary,
@@ -71,7 +69,6 @@ export function TaskConversation({
   /** Opens the side question dialog. */
   onAside?: (chatId?: string) => void
   visible: boolean
-  codeReference?: CodeReference | null
   composerInsert?: { id: string; text: string } | null
   onComposerInsertApplied?: () => void
 }) {
@@ -302,7 +299,6 @@ export function TaskConversation({
           queuedMessages={<MessageQueue task={queueTask} pending={visiblePending} />}
           onPending={onPending}
           onAside={onAside}
-          codeReference={codeReference}
           composerInsert={pendingTemplate ?? composerInsert}
           onComposerInsertApplied={
             pendingTemplate ? () => setTemplateInsert(null) : onComposerInsertApplied

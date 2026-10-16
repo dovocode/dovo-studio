@@ -45,13 +45,11 @@ import {
 } from '@dovo/studio-ui'
 import { ComposerHarnessControls } from './composer-harness-controls'
 import { ComposerWorkspace } from './composer-workspace'
-import type { CodeReference } from '../../detail/code-reference'
 export function Composer({
   task,
   collapsed = false,
   onPending,
   onAside,
-  codeReference,
   composerInsert,
   onComposerInsertApplied,
   workspaceControls,
@@ -66,7 +64,6 @@ export function Composer({
   onPending: (pending: PendingMessage | null) => void
   /** Opens side chats, selecting a newly sent question when provided. */
   onAside?: (chatId?: string) => void
-  codeReference?: CodeReference | null
   composerInsert?: { id: string; text: string } | null
   onComposerInsertApplied?: () => void
 }) {
@@ -147,25 +144,14 @@ export function Composer({
   const setDraft = composerDraft.update
   const [submittedText, setSubmittedText] = useState<string | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
-  const insertedReference = useRef<string | null>(null)
-  const insertedAnswer = useRef<string | null>(null)
+  const appliedInsert = useRef<string | null>(null)
   useEffect(() => {
-    if (!composerInsert || insertedAnswer.current === composerInsert.id) return
-    insertedAnswer.current = composerInsert.id
+    if (!composerInsert || appliedInsert.current === composerInsert.id) return
+    appliedInsert.current = composerInsert.id
     setDraft((current) => [current.trimEnd(), composerInsert.text].filter(Boolean).join('\n\n'))
     input.current?.focus()
     onComposerInsertApplied?.()
   }, [composerInsert, setDraft, onComposerInsertApplied])
-  useEffect(() => {
-    if (
-      !codeReference ||
-      codeReference.taskId !== task.id ||
-      insertedReference.current === codeReference.id
-    )
-      return
-    insertedReference.current = codeReference.id
-    setDraft((current) => [current.trimEnd(), codeReference.text].filter(Boolean).join('\n\n'))
-  }, [codeReference, task.id, setDraft])
   const [command, setCommand] = useState<'new-session' | 'undo' | null>(null)
   const [commandBusy, setCommandBusy] = useState(false)
   const [commandError, setCommandError] = useState('')

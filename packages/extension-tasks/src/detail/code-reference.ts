@@ -1,5 +1,3 @@
-export type CodeReference = { taskId: string; id: string; text: string }
-
 /** Include the selected text: a historical diff may no longer match the checkout on disk. */
 export function formatCodeReference(
   path: string,
