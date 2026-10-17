@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Schema } from 'effect'
 import {
   decode,
+  randomUUID,
   mutableArray,
   mutableStruct,
   connectionSchema,
@@ -56,7 +57,7 @@ export function StudioPairedComputersBridge() {
       JSON.parse(registrations),
     )
     const controller = new AbortController()
-    const sessions = sources.map((source) => ({ ...source, sessionId: crypto.randomUUID() }))
+    const sessions = sources.map((source) => ({ ...source, sessionId: randomUUID() }))
     const sendEndpoint = async (source: (typeof sessions)[number], endpoint: string) => {
       try {
         const response = await fetch(source.target.address.replace(/\/$/, '') + endpoint, {

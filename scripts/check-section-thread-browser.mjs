@@ -36,6 +36,8 @@ const mocks = {
     }
   `,
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/sidebar-header.tsx';export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;export const ErrorBoundary=({children})=>children;export const TooltipProvider=({children})=>children;export const useCompactLayout=()=>false;`,
+  // Pair registration has its own browser suite; this fixture tests thread navigation.
+  './studio-paired-computers-bridge': 'export const StudioPairedComputersBridge=()=>null;',
   './app-extension': 'export const appSettingsExtension={views:[]};',
   './appearance': 'export const useAppearance=()=>{};',
   './task-notifications': 'export const useTaskNotifications=open=>{window.notify=open;return {}};',

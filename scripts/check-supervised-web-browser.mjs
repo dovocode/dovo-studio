@@ -44,7 +44,7 @@ const built = await bundleBrowser(
           if(path==='/api/workspace')setProject(current=>({...current,approvedWebRequests:input.changes.approvedWebRequests.after}));return {ok:true,revision:2}
         };
         const requestEffect=(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error});
-        window.native={connected:online,snapshot,profile:{name:'Computer',connection:{address:'http://computer',token:'test-token'}},readEffect:requestEffect,callEffect:requestEffect};
+        window.native={overviews:[],connected:online,snapshot,profile:{name:'Computer',connection:{address:'http://computer',token:'test-token'}},readEffect:requestEffect,callEffect:requestEffect};
         window.store={connected:online,snapshot,workspace:snapshot.workspace,runtimes:[],request,requestEffect,setWorkspace:update=>setProject(update(snapshot.workspace).repositories[0])};
         window.project=project;
         if(mode==='mobile-system')return <RuntimePreferences/>;
