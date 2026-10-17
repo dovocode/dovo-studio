@@ -4,7 +4,7 @@ appId: com.dovo.studio
     stopApp: true
 - extendedWaitUntil:
     visible:
-      id: Tab Settings
+      id: Tab More
     timeout: 15000
 - runFlow: reset-computers.yaml
 - tapOn:
@@ -194,7 +194,7 @@ appId: com.dovo.studio
     text: Preserved through native back
 - tapOn: Back
 - assertVisible:
-    id: Tab Issues
+    id: Tab More
 - tapOn:
     id: Tab Automations
 - assertVisible:
@@ -205,7 +205,7 @@ appId: com.dovo.studio
 - tapOn: Projects
 - assertVisible: Back
 - assertNotVisible:
-    id: Tab Settings
+    id: Tab More
 - swipe:
     start: 1%, 45%
     end: 95%, 45%
@@ -215,7 +215,8 @@ appId: com.dovo.studio
       id: Task mobile-task
     timeout: 10000
 - tapOn:
-    id: Tab Settings
+    id: Tab More
+- tapOn: Settings
 - tapOn:
     id: Tab Tasks
 - assertVisible:
@@ -260,7 +261,8 @@ appId: com.dovo.studio
     id: Message
 - takeScreenshot: dovo-mobile-native-tabs
 - tapOn:
-    id: Tab Settings
+    id: Tab More
+- tapOn: Settings
 - tapOn: Agents
 - assertVisible: Mobile agent
 - swipe:

@@ -11,7 +11,7 @@ const flat=style=>Object.assign({},...(Array.isArray(style)?style.flat(Infinity)
 export const View=({children,style,testID})=><div data-testid={testID} style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;
 export const Text=({children,style})=><span style={flat(style)}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
-export const Pressable=({children,style,onPress,disabled,accessibilityLabel,testID})=><button data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID})=><button aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
 export const Keyboard={dismiss(){}};export const Linking={openSettings:async()=>{}};
@@ -108,7 +108,7 @@ function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
   const [text,setText]=useState('Continue the review');const [connected,setConnected]=useState(true);
   window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
-  const snapshot={questions:[],workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
+  const snapshot={autoProjectSelectionEnabled:true,questions:[],workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const draft={text,ready:true,key:'draft',revision:text,update:setText};
   window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
   window.conversation={send:mode=>window.calls.push({mode:mode??'queue'}),stop:()=>window.calls.push({mode:'stop'}),actions:{connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!text,canSend:connected&&!!text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
@@ -259,6 +259,38 @@ try {
   assert.equal(
     await page.getByRole('button', { name: 'Link projects (1)', exact: true }).isDisabled(),
     true,
+  )
+  await page.evaluate(() => {
+    window.setConnected(true)
+    window.setTask({ autoProject: true, autoProjectExecution: undefined })
+  })
+  const advanced = page.getByRole('button', { name: 'Advanced', exact: true })
+  const defaults = page.getByRole('button', { name: 'Project defaults', exact: true })
+  assert.equal(await defaults.count(), 0)
+  assert.equal(await advanced.getAttribute('aria-expanded'), 'false')
+  await advanced.click()
+  await defaults.waitFor()
+  await page.getByRole('button', { name: 'New worktrees', exact: true }).click()
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((c) => c.patch).at(-1).patch.autoProjectExecution.after,
+    ),
+    'worktree',
+  )
+  await advanced.click()
+  assert.equal(await defaults.count(), 0)
+  await advanced.click()
+  await page.evaluate(() => window.setTask({ repositoryId: 'repo', autoProject: false }))
+  assert.equal(
+    await page.getByRole('button', { name: 'Checkout & branch', exact: true }).count(),
+    0,
+  )
+  await advanced.click()
+  await page.getByRole('button', { name: 'Checkout & branch', exact: true }).waitFor()
+  await advanced.click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Checkout & branch', exact: true }).count(),
+    0,
   )
   assert.deepEqual(errors, [])
   console.log(

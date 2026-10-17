@@ -306,3 +306,30 @@ it('restores section collapse choices across phone restarts independently of lis
   await expanded.preferencesReady
   expect(expanded.readMobilePreferences().collapsedThreadSections).toEqual([])
 })
+
+it.each([undefined, 'obsolete'])(
+  'defaults thread density safely for saved value %s and persists both layouts',
+  async (threadDensity) => {
+    let saved = JSON.stringify({ threadDensity, taskSort: 'title' })
+    storage.getItem = async () => saved
+    storage.setItem = async (value) => {
+      saved = value
+    }
+    let preferences = await loadPreferences()
+    await preferences.preferencesReady
+    expect(preferences.readMobilePreferences()).toMatchObject({
+      threadDensity: 'compact',
+      taskSort: 'title',
+    })
+    for (const density of ['comfortable', 'compact'] as const) {
+      preferences.updateMobilePreferences({ threadDensity: density })
+      await vi.waitFor(() => expect(JSON.parse(saved).threadDensity).toBe(density))
+      preferences = await loadPreferences()
+      await preferences.preferencesReady
+      expect(preferences.readMobilePreferences()).toMatchObject({
+        threadDensity: density,
+        taskSort: 'title',
+      })
+    }
+  },
+)

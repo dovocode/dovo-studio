@@ -261,6 +261,16 @@ try {
       )
     }
     if (mobile) {
+      await page.getByRole('button', { name: 'Clone a project', exact: true }).click()
+      const repository = page.getByRole('textbox', { name: 'Repository', exact: true })
+      const name = page.getByRole('textbox', { name: 'Project name (optional)', exact: true })
+      await repository.fill('team/first-project')
+      assert.equal(await name.inputValue(), 'first-project')
+      await repository.fill('team/second-project')
+      assert.equal(await name.inputValue(), 'second-project')
+      await name.fill('My custom name')
+      await repository.fill('team/third-project')
+      assert.equal(await name.inputValue(), 'My custom name')
       await page.evaluate(() => window.renderPreferences())
       const toolSwitch = page.getByRole('switch', { name: 'Linked projects tool', exact: true })
       await toolSwitch.waitFor()

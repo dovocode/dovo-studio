@@ -3,7 +3,7 @@ appId: com.dovo.studio
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: Tab Settings
+      id: Tab More
     timeout: 15000
 - runFlow: reset-computers.yaml
 - tapOn:

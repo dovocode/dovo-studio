@@ -106,7 +106,7 @@ function TaskListRowView({
   rowWindow: TaskListWindow | null
 }) {
   const element = useRef<HTMLDivElement>(null)
-  const estimate = task.archived || task.archivedAt ? 40 : 76 + (subagents.length ? 32 : 0)
+  const estimate = task.archived || task.archivedAt ? 38 : 72 + (subagents.length ? 32 : 0)
   const [visible, setVisible] = useState(!rowWindow)
   // Focus, an open menu or dialog, and a pending action keep their row mounted off-screen.
   const [focused, setFocused] = useState(false)

@@ -174,6 +174,8 @@ try {
   await main.evaluate(() => window.store.switchRuntime('http://host0.lan:8787'))
   await detached.evaluate(() => window.store.switchRuntime('http://host1.lan:8787'))
   await detached.getByRole('button', { name: 'Task actions', exact: true }).click()
+  await detached.getByRole('menuitem', { name: 'Advanced', exact: true }).focus()
+  await detached.keyboard.press('ArrowRight')
   await detached.getByRole('menuitem', { name: 'Compact agent context', exact: true }).click()
   await detached.waitForFunction(() =>
     window.calls.some((row) => row.path === '/api/tasks/compact'),

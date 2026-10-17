@@ -155,10 +155,10 @@ function TaskRowView({
             aria-current={selected ? 'true' : undefined}
             data-unread={unread || undefined}
             className={cn(
-              'mb-1 h-auto w-full min-w-0 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
+              'mb-0.5 h-auto w-full min-w-0 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
               compact
                 ? 'min-h-9 flex-row items-center gap-2 py-1.5'
-                : 'min-h-[72px] flex-col items-stretch gap-1 py-2',
+                : 'min-h-[68px] flex-col items-stretch gap-0.5 py-1.5',
               selected || multiSelected || selectedChildId
                 ? 'border-border/50 bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
                 : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
@@ -167,7 +167,7 @@ function TaskRowView({
             disabled={disabled}
           >
             {compact ? (
-              projectIcon
+              <span className={cn('shrink-0', !unread && 'opacity-50')}>{projectIcon}</span>
             ) : (
               <span
                 className={cn(
@@ -206,7 +206,7 @@ function TaskRowView({
               className={cn(
                 'block min-w-0 truncate text-sm font-medium leading-5',
                 compact ? 'flex-1' : 'w-full',
-                unread ? 'text-foreground' : 'text-foreground/65',
+                unread ? 'text-foreground' : 'text-foreground/80',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}

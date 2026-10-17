@@ -35,6 +35,7 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { SettingsGroup, SettingsRow } from '../../screens/settings-group'
 import { DirectoryPicker } from './directory-picker'
+import { suggestedProjectName } from './project-name'
 const defaults: Record<ForgeProvider, string> = {
   github: 'https://github.com',
   gitlab: 'https://gitlab.com',
@@ -638,7 +639,7 @@ function ProjectConnection({
     ),
     [repository, setRepository] = useApplicationState(project?.forge?.repository ?? '')
   const [directory, setDirectory] = useApplicationState(''),
-    [name, setName] = useApplicationState(''),
+    [customName, setName] = useApplicationState<string | null>(null),
     [browsing, setBrowsing] = useApplicationState(false),
     [choices, setChoices] = useApplicationState<
       Array<{
@@ -651,6 +652,7 @@ function ProjectConnection({
     [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const pending = useRef(false)
+  const name = customName ?? suggestedProjectName(repository)
   const browse = (next = 1) => {
     return runClientEffect(
       mobileWorkflow(function* () {
@@ -811,7 +813,10 @@ function ProjectConnection({
             <Choice
               label="Accessible repositories"
               value={repository}
-              onChange={setRepository}
+              onChange={(value) => {
+                setRepository(value)
+                setName((current) => (current?.trim() ? current : null))
+              }}
               disabled={busy}
               items={choices}
             />

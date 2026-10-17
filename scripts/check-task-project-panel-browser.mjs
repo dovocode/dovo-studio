@@ -196,13 +196,19 @@ try {
     if (!mobile) {
       for (const width of [280, 380, 0]) {
         await page.evaluate((width) => window.setToolsWidth(width), width)
-        await page.waitForFunction(() => {
+        await page.waitForFunction((width) => {
           const chat = document.querySelector('[data-project-panel-frame]').getBoundingClientRect()
           const panel = document
             .querySelector('[aria-label="Project information"]')
             .getBoundingClientRect()
-          return Math.abs(chat.right - panel.right - 32) < 1
-        })
+          const workspace = document
+            .querySelector('[data-thread-workspace]')
+            .getBoundingClientRect()
+          return (
+            Math.abs(chat.right - panel.right - 32) < 1 &&
+            Math.round(workspace.width - chat.width) === width
+          )
+        }, width)
         const chat = await page.locator('[data-project-panel-frame]').boundingBox()
         const workspace = await page.locator('[data-thread-workspace]').boundingBox()
         assert.equal(Math.round(workspace.width - chat.width), width)
@@ -307,8 +313,20 @@ try {
     await page.waitForFunction(() => window.calls.some((call) => call.input.unlink))
     await page.getByRole('button', { name: 'Hide project panel', exact: true }).click()
     await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
+    const menuItems = await page.getByRole('menu').first().getByRole('menuitem').allTextContents()
+    assert.ok(
+      menuItems.findIndex((label) => label.includes('Rename')) <
+        menuItems.findIndex((label) => label.includes('Advanced')),
+    )
+    assert.ok(
+      menuItems.findIndex((label) => label === 'Pin') <
+        menuItems.findIndex((label) => label.includes('New thread')),
+    )
+    assert.ok(menuItems.at(-1).includes('Delete thread'))
     if (stylesheet)
       await page.screenshot({ path: `/tmp/dovo-thread-menu-${mobile ? 'compact' : 'desktop'}.png` })
+    await page.getByRole('menuitem', { name: 'Advanced', exact: true }).focus()
+    await page.keyboard.press('ArrowRight')
     await page.getByRole('menuitem', { name: /Auto-archive after settled/ }).focus()
     await page.keyboard.press('ArrowRight')
     await page.getByRole('menuitem', { name: 'Custom period…', exact: true }).focus()
@@ -323,6 +341,8 @@ try {
       window.calls.some((call) => call.input.changes?.archiveAfterSettledDays?.after === 12),
     )
     await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
+    await page.getByRole('menuitem', { name: 'Advanced', exact: true }).focus()
+    await page.keyboard.press('ArrowRight')
     await page.getByRole('menuitem', { name: /Auto-settle behavior/ }).focus()
     await page.keyboard.press('ArrowRight')
     await page.getByRole('menuitem', { name: 'Never auto-settle', exact: true }).focus()
@@ -333,6 +353,8 @@ try {
       ),
     )
     await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
+    await page.getByRole('menuitem', { name: 'New thread', exact: true }).focus()
+    await page.keyboard.press('ArrowRight')
     await page
       .getByRole('menuitem', { name: 'New thread on fix/reconnection', exact: true })
       .click()

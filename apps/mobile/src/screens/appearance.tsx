@@ -15,12 +15,30 @@ import { CodeThemeSettings } from './code-theme'
 
 export default function AppearanceScreen() {
   const { colors, styles } = useTheme()
-  const { theme, themePalette, terminalFontFamily, terminalFontSize } = useMobilePreferences()
+  const { theme, themePalette, threadDensity, terminalFontFamily, terminalFontSize } =
+    useMobilePreferences()
   return (
     <SettingsPage>
       <ScreenHeader title="Appearance" />
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: 8, gap: 24 }]}>
         <Text style={[styles.muted, { fontSize: 13 }]}>This device · saved automatically</Text>
+        <SettingsGroup
+          title="Layout"
+          footer="Compact uses uniform rows with smaller text and single-line details. Comfortable keeps the original layout with more room for context."
+        >
+          <Choice
+            label="Thread density"
+            value={threadDensity}
+            items={[
+              { id: 'compact', name: 'Compact' },
+              { id: 'comfortable', name: 'Comfortable' },
+            ]}
+            onChange={(value) => {
+              if (value === 'compact' || value === 'comfortable')
+                updateMobilePreferences({ threadDensity: value })
+            }}
+          />
+        </SettingsGroup>
         <SettingsGroup title="Theme" footer="System follows your phone’s light or dark mode.">
           <Choice
             label="Color scheme"

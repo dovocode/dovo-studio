@@ -108,7 +108,7 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Too
 })
 // Tailwind is compiled by the apps; the layout classes the sidebar scrolls with are enough here.
 const layout = `.flex{display:flex}.flex-col{flex-direction:column}.h-full{height:100%}.w-full{width:100%}
-.min-h-0{min-height:0}.flex-1{flex:1 1 0%}.overflow-y-auto{overflow-y:auto}.min-h-\\[72px\\]{min-height:72px}
+.min-h-0{min-height:0}.flex-1{flex:1 1 0%}.overflow-y-auto{overflow-y:auto}.min-h-\\[68px\\]{min-height:68px}
 .mb-1{margin-bottom:4px}`
 const browser = await chromium.launch({ headless: true })
 try {

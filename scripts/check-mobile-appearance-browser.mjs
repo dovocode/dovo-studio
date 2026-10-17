@@ -145,6 +145,22 @@ try {
     await page.getByLabel('Message').waitFor()
   }
   await load()
+  assert.equal(await page.getByLabel('Thread density').inputValue(), 'compact')
+  await page.getByLabel('Thread density').selectOption('comfortable')
+  await page.waitForFunction(
+    () =>
+      JSON.parse(localStorage.getItem('dovo.mobile-preferences.v1')).threadDensity ===
+      'comfortable',
+  )
+  await load()
+  assert.equal(await page.getByLabel('Thread density').inputValue(), 'comfortable')
+  await page.getByLabel('Thread density').selectOption('compact')
+  await page.waitForFunction(
+    () =>
+      JSON.parse(localStorage.getItem('dovo.mobile-preferences.v1')).threadDensity === 'compact',
+  )
+  await load()
+  assert.equal(await page.getByLabel('Thread density').inputValue(), 'compact')
   assert.equal(await page.evaluate(() => window.currentTheme.palette), 'dovo')
   assert.equal(await page.evaluate(() => window.preferences.confirmArchive), true)
   assert.equal(await page.evaluate(() => window.preferences.timeFormat), '24h')

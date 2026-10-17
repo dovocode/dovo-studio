@@ -9,11 +9,15 @@ export function DeviceLabel({
   runtimeHost,
   runtimeIcon,
   compact = false,
+  fontSize = 12,
+  flexible = false,
 }: {
   task: Task
   runtimeIcon?: RuntimeIconName
   runtimeHost?: string
   compact?: boolean
+  fontSize?: number
+  flexible?: boolean
 }) {
   const { colors, styles } = useTheme()
 
@@ -25,10 +29,20 @@ export function DeviceLabel({
     <View
       accessible
       accessibilityLabel={label}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 }}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        flexShrink: 1,
+        flex: flexible ? 1 : undefined,
+        minWidth: 0,
+      }}
     >
-      <RuntimeIcon icon={runtimeIcon} size={13} color={colors.muted} />
-      <Text numberOfLines={compact ? 1 : 2} style={[styles.muted, { flexShrink: 1 }]}>
+      <RuntimeIcon icon={runtimeIcon} size={compact ? fontSize : 13} color={colors.muted} />
+      <Text
+        numberOfLines={compact ? 1 : 2}
+        style={[styles.muted, { flexShrink: 1 }, compact && { fontSize, lineHeight: fontSize + 4 }]}
+      >
         {compact ? (host ?? 'Unknown device') : label}
       </Text>
     </View>

@@ -221,7 +221,7 @@ export function FolderPicker({
             style={[
               styles.row,
               {
-                maxWidth: stacked ? '100%' : '45%',
+                flex: stacked ? undefined : 1,
                 flexWrap: 'nowrap',
                 padding: 12,
                 minHeight: 44,
@@ -231,11 +231,8 @@ export function FolderPicker({
               },
             ]}
           >
-            <RuntimeIcon icon={runtime.snapshot?.runtimeIcon} size={16} />
-            <Text
-              numberOfLines={1}
-              style={[styles.muted, stacked ? { flex: 1 } : { flexShrink: 1 }]}
-            >
+            <RuntimeIcon icon={runtime.snapshot?.runtimeIcon} size={18} />
+            <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
               {runtimeComputerName(runtime)}
             </Text>
             <Icon name="down" size={14} />

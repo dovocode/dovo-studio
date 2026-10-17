@@ -11,8 +11,8 @@ const flat=s=>Array.isArray(s)?Object.assign({},...s.map(flat)):s??{};
 const css=s=>{const v=flat(s);return {...v,paddingLeft:v.paddingLeft??v.paddingHorizontal,paddingRight:v.paddingRight??v.paddingHorizontal,paddingTop:v.paddingTop??v.paddingVertical,paddingBottom:v.paddingBottom??v.paddingVertical}};
 const base={display:'flex',flexDirection:'column',boxSizing:'border-box',flexShrink:0,minHeight:0};
 export const View=({children,style,testID})=><div data-testid={testID} style={{...base,...css(style)}}>{children}</div>;
-export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button aria-checked={accessibilityState?.checked} aria-label={accessibilityLabel} role={accessibilityRole} disabled={disabled} onClick={onPress} style={{...base,padding:0,border:0,background:'transparent',font:'inherit',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
-export const Text=({children,style})=>{const v=css(style);return <span style={{display:'block',...v,fontSize:(v.fontSize??14)*window.fontScale,lineHeight:v.lineHeight?v.lineHeight*window.fontScale+'px':undefined}}>{children}</span>};
+export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button aria-checked={accessibilityState?.checked} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} aria-label={accessibilityLabel} role={accessibilityRole} disabled={disabled} onClick={onPress} style={{...base,padding:0,border:0,background:'transparent',font:'inherit',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Text=({children,style,accessibilityRole})=>{const v=css(style);return <span role={accessibilityRole==='header'?'heading':accessibilityRole} style={{display:'block',...v,fontSize:(v.fontSize??14)*window.fontScale,lineHeight:v.lineHeight?v.lineHeight*window.fontScale+'px':undefined}}>{children}</span>};
 export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><button role="switch" aria-label={accessibilityLabel} aria-checked={value} disabled={disabled} onClick={()=>onValueChange(!value)} style={{width:51,height:31,flexShrink:0}}>●</button>;
 export const Modal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const TextInput=()=>null;
@@ -31,7 +31,7 @@ import {ScreenHeader,ScreenBackContext} from './src/ui/layout/screen-header';
 import {MobileFileReview} from './src/scm/review/file-review';
 const root=createRoot(document.getElementById('app'));
 window.events=[];
-window.renderHeader=options=>flushSync(()=>root.render(<ScreenBackContext.Provider value={options.context?()=>window.events.push('context'):null}><ScreenHeader title="Start a task" onBack={options.explicit?()=>window.events.push('explicit'):undefined} leading={options.leading?<button>Custom leading</button>:undefined} hidden={options.hidden}/></ScreenBackContext.Provider>));
+window.renderHeader=options=>flushSync(()=>root.render(<ScreenBackContext.Provider value={options.context?()=>window.events.push('context'):null}><ScreenHeader title="Start a task" onBack={options.explicit?()=>window.events.push('explicit'):undefined} leading={options.leading?<button>Custom leading</button>:undefined} hidden={options.hidden} buttons={window.headerButtons} collapsedMenuGroups={['Project','Tools','Advanced']}/></ScreenBackContext.Provider>));
 const files=[{path:'first.ts',viewed:false},{path:'second.ts',viewed:true},{path:'last.ts',viewed:false}];
 function Review(){const [selected,setSelected]=useState('second.ts'),[wrap,setWrap]=useState(false);return <MobileFileReview files={files} groups={[]} selected={selected} onSelect={path=>{window.events.push(path);setSelected(path)}} related={false} onRelatedChange={()=>{}} onViewed={value=>window.events.push(value)} navigationDisabled={window.navigationDisabled} wrapLines={wrap} onWrapLinesChange={setWrap} onRetry={()=>{}}/>}
 window.renderReview=()=>flushSync(()=>root.render(<Review/>));
@@ -49,7 +49,7 @@ window.renderReview=()=>flushSync(()=>root.render(<Review/>));
     { path: 'react-native', contents: native },
     {
       path: 'expo-router',
-      contents: `import {Pressable} from 'react-native';export const Stack={Screen:({options})=>{window.stackOptions=options;return null},Toolbar:({children})=><div>{children}</div>};Stack.Toolbar.Button=({accessibilityLabel,onPress})=><Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress}/>;`,
+      contents: `import {Pressable} from 'react-native';export const Stack={Screen:({options})=>{window.stackOptions=options;return null},Toolbar:({children})=><div>{children}</div>};Stack.Toolbar.Button=({accessibilityLabel,onPress})=><Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress}/>;Stack.Toolbar.Menu=({children,title,accessibilityLabel,inline})=><div role="group" aria-label={title??accessibilityLabel} data-inline={String(!!inline)}>{children}</div>;Stack.Toolbar.MenuAction=({children,onPress,disabled,isOn,destructive})=><button disabled={disabled} aria-pressed={isOn} data-destructive={String(!!destructive)} onClick={onPress}>{children}</button>;`,
     },
     {
       path: '../../runtime/preferences/app-build',
@@ -159,6 +159,122 @@ try {
   await page.evaluate(() => window.renderHeader({ context: true }))
   assert.equal(await page.evaluate(() => window.stackOptions.headerBackVisible), true)
   assert.equal(await back.count(), 0, 'iOS keeps native context back navigation')
+
+  // Both menu renderers preserve groups, selection, guards and callbacks.
+  await page.evaluate(() => {
+    window.os = 'android'
+    window.headerButtons = [
+      {
+        label: 'Chat',
+        icon: 'chat',
+        group: 'Navigate',
+        selected: true,
+        overflow: true,
+        onPress: () => window.events.push('chat'),
+      },
+      {
+        label: 'Rename thread',
+        icon: 'edit',
+        group: 'Thread',
+        overflow: true,
+        onPress: () => window.events.push('rename'),
+      },
+      {
+        label: 'Pin thread',
+        icon: 'pin',
+        group: 'Thread',
+        overflow: true,
+        disabled: true,
+        onPress: () => window.events.push('pin'),
+      },
+      {
+        label: 'Linked projects',
+        icon: 'projects',
+        group: 'Project',
+        overflow: true,
+        onPress: () => window.events.push('links'),
+      },
+      {
+        label: 'Compact agent context',
+        icon: 'collapse',
+        group: 'Advanced',
+        overflow: true,
+        onPress: () => window.events.push('compact'),
+      },
+      {
+        label: 'Delete thread…',
+        icon: 'trash',
+        group: 'Delete',
+        overflow: true,
+        destructive: true,
+        onPress: () => window.events.push('delete'),
+      },
+    ]
+    window.renderHeader({})
+  })
+  await page.getByRole('button', { name: 'More actions', exact: true }).click()
+  assert.deepEqual(await page.getByRole('heading').allTextContents(), [
+    'Start a task',
+    'Navigate',
+    'Thread',
+    'Delete',
+  ])
+  assert.equal(
+    await page.getByRole('button', { name: 'Chat', exact: true }).getAttribute('aria-pressed'),
+    'true',
+  )
+  assert.ok(await page.getByRole('button', { name: 'Pin thread', exact: true }).isDisabled())
+  assert.equal(await page.getByRole('button', { name: 'Linked projects', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Project', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Project', exact: true }).getAttribute('aria-expanded'),
+    'true',
+  )
+  await page.getByRole('button', { name: 'Linked projects', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.events.at(-1)), 'links')
+  assert.equal(await page.getByRole('button', { name: 'Rename thread', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'More actions', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Project', exact: true }).getAttribute('aria-expanded'),
+    'false',
+  )
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click()
+  await page.getByRole('button', { name: 'Compact agent context', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.events.at(-1)), 'compact')
+  await page.evaluate(() => {
+    window.os = 'ios'
+    window.renderHeader({})
+  })
+  const menu = page.getByRole('group', { name: 'More actions', exact: true })
+  assert.deepEqual(
+    await menu.getByRole('group').evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        name: node.getAttribute('aria-label'),
+        inline: node.dataset.inline,
+      })),
+    ),
+    [
+      { name: 'Navigate', inline: 'true' },
+      { name: 'Thread', inline: 'true' },
+      { name: 'Project', inline: 'false' },
+      { name: 'Advanced', inline: 'false' },
+      { name: 'Delete', inline: 'true' },
+    ],
+  )
+  assert.equal(
+    await menu
+      .getByRole('button', { name: 'Delete thread…', exact: true })
+      .getAttribute('data-destructive'),
+    'true',
+  )
+  assert.ok(await menu.getByRole('button', { name: 'Pin thread', exact: true }).isDisabled())
+  await menu.getByRole('button', { name: 'Chat', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.events.at(-1)), 'chat')
+  await page.evaluate(() => {
+    window.headerButtons = undefined
+    window.os = 'android'
+    window.renderHeader({})
+  })
 
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 740 })

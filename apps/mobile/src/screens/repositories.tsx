@@ -9,6 +9,7 @@ import { useNavigation } from '../shell/navigation'
 import { RepositoryCheckouts } from '../scm/connections/repository-checkouts'
 import { DirectoryPicker } from '../scm/connections/directory-picker'
 import { GithubRepositoryPicker } from '../scm/connections/github-repository-picker'
+import { suggestedProjectName } from '../scm/connections/project-name'
 import { ScrollView, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import { addRepositorySchema, repositorySchema } from '@dovo/protocol'
@@ -86,12 +87,13 @@ export function AddProject({
 
   const { profile, snapshot, connected, connection, callEffect } = useRuntime(),
     { busy, error, act } = useAction(),
-    [name, setName] = useApplicationState(''),
+    [customName, setName] = useApplicationState<string | null>(null),
     [path, setPath] = useApplicationState(''),
     [source, setSource] = useApplicationState<'local' | 'github'>(initialSource),
     [repository, setRepository] = useApplicationState(''),
     [directory, setDirectory] = useApplicationState(''),
     [picker, setPicker] = useApplicationState<'directory' | 'github' | null>(null)
+  const name = customName ?? suggestedProjectName(source === 'local' ? path : repository)
   return (
     <Sheet
       scrollable={picker !== 'directory'}
@@ -112,6 +114,7 @@ export function AddProject({
           onClose={() => setPicker(null)}
           onSelect={(selected) => {
             ;(source === 'local' ? setPath : setDirectory)(selected)
+            if (source === 'local') setName((current) => (current?.trim() ? current : null))
             setPicker(null)
           }}
         />
@@ -121,7 +124,7 @@ export function AddProject({
           onClose={() => setPicker(null)}
           onSelect={(selected) => {
             setRepository(selected.fullName)
-            if (!name.trim()) setName(selected.name)
+            setName((current) => (current?.trim() ? current : null))
             setPicker(null)
           }}
         />
@@ -233,7 +236,7 @@ export function AddProject({
                   )
                   onAdded?.(added)
                   onClose()
-                  setName('')
+                  setName(null)
                   setPath('')
                   setRepository('')
                   setDirectory('')

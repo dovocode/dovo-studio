@@ -1,4 +1,5 @@
 import { RuntimeIcon } from '../../ui/content/runtime-icon'
+import { useRef } from 'react'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { Pressable, ScrollView, View } from 'react-native'
@@ -7,7 +8,7 @@ import { aggregateRuntimeTasks, runtimeReachability, type RuntimeOverview } from
 import { useNavigation } from '../../shell/navigation'
 import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle, useSheetNavigation } from '../../ui/layout/sheet'
 import { formatDateTime } from '../../ui/content/format-date'
 import { Action } from '../../ui/controls/action'
 function status(entry: RuntimeOverview) {
@@ -46,6 +47,8 @@ export function FleetOverview({
   const { colors, styles } = useTheme()
 
   const { navigate } = useNavigation()
+  const sheet = useRef<SheetHandle>(null)
+  const leaveParentSheet = useSheetNavigation()
   const [viewportWidth, setViewportWidth] = useApplicationState(0)
   const [selected, setSelected] = useApplicationState('')
   const [open, setOpen] = useApplicationState(false)
@@ -183,6 +186,7 @@ export function FleetOverview({
       )}
       {(open || detail) && (
         <Sheet
+          ref={sheet}
           title={(detail ? runtimeComputerName(detail) : undefined) ?? 'Your computers'}
           onClose={() => {
             setOpen(false)
@@ -277,11 +281,9 @@ export function FleetOverview({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Open pull requests"
-                onPress={() => {
-                  setSelected('')
-                  setOpen(false)
-                  navigate('pulls')
-                }}
+                onPress={() =>
+                  sheet.current?.dismiss(() => leaveParentSheet(() => navigate('pulls')))
+                }
                 style={[
                   styles.row,
                   {
@@ -322,11 +324,9 @@ export function FleetOverview({
               <Action
                 label="Manage computers"
                 secondary
-                onPress={() => {
-                  setSelected('')
-                  setOpen(false)
-                  navigate('settings')
-                }}
+                onPress={() =>
+                  sheet.current?.dismiss(() => leaveParentSheet(() => navigate('settings')))
+                }
               />
             </View>
           )}

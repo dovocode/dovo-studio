@@ -4,14 +4,15 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../apps/mobile/', import.meta.url).pathname
 const controls = `
-export const View=({children})=><div>{children}</div>;
-export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityState})=><button aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress}>{children}</button>;
-export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
+const flat=style=>Object.assign({},...(Array.isArray(style)?style:[style]));
+export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;
+export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityState,style})=><button style={{display:"flex",...flat(style)}} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress}>{children}</button>;
+export const Text=({children,accessibilityRole,style})=><span style={flat(style)} role={accessibilityRole}>{children}</span>;
 export const Icon=({name})=><span aria-hidden data-icon={name}/>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;
 export const Sheet=({title,children,onClose,busy,headerAction})=><div role="dialog" aria-label={title}>{headerAction&&<button aria-label={headerAction.label} disabled={busy||headerAction.disabled} onClick={headerAction.onPress}>+</button>}{children}<button disabled={busy} onClick={onClose}>Close picker</button></div>;
-export const useTheme=()=>({styles:{},colors:{}});
+export const useTheme=()=>({styles:{row:{flexDirection:'row',alignItems:'center',gap:8},text:{color:'#eee',fontSize:14},muted:{color:'#999'}},colors:{surface:'#222'}});
 `
 const mocks = {
   'react-native': controls,
@@ -38,12 +39,12 @@ const built = await build({
       const inventory={local:[scratch('scratch'),repo('local','Shared project','host/team/project')],remote:[scratch('remote-scratch'),repo('remote','Shared project','host/team/project'),repo('notes','Remote notes')],empty:[scratch('empty-scratch')]};
       window.choices=[];window.fail=false;
       function App(){
-        const [active,setActive]=useState('local'),[repository,setRepository]=useState('local'),[multiple,setMultiple]=useState(false),[remoteOnline,setRemoteOnline]=useState(true),[allow,setAllow]=useState(true),[auto,setAuto]=useState(false),[autoEnabled,setAutoEnabled]=useState(false);
-        window.update=changes=>{if('autoEnabled' in changes)setAutoEnabled(changes.autoEnabled);if('multiple' in changes)setMultiple(changes.multiple);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('allow' in changes)setAllow(changes.allow)};
+        const [stacked,setStacked]=useState(false),[active,setActive]=useState('local'),[repository,setRepository]=useState('local'),[multiple,setMultiple]=useState(false),[remoteOnline,setRemoteOnline]=useState(true),[allow,setAllow]=useState(true),[auto,setAuto]=useState(false),[autoEnabled,setAutoEnabled]=useState(false);
+        window.update=changes=>{if('stacked' in changes)setStacked(changes.stacked);if('autoEnabled' in changes)setAutoEnabled(changes.autoEnabled);if('multiple' in changes)setMultiple(changes.multiple);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('allow' in changes)setAllow(changes.allow)};
         const defaults={scopedSettings:{environment:{},shared:[{key:'project:host/team/project',updatedAt:1,changeId:'one',value:{taskDefaults:{defaultServerId:'remote'}}}]}};
         const overviews=(multiple?['local','remote','empty']:['local']).map(id=>({profile:{id,name:id+' server',nameIsCustom:true,connection:{address:'http://'+id,token:'test'}},connected:id==='local'||remoteOnline,snapshot:{defaults,workspace:{repositories:inventory[id]}}}));
         window.runtime={activeId:active,overviews,profile:overviews.find(entry=>entry.profile.id===active)?.profile};window.active=active;window.repository=repository;
-        return <FolderPicker repositories={inventory[active]} value={repository} allowMachineChange={allow} autoProject={auto} onAuto={autoEnabled?async()=>{setAuto(true);setRepository(inventory[active].find(repo=>repo.kind==='scratch').id)}:undefined}
+        return <FolderPicker stacked={stacked} repositories={inventory[active]} value={repository} allowMachineChange={allow} autoProject={auto} onAuto={autoEnabled?async()=>{setAuto(true);setRepository(inventory[active].find(repo=>repo.kind==='scratch').id)}:undefined}
           onChange={async(id,target,runtimeId,preserveAuto)=>{if(window.fail)throw Error('Fixture move failed');window.choices.push({id,runtimeId});if(!preserveAuto)setAuto(false);setActive(runtimeId);setRepository(id)}}/>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
@@ -73,7 +74,7 @@ const built = await build({
 })
 const browser = await chromium.launch({ headless: true })
 try {
-  const page = await browser.newPage()
+  const page = await browser.newPage({ viewport: { width: 320, height: 900 } })
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
@@ -99,6 +100,27 @@ try {
   await runtimePanel.waitFor({ state: 'hidden' })
 
   await page.evaluate(() => window.update({ multiple: true }))
+  const appearance = (locator) =>
+    locator.evaluate((node) => {
+      const style = getComputedStyle(node),
+        text = getComputedStyle(node.querySelector('span:not([aria-hidden])') ?? node)
+      return {
+        height: style.minHeight,
+        padding: style.padding,
+        radius: style.borderRadius,
+        background: style.backgroundColor,
+        color: text.color,
+        fontSize: text.fontSize,
+      }
+    })
+  assert.deepEqual(await appearance(project), await appearance(server))
+  for (const stacked of [true, false]) {
+    await page.evaluate((stacked) => window.update({ stacked }), stacked)
+    const projectBounds = await project.boundingBox(),
+      serverBounds = await server.boundingBox()
+    assert.ok(Math.abs(projectBounds.width - serverBounds.width) < 1)
+    assert.ok(serverBounds.x + serverBounds.width <= 320)
+  }
   await project.click()
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 1)
   assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)

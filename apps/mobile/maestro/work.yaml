@@ -1,7 +1,8 @@
 appId: com.dovo.studio
 ---
 - tapOn:
-    id: Tab Issues
+    id: Tab More
+- tapOn: Issues
 - extendedWaitUntil:
     visible: '.*Mobile issue workflow.*'
     timeout: 20000
@@ -127,7 +128,7 @@ appId: com.dovo.studio
     id: Work item 42
 - assertVisible: 'Run #256'
 - assertNotVisible:
-    id: Tab Issues
+    id: Tab More
 - swipe:
     start: 1%, 45%
     end: 95%, 45%
@@ -256,7 +257,8 @@ appId: com.dovo.studio
 - tapOn: Back
 - tapOn: Back
 - tapOn:
-    id: Tab Settings
+    id: Tab More
+- tapOn: Settings
 - runFlow:
     when:
       visible:
@@ -298,7 +300,8 @@ appId: com.dovo.studio
     timeout: 15000
 - assertVisible: GitHub
 - tapOn:
-    id: Tab Issues
+    id: Tab More
+- tapOn: Issues
 
 # A composer already open when connectivity drops must keep its text and disable submission.
 - tapOn:

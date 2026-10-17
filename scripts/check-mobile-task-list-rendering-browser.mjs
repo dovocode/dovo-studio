@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
@@ -7,12 +8,15 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
 const controls = `
-import {forwardRef,useImperativeHandle} from 'react';
-export const View=({children,accessibilityLabel,style})=><div aria-label={accessibilityLabel} style={{opacity:(Array.isArray(style)?Object.assign({},...style):style)?.opacity}}>{children}</div>;
-export const Text=({children,accessibilityRole,style})=><span role={accessibilityRole} style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;
+import {createContext,useContext,forwardRef,useImperativeHandle} from 'react';
+const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
+const nativeStyle=style=>{const result={...flat(style)};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(key in result){for(const axis of axes)result[axis]=result[key];delete result[key]}};if(typeof result.lineHeight==='number')result.lineHeight+='px';return result};
+export const View=({children,accessibilityLabel,style})=><div aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity}}>{children}</div>;
+export const Text=({children,accessibilityRole,numberOfLines,style})=>{const value=flat(style),scale=window.rowFontScale??1;return <span role={accessibilityRole} style={window.rowLayout?{display:'block',minWidth:0,...nativeStyle({...value,fontSize:(value.fontSize??13)*scale,...(value.lineHeight?{lineHeight:value.lineHeight*scale}:{})}),...(numberOfLines===1?{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}:{})}:value}>{children}</span>};
 export const Image=()=>null;
+export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
 export const ScrollView=View;
-export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID})=><button data-testid={testID} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
+export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style})=><button style={window.rowLayout?{display:'flex',position:'relative',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
 export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,testID},ref){
   useImperativeHandle(ref,()=>({scrollToOffset:()=>{}}),[]);
   return <div data-testid={testID}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}</div>
@@ -25,20 +29,25 @@ export const IconButton=({label,onPress,disabled})=><button aria-label={label} o
 export const Action=({label,onPress,disabled})=><button onClick={onPress} disabled={disabled}>{label}</button>;
 export const SettingsAction=Action;
 export const SettingsSearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;
-export const Sheet=({title,children,onClose})=><div role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close details</button></div>;
-export const ScreenHeader=({title})=><h1>{title}</h1>;
+const SheetNavigation=window.fixtureSheetNavigation??=createContext(callback=>callback());
+export const useSheetNavigation=()=>useContext(SheetNavigation);
+export const Sheet=forwardRef(function Sheet({title,children,onClose},ref){const parent=useSheetNavigation();const dismiss=after=>{onClose();after?.()};useImperativeHandle(ref,()=>({dismiss}));return <div role="dialog" aria-label={title}><SheetNavigation.Provider value={callback=>dismiss(()=>parent(callback))}>{children}</SheetNavigation.Provider><button onClick={onClose}>Close details</button></div>});
+export const ScreenHeader=({title,buttons})=><header><h1>{title}</h1>{buttons?.map(button=><button key={button.label} aria-pressed={button.selected} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;
+export const SettingsChoice=({label,value,items,onChange})=><label>{label}<select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
 export const useTheme=()=>window.rowTheme??{styles:{},colors:{}};
 `
 const preferenceModule = `
-const preferences={computerRefresh:'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[],taskSort:'newest',taskGrouping:'none',threadSectionOrder:['active','working','waiting','snoozed','settled'],workingSection:false,collapsedThreadSections:['working','snoozed'],confirmArchive:false};
-export const useMobilePreferences=()=>preferences;export const readMobilePreferences=()=>preferences;export const updateMobilePreferences=()=>{};export const preferencesReady=Promise.resolve();export const useCarMode=()=>false;
+import {useSyncExternalStore} from 'react';
+const preferences={threadDensity:'compact',computerRefresh:'manual',globalAgentPresets:[],retiredGlobalAgentPresets:[],globalModelPreferences:null,globalModelPreferencesUpdatedAt:0,sharedScopedSettings:[],taskSort:'newest',taskGrouping:'none',threadSectionOrder:['active','working','waiting','snoozed','settled'],workingSection:false,collapsedThreadSections:['working','snoozed'],confirmArchive:false};
+window.listPreferences??=preferences;window.preferenceListeners??=new Set();window.setListPreferences=changes=>{window.listPreferences={...window.listPreferences,...changes};window.preferenceListeners.forEach(notify=>notify())};
+export const useMobilePreferences=()=>useSyncExternalStore(notify=>{window.preferenceListeners.add(notify);return()=>window.preferenceListeners.delete(notify)},()=>window.listPreferences);export const readMobilePreferences=()=>window.listPreferences;export const updateMobilePreferences=changes=>{window.listPreferences={...window.listPreferences,...changes};window.preferenceListeners.forEach(notify=>notify())};export const preferencesReady=Promise.resolve();export const useCarMode=()=>false;
 `
 const stubs = [
   { path: 'react-native-gesture-handler', contents: controls },
   { path: 'react-native', contents: controls },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=({color,accessibilityLabel})=><svg aria-label={accessibilityLabel} style={{color}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as Pin,Icon as Save};`,
+    contents: `const Icon=({color,accessibilityLabel,size=12})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as Pin,Icon as Save};`,
   },
   {
     path: '@dovo/protocol',
@@ -94,12 +103,22 @@ export const startRuntimeSync=(connection,options)=>{
   {
     path: '../tasks/list/section-order-sheet',
     importer: mobile + 'screens/tasks.tsx',
-    contents: `export const SectionOrderSheet=()=>null;`,
+    contents: `export const SectionOrderSheet=({onClose})=><div role="dialog" aria-label="Organize sections"><button onClick={onClose}>Close section order</button></div>;`,
   },
   {
-    path: '../runtime/connection/fleet-overview',
-    importer: mobile + 'screens/tasks.tsx',
-    contents: `export const FleetOverview=()=>null;`,
+    path: '../../shell/navigation',
+    importer: mobile + 'runtime/connection/fleet-overview.tsx',
+    contents: `export const useNavigation=()=>window.navigation;`,
+  },
+  {
+    path: '../../ui/content/runtime-icon',
+    importer: mobile + 'runtime/connection/fleet-overview.tsx',
+    contents: `export const RuntimeIcon=()=>null;`,
+  },
+  {
+    path: '../../ui/content/format-date',
+    importer: mobile + 'runtime/connection/fleet-overview.tsx',
+    contents: `export const formatDateTime=value=>value;`,
   },
   {
     path: '../tasks/list/project-thread-filter',
@@ -115,7 +134,7 @@ export const startRuntimeSync=(connection,options)=>{
   {
     path: '../../agents/harness-icon',
     importer: mobile + 'tasks/list/task-list-row.tsx',
-    contents: `export const HarnessIcon=()=>null;`,
+    contents: `export const HarnessIcon=({provider})=><span data-harness={provider} aria-hidden/>;`,
   },
   {
     path: '../../agents/use-model-catalog',
@@ -131,7 +150,7 @@ export const startRuntimeSync=(connection,options)=>{
     path: './task-row-menu',
     importer: mobile + 'tasks/list/task-list-row.tsx',
     contents: `
-export const TaskRowMenu=({testID,task,actions,onDetails})=>{window.rowRenders[task.id]=(window.rowRenders[task.id]??0)+1;return <div data-testid={testID}><button onClick={onDetails}>Details {task.id}</button><button disabled={!actions.enabled||actions.busy} onClick={actions.togglePinned}>{task.pinned?'Unpin':'Pin'} {task.id}</button></div>};`,
+export const TaskRowMenu=({testID,task,actions,onDetails})=>{window.rowRenders[task.id]=(window.rowRenders[task.id]??0)+1;if(window.rowLayout)return <div style={{width:44,height:44}}/>;return <div data-testid={testID}><button onClick={onDetails}>Details {task.id}</button><button disabled={!actions.enabled||actions.busy} onClick={actions.togglePinned}>{task.pinned?'Unpin':'Pin'} {task.id}</button></div>};`,
   },
   {
     path: './task-swipe-actions',
@@ -146,7 +165,13 @@ for (const [path, importer] of [
   ['../ui/controls/icon-button', 'screens/tasks.tsx'],
   ['../ui/layout/screen-header', 'screens/tasks.tsx'],
   ['../ui/theme', 'screens/tasks.tsx'],
+  ['../../ui/theme', 'runtime/connection/fleet-overview.tsx'],
+  ['../../ui/content/text', 'runtime/connection/fleet-overview.tsx'],
+  ['../../ui/controls/icon', 'runtime/connection/fleet-overview.tsx'],
+  ['../../ui/controls/action', 'runtime/connection/fleet-overview.tsx'],
+  ['../../ui/layout/sheet', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/content/text', 'tasks/list/task-list-row.tsx'],
+  ['../../ui/layout/sheet', 'tasks/list/task-list-row.tsx'],
   ['../../ui/controls/icon', 'tasks/list/task-list-row.tsx'],
   ['../../ui/theme', 'tasks/list/task-list-row.tsx'],
   ['../theme', 'ui/content/pull-request-icon.tsx'],
@@ -221,8 +246,171 @@ try {
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
   await page.goto('http://mobile-task-list.lan/')
+  if (process.env.DOVO_MOBILE_DENSITY_LAYOUT) {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => {
+      window.rowLayout = true
+      window.rowTheme = {
+        styles: { muted: { color: '#aaa' } },
+        colors: {
+          text: '#eee',
+          surface: '#191919',
+          muted: '#aaa',
+          accent: '#69f',
+          success: '#4b8',
+        },
+      }
+    })
+    await page.addStyleTag({
+      content:
+        'body{margin:0;background:#111;font-family:system-ui}button{font:inherit}h1{color:#eee}#app{padding:8px}',
+    })
+  }
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByTestId('Task task-99').waitFor()
+  if (process.env.DOVO_MOBILE_DENSITY_LAYOUT) {
+    const ids = ['running', 'parent', 'task-0', 'task-1', 'task-2', 'task-3']
+    for (const width of [320, 390, 430]) {
+      await page.setViewportSize({ width, height: 844 })
+      for (const scale of [1, 1.5, 2]) {
+        await page.evaluate((scale) => {
+          window.rowFontScale = scale
+          window.publish({
+            running: { title: 'Short ' + scale },
+            parent: { title: 'Has several subagents ' + scale },
+            'task-0': {
+              title: 'Long project and checkout ' + scale,
+              checkoutBranch: 'feature/a-very-long-branch-name-that-must-not-wrap',
+              pinned: true,
+              execution: 'worktree',
+              linkedPullRequests: [
+                {
+                  number: 12345,
+                  url: 'https://github.com/team/project/pull/12345',
+                  repositoryUrl: 'https://github.com/team/project',
+                  title: 'Linked PR',
+                },
+              ],
+            },
+            'task-1': { title: 'General ' + scale, repositoryId: 'scratch', agentId: '' },
+            'task-2': { title: 'Settled ' + scale, archived: true },
+            'task-3': { title: 'Draft ' + scale, status: 'draft' },
+          })
+        }, scale)
+        await page
+          .getByTestId('Task task-1')
+          .getByText('General ' + scale, { exact: true })
+          .waitFor()
+        const sizes = await Promise.all(
+          ids.map((id) => page.getByTestId('Task ' + id).boundingBox()),
+        )
+        assert.ok(
+          sizes.every((size) => size && Math.abs(size.height - sizes[0].height) < 0.5),
+          JSON.stringify({ width, scale, sizes }),
+        )
+        assert.ok(sizes[0].height >= 44)
+        for (const id of ids) {
+          const bounds = await page
+            .getByTestId('Task ' + id)
+            .evaluate((el) => ({ client: el.clientWidth, scroll: el.scrollWidth }))
+          assert.ok(
+            bounds.scroll <= bounds.client + 1,
+            JSON.stringify({ id, width, scale, bounds }),
+          )
+        }
+      }
+    }
+    await page.screenshot({ path: '/tmp/dovo-compact-uniform-rows.png' })
+    assert.deepEqual(errors, [])
+    console.log(
+      'Compact row heights match across regular, General, settled, draft, long-checkout and subagent threads at 320/390/430px widths and 1/1.5/2x text sizes.',
+    )
+    await browser.close()
+    process.exit(0)
+  }
+  assert.equal(
+    await page.locator('header').getByRole('button', { name: 'New thread', exact: true }).count(),
+    0,
+  )
+  // Density changes update memoized rows in place and preserve their context.
+  const densityTitle = page.getByTestId('Task task-0').getByText('Task 0', { exact: true })
+  for (const [density, size, contextSize] of [
+    ['comfortable', '16px', '12px'],
+    ['compact', '15px', '11px'],
+  ]) {
+    await page.evaluate((density) => window.setListPreferences({ threadDensity: density }), density)
+    await page.waitForFunction(
+      ({ size }) =>
+        [...document.querySelectorAll('[data-testid="Task task-0"] span')].some(
+          (el) => el.textContent === 'Task 0' && getComputedStyle(el).fontSize === size,
+        ),
+      { size },
+    )
+    assert.equal(await densityTitle.evaluate((el) => getComputedStyle(el).fontSize), size)
+    assert.equal(
+      await page
+        .getByTestId('Task task-0')
+        .getByText('Project', { exact: true })
+        .evaluate((el) => getComputedStyle(el).fontSize),
+      contextSize,
+    )
+    assert.equal(
+      await page.getByTestId('Task task-0').getByText('main', { exact: true }).count(),
+      1,
+    )
+  }
+  assert.equal(
+    await densityTitle.evaluate((el) => el.parentElement.parentElement.children.length),
+    2,
+    'Compact uses title/status and a single context row',
+  )
+  assert.equal(
+    await densityTitle.evaluate((el) => el.parentElement.children.length),
+    2,
+    'Compact keeps status beside the title',
+  )
+  const filters = page.getByRole('button', { name: 'Filters', exact: true })
+  assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).count(), 0)
+  assert.equal(await filters.getAttribute('aria-pressed'), 'false')
+  await filters.click()
+  const filterSheet = page.getByRole('dialog', { name: 'Filter threads', exact: true })
+  await filterSheet.getByRole('textbox', { name: 'Search tasks' }).fill('Task 99')
+  await page.getByTestId('Task task-0').waitFor({ state: 'detached' })
+  await filterSheet.getByRole('button', { name: 'Close details' }).click()
+  assert.equal(await filters.getAttribute('aria-pressed'), 'true')
+  await page.getByTestId('Task task-99').waitFor()
+  assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).count(), 0)
+  await filters.click()
+  assert.equal(
+    await filterSheet.getByRole('textbox', { name: 'Search tasks' }).inputValue(),
+    'Task 99',
+  )
+  await filterSheet.getByRole('button', { name: 'Clear filters', exact: true }).click()
+  await page.getByTestId('Task task-0').waitFor()
+  assert.equal(await filters.getAttribute('aria-pressed'), 'false')
+  await filterSheet.getByRole('combobox', { name: 'Sort by', exact: true }).selectOption('title')
+  assert.equal(await page.evaluate(() => window.listPreferences.taskSort), 'title')
+  await filterSheet.getByRole('combobox', { name: 'Sort by', exact: true }).selectOption('newest')
+  await filterSheet.getByRole('combobox', { name: 'Group by', exact: true }).selectOption('project')
+  assert.equal(await page.evaluate(() => window.listPreferences.taskGrouping), 'project')
+  await filterSheet.getByRole('combobox', { name: 'Group by', exact: true }).selectOption('none')
+  await filterSheet.getByRole('button', { name: 'Organize sections', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Organize sections', exact: true }).waitFor()
+  assert.equal(await filterSheet.count(), 0)
+  await page.getByRole('button', { name: 'Close section order', exact: true }).click()
+  await filters.click()
+  await filterSheet.getByRole('button', { name: 'Device overview', exact: true }).click()
+  await page.getByRole('button', { name: /^Owner, Online,/ }).click()
+  await page.getByRole('button', { name: 'View tasks on this device', exact: true }).click()
+  assert.equal(await filters.getAttribute('aria-pressed'), 'true')
+  await filterSheet.getByRole('button', { name: 'Clear filters', exact: true }).click()
+  assert.equal(await filters.getAttribute('aria-pressed'), 'false')
+  await filterSheet.getByRole('button', { name: 'Device overview', exact: true }).click()
+  await page.getByRole('button', { name: /^Owner, Online,/ }).click()
+  await page.getByRole('button', { name: 'Manage computers', exact: true }).click()
+  assert.equal(await filterSheet.count(), 0, 'Navigation must dismiss both nested sheets')
+  assert.equal(await page.getByRole('dialog').count(), 0)
+  assert.equal(await page.evaluate(() => window.navigations.at(-1)[0]), 'settings')
   await page.waitForTimeout(100)
   await page.evaluate(() => {
     window.rowTheme = { styles: {}, colors: { success: '#00ee88' } }
@@ -278,7 +466,21 @@ try {
   await page.getByRole('button', { name: 'Close details', exact: true }).click()
   await page.getByTestId('Task task-5').click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'task-5')
-  await page.getByRole('button', { name: /Open subagent Child agent/ }).click()
+  const beforeSubagents = await page.evaluate(() => window.navigations.length)
+  await page.getByRole('button', { name: 'Show 1 working subagents', exact: true }).click()
+  assert.equal(
+    await page.evaluate(() => window.navigations.length),
+    beforeSubagents,
+    'Opening the subagent picker must not open the parent conversation',
+  )
+  await page
+    .getByRole('dialog', { name: 'Working subagents', exact: true })
+    .getByRole('button', { name: /Open subagent Child agent/ })
+    .click()
+  assert.equal(
+    await page.getByRole('dialog', { name: 'Working subagents', exact: true }).count(),
+    0,
+  )
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'child')
   await page.getByTestId('Task task-2').dispatchEvent('contextmenu')
   await page.getByTestId('Task task-3').click()
@@ -329,6 +531,7 @@ try {
       )
     }, 0)
   }
+  await page.evaluate(() => window.setListPreferences({ threadDensity: 'comfortable' }))
   let minimumContrast = Infinity
   for (const palette of await page.evaluate(() => window.titlePalettes)) {
     await page.evaluate((palette) => {
@@ -340,7 +543,7 @@ try {
       const style = getComputedStyle(element)
       return { color: style.color, opacity: Number(style.opacity), weight: style.fontWeight }
     })
-    assert.equal(style.opacity, 0.65, palette.name + ' read title must be dimmed')
+    assert.equal(style.opacity, 0.8, palette.name + ' read title must be dimmed')
     assert.equal(style.weight, '500')
     const metadataOpacity = () =>
       title.evaluate((element) =>
@@ -351,8 +554,8 @@ try {
       )
     assert.deepEqual(
       await metadataOpacity(),
-      [0.65, 0.65],
-      palette.name + ' read metadata must match the title',
+      [0.75, 0.75],
+      palette.name + ' read metadata must be slightly dimmer than the title',
     )
     await page.evaluate(() => window.publish({ 'task-0': { status: 'running' } }))
     const unreadStyle = await title.evaluate((element) => {
@@ -380,6 +583,8 @@ try {
     minimumContrast = Math.min(minimumContrast, contrast)
     assert.ok(contrast >= 4.5, `${palette.name} unread title contrast ${contrast}`)
   }
+  assert.equal(await page.getByTestId('Task task-0').locator('[data-harness]').count(), 1)
+  assert.equal(await page.getByTestId('Task task-0').getByText('Codex', { exact: true }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
     `Mobile task titles: read dimming and unread emphasis verified across 28 shipped palette/mode combinations; unread contrast >= ${minimumContrast.toFixed(2)}:1.`,
@@ -394,7 +599,13 @@ try {
     await settled
       .getByText('Task 1', { exact: true })
       .evaluate((el) => getComputedStyle(el).opacity),
-    '0.65',
+    '0.8',
+  )
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Task details for Task 1', exact: true })
+      .evaluate((el) => getComputedStyle(el).opacity),
+    '0.5',
   )
   await settled.click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'task-1')
@@ -440,15 +651,26 @@ try {
     await page.getByRole('button', { name: /^Task details for /, exact: true }).count(),
     5,
   )
+  await filters.click()
   await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('Task 11')
   await page.getByTestId('Task task-11').waitFor()
   assert.equal(await page.getByRole('button', { name: /Show all \d+ settled threads/ }).count(), 0)
   await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('')
   await allHistory.waitFor()
+  await filterSheet.getByRole('button', { name: 'Close details' }).click()
   assert.deepEqual(errors, [])
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
   )
 } finally {
   await browser.close()
+}
+
+// Include geometric regression coverage in the normal CI suite as well as direct layout runs.
+if (!process.env.DOVO_MOBILE_DENSITY_LAYOUT) {
+  const layout = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+    stdio: 'inherit',
+    env: { ...process.env, DOVO_MOBILE_DENSITY_LAYOUT: '1' },
+  })
+  assert.equal(layout.status, 0, 'Mobile density layout regression failed')
 }

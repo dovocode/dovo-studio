@@ -97,6 +97,8 @@ export function Composer({
     text: string
     attachmentIds: string[]
   } | null>(null)
+  const [advanced, setAdvanced] = useApplicationState(false)
+  useEffect(() => setAdvanced(false), [task.id, task.repositoryId, setAdvanced])
   const [machineMoving, setMachineMoving] = useApplicationState(false)
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const linkedProjectsAction = useAction()
@@ -435,96 +437,112 @@ export function Composer({
                 }}
               />
             )}
-            {task.autoProject && snapshot?.autoProjectSelectionEnabled === true && (
-              <View
-                accessibilityLabel="Scope checkout"
-                style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}
+            {(task.autoProject || hasGit) && !dictation.active && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Advanced"
+                accessibilityState={{ expanded: advanced }}
+                onPress={() => setAdvanced(!advanced)}
+                style={[styles.row, { minHeight: 44, paddingHorizontal: 12 }]}
               >
-                {(
-                  [
-                    { label: 'Project defaults', value: undefined },
-                    { label: 'New worktrees', value: 'worktree' },
-                    { label: 'Local checkouts', value: 'main' },
-                  ] as const
-                ).map(({ label, value }) => (
+                <Text style={[styles.muted, { flex: 1 }]}>Advanced</Text>
+                <Icon name={advanced ? 'down' : 'next'} size={14} color={colors.muted} />
+              </Pressable>
+            )}
+            {advanced && (
+              <View style={{ gap: 8 }}>
+                {task.autoProject && snapshot?.autoProjectSelectionEnabled === true && (
+                  <View
+                    accessibilityLabel="Scope checkout"
+                    style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}
+                  >
+                    {(
+                      [
+                        { label: 'Project defaults', value: undefined },
+                        { label: 'New worktrees', value: 'worktree' },
+                        { label: 'Local checkouts', value: 'main' },
+                      ] as const
+                    ).map(({ label, value }) => (
+                      <Pressable
+                        key={label}
+                        accessibilityRole="button"
+                        accessibilityLabel={label}
+                        accessibilityState={{
+                          selected: task.autoProjectExecution === value,
+                          disabled: busy,
+                        }}
+                        disabled={busy}
+                        onPress={() =>
+                          void checkoutAction.run(() =>
+                            patch({
+                              autoProjectExecution: {
+                                before: task.autoProjectExecution ?? null,
+                                after: value ?? null,
+                              },
+                            }),
+                          )
+                        }
+                        style={[
+                          styles.row,
+                          { padding: 10, borderRadius: 10, backgroundColor: colors.surface },
+                        ]}
+                      >
+                        <Icon
+                          name={task.autoProjectExecution === value ? 'check' : 'folder'}
+                          size={16}
+                        />
+                        <Text style={styles.text}>{label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+                {hasGit && !task.autoProject && !dictation.active && (
                   <Pressable
-                    key={label}
+                    testID="Checkout & branch"
                     accessibilityRole="button"
-                    accessibilityLabel={label}
+                    accessibilityLabel="Checkout & branch"
+                    accessibilityValue={{ text: checkoutLabel }}
                     accessibilityState={{
-                      selected: task.autoProjectExecution === value,
                       disabled: busy,
                     }}
                     disabled={busy}
-                    onPress={() =>
-                      void checkoutAction.run(() =>
-                        patch({
-                          autoProjectExecution: {
-                            before: task.autoProjectExecution ?? null,
-                            after: value ?? null,
-                          },
-                        }),
-                      )
-                    }
-                    style={[
-                      styles.row,
-                      { padding: 10, borderRadius: 10, backgroundColor: colors.surface },
-                    ]}
+                    onPress={() => {
+                      Keyboard.dismiss()
+                      setCheckout(true)
+                    }}
+                    style={({ pressed }) => ({
+                      minWidth: 44,
+                      minHeight: 44,
+                      borderRadius: 12,
+                      backgroundColor: colors.surface,
+                      flexWrap: 'nowrap',
+                      paddingHorizontal: 12,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      opacity: pressed || busy ? 0.5 : 1,
+                    })}
                   >
                     <Icon
-                      name={task.autoProjectExecution === value ? 'check' : 'folder'}
-                      size={16}
+                      name={task.execution === 'worktree' ? 'changes' : 'folder'}
+                      size={14}
+                      color={colors.muted}
                     />
-                    <Text style={styles.text}>{label}</Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.muted,
+                        {
+                          flex: 1,
+                        },
+                      ]}
+                    >
+                      {checkoutLabel}
+                    </Text>
+                    <Icon name="down" size={10} color={colors.muted} />
                   </Pressable>
-                ))}
+                )}
               </View>
-            )}
-            {hasGit && !task.autoProject && !dictation.active && (
-              <Pressable
-                testID="Checkout & branch"
-                accessibilityRole="button"
-                accessibilityLabel="Checkout & branch"
-                accessibilityValue={{ text: checkoutLabel }}
-                accessibilityState={{
-                  disabled: busy,
-                }}
-                disabled={busy}
-                onPress={() => {
-                  Keyboard.dismiss()
-                  setCheckout(true)
-                }}
-                style={({ pressed }) => ({
-                  minWidth: 44,
-                  minHeight: 44,
-                  borderRadius: 12,
-                  backgroundColor: colors.surface,
-                  flexWrap: 'nowrap',
-                  paddingHorizontal: 12,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 8,
-                  opacity: pressed || busy ? 0.5 : 1,
-                })}
-              >
-                <Icon
-                  name={task.execution === 'worktree' ? 'changes' : 'folder'}
-                  size={14}
-                  color={colors.muted}
-                />
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.muted,
-                    {
-                      flex: 1,
-                    },
-                  ]}
-                >
-                  {checkoutLabel}
-                </Text>
-                <Icon name="down" size={10} color={colors.muted} />
-              </Pressable>
             )}
           </View>
         )}

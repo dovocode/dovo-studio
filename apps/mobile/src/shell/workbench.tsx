@@ -30,7 +30,15 @@ import {
   type ComponentType,
   type ReactNode,
 } from 'react'
-import { ActivityIndicator, KeyboardAvoidingView, Keyboard, Platform } from 'react-native'
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Keyboard,
+  Platform,
+  View as NativeView,
+} from 'react-native'
+import { IconButton } from '../ui/controls/icon-button'
+import { MoreMenu } from './more-menu'
 import { Text } from '../ui/content/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SafeAreaView as NativeSafeAreaView } from 'react-native-screens/experimental'
@@ -182,6 +190,8 @@ export function Workbench() {
   ])
   const { tab: active, detail: routeDetail } = workbenchRoute(pathname)
   const car = useCarMode()
+  const [moreOpen, setMoreOpen] = useApplicationState(false)
+  useEffect(() => setMoreOpen(false), [pathname])
   const artifactsEnabled = runtime.overviews.some((entry) => entry.snapshot?.artifactsEnabled)
   useEffect(() => {
     if (runtime.ready && active === 'artifacts' && (!artifactsEnabled || car)) router.replace('/')
@@ -213,6 +223,9 @@ export function Workbench() {
   const shortcuts = useShortcuts()
   const routedShortcut = useRef('')
   const hasOnlineComputer = runtime.overviews.some((entry) => entry.connected)
+  const newThread = useCallback(() => {
+    if (hasOnlineComputer) router.push('/new', { withAnchor: true })
+  }, [hasOnlineComputer])
   useEffect(() => {
     if (!hasOnlineComputer || !shortcuts.input || routedShortcut.current === shortcuts.input.id)
       return
@@ -412,11 +425,25 @@ export function Workbench() {
                 <ConnectionPill />
               </FloatingPills>
             )}
+            {Platform.OS !== 'ios' && (
+              <FloatingPills>
+                <NativeView style={{ alignSelf: 'flex-end', paddingRight: 16 }}>
+                  <IconButton
+                    label="New thread"
+                    icon="add"
+                    variant="filled"
+                    size={48}
+                    disabled={!hasOnlineComputer}
+                    onPress={newThread}
+                  />
+                </NativeView>
+              </FloatingPills>
+            )}
           </NativeSafeAreaView>
         )
     }
     return content
-  }, [screens, runtime.ready, runtime.activeId, keyboard])
+  }, [screens, runtime.ready, runtime.activeId, keyboard, hasOnlineComputer, newThread])
   const content =
     hasOnlineComputer && shortcuts.input
       ? {
@@ -478,6 +505,7 @@ export function Workbench() {
               hidden={keyboard || detail}
               tintColor={colors.accent}
               backBehavior="history"
+              unstable_nativeProps={{ ios: { prominentScreenKey: 'compose' } }}
             >
               <NativeTabs.Trigger
                 name="(tasks)"
@@ -493,19 +521,6 @@ export function Workbench() {
                 <NativeTabs.Trigger.Label>Tasks</NativeTabs.Trigger.Label>
               </NativeTabs.Trigger>
               <NativeTabs.Trigger
-                name="issues"
-                hidden={car}
-                disableAutomaticContentInsets={Platform.OS === 'ios'}
-                testID="Tab Issues"
-                disabled={!runtime.profiles.length}
-                listeners={{
-                  tabPress: () => active === 'issues' && router.dismissTo('/issues'),
-                }}
-              >
-                <NativeTabs.Trigger.Icon src={iconAssets.issues} renderingMode="template" />
-                <NativeTabs.Trigger.Label>Issues</NativeTabs.Trigger.Label>
-              </NativeTabs.Trigger>
-              <NativeTabs.Trigger
                 name="pulls"
                 hidden={car}
                 disableAutomaticContentInsets={Platform.OS === 'ios'}
@@ -519,30 +534,47 @@ export function Workbench() {
                 <NativeTabs.Trigger.Label>PRs</NativeTabs.Trigger.Label>
               </NativeTabs.Trigger>
               <NativeTabs.Trigger
-                name="artifacts"
-                hidden={car || !artifactsEnabled}
-                disableAutomaticContentInsets={Platform.OS === 'ios'}
-                testID="Tab Artifacts"
+                name="(more)"
+                testID="Tab More"
+                accessibilityLabel="More"
+                disablePopToTop
+                disableScrollToTop
+                unstable_nativeProps={{ preventNativeSelection: true }}
+                listeners={{ tabPress: () => setMoreOpen(true) }}
+              >
+                <NativeTabs.Trigger.Icon src={iconAssets.more} renderingMode="template" />
+                <NativeTabs.Trigger.Label>More</NativeTabs.Trigger.Label>
+              </NativeTabs.Trigger>
+              <NativeTabs.Trigger
+                name="compose"
+                role="search"
+                hidden={Platform.OS !== 'ios'}
+                accessibilityLabel="New thread"
+                testID="New thread"
+                disabled={!hasOnlineComputer}
+                // This is an action: preserve the current tab and its navigation history.
+                unstable_nativeProps={{ preventNativeSelection: true }}
                 listeners={{
-                  tabPress: () => active === 'artifacts' && router.dismissTo('/artifacts'),
+                  tabPress: newThread,
                 }}
               >
-                <NativeTabs.Trigger.Icon src={iconAssets.artifact} renderingMode="template" />
-                <NativeTabs.Trigger.Label>Artifacts</NativeTabs.Trigger.Label>
+                <NativeTabs.Trigger.Icon src={iconAssets.add} renderingMode="template" />
+                <NativeTabs.Trigger.Label hidden>New thread</NativeTabs.Trigger.Label>
               </NativeTabs.Trigger>
               <NativeTabs.Trigger name="jobs" hidden />
-              <NativeTabs.Trigger
-                name="settings"
-                disableAutomaticContentInsets={Platform.OS === 'ios'}
-                testID="Tab Settings"
-                listeners={{
-                  tabPress: () => active === 'settings' && router.dismissTo('/settings'),
-                }}
-              >
-                <NativeTabs.Trigger.Icon src={iconAssets.settings} renderingMode="template" />
-                <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
-              </NativeTabs.Trigger>
             </NativeTabs>
+            {moreOpen && (
+              <MoreMenu
+                active={active}
+                artifactsEnabled={artifactsEnabled}
+                car={car}
+                onClose={() => setMoreOpen(false)}
+                onSelect={(tab) => {
+                  setMoreOpen(false)
+                  router.navigate(routes[tab], { withAnchor: true })
+                }}
+              />
+            )}
           </SceneContext.Provider>
         </TaskListViewProvider>
       </KeyboardAvoidingView>

@@ -23,6 +23,8 @@ export type HeaderAction = {
   disabled?: boolean
   selected?: boolean
   overflow?: boolean
+  group?: string
+  destructive?: boolean
 }
 
 /** UIKit owns navigation sizing, button grouping and back gestures on iOS. */
@@ -34,6 +36,7 @@ export function ScreenHeader({
   leading,
   actions,
   buttons,
+  collapsedMenuGroups = [],
   testID,
   onBack,
   gestureEnabled = true,
@@ -46,6 +49,7 @@ export function ScreenHeader({
   leading?: ReactNode
   actions?: ReactNode
   buttons?: HeaderAction[]
+  collapsedMenuGroups?: readonly string[]
   testID?: string
   onBack?: () => void
   gestureEnabled?: boolean
@@ -132,23 +136,35 @@ export function ScreenHeader({
             <Stack.Toolbar.Menu
               icon={iconAssets.more}
               iconRenderingMode="template"
-              accessibilityLabel="Task tools"
+              accessibilityLabel="More actions"
               tintColor={colors.text}
             >
-              {buttons
-                .filter((button) => button.overflow)
-                .map((button) => (
+              {groupHeaderActions(buttons).map(({ name, actions }) => {
+                const items = actions.map((button) => (
                   <Stack.Toolbar.MenuAction
                     key={button.label}
                     icon={iconAssets[button.icon]}
                     iconRenderingMode="template"
                     disabled={button.disabled}
                     isOn={button.selected}
+                    destructive={button.destructive}
                     onPress={button.onPress}
                   >
                     {button.label}
                   </Stack.Toolbar.MenuAction>
-                ))}
+                ))
+                return name ? (
+                  <Stack.Toolbar.Menu
+                    key={name}
+                    title={name}
+                    inline={!collapsedMenuGroups.includes(name)}
+                  >
+                    {items}
+                  </Stack.Toolbar.Menu>
+                ) : (
+                  items
+                )
+              })}
             </Stack.Toolbar.Menu>
           )}
           {!!actions && (
@@ -169,6 +185,7 @@ export function ScreenHeader({
           <HeaderActionSheet
             title={screenTitle}
             buttons={buttons ?? []}
+            collapsedGroups={collapsedMenuGroups}
             onClose={() => setMenu(false)}
           />
         )}
@@ -230,6 +247,7 @@ export function ScreenHeader({
         <HeaderActionSheet
           title={screenTitle}
           buttons={buttons ?? []}
+          collapsedGroups={collapsedMenuGroups}
           onClose={() => setMenu(false)}
         />
       )}
@@ -241,53 +259,117 @@ function HeaderActionSheet({
   title,
   buttons,
   onClose,
+  collapsedGroups,
 }: {
   title: string
   buttons: HeaderAction[]
+  collapsedGroups: readonly string[]
   onClose: () => void
 }) {
   const { colors } = useTheme()
+  const [expanded, setExpanded] = useApplicationState<string[]>([])
   return (
     <Sheet title={title} onClose={onClose}>
-      {buttons
-        ?.filter((button) => button.overflow)
-        .map((button) => (
-          <Pressable
-            key={button.label}
-            accessibilityRole="button"
-            accessibilityLabel={button.label}
-            accessibilityState={{ disabled: button.disabled, selected: button.selected }}
-            disabled={button.disabled}
-            onPress={() => {
-              onClose()
-              button.onPress()
-            }}
-            style={({ pressed }) => ({
-              minHeight: 52,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
-              opacity: button.disabled ? 0.4 : pressed ? 0.6 : 1,
-            })}
-          >
-            <Icon
-              name={button.icon}
-              size={20}
-              color={button.selected ? colors.accent : colors.text}
-            />
-            <Text
-              style={{
-                color: button.selected ? colors.accent : colors.text,
-                fontSize: 17,
-                lineHeight: 22,
-                flex: 1,
-                minWidth: 0,
-              }}
-            >
-              {button.label}
-            </Text>
-          </Pressable>
-        ))}
+      {groupHeaderActions(buttons).map(({ name, actions }) => (
+        <View key={name} style={{ gap: name ? 2 : 12 }}>
+          {!!name &&
+            (collapsedGroups.includes(name) ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={name}
+                accessibilityState={{ expanded: expanded.includes(name) }}
+                onPress={() =>
+                  setExpanded((current) =>
+                    current.includes(name)
+                      ? current.filter((item) => item !== name)
+                      : [...current, name],
+                  )
+                }
+                style={{ minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+              >
+                <Text style={{ color: colors.text, fontSize: 17, flex: 1 }}>{name}</Text>
+                <Icon
+                  name={expanded.includes(name) ? 'down' : 'next'}
+                  size={18}
+                  color={colors.muted}
+                />
+              </Pressable>
+            ) : (
+              <Text
+                accessibilityRole="header"
+                style={{
+                  color: colors.muted,
+                  fontSize: 12,
+                  fontWeight: '600',
+                  paddingTop: 16,
+                  paddingBottom: 4,
+                }}
+              >
+                {name}
+              </Text>
+            ))}
+          {(!collapsedGroups.includes(name) || expanded.includes(name)) &&
+            actions.map((button) => (
+              <Pressable
+                key={button.label}
+                accessibilityRole="button"
+                accessibilityLabel={button.label}
+                accessibilityState={{ disabled: button.disabled, selected: button.selected }}
+                disabled={button.disabled}
+                onPress={() => {
+                  onClose()
+                  button.onPress()
+                }}
+                style={({ pressed }) => ({
+                  minHeight: 52,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 14,
+                  opacity: button.disabled ? 0.4 : pressed ? 0.6 : 1,
+                })}
+              >
+                <Icon
+                  name={button.icon}
+                  size={20}
+                  color={
+                    button.destructive
+                      ? colors.error
+                      : button.selected
+                        ? colors.accent
+                        : colors.text
+                  }
+                />
+                <Text
+                  style={{
+                    color: button.destructive
+                      ? colors.error
+                      : button.selected
+                        ? colors.accent
+                        : colors.text,
+                    fontSize: 17,
+                    lineHeight: 22,
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {button.label}
+                </Text>
+              </Pressable>
+            ))}
+        </View>
+      ))}
     </Sheet>
   )
+}
+
+function groupHeaderActions(buttons: readonly HeaderAction[]) {
+  const groups = new Map<string, HeaderAction[]>()
+  for (const button of buttons) {
+    if (!button.overflow) continue
+    const name = button.group ?? ''
+    const actions = groups.get(name) ?? []
+    actions.push(button)
+    groups.set(name, actions)
+  }
+  return Array.from(groups, ([name, actions]) => ({ name, actions }))
 }

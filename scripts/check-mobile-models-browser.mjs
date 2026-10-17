@@ -39,11 +39,11 @@ function App(){
  const[host,setHost]=useState('one');const[agent,setAgent]=useState({...defaultTaskHarness('codex'),id:'agent',name:'Agent',model:''});const[online,setOnline]=useState(true);
  window.host=setHost;window.harness=provider=>setAgent({...defaultTaskHarness(provider),id:'agent',name:'Agent',model:''});window.online=setOnline;
  const profile={id:host,name:host,connection:{address:'http://'+host,token:'private-token'}};
- const snapshot={revision,runtimeInstanceId:host,defaults:{},workspace:{agents:[],repositories:[],tasks:task?[task]:[]},acpInstallations:[]};
+ const snapshot={smartModelSelectionEnabled:true,revision,runtimeInstanceId:host,defaults:{},workspace:{agents:[],repositories:[],tasks:task?[task]:[]},acpInstallations:[]};
  const entry={profile,snapshot};const visible=previewTasks(entry,pending).snapshot.workspace.tasks[0];window.visibleTask=visible;window.rawTask=task;
  window.publishTask=(nextRevision,nextTask)=>{setRevision(nextRevision);if(nextTask)setTask(nextTask)};
  useEffect(()=>setPending(items=>{const next=items.filter(item=>!optimisticTaskConfirmed(item,entry,items));return next.length===items.length?items:next}),[task,revision]);
- const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/workspace'){const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
+ const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/workspace'){if(method!=='PATCH')throw Error('Workspace changes require PATCH');const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after??undefined]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
  return <Context.Provider value={value}>{task?<><span data-selected-model>{resolveTaskAgent(visible,[])?.model||'Default'}</span>{editing&&<HarnessSettings task={visible} onClose={()=>setEditing(false)}/>}</>:<ModelSettings agent={agent} onChange={setAgent}/>}<ConnectionPill/></Context.Provider>
 };createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -81,6 +81,7 @@ function App(){
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
+  page.setDefaultTimeout(15000)
   const errors = []
   page.on('pageerror', (error) => {
     errors.push(error.message)
@@ -292,6 +293,56 @@ try {
   await page
     .getByRole('heading', { name: 'Connection', exact: true })
     .waitFor({ state: 'detached' })
+  // Automatic modes must use the workspace mutation contract and stay selected
+  // while the confirming snapshot is still in flight.
+  const mode = page.getByRole('combobox', { name: 'Model selection', exact: true })
+  await mode.selectOption('smart')
+  await page.waitForFunction(() => window.visibleTask?.modelSelection === 'smart')
+  await page.waitForFunction(() => window.saved.input.changes.modelSelection?.after === 'smart')
+  if ((await page.evaluate(() => window.saved.method)) !== 'PATCH')
+    throw new Error('Maestro did not use PATCH')
+  await page.evaluate(() => window.finishSave(false))
+  await page.waitForFunction(
+    () => !document.querySelector('select[aria-label="Model selection"]').disabled,
+  )
+  if ((await mode.inputValue()) !== 'smart') throw new Error('Maestro reverted before confirmation')
+  if (await page.getByRole('button', { name: 'Save agent & model', exact: true }).count())
+    throw new Error('Manual save can overwrite Maestro')
+  await page.evaluate(() =>
+    window.publishTask(3, {
+      ...window.rawTask,
+      ...Object.fromEntries(
+        Object.entries(window.saved.input.changes).map(([key, value]) => [
+          key,
+          value.after ?? undefined,
+        ]),
+      ),
+    }),
+  )
+  const difficulty = page.getByRole('combobox', { name: 'Difficulty', exact: true })
+  await difficulty.selectOption('high')
+  await page.waitForFunction(() => window.visibleTask?.modelSelectionDifficulty === 'high')
+  await page.evaluate(() => window.finishSave(true))
+  await page.getByText('Model save rejected', { exact: true }).waitFor()
+  await page.waitForFunction(() => !window.visibleTask?.modelSelectionDifficulty)
+  if ((await mode.inputValue()) !== 'smart')
+    throw new Error('Failed difficulty save cleared Maestro')
+  await mode.selectOption('auto')
+  await page.waitForFunction(() => window.visibleTask?.modelSelection === 'auto')
+  await page.evaluate(() => window.finishSave(false))
+  await page.waitForFunction(
+    () => !document.querySelector('select[aria-label="Model selection"]').disabled,
+  )
+  await page.evaluate(() => window.online(false))
+  if (!(await mode.isDisabled())) throw new Error('Offline mode changes remained enabled')
+  await page.evaluate(() => window.online(true))
+  await mode.selectOption('fixed')
+  await page.waitForFunction(() => window.saved.input.changes.modelSelection?.after === null)
+  await page.evaluate(() => window.finishSave(false))
+  await mode.waitFor({ state: 'detached' })
+  await page.evaluate(() => window.openTask())
+  await mode.waitFor()
+  if ((await mode.inputValue()) !== 'fixed') throw new Error('Fixed mode reverted after reopening')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse/Cursor model selection, reasoning, OpenCode v1/v2 labels, and task model/reasoning saves with unavailable provider discovery passed.',

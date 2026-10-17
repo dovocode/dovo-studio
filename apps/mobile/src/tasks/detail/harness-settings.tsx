@@ -117,16 +117,23 @@ export function HarnessSettings({
             if (value === 'fixed') {
               act(() =>
                 mobileWorkflow(function* () {
-                  yield* callEffect(
-                    '/api/workspace',
-                    {
-                      collection: 'tasks',
-                      id: task.id,
-                      changes: {
-                        modelSelection: { before: task.modelSelection ?? null, after: null },
+                  if (!profile) throw new Error('This computer is no longer saved.')
+                  yield* previewTaskEffect(
+                    profile,
+                    task.id,
+                    { modelSelection: undefined },
+                    callEffect(
+                      '/api/workspace',
+                      {
+                        collection: 'tasks',
+                        id: task.id,
+                        changes: {
+                          modelSelection: { before: task.modelSelection ?? null, after: null },
+                        },
                       },
-                    },
-                    workspacePatchResultSchema,
+                      workspacePatchResultSchema,
+                      'PATCH',
+                    ),
                   )
                   onClose()
                 }),
@@ -143,23 +150,35 @@ export function HarnessSettings({
                   snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
                   snapshot?.defaults,
                 )
-                yield* callEffect(
-                  '/api/workspace',
+                yield* previewTaskEffect(
+                  profile,
+                  task.id,
                   {
-                    collection: 'tasks',
-                    id: task.id,
-                    changes: {
-                      modelSelection: { before: task.modelSelection ?? null, after: value },
-                      harness: { before: task.harness ?? null, after: next.harness },
-                      agentId: { before: task.agentId, after: '' },
-                      agentOverrides: { before: task.agentOverrides ?? null, after: null },
-                      harnessCustomized: {
-                        before: task.harnessCustomized ?? null,
-                        after: next.harnessCustomized ?? null,
+                    modelSelection: value,
+                    harness: next.harness,
+                    agentId: '',
+                    agentOverrides: undefined,
+                    harnessCustomized: next.harnessCustomized,
+                  },
+                  callEffect(
+                    '/api/workspace',
+                    {
+                      collection: 'tasks',
+                      id: task.id,
+                      changes: {
+                        modelSelection: { before: task.modelSelection ?? null, after: value },
+                        harness: { before: task.harness ?? null, after: next.harness },
+                        agentId: { before: task.agentId, after: '' },
+                        agentOverrides: { before: task.agentOverrides ?? null, after: null },
+                        harnessCustomized: {
+                          before: task.harnessCustomized ?? null,
+                          after: next.harnessCustomized ?? null,
+                        },
                       },
                     },
-                  },
-                  workspacePatchResultSchema,
+                    workspacePatchResultSchema,
+                    'PATCH',
+                  ),
                 )
                 if (value === 'inherit') onClose()
               }),
@@ -177,24 +196,37 @@ export function HarnessSettings({
           onChange={(reasoning) =>
             act(() =>
               mobileWorkflow(function* () {
-                yield* callEffect(
-                  '/api/workspace',
-                  {
-                    collection: 'tasks',
-                    id: task.id,
-                    changes: {
-                      modelSelectionDifficulty: {
-                        before: task.modelSelectionDifficulty ?? null,
-                        after: decode(taskModelSelectionDifficultySchema, reasoning),
+                if (!profile) throw new Error('This computer is no longer saved.')
+                const difficulty = decode(taskModelSelectionDifficultySchema, reasoning)
+                yield* previewTaskEffect(
+                  profile,
+                  task.id,
+                  { modelSelectionDifficulty: difficulty },
+                  callEffect(
+                    '/api/workspace',
+                    {
+                      collection: 'tasks',
+                      id: task.id,
+                      changes: {
+                        modelSelectionDifficulty: {
+                          before: task.modelSelectionDifficulty ?? null,
+                          after: difficulty,
+                        },
                       },
                     },
-                  },
-                  workspacePatchResultSchema,
+                    workspacePatchResultSchema,
+                    'PATCH',
+                  ),
                 )
               }),
             )
           }
         />
+      )}
+      {!!error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
       )}
       {task.modelSelection !== 'auto' && task.modelSelection !== 'smart' && (
         <>
@@ -326,7 +358,6 @@ export function HarnessSettings({
               Saving model settings…
             </Text>
           )}
-          {!!error && <Text style={styles.error}>{error}</Text>}
           <Action
             label="Save agent & model"
             disabled={

@@ -1,4 +1,9 @@
-import { orderThreadSections, settledThreadPreviewLimit } from '@dovo/protocol'
+import {
+  orderThreadSections,
+  settledThreadPreviewLimit,
+  taskGroupOptions,
+  taskSortOptions,
+} from '@dovo/protocol'
 import { SectionOrderSheet } from '../tasks/list/section-order-sheet'
 import { useForegroundInterval } from '../runtime/state/app-active'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
@@ -36,7 +41,8 @@ import { chooseSnoozeDuration } from '../tasks/detail/use-task-lifecycle'
 import { LifecycleActions } from '../tasks/detail/lifecycle-actions'
 import { SettingsAction as Action } from './settings-controls'
 import { SettingsSearchField as SearchField } from './settings-controls'
-import { Sheet } from '../ui/layout/sheet'
+import { SettingsChoice as Choice } from './settings-controls'
+import { Sheet, type SheetHandle } from '../ui/layout/sheet'
 import { Icon } from '../ui/controls/icon'
 import { IconButton } from '../ui/controls/icon-button'
 import { ScreenHeader } from '../ui/layout/screen-header'
@@ -46,6 +52,7 @@ type TaskListItem =
   | { kind: 'history'; count: number }
   | { kind: 'group'; key: string; name: string; count: number }
   | { kind: 'task'; entry: RuntimeTask }
+const sortOptions = taskSortOptions.filter((option) => option.id !== 'status')
 export default function TasksScreen({ archived = false }: { archived?: boolean }) {
   const { colors, styles } = useTheme()
 
@@ -65,6 +72,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       ? { ...view, search: '', sort: 'priority', project: '' }
       : { ...view, sort: preferences.taskSort }
   const [organizing, setOrganizing] = useApplicationState(false)
+  const [filtering, setFiltering] = useApplicationState(false)
+  const filterSheet = useRef<SheetHandle>(null)
+  const filtersActive = !!(search.trim() || project || (!archived && source !== 'all'))
   const [showAllSettled, setShowAllSettled] = useApplicationState(false)
   const [details, setDetails] = useApplicationState(''),
     [now, setNow] = useApplicationState(Date.now())
@@ -444,14 +454,28 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         title={archived ? 'Archived tasks' : 'Tasks'}
         buttons={
           archived
-            ? []
+            ? [
+                {
+                  label: 'Filters',
+                  icon: 'filters',
+                  selected: filtersActive,
+                  onPress: () => setFiltering(true),
+                },
+              ]
             : [
                 ...(car
                   ? []
                   : [
                       {
+                        label: 'Filters',
+                        icon: 'filters' as const,
+                        selected: filtersActive,
+                        onPress: () => setFiltering(true),
+                      },
+                      {
                         label: 'Projects',
                         icon: 'projects' as const,
+                        overflow: true,
                         onPress: () => {
                           retainPosition()
                           navigate('scm')
@@ -473,17 +497,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                   icon: 'jobs',
                   overflow: true,
                   onPress: () => router.push('/launch'),
-                },
-                {
-                  label: 'New thread',
-                  icon: 'add',
-                  disabled: !overviews.some((entry) => entry.connected) || busy,
-                  onPress: () => {
-                    retainPosition()
-                    router.push('/new', {
-                      withAnchor: true,
-                    })
-                  },
                 },
               ]
         }
@@ -531,6 +544,84 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           />
         </View>
       )}
+      {filtering && !car && (
+        <Sheet ref={filterSheet} title="Filter threads" onClose={() => setFiltering(false)}>
+          <SearchField
+            label={archived ? 'Search archived tasks' : 'Search tasks'}
+            placeholder="Search threads"
+            clearButtonMode="while-editing"
+            returnKeyType="search"
+            value={search}
+            onChangeText={(search) => {
+              scrollOffset.current = 0
+              setView((current) => ({ ...current, search }))
+            }}
+          />
+          {!archived && (
+            <>
+              <ProjectThreadFilter
+                value={project}
+                onChange={(project) => {
+                  scrollOffset.current = 0
+                  setView((current) => ({ ...current, project }))
+                }}
+              />
+              <FleetOverview
+                compact
+                source={source}
+                entries={overviews}
+                onSelectSource={(source) => {
+                  scrollOffset.current = 0
+                  setView((current) => ({ ...current, source }))
+                }}
+              />
+            </>
+          )}
+          {filtersActive && (
+            <Action
+              secondary
+              label="Clear filters"
+              onPress={() => {
+                scrollOffset.current = 0
+                setView((current) => ({ ...current, search: '', project: '', source: 'all' }))
+              }}
+            />
+          )}
+          {!archived && (
+            <>
+              <Choice
+                label="Sort by"
+                value={preferences.taskSort}
+                items={sortOptions}
+                onChange={(value) => {
+                  const option = sortOptions.find((option) => option.id === value)
+                  if (!option) return
+                  scrollOffset.current = 0
+                  updateMobilePreferences({ taskSort: option.id })
+                  setView((current) => ({ ...current, sort: option.id }))
+                }}
+              />
+              <Choice
+                label="Group by"
+                value={preferences.taskGrouping}
+                items={[...taskGroupOptions]}
+                onChange={(value) => {
+                  const option = taskGroupOptions.find((option) => option.id === value)
+                  if (!option) return
+                  scrollOffset.current = 0
+                  updateMobilePreferences({ taskGrouping: option.id })
+                }}
+              />
+              <Action
+                secondary
+                label="Organize sections"
+                icon="settings"
+                onPress={() => filterSheet.current?.dismiss(() => setOrganizing(true))}
+              />
+            </>
+          )}
+        </Sheet>
+      )}
       {organizing && <SectionOrderSheet onClose={() => setOrganizing(false)} />}
       <FlatList
         {...listScroll}
@@ -574,69 +665,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           },
         ]}
         ListHeaderComponent={
-          car ? undefined : (
-            <View
-              style={{
-                gap: 8,
-                paddingBottom: 10,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <SearchField
-                    label={archived ? 'Search archived tasks' : 'Search tasks'}
-                    placeholder={archived ? 'Search archived tasks' : 'Search tasks'}
-                    clearButtonMode="while-editing"
-                    returnKeyType="search"
-                    value={search}
-                    onChangeText={(search) =>
-                      setView((current) => ({
-                        ...current,
-                        search,
-                      }))
-                    }
-                  />
-                </View>
-                {!archived && (
-                  <IconButton
-                    label="Organize sections"
-                    icon="settings"
-                    onPress={() => setOrganizing(true)}
-                  />
-                )}
-              </View>
-              {!archived && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <ProjectThreadFilter
-                      compact
-                      value={project}
-                      onChange={(project) => {
-                        scrollOffset.current = 0
-                        setView((current) => ({ ...current, project }))
-                      }}
-                    />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <FleetOverview
-                      compact
-                      source={source}
-                      entries={overviews}
-                      onSelectSource={(source) => {
-                        scrollOffset.current = 0
-                        setView((current) => ({ ...current, source }))
-                      }}
-                    />
-                  </View>
-                </View>
-              )}
-              {!!(error || refreshError) && (
-                <Text accessibilityRole="alert" style={styles.error}>
-                  {error || refreshError}
-                </Text>
-              )}
-            </View>
-          )
+          error || refreshError ? (
+            <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 10 }]}>
+              {error || refreshError}
+            </Text>
+          ) : undefined
         }
         renderItem={({ item }) =>
           item.kind === 'history' ? (
@@ -722,6 +755,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               }
             >
               <TaskListRow
+                density={preferences.threadDensity ?? 'compact'}
                 row={item.entry}
                 subagents={rowData.get(item.entry.key)!.subagents}
                 owner={rowData.get(item.entry.key)!.owner}

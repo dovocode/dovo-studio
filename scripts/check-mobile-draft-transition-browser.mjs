@@ -73,7 +73,7 @@ const mocks = {
   '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
   '../../ui/layout/sheet': `import {useImperativeHandle} from 'react';export const Sheet=({children,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section>{children}</section>};export const useSheetNavigation=()=>navigate=>navigate();`,
   '../../ui/theme': `export const useTheme=()=>({colors:{},styles:{}});`,
-  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,titleContent,buttons,leading,hidden,onBack,gestureEnabled})=>{const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{titleContent??title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
+  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,titleContent,buttons,leading,hidden,onBack,gestureEnabled})=>{const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;window.headerActions=buttons;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{titleContent??title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
   '../../ui/content/markdown': `export const Markdown=({text})=><p data-native-prose>{text}</p>;`,
   '../files/task-files': 'export const TaskFiles=()=>null;',
   './task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
@@ -354,6 +354,20 @@ try {
       false,
     )
   })
+  const menuGroups = await page.evaluate(() => [
+    ...new Set(
+      window.headerActions.filter((action) => action.overflow).map((action) => action.group),
+    ),
+  ])
+  assert.deepEqual(menuGroups, ['Navigate', 'Thread', 'Project', 'Tools', 'Advanced', 'Delete'])
+  const threadActions = await page.evaluate(() =>
+    window.headerActions
+      .filter((action) => action.group === 'Thread')
+      .map((action) => action.label),
+  )
+  assert.equal(threadActions[0], 'Rename thread')
+  assert.equal(threadActions[1], 'Pin thread')
+  assert.ok(threadActions.includes('Settle thread'))
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
   await page.getByRole('button', { name: 'Project information', exact: true }).click()
   await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()

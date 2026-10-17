@@ -6,6 +6,7 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,set]=useState(initial);const ref=useRef(value);ref.current=value;return [value,set,ref]}`
 const controls = `
+import {useImperativeHandle} from 'react';
 export const SidebarHeader=()=>null;export const HeaderContent=({children})=>children;
 export const Conversation=({children,...props})=><div role="log" {...props}>{children}</div>;export const ConversationContent=({children,...props})=><div {...props}>{children}</div>;export const ConversationScrollButton=()=>null;
 export const Message=({children,from})=><div data-native-role={from}>{children}</div>;export const MessageContent=({children})=><div>{children}</div>;
@@ -22,15 +23,15 @@ export const PageHeader=({title})=><h1>{title}</h1>;
 export const ContextMenu={Label:({children})=><span>{children}</span>,Item:Tooltip,Sub:Tooltip,SubTrigger:Tooltip,Portal:Tooltip,SubContent:Tooltip};
 export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;
 export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;
-export const ScrollView=View;export const Image=()=>null;
+export const ScrollView=View;export const Image=()=>null;export const useWindowDimensions=()=>({width:390,height:844,fontScale:1,scale:3});
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID})=><button data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} disabled={disabled} onClick={onPress} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</button>;
 export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent})=><div>{ListHeaderComponent}{data.length?data.map((item,i)=><div key={i}>{renderItem({item})}</div>):ListEmptyComponent}</div>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
-export const SettingsAction=Action;export const SettingsSearchField=SearchField;
+export const SettingsAction=Action;export const SettingsSearchField=SearchField;export const SettingsChoice=({label,value,items,onChange})=><label>{label}<select aria-label={label} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
 export const ScreenHeader=({title,leading,buttons=[]})=><header>{leading}<h1>{title}</h1>{buttons.map(button=><button key={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;
 export const Icon=()=>null;export const RuntimeIcon=()=>null;export const IconButton=({label,onPress})=><button onClick={onPress}>{label}</button>;
-export const Sheet=View;export const colors={};export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const Alert={alert:()=>{}};
+export function Sheet({title,children,onClose,ref}){useImperativeHandle(ref,()=>({dismiss:after=>{onClose?.();after?.()}}));return <div role="dialog" aria-label={title}>{children}</div>};export const colors={};export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const Alert={alert:()=>{}};
 `
 const fixture = `
 const base={repositoryId:'repo',agentId:'',status:'running',createdAt:'2026-10-03T12:00:00Z',draft:'',files:[],messages:[],example:false};
@@ -50,7 +51,7 @@ window.request=async(path,input)=>{window.requests.push({path,input});if(path===
 window.host={navigate:target=>window.routes.push(target)};
 window.store={request:window.request,call:window.request,callEffect:(path,input)=>Effect.promise(()=>window.request(path,input)),workspace:window.workspace,snapshot,connected:true,activeRuntimeId:'mac',activeId:'mac',runtimeRegistry:{profiles:[profile]},profiles:[profile],overviews:[window.overview],runtimes:[window.overview],profile,ready:true,refreshAll:async()=>{},refreshRuntimes:async()=>{},selectRuntimeEffect:id=>Effect.sync(()=>window.switches.push(id))};
 window.publishTasks=tasks=>{window.workspace={...window.workspace,tasks};const next={...window.store.snapshot,workspace:window.workspace};window.source={...window.source,workspace:window.workspace,snapshot:next};window.overview={...window.overview,snapshot:next};window.store={...window.store,workspace:window.workspace,snapshot:next,overviews:[window.overview],runtimes:[window.overview]};};
-window.preferences={taskSort:'newest',taskGrouping:'none',hideFinishedSubagents:true,collapsedThreadSections:[]};
+window.preferences={threadDensity:'comfortable',taskSort:'newest',taskGrouping:'none',hideFinishedSubagents:true,collapsedThreadSections:[]};
 window.preferenceListeners=new Set();window.subscribePreferences=listener=>{window.preferenceListeners.add(listener);return ()=>window.preferenceListeners.delete(listener)};
 window.updatePreferences=changes=>{window.preferences={...window.preferences,...changes};window.preferenceListeners.forEach(listener=>listener())};
 `
@@ -467,6 +468,7 @@ try {
     })
     await page.getByText('Active order', { exact: true }).waitFor()
     if (mobile) {
+      await page.getByRole('button', { name: 'Filters', exact: true }).click()
       await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
       await page.getByRole('button', { name: 'Move waiting up', exact: true }).click()
       await page.getByRole('button', { name: 'Move waiting up', exact: true }).click()

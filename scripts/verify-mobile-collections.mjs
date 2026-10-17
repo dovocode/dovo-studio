@@ -156,7 +156,8 @@ try {
     `appId: com.dovo.studio
 ---
 - tapOn:
-    id: Tab Issues
+    id: Tab More
+- tapOn: Issues
 - extendedWaitUntil:
     visible: '.*First issue.*'
     timeout: 20000
@@ -227,7 +228,8 @@ try {
 - assertVisible: '.*Second automation.*'
 - takeScreenshot: dovo-mobile-unified-automations
 - tapOn:
-    id: Tab Issues
+    id: Tab More
+- tapOn: Issues
 - assertVisible: '.*First issue.*'
 - assertVisible: '.*Second issue.*'
 - takeScreenshot: dovo-mobile-unified-issues
@@ -265,7 +267,8 @@ try {
     centerElement: true
 - tapOn: Forget computer
 - tapOn:
-    id: Tab Issues
+    id: Tab More
+- tapOn: Issues
 - assertVisible: '.*Second issue.*'
 - assertNotVisible: '.*First issue.*'
 - takeScreenshot: dovo-mobile-unified-offline

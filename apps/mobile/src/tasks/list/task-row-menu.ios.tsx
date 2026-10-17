@@ -49,11 +49,11 @@ export function TaskRowMenu({
         ]}
       >
         {!actions.onCurrentRuntime && (
-          <NativeMenuButton label="Open task" icon="chat" onPress={onOpen} />
+          <NativeMenuButton label="Open thread" icon="chat" onPress={onOpen} />
         )}
         <NativeMenuButton
           testID="Task menu details"
-          label="Task details"
+          label="Thread details"
           icon="info"
           onPress={onDetails}
         />
@@ -62,7 +62,7 @@ export function TaskRowMenu({
             <Divider />
             <NativeMenuButton
               testID="Task menu read status"
-              label={actions.unread ? 'Mark read' : 'Mark unread'}
+              label={actions.unread ? 'Mark as read' : 'Mark as unread'}
               icon={actions.unread ? 'read' : 'unread'}
               modifiers={[disabledModifier(!actions.readStateEnabled || actions.busy)]}
               onPress={actions.toggleRead}
@@ -74,11 +74,20 @@ export function TaskRowMenu({
             <Divider />
             <NativeMenuButton
               testID="Task menu pin"
-              label={task.pinned ? 'Unpin task' : 'Pin task'}
+              label={task.pinned ? 'Unpin thread' : 'Pin thread'}
               icon={task.pinned ? 'unpin' : 'pin'}
               modifiers={[disabledModifier(unavailable)]}
               onPress={actions.togglePinned}
             />
+            {!task.archivedAt && (
+              <NativeMenuButton
+                testID="Task menu settle"
+                label={task.archived ? 'Reopen thread' : 'Settle thread'}
+                icon={task.archived ? 'reopen' : 'check'}
+                modifiers={[disabledModifier(unavailable || task.status === 'running')]}
+                onPress={actions.toggleSettled}
+              />
+            )}
             {!task.archived &&
               (isSnoozed(task, Date.now()) ? (
                 <NativeMenuButton
@@ -112,21 +121,14 @@ export function TaskRowMenu({
               modifiers={[disabledModifier(unavailable || task.status === 'running')]}
               onPress={actions.toggleArchived}
             />
+            <Divider />
             <NativeMenuButton
+              role="destructive"
               label="Delete thread…"
               icon="trash"
               modifiers={[disabledModifier(unavailable || task.status === 'running')]}
               onPress={actions.deleteThread}
             />
-            {!task.archivedAt && (
-              <NativeMenuButton
-                testID="Task menu settle"
-                label={task.archived ? 'Reopen task' : 'Settle task'}
-                icon={task.archived ? 'reopen' : 'check'}
-                modifiers={[disabledModifier(unavailable || task.status === 'running')]}
-                onPress={actions.toggleSettled}
-              />
-            )}
           </>
         )}
       </Menu>

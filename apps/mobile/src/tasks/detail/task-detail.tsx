@@ -198,6 +198,7 @@ function TaskDetailContent({
           label: mode === 'reuse' ? 'New thread in this worktree' : 'Fork worktree',
           icon: mode === 'reuse' ? 'chat' : 'changes',
           overflow: true,
+          group: 'Advanced',
           disabled: !connected || worktreeThread.busy || task.status === 'running',
           onPress: () =>
             worktreeThread.act(() =>
@@ -245,6 +246,7 @@ function TaskDetailContent({
         []
       ).map((action): HeaderAction => ({
         label: `Run ${action.name}`,
+        group: 'Project',
         icon: 'terminal',
         overflow: true,
         disabled: !connected || projectAction.busy,
@@ -299,6 +301,7 @@ function TaskDetailContent({
     ? [
         {
           label: 'Review changes',
+          group: 'Navigate',
           icon: 'changes',
           overflow: true,
           disabled: !connected || task.status === 'running' || !task.files.length || review.busy,
@@ -313,6 +316,7 @@ function TaskDetailContent({
         },
         {
           label: 'Ask a side question',
+          group: 'Tools',
           icon: 'chat',
           overflow: true,
           disabled: !connected,
@@ -323,6 +327,7 @@ function TaskDetailContent({
         },
         {
           label: 'Copy conversation',
+          group: 'Thread',
           icon: 'copy',
           overflow: true,
           disabled: copyConversation.busy || (!!task.historyBefore && !connected),
@@ -370,6 +375,7 @@ function TaskDetailContent({
       ? [
           {
             label: 'Compact agent context',
+            group: 'Advanced',
             icon: 'collapse',
             overflow: true,
             disabled:
@@ -391,6 +397,7 @@ function TaskDetailContent({
     !task.workItem
       ? [
           {
+            group: 'Advanced',
             label: inWorktree ? 'Move to the project folder' : 'Move to its own worktree',
             icon: 'changes',
             overflow: true,
@@ -423,6 +430,7 @@ function TaskDetailContent({
     ? [
         {
           label: 'Copy branch name',
+          group: 'Project',
           icon: 'copy',
           overflow: true,
           onPress: () => copied(branch),
@@ -596,6 +604,7 @@ function TaskDetailContent({
               : undefined
         }
         leading={<Action secondary label="Back" onPress={pane === 'diff' ? backToChat : onBack} />}
+        collapsedMenuGroups={['Project', 'Tools', 'Advanced']}
         buttons={
           startup?.temporary
             ? [{ label: 'New thread', icon: 'add', onPress: startup.onNewThread }]
@@ -639,6 +648,7 @@ function TaskDetailContent({
                           : tab === 'devices'
                             ? 'device'
                             : tab,
+                  group: tab === 'agents' || tab === 'devices' ? 'Tools' : 'Navigate',
                   selected: pane === tab,
                   // Keep one primary action beside the menu; car mode keeps every tool inside.
                   overflow: car || tab !== 'diff',
@@ -651,15 +661,10 @@ function TaskDetailContent({
                   },
                 }))
                 .concat(
-                  projectActions,
-                  conversationActions,
-                  compactActions,
-                  branchActions,
-                  worktreeActions,
-                  moveActions,
                   [
                     {
                       label: 'Project information',
+                      group: 'Project',
                       icon: 'info',
                       overflow: true,
                       selected: projectInfo,
@@ -672,6 +677,7 @@ function TaskDetailContent({
                       ? [
                           {
                             label: 'Linked PRs',
+                            group: 'Project',
                             icon: 'pulls' as const,
                             overflow: true,
                             onPress: () => {
@@ -685,6 +691,7 @@ function TaskDetailContent({
                       ? [
                           {
                             label: 'Artifacts',
+                            group: 'Tools',
                             icon: 'artifact' as const,
                             overflow: true,
                             onPress: () => setArtifactsOpen(true),
@@ -693,6 +700,7 @@ function TaskDetailContent({
                       : []),
                     {
                       label: 'Linked projects',
+                      group: 'Project',
                       icon: 'projects',
                       overflow: true,
                       onPress: () => {
@@ -702,13 +710,23 @@ function TaskDetailContent({
                     },
                     {
                       label: 'Rename thread',
+                      group: 'Thread',
                       icon: 'edit',
                       overflow: true,
                       disabled: !connected,
                       onPress: () => setRenaming(true),
                     },
                     {
+                      label: task.pinned ? 'Unpin thread' : 'Pin thread',
+                      group: 'Thread',
+                      icon: task.pinned ? 'unpin' : 'pin',
+                      overflow: true,
+                      disabled: !lifecycle.enabled || lifecycle.busy,
+                      onPress: lifecycle.togglePinned,
+                    },
+                    {
                       label: 'Regenerate title',
+                      group: 'Advanced',
                       icon: 'refresh',
                       overflow: true,
                       disabled: !connected || newSession.busy || task.status === 'running',
@@ -737,14 +755,24 @@ function TaskDetailContent({
                         ),
                     },
                     {
-                      label: lifecycle.unread ? 'Mark read' : 'Mark unread',
-                      icon: 'unread',
+                      label: task.archived ? 'Reopen thread' : 'Settle thread',
+                      group: 'Thread',
+                      icon: 'check',
+                      overflow: true,
+                      disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
+                      onPress: lifecycle.toggleSettled,
+                    },
+                    {
+                      label: lifecycle.unread ? 'Mark as read' : 'Mark as unread',
+                      group: 'Thread',
+                      icon: lifecycle.unread ? 'read' : 'unread',
                       overflow: true,
                       disabled: !lifecycle.readStateEnabled || lifecycle.busy,
                       onPress: lifecycle.toggleRead,
                     },
                     {
-                      label: task.snoozedUntil ? 'Unsnooze' : 'Snooze',
+                      label: task.snoozedUntil ? 'Unsnooze thread' : 'Snooze thread',
+                      group: 'Thread',
                       icon: 'snooze',
                       overflow: true,
                       disabled: !lifecycle.enabled || lifecycle.busy || !!task.archivedAt,
@@ -759,27 +787,15 @@ function TaskDetailContent({
                     },
                     {
                       label: 'Auto-settle & auto-archive',
+                      group: 'Advanced',
                       icon: 'archive',
                       overflow: true,
                       disabled: !connected,
                       onPress: () => setThreadBehavior(true),
                     },
                     {
-                      label: task.pinned ? 'Unpin task' : 'Pin task',
-                      icon: task.pinned ? 'unpin' : 'pin',
-                      overflow: true,
-                      disabled: !lifecycle.enabled || lifecycle.busy,
-                      onPress: lifecycle.togglePinned,
-                    },
-                    {
-                      label: task.archived ? 'Reopen task' : 'Settle task',
-                      icon: 'check',
-                      overflow: true,
-                      disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
-                      onPress: lifecycle.toggleSettled,
-                    },
-                    {
                       label: task.archivedAt ? 'Restore thread' : 'Archive thread',
+                      group: 'Thread',
                       icon: 'archive',
                       overflow: true,
                       disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
@@ -787,6 +803,8 @@ function TaskDetailContent({
                     },
                     {
                       label: 'Delete thread…',
+                      group: 'Delete',
+                      destructive: true,
                       icon: 'trash',
                       overflow: true,
                       disabled: !lifecycle.enabled || lifecycle.busy || task.status === 'running',
@@ -795,7 +813,8 @@ function TaskDetailContent({
                     ...(task.sessionId
                       ? [
                           {
-                            label: 'New session',
+                            label: 'Start fresh agent session',
+                            group: 'Advanced',
                             icon: 'newChat' as const,
                             overflow: true,
                             disabled: !connected || newSession.busy || task.status === 'running',
@@ -808,19 +827,31 @@ function TaskDetailContent({
                       : []),
                     {
                       label: 'Edit project instructions',
+                      group: 'Advanced',
                       icon: 'settings',
                       overflow: true,
                       onPress: () => setEditingInstructions(true),
                     },
                     {
                       label: 'Project approval rules',
+                      group: 'Advanced',
                       icon: 'settings',
                       overflow: true,
                       disabled: !task.repositoryId,
                       onPress: () => setEditingApprovalRules(true),
                     },
                   ] satisfies HeaderAction[],
+                  projectActions,
+                  conversationActions,
+                  compactActions,
+                  branchActions,
+                  worktreeActions,
+                  moveActions,
                 )
+                .sort((a, b) => {
+                  const order = ['Navigate', 'Thread', 'Project', 'Tools', 'Advanced', 'Delete']
+                  return order.indexOf(a.group ?? '') - order.indexOf(b.group ?? '')
+                })
         }
       />
       {projectInfo && !native && !car && (

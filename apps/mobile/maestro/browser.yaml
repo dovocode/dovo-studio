@@ -133,7 +133,8 @@
 - tapOn: Close
 - tapOn: Back
 - tapOn:
-    id: Tab Issues
+    id: Tab More
+- tapOn: Issues
 - extendedWaitUntil:
     visible: '.*Verify compact mobile navigation.*'
     timeout: 15000

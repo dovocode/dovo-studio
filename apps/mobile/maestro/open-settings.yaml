@@ -1,7 +1,8 @@
 appId: com.dovo.studio
 ---
 - tapOn:
-    id: Tab Settings
+    id: Tab More
+- tapOn: Settings
 - runFlow:
     when:
       visible:
