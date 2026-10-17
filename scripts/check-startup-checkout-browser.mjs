@@ -58,12 +58,12 @@ try {
     await page.getByRole('button', { name: 'Task project', exact: true }).click()
     await page.getByRole('button', { name, exact: true }).click()
   }
-  await chooseFolder('AUTO project')
-  const autoCheckout = page.getByRole('button', { name: 'AUTO checkout', exact: true })
+  await chooseFolder('Scope mode')
+  const autoCheckout = page.getByRole('button', { name: 'Scope checkout', exact: true })
   await autoCheckout.click()
   await page.getByRole('option', { name: 'New worktrees', exact: true }).click()
   assert.match(await autoCheckout.innerText(), /New worktrees/)
-  // AUTO and checkout selection remain local until the draft is typed.
+  // Scope and checkout selection remain local until the draft is typed.
   assert.equal(await page.evaluate(() => window.saved.length), 0)
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Update this project')
   await page.waitForFunction(() => window.saved[0]?.autoProjectExecution === 'worktree')
@@ -147,18 +147,18 @@ try {
   assert.equal(await page.evaluate(() => window.fleetRefreshes), 0)
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  await chooseFolder('AUTO project')
+  await chooseFolder('Scope mode')
   await autoCheckout.click()
   await page.getByRole('option', { name: 'New worktrees', exact: true }).click()
   await page.getByRole('button', { name: 'Task server', exact: true }).click()
   await page.getByRole('button', { name: 'Remote machine', exact: true }).click()
   assert.match(
     await page.getByRole('button', { name: 'Task project', exact: true }).innerText(),
-    /AUTO/,
+    /Scope/,
   )
   assert.match(await autoCheckout.innerText(), /New worktrees/)
   assert.equal(await page.evaluate(() => window.saved.length), 0)
-  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Remote AUTO task')
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Remote Scope task')
   await page.waitForFunction(() => window.saved[0]?.autoProjectExecution === 'worktree')
   assert.equal(await page.evaluate(() => window.saved[0].repositoryId), 'remote-chat')
   assert.deepEqual(errors, [])

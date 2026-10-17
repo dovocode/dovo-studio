@@ -79,7 +79,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
       <header className="border-b p-4">
         <h2 className="text-sm font-semibold">
           {selection
-            ? 'Model for AUTO & SMART selection (experimental)'
+            ? 'Model for Scope, Tune & Maestro selection (experimental)'
             : 'Model for titles & dictation'}
         </h2>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -131,7 +131,9 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
               <FormField layout="settings" label="Provider">
                 <ChoicePicker
                   aria-label={
-                    selection ? 'AUTO & SMART selector harness' : 'Titles & dictation provider'
+                    selection
+                      ? 'Scope, Tune & Maestro selector harness'
+                      : 'Titles & dictation provider'
                   }
                   value={
                     selection && settings.inheritTitleModel

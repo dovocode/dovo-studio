@@ -85,7 +85,10 @@ try {
     window.showSelection()
   })
   await page.getByText('Uses the title harness and model.', { exact: false }).waitFor()
-  const provider = page.getByRole('button', { name: 'AUTO & SMART selector harness', exact: true })
+  const provider = page.getByRole('button', {
+    name: 'Scope, Tune & Maestro selector harness',
+    exact: true,
+  })
   await provider.click()
   await page.getByRole('option', { name: 'Codex', exact: true }).click()
   await page.getByRole('button', { name: 'Model', exact: true }).click()

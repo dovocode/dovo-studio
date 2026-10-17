@@ -63,6 +63,7 @@ export function ChatThread({
 }: {
   task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'> & {
     archived?: Task['archived']
+    autoProjectFallback?: Task['autoProjectFallback']
     historyBefore: Task['historyBefore']
     historyRevision: Task['historyRevision']
   }
@@ -479,6 +480,11 @@ export function ChatThread({
                   : 'mx-auto w-full max-w-[var(--chat-max)] gap-5 px-4 py-4 md:pl-16 md:pr-5'
               }
             >
+              {liveTask.autoProjectFallback && (
+                <p role="note" className="text-xs text-muted-foreground">
+                  Scope found no matching project; continued in General.
+                </p>
+              )}
               {history.busy && (
                 <p role="status" className="text-xs text-muted-foreground">
                   Loading earlier messages…

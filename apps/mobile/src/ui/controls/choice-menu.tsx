@@ -24,6 +24,7 @@ export function ChoiceMenu(props: ChoiceProps) {
   const { colors, mode: appearanceMode } = useTheme()
 
   const [width, setWidth] = useApplicationState<number | undefined>(undefined)
+  const selectedIcon = props.items.find((item) => item.id === props.value)?.icon
   const selected =
     props.items.find((item) => item.id === props.value)?.name ?? props.selectedLabel ?? 'Choose…'
   return (
@@ -70,6 +71,13 @@ export function ChoiceMenu(props: ChoiceProps) {
                 contentShape(shapes.rectangle(), ['interaction', 'accessibility']),
               ]}
             >
+              {selectedIcon && (
+                <NativeIcon
+                  name={selectedIcon}
+                  size={18}
+                  color={props.compact ? colors.accent : colors.text}
+                />
+              )}
               <Text
                 modifiers={[
                   font({
@@ -91,14 +99,19 @@ export function ChoiceMenu(props: ChoiceProps) {
             <Button
               key={item.id}
               testID={`Choose ${item.name}`}
-              label={item.id === props.value ? undefined : item.name}
+              label={item.icon || item.id === props.value ? undefined : item.name}
               modifiers={[
                 disabled((props.disabled ?? false) || (item.disabled ?? false)),
                 accessibilityAddTraits(item.id === props.value ? ['isSelected'] : []),
               ]}
               onPress={() => props.onChange(item.id)}
             >
-              {item.id === props.value ? (
+              {item.icon ? (
+                <HStack spacing={8}>
+                  <NativeIconLabel title={item.name} icon={item.icon} />
+                  {item.id === props.value && <NativeIcon name="check" size={16} />}
+                </HStack>
+              ) : item.id === props.value ? (
                 <NativeIconLabel title={item.name} icon="check" />
               ) : undefined}
             </Button>

@@ -185,11 +185,23 @@ try {
     await page.addScriptTag({ content: await bundle(mobile) })
     const header = page.getByRole('button', { name: /Worked for/ })
     await header.waitFor()
+    if (mobile) assert.equal(await page.evaluate(() => window.recentLayouts), 1)
+    const fallback = page.getByText('Scope found no matching project; continued in General.', {
+      exact: true,
+    })
+    assert.equal(await fallback.count(), 0)
+    await page.evaluate(() => window.setTask((task) => ({ ...task, autoProjectFallback: true })))
+    await fallback.waitFor()
+    await page.evaluate(() => window.setTask((task) => ({ ...task })))
+    assert.equal(await fallback.count(), 1)
+    await page.evaluate(() =>
+      window.setTask((task) => ({ ...task, autoProjectFallback: undefined })),
+    )
+    await fallback.waitFor({ state: 'detached' })
     assert.equal(
       await page.evaluate(() => window.renderedProse[0]),
       mobile ? 'Final answer.' : 'Original request',
     )
-    if (mobile) assert.equal(await page.evaluate(() => window.recentLayouts), 1)
     assert.equal(await header.count(), 1)
     assert.equal(
       await page.getByText('1 test command · 3 commands used', { exact: true }).count(),

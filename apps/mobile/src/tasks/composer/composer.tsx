@@ -437,7 +437,7 @@ export function Composer({
             )}
             {task.autoProject && snapshot?.autoProjectSelectionEnabled === true && (
               <View
-                accessibilityLabel="AUTO checkout"
+                accessibilityLabel="Scope checkout"
                 style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}
               >
                 {(
@@ -788,6 +788,13 @@ export function Composer({
                       pressed || busy || task.status === 'running' || task.archived ? 0.5 : 1,
                   })}
                 >
+                  {(task.modelSelection === 'auto' || task.modelSelection === 'smart') && (
+                    <Icon
+                      name={task.modelSelection === 'auto' ? 'tune' : 'maestro'}
+                      size={15}
+                      color={colors.muted}
+                    />
+                  )}
                   <Text
                     numberOfLines={1}
                     style={[

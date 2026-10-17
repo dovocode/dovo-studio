@@ -172,34 +172,39 @@ export function RuntimePreferences() {
       )}
       {value && (
         <>
-          <Section title="Model selection (experimental)">
+          <Section title="Model modes (experimental)">
             <SettingsSwitchRow
               first
-              label="Automatic model selection (experimental)"
+              label="Tune & Maestro modes (experimental)"
               value={value.enableSmartModelSelection}
               disabled={disabled || snapshot?.smartModelSelectionEnabled === undefined}
               onValueChange={(enableSmartModelSelection) => save({ enableSmartModelSelection })}
             />
+            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+              Tune chooses a model within the default agent. Maestro chooses the agent and model
+              together. Both choose reasoning once before the first turn. Inherit keeps project
+              defaults.
+            </Text>
           </Section>
-          <Section title="Project selection (experimental)">
+          <Section title="Project mode (experimental)">
             <SettingsSwitchRow
               first
-              label="AUTO project selection (experimental)"
+              label="Scope mode (experimental)"
               value={value.enableAutoProjectSelection}
               disabled={disabled || snapshot?.autoProjectSelectionEnabled === undefined}
               onValueChange={(enableAutoProjectSelection) => save({ enableAutoProjectSelection })}
             />
             {value.enableAutoProjectSelection && (
               <Choice
-                label="AUTO project mode model"
+                label="Scope model mode"
                 value={value.autoProjectModelSelection}
                 disabled={disabled}
                 items={[
                   { id: 'inherit', name: 'Inherit' },
                   ...(value.enableSmartModelSelection
                     ? [
-                        { id: 'auto', name: 'AUTO' },
-                        { id: 'smart', name: 'SMART' },
+                        { id: 'auto', name: 'Tune', icon: 'tune' as const },
+                        { id: 'smart', name: 'Maestro', icon: 'maestro' as const },
                       ]
                     : []),
                 ]}
@@ -210,8 +215,8 @@ export function RuntimePreferences() {
             )}
 
             <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-              Use the selector utility model to select primary and linked projects from the first
-              prompt on this computer.
+              Find primary and linked projects from the first message on this computer. If no
+              project matches, continue in General.
             </Text>
           </Section>
           <Section title="Supervised mode">

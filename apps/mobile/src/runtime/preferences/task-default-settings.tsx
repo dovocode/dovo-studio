@@ -327,7 +327,7 @@ function TaskDefaultSettingsForm({
                 { id: '', name: 'Use inherited setting' },
                 { id: 'fixed', name: 'Configured harness and model' },
                 ...(snapshot?.smartModelSelectionEnabled === true
-                  ? [{ id: 'smart', name: 'SMART' }]
+                  ? [{ id: 'smart', name: 'Maestro', icon: 'maestro' as const }]
                   : []),
               ]}
               onChange={(value) =>

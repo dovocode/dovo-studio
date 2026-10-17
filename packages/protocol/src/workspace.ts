@@ -765,11 +765,13 @@ export const taskSchema = mutableStruct({
   harnessCustomized: Schema.optional(Schema.Boolean),
   /** Pending first-turn model selection; removed after resolution. */
   modelSelection: Schema.optional(taskModelSelectionSchema),
-  /** Difficulty preference for pending AUTO/SMART selection, independent of task defaults. */
+  /** Difficulty preference for pending Tune/Maestro selection, independent of task defaults. */
   modelSelectionDifficulty: Schema.optional(taskModelSelectionDifficultySchema),
   /** Resolve projects on the selected runtime before the first prompt. */
   autoProject: Schema.optional(Schema.Boolean),
   autoProjectExecution: Schema.optional(executionSchema),
+  /** Runtime-owned notice: Scope resolved this thread to General without a project match. */
+  autoProjectFallback: Schema.optional(Schema.Boolean),
   queue: Schema.optional(mutableArray(queuedMessageSchema)),
   queuePaused: Schema.optional(Schema.Boolean),
   restartRecovery: Schema.optional(

@@ -181,7 +181,7 @@ export function taskHarnessLabel(
   harnessName?: string,
 ) {
   if (task.modelSelection)
-    return { inherit: 'Inherit', auto: 'AUTO', smart: 'SMART' }[task.modelSelection]
+    return { inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[task.modelSelection]
   if (!agent) return 'Choose agent'
   const name = !task.agentId
     ? (acpHarnessName(agent, installations) ?? harnessNames[agent.provider])

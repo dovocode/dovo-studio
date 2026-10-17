@@ -2,7 +2,13 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { decode, defaultTaskHarness, runtimeSetupSchema, snapshotSchema } from '@dovo/protocol'
+import {
+  decode,
+  defaultTaskHarness,
+  runtimeSetupSchema,
+  snapshotSchema,
+  taskSchema,
+} from '@dovo/protocol'
 import { startRuntime } from '../../index'
 import { RuntimeDefaults } from '../../storage/runtime-defaults'
 import type { AgentAdapter } from '../../agents/execution/types'
@@ -264,7 +270,7 @@ it('rejects stale runtime default saves without overwriting independent title se
   expect(runtime.services.titles.read().model).toBe(selection.titles.model)
 })
 
-it('keeps AUTO selection off by default and publishes the per-computer opt-in', async () => {
+it('keeps Scope selection off by default and publishes the per-computer opt-in', async () => {
   const { runtime, options } = await setup()
   const s = runtime.services
   s.titles.save({ harness: { provider: 'codex', endpoint: '' }, model: 'title-model' })
@@ -273,7 +279,7 @@ it('keeps AUTO selection off by default and publishes the per-computer opt-in', 
     repositories: [{ id: 'project', kind: 'folder', name: 'Project', path: tmpdir(), branch: '' }],
   }))
   const task = s.tasks.create({
-    title: 'AUTO draft',
+    title: 'Scope draft',
     repositoryId: 'project',
     agentId: '',
     objective: '',
@@ -324,7 +330,80 @@ it('keeps AUTO selection off by default and publishes the per-computer opt-in', 
   expect(s.store.task(task.id).repositoryId).toBe('project')
 })
 
-it('resolves a SMART default before accepting the first message and keeps the concrete choice', async () => {
+it('lets a paired device send the first message after Scope falls back to General', async () => {
+  const { runtime } = await setup()
+  const s = runtime.services
+  const phoneToken = 'scope-paired-phone-token-at-least-thirty-two-characters'
+  s.devices.add('Phone', phoneToken)
+  s.preferences.save({ enableAutoProjectSelection: true })
+  s.titles.save({ harness: { provider: 'codex', endpoint: '' }, model: 'title-model' })
+  const scratch = await s.scratch.ensure()
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      scratch,
+      { id: 'project', kind: 'folder', name: 'Project', path: tmpdir(), branch: '' },
+    ],
+  }))
+  const task = s.tasks.create({
+    title: 'Scope draft',
+    repositoryId: scratch.id,
+    agentId: '',
+    objective: '',
+  })
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    autoProject: true,
+    autoProjectExecution: 'worktree',
+  }))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (input) =>
+      input.onText(
+        input.agent.model === 'title-model'
+          ? JSON.stringify({
+              status: 'ambiguous',
+              repositoryId: null,
+              links: [],
+              reason: 'No project matches',
+            })
+          : 'Ready to help in General',
+      ),
+  })
+  const post = (path: string, body: unknown) =>
+    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${phoneToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  const resolved = await post('/api/tasks/projects/select', {
+    id: task.id,
+    text: 'Plan a new service',
+  })
+  expect(resolved.status).toBe(200)
+  const general = decode(taskSchema, await resolved.json())
+  expect(general).toMatchObject({
+    repositoryId: scratch.id,
+    autoProjectFallback: true,
+    linkedCheckouts: [],
+  })
+  expect(general.autoProject).toBeUndefined()
+  expect(general.autoProjectExecution).toBeUndefined()
+  expect(
+    (
+      await post('/api/tasks/message', {
+        id: task.id,
+        text: 'Plan a new service',
+        messageId: 'first',
+      })
+    ).status,
+  ).toBe(200)
+  await vi.waitFor(() => expect(s.store.task(task.id).turns?.at(-1)?.status).toBe('completed'))
+  expect(s.store.task(task.id)).toMatchObject({ repositoryId: scratch.id, linkedCheckouts: [] })
+  expect(s.store.task(task.id).checkoutBranch).toBeUndefined()
+})
+
+it('resolves a Maestro default before accepting the first message and keeps the concrete choice', async () => {
   const { runtime, options } = await setup()
   const s = runtime.services
   s.preferences.save({ ...s.preferences.get(), enableSmartModelSelection: true })
@@ -346,7 +425,7 @@ it('resolves a SMART default before accepting the first message and keeps the co
     ],
   }))
   const task = s.tasks.create({
-    title: 'SMART draft',
+    title: 'Maestro draft',
     repositoryId: 'project',
     agentId: '',
     objective: '',

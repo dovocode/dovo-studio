@@ -1330,6 +1330,7 @@ export class WorkspaceStore {
           record.pullStatus !== undefined ||
           record.pullStatuses !== undefined ||
           record.nativeTodos !== undefined ||
+          record.autoProjectFallback !== undefined ||
           record.contextUsage !== undefined ||
           record.sideChats !== undefined ||
           record.forkedFrom !== undefined ||
@@ -1537,6 +1538,8 @@ export class WorkspaceStore {
     if (Object.keys(recovered).length)
       this.preserveEdit({ ...patch, changes: recovered }, recoveryHost)
     patch = { ...patch, changes: applied }
+    if (patch.collection === 'tasks' && (patch.changes.repositoryId || patch.changes.autoProject))
+      current.autoProjectFallback = undefined
     if (
       patch.collection === 'tasks' &&
       changed &&

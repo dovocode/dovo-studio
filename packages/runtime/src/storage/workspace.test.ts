@@ -1334,7 +1334,7 @@ it('preserves advanced controls through storage and rejects clearing or widening
   }
 })
 
-it('persists AUTO preferences on drafts and locks them once input is submitted', () => {
+it('persists Scope preferences on drafts and locks them once input is submitted', () => {
   const db = openDatabase(':memory:')
   try {
     const store = new WorkspaceStore(db)
@@ -1366,6 +1366,26 @@ it('persists AUTO preferences on drafts and locks them once input is submitted',
     expect(new WorkspaceStore(db).task('auto')).toMatchObject({
       autoProject: true,
       autoProjectExecution: 'worktree',
+    })
+    store.updateTask('auto', (task) => ({ ...task, autoProjectFallback: true }))
+    expect(new WorkspaceStore(db).task('auto').autoProjectFallback).toBe(true)
+    expect(() =>
+      store.patch({
+        collection: 'tasks',
+        id: 'auto',
+        changes: { autoProjectFallback: { before: true, after: false } },
+      }),
+    ).toThrow('Cannot edit autoProjectFallback')
+    store.patch({
+      collection: 'tasks',
+      id: 'auto',
+      changes: { autoProject: { before: true, after: null } },
+    })
+    expect(store.task('auto').autoProjectFallback).toBeUndefined()
+    store.patch({
+      collection: 'tasks',
+      id: 'auto',
+      changes: { autoProject: { before: null, after: true } },
     })
     store.updateTask('auto', (task) => ({ ...task, checkoutLocked: true }))
     expect(() =>

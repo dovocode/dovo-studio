@@ -79,7 +79,7 @@ export function settingValueDescription(
     }
   }
   if (field.key === 'setupCommand' && value === '') return 'No setup command'
-  if (field.key === 'modelSelection') return value === 'smart' ? 'SMART' : 'Use selected agent'
+  if (field.key === 'modelSelection') return value === 'smart' ? 'Maestro' : 'Use selected agent'
   if (field.key === 'defaultServerId' && typeof value === 'string' && computers.length)
     return computers.find((entry) => entry.id === value)?.name ?? 'Unavailable computer'
   if (field.key === 'permission' && value === 'full-access') return 'Full access'

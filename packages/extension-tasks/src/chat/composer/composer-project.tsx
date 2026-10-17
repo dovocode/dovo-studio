@@ -23,7 +23,7 @@ import {
   LoaderCircle,
   Plus,
   MessageCircle,
-  WandSparkles,
+  ScanSearch,
 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { taskSources, type TaskSource } from '../../list/task-collection'
@@ -247,7 +247,7 @@ export function ComposerProject({
             className="h-6 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
           >
             {task.autoProject ? (
-              <WandSparkles className="size-3.5" />
+              <ScanSearch className="size-3.5" />
             ) : repository?.kind === 'scratch' ? (
               <MessageCircle className="size-3.5" />
             ) : (
@@ -256,8 +256,8 @@ export function ComposerProject({
             <span className="max-w-32 truncate">
               {task.autoProject
                 ? autoAvailable
-                  ? 'AUTO'
-                  : 'AUTO (disabled)'
+                  ? 'Scope'
+                  : 'Scope (disabled)'
                 : repository?.kind === 'scratch'
                   ? 'General'
                   : (repository?.name ?? 'Choose project')}
@@ -327,7 +327,7 @@ export function ComposerProject({
                 current?.workspace.repositories.some((repo) => repo.kind === 'scratch') && (
                   <button
                     type="button"
-                    aria-label="AUTO project"
+                    aria-label="Scope mode"
                     aria-pressed={!!task.autoProject}
                     disabled={locked}
                     className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent"
@@ -351,8 +351,8 @@ export function ComposerProject({
                       setOpen(false)
                     }}
                   >
-                    <WandSparkles className="size-4" />
-                    <span className="flex-1">AUTO</span>
+                    <ScanSearch className="size-4" />
+                    <span className="flex-1">Scope</span>
                     {task.autoProject && <Check className="size-4" />}
                   </button>
                 )}

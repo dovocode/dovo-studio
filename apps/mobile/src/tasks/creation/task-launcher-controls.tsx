@@ -57,8 +57,8 @@ export function TaskLauncherControls({
             { id: 'inherit', name: 'Inherit' },
             ...(snapshot.smartModelSelectionEnabled === true
               ? [
-                  { id: 'auto', name: 'AUTO' },
-                  { id: 'smart', name: 'SMART' },
+                  { id: 'auto', name: 'Tune', icon: 'tune' as const },
+                  { id: 'smart', name: 'Maestro', icon: 'maestro' as const },
                 ]
               : []),
           ]}

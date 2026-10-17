@@ -29,6 +29,12 @@ it('creates a draft-only patch without serializing unchanged message history', (
     { collection: 'tasks', id: 't', changes: { draft: { before: '', after: 'Hello' } } },
   ])
   expect(workspacePatches(before, before)).toEqual([])
+  const resolved = updateTask(after, 't', (current) => ({
+    ...current,
+    autoProjectFallback: true,
+  }))
+  expect(workspacePatches(before, resolved)).toEqual(workspacePatches(before, after))
+  expect(workspacePatches(resolved, after)).toEqual([])
 })
 
 it('ignores structurally equal replacements but detects changed message history', () => {

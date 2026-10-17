@@ -52,7 +52,7 @@ export function changeTaskModelSelection<T extends Task | TaskSummary>(
   runtime: RuntimeDefaults | undefined,
 ): T {
   if (!canChangeTaskCheckout(task) || task.delegation)
-    throw new Error('Choose an automatic model mode before sending input.')
+    throw new Error('Choose Inherit, Tune or Maestro before sending input.')
   return {
     ...task,
     modelSelection,
@@ -63,7 +63,7 @@ export function changeTaskModelSelection<T extends Task | TaskSummary>(
   }
 }
 
-/** AUTO projects have a separate model-mode default from ordinary task defaults. */
+/** Scope mode has a separate model-mode default from ordinary task defaults. */
 export function changeTaskAutoProject<T extends Task | TaskSummary>(
   task: T,
   source: Repository | undefined,
@@ -84,7 +84,7 @@ export function changeTaskAutoProject<T extends Task | TaskSummary>(
   }
 }
 
-/** New unscoped threads use AUTO only when this computer has enabled the experiment. */
+/** New unscoped threads use Scope only when this computer has enabled the experiment. */
 export function defaultTaskProjectSelection(
   snapshot:
     | Pick<RuntimeSnapshot, 'autoProjectSelectionEnabled' | 'autoProjectModelSelection'>

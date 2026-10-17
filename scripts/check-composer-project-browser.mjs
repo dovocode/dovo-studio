@@ -205,13 +205,21 @@ try {
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
 
   await trigger.click()
-  assert.equal(await page.getByRole('button', { name: 'AUTO project', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Scope mode', exact: true }).count(), 0)
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.configure({ autoEnabled: true }))
-  // AUTO is local to the chosen machine and manual General exits the mode.
+  // Scope is local to the chosen machine and manual General exits the mode.
   await trigger.click()
-  await page.getByRole('button', { name: 'AUTO project', exact: true }).click()
-  assert.match(await trigger.textContent(), /AUTO/)
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Scope mode', exact: true })
+      .locator('svg.lucide-scan-search')
+      .count(),
+    1,
+  )
+  await page.getByRole('button', { name: 'Scope mode', exact: true }).click()
+  assert.equal(await trigger.locator('svg.lucide-scan-search').count(), 1)
+  assert.match(await trigger.textContent(), /Scope/)
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].autoProject), true)
   assert.equal(await page.evaluate(() => window.active), 'local')
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
@@ -219,10 +227,10 @@ try {
   assert.equal(await serverPanel.getByRole('button').count(), 4)
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.configure({ autoEnabled: false }))
-  await trigger.filter({ hasText: 'AUTO (disabled)' }).waitFor()
-  assert.match(await trigger.textContent(), /AUTO \(disabled\)/)
+  await trigger.filter({ hasText: 'Scope (disabled)' }).waitFor()
+  assert.match(await trigger.textContent(), /Scope \(disabled\)/)
   await trigger.click()
-  assert.equal(await page.getByRole('button', { name: 'AUTO project', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Scope mode', exact: true }).count(), 0)
   await page.getByRole('button', { name: 'General', exact: true }).click()
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].autoProject), undefined)
   assert.match(await trigger.textContent(), /General/)

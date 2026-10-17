@@ -554,7 +554,13 @@ it('selects primary and linked projects with the title model before creating any
   }
 })
 it.each([
-  { status: 'ambiguous', repositoryId: null, links: [], reason: 'Which app?' },
+  { status: 'ambiguous', repositoryId: 'web', links: [], reason: 'Which app?' },
+  {
+    status: 'ambiguous',
+    repositoryId: null,
+    links: [{ repositoryId: 'api', access: 'edit' }],
+    reason: 'Which app?',
+  },
   { status: 'selected', repositoryId: 'unknown', links: [], reason: '' },
   {
     status: 'selected',
@@ -578,18 +584,88 @@ it.each([
     reason: '',
   },
   { nonsense: true },
-])('preserves AUTO drafts when the selection is ambiguous or invalid: %j', async (selection) => {
+  'not JSON',
+])('preserves Scope drafts when the selection is ambiguous or invalid: %j', async (selection) => {
   const s = autoFixture()
   vi.spyOn(s.registry, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
-    run: async (run) => run.onText(JSON.stringify(selection)),
+    run: async (run) =>
+      run.onText(typeof selection === 'string' ? selection : JSON.stringify(selection)),
   })
   try {
     const before = s.store.task('auto')
     await expect(
       runClientEffect(s.titles.selectProjectsEffect({ id: 'auto', text: 'Update the app' })),
-    ).rejects.toThrow(/AUTO/)
+    ).rejects.toThrow(/Scope/)
     expect(s.store.task('auto')).toEqual(before)
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+it.each(['selected', 'ambiguous'])(
+  'falls back to General when Scope reports %s with no discovered project',
+  async (status) => {
+    const s = autoFixture()
+    s.store.updateTask('auto', (task) => ({
+      ...task,
+      autoProjectExecution: 'worktree',
+      linkedCheckouts: [
+        { id: 'old-link', repositoryId: 'web', execution: 'worktree', access: 'edit' },
+      ],
+      modelSelection: 'smart',
+      harnessCustomized: true,
+    }))
+    vi.spyOn(s.registry, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        expect(run.agent.instructions).toContain('continue in General whenever no project')
+        run.onText(
+          JSON.stringify({ status, repositoryId: null, links: [], reason: 'No matching project' }),
+        )
+      },
+    })
+    try {
+      const result = await runClientEffect(
+        s.titles.selectProjectsEffect({ id: 'auto', text: 'Help plan a new service' }),
+      )
+      expect(result).toMatchObject({
+        repositoryId: 'scratch',
+        autoProjectFallback: true,
+        autoProject: undefined,
+        autoProjectExecution: undefined,
+        linkedCheckouts: [],
+        modelSelection: 'smart',
+        messages: [],
+      })
+      expect(result.existingWorktreePath).toBeUndefined()
+      expect(result.checkoutBranch).toBeUndefined()
+      expect(result.linkedCheckoutSetup).toBeUndefined()
+    } finally {
+      await s.titles.dispose()
+      await s.registry.dispose()
+      s.db.close()
+    }
+  },
+)
+it('continues in General without calling a utility model when there are no discoverable projects', async () => {
+  const s = autoFixture()
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.filter((repository) => repository.kind === 'scratch'),
+  }))
+  const get = vi.spyOn(s.registry, 'get')
+  try {
+    const result = await runClientEffect(
+      s.titles.selectProjectsEffect({ id: 'auto', text: 'Help plan a new service' }),
+    )
+    expect(result).toMatchObject({
+      repositoryId: 'scratch',
+      autoProject: undefined,
+      linkedCheckouts: [],
+    })
+    expect(get).not.toHaveBeenCalled()
   } finally {
     await s.titles.dispose()
     await s.registry.dispose()
@@ -631,7 +707,7 @@ it('keeps general conversations projectless and refuses a stale selection', asyn
 })
 
 it.each(['main', 'worktree'] as const)(
-  'applies AUTO %s checkout choices to Git projects while folders stay local',
+  'applies Scope %s checkout choices to Git projects while folders stay local',
   async (execution) => {
     const s = autoFixture()
     s.store.update((w) => ({
@@ -678,7 +754,7 @@ it.each(['main', 'worktree'] as const)(
   },
 )
 
-it('rejects experimental AUTO while disabled, including disabling during selection', async () => {
+it('rejects experimental Scope while disabled, including disabling during selection', async () => {
   const s = autoFixture()
   const preferences = new RuntimePreferences(s.db)
   preferences.save({ enableAutoProjectSelection: false })
@@ -742,7 +818,7 @@ it('requires an explicit title harness/model and inherits it for selection unles
 })
 
 it.each(['inherit', 'auto', 'smart'] as const)(
-  'AUTO projects use their separate %s model default instead of the ordinary SMART task default',
+  'Scope projects use their separate %s model default instead of the ordinary Maestro task default',
   async (mode) => {
     const s = autoFixture()
     const preferences = new RuntimePreferences(s.db)

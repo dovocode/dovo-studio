@@ -113,7 +113,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
   return (
     <View style={styles.card}>
       <Text style={[styles.title, { fontWeight: '600' }]}>
-        {selection ? 'AUTO & SMART selector (experimental)' : 'Titles & dictation'}
+        {selection ? 'Scope, Tune & Maestro selector (experimental)' : 'Titles & dictation'}
       </Text>
       <Text style={styles.muted}>
         {selection
@@ -121,7 +121,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
           : 'Choose an explicit harness and model for task titles and dictation cleanup.'}
       </Text>
       <Choice
-        label={selection ? 'AUTO & SMART selector harness' : 'Title harness'}
+        label={selection ? 'Scope, Tune & Maestro selector harness' : 'Title harness'}
         value={
           selection && settings.inheritTitleModel
             ? 'title'

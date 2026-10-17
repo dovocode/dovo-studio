@@ -219,24 +219,45 @@ try {
     await page.evaluate(() => window.setExperimental(false))
     await page.getByRole('button', { name: 'Choose agent and model' }).click()
     await page.getByRole('button', { name: 'Inherit', exact: true }).waitFor()
-    assert.equal(await page.getByRole('button', { name: 'AUTO', exact: true }).count(), 0)
-    assert.equal(await page.getByRole('button', { name: 'SMART', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Tune', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Maestro', exact: true }).count(), 0)
     await page.getByRole('button', { name: 'Inherit', exact: true }).click()
     await page
       .getByRole('button', { name: 'Choose agent and model' })
       .filter({ hasText: 'Inherit' })
       .waitFor()
     await page.evaluate(() => window.setExperimental(true))
-    for (const mode of ['Inherit', 'AUTO', 'SMART']) {
+    for (const mode of ['Inherit', 'Tune', 'Maestro']) {
       await page.getByRole('button', { name: 'Choose agent and model' }).click()
-      await page.getByRole('button', { name: mode, exact: true }).click()
+      const icon = { Inherit: 'layers', Tune: 'sliders-horizontal', Maestro: 'wand-sparkles' }[mode]
+      const option = page.getByRole('button', { name: mode, exact: true })
+      assert.equal(await option.locator('svg.lucide-' + icon).count(), 1)
+      if (mode === 'Maestro' && !fixture.launcher && fixture.selectBeforeTyping)
+        await page.screenshot({ path: '/tmp/dovo-mode-picker-icons.png' })
+      await option.click()
+      assert.equal(
+        await page
+          .getByRole('button', { name: 'Choose agent and model' })
+          .locator('svg.lucide-' + icon)
+          .count(),
+        1,
+      )
       await page
         .getByRole('button', { name: 'Choose agent and model' })
         .filter({ hasText: mode })
         .waitFor()
-      if (mode === 'AUTO' || mode === 'SMART') {
+      await page.getByRole('button', { name: 'Choose agent and model' }).click()
+      const selectedMode = page.getByRole('button', { name: mode, exact: true })
+      assert.equal(await selectedMode.getAttribute('aria-pressed'), 'true')
+      assert.notEqual(
+        await selectedMode.evaluate((element) => getComputedStyle(element).backgroundColor),
+        'rgba(0, 0, 0, 0)',
+      )
+      assert.match(await selectedMode.getAttribute('class'), /ring-primary/)
+      await page.keyboard.press('Escape')
+      if (mode === 'Tune' || mode === 'Maestro') {
         const difficulty = page.getByRole('button', { name: 'Difficulty', exact: true })
-        assert.match(await difficulty.textContent(), mode === 'AUTO' ? /Auto/ : /High/)
+        assert.match(await difficulty.textContent(), mode === 'Tune' ? /Auto/ : /High/)
         await difficulty.click()
         await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
         assert.match(await difficulty.textContent(), /High/)

@@ -61,7 +61,7 @@ it('reuses the identical creation payload if creating the draft loses its acknow
   expect(calls.mock.calls.filter(([path]) => path === '/api/tasks/message')).toHaveLength(1)
 })
 
-it('resolves AUTO projects before sending and retains selection when submission is retried', async () => {
+it('resolves Scope projects before sending and retains selection when submission is retried', async () => {
   const { attempt, calls, request } = fixture('/api/tasks/message')
   attempt.task.autoProject = true
   await expect(dispatchLauncherTask(attempt, request)).rejects.toThrow('Response lost')
@@ -74,7 +74,7 @@ it('resolves AUTO projects before sending and retains selection when submission 
   await dispatchLauncherTask(attempt, request)
   expect(calls.mock.calls.filter(([path]) => path === '/api/tasks/projects/select')).toHaveLength(1)
 })
-it('keeps the AUTO prompt pending and sends nothing if project selection fails', async () => {
+it('keeps the Scope prompt pending and sends nothing if project selection fails', async () => {
   const { attempt, calls, request } = fixture('/api/tasks/projects/select')
   attempt.task.autoProject = true
   await expect(dispatchLauncherTask(attempt, request)).rejects.toThrow('Response lost')

@@ -10,6 +10,9 @@ import {
   EyeOff,
   Settings2,
   RefreshCw,
+  Layers,
+  SlidersHorizontal,
+  WandSparkles,
 } from 'lucide-react'
 import {
   providers,
@@ -30,6 +33,7 @@ import { useHarnessCatalog } from './harness-catalog'
 import { useHarnessAvailability } from './use-harness-availability'
 import { harnessChoiceId, acpHarnessChoiceId } from '@dovo/protocol'
 import { modelPreferenceKey, runtimeDefaultsSchema, type RuntimeDefaults } from '@dovo/protocol'
+const modelModeIcons = { inherit: Layers, auto: SlidersHorizontal, smart: WandSparkles }
 const favoritesKey = 'dovo:model-favorites'
 type PickerItem = {
   id: string
@@ -70,6 +74,7 @@ export function ComposerModelPicker({
   onChange: (next: TaskHarness) => Promise<boolean>
   onConfigure: () => void
 }) {
+  const ModeIcon = modelSelection ? modelModeIcons[modelSelection] : undefined
   const { snapshot, request } = useWorkspace()
   const installations = snapshot?.acpInstallations ?? []
   const [open, setOpen] = useApplicationState(false)
@@ -326,13 +331,17 @@ export function ComposerModelPicker({
           aria-label="Choose agent and model"
           className="h-8 min-w-0 max-w-64 gap-1.5 rounded-lg px-2 text-xs font-normal"
         >
-          <AgentAvatar
-            provider={value.provider}
-            customIcon={selectedAgent ? (selectedAgent.icon ?? 'bot') : undefined}
-          />
+          {ModeIcon ? (
+            <ModeIcon className="size-4 shrink-0" aria-hidden="true" />
+          ) : (
+            <AgentAvatar
+              provider={value.provider}
+              customIcon={selectedAgent ? (selectedAgent.icon ?? 'bot') : undefined}
+            />
+          )}
           <span className="truncate">
             {modelSelection ? (
-              { inherit: 'Inherit', auto: 'AUTO', smart: 'SMART' }[modelSelection]
+              { inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[modelSelection]
             ) : (
               <>
                 {selectedAgent && `${selectedAgent.name} · `}
@@ -362,23 +371,30 @@ export function ComposerModelPicker({
             {onSelectMode &&
               (
                 ['inherit', ...(automaticModesEnabled ? (['auto', 'smart'] as const) : [])] as const
-              ).map((mode) => (
-                <Button
-                  key={mode}
-                  type="button"
-                  variant="ghost"
-                  className="w-full text-xs"
-                  aria-pressed={modelSelection === mode}
-                  onClick={async () => {
-                    if (await onSelectMode(mode)) setOpen(false)
-                  }}
-                >
-                  {{ inherit: 'Inherit', auto: 'AUTO', smart: 'SMART' }[mode]}
-                </Button>
-              ))}
+              ).map((mode) => {
+                const Icon = modelModeIcons[mode]
+                return (
+                  <Button
+                    key={mode}
+                    type="button"
+                    variant="ghost"
+                    className={cn(
+                      'w-full justify-start gap-2 px-2 text-xs',
+                      modelSelection === mode &&
+                        'bg-accent text-primary ring-1 ring-inset ring-primary/50',
+                    )}
+                    aria-pressed={modelSelection === mode}
+                    onClick={async () => {
+                      if (await onSelectMode(mode)) setOpen(false)
+                    }}
+                  >
+                    <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+                    {{ inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[mode]}
+                  </Button>
+                )
+              })}
             <Button
               type="button"
-              size="icon"
               variant="ghost"
               aria-label="Favorite models"
               aria-pressed={mode === 'favorites'}
@@ -387,25 +403,32 @@ export function ComposerModelPicker({
                 setQuery('')
                 setActive(0)
               }}
-              className={cn('size-9', mode === 'favorites' && 'bg-accent')}
+              className={cn(
+                'w-full justify-start gap-2 px-2 text-xs',
+                mode === 'favorites' && 'bg-accent',
+              )}
             >
-              <Star className="size-4" />
+              <Star className="size-3.5 shrink-0" aria-hidden="true" />
+              Favorites
             </Button>
             <Button
               type="button"
-              size="icon"
               variant="ghost"
-              aria-label="Configurations"
-              title="Configurations"
+              aria-label="Custom configurations"
+              title="Custom configurations"
               aria-pressed={mode === 'agents'}
-              className={cn('size-9', mode === 'agents' && 'bg-accent')}
+              className={cn(
+                'w-full justify-start gap-2 px-2 text-xs',
+                mode === 'agents' && 'bg-accent',
+              )}
               onClick={() => {
                 setMode('agents')
                 setQuery('')
                 setActive(0)
               }}
             >
-              <Bot className="size-4" />
+              <Bot className="size-3.5 shrink-0" aria-hidden="true" />
+              Custom
             </Button>
             <div className="my-1 w-full border-t" />
             {availableProviders.map((p) => (
@@ -422,7 +445,9 @@ export function ComposerModelPicker({
                   mode === 'models' &&
                     p === activeProvider &&
                     !activeInstallationId &&
-                    'bg-accent text-primary ring-1 ring-inset ring-primary/50',
+                    (modelSelection
+                      ? 'bg-accent'
+                      : 'bg-accent text-primary ring-1 ring-inset ring-primary/50'),
                 )}
                 onClick={() => {
                   setProvider(p)
@@ -474,7 +499,9 @@ export function ComposerModelPicker({
                   mode === 'models' &&
                     activeProvider === 'acp' &&
                     activeInstallationId === installation.id &&
-                    'bg-accent text-primary ring-1 ring-inset ring-primary/50',
+                    (modelSelection
+                      ? 'bg-accent'
+                      : 'bg-accent text-primary ring-1 ring-inset ring-primary/50'),
                 )}
                 onClick={() => {
                   setProvider('acp')

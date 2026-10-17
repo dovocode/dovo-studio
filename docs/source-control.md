@@ -83,20 +83,21 @@ independently of the task; a failure keeps the step name, and a manually edited 
 
 ## Linked projects and worktrees
 
-AUTO project selection is experimental and off by default. Enable **AUTO project selection
-(experimental)** in Settings → Running tasks on the selected computer.
+Scope mode is experimental and off by default. Enable **Scope mode (experimental)** in Settings →
+Running tasks on the selected computer.
 
-Before the first message, choose **AUTO** (the magic icon) in the project picker to infer the
+Before the first message, choose **Scope** (the magic icon) in the project picker to infer the
 primary project and necessary linked projects from your prompt. Machine selection remains explicit:
-AUTO uses only registered projects on the selected computer, using their names, paths and Git
-identities. Choose **Project defaults**, **New worktrees**, or **Local checkouts** alongside AUTO;
+Scope uses only registered projects on the selected computer, using their names, paths and Git
+identities. Choose **Project defaults**, **New worktrees**, or **Local checkouts** alongside Scope;
 the checkout choice applies to the primary and linked Git projects, while folder projects always
 stay local. Choose a project manually to select an existing worktree or a specific base branch. It
 uses the selector utility model in Settings → Agents (inheriting the title model by default) and
 runs without tools. Clear matches start with the selected project's defaults; reference links are
-read-only and projects requiring changes receive edit access. Ambiguous selections or model failures
-keep the prompt unsent so you can choose a project manually or retry. General conversations stay in
-the private thread folder.
+read-only and projects requiring changes receive edit access. If no project is discovered, Scope
+continues in General without linked checkouts. Invalid selections or model failures keep the prompt
+unsent so you can choose a project manually or retry. General conversations stay in the private
+thread folder.
 
 In thread settings, **Linked projects** attaches up to twelve registered projects or checkouts on
 the thread's computer. Choose main checkout, an existing worktree, or a new worktree with optional
@@ -191,35 +192,38 @@ managed checkout locations after the worktree folder changes or threads are dele
 
 ## Experimental model selection
 
-When automatic project selection is enabled on a computer, new threads and quick launchers start in
-AUTO if no specific project is selected. Explicit project choices, including No project, override
-that default. Existing threads keep their selection.
+When Scope mode is enabled on a computer, new threads and quick launchers start in Scope if no
+specific project is selected. Explicit project choices, including General, override that default. If
+Scope discovers no project, the thread continues in General with no linked checkouts and a saved
+notice explaining the fallback in the desktop and mobile conversation. Existing threads keep their
+selection.
 
-Inherit is always available. Enable **Automatic model selection (experimental)** in the computer's
-Running tasks settings to enable AUTO and SMART. Before the first message, the model picker offers:
+Inherit is always available. Enable **Tune & Maestro modes (experimental)** in the computer's
+Running tasks settings to enable Tune and Maestro. Before the first message, the model picker
+offers:
 
 - **Inherit**: use the primary project's exact harness/model defaults, falling back to system
   defaults.
-- **AUTO**: keep that default harness and choose an available model for the prompt's difficulty.
-- **SMART**: choose an available harness and model, preferring project/system defaults where
+- **Tune**: keep that default harness and choose an available model for the prompt's difficulty.
+- **Maestro**: choose an available harness and model, preferring project/system defaults where
   suitable.
 
-The runtime resolves the choice once and saves the concrete harness/model for the thread. With AUTO
+The runtime resolves the choice once and saves the concrete harness/model for the thread. With Scope
 project selection, projects resolve first. Hidden or disabled models are excluded.
 
-AUTO and SMART have a separate **Difficulty** picker, starting at **Auto**. An explicit difficulty
+Tune and Maestro have a separate **Difficulty** picker, starting at **Auto**. An explicit difficulty
 guides model choice while the selector independently chooses a supported reasoning level for that
 model. The model and reasoning are fixed together before the first turn. Inherit and specific models
 keep their usual reasoning settings. An invalid selection preserves the pending mode and does not
-send the message. Only SMART can be saved as an automatic project or system task default. **AUTO
-project mode model** is a separate computer preference with Inherit, AUTO and SMART; it starts at
-Inherit and does not follow the ordinary task default mode. Choosing AUTO projects uses that
-preference, while preserving an explicitly selected AUTO or SMART model mode.
+send the message. Only Maestro can be saved as an automatic project or system task default. **Scope
+model mode** is a separate computer preference with Inherit, Tune and Maestro; it starts at Inherit
+and does not follow the ordinary task default mode. Choosing Scope mode uses that preference, while
+preserving an explicitly selected Tune or Maestro model mode.
 
-Titles and dictation require an explicit utility harness and model in Agents settings. The **AUTO &
-SMART selector** inherits that title model by default. Set a separate utility harness/model there to
-use a different model for project selection and coding-model selection. Selection runs without tools
-and can choose only entries from the computer's discovered catalogs.
+Titles and dictation require an explicit utility harness and model in Agents settings. The **Scope,
+Tune & Maestro selector** inherits that title model by default. Set a separate utility harness/model
+there to use a different model for project selection and coding-model selection. Selection runs
+without tools and can choose only entries from the computer's discovered catalogs.
 
 Desktop **Pull requests & pipelines** settings combines device-local draft/merge defaults with
 lifecycle and monitoring preferences on the selected computer. Device defaults remain editable when

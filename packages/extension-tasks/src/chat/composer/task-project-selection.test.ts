@@ -166,7 +166,7 @@ it.each(['inherit', 'auto', 'smart'] as const)(
   },
 )
 
-it('permits only SMART or a concrete configuration in task defaults', () => {
+it('permits only Maestro or a concrete configuration in task defaults', () => {
   expect(decodeResult(projectTaskDefaultsSchema, { modelSelection: 'inherit' }).success).toBe(false)
   expect(decodeResult(projectTaskDefaultsSchema, { modelSelection: 'auto' }).success).toBe(false)
   const smart = {
@@ -182,7 +182,7 @@ it('permits only SMART or a concrete configuration in task defaults', () => {
   ).toBeUndefined()
 })
 
-it('AUTO projects use their own model default and preserve explicit AUTO/SMART choices', () => {
+it('Scope projects use their own model default and preserve explicit Tune/Maestro choices', () => {
   const inheritedSmart = { ...draft, modelSelection: 'smart' as const }
   expect(changeTaskAutoProject(inheritedSmart, source, source, runtime).modelSelection).toBe(
     'inherit',
@@ -196,7 +196,7 @@ it('AUTO projects use their own model default and preserve explicit AUTO/SMART c
   expect(changeTaskAutoProject(explicit, source, source, runtime).modelSelection).toBe('inherit')
 })
 
-it('defaults unscoped new threads to AUTO only on enabled computers', () => {
+it('defaults unscoped new threads to Scope only on enabled computers', () => {
   expect(defaultTaskProjectSelection(undefined, source)).toEqual({})
   expect(defaultTaskProjectSelection({ autoProjectSelectionEnabled: false }, source)).toEqual({})
   expect(defaultTaskProjectSelection({ autoProjectSelectionEnabled: true }, target)).toEqual({})

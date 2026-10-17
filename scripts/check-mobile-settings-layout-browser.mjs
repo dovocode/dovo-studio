@@ -73,7 +73,7 @@ const mocks = {
   'react-native': native,
   '@expo/ui/swift-ui': swift,
   '@expo/ui/swift-ui/modifiers': modifiers,
-  './native-icon': `export const NativeIcon=({name,size,color})=><span aria-hidden style={{width:size,height:size,flexShrink:0,color}}>⌄</span>;export const NativeIconLabel=({title})=>title;`,
+  './native-icon': `export const NativeIcon=({name,size,color})=><span data-icon={name} aria-hidden style={{width:size,height:size,flexShrink:0,color}}>⌄</span>;export const NativeIconLabel=({title,icon})=><><span aria-hidden data-icon={icon}/>{title}</>;`,
   './icon': `export const Icon=({name,size=20,color})=><span data-icon={name} aria-hidden style={{display:'block',width:size,height:size,flexShrink:0,color}}>◇</span>;`,
   '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;export const carZoom=1.4;`,
   './action': `export const Action=()=>null;`,
@@ -95,8 +95,9 @@ const built = await build({
       const computer='Dominic’s development computer with a long name';
       window.runtime={activeId:'computer',connected:true,overviews:[{profile:{id:'computer',name:computer,connection:{address:'http://computer',token:'test'}},connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'pnpm install && pnpm build'}},shared:[]}},workspace:{repositories:[]}}}]};
       window.runtime.snapshot=window.runtime.overviews[0].snapshot;
-      function Controls(){const [selected,setSelected]=useState('long');window.selected=selected;const [enabled,setEnabled]=useState(true);window.enabled=enabled;
+      function Controls(){const [modelMode,setModelMode]=useState('auto');window.modelMode=modelMode;const [selected,setSelected]=useState('long');window.selected=selected;const [enabled,setEnabled]=useState(true);window.enabled=enabled;
         return <><SettingsChoice label="Other computer refresh" value={selected} items={[{id:'long',name:'When I refresh the other development computer'},{id:'short',name:'Every 30 seconds'}]} onChange={setSelected}/>
+          <SettingsChoice label="Model mode" value={modelMode} items={[{id:'auto',name:'Tune',icon:'tune'},{id:'smart',name:'Maestro',icon:'maestro'}]} onChange={setModelMode}/>
           <SettingsChoice label="Voice" value="0" items={Array.from({length:14},(_,index)=>({id:String(index),name:'Siri voice '+index+' · English · Enhanced quality'}))} onChange={value=>window.voice=value}/>
           <SettingsSwitchRow first label="Keep this computer awake while running development tasks" value={enabled} onValueChange={setEnabled}/>
           <SettingsField label="Shell arguments (one per line)" multiline value={'--login\\n--interactive'} onChangeText={()=>{}}/>
@@ -272,6 +273,18 @@ try {
     }
     await page.setViewportSize({ width: 390, height: 844 })
     await page.evaluate(() => window.setFontScale(1))
+    const modeChoice = page.getByTestId('Model mode')
+    assert.equal(await modeChoice.locator('[data-icon=tune]').count(), 1)
+    await modeChoice.click()
+    const tune = page.getByTestId('Choose Tune')
+    assert.equal(await tune.locator('[data-icon=tune]').count(), 1)
+    assert.equal(await tune.locator('[data-icon=check]').count(), 1)
+    const maestro = page.getByTestId('Choose Maestro')
+    assert.equal(await maestro.locator('[data-icon=maestro]').count(), 1)
+    await maestro.click()
+    await page.waitForFunction(() => window.modelMode === 'smart')
+    assert.equal(await modeChoice.locator('[data-icon=maestro]').count(), 1)
+    if (platform === 'ios') await modeChoice.click()
     const choice = page.getByTestId('Other computer refresh')
     await choice.click()
     await page.getByTestId('Choose Every 30 seconds').click()

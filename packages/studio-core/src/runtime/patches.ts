@@ -25,7 +25,13 @@ export function workspacePatches(before: Workspace, after: Workspace): Workspace
         old = decode(Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)), previous)
       const changes: WorkspacePatch['changes'] = {}
       for (const key of new Set([...Object.keys(record), ...Object.keys(old)]))
-        if (record[key] !== old[key] && JSON.stringify(record[key]) !== JSON.stringify(old[key]))
+        if (
+          // Project selection responses include this runtime-owned notice. Adopting
+          // the response must not echo it back as a user edit before sync arrives.
+          !(collection === 'tasks' && key === 'autoProjectFallback') &&
+          record[key] !== old[key] &&
+          JSON.stringify(record[key]) !== JSON.stringify(old[key])
+        )
           changes[key] = {
             before: old[key] ?? null,
             after: record[key] ?? null,

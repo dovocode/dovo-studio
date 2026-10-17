@@ -1,5 +1,5 @@
 import { useApplicationState } from '../../runtime/state/application-state'
-import { Icon } from './icon'
+import { Icon, type IconName } from './icon'
 import { Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native'
 import { Text } from '../content/text'
 import { useTheme } from '../theme'
@@ -13,6 +13,7 @@ export type ChoiceProps = {
   items: Array<{
     id: string
     name: string
+    icon?: IconName
     disabled?: boolean
   }>
   onChange: (value: string) => void
@@ -38,6 +39,7 @@ export function Choice({
     [search, setSearch] = useApplicationState('')
   const { width, fontScale } = useWindowDimensions()
   const insideSheet = useInsideSheet()
+  const selected = items.find((item) => item.id === value)
   const horizontal = row && fontScale < 1.5 && width / fontScale >= 360
   const compactControl = compact || horizontal
   const searchField = items.length > 6 && (
@@ -79,6 +81,7 @@ export function Choice({
               setOpen(false)
             }}
           >
+            {item.icon && <Icon name={item.icon} size={18} />}
             <Text
               style={[
                 styles.text,
@@ -198,6 +201,13 @@ export function Choice({
                   },
                 ]}
               >
+                {selected?.icon && (
+                  <Icon
+                    name={selected.icon}
+                    size={18}
+                    color={compactControl ? colors.accent : colors.text}
+                  />
+                )}
                 <Text
                   numberOfLines={compactControl ? 1 : undefined}
                   style={[

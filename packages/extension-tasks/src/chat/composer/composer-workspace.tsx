@@ -94,7 +94,7 @@ export function ComposerWorkspace({
           onSelectRemote={onSelectRemote}
         />
         <ChoicePicker
-          aria-label="AUTO checkout"
+          aria-label="Scope checkout"
           className="h-6 w-auto gap-1.5 border-0 px-2 text-[0.6875rem] shadow-none"
           value={task.autoProjectExecution ?? 'default'}
           disabled={disabled || !connected}

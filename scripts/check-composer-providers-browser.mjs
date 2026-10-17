@@ -113,7 +113,7 @@ try {
   await page.getByRole('button', { name: 'Favorite models', exact: true }).click()
   await page.getByRole('option', { name: 'favorite-model' }).waitFor()
   await absent(page.getByRole('option', { name: 'missing-model' }))
-  await page.getByRole('button', { name: 'Configurations', exact: true }).click()
+  await page.getByRole('button', { name: 'Custom configurations', exact: true }).click()
   await page.getByRole('option', { name: 'Custom Codex' }).waitFor()
   await absent(page.getByRole('option', { name: 'Missing Cursor' }))
   await page.evaluate(() => window.host('two'))

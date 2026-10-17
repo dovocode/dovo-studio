@@ -1,5 +1,7 @@
 import {
   WandSparkles,
+  ScanSearch,
+  SlidersHorizontal,
   ArrowDown,
   ArrowUp,
   ArrowUpRight,
@@ -76,6 +78,9 @@ import {
 import { useTheme } from '../theme'
 const icons = {
   magic: WandSparkles,
+  scope: ScanSearch,
+  tune: SlidersHorizontal,
+  maestro: WandSparkles,
   agents: Users,
   expand: Maximize2,
   collapse: Minimize2,

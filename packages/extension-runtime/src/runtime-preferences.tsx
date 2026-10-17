@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react'
 import { Effect } from 'effect'
+import { SlidersHorizontal, WandSparkles } from 'lucide-react'
 import {
   studioToolSettings,
   normalizeBranchPrefix,
@@ -112,26 +113,26 @@ export function RunningTaskPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
-      <SettingsGroup title="Model selection (experimental)">
+      <SettingsGroup title="Model modes (experimental)">
         <SettingRow
-          label="Automatic model selection (experimental)"
-          description="Enable AUTO and SMART model choices. Inherit is always available. Choices resolve once before the first turn."
+          label="Tune & Maestro modes (experimental)"
+          description="Tune chooses a model within the default agent. Maestro chooses the agent and model together. Both choose reasoning once before the first turn. Inherit keeps project defaults."
         >
           <Toggle
-            label="Automatic model selection (experimental)"
+            label="Tune & Maestro modes (experimental)"
             checked={value?.enableSmartModelSelection ?? false}
             disabled={disabled || snapshot?.smartModelSelectionEnabled === undefined}
             onChange={(enableSmartModelSelection) => save({ enableSmartModelSelection })}
           />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup title="Project selection (experimental)">
+      <SettingsGroup title="Project mode (experimental)">
         <SettingRow
-          label="AUTO project selection (experimental)"
-          description="Use the title model to select primary and linked projects from the first prompt on this computer."
+          label="Scope mode (experimental)"
+          description="Find primary and linked projects from the first message on this computer. If no project matches, continue in General."
         >
           <Toggle
-            label="AUTO project selection (experimental)"
+            label="Scope mode (experimental)"
             checked={value?.enableAutoProjectSelection ?? false}
             disabled={disabled || snapshot?.autoProjectSelectionEnabled === undefined}
             onChange={(enableAutoProjectSelection) => save({ enableAutoProjectSelection })}
@@ -139,8 +140,8 @@ export function RunningTaskPreferences() {
         </SettingRow>
         {value?.enableAutoProjectSelection && (
           <SettingRow
-            label="AUTO project mode model"
-            description="Independent of normal task defaults. Inherit uses the selected project's harness/model; AUTO chooses a model within it; SMART chooses both."
+            label="Scope model mode"
+            description="Independent of normal task defaults. Inherit uses the selected project's harness/model; Tune chooses a model within it; Maestro chooses both."
           >
             <Select
               value={value.autoProjectModelSelection}
@@ -149,16 +150,22 @@ export function RunningTaskPreferences() {
                 save({ autoProjectModelSelection: decode(taskModelSelectionSchema, mode) })
               }
             >
-              <SelectTrigger aria-label="AUTO project mode model">
+              <SelectTrigger aria-label="Scope model mode">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="inherit">Inherit</SelectItem>
                 <SelectItem value="auto" disabled={!value.enableSmartModelSelection}>
-                  AUTO
+                  <span className="flex items-center gap-2">
+                    <SlidersHorizontal className="size-4" aria-hidden="true" />
+                    Tune
+                  </span>
                 </SelectItem>
                 <SelectItem value="smart" disabled={!value.enableSmartModelSelection}>
-                  SMART
+                  <span className="flex items-center gap-2">
+                    <WandSparkles className="size-4" aria-hidden="true" />
+                    Maestro
+                  </span>
                 </SelectItem>
               </SelectContent>
             </Select>

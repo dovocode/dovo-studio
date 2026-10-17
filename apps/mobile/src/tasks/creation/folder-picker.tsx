@@ -173,8 +173,8 @@ export function FolderPicker({
           accessibilityValue={{
             text: autoProject
               ? onAuto
-                ? 'AUTO'
-                : 'AUTO (disabled)'
+                ? 'Scope'
+                : 'Scope (disabled)'
               : selected
                 ? label(selected)
                 : 'Choose project',
@@ -196,14 +196,14 @@ export function FolderPicker({
           ]}
         >
           <Icon
-            name={autoProject ? 'magic' : selected?.kind === 'scratch' ? 'chat' : 'folder'}
+            name={autoProject ? 'scope' : selected?.kind === 'scratch' ? 'chat' : 'folder'}
             size={18}
           />
           <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
             {autoProject
               ? onAuto
-                ? 'AUTO'
-                : 'AUTO (disabled)'
+                ? 'Scope'
+                : 'Scope (disabled)'
               : selected
                 ? label(selected)
                 : 'Choose project'}
@@ -267,7 +267,7 @@ export function FolderPicker({
               {onAuto && (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="AUTO project"
+                  accessibilityLabel="Scope mode"
                   accessibilityState={{ selected: autoProject, disabled: locked }}
                   disabled={locked}
                   onPress={() => {
@@ -281,8 +281,8 @@ export function FolderPicker({
                   }}
                   style={[styles.row, { padding: 12, minHeight: 48 }]}
                 >
-                  <Icon name="magic" size={18} />
-                  <Text style={[styles.text, { flex: 1 }]}>AUTO</Text>
+                  <Icon name="scope" size={18} />
+                  <Text style={[styles.text, { flex: 1 }]}>Scope</Text>
                   {autoProject && <Icon name="check" size={17} />}
                 </Pressable>
               )}

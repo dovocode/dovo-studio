@@ -22,7 +22,7 @@ import {
   ComposerSubmit,
   ComposerWorkspaceBar,
 } from '@dovo/studio-ui'
-import { ChevronDown, Folder } from 'lucide-react'
+import { ChevronDown, Folder, MessageCircle, ScanSearch } from 'lucide-react'
 import {
   launcherDefaultAgent,
   type LauncherAgent,
@@ -302,7 +302,13 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
           </ComposerSurface>
           <ComposerWorkspaceBar>
             <label className="relative flex min-w-0 items-center gap-1.5 px-2">
-              <Folder className="size-3 shrink-0" />
+              {autoProject ? (
+                <ScanSearch className="size-3 shrink-0" aria-hidden="true" />
+              ) : selectedGroup?.entries[0]?.repository.kind === 'scratch' ? (
+                <MessageCircle className="size-3 shrink-0" aria-hidden="true" />
+              ) : (
+                <Folder className="size-3 shrink-0" aria-hidden="true" />
+              )}
               <select
                 aria-label="Project"
                 className={selectClass}
@@ -334,7 +340,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
                 {snapshot?.autoProjectSelectionEnabled &&
                   snapshot.workspace.repositories.some(
                     (repository) => repository.kind === 'scratch',
-                  ) && <option value="auto-project">AUTO</option>}
+                  ) && <option value="auto-project">Scope</option>}
                 {projectGroups.map((group) => (
                   <option
                     key={group.key}

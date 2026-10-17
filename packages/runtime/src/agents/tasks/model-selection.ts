@@ -54,7 +54,7 @@ export class ModelSelection {
     if (!new RuntimePreferences(this.db).get().enableSmartModelSelection)
       throw new HttpError(
         403,
-        'Experimental model selection is disabled on this computer. Enable it in settings or choose a model manually.',
+        'Tune and Maestro modes are disabled on this computer. Enable them in settings or choose a model manually.',
       )
   }
 
@@ -65,9 +65,9 @@ export class ModelSelection {
         if (!before.modelSelection) return
         if (before.modelSelection !== 'inherit') this.requireEnabled()
         if (before.turns?.length || before.sessionId || before.delegation)
-          throw new HttpError(409, 'Choose an automatic model mode before the first turn.')
+          throw new HttpError(409, 'Choose Inherit, Tune or Maestro before the first turn.')
         if (before.autoProject)
-          throw new HttpError(409, 'Resolve AUTO project selection before choosing a model.')
+          throw new HttpError(409, 'Resolve Scope mode before choosing a model.')
         const defaults = this.store.taskDefaults(before.repositoryId).harness
         let harness: TaskHarness = defaults
         if (before.modelSelection !== 'inherit') {

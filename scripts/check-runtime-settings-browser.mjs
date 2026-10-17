@@ -156,57 +156,57 @@ try {
   )
   assert.equal(runtime.services.preferences.get().enableLinkedProjectsTool, false)
   const auto = page.getByRole('switch', {
-    name: 'AUTO project selection (experimental)',
+    name: 'Scope mode (experimental)',
     exact: true,
   })
   await auto.waitFor()
   await page.waitForFunction(
-    () => !document.querySelector('[aria-label="AUTO project selection (experimental)"]').disabled,
+    () => !document.querySelector('[aria-label="Scope mode (experimental)"]').disabled,
   )
   assert.equal(await auto.isChecked(), false)
   await auto.click()
   await page.waitForFunction(
     () =>
       document
-        .querySelector('[aria-label="AUTO project selection (experimental)"]')
+        .querySelector('[aria-label="Scope mode (experimental)"]')
         .getAttribute('aria-checked') === 'true' &&
-      !document.querySelector('[aria-label="AUTO project selection (experimental)"]').disabled,
+      !document.querySelector('[aria-label="Scope mode (experimental)"]').disabled,
   )
   assert.equal(runtime.services.preferences.get().enableAutoProjectSelection, true)
   const modelFlag = page.getByRole('switch', {
-    name: 'Automatic model selection (experimental)',
+    name: 'Tune & Maestro modes (experimental)',
     exact: true,
   })
   assert.equal(await modelFlag.isChecked(), false)
-  const projectModel = page.getByRole('combobox', { name: 'AUTO project mode model', exact: true })
+  const projectModel = page.getByRole('combobox', { name: 'Scope model mode', exact: true })
   await projectModel.waitFor()
   assert.match(await projectModel.textContent(), /Inherit/)
   await modelFlag.click()
   await page.waitForFunction(
     () =>
       document
-        .querySelector('[aria-label="Automatic model selection (experimental)"]')
+        .querySelector('[aria-label="Tune & Maestro modes (experimental)"]')
         .getAttribute('aria-checked') === 'true' &&
-      !document.querySelector('[aria-label="Automatic model selection (experimental)"]').disabled,
+      !document.querySelector('[aria-label="Tune & Maestro modes (experimental)"]').disabled,
   )
   await projectModel.click()
-  await page.getByRole('option', { name: 'SMART', exact: true }).click()
+  await page.getByRole('option', { name: 'Maestro', exact: true }).click()
   await page.waitForFunction(
-    () => !document.querySelector('[aria-label="AUTO project mode model"]').disabled,
+    () => !document.querySelector('[aria-label="Scope model mode"]').disabled,
   )
   assert.equal(runtime.services.preferences.get().autoProjectModelSelection, 'smart')
   await projectModel.click()
   await page.getByRole('option', { name: 'Inherit', exact: true }).click()
   await page.waitForFunction(
-    () => !document.querySelector('[aria-label="AUTO project mode model"]').disabled,
+    () => !document.querySelector('[aria-label="Scope model mode"]').disabled,
   )
   await modelFlag.click()
   await page.waitForFunction(
     () =>
       document
-        .querySelector('[aria-label="Automatic model selection (experimental)"]')
+        .querySelector('[aria-label="Tune & Maestro modes (experimental)"]')
         .getAttribute('aria-checked') === 'false' &&
-      !document.querySelector('[aria-label="Automatic model selection (experimental)"]').disabled,
+      !document.querySelector('[aria-label="Tune & Maestro modes (experimental)"]').disabled,
   )
   assert.equal(runtime.services.preferences.get().enableSmartModelSelection, false)
   assert.equal(runtime.services.preferences.get().autoProjectModelSelection, 'inherit')
@@ -214,9 +214,9 @@ try {
   await page.waitForFunction(
     () =>
       document
-        .querySelector('[aria-label="AUTO project selection (experimental)"]')
+        .querySelector('[aria-label="Scope mode (experimental)"]')
         .getAttribute('aria-checked') === 'false' &&
-      !document.querySelector('[aria-label="AUTO project selection (experimental)"]').disabled,
+      !document.querySelector('[aria-label="Scope mode (experimental)"]').disabled,
   )
   assert.equal(runtime.services.preferences.get().enableAutoProjectSelection, false)
   const web = page.getByRole('switch', {

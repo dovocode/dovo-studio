@@ -666,6 +666,11 @@ export function Conversation({
         }
         ListFooterComponent={
           <View style={{ padding: 12, alignItems: 'center' }}>
+            {task.autoProjectFallback && (
+              <Text style={[styles.muted, { fontSize: 12 }]}>
+                Scope found no matching project; continued in General.
+              </Text>
+            )}
             {history.busy && <ActivityIndicator size="small" color={colors.muted} />}
             {history.hasMore && !!history.error && (
               <IconButton

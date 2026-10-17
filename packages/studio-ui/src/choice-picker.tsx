@@ -54,6 +54,7 @@ export function ChoicePicker({
   value,
   onValueChange,
   children,
+  icons,
   disabled,
   className,
   'aria-label': label = 'Choose an option',
@@ -61,6 +62,7 @@ export function ChoicePicker({
   value: string
   onValueChange: (value: string) => void
   children: ReactNode
+  icons?: Readonly<Record<string, ReactNode>>
   disabled?: boolean
   className?: string
   'aria-label'?: string
@@ -98,7 +100,12 @@ export function ChoicePicker({
           data-value={value}
           className={cn('h-9 w-full min-w-0 justify-between text-xs font-normal', className)}
         >
-          <span id={`${id}-value`} className="truncate">
+          {icons?.[value] && (
+            <span className="shrink-0" aria-hidden="true">
+              {icons[value]}
+            </span>
+          )}
+          <span id={`${id}-value`} className="min-w-0 flex-1 truncate text-left">
             {options.find((option) => option.value === value)?.label ?? (value || 'Choose…')}
           </span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
@@ -171,6 +178,11 @@ export function ChoicePicker({
                 !option.disabled && 'hover:bg-accent',
               )}
             >
+              {icons?.[option.value] && (
+                <span className="shrink-0" aria-hidden="true">
+                  {icons[option.value]}
+                </span>
+              )}
               <span className="min-w-0 flex-1 break-words">{option.label}</span>
               {value === option.value && <Check className="size-4 shrink-0" />}
             </button>

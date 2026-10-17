@@ -4,6 +4,7 @@ import {
   permissionPolicyLabel,
 } from '@dovo/protocol'
 import { Struct } from 'effect'
+import { WandSparkles } from 'lucide-react'
 import { useCallback, useEffect } from 'react'
 import {
   accessLabel,
@@ -317,11 +318,12 @@ function TaskDefaultSettingsForm({
           {(snapshot?.smartModelSelectionEnabled === true || draft.modelSelection === 'smart') && (
             <SettingRow
               label="Model selection"
-              description="SMART chooses a harness and model once from the first prompt. Inherit and AUTO are thread-only choices."
+              description="Maestro chooses a harness and model once from the first prompt. Inherit and Tune are thread-only choices."
               source={source('modelSelection')}
             >
               <ChoicePicker
                 aria-label="Default model selection"
+                icons={{ smart: <WandSparkles className="size-4" /> }}
                 value={draft.modelSelection ?? ''}
                 onValueChange={(value) =>
                   change({
@@ -334,7 +336,7 @@ function TaskDefaultSettingsForm({
                 <option value="">Use inherited setting</option>
                 <option value="fixed">Configured harness and model</option>
                 <option value="smart" disabled={snapshot?.smartModelSelectionEnabled !== true}>
-                  SMART
+                  Maestro
                 </option>
               </ChoicePicker>
             </SettingRow>

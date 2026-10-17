@@ -7,7 +7,7 @@ const controls = `
 export const View=({children})=><div>{children}</div>;
 export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityState})=><button aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress}>{children}</button>;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
-export const Icon=()=>null;
+export const Icon=({name})=><span aria-hidden data-icon={name}/>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;
 export const Sheet=({title,children,onClose,busy,headerAction})=><div role="dialog" aria-label={title}>{headerAction&&<button aria-label={headerAction.label} disabled={busy||headerAction.disabled} onClick={headerAction.onPress}>+</button>}{children}<button disabled={busy} onClick={onClose}>Close picker</button></div>;
@@ -192,13 +192,18 @@ try {
     runtimeId: 'local',
   })
   await project.click()
-  assert.equal(await page.getByRole('button', { name: 'AUTO project', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Scope mode', exact: true }).count(), 0)
   await page.evaluate(() => window.update({ autoEnabled: true }))
-  await page.getByRole('button', { name: 'AUTO project', exact: true }).click()
-  assert.match(await project.textContent(), /AUTO/)
+  await page
+    .getByRole('button', { name: 'Scope mode', exact: true })
+    .locator('[data-icon=scope]')
+    .waitFor({ state: 'attached' })
+  await page.getByRole('button', { name: 'Scope mode', exact: true }).click()
+  assert.equal(await project.locator('[data-icon=scope]').count(), 1)
+  assert.match(await project.textContent(), /Scope/)
   await page.evaluate(() => window.update({ autoEnabled: false }))
-  await project.filter({ hasText: 'AUTO (disabled)' }).waitFor()
-  assert.match(await project.textContent(), /AUTO \(disabled\)/)
+  await project.filter({ hasText: 'Scope (disabled)' }).waitFor()
+  assert.match(await project.textContent(), /Scope \(disabled\)/)
   assert.equal(await page.evaluate(() => window.active), 'local')
   await project.click()
   assert.equal(
