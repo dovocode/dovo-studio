@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { FleetWebGL } from './fleet-webgl'
+import { repository } from './site-links'
 
 const stages = [
   {
@@ -56,8 +57,8 @@ const stages = [
     name: 'Connected runtimes',
     title: 'One fleet. Multiple machines.',
     description:
-      'Coming soon: experimental agent orchestration across your laptop, build server, remote workstation and test runner. Agents will hand off work and exchange findings between paired runtimes. Connecting to multiple runtimes is available today.',
-    count: 'Coming soon · 4 runtimes · 64 agents',
+      'Use experimental Studio Tools to discover paired computers and manage threads, automations, browsers and diagnostics across their runtimes. Enable the tools on both computers and keep Studio connected to its local runtime. Live Studio UI control stays local. This fleet illustrates how work can span machines; actual concurrency depends on each runtime’s settings.',
+    count: 'Experimental · 4 runtimes · illustrative fleet',
     event: [
       'Connect the fleet across runtimes',
       'Laptop agent sends the build brief',
@@ -530,7 +531,9 @@ export function AgentFleet() {
             >
               <span>0{index + 1}</span>
               {item.name}
-              {index >= 3 && <small className="fleet-soon">Soon</small>}
+              {index >= 3 && (
+                <small className="fleet-soon">{index === 3 ? 'Experimental' : 'Soon'}</small>
+              )}
               <i
                 aria-hidden="true"
                 className={index < stage ? 'complete' : ''}
@@ -554,10 +557,15 @@ export function AgentFleet() {
               <span className="fleet-future">
                 {stage === 4
                   ? 'Coming soon · Do fleet orchestration'
-                  : 'Coming soon · Experimental cross-runtime orchestration'}
+                  : 'Available · Experimental Studio Tools'}
               </span>
             )}
             <p>{current.description}</p>
+            {stage === 3 && (
+              <a className="text-link" href={`${repository}/blob/main/docs/studio-tools.md`}>
+                Set up connected runtimes <span aria-hidden="true">↗</span>
+              </a>
+            )}
           </div>
           <div className="fleet-controls">
             {!reduced && (

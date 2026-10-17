@@ -208,10 +208,19 @@ try {
   await fleet.getByRole('button', { name: /04 Connected runtimes/ }).click()
   assert.equal(await fleet.getAttribute('data-stage'), '3')
   assert.equal(
-    await fleet
-      .getByText('Coming soon · Experimental cross-runtime orchestration', { exact: true })
-      .isVisible(),
+    await fleet.getByText('Available · Experimental Studio Tools', { exact: true }).isVisible(),
     true,
+  )
+  assert.equal(
+    await fleet
+      .getByRole('button', { name: /04 Connected runtimes/ })
+      .getByText('Soon', { exact: true })
+      .count(),
+    0,
+  )
+  assert.equal(
+    await fleet.getByRole('link', { name: 'Set up connected runtimes' }).getAttribute('href'),
+    'https://github.com/dovocode/dovo-studio/blob/main/docs/studio-tools.md',
   )
   assert.equal(await fleet.getByText('Lead agent', { exact: true }).count(), 1)
   assert.equal(
