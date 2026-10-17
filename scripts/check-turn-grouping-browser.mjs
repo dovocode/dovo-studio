@@ -58,6 +58,7 @@ async function bundle(mobile) {
     './components/tool-activity-row': `import {ToolActivityRow as ActualToolActivityRow} from '${root}/apps/mobile/src/tasks/conversation/components/tool-activity-row.tsx';export const ToolActivityRow=props=>window.artifactCase?<ActualToolActivityRow {...props}/>:<div data-tools>Tools</div>;export const ReasoningActivity=()=>null;`,
     './components/work-group': `import {ConversationWorkGroup as ActualWorkGroup} from '${root}/apps/mobile/src/tasks/conversation/components/work-group.tsx';export const ConversationWorkGroup=props=>window.artifactCase?<ActualWorkGroup {...props}/>:<div>{props.children}</div>;`,
     './components/activity': `export const TaskActivity=()=>null;`,
+    './components/do-proposals': `export const DoProposals=()=>null;`,
     '@assistant-ui/react-native': `
 import {useContext,useEffect} from 'react';import {MessageContext,useFixture} from 'fixture';
 export const useAuiState=select=>{const fixture=useFixture(),message=useContext(MessageContext);return select({thread:{messages:fixture.messages},message})};
