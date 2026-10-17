@@ -29,6 +29,7 @@ const built = await build({
   target: 'es2022',
 })
 const mocks = {
+  'expo-router': `export const router={dismissTo:href=>window.artifactBackRoute=href};`,
   // The real markdown renderer now follows the selected Studio palette.
   '@dovo/studio-core': `export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo'});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
   '@dovo/studio-ui': `
@@ -71,7 +72,7 @@ export const Alert={alert:(...args)=>(window.artifactAlerts??=[]).push(args)};ex
   '../controls/icon-button': `import React from 'react';import {Icon} from '../controls/icon';export const IconButton=({label,icon,onPress,disabled})=><button aria-label={label} data-icon={icon} disabled={disabled} onClick={onPress} style={{width:44,height:44,display:'flex',alignItems:'center',justifyContent:'center',background:'transparent',border:0,opacity:disabled?0.4:1}}><Icon name={icon}/></button>;`,
   '../runtime/connection/provider': `import {useWorkspace,WorkspaceScope} from '@dovo/studio-core';export const useRuntime=()=>useWorkspace();export const RuntimeScope=({runtimeId,children})=><WorkspaceScope profile={window.artifactWorkspace.overviews.find(x=>x.profile.id===runtimeId).profile}>{children}</WorkspaceScope>;`,
   '../shell/navigation': `export const useNavigation=()=>({focused:true,navigate:(view,entityId,runtimeId)=>window.artifactNavigation={view,entityId,runtimeId}});`,
-  '../ui/layout/screen-header': `export const ScreenHeader=({title,subtitle,buttons})=><header><h1>{title}</h1><p>{subtitle}</p>{buttons.map(button=><button key={button.label} aria-label={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;`,
+  '../ui/layout/screen-header': `export const ScreenHeader=({title,subtitle,buttons,onBack})=><header>{onBack&&<button aria-label="Back" onClick={onBack}>Back</button>}<h1>{title}</h1><p>{subtitle}</p>{buttons.map(button=><button key={button.label} aria-label={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;`,
   '../ui/controls/field': `export const SearchField=({label,value,onChangeText,placeholder})=><input aria-label={label} value={value} placeholder={placeholder} onChange={event=>onChangeText(event.target.value)}/>;`,
   '../ui/controls/choice': `export const Choice=({label,value,items,onChange})=><select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;`,
   '../ui/controls/action': `export {Action} from '../controls/action';`,
@@ -836,6 +837,10 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     const cards = library.getByRole('button', { name: /^Open artifact / })
     await cards.first().waitFor()
     assert.equal(await cards.count(), 8)
+    if (native) {
+      await library.getByRole('button', { name: 'Back', exact: true }).click()
+      assert.equal(await library.evaluate(() => window.artifactBackRoute), '/')
+    }
     assert.equal(
       await cards.first().getAttribute('aria-label'),
       'Open artifact API client',
