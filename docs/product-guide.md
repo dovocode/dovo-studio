@@ -308,8 +308,12 @@ Desktop and web settings use a grouped sidebar with search (matching words insid
 - **Tasks & projects**:
   - **Task defaults** ([four scopes](scoped-settings.md): Global → Computer → Project → Project on
     computer) — agent and model, permissions, checkout or worktree, **Start from origin**,
-    submodules, setup command, saved prompts and lifecycle policy. Source labels and Reset appear
-    beside each inherited setting. Existing conversations keep their copied launch defaults.
+    submodules, setup command, saved prompts and lifecycle policy. The target header identifies the
+    scope and where it is saved; on mobile its compact summary stays visible while scrolling. Each
+    setting shows its value at the edited level and its named source. **View inheritance** explains
+    the winning value on each computer; later overrides keep their own values. **Use inherited
+    value** previews the reset destination. Existing conversations keep their copied launch
+    defaults.
   - **Source control** — forge accounts on each computer.
   - **Pull requests** (this device) — whether new pull requests start as drafts and the preferred
     merge method.

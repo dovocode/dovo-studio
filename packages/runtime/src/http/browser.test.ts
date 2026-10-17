@@ -136,8 +136,12 @@ it('checks task ownership and credentials before launching, isolates browser tic
     sequence: number
     text: string
   }> = []
+  const legacyMetrics: unknown[] = []
   binary.on('message', (raw, isBinary) => {
-    if (!isBinary) return
+    if (!isBinary) {
+      legacyMetrics.push(raw)
+      return
+    }
     const data = Array.isArray(raw)
       ? Buffer.concat(raw)
       : Buffer.isBuffer(raw)
@@ -175,6 +179,7 @@ it('checks task ownership and credentials before launching, isolates browser tic
     JSON.stringify({
       type: 'frameAck',
       sequence: 1,
+      decodeMs: 0,
     }),
   )
   await vi.waitFor(() =>
@@ -184,6 +189,7 @@ it('checks task ownership and credentials before launching, isolates browser tic
     }),
   )
   expect(received).toHaveLength(3)
+  expect(legacyMetrics).toHaveLength(0)
   expect(input).toHaveBeenCalledTimes(1)
   const invalidAck = once(binary, 'close')
   binary.send(
@@ -203,6 +209,148 @@ it('rejects expired tickets without keeping bearer credentials reusable', () => 
   time.mockReturnValue(32000)
   expect(() => tickets.consume(ticket)).toThrow('expired')
   expect(() => tickets.consume(ticket)).toThrow('expired')
+})
+
+it('pipelines high-RTT viewers but bounds bytes and contracts when their decoder slows', async () => {
+  vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  const attach = vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
+  const token = 'adaptive-browser-test-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      {
+        id: 'task',
+        title: 'Browser',
+        repositoryId: '',
+        agentId: '',
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+      },
+    ],
+  }))
+  const ticket = runtime.services.browserTickets.issue(token, 'task', 'task')
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${runtime.port}/ws/browser?ticket=${ticket}&frames=binary-v1&metrics=1`,
+  )
+  cleanups.unshift(async () => {
+    socket.terminate()
+  })
+  const received: Array<{ sequence: number; size: number; value: number }> = []
+  const metrics: number[] = []
+  socket.on('message', (raw, binary) => {
+    const data = Array.isArray(raw)
+      ? Buffer.concat(raw)
+      : Buffer.isBuffer(raw)
+        ? raw
+        : Buffer.from(raw)
+    if (!binary) {
+      const message = decode(remoteBrowserMessageSchema, JSON.parse(data.toString()))
+      if (message.type === 'streamStats') metrics.push(message.transportMs)
+      return
+    }
+    const frame = decodeBrowserFrame(Uint8Array.from(data).buffer)
+    received.push({ sequence: frame.sequence, size: frame.data.length, value: frame.data[0]! })
+  })
+  await once(socket, 'open')
+  await vi.waitFor(() => expect(attach).toHaveBeenCalledOnce())
+  const publish = (value: number, bytes = 1) =>
+    attach.mock.calls[0][1]({
+      type: 'frame',
+      width: 390,
+      height: 844,
+      data: Buffer.alloc(bytes, value),
+    })
+  const now = vi.spyOn(performance, 'now').mockReturnValue(1000)
+  publish(1)
+  publish(2)
+  await vi.waitFor(() => expect(received).toHaveLength(2))
+  now.mockReturnValue(1112)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 1, decodeMs: 0 }))
+  // A following status is an input-queue barrier after processing the ack.
+  const input = vi.spyOn(RemoteBrowsers.prototype, 'input').mockResolvedValue()
+  socket.send(JSON.stringify({ type: 'status' }))
+  await vi.waitFor(() => expect(input).toHaveBeenCalledTimes(1))
+  expect(metrics).toEqual([112])
+  for (let value = 3; value <= 12; value++) publish(value)
+  await vi.waitFor(() => expect(received).toHaveLength(4))
+  expect(received.at(-1)?.value).toBe(4)
+  // Shrink back to two, retaining only the newest pending image. Already sent
+  // images cannot be recalled; no more are sent until the window drains.
+  now.mockReturnValue(1304)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 2, decodeMs: 80 }))
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 3, decodeMs: 80 }))
+  await vi.waitFor(() => expect(received).toHaveLength(5))
+  expect(received.at(-1)?.value).toBe(12)
+  // Dropped pending frames must not be mistaken for an instant decoder and
+  // reopen the window while an actual decode is slow.
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 4, decodeMs: 0, dropped: true }))
+  socket.send(JSON.stringify({ type: 'status' }))
+  await vi.waitFor(() => expect(input).toHaveBeenCalledTimes(2))
+  expect(metrics).toEqual([112])
+  publish(13)
+  publish(14)
+  await vi.waitFor(() => expect(received).toHaveLength(6))
+  expect(received.at(-1)?.value).toBe(13)
+  // Restore a fast decoder, then verify the byte budget still wins over the
+  // larger frame window. Oversized detail frames travel alone.
+  now.mockReturnValue(1416)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 5, decodeMs: 0 }))
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 6, decodeMs: 0 }))
+  await vi.waitFor(() => expect(received).toHaveLength(7))
+  now.mockReturnValue(1528)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 7, decodeMs: 0 }))
+  socket.send(JSON.stringify({ type: 'status' }))
+  await vi.waitFor(() => expect(input).toHaveBeenCalledTimes(3))
+  now.mockReturnValue(2416)
+  publish(15)
+  await vi.waitFor(() => expect(received).toHaveLength(8))
+  now.mockReturnValue(2528)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 8, decodeMs: 0 }))
+  socket.send(JSON.stringify({ type: 'status' }))
+  await vi.waitFor(() => expect(input).toHaveBeenCalledTimes(4))
+  expect(metrics).toHaveLength(2)
+  expect(metrics[1]).toBeGreaterThanOrEqual(112)
+  expect(metrics[1]).toBeLessThan(130)
+  for (let value = 20; value <= 24; value++) publish(value, 100 * 1024)
+  await vi.waitFor(() => expect(received).toHaveLength(10))
+  expect(received.slice(-2).map((frame) => frame.value)).toEqual([20, 21])
+  publish(30, 512 * 1024)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 9, decodeMs: 0 }))
+  socket.send(JSON.stringify({ type: 'status' }))
+  await vi.waitFor(() => expect(input).toHaveBeenCalledTimes(5))
+  expect(received).toHaveLength(10)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 10, decodeMs: 0 }))
+  await vi.waitFor(() => expect(received).toHaveLength(11))
+  expect(received.at(-1)).toEqual({ sequence: 11, size: 512 * 1024, value: 30 })
+  // A changed network route may have a higher baseline RTT. Aging the old
+  // minimum lets it pipeline again instead of remaining in congestion backoff.
+  publish(31)
+  now.mockReturnValue(20000)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 11, decodeMs: 0 }))
+  await vi.waitFor(() => expect(received).toHaveLength(12))
+  now.mockReturnValue(20096)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 12, decodeMs: 0 }))
+  socket.send(JSON.stringify({ type: 'status' }))
+  await vi.waitFor(() => expect(input).toHaveBeenCalledTimes(6))
+  for (let value = 32; value <= 40; value++) publish(value)
+  await vi.waitFor(() => expect(received).toHaveLength(16))
+  expect(received.slice(-4).map((frame) => frame.value)).toEqual([32, 33, 34, 35])
+  for (let value = 41; value <= 43; value++) publish(value)
+  now.mockReturnValue(20360)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 13, decodeMs: 0 }))
+  await vi.waitFor(() => expect(received).toHaveLength(17))
+  // A single scheduling spike keeps the window open. Sustained delay contracts it.
+  now.mockReturnValue(20376)
+  socket.send(JSON.stringify({ type: 'frameAck', sequence: 14, decodeMs: 0 }))
+  socket.send(JSON.stringify({ type: 'status' }))
+  await vi.waitFor(() => expect(input).toHaveBeenCalledTimes(7))
+  expect(received).toHaveLength(17)
 })
 
 it('isolates remote tabs, binds their tickets to the task, and closes only the requested tab', async () => {
@@ -267,7 +415,7 @@ it('isolates remote tabs, binds their tickets to the task, and closes only the r
   const frameReceived = once(socket, 'message')
   attach.mock.calls[0][1]({ type: 'frame', width: 390, height: 844, data: Buffer.from('frame') })
   await frameReceived
-  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 20000)
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 20000)
   await new Promise((resolve) => setTimeout(resolve, 2100))
   expect(socket.readyState).toBe(WebSocket.OPEN)
   socket.send(JSON.stringify({ type: 'visibility', visible: true }))

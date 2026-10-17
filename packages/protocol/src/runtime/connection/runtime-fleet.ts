@@ -12,6 +12,7 @@ import { taskFamilyInputIds } from '../../tasks/delegation.js'
 import { isSnoozed } from '../../tasks/task-priority.js'
 import { selectPullSources } from '../../scm/pulls/pull-sources.js'
 import type { Repository, Task } from '../../workspace.js'
+import { projectDisplayName } from '../../workspace.js'
 /** People type what their computer shows, often without a scheme. Plain HTTP is the
  * supported LAN/VPN default, so a bare host is never upgraded to HTTPS. */
 export function normalizeRuntimeAddress(value: string) {
@@ -378,7 +379,10 @@ export function aggregateRuntimeTasks(
       [...snapshot.approvals, ...snapshot.questions].map((item) => item.taskId),
     )
     const projects = new Map(
-      snapshot.workspace.repositories.map((repository) => [repository.id, repository.name]),
+      snapshot.workspace.repositories.map((repository) => [
+        repository.id,
+        projectDisplayName(repository),
+      ]),
     )
     return snapshot.workspace.tasks
       .filter(

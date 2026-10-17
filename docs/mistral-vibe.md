@@ -36,6 +36,8 @@ host; Dovo does not add an account or login service.
 - Read-only access restricts Vibe's tools to file reads, search, skills and questions. It does not
   expose an operating-system filesystem sandbox or Codex's advanced sandbox controls.
 - Reports context usage and turn token counts supplied by Vibe.
+- Imports successful native todo results into the shared desktop/mobile checklist; pending or failed
+  calls and child-session events do not replace the parent checklist.
 
 Dovo starts an owned app-server process for each turn and closes it afterwards. Follow-ups resume
 from Vibe's persisted history; native background workers are not retained between turns. Dovo child

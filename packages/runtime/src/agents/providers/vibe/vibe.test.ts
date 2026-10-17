@@ -5,6 +5,7 @@ import { createVibeAdapter, vibeSessionOptions } from './vibe.js'
 import { patchVibeEntry } from './vibe-protocol.js'
 import { providerFixture } from '../shared/provider-fixture.js'
 import type { AgentRun } from '../../execution/types.js'
+import { nativeTodos } from '@dovo/protocol'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -52,6 +53,12 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
   }
   reply(v.id,{turn:{id:tid,status:'in_progress'}});
   if(prompt==='hold')return;
+  if(prompt==='todos'){
+   added(entry('todo','effect',{detail:{kind:'todo',toolName:'todo',input:{action:'write',todos:[]}},state:{status:'running'}}));
+   event('history/entryUpdated',{turnId:tid,entryId:'todo',patch:[{op:'replace',path:'/state',value:{status:'completed',output:{todos:[{id:'1',content:'Native Vibe step',status:'in_progress',priority:'medium'}]}}}]});
+   event('history/entryAdded',{sessionId:'child',entry:entry('child-todo','effect',{sessionId:'child',detail:{kind:'todo'},state:{status:'completed',output:{todos:[]}}})});
+   done();return;
+  }
   if(prompt==='fail')return done('failed',{error:{message:'Invalid API key'}});
   if(prompt==='limit')return done('completed',{stopReason:'limit'});
   if(prompt==='malformed')return event('history/entryUpdated',{turnId:tid,entryId:'missing',patch:[]});
@@ -101,6 +108,14 @@ it('admits events sent before the turn acknowledgement without losing completion
   const f = await fixture()
   await f.adapter.run({ ...f.run, prompt: 'early' })
   expect(f.output.join('')).toBe('Early reply')
+})
+it('publishes the completed native todo output after history patches, excluding child sessions', async () => {
+  const f = await fixture()
+  await f.adapter.run({ ...f.run, prompt: 'todos' })
+  const updates = f.events.flatMap(
+    (event) => nativeTodos(event.name, event.value, 'vibe', [], 'vibe-session') ?? [],
+  )
+  expect(updates).toEqual([{ id: 'vibe:1', text: 'Native Vibe step', status: 'in-progress' }])
 })
 it('resumes the saved session and applies model/reasoning only to the session override layer', async () => {
   const f = await fixture()

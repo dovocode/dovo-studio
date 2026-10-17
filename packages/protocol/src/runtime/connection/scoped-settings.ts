@@ -3,6 +3,7 @@ import { mutableStruct } from '../../shared/schema.js'
 import { mergeResources } from '../../shared/resources.js'
 import {
   scopedSettingsValueSchema,
+  projectDisplayName,
   settingsScopeSchema,
   sharedSettingsSchema,
   type Agent,
@@ -121,6 +122,44 @@ export const settingsScopeLabels: Record<SettingsScope, string> = {
   environment: 'Computer',
   project: 'Project',
   'environment-project': 'Project on computer',
+}
+
+export function settingsScopeSummary(
+  scope: SettingsScope,
+  context: { project?: string; computer?: string },
+) {
+  const project = context.project ?? 'Selected project'
+  const computer = context.computer ?? 'Selected computer'
+  switch (scope) {
+    case 'global':
+      return {
+        title: 'Global defaults',
+        description:
+          'Defaults for all projects on all computers. More-specific overrides keep their own values.',
+        storage: 'Shared across paired computers',
+      }
+    case 'environment':
+      return {
+        title: `${computer} defaults`,
+        description:
+          'Defaults for projects on this computer. Project defaults override computer defaults.',
+        storage: `Saved on ${computer}`,
+      }
+    case 'project':
+      return {
+        title: `${project} project defaults`,
+        description:
+          'Defaults for this project across computers. Project-on-computer overrides keep their own values.',
+        storage: 'Shared across paired computers',
+      }
+    case 'environment-project':
+      return {
+        title: `${project} on ${computer}`,
+        description:
+          'Changes apply only to this project on this computer. This is the most specific level.',
+        storage: `Saved on ${computer}`,
+      }
+  }
 }
 export const settingsScopeDescriptions: Record<SettingsScope, string> = {
   global: 'All projects on all computers',
@@ -300,7 +339,7 @@ export function settingsProjectChoices(
     for (const repository of source.snapshot?.workspace.repositories ?? []) {
       if (!environmentId && !repository.gitIdentity) continue
       const id = settingsProjectId(repository, source.profile.id)
-      if (!projects.has(id)) projects.set(id, { id, name: repository.name })
+      if (!projects.has(id)) projects.set(id, { id, name: projectDisplayName(repository) })
     }
   }
   return [...projects.values()].sort((a, b) => a.name.localeCompare(b.name))

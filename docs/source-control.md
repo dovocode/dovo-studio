@@ -104,6 +104,23 @@ base branch and branch name. New branch names receive a unique suffix. Links can
 the thread is idle; changing links starts a fresh provider session. Removing a link preserves its
 worktree and saved checkpoints.
 
+Agents also have a regular `dovo_task linked_projects` tool, independent of Studio Tools settings:
+
+- `projects` lists registered projects on the thread's computer.
+- `worktrees` with `repositoryId` lists existing worktrees.
+- `list` returns active links and any pending configuration.
+- `add` accepts a `checkout` with a stable `id`, `repositoryId`, `execution` (`main` or `worktree`)
+  and `access` (`read-only` or `edit`). New worktrees may specify `branch` and `baseBranch`;
+  existing ones use `existingWorktreePath`.
+
+This works for General threads too. Additions made during a turn are saved for the next fresh turn;
+the current agent's folders, permissions and checkpoints stay unchanged. A follow-up message starts
+with the links and a fresh provider session. Interrupted-turn recovery keeps its original roots;
+pending links wait for a fresh turn. Repeating the same ID/configuration is safe, while reusing an
+ID for different settings fails. Read-only agents can inspect links but cannot add them. Child
+agents inherit their parent's configuration. The tool acts only on its own thread and computer. The
+linked projects editor displays pending links and lets you adjust them once the thread is idle.
+
 The primary checkout remains responsible for thread settings and its PR status. Linked checkouts are
 available in Changes and when opening a terminal. Agents receive their paths, project names and
 access modes, and can create separate commits and PRs in each project. A child agent can target a
@@ -203,3 +220,19 @@ Titles and dictation require an explicit utility harness and model in Agents set
 SMART selector** inherits that title model by default. Set a separate utility harness/model there to
 use a different model for project selection and coding-model selection. Selection runs without tools
 and can choose only entries from the computer's discovered catalogs.
+
+Desktop **Pull requests & pipelines** settings combines device-local draft/merge defaults with
+lifecycle and monitoring preferences on the selected computer. Device defaults remain editable when
+the computer is offline. Mobile Source control shows automatic and saved GitHub identities, projects
+using them, and explicit repository/Actions access tests. Account checks run on opening; project
+access checks run only when requested.
+
+General drafts expose **Link projects** directly in their setup on desktop and mobile. Links stay
+part of the draft and are included when the thread is created on its chosen computer. Expanded
+Settled sections show five threads with Show all/Show fewer controls; search and bulk selection
+include the full history.
+
+The **Linked projects tool** switch in the computer’s Running tasks settings controls agent access
+on desktop and mobile. It is enabled by default. Disabling it blocks new calls immediately and omits
+the tool and its guidance on the next turn. It preserves existing/pending links and manual linking.
+A new provider session is created when the setting changes between turns.

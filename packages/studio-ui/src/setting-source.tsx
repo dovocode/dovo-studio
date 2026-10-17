@@ -7,9 +7,12 @@ import {
   settingLayers,
   settingOverrides,
   settingValueLabel,
+  settingValueDescription,
+  settingValuePreview,
+  settingSourceName,
+  settingInheritanceIsCurrent,
   runtimeComputerName,
-  type Repository,
-  type SettingField,
+  type SettingSourceSetting,
   type SettingOverride,
 } from '@dovo/protocol'
 import {
@@ -40,7 +43,7 @@ export function SettingSource({
   setting,
 }: {
   origin: SettingOrigin
-  setting?: { field: SettingField; repository?: Repository; scope: SettingsScope; value: unknown }
+  setting?: SettingSourceSetting
   onReset?: () => void
   label: string
   disabled?: boolean
@@ -51,12 +54,32 @@ export function SettingSource({
     busy: false,
     message: '',
   })
-  const name =
-    origin.source === 'built-in'
-      ? 'Dovo default'
-      : origin.source === 'computer-default'
-        ? 'Computer preference'
-        : settingsScopeLabels[origin.source]
+  const computers = runtimes.map((entry) => ({
+    id: entry.profile.id,
+    name: runtimeComputerName(entry),
+  }))
+  const computer = runtimes.find((entry) => entry.profile.id === activeRuntimeId)
+  const name = settingSourceName(origin.source, {
+    project: setting?.repository?.name,
+    computer: computer ? runtimeComputerName(computer) : undefined,
+  })
+  const sourceCurrent =
+    !setting ||
+    origin.overridden ||
+    settingInheritanceIsCurrent(snapshot?.defaults, setting, origin.source)
+  const inheritedLabel = setting
+    ? settingValueDescription(setting.field, setting.inheritedValue, computers)
+    : undefined
+  const valueLabel = setting
+    ? settingValueDescription(
+        setting.field,
+        setting.value === undefined ? setting.inheritedValue : setting.value,
+        computers,
+      )
+    : undefined
+  const resetLabel = inheritedLabel
+    ? `Use inherited value: ${settingValuePreview(inheritedLabel)}`
+    : 'Use inherited value'
   const Icon = origin.overridden ? SlidersHorizontal : CornerDownRight
   // Origin-only badges render outside the settings pages; only field badges read the fleet.
   const sources = setting
@@ -126,12 +149,26 @@ export function SettingSource({
     })
   }
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px]">
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
+      {setting && (
+        <p
+          title={valueLabel}
+          className="w-full break-words font-medium text-foreground [overflow-wrap:anywhere]"
+        >
+          At this level: {valueLabel && settingValuePreview(valueLabel)}
+        </p>
+      )}
       <span
-        className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 ${origin.overridden ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
+        className={`inline-flex min-w-0 items-start gap-1.5 rounded-md px-2 py-1 ${origin.overridden ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
       >
-        <Icon className="size-3 shrink-0" aria-hidden="true" />
-        {origin.overridden ? `Set here · ${name}` : `Inherited · ${name}`}
+        <Icon className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+        <span className="break-words [overflow-wrap:anywhere]">
+          {origin.overridden
+            ? `Set here · ${name}`
+            : sourceCurrent
+              ? `Inherited from ${name}`
+              : 'Inherited · source snapshot outdated'}
+        </span>
       </span>
       {setting && (
         <Popover.Root>
@@ -140,15 +177,28 @@ export function SettingSource({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-6 px-1.5 text-[11px]"
-              aria-label={`Sources for ${label.toLowerCase()}`}
+              className="h-auto min-h-7 min-w-0 max-w-full whitespace-normal px-1.5 text-xs [overflow-wrap:anywhere]"
+              aria-label={`View inheritance for ${label.toLowerCase()}`}
             >
-              <Layers className="size-3" /> Sources
+              <Layers className="size-3" /> View inheritance
             </Button>
           </Popover.Trigger>
           <Popover.Portal>
             <Popover.Content sideOffset={6} align="start" className={popoverClassName}>
-              <p className="mb-3 text-xs font-semibold">{label} · value sources</p>
+              <p className="mb-1 text-xs font-semibold">{label} · inheritance</p>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Project overrides Computer; Project on computer wins over both. The check marks the
+                effective value for each computer, including later overrides.
+              </p>
+              {!sourceCurrent && (
+                <p className="mb-3 text-xs text-amber-700 dark:text-amber-400">
+                  The value above comes from the latest settings read. Source details below use
+                  saved snapshots.
+                </p>
+              )}
+              <p className="mb-3 break-words text-xs [overflow-wrap:anywhere]">
+                Use inherited value: {inheritedLabel}
+              </p>
               {runtimes.map((entry) => {
                 const active = entry.profile.id === activeRuntimeId
                 const state = active ? snapshot : entry.snapshot
@@ -182,7 +232,7 @@ export function SettingSource({
                         {rows.map((row) => (
                           <div
                             key={row.scope}
-                            className="flex items-start gap-2 rounded px-2 py-1 text-xs"
+                            className={`flex items-start gap-2 rounded px-2 py-1.5 text-xs ${row.effective ? 'bg-primary/10 text-foreground' : 'text-muted-foreground'}`}
                           >
                             <span className="mt-0.5 w-3 shrink-0">
                               {row.effective && (
@@ -194,10 +244,16 @@ export function SettingSource({
                             </span>
                             <div className="min-w-0 flex-1">
                               <p className="break-words [overflow-wrap:anywhere]">
-                                {settingValueLabel(row.value)}
+                                {row.value === undefined
+                                  ? 'Inherit'
+                                  : settingValueDescription(setting.field, row.value, computers)}
                               </p>
                               <p className="text-[11px] text-muted-foreground">
-                                {settingsScopeLabels[row.scope]}
+                                {settingSourceName(row.scope, {
+                                  project: repository?.name,
+                                  computer: runtimeComputerName(entry),
+                                })}
+                                {row.effective ? ' · effective' : ''}
                                 {active && row.scope === setting.scope ? ' · current draft' : ''}
                               </p>
                             </div>
@@ -217,10 +273,11 @@ export function SettingSource({
                   type="button"
                   variant="ghost"
                   size="sm"
+                  className="h-auto min-h-7 min-w-0 max-w-full whitespace-normal text-xs [overflow-wrap:anywhere]"
                   disabled={disabled}
                   onClick={onReset}
                 >
-                  Reset current override
+                  {resetLabel}
                 </Button>
               )}
             </Popover.Content>
@@ -234,10 +291,13 @@ export function SettingSource({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-6 px-1.5 text-[11px] text-amber-600 dark:text-amber-400"
+              className="h-auto min-h-7 min-w-0 max-w-full whitespace-normal px-1.5 text-xs [overflow-wrap:anywhere] text-amber-700 dark:text-amber-400"
               aria-label={`${label}: overridden at ${overrides.length} later ${overrides.length === 1 ? 'level' : 'levels'}`}
             >
-              <Layers className="size-3" /> Overridden by {overrides.length}
+              <Layers className="size-3 shrink-0" /> {overrides.length}{' '}
+              {overrides.length === 1
+                ? 'override keeps its own value'
+                : 'overrides keep their own values'}
             </Button>
           </Popover.Trigger>
           <Popover.Portal>
@@ -301,13 +361,14 @@ export function SettingSource({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-6 px-1.5 text-[11px] text-muted-foreground"
+          className="h-7 min-w-0 max-w-full px-1.5 text-xs text-muted-foreground"
           disabled={disabled}
-          aria-label={`Use inherited ${label.toLowerCase()}`}
+          title={inheritedLabel}
+          aria-label={`Use inherited ${label.toLowerCase()}: ${inheritedLabel}`}
           onClick={onReset}
         >
           <Undo2 className="size-3" />
-          Reset
+          <span className="min-w-0 truncate">{resetLabel}</span>
         </Button>
       )}
     </div>

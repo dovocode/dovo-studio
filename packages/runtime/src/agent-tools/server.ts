@@ -16,6 +16,9 @@ import {
   deviceButtonSchema,
   remoteBrowserInputSchema,
   runtimeRequestTimeout,
+  linkedProjectsCommandSchema,
+  agentQuestionCommandSchema,
+  agentTodosCommandSchema,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -59,6 +62,7 @@ const studioTools = decode(
   studioToolsSchema,
   JSON.parse(process.env.DOVO_STUDIO_TOOLS ?? JSON.stringify(noStudioTools())),
 )
+const linkedProjectsEnabled = process.env.DOVO_TASK_LINKED_PROJECTS_ENABLED !== '0'
 const artifactsEnabled = process.env.DOVO_TASK_ARTIFACTS_ENABLED === '1'
 const pipelineWatchingEnabled = process.env.DOVO_TASK_PIPELINE_WATCHING_ENABLED === '1'
 const pullRequestWatchingEnabled = process.env.DOVO_TASK_PR_WATCHING_ENABLED === '1'
@@ -159,6 +163,33 @@ const tools: Array<
   }
 > = [
   ...studioToolDefinitions(studioTools),
+  {
+    name: 'ask_question',
+    description:
+      'Ask the user structured questions in this thread on desktop or mobile. Prefer the harness native question tool when available; do not ask the same question through both. Supply a stable key for retries, a title and questions with unique ids, question text and optional choices (value, label, description), multiple, custom and required flags. No choice is preselected. Returns immediately after showing the form; the answer steers the active turn or arrives as a follow-up conversation message. Do not request secrets with this tool. Continue independent work, or finish your turn when the answer is needed. Never treat a pending form, silence or a default choice as an answer or approval. Use a new key for a new question. Available in read-only runs.',
+    inputSchema: (() => {
+      const document = Schema.toJsonSchemaDocument(agentQuestionCommandSchema)
+      return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+    })(),
+  },
+  {
+    name: 'todos',
+    description:
+      'Read or replace this thread’s shared agent checklist, shown on desktop and mobile. Use action list to read; action set with items [{text, status}] replaces the whole list. Status is pending, in-progress or completed; an empty list clears it. Codex, Claude and Muse native planning/todo tools feed this same checklist; prefer those native tools there. Other providers can use this tool for visible progress. Do not maintain parallel lists. Use checklists for multi-step work when useful, not for every small task. Updates describe progress and never grant permission or mark the thread complete. Available in read-only runs where the provider permits MCP.',
+    inputSchema: (() => {
+      const document = Schema.toJsonSchemaDocument(agentTodosCommandSchema)
+      return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+    })(),
+  },
+  {
+    name: 'linked_projects',
+    description:
+      'Manage linked project checkouts for this thread, including General threads. projects lists projects on this computer; worktrees takes repositoryId and lists existing worktrees; list returns active and pending links. add takes checkout with a stable id, repositoryId, execution (main/worktree), access (read-only/edit), and optional branch/baseBranch for a new worktree or existingWorktreePath for an existing one. Additions take effect on the next fresh turn; they do not grant access or change checkpoints in this running turn. Ask for a follow-up message before working in the new linked folders. Repeating the same checkout ID and configuration is safe. Child agents inherit links and cannot add them.',
+    inputSchema: (() => {
+      const document = Schema.toJsonSchemaDocument(linkedProjectsCommandSchema)
+      return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+    })(),
+  },
   {
     name: 'browser',
     description:
@@ -684,6 +715,15 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
       return text(result)
     }
     switch (name) {
+      case 'ask_question':
+      case 'todos':
+        return text(
+          await post(`/api/agent/${name === 'ask_question' ? 'question' : 'todos'}`, {
+            taskId: task,
+            parentRunId,
+            command: input,
+          }),
+        )
       case 'memory_list':
       case 'memory_read':
       case 'memory_write':
@@ -695,6 +735,13 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             ...input,
             taskId: task,
           }),
+        )
+      case 'linked_projects':
+        if (!linkedProjectsEnabled)
+          throw new Error('The linked projects tool is disabled on this computer')
+        if (input.action === 'add') writable()
+        return text(
+          await post('/api/linked-projects', { taskId: task, parentRunId, command: input }),
         )
       case 'pipeline_watch':
         writable()
@@ -1025,6 +1072,7 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
 }
 for (const tool of tools.filter(
   (tool) =>
+    (linkedProjectsEnabled || tool.name !== 'linked_projects') &&
     (deviceHubEnabled || !deviceTools.has(tool.name)) &&
     (!terminalsDisabled || !tool.name.startsWith('terminal_')),
 ))

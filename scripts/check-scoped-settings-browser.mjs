@@ -64,6 +64,9 @@ try {
     if (mobile) await page.getByRole('button', { name: 'Task defaults', exact: true }).click()
     const scopes = page.getByLabel('Settings scope', { exact: true })
     await scopes.waitFor()
+    // The API's inherited value wins over the stale fleet snapshot when explaining this editor.
+    await page.getByText('At this level: Local checkout', { exact: true }).waitFor()
+    await page.getByText('Inherited · source snapshot outdated', { exact: true }).waitFor()
     const choose = async (control, value, name) => {
       if (mobile) await control.selectOption(value)
       else {
@@ -94,12 +97,15 @@ try {
     const originOn = async () =>
       mobile ? origin.isChecked() : (await origin.getAttribute('aria-checked')) === 'true'
     assert.equal(await originOn(), true)
-    await page.getByRole('button', { name: 'Sources for working directory', exact: true }).click()
+    await page
+      .getByRole('button', { name: 'View inheritance for working directory', exact: true })
+      .click()
     await page.getByText('Mac · editing', { exact: true }).waitFor()
     await page.getByText('Linux · offline, saved snapshot', { exact: true }).waitFor()
     await page
-      .locator(mobile ? 'div' : 'p')
-      .filter({ hasText: /^(?:✓ )?New worktree(?: · Computer)?$/ })
+      .getByText(mobile ? '✓ New worktree · Mac defaults · effective' : 'New worktree', {
+        exact: true,
+      })
       .last()
       .waitFor()
     await choose(
@@ -107,13 +113,21 @@ try {
       'main',
       'Local checkout',
     )
+    await page.getByText('At this level: Local checkout', { exact: true }).waitFor()
     if (mobile)
       await page
-        .getByRole('button', { name: 'Use inherited working directory', exact: true })
+        .getByRole('button', {
+          name: 'Use inherited working directory: Local checkout',
+          exact: true,
+        })
         .click()
     else {
-      await page.getByRole('button', { name: 'Sources for working directory', exact: true }).click()
-      await page.getByRole('button', { name: 'Reset current override', exact: true }).click()
+      await page
+        .getByRole('button', { name: 'View inheritance for working directory', exact: true })
+        .click()
+      await page
+        .getByRole('button', { name: 'Use inherited value: Local checkout', exact: true })
+        .click()
     }
     assert.equal(
       mobile
@@ -123,7 +137,7 @@ try {
             .textContent(),
       mobile ? 'inherit' : 'Inherit (Local checkout)',
     )
-    if (mobile) await page.getByRole('button', { name: 'Hide sources', exact: true }).click()
+    if (mobile) await page.getByRole('button', { name: 'Hide inheritance', exact: true }).click()
     else await page.keyboard.press('Escape')
     await chooseScope('global')
     assert.equal(await originOn(), true)

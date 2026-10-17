@@ -45,8 +45,8 @@ import {useState} from 'react';import {createRoot} from 'react-dom/client';impor
 import {LinkedProjects} from '${root}/${mobile ? 'apps/mobile/src/tasks' : 'packages/extension-tasks/src'}/detail/linked-projects.tsx';
 ${mobile ? '' : `import {TaskTools} from '${root}/packages/extension-tasks/src/detail/task-tools.tsx';import {HarnessDialog} from '${root}/packages/extension-tasks/src/dialogs/harness-dialog.tsx';`}
 const agent={...defaultTaskHarness('codex'),id:'writer',name:'Writer',model:'old-model',instructions:'Saved instructions',skills:['skill'],mcpServers:['server']};
-const initial={id:'thread',title:'Thread',repositoryId:'repo',status:'draft',agentId:agent.id,harness:null,messages:[],files:[],linkedCheckouts:[]};
-window.requests=[];window.fail=false;window.store={connected:true,workspace:{tasks:[initial],agents:[agent],repositories:[{id:'repo',name:'Main project',path:'/repo',branch:'main'},{id:'folder',name:'Reference folder',path:'/folder',branch:'',kind:'folder'}]},flush:async()=>{},request:async(path,input)=>{window.requests.push({path,input});if(window.fail)throw Error('Fixture save failed');if(path.endsWith('/choices')){if(window.holdChoices)await new Promise(resolve=>window.resolveChoices=resolve);return {worktrees:[{path:'/existing',branch:'feature'}]}};return {ok:true}}};
+const initial={id:'thread',title:'Thread',repositoryId:'scratch',status:'draft',agentId:agent.id,harness:null,messages:[],files:[],linkedCheckouts:[]};
+window.requests=[];window.fail=false;window.store={connected:true,workspace:{tasks:[initial],agents:[agent],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''},{id:'repo',name:'Main project',path:'/repo',branch:'main'},{id:'folder',name:'Reference folder',path:'/folder',branch:'',kind:'folder'}]},flush:async()=>{},request:async(path,input)=>{window.requests.push({path,input});if(window.fail)throw Error('Fixture save failed');if(path.endsWith('/choices')){if(window.holdChoices)await new Promise(resolve=>window.resolveChoices=resolve);return {worktrees:[{path:'/existing',branch:'feature'}]}};return {ok:true}}};
 function App(){const [task,setTask]=useState(initial),[surface,setSurface]=useState('chat'),[revision,setRevision]=useState(0),[configure,setConfigure]=useState(false);window.change=changes=>{Object.assign(window.store,changes);setRevision(value=>value+1)};window.task=changes=>setTask(old=>({...old,...changes}));window.store.setWorkspace=update=>{window.store.workspace=update(window.store.workspace);setTask(window.store.workspace.tasks[0])};return <div data-revision={revision}>
 ${mobile ? `<button onClick={()=>setSurface('projects')}>Linked projects</button>` : `<TaskTools surface={surface} onSelect={setSurface} hasDiff={false}/><button onClick={()=>setConfigure(true)}>Configure agent</button>{configure&&<HarnessDialog task={task} onClose={()=>setConfigure(false)}/>} `}
 {surface==='projects'&&<aside aria-label="Workspace tools"><LinkedProjects key={task.id} task={task}/></aside>}</div>}
@@ -100,6 +100,25 @@ createRoot(document.getElementById('app')).render(<App/>);
     const save = page.getByRole('button', { name: 'Save linked projects', exact: true })
     assert.equal(await save.isDisabled(), true)
     await page.getByRole('button', { name: 'Add checkout', exact: true }).click()
+    const checkout = page.getByLabel(mobile ? 'Checkout' : 'Linked checkout', { exact: true })
+    assert.deepEqual(
+      await checkout
+        .locator('option')
+        .evaluateAll((options) => options.map((option) => option.value)),
+      ['main', 'worktree', 'existing'],
+    )
+    await checkout.selectOption('worktree')
+    await page
+      .getByLabel(mobile ? 'Base branch' : 'Linked base branch', { exact: true })
+      .fill('main')
+    await page
+      .getByLabel(mobile ? 'Branch name' : 'Linked branch name', { exact: true })
+      .fill('feature/general')
+    if (mobile) {
+      await checkout.selectOption('existing')
+      assert.equal(await page.getByLabel('Worktree', { exact: true }).inputValue(), '/existing')
+    }
+
     if (!mobile) {
       await page.evaluate(() => {
         window.holdChoices = true
@@ -187,6 +206,33 @@ createRoot(document.getElementById('app')).render(<App/>);
       assert.equal(workspace.agents[0].instructions, 'Saved instructions')
       assert.deepEqual(workspace.agents[0].skills, ['skill'])
     }
+    // Pending agent additions are visible and editable after the turn ends.
+    await page.evaluate(() => {
+      window.change({ connected: true })
+      window.task({
+        id: 'pending-thread',
+        status: 'draft',
+        queue: [],
+        delegation: undefined,
+        archivedAt: undefined,
+        linkedCheckouts: [],
+        pendingLinkedCheckouts: [
+          { id: 'agent-link', repositoryId: 'repo', execution: 'worktree', access: 'edit' },
+        ],
+      })
+    })
+    await page
+      .getByText('Linked projects added by the agent take effect on the next turn.', {
+        exact: true,
+      })
+      .waitFor()
+    await page.getByLabel('Linked project', { exact: true }).selectOption('folder')
+    await save.click()
+    await page.waitForFunction(() => window.requests.at(-1)?.input.id === 'pending-thread')
+    const pendingSave = await page.evaluate(() => window.requests.at(-1).input)
+    assert.equal(pendingSave.before[0].id, 'agent-link')
+    assert.equal(pendingSave.before[0].repositoryId, 'repo')
+    assert.equal(pendingSave.links[0].repositoryId, 'folder')
     assert.deepEqual(errors, [])
     await page.close()
     console.log(

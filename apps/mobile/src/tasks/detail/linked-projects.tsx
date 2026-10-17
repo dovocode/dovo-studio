@@ -222,8 +222,8 @@ export function LinkedProjects({ task }: { task: Task }) {
   const { styles } = useTheme()
 
   const { call, connected } = useRuntime()
-  const [links, setLinks] = useState(task.linkedCheckouts ?? [])
-  const [before, setBefore] = useState(task.linkedCheckouts ?? [])
+  const [links, setLinks] = useState(task.pendingLinkedCheckouts ?? task.linkedCheckouts ?? [])
+  const [before, setBefore] = useState(task.pendingLinkedCheckouts ?? task.linkedCheckouts ?? [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const disabled =
@@ -247,6 +247,11 @@ export function LinkedProjects({ task }: { task: Task }) {
   }
   return (
     <View style={{ gap: 12 }}>
+      {!!task.pendingLinkedCheckouts && (
+        <Text style={styles.muted}>
+          Linked projects added by the agent take effect on the next turn.
+        </Text>
+      )}
       <LinkedCheckoutEditor value={links} onChange={setLinks} disabled={disabled} />
       <Text style={styles.muted}>
         Removing a link keeps the worktree and saved history. Reference-only access also follows

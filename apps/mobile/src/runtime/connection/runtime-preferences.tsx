@@ -285,6 +285,20 @@ export function RuntimePreferences() {
               </Text>
             </View>
           </Section>
+          <Section title="Agent tools">
+            <SettingsSwitchRow
+              first
+              label="Linked projects tool"
+              value={value?.enableLinkedProjectsTool ?? true}
+              disabled={disabled}
+              onValueChange={(enableLinkedProjectsTool) => save({ enableLinkedProjectsTool })}
+            />
+            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+              Let agents discover projects and stage links for their own thread’s next turn.
+              Existing links and manual linking are unaffected. Disabling blocks calls immediately;
+              tool visibility updates next turn.
+            </Text>
+          </Section>
           <Section title="Code reviews (experimental)">
             <SettingsSwitchRow
               first
@@ -434,7 +448,7 @@ export function RuntimePreferences() {
                 },
                 {
                   scope: 'projectless',
-                  label: 'Memory for threads without a project',
+                  label: 'Memory for General threads',
                   enabled: value?.memory.projectlessEnabled ?? false,
                 },
               ] as const

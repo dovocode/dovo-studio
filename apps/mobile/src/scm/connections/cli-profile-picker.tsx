@@ -7,6 +7,7 @@ import { Schema, Effect } from 'effect'
 import { cliProfileOptions, runClientEffect } from '@dovo/client-runtime'
 import {
   forgeCliProfileQuerySchema,
+  projectDisplayName,
   forgeCliProfilesSchema,
   type ForgeProvider,
 } from '@dovo/protocol'
@@ -120,7 +121,7 @@ export function CliProfilePicker({
           },
           ...repositories.map((repo) => ({
             id: repo.id,
-            name: `${repo.name} · Project checkout`,
+            name: `${projectDisplayName(repo)} · Project checkout`,
           })),
         ]}
       />

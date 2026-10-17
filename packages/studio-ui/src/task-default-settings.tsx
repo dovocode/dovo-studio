@@ -162,7 +162,13 @@ function TaskDefaultSettingsForm({
       origin && (
         <SettingSource
           origin={origin}
-          setting={{ field: { group: 'taskDefaults', key }, repository, scope, value: draft[key] }}
+          setting={{
+            field: { group: 'taskDefaults', key },
+            repository,
+            scope,
+            value: draft[key],
+            inheritedValue: inherited[key],
+          }}
           label={origin.label}
           disabled={
             disabled || ((key === 'approvalPolicy' || key === 'sandboxMode') && !policySupported)

@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { Pressable, View } from 'react-native'
+import { Pressable, ScrollView, View } from 'react-native'
 import { nativeTodoSummary, type Task } from '@dovo/protocol'
 import { Icon } from '../../../ui/controls/icon'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 
-/** The provider's native todo list (Muse `session/todoListChanged`), latest state only. */
+/** Shared agent checklist from native progress or the regular task tool, latest state only. */
 export function NativeTodos({ task }: { task: Task }) {
   const { colors, styles } = useTheme()
   const [open, setOpen] = useState(false)
@@ -31,41 +31,52 @@ export function NativeTodos({ task }: { task: Task }) {
           </Text>
         )}
       </Pressable>
-      {open &&
-        todos.map((todo, index) => (
-          <View key={index} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-            <Icon
-              name={
-                todo.status === 'completed'
-                  ? 'checkCircle'
-                  : todo.status === 'in-progress'
-                    ? 'loader'
-                    : 'circle'
-              }
-              size={14}
-              color={
-                todo.status === 'completed'
-                  ? colors.success
-                  : todo.status === 'in-progress'
-                    ? colors.accent
-                    : colors.muted
-              }
-            />
-            <Text
-              style={[
-                styles.text,
-                { flex: 1 },
-                todo.status === 'completed'
-                  ? { color: colors.muted, textDecorationLine: 'line-through' }
-                  : todo.status === 'in-progress'
-                    ? { fontWeight: '600' }
-                    : undefined,
-              ]}
+      {open && (
+        <ScrollView
+          style={{ maxHeight: 180 }}
+          contentContainerStyle={{ gap: 8 }}
+          accessibilityLabel="Checklist items"
+          nestedScrollEnabled
+        >
+          {todos.map((todo, index) => (
+            <View
+              key={todo.id ?? index}
+              style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}
             >
-              {todo.text}
-            </Text>
-          </View>
-        ))}
+              <Icon
+                name={
+                  todo.status === 'completed'
+                    ? 'checkCircle'
+                    : todo.status === 'in-progress'
+                      ? 'loader'
+                      : 'circle'
+                }
+                size={14}
+                color={
+                  todo.status === 'completed'
+                    ? colors.success
+                    : todo.status === 'in-progress'
+                      ? colors.accent
+                      : colors.muted
+                }
+              />
+              <Text
+                style={[
+                  styles.text,
+                  { flex: 1 },
+                  todo.status === 'completed'
+                    ? { color: colors.muted, textDecorationLine: 'line-through' }
+                    : todo.status === 'in-progress'
+                      ? { fontWeight: '600' }
+                      : undefined,
+                ]}
+              >
+                {todo.text}
+              </Text>
+            </View>
+          ))}
+        </ScrollView>
+      )}
     </View>
   )
 }

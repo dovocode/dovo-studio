@@ -259,7 +259,7 @@ export function ComposerProject({
                   ? 'AUTO'
                   : 'AUTO (disabled)'
                 : repository?.kind === 'scratch'
-                  ? 'No project'
+                  ? 'General'
                   : (repository?.name ?? 'Choose project')}
             </span>
             <ChevronDown className="size-3" />
@@ -427,9 +427,7 @@ export function ComposerProject({
                 {task.autoProject ? (
                   'Select projects automatically on'
                 ) : (
-                  <>
-                    Run {repository?.kind === 'scratch' ? 'without a project' : repository?.name} on
-                  </>
+                  <>Run {repository?.kind === 'scratch' ? 'General' : repository?.name} on</>
                 )}
               </p>
               {sources

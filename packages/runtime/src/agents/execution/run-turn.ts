@@ -114,6 +114,7 @@ export class TaskTurnRunner {
     private memoryScopes: (taskId: string) => MemoryScope[] = () => [],
     private deviceHubEnabled: () => boolean = () => false,
     private studioTools: () => StudioTools = noStudioTools,
+    private linkedProjectsEnabled: () => boolean = () => true,
   ) {
     this.sharedSkills = new SharedSkillBundles(skillCacheDirectory)
   }
@@ -208,6 +209,7 @@ export class TaskTurnRunner {
         const artifactsEnabled = this.artifactsEnabled()
         const pullRequestWatchingEnabled = this.pullRequestWatchingEnabled()
         const pipelineWatchingEnabled = this.pipelineWatchingEnabled()
+        const linkedProjectsEnabled = this.linkedProjectsEnabled()
         const selectedAgent = resolveTaskAgent(task, this.store.get().agents)
         if (!selectedAgent) throw new HttpError(400, 'Choose a harness or agent first')
         const policyIssue = permissionPolicyIssue(selectedAgent)
@@ -293,6 +295,7 @@ export class TaskTurnRunner {
               configured.sandboxMode,
               credentialFile,
               studioTools,
+              linkedProjectsEnabled,
             ),
           )
         }
@@ -367,6 +370,7 @@ ${
                 commands,
                 cuaServer,
                 taskToolFeatures: {
+                  linkedProjectsEnabled,
                   studioTools,
                   artifactsEnabled,
                   pullRequestWatchingEnabled,
@@ -798,6 +802,12 @@ ${
                     agent.instructions,
                     browserCdpInstructions(id),
                     this.taskTools
+                      ? 'Regular dovo_task ask_question and todos tools are available independently of Studio Tools, including in read-only runs where the provider permits MCP. Prefer native question tools when available; do not duplicate questions. ask_question opens a non-blocking desktop/mobile form using a stable key; answers steer the active turn or become a follow-up conversation message. Do not request secrets through this fallback tool. Continue independent work or finish the turn if you need the answer; do not poll or treat silence as approval. Codex, Claude, Muse, OpenCode, ACP/Grok and Mistral Vibe native planning/todo tools feed the shared checklist; prefer those native tools there. Other providers can use todos to list or replace that checklist for useful multi-step tracking. Do not maintain parallel checklists.'
+                      : '',
+                    this.taskTools && linkedProjectsEnabled
+                      ? 'The regular dovo_task linked_projects tool lists local projects and worktrees and adds linked checkouts to this thread, including General threads. Use stable checkout IDs for retries. Additions activate on the next fresh turn; current folders, permissions and checkpoints do not change. After configuring a link, ask for a follow-up message before working in its folders. Child agents inherit links and cannot add their own.'
+                      : '',
+                    this.taskTools
                       ? 'Dovo supports child agents across harnesses with dovo_task subagent_spawn. Use subagent_list to find named configurations. Delegate only when the user’s instructions allow it. Include the child’s goal, relevant context and constraints in its prompt. Children inherit the parent’s permissions by default; request narrower access only when needed. For investigation, specify read-only work in the prompt. Children share this checkout, so avoid overlapping writes. Use a stable key for each child. Prefer Dovo delegation for cross-harness work, named configurations, or work that should survive your reply; native same-harness agents remain available. Children continue after a normal reply and automatically queue their final result here. Use subagent_wait/read when you need the result now; a timeout leaves the child running. Incorporate results when they arrive. Explicit Stop cancels descendants. Start a fresh child with a new key for each review round, supplying the original brief and previous findings.'
                       : '',
                     this.taskTools && memoryScopes.length
@@ -1144,14 +1154,21 @@ ${
                   }
                   recordUsage(name, payload)
                   tokens.accept(name, payload)
-                  const todos = nativeTodos(name, payload)
-                  if (todos && agent.provider === 'muse') {
+                  const todos = nativeTodos(
+                    name,
+                    payload,
+                    agent.provider,
+                    this.store.taskSummary(id).nativeTodos,
+                    this.store.taskSummary(id).sessionId,
+                  )
+                  if (todos) {
                     const current = this.store.taskSummary(id).nativeTodos
                     const changed =
                       current?.length !== todos.length ||
                       todos.some(
                         (todo, index) =>
                           current?.[index]?.text !== todo.text ||
+                          current?.[index]?.id !== todo.id ||
                           current?.[index]?.status !== todo.status,
                       )
                     if (changed)

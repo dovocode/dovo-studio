@@ -105,8 +105,9 @@ export class LinkedCheckouts {
     )
       throw new HttpError(409, 'Finish or stop pending work before changing linked projects')
     const links = this.validate(value)
-    if (isDeepStrictEqual(task.linkedCheckouts ?? [], links)) return { ok: true }
-    if (!isDeepStrictEqual(task.linkedCheckouts ?? [], before))
+    const effective = task.pendingLinkedCheckouts ?? task.linkedCheckouts ?? []
+    if (isDeepStrictEqual(effective, links)) return { ok: true }
+    if (!isDeepStrictEqual(effective, before))
       throw new HttpError(409, 'Linked projects changed. Reload before saving.')
     for (const link of links) {
       const previous = task.linkedCheckouts?.find((item) => item.id === link.id)
@@ -123,6 +124,7 @@ export class LinkedCheckouts {
     this.store.updateTask(id, (current) => ({
       ...current,
       linkedCheckouts: links,
+      pendingLinkedCheckouts: undefined,
       sessionId: undefined,
       sessionAgentId: undefined,
     }))

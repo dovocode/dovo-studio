@@ -62,7 +62,7 @@ export function ProjectThreadFilter({
         })}
       >
         <Icon
-          name="folder"
+          name={selected?.entries[0].repository.kind === 'scratch' ? 'chat' : 'folder'}
           size={compact ? 14 : 17}
           color={selected ? colors.text : colors.muted}
         />
@@ -128,13 +128,19 @@ export function ProjectThreadFilter({
                     opacity: pressed ? 0.7 : 1,
                   })}
                 >
-                  <Icon name="folder" size={18} color={colors.muted} />
+                  <Icon
+                    name={group.entries[0].repository.kind === 'scratch' ? 'chat' : 'folder'}
+                    size={18}
+                    color={colors.muted}
+                  />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text numberOfLines={1} style={styles.text}>
                       {group.name}
                     </Text>
                     <Text numberOfLines={1} style={styles.muted}>
-                      {group.identity ?? 'Local repository'}
+                      {group.entries[0].repository.kind === 'scratch'
+                        ? 'General conversations'
+                        : (group.identity ?? 'Local repository')}
                     </Text>
                   </View>
                 </Pressable>

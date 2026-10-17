@@ -270,52 +270,61 @@ it('keeps a tool group disclosure stable when new activity events update the sam
   )
 })
 
-it('shows artifacts only at their owning message, never in the fallback when history is unloaded', () => {
-  const reference = {
-    id: 'a2ecfb4a-d6c3-40bd-8695-f40a352fb612',
-    taskId: 'task',
-    title: 'Design',
-    format: 'html',
-    revision: 1,
-  }
-  const tools = recentTools([
-    {
-      id: 'artifact',
-      time: '2026-10-03T10:00:05Z',
-      kind: 'tool',
-      scope: 'task',
-      summary: 'Design',
-      payload: JSON.stringify({
-        turnId: turn.id,
-        messageId: 'before',
-        toolId: 'artifact',
-        status: 'completed',
-        artifacts: [reference],
-      }),
-    },
-    {
-      id: 'orphan',
-      time: '2026-10-03T10:00:06Z',
-      kind: 'tool',
-      scope: 'task',
-      summary: 'Legacy artifact',
-      payload: JSON.stringify({ artifacts: [{ ...reference, revision: 2 }] }),
-    },
-    {
-      id: 'legacy',
-      time: '2026-10-03T10:00:07Z',
-      kind: 'tool',
-      scope: 'task',
-      summary: 'Legacy command',
-      payload: '{}',
-    },
-  ])
-  expect(
-    conversationToolsByMessage(task, tools)
-      .get('before')
-      ?.map((tool) => tool.id),
-  ).toEqual(['artifact'])
-  expect(unassignedConversationTools(task, tools).map((tool) => tool.id)).toEqual(['legacy'])
-  const partial = { ...task, messages: messages.filter((message) => message.id === 'after') }
-  expect(unassignedConversationTools(partial, tools).map((tool) => tool.id)).toEqual(['legacy'])
-})
+it.each(['artifacts', 'images'])(
+  'shows %s only at their owning message, never in the fallback when history is unloaded',
+  (kind) => {
+    const reference = {
+      id: 'a2ecfb4a-d6c3-40bd-8695-f40a352fb612',
+      taskId: 'task',
+      title: 'Design',
+      format: 'html',
+      revision: 1,
+    }
+    const tools = recentTools([
+      {
+        id: 'artifact',
+        time: '2026-10-03T10:00:05Z',
+        kind: 'tool',
+        scope: 'task',
+        summary: 'Design',
+        payload: JSON.stringify({
+          turnId: turn.id,
+          messageId: 'before',
+          toolId: 'artifact',
+          status: 'completed',
+          ...(kind === 'artifacts'
+            ? { artifacts: [reference] }
+            : { toolImages: [{ eventId: 'image', index: 0 }] }),
+        }),
+      },
+      {
+        id: 'orphan',
+        time: '2026-10-03T10:00:06Z',
+        kind: 'tool',
+        scope: 'task',
+        summary: 'Legacy artifact',
+        payload: JSON.stringify(
+          kind === 'artifacts'
+            ? { artifacts: [{ ...reference, revision: 2 }] }
+            : { toolImages: [{ eventId: 'orphan-image', index: 0 }] },
+        ),
+      },
+      {
+        id: 'legacy',
+        time: '2026-10-03T10:00:07Z',
+        kind: 'tool',
+        scope: 'task',
+        summary: 'Legacy command',
+        payload: '{}',
+      },
+    ])
+    expect(
+      conversationToolsByMessage(task, tools)
+        .get('before')
+        ?.map((tool) => tool.id),
+    ).toEqual(['artifact'])
+    expect(unassignedConversationTools(task, tools).map((tool) => tool.id)).toEqual(['legacy'])
+    const partial = { ...task, messages: messages.filter((message) => message.id === 'after') }
+    expect(unassignedConversationTools(partial, tools).map((tool) => tool.id)).toEqual(['legacy'])
+  },
+)

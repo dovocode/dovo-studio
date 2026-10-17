@@ -7,7 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 // Model RN's column layout, zero default shrink and explicit font scaling. These checks
 // exercise real settings components; UIKit/SwiftUI measurement still needs a device.
 const native = `
-  import {useLayoutEffect,useRef,useSyncExternalStore} from 'react';
+  import {Children,useLayoutEffect,useRef,useSyncExternalStore} from 'react';
   const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
   const css=styles=>{const style=flat(styles);return Object.fromEntries(Object.entries({...style,
     ...(style.paddingHorizontal!=null?{paddingLeft:style.paddingLeft??style.paddingHorizontal,paddingRight:style.paddingRight??style.paddingHorizontal}:{}),
@@ -21,7 +21,7 @@ const native = `
     const ref=useRef();useLayoutEffect(()=>{if(!onLayout)return;const observer=new ResizeObserver(()=>{const {width,height}=ref.current.getBoundingClientRect();onLayout({nativeEvent:{layout:{width,height}}})});observer.observe(ref.current);return ()=>observer.disconnect()},[onLayout]);
     return <div ref={ref} data-testid={testID} aria-label={accessibilityLabel} style={{...base,...css(style)}}>{children}</div>;
   };
-  export const ScrollView=({children,style,contentContainerStyle})=><View style={[{overflowY:'auto',flex:1},style]}><View style={contentContainerStyle}>{children}</View></View>;
+  export const ScrollView=({children,style,contentContainerStyle,stickyHeaderIndices})=><View style={[{overflowY:'auto',flex:1},style]}><View style={contentContainerStyle}>{Children.toArray(children).map((child,index)=>stickyHeaderIndices?.includes(index)?<View key={index} style={{position:'sticky',top:0,zIndex:1}}>{child}</View>:child)}</View></View>;
   export const Pressable=({children,style,onPress,testID,accessibilityLabel,accessibilityRole,accessibilityState,accessibilityValue,disabled})=><button data-testid={testID} aria-label={accessibilityLabel} role={accessibilityRole} aria-pressed={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-value={accessibilityValue?.text} disabled={disabled} onClick={onPress} style={{...base,backgroundColor:'transparent',border:0,margin:0,padding:0,font:'inherit',textAlign:'left',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
   export const Text=({children,style,numberOfLines,testID,accessibilityRole})=>{
     const textStyle=css(style),scale=window.fontScale;
@@ -84,7 +84,7 @@ const built = await build({
     loader: 'tsx',
     contents: `
       import {useState} from 'react';import {createRoot} from 'react-dom/client';
-      import {ScrollView,View} from 'react-native';
+      import {ScrollView,View,Text as RNText} from 'react-native';
       import {createMobileTheme,MobileThemeContext} from './src/ui/theme';
       import {SettingsPage,SettingsSheet} from './src/screens/settings-theme';
       import {SettingsGroup,SettingsRow,SettingsSwitchRow} from './src/screens/settings-group';
@@ -103,13 +103,13 @@ const built = await build({
           <SettingsAction secondary label="Reset all later worktree setup overrides" onPress={()=>{}}/>
         </>;
       }
-      function App(){const [mode,setMode]=useState('dark');const [sheet,setSheet]=useState(false);window.setMode=setMode;window.showSheet=setSheet;
-        return <MobileThemeContext.Provider value={createMobileTheme('dovo',mode)}><SettingsPage><ScrollView contentContainerStyle={{padding:16,gap:24}}>
+      function App(){const [mode,setMode]=useState('dark');const [sheet,setSheet]=useState(false);const [scopeOnly,setScopeOnly]=useState(false);window.showScoped=setScopeOnly;window.setMode=setMode;window.showSheet=setSheet;
+        return <MobileThemeContext.Provider value={createMobileTheme('dovo',mode)}><SettingsPage>{scopeOnly?<SettingsTargetProvider><ScopedSettings scrollable>{()=> <View style={{height:1800}}><RNText>Settings content</RNText></View>}</ScopedSettings></SettingsTargetProvider>:<ScrollView contentContainerStyle={{padding:16,gap:24}}>
           <SettingsGroup title="Computers"><SettingsRow title="Settings scope" subtitle="All projects on this computer" value={computer} icon="device" tint="#087f5b" mark={{icon:'stack',label:'Computer settings'}} onPress={()=>{}}/></SettingsGroup>
           <SettingsGroup title="Preferences"><Controls/></SettingsGroup>
-          <SettingsTargetProvider><ScopedSettings>{()=> <SettingSource source="global" overridden={false} label="Worktree setup" setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:undefined}}/>}</ScopedSettings></SettingsTargetProvider>
+          <SettingsTargetProvider><ScopedSettings>{()=> <SettingSource source="global" overridden={false} label="Worktree setup" setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:undefined,inheritedValue:undefined}}/>}</ScopedSettings></SettingsTargetProvider>
           <HarnessUpdates/>
-        </ScrollView>{sheet&&<SettingsSheet title="Edit computer" onClose={()=>setSheet(false)}><Controls/></SettingsSheet>}</SettingsPage></MobileThemeContext.Provider>;
+        </ScrollView>}{sheet&&<SettingsSheet title="Edit computer" onClose={()=>setSheet(false)}><Controls/></SettingsSheet>}</SettingsPage></MobileThemeContext.Provider>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -181,9 +181,14 @@ try {
     )
 
     await page.getByRole('button', { name: 'Change scope', exact: true }).click()
-    await page.getByRole('button', { name: 'Sources for worktree setup', exact: true }).click()
     await page
-      .getByRole('button', { name: 'Worktree setup: overridden at 1 later level', exact: true })
+      .getByRole('button', { name: 'View inheritance for worktree setup', exact: true })
+      .click()
+    await page
+      .getByRole('button', {
+        name: '1 override keeps its own value for worktree setup',
+        exact: true,
+      })
       .click()
     const sourceName = page.getByText('Dominic’s development computer with a long name · editing', {
       exact: true,
@@ -286,6 +291,31 @@ try {
     await editor.getByTestId('Choose Siri voice 13 · English · Enhanced quality').click()
     await page.waitForFunction(() => window.voice === '13')
     await page.evaluate(() => window.showSheet(false))
+    await page.evaluate(() => window.showScoped(true))
+    const sticky = page.getByLabel('Settings target', { exact: true })
+    await sticky.getByText('Editing Global defaults', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Change scope', exact: true }).click()
+    const before = await sticky.boundingBox()
+    const scroll = () =>
+      sticky.evaluate((element) => {
+        let parent = element.parentElement
+        while (parent && getComputedStyle(parent).overflowY !== 'auto')
+          parent = parent.parentElement
+        if (!parent) throw Error('No scoped settings scroller')
+        parent.scrollTop = 700
+        return parent.getBoundingClientRect().top
+      })
+    const scrollTop = await scroll()
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('div')].some((e) => e.scrollTop === 700),
+    )
+    assert.ok(
+      Math.abs((await sticky.boundingBox()).y - scrollTop) <= 1,
+      'Only the compact scope summary must stick',
+    )
+    const choices = page.getByLabel('Settings inheritance', { exact: true })
+    assert.ok((await choices.boundingBox()).y < before.y, 'Expanded choices must scroll away')
+    await page.screenshot({ path: '/tmp/dovo-inheritance-mobile-' + platform + '.png' })
     assert.deepEqual(errors, [])
     await page.close()
   }

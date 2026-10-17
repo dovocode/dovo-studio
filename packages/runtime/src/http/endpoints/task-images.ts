@@ -1,7 +1,14 @@
 import { open } from 'node:fs/promises'
 import { fileTypeFromBuffer } from 'file-type'
 import { constants } from 'node:fs'
-import { decode, taskImageRequestSchema, toolImages, isImageAttachment } from '@dovo/protocol'
+import { isAbsolute, resolve } from 'node:path'
+import {
+  decode,
+  taskImageRequestSchema,
+  toolImages,
+  nativeToolImagePath,
+  isImageAttachment,
+} from '@dovo/protocol'
 import { imagePreview } from '../../previews/image.js'
 import type { Services } from '../../services.js'
 import { HttpError } from '../../errors.js'
@@ -23,16 +30,25 @@ async function readImage(s: Services, value: unknown) {
       throw new HttpError(400, 'Choose one image source')
     const payload = s.activity.imagePayload(task.id, input.eventId)
     const image = payload === undefined ? undefined : toolImages(payload)[input.index]
-    if (!image) throw new HttpError(404, 'This image result is no longer available')
-    return input.maxSize
-      ? imagePreview(
-          Buffer.from(image.uri.slice(image.uri.indexOf(',') + 1), 'base64'),
-          input.maxSize,
-        )
-      : { uri: image.uri }
+    if (image)
+      return input.maxSize
+        ? imagePreview(
+            Buffer.from(image.uri.slice(image.uri.indexOf(',') + 1), 'base64'),
+            input.maxSize,
+          )
+        : { uri: image.uri }
+    const path = input.index === 0 ? nativeToolImagePath(payload) : undefined
+    if (!path) throw new HttpError(404, 'This image result is no longer available')
+    // The saved, task-owned event authorizes this exact provider output, including
+    // generated images outside the checkout. A client-supplied path still uses sharedTaskFile.
+    const target = isAbsolute(path) ? path : resolve(await s.checkouts.fileDirectory(task.id), path)
+    return readImageFile(target, input.maxSize)
   }
   if (!input.path || input.index !== undefined) throw new HttpError(400, 'Image path is required')
   const target = await sharedTaskFile(s, task.id, input.path)
+  return readImageFile(target, input.maxSize)
+}
+async function readImageFile(target: string, maxSize?: number) {
   const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
     const info = await handle.stat()
@@ -45,8 +61,8 @@ async function readImage(s: Services, value: unknown) {
       type = await fileTypeFromBuffer(data)
     if (!type || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(type.mime))
       throw new HttpError(415, 'Use a PNG, JPEG, GIF or WebP image')
-    return input.maxSize
-      ? imagePreview(data, input.maxSize)
+    return maxSize
+      ? imagePreview(data, maxSize)
       : { uri: `data:${type.mime};base64,${data.toString('base64')}` }
   } finally {
     await handle.close()

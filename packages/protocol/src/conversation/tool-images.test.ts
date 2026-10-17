@@ -1,7 +1,86 @@
 import { expect, it } from 'vite-plus/test'
-import { toolImages, toolImageReferences } from './tool-images'
+import { toolImages, toolImageReferences, nativeToolImagePath } from './tool-images'
 import { compactActivityEvents } from '../automation/activity'
 const image = { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }
+const png =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6K0sAAAAASUVORK5CYII='
+const native = (item: unknown, status = 'completed') => ({ status, event: { item } })
+
+it('extracts native generated raster data and keeps it out of compact activity', () => {
+  const item = {
+    id: 'generated',
+    type: 'imageGeneration',
+    status: 'completed',
+    result: png,
+    savedPath: '/tmp/result.png',
+  }
+  expect(toolImages(native(item))).toEqual([
+    { uri: `data:image/png;base64,${png}`, mime: 'image/png' },
+  ])
+  const event = {
+    id: 'gen-event',
+    scope: 'task',
+    kind: 'tool',
+    time: '',
+    summary: 'Generate image',
+    payload: JSON.stringify(native(item)),
+  }
+  const [compact] = compactActivityEvents([event])
+  expect(toolImageReferences(compact!.payload)).toEqual([
+    { eventId: 'gen-event', index: 0, mime: 'image/png' },
+  ])
+  expect(compact!.payload).not.toContain(png)
+  expect(compactActivityEvents([compact!])).toEqual([compact])
+  for (const result of ['', 'not-image', '<svg/>', 'https://example.com/image.png'])
+    expect(toolImages(native({ ...item, result }))).toEqual([])
+  expect(
+    toolImages(native({ ...item, status: 'failed', failure: { type: 'usageLimitExceeded' } })),
+  ).toEqual([])
+  expect(toolImages(native({ ...item, result: `data:image/png;base64,${png}` }))).toHaveLength(1)
+})
+
+it.each([
+  ['jpeg', '/9j/4AAQSkZJRgAB'],
+  ['gif', 'R0lGODlhAQABAIAA'],
+  ['webp', 'UklGRhAAAABXRUJQ'],
+])('recognizes generated %s data by its raster signature', (format, result) => {
+  expect(
+    toolImages(native({ type: 'imageGeneration', status: 'completed', result }))[0]?.mime,
+  ).toBe(`image/${format}`)
+})
+
+it.each(['imageView', 'imageGeneration'])(
+  'keeps %s file previews task/event scoped through compaction',
+  (type) => {
+    const item =
+      type === 'imageView'
+        ? { type, path: '/tmp/view.png' }
+        : { type, status: 'completed', savedPath: '/tmp/view.png', result: '' }
+    const payload = native(item)
+    expect(nativeToolImagePath(payload)).toBe('/tmp/view.png')
+    expect(nativeToolImagePath(native(item, 'running'))).toBeUndefined()
+    const event = {
+      id: 'file-event',
+      scope: 'task',
+      kind: 'tool',
+      time: '',
+      summary: 'Image',
+      payload: JSON.stringify(payload),
+    }
+    const compact = compactActivityEvents([event])
+    expect(toolImageReferences(compact[0]!.payload)).toEqual([{ eventId: 'file-event', index: 0 }])
+    expect(toolImageReferences(payload, event.id)).toEqual([{ eventId: 'file-event', index: 0 }])
+    expect(JSON.parse(compact[0]!.payload).event).toBeUndefined()
+    expect(compactActivityEvents(compact)).toEqual(compact)
+    for (const path of [
+      'https://example.com/a.png',
+      'file:///tmp/a.png',
+      'data:image/png;base64,AAAA',
+      'bad\0.png',
+    ])
+      expect(nativeToolImagePath(native({ type: 'imageView', path }))).toBeUndefined()
+  },
+)
 it('reads MCP, Claude, nested JSON and screenshot images without exposing inputs', () => {
   expect(toolImages({ input: image, result: JSON.stringify({ content: [image] }) })).toEqual([
     { uri: 'data:image/png;base64,aGVsbG8=', mime: 'image/png' },

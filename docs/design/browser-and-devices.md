@@ -62,6 +62,25 @@ contexts are isolated from personal browser profiles; they do not receive Dovo t
 permissions. An HTTPS web app still requires an HTTPS/WSS runtime endpoint. No development-server
 ports need to be exposed to the phone.
 
+Binary frame flow adapts to network round-trip time and decoder speed, with at most eight frames and
+256 KiB in flight (larger detail images travel alone). Rising delay reduces the window to avoid
+queuing stale images on bandwidth-limited links; recovery is gradual. Older viewers retain the
+two-frame window. Browser movement sends immediately, coalescing only bursts within 4 ms. Native
+device gestures retain frame pacing. Lighter JPEGs carry motion, and sharp 2× stills restore detail
+after interaction settles. Resize detail capture does not block subsequent input.
+
+The stream indicator shows painted frames per second, transport round-trip time, and image scale.
+Its disclosure also shows decode/draw time and image dimensions. Still pages show Idle; older
+runtimes can stream without RTT diagnostics. Measurements exclude host capture and physical screen
+presentation. Telemetry is opt-in and sent at most once per second, preserving older viewers.
+
+`pnpm test:browser-stream-latency:browser` compares frame flow with simulated network delay,
+bandwidth limits and slow decoders. It measures transport and canvas rendering using a synthetic
+JPEG source. `node scripts/verify-remote-browser.mjs` (also with `--slow-decoder`) exercises real
+Chromium capture and interaction. These local checks do not establish latency over a physical
+network. Input-to-image latency includes network round trips, capture, decoding and display refresh;
+a 1–5 ms end-to-end guarantee across networks is not achievable through app optimization alone.
+
 The canvas represents the remote page visually: it does not expose that page's DOM to the client's
 screen reader. Use Direct preview when local page accessibility is needed. This slice doesn't
 transfer uploaded/downloaded files, system clipboard contents, audio or video streams. Typed text

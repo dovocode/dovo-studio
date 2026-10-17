@@ -312,6 +312,8 @@ export function createRuntimeServer(services: Services, internal = false) {
             url.searchParams.get('frames') === 'binary-v1',
             undefined,
             ticket.resourceId,
+            undefined,
+            url.searchParams.get('metrics') === '1',
           )
         })
         return

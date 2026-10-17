@@ -65,7 +65,9 @@ import Appearance from '${root}/packages/studio-shell/src/app-settings/appearanc
 import Notifications from '${root}/packages/studio-shell/src/app-settings/notifications.tsx';
 import Shortcuts from '${root}/packages/studio-shell/src/app-settings/shortcuts.tsx';
 import Browser from '${root}/packages/studio-shell/src/app-settings/browser.tsx';
-import PullRequests from '${root}/packages/studio-shell/src/app-settings/pull-requests.tsx';
+import {PullRequestCreationDefaults} from '${root}/packages/extension-runtime/src/pull-request-creation-defaults.tsx';
+import {SettingsPage} from '@dovo/studio-ui';
+function PullRequests(){return <SettingsPage title="Pull requests & pipelines" description="Device creation defaults"><PullRequestCreationDefaults/></SettingsPage>}
 import Diffs from '${root}/packages/studio-shell/src/app-settings/diffs.tsx';
 import Usage from '${root}/packages/studio-shell/src/app-settings/usage.tsx';
 import Agents from '${root}/packages/extension-agents/src/view.tsx';
@@ -90,8 +92,8 @@ window.request=async(path,input)=>{
 window.runtime={...window.sources[0],runtimes:window.sources,request:window.request,activeRuntimeId:'computer',refreshRuntimes:async()=>{},refreshRuntime:async()=>{},readRuntime:(profile,path,input)=>window.request(path,input),runtimeReadCache:()=>({read:async()=>null,write:async()=>{}})};
 window.updateState={status:'idle',channel:'stable'};window.updateCalls=[];window.updateListeners=new Set();window.publishUpdate=value=>{window.updateState=value;for(const fn of window.updateListeners)fn(value)};
 window.updates={state:async()=>window.updateState,subscribe:fn=>{window.updateListeners.add(fn);return()=>window.updateListeners.delete(fn)},check:async()=>window.updateCalls.push('check'),install:async()=>window.updateCalls.push('install'),setChannel:async channel=>{window.updateCalls.push(channel);window.publishUpdate({...window.updateState,channel})}};
-const localPages={'appearance-settings':Appearance,'notification-settings':Notifications,'shortcuts-settings':Shortcuts,'browser-settings':Browser,'pull-settings':PullRequests,'diff-settings':Diffs,'usage-settings':Usage};
-const localTitles=['Appearance','Notifications','Keyboard shortcuts','Browser','Pull requests','Review & diffs','Usage & limits'];
+const localPages={'appearance-settings':Appearance,'notification-settings':Notifications,'shortcuts-settings':Shortcuts,'browser-settings':Browser,'pull-request-monitoring-settings':PullRequests,'diff-settings':Diffs,'usage-settings':Usage};
+const localTitles=['Appearance','Notifications','Keyboard shortcuts','Browser','Pull requests & pipelines','Review & diffs','Usage & limits'];
 const views=[
  ...Object.keys(localPages).map((id,index)=>({id,title:localTitles[index],order:.2+index*.01,settingsSection:'app'})),
  {id:'general',title:'General',order:.1,settingsSection:'app',keywords:'organization navigation'},
@@ -298,7 +300,7 @@ try {
   assert.equal(writes.at(-1).scope, 'environment-project')
   assert.equal(writes.at(-1).repositoryId, 'project')
   await page
-    .getByRole('button', { name: 'Use inherited auto-resume limited tasks', exact: true })
+    .getByRole('button', { name: 'Use inherited auto-resume limited tasks: Off', exact: true })
     .click()
   await page.getByRole('button', { name: 'Save lifecycle settings', exact: true }).click()
   await page.waitForFunction(
@@ -398,7 +400,7 @@ try {
   await remoteProfiles.getByRole('textbox', { name: 'Name for Remote work' }).waitFor()
   assert.equal(await page.evaluate(() => window.browserWrites.at(-1).name), 'Remote work')
   assert.equal((await preference('browserProfiles')).at(-1).name, 'Local work')
-  await openLocal('Pull requests')
+  await openLocal('Pull requests & pipelines')
   await choose('Merge method', 'Squash and merge')
   assert.equal(await preference('mergeMethod'), 'squash')
   await openLocal('Review & diffs')
@@ -440,7 +442,7 @@ try {
       'Keyboard shortcuts',
       'Browser',
       'Updates & about',
-      'Pull requests',
+      'Pull requests & pipelines',
       'Review & diffs',
       'Usage & limits',
     ]) {
@@ -462,7 +464,7 @@ try {
     'Keyboard shortcuts',
     'Browser',
     'Updates & about',
-    'Pull requests',
+    'Pull requests & pipelines',
     'Review & diffs',
     'Usage & limits',
   ]) {

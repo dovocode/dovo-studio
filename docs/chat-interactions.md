@@ -50,6 +50,37 @@ completion; answers steer an active turn or become a follow-up when it finishes.
 explicit decline. Stop and runtime shutdown dismiss pending forms without sending a response.
 Blocking questions take precedence when multiple requests are pending.
 
+The regular `dovo_task ask_question` tool provides structured questions for providers without a
+usable native question interface, including normal Cursor sessions. It is independent of Studio
+Tools. Supply a stable `key`, `title`, and `questions` with unique IDs, choices and/or custom input.
+The tool returns immediately with the question ID and pending status. The user can answer on desktop
+or mobile; the answer steers an active turn when supported or becomes a follow-up. If work depends
+on the answer, finish the turn and wait for that follow-up instead of polling. Retrying the same key
+within a turn reuses the card; a different question needs a new key. Decline is explicit, and Stop
+or runtime shutdown cancels pending cards. Answers become conversation messages: do not request
+secrets through this tool. Native blocking questions retain their separate secret-input support.
+
+The regular `dovo_task todos` tool reads (`action: "list"`) or replaces (`action: "set", items`) the
+thread's shared checklist. Items have `text` and `status`: `pending`, `in-progress` or `completed`.
+An empty list clears it. It supports up to 100 entries and does not mark the thread complete. Codex
+native plan updates, successful Claude `TodoWrite` and task-tool updates, Muse native todos,
+OpenCode todo snapshots, ACP/Grok plans and successful Mistral Vibe todo results feed the same
+checklist. Prefer the provider's native tools where available; do not maintain a parallel list with
+the fallback tool. Parent checklists exclude native child progress. Desktop and mobile show the
+current progress and active item; expanded lists scroll within a bounded area so the composer stays
+reachable.
+
+Codex native image generation and image viewing appear as tool activity with image previews on
+desktop and mobile. Previews stay visible when work is folded. Generated raster data stays on the
+runtime; clients receive task/event references and request thumbnails or larger previews from that
+computer. Native file-backed images authorize only the path recorded by the completed event,
+including outputs outside the checkout. Pairing and thread ownership are required; clients cannot
+substitute a path.
+
+Both regular tools are restricted to their own active thread/run. Runtime authorization permits them
+for read-only agents because they affect conversation and progress, not project access. Provider
+restrictions still apply: for example, Cursor's read-only mode excludes all MCP tools.
+
 Answer validation happens before delivery; secrets are redacted in question history. An identical
 answer retry is acknowledged for the most recent 256 answers within the running runtime. Conflicting
 answers and replies to cancelled questions are rejected. Pending forms and retry acknowledgements

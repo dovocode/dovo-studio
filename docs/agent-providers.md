@@ -57,6 +57,14 @@ resume. Cursor’s built-in question tool is excluded because the SDK has no pub
 Dovo’s MCP question tools remain available. Context summaries are automatic; manual compaction fails
 explicitly without sending a fake command to the model.
 
+Regular `dovo_task ask_question` and `todos` tools provide thread-scoped question forms and a shared
+checklist independently of Studio Tools. Native question and planning tools remain preferred when
+available. Codex plans, successful Claude todo/task changes, Muse todo lists, OpenCode todos,
+ACP/Grok plans and successful Mistral Vibe todo results update the same desktop/mobile checklist.
+The fallback question tool delivers answers as conversation input without holding an MCP call open.
+Cursor can use it in normal sessions; its read-only mode excludes MCP. See
+[chat interactions](chat-interactions.md) for tool semantics and lifecycle limits.
+
 Sources: [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript),
 [Hermes programmatic integration](https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration/),
 [Copilot SDK](https://github.com/github/copilot-sdk),

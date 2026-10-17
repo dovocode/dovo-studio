@@ -100,6 +100,12 @@ export const remoteBrowserInputSchema = Schema.Union([
 export type RemoteBrowserInput = Schema.Schema.Type<typeof remoteBrowserInputSchema>
 export const remoteBrowserFrameAckSchema = mutableStruct({
   type: Schema.Literal('frameAck'),
+  // Time spent waiting for/using the decoder, excluded from the transport RTT.
+  // Optional so older binary-v1 viewers retain the conservative two-frame window.
+  decodeMs: Schema.optional(
+    maxValue(minValue(Schema.Number.pipe(Schema.check(Schema.isFinite())), 0), 10000),
+  ),
+  dropped: Schema.optional(Schema.Boolean),
   sequence: maxValue(
     minValue(
       Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
@@ -120,6 +126,10 @@ export const remoteBrowserDialogSchema = mutableStruct({
   defaultValue: Schema.String,
 })
 export const remoteBrowserMessageSchema = Schema.Union([
+  mutableStruct({
+    type: Schema.Literal('streamStats'),
+    transportMs: maxValue(minValue(Schema.Number.pipe(Schema.check(Schema.isFinite())), 0), 60000),
+  }),
   mutableStruct({
     type: Schema.Literal('frame'),
     data: Schema.String,

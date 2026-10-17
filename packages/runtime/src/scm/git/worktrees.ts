@@ -19,7 +19,7 @@ function ownsWorktree(
 ) {
   const keys = [
     ...(task.repositoryId === repositoryId ? [taskWorktreeKeys(common, task.id, root)] : []),
-    ...(task.linkedCheckouts ?? [])
+    ...[...(task.linkedCheckouts ?? []), ...(task.pendingLinkedCheckouts ?? [])]
       .filter(
         (link) =>
           link.repositoryId === repositoryId &&
@@ -51,6 +51,7 @@ function referencesWorktree(
     ownsWorktree(task, repositoryId, common, root, path, branch) ||
     task.existingWorktreePath === path ||
     !!task.linkedCheckouts?.some((link) => link.existingWorktreePath === path) ||
+    !!task.pendingLinkedCheckouts?.some((link) => link.existingWorktreePath === path) ||
     !!task.history.linkedCheckpoints?.some(
       (link) => link.repositoryId === repositoryId && link.directory === path,
     )

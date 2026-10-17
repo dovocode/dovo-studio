@@ -4,6 +4,7 @@ import { filePreviewMetadataSchema } from './scm/repositories/file-previews.js'
 import { mutableArray, mutableStruct } from './shared/schema.js'
 import { minValue, maxValue, refine, urlSchema, isoDateTime } from './shared/schema.js'
 import { subagentSchema } from './conversation/workflow/subagents.js'
+import { agentTodosSchema } from './conversation/workflow/agent-interactions.js'
 import { jiraBindingSchema, jiraSourceSchema, jiraIssueLinkSchema } from './scm/forges/jira.js'
 import { taskWorkItemSchema } from './scm/work/work-task.js'
 import { resourceSettingsSchema } from './shared/resources.js'
@@ -596,18 +597,8 @@ export const taskSchema = mutableStruct({
       snapshot: Schema.optional(Schema.String),
     }),
   ),
-  // Runtime-owned: the provider's native todo list, replaced whole on every update.
-  nativeTodos: Schema.optional(
-    maxValue(
-      mutableArray(
-        mutableStruct({
-          text: maxValue(minValue(Schema.String, 1), 2000),
-          status: Schema.Literals(['pending', 'in-progress', 'completed']),
-        }),
-      ),
-      100,
-    ),
-  ),
+  // Runtime-owned: the shared agent checklist, from native events or the regular task tool.
+  nativeTodos: Schema.optional(agentTodosSchema),
   // Runtime-owned: how full the agent's context window is, from its latest usage report.
   contextUsage: Schema.optional(
     mutableStruct({
@@ -663,6 +654,8 @@ export const taskSchema = mutableStruct({
     mutableArray(mutableStruct({ id: Schema.String, directory: Schema.String })),
   ),
   linkedCheckouts: Schema.optional(linkedCheckoutsSchema),
+  /** Agent-requested additions activate at the next fresh turn, preserving the current run's roots. */
+  pendingLinkedCheckouts: Schema.optional(linkedCheckoutsSchema),
   checkoutBranch: Schema.optional(Schema.String),
   /** Reuse a registered Git worktree instead of creating one for this task. */
   existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
@@ -859,6 +852,13 @@ export const workspaceSchema = mutableStruct({
 })
 export type Agent = Schema.Schema.Type<typeof agentSchema>
 export type Repository = Schema.Schema.Type<typeof repositorySchema>
+/** Keep managed General threads consistent with runtimes that still save the legacy name. */
+export function projectDisplayName(
+  repository: Pick<Repository, 'kind' | 'name'> | undefined,
+  fallback = 'No project',
+) {
+  return repository?.kind === 'scratch' ? 'General' : (repository?.name ?? fallback)
+}
 export function projectIcon(repository: Repository | undefined) {
   return repository?.iconOverride ?? repository?.discoveredIcon
 }

@@ -233,6 +233,9 @@ function WorkbenchContent({
   }, [confirmSettingsNavigation])
   const navigate = useCallback(
     (next: StudioNavigation, options?: { replace?: boolean }) => {
+      // Keep existing links to the former device-only PR page working.
+      if (next.viewId === 'pull-request-settings')
+        next = { ...next, viewId: 'pull-request-monitoring-settings' }
       const { target } = settingsNavigation.current
       if (!canLeave()) return
       navigationAttempt.current++

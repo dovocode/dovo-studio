@@ -68,6 +68,71 @@ it('requires pairing and reads compact references only from their own task', asy
   expect((await read({ ...input, taskId: 'other' })).status).toBe(404)
   expect((await read({ ...input, path: 'extra' })).status).toBe(400)
 })
+
+it('previews Codex generated data and native file outputs through paired, task-owned event references', async () => {
+  const { runtime, directory, read } = await setup()
+  const { default: sharp } = await import('sharp')
+  const png = await sharp({ create: { width: 8, height: 4, channels: 3, background: '#124578' } })
+    .png()
+    .toBuffer()
+  const outside = await mkdtemp(join(tmpdir(), 'dovo-native-image-'))
+  cleanup.push(() => rm(outside, { recursive: true, force: true }))
+  const path = join(outside, 'generated.png')
+  await writeFile(path, png)
+  await writeFile(join(directory, 'view.png'), png)
+  const add = (id: string, item: unknown, status = 'completed') => {
+    runtime.services.activity.add(
+      'tool',
+      'task',
+      'Image',
+      { toolId: id, status, event: { item } },
+      id,
+    )
+    return { taskId: 'task', eventId: id, index: 0 }
+  }
+  const generated = add('generated', {
+    type: 'imageGeneration',
+    status: 'completed',
+    result: png.toString('base64'),
+    savedPath: path,
+  })
+  const viewed = add('viewed', { type: 'imageView', path: 'view.png' })
+  const saved = add('saved', {
+    type: 'imageGeneration',
+    status: 'completed',
+    result: '',
+    savedPath: path,
+  })
+  for (const input of [generated, viewed, saved]) {
+    expect(await (await read(input)).json()).toEqual({
+      uri: `data:image/png;base64,${png.toString('base64')}`,
+    })
+    expect((await read({ ...input, maxSize: 128 })).status).toBe(200)
+    expect((await read({ ...input, taskId: 'other' })).status).toBe(404)
+    expect((await read({ ...input, index: 1 })).status).toBe(404)
+    expect((await read({ ...input, path })).status).toBe(400)
+    expect((await read(input, 'wrong')).status).toBe(401)
+  }
+  expect((await read({ taskId: 'task', path })).status).toBe(403)
+  expect((await read(add('running', { type: 'imageView', path }, 'running'))).status).toBe(404)
+  expect(
+    (
+      await read(
+        add(
+          'failed',
+          { type: 'imageGeneration', status: 'failed', result: '', savedPath: path },
+          'failed',
+        ),
+      )
+    ).status,
+  ).toBe(404)
+  expect((await read(add('missing', { type: 'imageView', path: 'missing.png' }))).status).toBe(404)
+  await writeFile(join(directory, 'fake.png'), 'not an image')
+  expect((await read(add('invalid', { type: 'imageView', path: 'fake.png' }))).status).toBe(415)
+  expect(
+    (await read(add('url', { type: 'imageView', path: 'https://example.com/image.png' }))).status,
+  ).toBe(404)
+})
 it('reads checkout images and assistant-shared temp images while denying unrelated files', async () => {
   const { runtime, directory, read } = await setup()
   await writeFile(join(directory, 'shot.png'), png)

@@ -18,6 +18,7 @@ export function attachBrowserSocket(
   simulatorId?: string,
   browserId = taskId,
   foreignAuthorize?: () => void,
+  metrics = false,
 ) {
   const source = simulatorId
     ? foreignAuthorize
@@ -31,19 +32,33 @@ export function attachBrowserSocket(
   let frame: BrowserFrame | undefined
   let flush: ReturnType<typeof setTimeout> | undefined
   let sequence = 0
-  const inFlight = new Map<number, number>()
+  let frameWindow = 2
+  let inFlightBytes = 0
+  let transportMs: number | undefined
+  let minimumTransportMs = Infinity
+  let minimumTransportAt = 0
+  let congestedSamples = 0
+  let growAfter = 0
+  let resumedAt = 0
+  let lastMetricsAt = -Infinity
+  const inFlight = new Map<number, { sentAt: number; bytes: number }>()
   const send = (message: BrowserOutput) => {
     if (closed || client.readyState !== WebSocket.OPEN) return
     if (message.type === 'frame') {
-      // Bound work all the way through the client's decoder, not just the OS socket.
-      // Two frames allow capture and rendering to overlap without building latency.
-      if ((binary && inFlight.size >= 2) || client.bufferedAmount > 256 * 1024) {
+      // Keep enough frames in transit for the measured round trip, but never
+      // build an unbounded queue in a slow network or decoder. Only the latest
+      // unsent frame survives. Large stills travel alone once prior frames clear.
+      const creditBlocked =
+        binary &&
+        (inFlight.size >= frameWindow ||
+          (inFlight.size > 0 && inFlightBytes + message.data.byteLength > 256 * 1024))
+      if (creditBlocked || client.bufferedAmount > 0) {
         frame = message
-        if (!flush && (!binary || inFlight.size < 2))
+        if (!flush && !creditBlocked)
           flush = setTimeout(() => {
             flush = undefined
             drain()
-          }, 16)
+          }, 4)
         return
       }
       clearTimeout(flush)
@@ -51,8 +66,12 @@ export function attachBrowserSocket(
       frame = undefined
       if (binary) {
         const id = ++sequence
-        inFlight.set(id, Date.now())
-        client.send(encodeBrowserFrame(message, id))
+        const packet = encodeBrowserFrame(message, id)
+        inFlight.set(id, { sentAt: performance.now(), bytes: message.data.byteLength })
+        inFlightBytes += message.data.byteLength
+        client.send(packet, (error) => {
+          if (!error) drain()
+        })
       } else
         client.send(
           JSON.stringify({
@@ -72,7 +91,7 @@ export function attachBrowserSocket(
     ? setInterval(() => {
         if (!visible) return
         const oldest = inFlight.values().next().value
-        if (oldest !== undefined && Date.now() - oldest > 10000)
+        if (oldest !== undefined && performance.now() - Math.max(oldest.sentAt, resumedAt) > 10000)
           client.close(1008, 'Browser renderer stopped responding')
       }, 2000)
     : undefined
@@ -120,22 +139,65 @@ export function attachBrowserSocket(
       const value: unknown = JSON.parse(data.toString())
       const ack = decodeResult(remoteBrowserFrameAckSchema, value)
       if (binary && ack.success) {
-        if (!inFlight.delete(ack.data.sequence))
-          throw new Error('Invalid browser frame acknowledgement')
+        const sent = inFlight.get(ack.data.sequence)
+        if (!sent) throw new Error('Invalid browser frame acknowledgement')
+        inFlight.delete(ack.data.sequence)
+        inFlightBytes -= sent.bytes
+        if (ack.data.decodeMs !== undefined && !ack.data.dropped) {
+          const now = performance.now()
+          const sample = Math.max(0, now - sent.sentAt - ack.data.decodeMs)
+          transportMs = transportMs === undefined ? sample : transportMs * 0.8 + sample * 0.2
+          // Age the baseline so a VPN/Wi-Fi route change can establish its new
+          // RTT instead of being mistaken for congestion for this whole session.
+          if (sample < minimumTransportMs || now - minimumTransportAt > 10000) {
+            minimumTransportMs = sample
+            minimumTransportAt = now
+          }
+          const congested = sample > minimumTransportMs + Math.max(24, minimumTransportMs * 0.3)
+          congestedSamples = congested ? Math.min(2, congestedSamples + 1) : 0
+          // A slow decoder needs backpressure, rather than more frames. A fast
+          // decoder on a high-RTT network can pipeline up to eight 60Hz frames.
+          // Rising RTT signals network queueing: cut the window and recover
+          // gradually, rather than amplifying congestion with more stale images.
+          if (ack.data.decodeMs > 24 || congestedSamples >= 2) {
+            // Ignore isolated scheduler/network spikes. At the minimum window,
+            // recurring jitter must not postpone every recovery probe forever.
+            if (ack.data.decodeMs > 24 || frameWindow > 2) growAfter = now + 1000
+            frameWindow = ack.data.decodeMs > 24 ? 2 : Math.max(2, Math.floor(frameWindow / 2))
+          } else {
+            const target = Math.min(8, Math.max(2, Math.ceil(transportMs / 16) + 1))
+            if (!growAfter) frameWindow = Math.min(target, frameWindow + 1)
+            else if (now >= growAfter) {
+              frameWindow = Math.min(target, frameWindow + 1)
+              growAfter = now + 250
+            }
+          }
+        }
+        // Frame delivery takes priority over optional diagnostic messages.
         drain()
+        if (
+          metrics &&
+          !simulatorId &&
+          !ack.data.dropped &&
+          transportMs !== undefined &&
+          performance.now() - lastMetricsAt >= 1000
+        ) {
+          lastMetricsAt = performance.now()
+          send({ type: 'streamStats', transportMs: Math.min(60000, transportMs) })
+        }
         return
       }
       if (Date.now() - windowStart > 1000) {
         count = 0
         windowStart = Date.now()
       }
-      if (++count > 200) throw new Error('Too many browser commands')
+      if (++count > (simulatorId ? 200 : 400)) throw new Error('Too many browser commands')
       const input = simulatorId
         ? decode(simulatorInputSchema, value)
         : decode(remoteBrowserInputSchema, value)
       if (input.type === 'visibility' && !simulatorId) {
         visible = input.visible
-        if (visible) for (const sequence of inFlight.keys()) inFlight.set(sequence, Date.now())
+        if (visible) resumedAt = performance.now()
       }
       const operation =
         input.type === 'visibility' && !simulatorId

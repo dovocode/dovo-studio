@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { CheckCircle2, Circle, ListChecks, LoaderCircle } from 'lucide-react'
 import { nativeTodoSummary, type Task } from '@dovo/protocol'
 
-/** The provider's native todo list (Muse `session/todoListChanged`), latest state only. */
+/** Shared agent checklist from native progress or the regular task tool, latest state only. */
 export function NativeTodos({ task }: { task: Task }) {
   const [open, setOpen] = useState(false)
   const summary = nativeTodoSummary(task)
@@ -29,9 +29,9 @@ export function NativeTodos({ task }: { task: Task }) {
           )}
         </button>
         {open && (
-          <ul className="mt-2 space-y-1.5">
+          <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto" aria-label="Checklist items">
             {todos.map((todo, index) => (
-              <li key={index} className="flex items-start gap-2 text-xs">
+              <li key={todo.id ?? index} className="flex items-start gap-2 text-xs">
                 {todo.status === 'completed' ? (
                   <CheckCircle2 className="mt-px size-3.5 shrink-0 text-emerald-600" aria-hidden />
                 ) : todo.status === 'in-progress' ? (

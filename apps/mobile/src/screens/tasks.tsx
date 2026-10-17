@@ -1,4 +1,4 @@
-import { orderThreadSections } from '@dovo/protocol'
+import { orderThreadSections, settledThreadPreviewLimit } from '@dovo/protocol'
 import { SectionOrderSheet } from '../tasks/list/section-order-sheet'
 import { useForegroundInterval } from '../runtime/state/app-active'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
@@ -43,6 +43,7 @@ import { ScreenHeader } from '../ui/layout/screen-header'
 import { useAction } from '../ui/controls/use-action'
 import { useTheme } from '../ui/theme'
 type TaskListItem =
+  | { kind: 'history'; count: number }
   | { kind: 'group'; key: string; name: string; count: number }
   | { kind: 'task'; entry: RuntimeTask }
 export default function TasksScreen({ archived = false }: { archived?: boolean }) {
@@ -64,6 +65,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       ? { ...view, search: '', sort: 'priority', project: '' }
       : { ...view, sort: preferences.taskSort }
   const [organizing, setOrganizing] = useApplicationState(false)
+  const [showAllSettled, setShowAllSettled] = useApplicationState(false)
   const [details, setDetails] = useApplicationState(''),
     [now, setNow] = useApplicationState(Date.now())
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
@@ -234,7 +236,19 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           { kind: 'group', key: 'settled', name: 'Settled', count: settled.length },
           ...(collapsed.has('settled')
             ? []
-            : settled.map((entry): TaskListItem => ({ kind: 'task', entry }))),
+            : [
+                ...settled
+                  .slice(
+                    0,
+                    showAllSettled || query.trim() || selecting
+                      ? undefined
+                      : settledThreadPreviewLimit,
+                  )
+                  .map((entry): TaskListItem => ({ kind: 'task', entry })),
+                ...(settled.length > settledThreadPreviewLimit && !query.trim() && !selecting
+                  ? [{ kind: 'history', count: settled.length } satisfies TaskListItem]
+                  : []),
+              ]),
         ]
       : []
     const otherSections = [
@@ -314,6 +328,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     collapsed,
     archived,
     car,
+    showAllSettled,
+    query,
+    selecting,
     preferences.workingSection,
     preferences.threadSectionOrder,
   ])
@@ -542,7 +559,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         initialNumToRender={12}
         windowSize={7}
         keyExtractor={(item) =>
-          item.kind === 'group' ? `group:${grouping}:${item.key}` : item.entry.key
+          item.kind === 'history'
+            ? 'settled-history'
+            : item.kind === 'group'
+              ? `group:${grouping}:${item.key}`
+              : item.entry.key
         }
         contentContainerStyle={[
           styles.content,
@@ -618,7 +639,17 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           )
         }
         renderItem={({ item }) =>
-          item.kind === 'group' ? (
+          item.kind === 'history' ? (
+            <Action
+              label={
+                showAllSettled
+                  ? 'Show fewer settled threads'
+                  : `Show all ${item.count} settled threads`
+              }
+              onPress={() => setShowAllSettled((value) => !value)}
+              secondary
+            />
+          ) : item.kind === 'group' ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`${item.name}, ${item.count} tasks`}

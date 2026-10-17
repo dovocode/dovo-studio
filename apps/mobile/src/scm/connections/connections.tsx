@@ -5,12 +5,14 @@ import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { ScreenHeader } from '../../ui/layout/screen-header'
 import { CliProfilePicker } from './cli-profile-picker'
+import { GithubConnectionStatus } from './github-connection-status'
 import { useEffect, useRef } from 'react'
 import { clientScopeKey, runClientEffect } from '@dovo/client-runtime'
 import { ScrollView, View } from 'react-native'
 import { Schema, Effect } from 'effect'
 import {
   forgeLabels,
+  projectDisplayName,
   forgeProviderSchema,
   forgeConnectionSchema,
   forgeConnectionsSchema,
@@ -87,6 +89,8 @@ function ConnectionsContent() {
   const [editing, setEditing] = useApplicationState<ForgeConnection | 'new' | null>(null),
     [project, setProject] = useApplicationState<string | null>(null)
   const [loading, setLoading] = useApplicationState(false)
+  const projects = snapshot?.workspace.repositories.filter((repo) => !repo.kind) ?? []
+  const automaticProjects = projects.filter((repo) => !repo.forge)
   useEffect(() => {
     let active = true
     let received = false
@@ -198,22 +202,42 @@ function ConnectionsContent() {
             Loading accounts…
           </Text>
         )}
-        <SettingsGroup title="Accounts">
+        <SettingsGroup title="Automatic GitHub CLI">
+          <GithubConnectionStatus automatic key={`automatic:${revision}`} />
+          <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 16 }]}>
+            Projects using automatic detection ({automaticProjects.length})
+            {automaticProjects.length
+              ? ` · ${automaticProjects.map((repo) => repo.name).join(', ')}`
+              : ' · No projects yet'}
+          </Text>
+        </SettingsGroup>
+        <SettingsGroup title="Saved accounts">
           {!loading && !error && !connections.length && (
             <Text style={[styles.muted, { padding: 16 }]}>
-              No accounts configured on this computer.
+              No saved accounts. Projects can use automatic GitHub CLI detection above.
             </Text>
           )}
           {connections.map((connection, index) => (
-            <SettingsRow
-              key={connection.id}
-              title={connection.name}
-              subtitle={`${forgeLabels[connection.provider]} · ${connection.baseUrl}`}
-              icon="changes"
-              disabled={!connected}
-              onPress={() => setEditing(connection)}
-              last={index === connections.length - 1}
-            />
+            <View key={`${connection.id}:${connection.revision}`}>
+              <SettingsRow
+                title={connection.name}
+                subtitle={`${forgeLabels[connection.provider]} · ${connection.baseUrl}`}
+                icon="changes"
+                disabled={!connected}
+                onPress={() => setEditing(connection)}
+                last={index === connections.length - 1}
+              />
+              {connection.provider === 'github' && (
+                <GithubConnectionStatus connectionId={connection.id} />
+              )}
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 16 }]}>
+                Projects using this account ·{' '}
+                {projects
+                  .filter((repo) => repo.forge?.connectionId === connection.id)
+                  .map((repo) => repo.name)
+                  .join(', ') || 'None'}
+              </Text>
+            </View>
           ))}
         </SettingsGroup>
         <Action label="Connect account" disabled={!connected} onPress={() => setEditing('new')} />
@@ -222,20 +246,31 @@ function ConnectionsContent() {
           different GitHub user, wrapper selector, host or provider.
         </Text>
         <SettingsGroup title="Projects">
-          {(snapshot?.workspace.repositories ?? []).map((repo, index) => (
-            <SettingsRow
-              key={repo.id}
-              title={repo.name}
-              subtitle={
-                repo.forge
-                  ? `${connections.find((connection) => connection.id === repo.forge?.connectionId)?.name ?? 'Account'} · ${repo.forge.repository}`
-                  : 'Automatic GitHub connection'
-              }
-              icon="folder"
-              disabled={!connected}
-              onPress={() => setProject(repo.id)}
-              last={index === (snapshot?.workspace.repositories.length ?? 0) - 1}
-            />
+          {projects.map((repo, index) => (
+            <View
+              key={`${repo.id}:${repo.path}:${repo.forge?.connectionId ?? ''}:${repo.forge?.repository ?? ''}:${revision}`}
+            >
+              <SettingsRow
+                title={projectDisplayName(repo)}
+                subtitle={
+                  repo.forge
+                    ? `${connections.find((connection) => connection.id === repo.forge?.connectionId)?.name ?? 'Account'} · ${repo.forge.repository}`
+                    : 'Automatic GitHub connection'
+                }
+                icon="folder"
+                disabled={!connected}
+                onPress={() => setProject(repo.id)}
+                last={index === projects.length - 1}
+              />
+              {(!repo.forge ||
+                connections.find((connection) => connection.id === repo.forge?.connectionId)
+                  ?.provider === 'github') && (
+                <GithubConnectionStatus
+                  repositoryId={repo.id}
+                  connectionId={repo.forge?.connectionId}
+                />
+              )}
+            </View>
           ))}
         </SettingsGroup>
         <Action

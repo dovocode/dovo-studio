@@ -7,6 +7,9 @@ import { isRunToken } from './run-credentials.js'
 
 const allowed = new Set([
   '/api/studio/tools',
+  '/api/linked-projects',
+  '/api/agent/question',
+  '/api/agent/todos',
   '/api/subagents/spawn',
   '/api/subagents/list',
   '/api/subagents/read',
@@ -72,15 +75,24 @@ export function authorizeRunRoute(
   if (
     (path.startsWith('/api/subagents/') ||
       path.endsWith('-watch') ||
-      ['/api/artifacts/create', '/api/artifacts/update'].includes(path)) &&
+      path.startsWith('/api/agent/') ||
+      ['/api/artifacts/create', '/api/artifacts/update', '/api/linked-projects'].includes(path)) &&
     !ownsRun
   )
     denied()
+  // Conversation questions and progress are allowed in read-only runs. They never
+  // grant filesystem access or change another thread's configuration.
+  if (path.startsWith('/api/agent/')) return grant
   if (path === '/api/studio/tools') {
     if (!ownsRun) denied()
     const part = typeof input.part === 'string' ? input.part : ''
     requireStudioPart(s, part, grant)
     if (grant.readOnly && !studioReadAction(part, record(input.command).action)) denied()
+    return grant
+  }
+  if (path === '/api/linked-projects') {
+    const command = record(input.command)
+    if (grant.readOnly && command.action === 'add') denied()
     return grant
   }
   if (path.startsWith('/api/subagents/')) {

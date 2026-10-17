@@ -24,6 +24,7 @@ export function taskToolsServer(
   sandboxMode?: SandboxMode,
   credentialFile?: string,
   studioTools: StudioTools = noStudioTools(),
+  linkedProjectsEnabled = true,
 ): McpServer {
   const localHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const urlHost = localHost.includes(':') ? `[${localHost}]` : localHost
@@ -50,6 +51,7 @@ export function taskToolsServer(
       DOVO_TASK_TERMINALS_DISABLED: sandboxMode && sandboxMode !== 'danger-full-access' ? '1' : '0',
       DOVO_TASK_MEMORY_SCOPES: JSON.stringify(memoryScopes),
       DOVO_TASK_DEVICE_HUB_ENABLED: deviceHubEnabled ? '1' : '0',
+      DOVO_TASK_LINKED_PROJECTS_ENABLED: linkedProjectsEnabled ? '1' : '0',
       DOVO_TASK_ARTIFACTS_ENABLED: artifactsEnabled ? '1' : '0',
       DOVO_TASK_PIPELINE_WATCHING_ENABLED: pipelineWatchingEnabled ? '1' : '0',
       DOVO_TASK_PR_WATCHING_ENABLED: pullRequestWatchingEnabled ? '1' : '0',

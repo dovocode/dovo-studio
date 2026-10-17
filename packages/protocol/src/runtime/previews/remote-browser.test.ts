@@ -4,8 +4,16 @@ import {
   remoteBrowserInputSchema,
   remoteBrowserViewportSchema,
   remoteBrowserOpenSchema,
+  remoteBrowserFrameAckSchema,
 } from './remote-browser'
 import { previewUrl } from './previews'
+it('accepts optional decoder timing without permitting unbounded or invalid feedback', () => {
+  const ack = { type: 'frameAck', sequence: 1 }
+  for (const extra of [{}, { decodeMs: 0 }, { decodeMs: 17.25 }, { decodeMs: 10000 }])
+    expect(decodeResult(remoteBrowserFrameAckSchema, { ...ack, ...extra }).success).toBe(true)
+  for (const decodeMs of [-1, Infinity, NaN, 10001, '10'])
+    expect(decodeResult(remoteBrowserFrameAckSchema, { ...ack, decodeMs }).success).toBe(false)
+})
 it('keeps host-local URLs on the host and only allows HTTP navigation', () => {
   expect(previewUrl('localhost:3000/path')).toBe('http://localhost:3000/path')
   for (const value of [

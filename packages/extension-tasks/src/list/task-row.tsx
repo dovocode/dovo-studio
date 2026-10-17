@@ -206,7 +206,7 @@ function TaskRowView({
               className={cn(
                 'block min-w-0 truncate text-sm font-medium leading-5',
                 compact ? 'flex-1' : 'w-full',
-                unread ? 'text-foreground' : 'text-foreground/40',
+                unread ? 'text-foreground' : 'text-foreground/65',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}

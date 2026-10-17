@@ -1,5 +1,14 @@
 import { expect, test } from 'vite-plus/test'
-import { settingLayers, settingOverrides, settingValueLabel } from './setting-layers.js'
+import {
+  settingLayers,
+  settingOverrides,
+  settingValueLabel,
+  settingValueDescription,
+  settingSourceName,
+  settingBaseLabel,
+  settingInheritanceIsCurrent,
+} from './setting-layers.js'
+import { settingsScopeSummary } from './scoped-settings.js'
 import { decode } from '../../shared/schema.js'
 import { runtimeDefaultsSchema } from './runtime-setup.js'
 
@@ -46,6 +55,42 @@ test('false and empty commands are explicit overrides', () => {
   expect(settingValueLabel(false)).toBe('Off')
   expect(settingValueLabel('')).toBe('Disabled')
   expect(settingValueLabel(undefined)).toBe('Inherit')
+})
+
+test('explains explicit false, disabled setup and provider resets without treating them as inherited', () => {
+  expect(settingValueDescription({ group: 'taskBehavior', key: 'settleMerged' }, false)).toBe('Off')
+  expect(settingValueDescription({ group: 'taskDefaults', key: 'setupCommand' }, '')).toBe(
+    'No setup command',
+  )
+  expect(settingValueDescription({ group: 'taskDefaults', key: 'approvalPolicy' }, null)).toBe(
+    'Provider default',
+  )
+  expect(settingValueDescription({ group: 'taskDefaults', key: 'execution' }, undefined)).toBe(
+    'Local checkout',
+  )
+  expect(settingValueDescription({ group: 'taskBehavior', key: 'inactiveDays' }, undefined)).toBe(
+    '3 days',
+  )
+  expect(settingBaseLabel({ group: 'taskDefaults', key: 'modelSelection' })).toBe(
+    'Use selected agent · Dovo default',
+  )
+})
+
+test('names the actual source and distinguishes shared defaults from computer storage', () => {
+  const context = { project: 'Studio', computer: 'Mac Studio' }
+  expect(settingSourceName('project', context)).toBe('Studio project defaults')
+  expect(settingSourceName('environment-project', context)).toBe('Studio on Mac Studio')
+  expect(settingSourceName('computer-default', context)).toBe('Mac Studio preferences')
+  expect(settingsScopeSummary('project', context).storage).toBe('Shared across paired computers')
+  expect(settingsScopeSummary('environment-project', context)).toEqual({
+    title: 'Studio on Mac Studio',
+    description:
+      'Changes apply only to this project on this computer. This is the most specific level.',
+    storage: 'Saved on Mac Studio',
+  })
+  expect(settingsScopeSummary('environment', context).description).toContain(
+    'Project defaults override computer defaults',
+  )
 })
 
 test('project-on-computer wins and resetting reveals the shared project value', () => {
@@ -166,4 +211,21 @@ test('lists later overrides once per shared project and per computer-local check
     ]),
   ).toEqual([['environment-project', 'mac', 'mac-repo']])
   expect(settingOverrides(sources, field, { scope: 'environment-project', repository })).toEqual([])
+})
+
+test('does not attribute a fresh inherited value to an outdated source snapshot', () => {
+  const runtime = decode(runtimeDefaultsSchema, {
+    scopedSettings: { environment: { taskDefaults: { execution: 'worktree' } }, shared: [] },
+  })
+  const setting = {
+    field: { group: 'taskDefaults', key: 'execution' },
+    scope: 'environment-project',
+    repository: { id: 'repo', name: 'Repo', path: '/repo', branch: 'main' },
+    value: undefined,
+    inheritedValue: 'main',
+  } as const
+  expect(settingInheritanceIsCurrent(runtime, setting, 'environment')).toBe(false)
+  expect(
+    settingInheritanceIsCurrent(runtime, { ...setting, inheritedValue: 'worktree' }, 'environment'),
+  ).toBe(true)
 })

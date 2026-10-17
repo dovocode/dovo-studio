@@ -33,6 +33,36 @@ const editor = element('editor', HTMLTextAreaElement)
 const preset = element('preset', HTMLSelectElement)
 const rotate = element('rotate', HTMLButtonElement)
 const reconnect = element('reconnect', HTMLButtonElement)
+const performancePanel = element('streamPerformance', HTMLDetailsElement)
+const performanceSummary = element('streamSummary', HTMLElement)
+const performanceDetails = element('streamDetails', HTMLDivElement)
+let transportMs: number | undefined
+let transportAt = 0
+let decodeMs: number | undefined
+let renderedFrames = 0
+let performanceTimer: ReturnType<typeof setInterval> | undefined
+let lastPerformanceAt = performance.now()
+function renderPerformance() {
+  const now = performance.now()
+  const fps = Math.round((renderedFrames * 1000) / Math.max(1, now - lastPerformanceAt))
+  renderedFrames = 0
+  lastPerformanceAt = now
+  const network =
+    transportMs !== undefined && now - transportAt < 10000
+      ? `${Math.round(transportMs)} ms RTT`
+      : 'RTT unavailable'
+  const scale = canvas.width / width
+  const quality =
+    canvas.width && !canvas.hidden
+      ? `${scale >= 1.5 ? 'Sharp' : 'Live'} ${Math.round(scale * 10) / 10}×`
+      : 'Awaiting image'
+  performanceSummary.textContent = online
+    ? `${fps ? `${fps} fps` : 'Idle'} · ${network} · ${quality}`
+    : 'Stream disconnected'
+  performanceDetails.textContent = online
+    ? `Network round trip: ${network}. Decode and draw: ${decodeMs === undefined ? 'unavailable' : `${Math.round(decodeMs * 10) / 10} ms`}. Image: ${canvas.hidden ? 'unavailable' : `${canvas.width} × ${canvas.height}`}. Network RTT excludes decoder time; it includes transfer and acknowledgement. Capture time and screen presentation are not measured. A still page can be idle while connected.`
+    : 'Reconnect to measure the browser stream.'
+}
 const dialog = element('dialog', HTMLDialogElement)
 const dialogText = element('dialogText', HTMLParagraphElement)
 const dialogValue = element('dialogValue', HTMLInputElement)
@@ -94,6 +124,14 @@ function notice(message: string, error = false) {
 }
 function enabled(value: boolean) {
   online = value
+  clearInterval(performanceTimer)
+  performanceTimer = undefined
+  transportMs = undefined
+  decodeMs = undefined
+  renderedFrames = 0
+  lastPerformanceAt = performance.now()
+  renderPerformance()
+  if (value && !simulator) performanceTimer = setInterval(renderPerformance, 1000)
   element('home', HTMLButtonElement).disabled = !value
   element('deviceButton', HTMLSelectElement).disabled = !value
   reload.disabled = !value
@@ -108,6 +146,8 @@ function enabled(value: boolean) {
     pointerPosition = undefined
     touch = undefined
     cancelAnimationFrame(moveFrame)
+    clearTimeout(moveTimer)
+    moveTimer = undefined
     moveFrame = 0
     move = undefined
     back.disabled = forward.disabled = true
@@ -152,6 +192,7 @@ function layoutCanvas() {
 new ResizeObserver(layoutCanvas).observe(viewport)
 function configure(device: unknown) {
   simulator = !!device && typeof device === 'object' && 'platform' in device
+  performancePanel.hidden = simulator
   document.body.classList.toggle('device', simulator)
   element('navigation', HTMLFormElement).hidden = simulator
   for (const id of ['forward', 'reload', 'preset', 'rotate'])
@@ -219,6 +260,7 @@ function connect(url: string) {
   nativeTouch = false
   requestedSize = ''
   target.searchParams.set('frames', 'binary-v1')
+  if (!simulator) target.searchParams.set('metrics', '1')
   const previous = socket
   socket = undefined
   previous?.close()
@@ -252,16 +294,23 @@ function connect(url: string) {
     if (socket === next && !retryTimer)
       notice('Cannot reach the host browser. Check your connection and reconnect.', true)
   }
-  type Frame = { width: number; height: number; blob: Blob; sequence?: number }
+  type Frame = { width: number; height: number; blob: Blob; sequence?: number; receivedAt: number }
   let pendingFrame: Frame | undefined
   let rendering = false
   let hasFrame = false
-  const acknowledge = (frame: Frame) => {
+  const acknowledge = (frame: Frame, dropped = false) => {
     if (frame.sequence && next.readyState === WebSocket.OPEN)
-      next.send(JSON.stringify({ type: 'frameAck', sequence: frame.sequence }))
+      next.send(
+        JSON.stringify({
+          type: 'frameAck',
+          sequence: frame.sequence,
+          decodeMs: Math.min(10000, performance.now() - frame.receivedAt),
+          dropped,
+        }),
+      )
   }
   const render = async (frame: Frame) => {
-    if (pendingFrame) acknowledge(pendingFrame)
+    if (pendingFrame) acknowledge(pendingFrame, true)
     pendingFrame = frame
     if (rendering) return
     rendering = true
@@ -270,6 +319,7 @@ function connect(url: string) {
         const current = pendingFrame
         pendingFrame = undefined
         try {
+          const decodeStartedAt = performance.now()
           const image = await decodeImage(current.blob)
           try {
             if (socket !== next || next.readyState !== WebSocket.OPEN) continue
@@ -285,6 +335,8 @@ function connect(url: string) {
             canvas.dataset.viewportHeight = String(height)
             drawing.imageSmoothingQuality = 'high'
             drawing.drawImage(image.source, 0, 0)
+            decodeMs = performance.now() - decodeStartedAt
+            renderedFrames++
             if (resized || canvas.hidden) layoutCanvas()
             canvas.hidden = !currentUrl || currentUrl === 'about:blank'
           } finally {
@@ -306,14 +358,25 @@ function connect(url: string) {
     try {
       if (event.data instanceof ArrayBuffer) {
         const frame = decodeBrowserFrame(event.data)
-        void render({ ...frame, blob: new Blob([frame.data], { type: 'image/jpeg' }) })
+        void render({
+          ...frame,
+          blob: new Blob([frame.data], { type: 'image/jpeg' }),
+          receivedAt: performance.now(),
+        })
         return
       }
       const message = decode(remoteBrowserMessageSchema, JSON.parse(String(event.data)))
       if (message.type === 'frame') {
         // Backward compatibility with a host that has not been updated yet.
         const bytes = Uint8Array.from(atob(message.data), (value) => value.charCodeAt(0))
-        void render({ ...message, blob: new Blob([bytes], { type: 'image/jpeg' }) })
+        void render({
+          ...message,
+          blob: new Blob([bytes], { type: 'image/jpeg' }),
+          receivedAt: performance.now(),
+        })
+      } else if (message.type === 'streamStats') {
+        transportMs = message.transportMs
+        transportAt = performance.now()
       } else if (message.type === 'state') {
         nativeTouch = message.touch === true
         currentUrl = message.url
@@ -469,10 +532,17 @@ const button = (event: PointerEvent) =>
 let touch: { id: number; x: number; y: number; moved: boolean } | undefined
 let move: RemoteBrowserInput | undefined
 let moveFrame = 0
+let moveTimer: ReturnType<typeof setTimeout> | undefined
+let lastMovement = -Infinity
 function flushMovement() {
   cancelAnimationFrame(moveFrame)
+  clearTimeout(moveTimer)
+  moveTimer = undefined
   moveFrame = 0
-  if (move) send(move)
+  if (move) {
+    send(move)
+    lastMovement = performance.now()
+  }
   move = undefined
 }
 function coalesce(message: RemoteBrowserInput) {
@@ -484,6 +554,15 @@ function coalesce(message: RemoteBrowserInput) {
     }
   }
   move = message
+  // Browser input does not need to wait for a display refresh (up to 16.7ms at
+  // 60Hz). Send the leading event immediately and coalesce only bursts within
+  // 4ms. Native devices retain frame-paced gestures to avoid overloading RPC.
+  if (!simulator) {
+    const delay = 4 - (performance.now() - lastMovement)
+    if (delay <= 0) flushMovement()
+    else if (!moveTimer) moveTimer = setTimeout(flushMovement, delay)
+    return
+  }
   if (!moveFrame)
     moveFrame = requestAnimationFrame(() => {
       moveFrame = 0
@@ -571,6 +650,8 @@ function cancelPointer(event: PointerEvent) {
   if (activePointer !== event.pointerId) return
   activePointer = undefined
   cancelAnimationFrame(moveFrame)
+  clearTimeout(moveTimer)
+  moveTimer = undefined
   moveFrame = 0
   move = undefined
   touch = undefined

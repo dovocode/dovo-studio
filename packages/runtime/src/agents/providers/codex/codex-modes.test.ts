@@ -186,6 +186,8 @@ it('rebinds Dovo task tools before a follow-up turn while resuming the same conv
         mcp_servers: {
           dovo_task: {
             tools: {
+              ask_question: { approval_mode: 'approve' },
+              todos: { approval_mode: 'approve' },
               subagent_spawn: { approval_mode: 'approve' },
               subagent_list: { approval_mode: 'approve' },
               subagent_read: { approval_mode: 'approve' },

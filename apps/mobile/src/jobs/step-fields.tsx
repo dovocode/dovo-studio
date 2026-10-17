@@ -4,6 +4,7 @@ import { View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
   resolveScopedAgents,
+  projectDisplayName,
   defaultTaskHarness,
   resolveTaskAgent,
   decode,
@@ -93,7 +94,10 @@ export function StepFields({
           <Choice
             label="Project"
             value={data.repositoryId}
-            items={workspace.repositories}
+            items={workspace.repositories.map((repository) => ({
+              id: repository.id,
+              name: projectDisplayName(repository),
+            }))}
             disabled={disabled || !workspace.repositories.length}
             onChange={(repositoryId) => onChange({ repositoryId })}
           />

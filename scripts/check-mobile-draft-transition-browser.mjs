@@ -65,15 +65,15 @@ const mocks = {
     };
   `,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
-  '../../runtime/preferences/app-preferences': `import {useSyncExternalStore} from 'react';const listeners=new Set();let prefs={projectPanelOpen:false};export const useCarMode=()=>false;export const useMobilePreferences=()=>useSyncExternalStore(listener=>{listeners.add(listener);return()=>listeners.delete(listener)},()=>prefs);export const updateMobilePreferences=changes=>{prefs={...prefs,...changes};listeners.forEach(listener=>listener())};`,
+  '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;`,
   '../../shell/navigation': `import {createContext,useContext} from 'react';export const FocusContext=createContext(true);export const useNavigation=()=>({focused:useContext(FocusContext),navigate:()=>{}});`,
   '../../shell/use-route-computer': `export const useRouteComputer=()=>({error:'',retry:()=>{}});`,
-  '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
+  '../../ui/content/text': `export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;`,
   '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
   '../../ui/layout/sheet': `import {useImperativeHandle} from 'react';export const Sheet=({children,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section>{children}</section>};export const useSheetNavigation=()=>navigate=>navigate();`,
   '../../ui/theme': `export const useTheme=()=>({colors:{},styles:{}});`,
-  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,buttons,leading,hidden,onBack,gestureEnabled})=>{const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
+  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,titleContent,buttons,leading,hidden,onBack,gestureEnabled})=>{const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{titleContent??title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
   '../../ui/content/markdown': `export const Markdown=({text})=><p data-native-prose>{text}</p>;`,
   '../files/task-files': 'export const TaskFiles=()=>null;',
   './task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
@@ -123,7 +123,7 @@ const mocks = {
         <input aria-label="Message" value={text} onChange={e=>setText(e.target.value)}/>
         <span data-pending={pending}>{pending?'Sending':'Ready'}</span>
         <button onClick={()=>runClientEffect(runtime.callEffect('/api/workspace',{collection:'tasks',id:task.id,changes:{setupCommand:{before:task.setupCommand,after:'pnpm install'}}},Schema.Unknown,'PATCH'))}>Settings</button>
-        <button onClick={()=>window.send()}>Send</button>
+        <button onClick={()=>runClientEffect(runtime.callEffect('/api/workspace',{collection:'tasks',id:task.id,changes:{linkedCheckouts:{before:task.linkedCheckouts,after:[{id:'link',repositoryId:'repo',execution:'main',access:'read-only'}]}}},Schema.Unknown,'PATCH'))}>Link project</button><button onClick={()=>window.send()}>Send</button>
         <button onClick={()=>window.send('/api/attachments/upload')}>Attach</button>
         {onSelectRemote&&<button onClick={()=>onSelectRemote('b',{id:'remote',kind:'folder',name:'Remote',path:'/remote',branch:''},text)}>Remote</button>}
       </>;
@@ -221,7 +221,7 @@ const built = await build({
         const [focused,setFocused]=useState(true);window.setFocused=setFocused;
         const [snapshots,setSnapshots]=useState(Object.fromEntries(profiles.map(p=>[p.id,{
           detailTaskIds:[],questions:[],approvals:[],runs:[],
-          workspace:{tasks:[],agents:[],repositories:[{id:'chat-'+p.id,kind:'scratch',name:'Chat',path:'/scratch',branch:''}]}
+          workspace:{tasks:[],agents:[],repositories:[{id:'chat-'+p.id,kind:'scratch',name:'No project',path:'/scratch',branch:''}]}
         }])));
         window.params=route.params;
         window.setParams=params=>{setRoute(route=>({...route,params:{...route.params,...params}}));if(params.runtimeId)setActiveId(params.runtimeId)};
@@ -287,6 +287,8 @@ try {
   await input.waitFor()
   assert.deepEqual(await page.evaluate(() => window.navigation.map((n) => n.kind)), ['redirect'])
   assert.equal(await page.evaluate(() => window.watches.length), 0)
+  await page.getByRole('button', { name: 'Link project', exact: true }).click()
+  await page.waitForFunction(() => window.task.linkedCheckouts?.length === 1)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.waitForFunction(() => window.task.setupCommand === 'pnpm install')
   assert.equal(await page.evaluate(() => window.requests.length), 0)
@@ -311,6 +313,8 @@ try {
     window.releaseMessage()
   })
   await page.waitForFunction(() => window.params.draft === undefined)
+  await page.getByLabel('General · a', { exact: true }).waitFor()
+  assert.ok(!(await page.locator('header').innerText()).includes('No project'))
   await page.waitForFunction(() => window.originalInput.value === '')
   assert.deepEqual(await page.evaluate(() => window.navigation.map((n) => n.kind)), [
     'redirect',
@@ -327,6 +331,7 @@ try {
   )
   assert.equal(await input.evaluate((element) => element === window.originalInput), true)
   assert.equal(await page.evaluate(() => window.created.setupCommand), 'pnpm install')
+  assert.equal(await page.evaluate(() => window.created.linkedCheckouts[0].repositoryId), 'repo')
   await page.evaluate(() => {
     window.watchedItems = [
       {
@@ -352,7 +357,20 @@ try {
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
   await page.getByRole('button', { name: 'Project information', exact: true }).click()
   await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Close project information', exact: true }).click()
+  // Blurred stack screens remain mounted, but must not retain project information.
+  const projectClose = page.getByRole('button', { name: 'Close project information', exact: true })
+  await page.evaluate(() => window.setFocused(false))
+  await projectClose.waitFor({ state: 'detached' })
+  await page.evaluate(() => window.setFocused(true))
+  assert.equal(await projectClose.count(), 0)
+  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await projectClose.waitFor()
+  await page.getByRole('button', { name: 'Files', exact: true }).click()
+  await projectClose.waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  assert.equal(await projectClose.count(), 0)
+  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await projectClose.click()
   await page.getByText('First prompt', { exact: true }).waitFor()
   assert.equal(await input.evaluate((element) => element === window.originalInput), true)
   await input.fill('Follow-up')
@@ -365,8 +383,11 @@ try {
 
   // Moving an unsent draft changes its runtime intentionally; committing it must only
   // update the owning route params, including after a failed upload and a retry.
+  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await projectClose.waitFor()
   await page.evaluate(() => window.openRoute('/new'))
   await page.getByRole('button', { name: 'Remote', exact: true }).waitFor()
+  assert.equal(await projectClose.count(), 0)
   await input.fill('Remote draft')
   await page.getByRole('button', { name: 'Remote', exact: true }).click()
   await page.waitForFunction(() => window.runtimeId === 'b')

@@ -56,7 +56,7 @@ export function FolderPicker({
   const [error, setError] = useApplicationState('')
   const selected = repositories.find((repository) => repository.id === value)
   const label = (repository: Repository) =>
-    repository.kind === 'scratch' ? 'No project' : repository.name
+    repository.kind === 'scratch' ? 'General' : repository.name
   const sources = runtime.overviews.filter(
     (entry) => allowMachineChange || entry.profile.id === runtime.activeId,
   )
@@ -336,7 +336,7 @@ export function FolderPicker({
               <Text style={styles.muted}>
                 {autoProject
                   ? 'Select projects automatically on'
-                  : `Run ${selected?.kind === 'scratch' ? 'without a project' : selected?.name} on`}
+                  : `Run ${selected?.kind === 'scratch' ? 'General' : selected?.name} on`}
               </Text>
               {sources.map((source) => {
                 const target = (

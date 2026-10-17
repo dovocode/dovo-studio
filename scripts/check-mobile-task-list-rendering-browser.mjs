@@ -340,7 +340,7 @@ try {
       const style = getComputedStyle(element)
       return { color: style.color, opacity: Number(style.opacity), weight: style.fontWeight }
     })
-    assert.equal(style.opacity, 0.4, palette.name + ' read title must be dimmed')
+    assert.equal(style.opacity, 0.65, palette.name + ' read title must be dimmed')
     assert.equal(style.weight, '500')
     const metadataOpacity = () =>
       title.evaluate((element) =>
@@ -351,7 +351,7 @@ try {
       )
     assert.deepEqual(
       await metadataOpacity(),
-      [0.4, 0.4],
+      [0.65, 0.65],
       palette.name + ' read metadata must match the title',
     )
     await page.evaluate(() => window.publish({ 'task-0': { status: 'running' } }))
@@ -394,7 +394,7 @@ try {
     await settled
       .getByText('Task 1', { exact: true })
       .evaluate((el) => getComputedStyle(el).opacity),
-    '0.4',
+    '0.65',
   )
   await settled.click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'task-1')
@@ -422,6 +422,29 @@ try {
   assert.ok((await generalDetails.textContent()).includes('General'))
   assert.ok(!/stale-branch|Project checkout|No project/.test(await generalDetails.textContent()))
   await page.getByRole('button', { name: 'Close details', exact: true }).click()
+  await page.evaluate(() =>
+    window.publish(
+      Object.fromEntries(Array.from({ length: 12 }, (_, i) => ['task-' + i, { archived: true }])),
+    ),
+  )
+  const allHistory = page.getByRole('button', { name: 'Show all 12 settled threads', exact: true })
+  await allHistory.waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: /^Task details for /, exact: true }).count(),
+    5,
+  )
+  await allHistory.click()
+  await page.getByTestId('Task task-11').waitFor()
+  await page.getByRole('button', { name: 'Show fewer settled threads', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: /^Task details for /, exact: true }).count(),
+    5,
+  )
+  await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('Task 11')
+  await page.getByTestId('Task task-11').waitFor()
+  assert.equal(await page.getByRole('button', { name: /Show all \d+ settled threads/ }).count(), 0)
+  await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('')
+  await allHistory.waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',

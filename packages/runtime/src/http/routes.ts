@@ -20,6 +20,8 @@ import { shareTaskFile, openTaskFile, readTaskVisualization } from './endpoints/
 import { readTaskImage } from './endpoints/task-images.js'
 import { deviceHostRoute } from './endpoints/device-host-routes.js'
 import { memoryRoute } from './endpoints/memory-routes.js'
+import { linkedProjectsTool } from '../scm/tasks/linked-project-tools.js'
+import { agentInteraction } from '../agent-tools/interactions.js'
 import { pipelineWatchRequestSchema } from '../scm/tasks/pipeline-watch.js'
 import { runtimeDiagnostics } from './diagnostics.js'
 import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
@@ -219,6 +221,21 @@ export function route(
             decode(taskWaitingRequestSchema, yield* serviceResult(body(request, 4096))),
           ),
         )
+      if (method === 'POST' && path === '/api/linked-projects') {
+        if (!run) throw new HttpError(403, 'Linked project tools require an active agent run')
+        return yield* serviceResult(linkedProjectsTool(s, yield* serviceResult(body(request))))
+      }
+      if (method === 'POST' && (path === '/api/agent/question' || path === '/api/agent/todos')) {
+        if (!run) throw new HttpError(403, 'Agent interaction tools require an active agent run')
+        return yield* serviceResult(
+          agentInteraction(
+            s,
+            path === '/api/agent/question' ? 'question' : 'todos',
+            yield* serviceResult(body(request)),
+            run.runId,
+          ),
+        )
+      }
       if (method === 'POST' && path === '/api/pipeline-watch') {
         if (!device.owner && !run)
           throw new HttpError(403, 'Pipeline watches are controlled by the thread’s agent')

@@ -514,8 +514,8 @@ export class RemoteBrowsers {
     }
   }
   private async sharpFrame(session: Session) {
-    // Screenshot emulation may briefly change screencast geometry. Suppress those
-    // transient frames and publish the completed image with the CSS viewport size.
+    // Optional detail capture runs separately from input, with a timeout and
+    // Playwright's viewport restoration. Suppress transient emulation frames.
     session.capturingFrames = (session.capturingFrames ?? 0) + 1
     try {
       return await session.page.screenshot({
@@ -528,7 +528,7 @@ export class RemoteBrowsers {
       session.capturingFrames--
     }
   }
-  private scheduleSharpFrame(session: Session) {
+  private scheduleSharpFrame(session: Session, delay = 150) {
     clearTimeout(session.sharpTimer)
     const version = ++session.sharpVersion
     if (!session.visibleListeners.size || session.page.isClosed()) return
@@ -564,7 +564,7 @@ export class RemoteBrowsers {
           session.capturingSharpFrame = false
           if (version !== session.sharpVersion) this.scheduleSharpFrame(session)
         })
-    }, 150)
+    }, delay)
   }
   private scheduleState(session: Session) {
     if (session.stateTimer) return
@@ -628,7 +628,9 @@ export class RemoteBrowsers {
       if (session.page.isClosed()) return
       if (session.visibleListeners.size && !session.streaming) {
         await session.page.screencast.start({
-          quality: 85,
+          // Use lighter frames during motion, then restore device-resolution
+          // detail with a quality-90 still when input settles.
+          quality: 70,
           size: {
             width: 1920,
             height: 1920,
@@ -760,16 +762,9 @@ export class RemoteBrowsers {
           width: input.width,
           height: input.height,
         })
-        // Chromium may suppress identical screencast pixels (for example a scrolled
-        // blank area). A resize must still publish its new geometry immediately.
-        const data = await this.sharpFrame(session)
-        session.frame = {
-          type: 'frame',
-          data,
-          width: input.width,
-          height: input.height,
-        }
-        this.emit(session, session.frame)
+        // The optional detail capture must not block clicks/typing behind resize.
+        // A zero-delay sharp frame also covers identical screencast pixels, which
+        // Chromium may suppress after resizing a blank or scrolled page.
       } else if (input.type === 'pointer' && input.pointerType === 'touch') {
         if (input.phase !== 'down' && !session.touching) return
         await session.cdp.send('Input.dispatchTouchEvent', {
@@ -815,7 +810,7 @@ export class RemoteBrowsers {
       .catch((error) => this.report(session, error))
       .finally(() => {
         session.queued--
-        this.scheduleSharpFrame(session)
+        this.scheduleSharpFrame(session, command.input.type === 'resize' ? 0 : 150)
       })
     await operation
   }

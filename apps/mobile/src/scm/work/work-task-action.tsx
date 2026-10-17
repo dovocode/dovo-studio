@@ -8,6 +8,7 @@ import { View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import {
   workTaskInputSchema,
+  projectDisplayName,
   workTaskResponseSchema,
   type ForgeIssue,
   type ForgePipeline,
@@ -239,7 +240,7 @@ export function WorkTaskAction({
               },
               ...projects.map((project) => ({
                 id: project.id,
-                name: project.name,
+                name: projectDisplayName(project),
               })),
             ]}
           />

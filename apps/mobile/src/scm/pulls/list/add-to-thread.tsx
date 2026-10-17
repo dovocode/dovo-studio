@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { projectDisplayName, runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { responses, type PullSummary } from '@dovo/protocol'
@@ -29,9 +29,9 @@ export function AddPullsToThread({
         .map((task) => ({
           task,
           runtime,
-          project:
-            runtime.snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
-              ?.name ?? 'No project',
+          project: projectDisplayName(
+            runtime.snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+          ),
         })),
     )
     .filter(({ task, runtime, project }) =>

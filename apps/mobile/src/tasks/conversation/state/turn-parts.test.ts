@@ -94,3 +94,25 @@ it('keeps created artifacts in folded work, including textless and intermediate 
   expect(foldedTurnPartRanges(content, -1, 4)).toEqual([{ start: 2, end: 4 }])
   expect(toolPartArtifacts({ ...tool('invalid'), artifact: { payload: 'not JSON' } })).toEqual([])
 })
+
+it('keeps native image previews visible in folded and textless turns', () => {
+  const content: ThreadMessage['content'] = [
+    {
+      type: 'tool-call',
+      toolCallId: 'view',
+      toolName: 'View image',
+      args: {},
+      argsText: '',
+      artifact: {
+        groupKey: 'images',
+        payload: JSON.stringify({ toolImages: [{ eventId: 'view', index: 0 }] }),
+      },
+    },
+    { type: 'text', text: 'Ready' },
+  ]
+  expect(foldedTurnPartRanges(content, 1, 2)).toEqual([
+    { start: 0, end: 1 },
+    { start: 1, end: 2 },
+  ])
+  expect(foldedTurnPartRanges(content, -1, 1)).toEqual([{ start: 0, end: 1 }])
+})

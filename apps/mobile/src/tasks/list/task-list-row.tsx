@@ -146,7 +146,7 @@ function TaskListRowView({
   const icon = projectIcon(repository)
   const StatusIcon = statusIcons[state]
   const compact = task.archived || !!task.archivedAt
-  const readOpacity = hasUnreadTaskActivity(task) ? 1 : 0.4
+  const readOpacity = hasUnreadTaskActivity(task) ? 1 : 0.65
 
   const projectBadge = general ? (
     <View style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>

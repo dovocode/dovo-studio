@@ -36,23 +36,14 @@ import { ResourceEditor } from '../resources/editor'
 import { CatalogPicker } from '../resources/catalog-picker'
 import { SettingSource } from '../runtime/preferences/setting-source'
 export default function ResourcesScreen() {
-  const { styles } = useTheme()
-
   return (
     <SettingsPage>
       <ScreenHeader title="MCP, skills & hooks" />
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        automaticallyAdjustKeyboardInsets
-      >
-        <ScopedSettings>
-          {({ scope, repository }) => (
-            <ComputerResources selectedScope={scope} repositoryId={repository?.id} />
-          )}
-        </ScopedSettings>
-      </ScrollView>
+      <ScopedSettings scrollable>
+        {({ scope, repository }) => (
+          <ComputerResources selectedScope={scope} repositoryId={repository?.id} />
+        )}
+      </ScopedSettings>
     </SettingsPage>
   )
 }

@@ -1,4 +1,5 @@
-import { mcpAppReferences, artifactReferences } from '@dovo/protocol'
+import { mcpAppReferences, artifactReferences, hasToolImages } from '@dovo/protocol'
+import { ToolResultImages } from './tool-result-images'
 import { lazy, Suspense } from 'react'
 const McpAppView = lazy(() =>
   import('../mcp-app').then((module) => ({ default: module.McpAppView })),
@@ -215,12 +216,19 @@ export function TaskActivity({
     () => tools.flatMap((tool) => artifactReferences(tool.payload)),
     [tools],
   )
+  const images = useMemo(() => tools.filter((tool) => hasToolImages(tool.payload)), [tools])
   const cards = artifacts.map((reference) => (
     <Suspense key={`${reference.id}:${reference.revision}`} fallback={<p>Loading artifact…</p>}>
       <ArtifactCard reference={reference} />
     </Suspense>
   ))
-  if (artifactsOnly) return <>{cards}</>
+  if (artifactsOnly)
+    return (
+      <>
+        {cards}
+        <ToolResultImages tools={images} />
+      </>
+    )
   const running = entries.filter((entry) => entry.state === 'running')
   const current =
     running.filter((entry) => entry.presentation.kind !== 'reasoning').at(-1) ?? running.at(-1)
@@ -231,6 +239,7 @@ export function TaskActivity({
     !error &&
     !apps.length &&
     !artifacts.length &&
+    !images.length &&
     !entries.some((entry) => entry.state === 'failed' || entry.state === 'stopped')
   )
     return null
@@ -320,6 +329,7 @@ export function TaskActivity({
         </Suspense>
       ))}
       {cards}
+      <ToolResultImages tools={images} />
       {error && (
         <p role="alert" className="py-2 text-destructive">
           Activity could not be loaded. {error}

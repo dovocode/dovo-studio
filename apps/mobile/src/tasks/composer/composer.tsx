@@ -5,6 +5,7 @@ import { checkpointCanUndo } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { useModelCatalog } from '../../agents/use-model-catalog'
 import { CheckoutChoice } from '../creation/checkout-choice'
+import { LinkedCheckoutEditor } from '../detail/linked-projects'
 import { TaskMachineSelector } from '../creation/task-machine-selector'
 import { WorktreeBasePicker } from '../creation/worktree-base-picker'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -97,13 +98,20 @@ export function Composer({
     attachmentIds: string[]
   } | null>(null)
   const [machineMoving, setMachineMoving] = useApplicationState(false)
+  const [linkingProjects, setLinkingProjects] = useApplicationState(false)
+  const linkedProjectsAction = useAction()
   const [asideCreating, setAsideCreating] = useState(false)
   const [asideBusy, setAsideBusy] = useState(false)
   const asideRequest = useRef(false)
   const latestDraft = useRef(draft)
   latestDraft.current = draft
   const busy =
-    actionBusy || machineMoving || forkAction.busy || checkoutAction.busy || asideCreating
+    actionBusy ||
+    machineMoving ||
+    forkAction.busy ||
+    checkoutAction.busy ||
+    asideCreating ||
+    linkedProjectsAction.busy
   const [focused, setFocused] = useApplicationState(false),
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
@@ -412,6 +420,21 @@ export function Composer({
                 await selectProject(repository, preserveAuto ? task.autoProject : undefined)
               }}
             />
+            {repository?.kind === 'scratch' && !task.autoProject && (
+              <Action
+                secondary
+                label={
+                  task.linkedCheckouts?.length
+                    ? `Link projects (${task.linkedCheckouts.length})`
+                    : 'Link projects'
+                }
+                disabled={busy || !connected || !draft.ready || attaching || dictation.active}
+                onPress={() => {
+                  Keyboard.dismiss()
+                  setLinkingProjects(true)
+                }}
+              />
+            )}
             {task.autoProject && snapshot?.autoProjectSelectionEnabled === true && (
               <View
                 accessibilityLabel="AUTO checkout"
@@ -692,7 +715,7 @@ export function Composer({
                 label="Dismiss keyboard"
                 variant="plain"
                 icon="keyboard"
-                onPress={Keyboard.dismiss}
+                onPress={() => Keyboard.dismiss()}
               />
             )}
             {/* Stay at the row's trailing edge when the keyboard button disappears on blur. */}
@@ -946,6 +969,38 @@ export function Composer({
           )}
         </View>
       )}
+      {linkingProjects &&
+        checkoutEditable &&
+        repository?.kind === 'scratch' &&
+        !task.autoProject && (
+          <Sheet
+            title="Linked projects"
+            onClose={() => setLinkingProjects(false)}
+            busy={linkedProjectsAction.busy}
+          >
+            <LinkedCheckoutEditor
+              value={task.linkedCheckouts ?? []}
+              disabled={busy || !connected}
+              onChange={(links) =>
+                void linkedProjectsAction.run(() =>
+                  patch({
+                    linkedCheckouts: { before: task.linkedCheckouts ?? null, after: links },
+                  }),
+                )
+              }
+            />
+            {!!linkedProjectsAction.error && (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {linkedProjectsAction.error}
+              </Text>
+            )}
+            <Action
+              label="Done"
+              disabled={linkedProjectsAction.busy}
+              onPress={() => setLinkingProjects(false)}
+            />
+          </Sheet>
+        )}
       {checkout && checkoutEditable && hasGit && (
         <Sheet title="Checkout & branch" onClose={() => setCheckout(false)}>
           <CheckoutChoice

@@ -17,11 +17,13 @@ export function HostSettingsPage({
   description,
   initialRuntimeId,
   children,
+  localSettings,
 }: {
   title: string
   description: string
   initialRuntimeId?: string
   children: ReactNode
+  localSettings?: ReactNode
 }) {
   const sources = useRuntimeSources()
   const confirmNavigation = useConfirmSettingsNavigation()
@@ -64,9 +66,9 @@ export function HostSettingsPage({
           <div className="flex w-80 min-w-0 max-w-full items-center gap-2">
             <span
               className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
-              title={`Saved on ${source.name}`}
+              title={`${localSettings ? 'Computer settings on' : 'Saved on'} ${source.name}`}
             >
-              Saved on {source.name}
+              {localSettings ? 'Computer settings on' : 'Saved on'} {source.name}
             </span>
             {sources.length > 1 && (
               <ChoicePicker
@@ -91,6 +93,7 @@ export function HostSettingsPage({
       </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
         <div className="mx-auto max-w-3xl space-y-4">
+          {localSettings}
           {!source ? (
             <p className="text-xs text-muted-foreground">
               Connect a computer in Devices & runtime to change these settings.

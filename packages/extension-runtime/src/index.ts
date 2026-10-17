@@ -75,7 +75,7 @@ export const runtimeExtension = defineStudioExtension(
       order: 3.5,
       settingsSection: 'coding',
       keywords:
-        'code review findings verification approval pr feedback watcher watching monitoring experimental pipeline checks linking settle archive merged closed',
+        'code review findings verification approval pr feedback watcher watching monitoring experimental pipeline checks linking settle archive merged closed draft merge squash rebase create method',
       load: () => import('./pull-request-settings-view'),
     },
     {

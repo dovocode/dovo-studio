@@ -186,6 +186,31 @@ describe('Saved runtimes', () => {
   })
 })
 describe('Runtime dashboard', () => {
+  it('labels legacy scratch projects General without relabeling missing or ordinary projects', () => {
+    const entries = aggregateRuntimeTasks([
+      {
+        ...overview,
+        snapshot: {
+          ...snapshot,
+          workspace: {
+            ...snapshot.workspace,
+            repositories: [
+              { ...snapshot.workspace.repositories[0], kind: 'scratch', name: 'No project' },
+              { ...snapshot.workspace.repositories[0], id: 'ordinary', name: 'No project' },
+            ],
+            tasks: [
+              task,
+              { ...task, id: 'missing', repositoryId: 'missing' },
+              { ...task, id: 'ordinary', repositoryId: 'ordinary' },
+            ],
+          },
+        },
+      },
+    ])
+    expect(entries.find((entry) => entry.task.id === task.id)?.projectName).toBe('General')
+    expect(entries.find((entry) => entry.task.id === 'missing')?.projectName).toBe('No project')
+    expect(entries.find((entry) => entry.task.id === 'ordinary')?.projectName).toBe('No project')
+  })
   it('scopes identical IDs, approvals and repository names to their owning device', () => {
     const entries = aggregateRuntimeTasks([
       overview,

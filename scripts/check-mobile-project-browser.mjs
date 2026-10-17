@@ -84,12 +84,9 @@ try {
   const panel = page.getByRole('dialog', { name: 'Project', exact: true })
   await project.click()
   assert.equal(await server.count(), 0)
-  assert.equal(await panel.getByRole('button').nth(1).getAttribute('aria-label'), 'No project')
+  assert.equal(await panel.getByRole('button').nth(1).getAttribute('aria-label'), 'General')
   await search.fill('Missing')
-  assert.equal(
-    await page.getByRole('button', { name: 'No project', exact: true }).isVisible(),
-    true,
-  )
+  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).isVisible(), true)
   await page.getByRole('button', { name: 'Close picker' }).click()
 
   await project.click()
@@ -104,6 +101,7 @@ try {
   await page.evaluate(() => window.update({ multiple: true }))
   await project.click()
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)
   assert.equal(
     await page.getByRole('button', { name: 'Remote notes', exact: true }).isVisible(),
     true,
@@ -178,7 +176,7 @@ try {
   assert.equal(await server.count(), 0)
   await search.fill('local server')
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'No project', exact: true }).click()
+  await page.getByRole('button', { name: 'General', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.repository), 'remote-scratch')
   await page.evaluate(() => window.update({ allow: true }))
@@ -204,16 +202,14 @@ try {
   assert.equal(await page.evaluate(() => window.active), 'local')
   await project.click()
   assert.equal(
-    await page
-      .getByRole('button', { name: 'No project', exact: true })
-      .getAttribute('aria-pressed'),
+    await page.getByRole('button', { name: 'General', exact: true }).getAttribute('aria-pressed'),
     'false',
   )
-  await page.getByRole('button', { name: 'No project', exact: true }).click()
-  assert.match(await project.textContent(), /No project/)
+  await page.getByRole('button', { name: 'General', exact: true }).click()
+  assert.match(await project.textContent(), /General/)
   assert.deepEqual(errors, [])
   console.log(
-    'Native FolderPicker with browser control adapters: project-first listing, grouped copies, pinned No project, preferred server, explicit server changes, offline fallback, retry and machine restrictions passed.',
+    'Native FolderPicker with browser control adapters: project-first listing, grouped copies, pinned General, preferred server, explicit server changes, offline fallback, retry and machine restrictions passed.',
   )
 } finally {
   await browser.close()

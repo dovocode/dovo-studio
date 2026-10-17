@@ -71,3 +71,24 @@ it('records Hermes native tool lifecycle events', () => {
     }),
   ).toEqual({ toolId: 'hermes-tool', title: 'Patch file', status: 'completed' })
 })
+
+it.each(['imageGeneration', 'imageView'])(
+  'tracks native Codex %s lifecycle without using image data as a label',
+  (type) => {
+    const item = { id: 'image', type, path: '/tmp/image.png', result: 'base64-image' }
+    expect(toolEvent('codex', 'item/started', { item })).toMatchObject({
+      toolId: 'image',
+      status: 'running',
+    })
+    expect(toolEvent('codex', 'item/completed', { item })).toMatchObject({
+      toolId: 'image',
+      status: 'completed',
+      title: type === 'imageView' ? 'View image' : 'Generate image',
+    })
+    expect(
+      toolEvent('codex', 'item/completed', {
+        item: { ...item, status: 'failed', failure: { type: 'usageLimitExceeded' } },
+      }),
+    ).toMatchObject({ status: 'failed' })
+  },
+)

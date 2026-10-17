@@ -11,7 +11,7 @@ const built = await build({
       import {useState} from 'react';
       import {createRoot} from 'react-dom/client';
       import {createTask} from '@dovo/studio-core';
-      import {ComposerProject} from '../extension-tasks/src/chat/composer/composer-project';
+      import {ComposerWorkspace} from '../extension-tasks/src/chat/composer/composer-workspace';
       const repo=(id,name,gitIdentity)=>({id,name,path:'/'+id,branch:'main',gitIdentity});
       const scratch=id=>({...repo(id,'Private folder'),kind:'scratch'});
       const inventory={
@@ -31,8 +31,8 @@ const built = await build({
         window.configure=changes=>{if('autoEnabled' in changes)setAutoEnabled(changes.autoEnabled);if('multiple' in changes)setMultiple(changes.multiple);if('disabled' in changes)setDisabled(changes.disabled);if('online' in changes)setOnline(changes.online);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('defaultServer' in changes)setDefaultServer(changes.defaultServer);setRevision(value=>value+1)};
         window.store={workspace,setWorkspace,activeRuntimeId:active,connected:active==='local'?online:remoteOnline,runtimes,snapshot:{defaults,autoProjectSelectionEnabled:autoEnabled},runtimeRegistry:{profiles},connection:{address:'http://'+active}};
         window.workspace=workspace;window.active=active;
-        return <div data-revision={revision}><ComposerProject task={workspace.tasks[0]} disabled={disabled}
-          onMoving={value=>window.moving.push(value)}
+        return <div data-revision={revision}><ComposerWorkspace task={workspace.tasks[0]} disabled={disabled}
+          onMachineMoving={value=>window.moving.push(value)}
           onSelectRemote={(source,target)=>new Promise((resolve,reject)=>{
             window.selected.push({runtimeId:source.runtimeId,repositoryId:target.id});
             window.finish=()=>{
@@ -51,7 +51,7 @@ const built = await build({
       setup(builder) {
         const mocks = {
           '@dovo/studio-core': `export * from '../protocol/src/index';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});export const WorkspaceScope=({profile,children})=><div data-runtime-scope={profile.id}>{children}</div>;`,
-          '@dovo/studio-ui': `export {Button} from '../studio-ui/src/components/ui/button';export {Input} from '../studio-ui/src/components/ui/input';export * as Popover from '@radix-ui/react-popover';`,
+          '@dovo/studio-ui': `export const ComposerWorkspaceBar=({children})=><div role="group" aria-label="Project and checkout">{children}</div>;export {LinkedCheckoutEditor} from '../studio-ui/src/linked-checkouts';export {ChoicePicker} from '../studio-ui/src/choice-picker';export * from '../studio-ui/src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {Button} from '../studio-ui/src/components/ui/button';export {Input} from '../studio-ui/src/components/ui/input';export * as Popover from '@radix-ui/react-popover';`,
           '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=({onClose})=><div role="dialog" aria-label="Add project"><button onClick={onClose}>Cancel adding</button></div>;`,
         }
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
@@ -90,7 +90,7 @@ try {
   const panel = page.getByRole('dialog', { name: 'Choose a project', exact: true })
   const serverPanel = page.getByRole('dialog', { name: 'Choose a server', exact: true })
 
-  // One server goes directly to projects; No project stays first even during search.
+  // One server goes directly to projects; General stays first even during search.
   await trigger.click()
   await search.waitFor()
   assert.equal(await search.evaluate((input) => input === document.activeElement), true)
@@ -101,17 +101,14 @@ try {
       .getByRole('button')
       .first()
       .getAttribute('aria-label'),
-    'No project',
+    'General',
   )
   assert.equal(
     await page.getByRole('button', { name: 'Invalid project', exact: true }).isDisabled(),
     true,
   )
   await search.fill('Other')
-  assert.equal(
-    await page.getByRole('button', { name: 'No project', exact: true }).isVisible(),
-    true,
-  )
+  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).isVisible(), true)
   await search.press('ArrowDown')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
@@ -123,6 +120,7 @@ try {
   await page.evaluate(() => window.configure({ multiple: true }))
   await trigger.click()
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)
   assert.equal(
     await page.getByRole('button', { name: 'Remote notes', exact: true }).isVisible(),
     true,
@@ -142,10 +140,7 @@ try {
   assert.equal(await search.inputValue(), '')
   await search.fill('Missing')
   assert.equal(await page.getByRole('status').textContent(), 'No matching projects.')
-  assert.equal(
-    await page.getByRole('button', { name: 'No project', exact: true }).isVisible(),
-    true,
-  )
+  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).isVisible(), true)
   await search.fill('')
   await page.getByRole('button', { name: 'Add project on local machine', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
@@ -204,7 +199,7 @@ try {
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'local')
   await trigger.click()
   await search.fill('Nothing matches')
-  await page.getByRole('button', { name: 'No project', exact: true }).click()
+  await page.getByRole('button', { name: 'General', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'scratch')
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
@@ -213,7 +208,7 @@ try {
   assert.equal(await page.getByRole('button', { name: 'AUTO project', exact: true }).count(), 0)
   await page.keyboard.press('Escape')
   await page.evaluate(() => window.configure({ autoEnabled: true }))
-  // AUTO is local to the chosen machine and manual No project exits the mode.
+  // AUTO is local to the chosen machine and manual General exits the mode.
   await trigger.click()
   await page.getByRole('button', { name: 'AUTO project', exact: true }).click()
   assert.match(await trigger.textContent(), /AUTO/)
@@ -228,11 +223,29 @@ try {
   assert.match(await trigger.textContent(), /AUTO \(disabled\)/)
   await trigger.click()
   assert.equal(await page.getByRole('button', { name: 'AUTO project', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'No project', exact: true }).click()
+  await page.getByRole('button', { name: 'General', exact: true }).click()
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].autoProject), undefined)
-  assert.match(await trigger.textContent(), /No project/)
+  assert.match(await trigger.textContent(), /General/)
 
+  await page.getByRole('button', { name: 'Link projects', exact: true }).click()
+  const linking = page.getByRole('dialog', { name: 'Linked projects', exact: true })
+  await linking.getByRole('button', { name: 'Add checkout', exact: true }).click()
+  await linking.getByRole('button', { name: 'Linked checkout', exact: true }).click()
+  await page.getByRole('option', { name: 'Main checkout', exact: true }).click()
+  await linking.getByRole('button', { name: 'Linked project access', exact: true }).click()
+  await page.getByRole('option', { name: 'Allow edits', exact: true }).click()
+  assert.equal(
+    await page.evaluate(() => window.workspace.tasks[0].linkedCheckouts[0].access),
+    'edit',
+  )
+  assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'scratch')
+  await linking.getByRole('button', { name: 'Done', exact: true }).click()
   await page.evaluate(() => window.configure({ multiple: false, online: false }))
+  await page.waitForFunction(() => document.querySelector('[aria-label="Link projects"]').disabled)
+  assert.equal(
+    await page.getByRole('button', { name: 'Link projects', exact: true }).isDisabled(),
+    true,
+  )
   await trigger.click()
   assert.equal(
     await page.getByRole('button', { name: 'Other project', exact: true }).isDisabled(),
@@ -248,7 +261,7 @@ try {
   assert.equal(await trigger.isDisabled(), true)
   assert.deepEqual(errors, [])
   console.log(
-    'Composer projects: all servers, grouped copies, pinned No project during search, keyboard navigation, explicit server changes, saved defaults, offline fallback, draft preservation and move failure/retry passed.',
+    'Composer projects: all servers, grouped copies, pinned General during search, keyboard navigation, explicit server changes, saved defaults, offline fallback, draft preservation and move failure/retry passed.',
   )
 } finally {
   await browser.close()

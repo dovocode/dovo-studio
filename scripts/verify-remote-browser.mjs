@@ -326,6 +326,43 @@ try {
   await host.state(session)
   console.log('Navigation replacement retains state; unexpected failures remain visible')
 
+  // A slow optional detail capture after resize must not block the next input.
+  await until(() => !session.capturingSharpFrame)
+  const originalScreenshot = session.page.screenshot.bind(session.page)
+  let captureStarted = false,
+    releaseCapture,
+    inputTimeout
+  const captureHeld = new Promise((resolve) => {
+    releaseCapture = resolve
+  })
+  session.page.screenshot = async (...args) => {
+    captureStarted = true
+    await captureHeld
+    return originalScreenshot(...args)
+  }
+  try {
+    const input = (async () => {
+      await host.input(sessionId, { type: 'resize', width: 620, height: 480 })
+      await host.input(sessionId, { type: 'key', key: 'Escape' })
+    })()
+    await until(() => captureStarted)
+    await Promise.race([
+      input,
+      new Promise((_, reject) => {
+        inputTimeout = setTimeout(
+          () => reject(new Error('Input blocked behind resize detail capture')),
+          1000,
+        )
+      }),
+    ])
+  } finally {
+    clearTimeout(inputTimeout)
+    releaseCapture()
+    session.page.screenshot = originalScreenshot
+  }
+  await until(() => !session.capturingSharpFrame)
+  console.log('Resize detail capture does not block following input')
+
   await viewer.getByLabel('Browser options', { exact: true }).click()
   await viewer.getByLabel('Viewport', { exact: true }).selectOption('phone')
   await until(async () => (await canvas.getAttribute('data-viewport-width')) === '390')
@@ -433,6 +470,20 @@ try {
       await page.frameLocator('iframe').locator('canvas').getAttribute('data-viewport-width'),
       await page.frameLocator('iframe').locator('canvas').getAttribute('data-viewport-height'),
     )
+  }
+  for (const pending of runtime.services.browsers.sessions.values()) {
+    const session = await pending
+    const metadata = session.frame
+      ? await require('sharp')(session.frame.data).metadata()
+      : undefined
+    console.error('Capture:', {
+      image: metadata && [metadata.width, metadata.height],
+      viewport: session.page.viewportSize(),
+      queued: session.queued,
+      capturing: session.capturingSharpFrame,
+      scheduled: !!session.sharpTimer,
+      logs: session.logs.slice(-3),
+    })
   }
   throw error
 } finally {

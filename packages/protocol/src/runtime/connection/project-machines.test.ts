@@ -137,7 +137,7 @@ it('pins one project-free choice and groups the same project across servers', ()
       },
     },
   ])
-  expect(groups.map((group) => group.name)).toEqual(['No project', 'Project'])
+  expect(groups.map((group) => group.name)).toEqual(['General', 'Project'])
   expect(groups[0].entries).toHaveLength(2)
   expect(groups[1].entries).toHaveLength(2)
 })
@@ -238,4 +238,50 @@ it('does not group folders or unavailable checkouts using stale Git identities',
   ])
   expect(groups).toHaveLength(4)
   expect(groups.filter((group) => group.identity)).toHaveLength(2)
+})
+
+it('groups General across computers without treating it as a Git project', () => {
+  const entries = [
+    {
+      runtimeId: 'one',
+      repository: {
+        id: 'scratch-one',
+        kind: 'scratch' as const,
+        name: 'No project',
+        path: '/private/one',
+        branch: 'stale',
+        gitIdentity: 'host/old/repo',
+      },
+    },
+    {
+      runtimeId: 'two',
+      repository: {
+        id: 'scratch-two',
+        kind: 'scratch' as const,
+        name: 'Private folder',
+        path: '/private/two',
+        branch: '',
+      },
+    },
+    {
+      runtimeId: 'one',
+      repository: { id: 'regular', name: 'General', path: '/regular', branch: 'main' },
+    },
+  ]
+  const groups = projectMachineGroups(entries)
+  expect(groups).toHaveLength(2)
+  expect(groups.find((group) => group.key === 'scratch')).toMatchObject({
+    name: 'General',
+    identity: undefined,
+    entries: entries.slice(0, 2),
+  })
+  expect(
+    projectMachineGroups([...entries].reverse()).find((group) => group.key === 'scratch')?.name,
+  ).toBe('General')
+  expect(projectMachineGroups(entries, false)).toHaveLength(3)
+  expect(projectMachineGroups(entries, false).map((group) => group.name)).toEqual([
+    'General',
+    'General',
+    'General',
+  ])
 })

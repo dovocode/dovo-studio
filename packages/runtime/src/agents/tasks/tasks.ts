@@ -35,7 +35,7 @@ import { pendingReviewComments, taskFeedbackSchema } from '@dovo/protocol'
 import type { Commands } from '../../storage/commands.js'
 import type { TaskCheckout } from '../../scm/tasks/task-checkout.js'
 import { randomUUID, createHash } from 'node:crypto'
-import type { Task, TaskMetadata } from '@dovo/protocol'
+import type { Task, TaskMetadata, QuestionPrompt } from '@dovo/protocol'
 import { WorkspaceStore } from '../../storage/workspace.js'
 import { GitService } from '../../scm/git/git.js'
 import { AgentRegistry } from '../configuration/registry.js'
@@ -97,6 +97,7 @@ export class Tasks {
     private resolveModel: (id: string, text?: string) => Effect.Effect<void, RuntimeFailure> = () =>
       Effect.void,
     studioTools: () => StudioTools = noStudioTools,
+    linkedProjectsEnabled: () => boolean = () => true,
   ) {
     this.runner = new TaskTurnRunner(
       store,
@@ -114,6 +115,7 @@ export class Tasks {
       memoryScopes,
       deviceHubEnabled,
       studioTools,
+      linkedProjectsEnabled,
     )
     this.runner.setLinkedCheckouts(checkouts.linked)
     this.runner.setNativeSessions((taskId, sessionId, control, directories) => {
@@ -1123,6 +1125,17 @@ export class Tasks {
             return Effect.fail(new HttpError(409, 'This task is already running'))
           let recoveringQueue = task.restartRecovery?.kind === 'queue'
           const recoveringTurn = task.restartRecovery?.kind === 'turn'
+          const pendingLinks =
+            !recoveringTurn && task.runPhase !== 'finalizing'
+              ? task.pendingLinkedCheckouts
+              : undefined
+          if (pendingLinks) {
+            try {
+              this.checkouts.linked.validate(pendingLinks)
+            } catch (cause) {
+              return Effect.fail(runtimeFailure(cause))
+            }
+          }
           let resumeInterruptedTurn = recoveringTurn
           const ready = Effect.runSync(Deferred.make<void, RuntimeFailure>())
           const run: Running = {
@@ -1137,6 +1150,14 @@ export class Tasks {
             id,
             (task) => ({
               ...task,
+              ...(pendingLinks
+                ? {
+                    linkedCheckouts: pendingLinks,
+                    pendingLinkedCheckouts: undefined,
+                    sessionId: undefined,
+                    sessionAgentId: undefined,
+                  }
+                : {}),
               startAfter: undefined,
               quotaContinuation: undefined,
               snoozedUntil:
@@ -1266,58 +1287,7 @@ export class Tasks {
                 (steer) => {
                   run.steer = steer
                 },
-                (prompt) => {
-                  // Message forms outlive the turn; Stop and runtime shutdown still dismiss them.
-                  void this.questions.request(
-                    id,
-                    prompt,
-                    run.controller.signal,
-                    undefined,
-                    (answers, receipt) => {
-                      const text = answers
-                        ? prompt.questions
-                            .map((q) => `${q.question}\n${(answers[q.id] ?? []).join('\n')}`)
-                            .join('\n\n')
-                        : `The user declined to answer:\n${prompt.questions.map((q) => q.question).join('\n')}`
-                      const messageId = `answer:${receipt.id}`
-                      // The answer receipt and input are one transaction, before HTTP acknowledgement.
-                      this.queue.add(id, messageId, text, [], receipt)
-                      if (
-                        !this.store
-                          .taskSummary(id)
-                          .queue?.some((message) => message.id === messageId)
-                      )
-                        return
-                      const active = this.running.get(id)
-                      const nativeSteer = active?.id === attemptId ? active.steer : undefined
-                      const token = Symbol()
-                      const deliver =
-                        nativeSteer && !this.steering.has(id)
-                          ? Effect.acquireUseRelease(
-                              Effect.sync(() => this.steering.set(id, token)),
-                              () => runtimeOperation(() => nativeSteer(messageId)),
-                              () =>
-                                Effect.sync(() => {
-                                  if (this.steering.get(id) === token) this.steering.delete(id)
-                                }),
-                            )
-                          : this.sendEffect(id, messageId, text)
-                      this.executor.runFork(
-                        deliver.pipe(
-                          Effect.catchCause((cause) =>
-                            Effect.sync(() => {
-                              this.store.updateTask(id, (task) => ({
-                                ...task,
-                                queuePaused: true,
-                                error: `Form answer saved in the queue; delivery was not confirmed: ${errorMessage(Cause.squash(cause))}`,
-                              }))
-                            }),
-                          ),
-                        ),
-                      )
-                    },
-                  )
-                },
+                (prompt) => this.askQuestion(id, attemptId, prompt),
                 continuing,
                 (completed) =>
                   Effect.gen({ self: this }, function* () {
@@ -1480,6 +1450,7 @@ export class Tasks {
     const paths = [
       task.existingWorktreePath,
       ...(task.linkedCheckouts ?? []).map((link) => link.existingWorktreePath),
+      ...(task.pendingLinkedCheckouts ?? []).map((link) => link.existingWorktreePath),
     ]
     if (paths.some((path) => path && this.checkoutMutations.has(path)))
       throw new HttpError(
@@ -1596,6 +1567,58 @@ export class Tasks {
     this.questions.cancelTask(id)
     this.mcpApps?.cancelTask(id)
     run.controller.abort(new Error('Cancelled by user'))
+  }
+  /** Shared non-blocking forms: native message questions and the regular MCP tool. */
+  askQuestion(id: string, runId: string, prompt: QuestionPrompt, requestId?: string) {
+    const run = this.running.get(id)
+    if (!run || run.id !== runId || run.retiring || run.controller.signal.aborted)
+      throw new HttpError(409, 'Questions require this thread’s active agent turn')
+    // Message forms outlive the turn; Stop and runtime shutdown still dismiss them.
+    void this.questions.request(
+      id,
+      prompt,
+      run.controller.signal,
+      undefined,
+      (answers, receipt) => {
+        const text = answers
+          ? prompt.questions
+              .map((q) => `${q.question}\n${(answers[q.id] ?? []).join('\n')}`)
+              .join('\n\n')
+          : `The user declined to answer:\n${prompt.questions.map((q) => q.question).join('\n')}`
+        const messageId = `answer:${receipt.id}`
+        // The answer receipt and input are one transaction, before HTTP acknowledgement.
+        this.queue.add(id, messageId, text, [], receipt)
+        if (!this.store.taskSummary(id).queue?.some((message) => message.id === messageId)) return
+        const active = this.running.get(id)
+        const nativeSteer = active?.id === runId ? active.steer : undefined
+        const token = Symbol()
+        const deliver =
+          nativeSteer && !this.steering.has(id)
+            ? Effect.acquireUseRelease(
+                Effect.sync(() => this.steering.set(id, token)),
+                () => runtimeOperation(() => nativeSteer(messageId)),
+                () =>
+                  Effect.sync(() => {
+                    if (this.steering.get(id) === token) this.steering.delete(id)
+                  }),
+              )
+            : this.sendEffect(id, messageId, text)
+        this.executor.runFork(
+          deliver.pipe(
+            Effect.catchCause((cause) =>
+              Effect.sync(() => {
+                this.store.updateTask(id, (task) => ({
+                  ...task,
+                  queuePaused: true,
+                  error: `Form answer saved in the queue; delivery was not confirmed: ${errorMessage(Cause.squash(cause))}`,
+                }))
+              }),
+            ),
+          ),
+        )
+      },
+      requestId,
+    )
   }
   private delegationRoot(id: string) {
     let task = this.store.taskSummary(id)

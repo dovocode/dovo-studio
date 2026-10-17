@@ -103,6 +103,24 @@ function claudeStream(
       // Coding sessions inherit Claude settings; text-only utilities stay isolated.
       settingSources: run.tools === 'none' ? [] : ['user', 'project', 'local'],
       includePartialMessages: true,
+      ...(run.tools === 'none'
+        ? {}
+        : {
+            hooks: {
+              PostToolUse: [
+                {
+                  matcher: 'TodoWrite|TaskCreate|TaskUpdate|TaskList|TaskGet',
+                  hooks: [
+                    async (input, _toolUseId, options) => {
+                      if (input.hook_event_name === 'PostToolUse' && !input.agent_id)
+                        activeRun(undefined, options.signal)?.onEvent?.('claude/checklist', input)
+                      return {}
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
       onElicitation: async (request, options) => {
         const current = activeRun(undefined, options.signal, true)
         if (!current) return { action: 'decline' }
@@ -142,6 +160,19 @@ function claudeStream(
         if (!current)
           return { behavior: 'deny', message: 'This Claude request has no active owner' }
         if (name === 'AskUserQuestion') return claudeQuestions(input, current, options.signal)
+        if (
+          ['mcp__dovo_task__ask_question', 'mcp__dovo_task__todos'].includes(name) &&
+          current.taskId &&
+          current.agent.resources?.mcpServers.some(
+            (server) =>
+              server.enabled &&
+              server.name === 'dovo_task' &&
+              server.envValues?.DOVO_TASK_ID === current.taskId,
+          )
+        )
+          // These tools only affect this thread's conversation and progress. The
+          // runtime still authenticates the exact run and validates every input.
+          return { behavior: 'allow', updatedInput: input }
         const disposition = toolPolicyDisposition(
           current,
           ['Read', 'Glob', 'Grep'].includes(name) ? 'read' : 'other',

@@ -12,7 +12,7 @@ runtime.services.store.update(() => f.workspace)
 const ui = `${root}/packages/studio-ui/src`
 // Exercise actual Radix controls. Only runtime context and the surrounding host shell are adapted.
 const mocks = {
-  '@dovo/studio-core': `import {useEffect} from 'react';export {responses} from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useStudioHost=()=>({});export const useWorkspace=()=>window.runtime;export const useAppPreferences=()=>({themePalette:'dovo'});export const useResolvedTheme=()=> 'dark';export function useSettingsDraft(dirty){useEffect(()=>{window.dirty=dirty},[dirty])}`,
+  '@dovo/studio-core': `import {useEffect} from 'react';export {responses} from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useStudioHost=()=>({});export const useWorkspace=()=>window.runtime;export const useAppPreferences=()=>({themePalette:'dovo',...window.localPreferences});export const updateAppPreferences=changes=>{Object.assign(window.localPreferences,changes);window.show('creation')};export const useResolvedTheme=()=> 'dark';export function useSettingsDraft(dirty){useEffect(()=>{window.dirty=dirty},[dirty])}`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui':
     ['button', 'input', 'textarea', 'dialog', 'select', 'checkbox']
@@ -24,7 +24,7 @@ const mocks = {
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import {RunningTaskPreferences,PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {Segmented} from '${ui}/settings-layout.tsx';const components={memory:Memory,worktrees:Worktrees,running:RunningTaskPreferences,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={connected:true,snapshot:window.initialSnapshot,request:async(path,input,schema)=>decode(schema,await window.callRuntime(path,input)),requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<Component key={name}/>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode} from '@dovo/protocol';import {SideQuestion} from '${root}/packages/extension-tasks/src/chat/thread/side-question.tsx';import Memory from '${root}/packages/extension-runtime/src/memory-view.tsx';import Worktrees from '${root}/packages/extension-runtime/src/worktrees-view.tsx';import {RunningTaskPreferences,PullRequestPreferences,ArtifactPreferences} from '${root}/packages/extension-runtime/src/runtime-preferences.tsx';import {PullRequestCreationDefaults} from '${root}/packages/extension-runtime/src/pull-request-creation-defaults.tsx';import {Segmented} from '${ui}/settings-layout.tsx';window.localPreferences={pullDraft:false,mergeMethod:'auto'};const components={creation:PullRequestCreationDefaults,memory:Memory,worktrees:Worktrees,running:RunningTaskPreferences,pulls:PullRequestPreferences,artifacts:ArtifactPreferences};const app=createRoot(document.getElementById('app'));window.runtime={connected:true,snapshot:window.initialSnapshot,request:async(path,input,schema)=>decode(schema,await window.callRuntime(path,input)),requestEffect:(path,input,schema)=>Effect.tryPromise({try:()=>window.runtime.request(path,input,schema),catch:error=>error})};window.show=name=>{const Component=components[name];app.render(<Component key={name}/>)};window.showSide=task=>{function SideDemo(){const [open,setOpen]=React.useState(true);const [drafts,setDrafts]=React.useState({});return <><button onClick={()=>setOpen(!open)}>Toggle panel</button>{open&&<SideQuestion task={task} drafts={drafts} setDrafts={setDrafts} onAddToComposer={()=>setOpen(false)}/>}</>};app.render(<SideDemo/>)};window.show('memory');window.showSegmented=()=>{function Demo(){const [value,set]=React.useState('one');return <Segmented label="Display" value={value} options={[['one','One'],['two','Two'],['three','Three']]} onChange={set}/>};app.render(<Demo/>)};`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -142,6 +142,19 @@ try {
   await page.getByRole('button', { name: 'Edit note-00', exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: /^Edit note-/ }).count(), 50)
   await page.evaluate(() => window.show('running'))
+  const linkedTool = page.getByRole('switch', { name: 'Linked projects tool', exact: true })
+  await linkedTool.waitFor()
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Linked projects tool"]').disabled,
+  )
+  assert.equal(await linkedTool.isChecked(), true)
+  await linkedTool.click()
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="Linked projects tool"]').getAttribute('aria-checked') ===
+        'false' && !document.querySelector('[aria-label="Linked projects tool"]').disabled,
+  )
+  assert.equal(runtime.services.preferences.get().enableLinkedProjectsTool, false)
   const auto = page.getByRole('switch', {
     name: 'AUTO project selection (experimental)',
     exact: true,
@@ -283,7 +296,26 @@ try {
     ),
   )
   assert.equal(runtime.services.preferences.get().enablePipelineWatching, true)
-  await page.evaluate(() => window.show('artifacts'))
+  await page.evaluate(() => {
+    window.runtime.connected = false
+    window.show('creation')
+  })
+  const draftDefault = page.getByRole('switch', {
+    name: 'Create pull requests as drafts',
+    exact: true,
+  })
+  await draftDefault.click()
+  assert.equal(await page.evaluate(() => window.localPreferences.pullDraft), true)
+  await page.getByRole('button', { name: 'Merge method', exact: true }).click()
+  await page.getByRole('option', { name: 'Squash and merge', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.localPreferences.mergeMethod), 'squash')
+  await page
+    .getByRole('heading', { name: 'Creating and merging · This device', exact: true })
+    .waitFor()
+  await page.evaluate(() => {
+    window.runtime.connected = true
+    window.show('artifacts')
+  })
   const retention = page.getByRole('combobox', { name: 'Artifacts when settled', exact: true })
   await retention.click()
   await page.getByRole('option').filter({ hasText: '7 days' }).click()

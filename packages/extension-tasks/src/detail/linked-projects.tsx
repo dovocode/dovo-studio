@@ -5,8 +5,10 @@ import type { LinkedCheckout } from '@dovo/protocol'
 
 export function LinkedProjects({ task }: { task: Task }) {
   const { request, connected } = useWorkspace()
-  const [links, setLinks] = useState<LinkedCheckout[]>(task.linkedCheckouts ?? [])
-  const [before, setBefore] = useState(task.linkedCheckouts ?? [])
+  const [links, setLinks] = useState<LinkedCheckout[]>(
+    task.pendingLinkedCheckouts ?? task.linkedCheckouts ?? [],
+  )
+  const [before, setBefore] = useState(task.pendingLinkedCheckouts ?? task.linkedCheckouts ?? [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const disabled =
@@ -30,6 +32,11 @@ export function LinkedProjects({ task }: { task: Task }) {
   }
   return (
     <div className="space-y-3">
+      {!!task.pendingLinkedCheckouts && (
+        <p className="text-xs text-muted-foreground">
+          Linked projects added by the agent take effect on the next turn.
+        </p>
+      )}
       <LinkedCheckoutEditor value={links} onChange={setLinks} disabled={disabled} />
       <p className="text-xs text-muted-foreground">
         Removing a link keeps its worktree and saved history. Read-only links are reference context;

@@ -86,17 +86,6 @@ export const appSettingsExtension = defineStudioExtension(
       load: () => import('./app-settings/diffs'),
     },
     {
-      id: 'pull-request-settings',
-      navigationGroup: 'settings',
-      settingsScope: 'device',
-      title: 'Pull requests',
-      icon: 'runtime',
-      order: 3.1,
-      settingsSection: 'coding',
-      keywords: 'pull request pr draft merge squash rebase method create',
-      load: () => import('./app-settings/pull-requests'),
-    },
-    {
       id: 'usage',
       navigationGroup: 'settings',
       settingsScope: 'computer',

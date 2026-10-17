@@ -1,6 +1,8 @@
 import { Schema } from 'effect'
 import { mutableArray } from '../shared/schema.js'
 
+export const settledThreadPreviewLimit = 5
+
 export const threadSections = [
   { id: 'pinned', name: 'Pinned' },
   { id: 'active', name: 'Open' },

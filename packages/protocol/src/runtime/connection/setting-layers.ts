@@ -12,6 +12,104 @@ export type SettingField =
   | { group: 'taskDefaults'; key: keyof NonNullable<ScopedSettingsValue['taskDefaults']> }
   | { group: 'taskBehavior'; key: keyof NonNullable<ScopedSettingsValue['taskBehavior']> }
 
+export type SettingSourceSetting = {
+  field: SettingField
+  repository?: Repository
+  scope: SettingsScope
+  value: unknown
+  /** Resolved by the settings read endpoint, including the control's fallback where needed. */
+  inheritedValue: unknown
+}
+
+export function settingSourceName(
+  source: SettingsScope | 'built-in' | 'computer-default',
+  context: { project?: string; computer?: string } = {},
+) {
+  const computer = context.computer ?? 'This computer'
+  const project = context.project ?? 'This project'
+  switch (source) {
+    case 'built-in':
+      return 'Dovo defaults'
+    case 'computer-default':
+      return `${computer} preferences`
+    case 'global':
+      return 'Global defaults'
+    case 'environment':
+      return `${computer} defaults`
+    case 'project':
+      return `${project} project defaults`
+    case 'environment-project':
+      return `${project} on ${computer}`
+  }
+}
+
+/** Describe the value at the edited level, never a more-specific override on another target. */
+export function settingValueDescription(
+  field: SettingField,
+  value: unknown,
+  computers: readonly { id: string; name: string }[] = [],
+): string {
+  if (value === null) return 'Provider default'
+  if (field.group === 'taskBehavior') {
+    if (field.key === 'inactiveDays') return `${settingValueLabel(value ?? 3)} days`
+    if (field.key === 'archiveAfterSettledDays') return `${settingValueLabel(value ?? 7)} days`
+    return value === undefined ? 'Off' : settingValueLabel(value)
+  }
+  if (value === undefined) {
+    switch (field.key) {
+      case 'defaultServerId':
+        return 'Automatic · current computer'
+      case 'harness':
+        return 'Codex · provider default model'
+      case 'modelSelection':
+        return 'Use selected agent'
+      case 'permission':
+        return 'Full access'
+      case 'execution':
+        return 'Local checkout'
+      case 'submodules':
+        return 'None'
+      case 'worktreeFromOrigin':
+        return defaultWorktreeFromOrigin ? 'On' : 'Off'
+      case 'setupCommand':
+        return 'No setup command'
+      case 'approvalPolicy':
+      case 'sandboxMode':
+        return 'Provider default'
+    }
+  }
+  if (field.key === 'setupCommand' && value === '') return 'No setup command'
+  if (field.key === 'modelSelection') return value === 'smart' ? 'SMART' : 'Use selected agent'
+  if (field.key === 'defaultServerId' && typeof value === 'string' && computers.length)
+    return computers.find((entry) => entry.id === value)?.name ?? 'Unavailable computer'
+  if (field.key === 'permission' && value === 'full-access') return 'Full access'
+  return settingValueLabel(value)
+}
+
+/** Keep commands and instructions readable in rows; inheritance details retain the full value. */
+export function settingValuePreview(value: string) {
+  const line = value.replace(/\s+/g, ' ').trim()
+  return line.length > 80 ? `${line.slice(0, 77)}…` : line
+}
+
+/** A settings read can be newer than the fleet snapshot used to name its source. */
+export function settingInheritanceIsCurrent(
+  runtime: RuntimeDefaults | undefined,
+  setting: SettingSourceSetting,
+  source: SettingsScope | 'built-in' | 'computer-default',
+) {
+  // Lifecycle preferences are read separately by the editor, outside the scoped snapshot.
+  if (source === 'computer-default') return true
+  const level = settingsScopes.indexOf(setting.scope)
+  const inherited = settingLayers(runtime, setting.repository, setting.field).find(
+    (row) => settingsScopes.indexOf(row.scope) < level && row.value !== undefined,
+  )
+  return (
+    settingValueDescription(setting.field, inherited?.value) ===
+    settingValueDescription(setting.field, setting.inheritedValue)
+  )
+}
+
 /** Keep explicit false/empty overrides; never infer inheritance from truthiness. */
 export function settingLayers(
   runtime: RuntimeDefaults | undefined,
@@ -49,33 +147,14 @@ export function settingValueLabel(value: unknown): string {
 }
 
 export function settingBaseLabel(field: SettingField) {
-  if (field.group === 'taskBehavior') {
-    if (field.key === 'inactiveDays') return '3 days · Dovo default'
-    if (field.key === 'archiveAfterSettledDays') return '7 days · Dovo default'
-    if (
-      field.key === 'continueAfterRestart' ||
+  if (
+    field.group === 'taskBehavior' &&
+    (field.key === 'continueAfterRestart' ||
       field.key === 'settleMerged' ||
-      field.key === 'settleClosed'
-    )
-      return 'Computer lifecycle preference'
-    return 'Off · Dovo default'
-  }
-  switch (field.key) {
-    case 'defaultServerId':
-      return 'Automatic · prefer current server'
-    case 'harness':
-      return 'Codex · provider default model · Dovo default'
-    case 'permission':
-      return 'Full access · Dovo default'
-    case 'execution':
-      return 'Local checkout · Dovo default'
-    case 'submodules':
-      return 'None · Dovo default'
-    case 'worktreeFromOrigin':
-      return `${defaultWorktreeFromOrigin ? 'On' : 'Off'} · Dovo default`
-    case 'setupCommand':
-      return 'No setup command · Dovo default'
-  }
+      field.key === 'settleClosed')
+  )
+    return 'Computer lifecycle preference'
+  return `${settingValueDescription(field, undefined)} · Dovo default`
 }
 
 export type SettingOverrideSource = {

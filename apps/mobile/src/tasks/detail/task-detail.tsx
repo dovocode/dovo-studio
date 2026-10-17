@@ -4,7 +4,7 @@ import { TaskLinkedPullSheet } from './task-linked-pull-sheet'
 import { TaskThreadBehavior } from './task-thread-behavior'
 import { chooseSnoozeDuration } from './use-task-lifecycle'
 import { generatedTitleSchema, taskPullLinks, workspacePatchResultSchema } from '@dovo/protocol'
-import { checkpointFileCount, runtimeComputerName } from '@dovo/protocol'
+import { checkpointFileCount, projectDisplayName, runtimeComputerName } from '@dovo/protocol'
 import { conversationPageSchema, readConversationHistory, runtimeRequest } from '@dovo/protocol'
 import {
   cachedThread,
@@ -22,11 +22,7 @@ import {
 } from '@dovo/protocol'
 import { Effect, Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
-import {
-  useCarMode,
-  useMobilePreferences,
-  updateMobilePreferences,
-} from '../../runtime/preferences/app-preferences'
+import { useCarMode } from '../../runtime/preferences/app-preferences'
 import { useAction } from '../../ui/controls/use-action'
 import {
   createDetailDrafts,
@@ -443,7 +439,10 @@ function TaskDetailContent({
     snapshot: { runtimeHost: latestTurn?.runtimeHost ?? snapshot?.runtimeHost },
   })
   // Name the computer only when there is more than one to tell apart.
-  const subtitle = [repository?.name, profiles.length > 1 ? runtimeHost : undefined]
+  const subtitle = [
+    projectDisplayName(repository, ''),
+    profiles.length > 1 ? runtimeHost : undefined,
+  ]
     .filter(Boolean)
     .join(' · ')
   const status = task.archivedAt
@@ -520,8 +519,11 @@ function TaskDetailContent({
   const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [renaming, setRenaming] = useApplicationState(false)
   const [artifactsOpen, setArtifactsOpen] = useState(false)
-  const { projectPanelOpen: projectInfo } = useMobilePreferences()
-  const setProjectInfo = (open: boolean) => updateMobilePreferences({ projectPanelOpen: open })
+  const [projectInfo, setProjectInfo] = useState(false)
+  // Navigation keeps screens mounted; project information belongs only to this view.
+  useEffect(() => {
+    setProjectInfo(false)
+  }, [focused, activeId, task.id, pane, native?.parentKey])
   const [linkedPulls, setLinkedPulls] = useState(false)
   const [linkedPullUrl, setLinkedPullUrl] = useState<string | undefined>(undefined)
   const [threadBehavior, setThreadBehavior] = useState(false)
@@ -829,6 +831,10 @@ function TaskDetailContent({
           scripts={projectActions}
           branchActions={[...branchActions, ...worktreeActions, ...moveActions]}
           onClose={() => setProjectInfo(false)}
+          onProjects={() => {
+            setProjectInfo(false)
+            setLinkingProjects(true)
+          }}
           onAgents={() => {
             setPane('agents')
           }}

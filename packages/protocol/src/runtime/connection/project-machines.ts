@@ -55,9 +55,11 @@ export function projectMachineGroups<
   const groups = new Map<string, { key: string; name: string; entries: T[] }>()
   for (const entry of entries) {
     const key =
+      (groupMatching && entry.repository.kind === 'scratch' ? 'scratch' : undefined) ??
       (groupMatching && sharedProjectKey(entry.repository)
         ? entry.repository.gitIdentity
-        : undefined) ?? JSON.stringify([entry.runtimeId, entry.repository.id])
+        : undefined) ??
+      JSON.stringify([entry.runtimeId, entry.repository.id])
     const group = groups.get(key) ?? { key, name: entry.repository.name, entries: [] }
     group.entries.push(entry)
     groups.set(key, group)
@@ -66,9 +68,12 @@ export function projectMachineGroups<
     .map((group) => ({
       ...group,
       // Choose a stable label regardless of which runtime is currently selected.
-      name: [...new Set(group.entries.map((entry) => entry.repository.name))].sort(
-        (a, b) => a.length - b.length || a.localeCompare(b),
-      )[0],
+      name:
+        group.entries[0].repository.kind === 'scratch'
+          ? 'General'
+          : [...new Set(group.entries.map((entry) => entry.repository.name))].sort(
+              (a, b) => a.length - b.length || a.localeCompare(b),
+            )[0],
       identity: sharedProjectKey(group.entries[0].repository)
         ? group.entries[0].repository.gitIdentity
         : undefined,
@@ -83,7 +88,7 @@ export function taskProjectGroups<T extends { repository: Repository; runtimeId:
   const scratch = entries.filter((entry) => entry.repository.kind === 'scratch')
   return [
     ...(scratch.length
-      ? [{ key: 'scratch', name: 'No project', entries: scratch, identity: undefined }]
+      ? [{ key: 'scratch', name: 'General', entries: scratch, identity: undefined }]
       : []),
     ...projectMachineGroups(entries.filter((entry) => entry.repository.kind !== 'scratch')),
   ]

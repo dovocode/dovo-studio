@@ -222,7 +222,7 @@ export function compactActivityEvents(events: Event[]): Event[] {
       const presentation = toolPresentation(call.payload, call.summary, undefined, metadata)
       const apps = mcpAppReferences(metadata)
       const artifacts = artifactReferences(metadata)
-      const images = toolImageReferences(metadata)
+      const images = toolImageReferences(metadata, event.id)
       if (!images.length)
         for (const image of call === event ? originalImages : toolImages(metadata)) {
           const index = originalImages.findIndex((original) => original.uri === image.uri)

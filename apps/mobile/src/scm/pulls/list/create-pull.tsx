@@ -1,5 +1,6 @@
 import {
   pullPageSchema,
+  projectDisplayName,
   pullDetailSchema,
   pullHeadBranch,
   type PullDetail,
@@ -265,7 +266,7 @@ export function CreatePull({
         disabled={busy || parentBusy}
         items={repos.map((repo) => ({
           id: repo.id,
-          name: repo.name,
+          name: projectDisplayName(repo),
         }))}
       />
       <Field label="Title" value={title} onChangeText={setTitle} editable={!busy} />

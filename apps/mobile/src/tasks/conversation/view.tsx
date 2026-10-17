@@ -52,6 +52,7 @@ import { createConversationScroll } from './state/scroll'
 import {
   foldedTurnPartRanges,
   toolPartArtifacts,
+  toolPartHasImages,
   toolPartGroupEnd,
   turnPartBoundaries,
 } from './state/turn-parts'
@@ -391,12 +392,14 @@ function Message() {
   const hasFailure = useAuiState((state) =>
     state.message.content.some((part) => part.type === 'tool-call' && part.isError),
   )
-  const hasArtifacts = useAuiState((state) =>
-    state.message.content.some((part) => toolPartArtifacts(part).length > 0),
+  const hasRichResults = useAuiState((state) =>
+    state.message.content.some(
+      (part) => toolPartArtifacts(part).length > 0 || toolPartHasImages(part),
+    ),
   )
   const showContent =
     hasFailure ||
-    hasArtifacts ||
+    hasRichResults ||
     user ||
     !presentation?.groupTurn ||
     !(collapsed ?? presentation.groupTurn.status === 'completed') ||

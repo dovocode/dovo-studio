@@ -19,6 +19,8 @@ export const Icon=()=>null;
 export const IconButton=({label,onPress,disabled})=><button aria-label={label} disabled={disabled} onClick={onPress} style={{width:44,height:44,padding:0,flexShrink:0}}/>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Glass=View;
+export const Choice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select>;
+export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>;
 export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>({dismiss:callback=>{onClose();queueMicrotask(()=>callback?.())}}));return <div role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close</button></div>};
 export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff'},styles:{content:{},muted:{color:'#999'}}});
 `
@@ -29,6 +31,8 @@ const stubs = [
     '../../ui/controls/icon',
     '../../ui/controls/icon-button',
     '../../ui/controls/action',
+    '../../ui/controls/choice',
+    '../../ui/controls/field',
     '../../ui/layout/glass',
     '../../ui/layout/sheet',
     '../../ui/theme',
@@ -104,11 +108,11 @@ function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
   const [text,setText]=useState('Continue the review');const [connected,setConnected]=useState(true);
   window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
-  const snapshot={questions:[],workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'}],agents:[]}};
+  const snapshot={questions:[],workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const draft={text,ready:true,key:'draft',revision:text,update:setText};
   window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
-  window.conversation={send:mode=>window.calls.push({mode:mode??'queue'}),stop:()=>window.calls.push({mode:'stop'}),actions:{connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:false,hasInput:!!text,canSend:connected&&!!text,patch:async()=>{},threadScope:'runtime:task',pendingMessages:[]}};
-  return <Composer task={task} renderAbove={()=> <div>Conversation</div>} queuedMessages={<MessageQueue task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
+  window.conversation={send:mode=>window.calls.push({mode:mode??'queue'}),stop:()=>window.calls.push({mode:'stop'}),actions:{connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!text,canSend:connected&&!!text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
+  return <Composer task={task} renderAbove={setup=> <>{setup}<div>Conversation</div></>} queuedMessages={<MessageQueue task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
     },
@@ -129,8 +133,12 @@ function App(){
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage({ viewport: { width: 320, height: 900 } })
+  page.setDefaultTimeout(7000)
   const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('pageerror', (error) => {
+    errors.push(error.message)
+    console.error(error.message)
+  })
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('button', { name: 'Queue follow-up', exact: true }).click()
@@ -225,6 +233,33 @@ try {
   )
   await page.evaluate(() => window.setTask({ repositoryId: undefined }))
   assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).count(), 0)
+  await page.evaluate(() => {
+    window.setConnected(true)
+    window.setTask({ repositoryId: 'scratch', status: 'draft', messages: [], linkedCheckouts: [] })
+  })
+  await page.getByRole('button', { name: 'Link projects', exact: true }).click()
+  const links = page.getByRole('dialog', { name: 'Linked projects', exact: true })
+  await links.getByRole('button', { name: 'Add checkout', exact: true }).click()
+  await links.getByRole('combobox', { name: 'Checkout', exact: true }).selectOption('main')
+  await links.getByRole('combobox', { name: 'Access', exact: true }).selectOption('edit')
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((c) => c.patch).at(-1).patch.linkedCheckouts.after[0].access,
+    ),
+    'edit',
+  )
+  await links.getByRole('button', { name: 'Done', exact: true }).click()
+  await page.getByRole('button', { name: 'Link projects (1)', exact: true }).waitFor()
+  await page.evaluate(() => window.setConnected(false))
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('button')].some(
+      (b) => b.textContent === 'Link projects (1)' && b.disabled,
+    ),
+  )
+  assert.equal(
+    await page.getByRole('button', { name: 'Link projects (1)', exact: true }).isDisabled(),
+    true,
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Mobile composer: compact/queue/input order, inline 44pt actions at 320px, steer and fork dispatch, queue editing, immediate side-chat sending, failure recovery and offline guards passed with native control adapters.',

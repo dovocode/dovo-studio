@@ -5,6 +5,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import {
   FolderGit2,
+  MessageCircle,
   ChevronDown,
   Plus,
   Settings2,
@@ -92,7 +93,8 @@ export function ProjectsMenu({
   const project = projects.find(
     (entry) =>
       entry.key === value ||
-      (allDevices && entry.gitIdentity && `git:${entry.gitIdentity}` === value),
+      (allDevices && entry.gitIdentity && `git:${entry.gitIdentity}` === value) ||
+      (value === 'scratch' && entry.kind === 'scratch'),
   )
   const projectGroups = allDevices
     ? projectMachineGroups(
@@ -101,9 +103,10 @@ export function ProjectsMenu({
       )
     : projects.map((repository) => ({
         key: repository.key,
-        name: repository.name,
+        name: repository.kind === 'scratch' ? 'General' : repository.name,
         entries: [{ repository, runtimeId: repository.source.runtimeId }],
       }))
+  const projectName = project?.kind === 'scratch' ? 'General' : project?.name
   projectGroups.sort((a, b) => {
     const activity = (group: typeof a) =>
       Math.max(
@@ -165,14 +168,18 @@ export function ProjectsMenu({
                 ? 'size-7 shrink-0 px-0'
                 : 'h-7 w-full justify-start gap-2 px-2 text-[0.6875rem]'
             }
-            title={project?.name ?? 'Projects'}
+            title={projectName ?? 'Projects'}
             aria-label="Filter threads by project"
             disabled={busy || disabled}
           >
-            <FolderGit2 className="size-3.5 shrink-0" />
+            {project?.kind === 'scratch' ? (
+              <MessageCircle className="size-3.5 shrink-0" />
+            ) : (
+              <FolderGit2 className="size-3.5 shrink-0" />
+            )}
             {!compact && (
               <>
-                <span className="min-w-0 flex-1 truncate">{project?.name ?? 'All projects'}</span>
+                <span className="min-w-0 flex-1 truncate">{projectName ?? 'All projects'}</span>
                 <ChevronDown className="size-3" />
               </>
             )}
@@ -212,7 +219,7 @@ export function ProjectsMenu({
               {projectGroups
                 .filter((group) =>
                   group.entries.some(({ repository: repo }) =>
-                    `${repo.name} ${repo.gitIdentity ?? ''} ${repo.source.name} ${repo.path}`
+                    `${group.name} ${repo.name} ${repo.gitIdentity ?? ''} ${repo.source.name} ${repo.path}`
                       .toLowerCase()
                       .includes(query.trim().toLowerCase()),
                   ),
@@ -220,9 +227,11 @@ export function ProjectsMenu({
                 .map((group) => {
                   const repo = group.entries[0].repository
                   const key =
-                    allDevices && preferences.projectGrouping && repo.gitIdentity
-                      ? `git:${repo.gitIdentity}`
-                      : repo.key
+                    allDevices && preferences.projectGrouping && repo.kind === 'scratch'
+                      ? 'scratch'
+                      : allDevices && preferences.projectGrouping && repo.gitIdentity
+                        ? `git:${repo.gitIdentity}`
+                        : repo.key
                   const selected =
                     key === value ||
                     group.entries.some(({ repository }) => repository.key === value)
@@ -243,13 +252,17 @@ export function ProjectsMenu({
                         }}
                       >
                         <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-[0.625rem] font-semibold text-muted-foreground">
-                          {group.name
-                            .split(/[^a-zA-Z0-9]+/)
-                            .filter(Boolean)
-                            .slice(-2)
-                            .map((part) => part[0])
-                            .join('')
-                            .toUpperCase()}
+                          {repo.kind === 'scratch' ? (
+                            <MessageCircle className="size-4" />
+                          ) : (
+                            group.name
+                              .split(/[^a-zA-Z0-9]+/)
+                              .filter(Boolean)
+                              .slice(-2)
+                              .map((part) => part[0])
+                              .join('')
+                              .toUpperCase()
+                          )}
                         </span>
                         <span className="truncate">{group.name}</span>
                       </button>
@@ -291,7 +304,7 @@ export function ProjectsMenu({
                               className="size-8 shrink-0 px-0 text-muted-foreground"
                               aria-label={`Settings for ${group.name}`}
                               title={`Settings for ${group.name}`}
-                              disabled={busy}
+                              disabled={busy || repo.kind === 'scratch'}
                             >
                               <Settings2 className="size-3.5" />
                             </Button>
@@ -333,7 +346,7 @@ export function ProjectsMenu({
                 })}
               {!projectGroups.some((group) =>
                 group.entries.some(({ repository: repo }) =>
-                  `${repo.name} ${repo.gitIdentity ?? ''} ${repo.source.name} ${repo.path}`
+                  `${group.name} ${repo.name} ${repo.gitIdentity ?? ''} ${repo.source.name} ${repo.path}`
                     .toLowerCase()
                     .includes(query.trim().toLowerCase()),
                 ),

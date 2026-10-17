@@ -4,6 +4,7 @@ import {
   artifactDeleteResponseSchema,
   artifactWriteResponseSchema,
   resolveTaskAgent,
+  projectDisplayName,
   type ArtifactMetadata,
   type RuntimeProfile,
 } from '@dovo/protocol'
@@ -143,7 +144,7 @@ export function ArtifactLibraryActions({
                   { id: '', name: 'Choose a thread…' },
                   ...tasks.map((task) => ({
                     id: task.id,
-                    name: `${task.title} · ${runtime?.snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.name ?? 'No project'}`,
+                    name: `${task.title} · ${projectDisplayName(runtime?.snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId))}`,
                   })),
                 ]}
                 onChange={setTarget}

@@ -103,7 +103,10 @@ function TaskDefaultSettingsForm({
 
   const { connected, call, snapshot, overviews } = useRuntime()
   const { busy, error, act } = useAction()
-  const [setup, setSetup] = useApplicationState<{ defaults: RuntimeDefaults } | null>(null)
+  const [setup, setSetup] = useApplicationState<{
+    defaults: RuntimeDefaults
+    inherited: ProjectTaskDefaults
+  } | null>(null)
   const [localScope, setScope] = useApplicationState<SettingsScope>(
     repository ? 'environment-project' : 'environment',
   )
@@ -148,7 +151,10 @@ function TaskDefaultSettingsForm({
     )
       .then((value) => {
         if (active) {
-          setSetup({ defaults: decode(runtimeDefaultsSchema, value.inherited.taskDefaults ?? {}) })
+          setSetup({
+            defaults: decode(runtimeDefaultsSchema, value.inherited.taskDefaults ?? {}),
+            inherited: value.inherited.taskDefaults ?? {},
+          })
           setScopeValue(value.value)
           setProjectKey(value.projectKey)
           setInheritedPrompts(value.inherited.prompts ?? [])
@@ -193,7 +199,13 @@ function TaskDefaultSettingsForm({
       origin && (
         <SettingSource
           {...origin}
-          setting={{ field: { group: 'taskDefaults', key }, repository, scope, value: draft[key] }}
+          setting={{
+            field: { group: 'taskDefaults', key },
+            repository,
+            scope,
+            value: draft[key],
+            inheritedValue: setup?.inherited[key],
+          }}
           label={origin.label}
           disabled={
             disabled || ((key === 'approvalPolicy' || key === 'sandboxMode') && !policySupported)
@@ -733,6 +745,7 @@ function TaskDefaultSettingsForm({
                     repository,
                     scope,
                     value: behavior[key],
+                    inheritedValue: inheritedBehavior[key] ?? legacyBehavior[key] ?? false,
                   }}
                   disabled={disabled}
                   onReset={() => {
@@ -775,6 +788,7 @@ function TaskDefaultSettingsForm({
                 repository,
                 scope,
                 value: behavior.inactiveDays,
+                inheritedValue: inheritedBehavior.inactiveDays ?? 3,
               }}
               label="Days of inactivity before settling"
               disabled={disabled}
@@ -824,6 +838,7 @@ function TaskDefaultSettingsForm({
                 repository,
                 scope,
                 value: behavior.archiveAfterSettledDays,
+                inheritedValue: inheritedBehavior.archiveAfterSettledDays ?? 7,
               }}
               label="Days in Settled before archiving"
               disabled={disabled}
@@ -863,6 +878,12 @@ function TaskDefaultSettingsForm({
               },
               scopedSettingsResultSchema,
             )
+            setSetup({
+              defaults: decode(runtimeDefaultsSchema, result.inherited.taskDefaults ?? {}),
+              inherited: result.inherited.taskDefaults ?? {},
+            })
+            setInheritedBehavior(result.inherited.taskBehavior ?? {})
+            setInheritedPrompts(result.inherited.prompts ?? [])
             setScopeValue(result.value)
             setDraft(result.value.taskDefaults ?? {})
             setBehavior(result.value.taskBehavior ?? {})

@@ -165,6 +165,19 @@ export function RunningTaskPreferences() {
           </SettingRow>
         )}
       </SettingsGroup>
+      <SettingsGroup title="Agent tools">
+        <SettingRow
+          label="Linked projects tool"
+          description="Let agents discover projects and stage links for their own thread’s next turn. Existing links and manual project linking are unaffected. Disabling blocks calls immediately; tool visibility updates next turn."
+        >
+          <Toggle
+            label="Linked projects tool"
+            checked={value?.enableLinkedProjectsTool ?? true}
+            disabled={disabled}
+            onChange={(enableLinkedProjectsTool) => save({ enableLinkedProjectsTool })}
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Supervised mode">
         <SettingRow
           label="Always allow web requests"

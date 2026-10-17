@@ -1,6 +1,8 @@
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'node:http'
+import { rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -651,6 +653,9 @@ it('keeps read-only providers from sending task terminal or device input', async
   try {
     await client.connect(transport)
     expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+      'ask_question',
+      'todos',
+      'linked_projects',
       'browser',
       'subagent_spawn',
       'subagent_list',
@@ -1499,3 +1504,176 @@ it('omits host terminal execution under an explicit restricted native sandbox wh
     await transport.close()
   }
 })
+
+it('offers linked_projects as a regular task tool and stages scoped General links for the next turn', async () => {
+  const f = await fixture()
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'linked-tools-test-owner-token-at-least-32-chars',
+    port: 0,
+  })
+  const client = new Client({ name: 'linked-projects-test', version: '1' })
+  let transport: StdioClientTransport | undefined
+  try {
+    const s = runtime.services
+    s.store.update(() => f.workspace)
+    const scratch = await s.scratch.ensure()
+    const task = s.tasks.create({
+      title: 'General',
+      repositoryId: scratch.id,
+      agentId: 'agent',
+      objective: 'Configure linked project',
+    })
+    const runId = randomUUID()
+    s.store.updateTask(task.id, (t) => ({ ...t, status: 'running', activeRunId: runId }))
+    const token = s.runCredentials.issue(
+      {
+        taskId: task.id,
+        runId,
+        permissions: { provider: 'codex', permission: 'ask' },
+        readOnly: false,
+        artifacts: false,
+        pipelineWatching: false,
+        pullRequestWatching: false,
+        deviceHub: false,
+        memoryScopes: [],
+      },
+      new AbortController().signal,
+    )
+    const config = taskToolsServer(task.id, runtime.port, token, '127.0.0.1', false, true, runId)
+    transport = new StdioClientTransport({
+      command: config.command,
+      args: config.args,
+      env: { ...config.envValues },
+      stderr: 'ignore',
+    })
+    await client.connect(transport)
+    expect((await client.listTools()).tools.map((t) => t.name)).toContain('linked_projects')
+    const projects = await client.callTool({
+      name: 'linked_projects',
+      arguments: { action: 'projects' },
+    })
+    expect(projects.isError).not.toBe(true)
+    expect(JSON.parse(decodeToolText(projects))).toMatchObject({
+      projects: [{ id: 'repo', supportsWorktrees: true }],
+    })
+    expect(
+      (
+        await client.callTool({
+          name: 'linked_projects',
+          arguments: { action: 'worktrees', repositoryId: 'repo' },
+        })
+      ).isError,
+    ).not.toBe(true)
+    const checkout = {
+      id: 'general-link',
+      repositoryId: 'repo',
+      execution: 'worktree',
+      access: 'edit',
+      branch: 'feature/general',
+    }
+    const add = { action: 'add', checkout }
+    expect((await client.callTool({ name: 'linked_projects', arguments: add })).isError).not.toBe(
+      true,
+    )
+    expect((await client.callTool({ name: 'linked_projects', arguments: add })).isError).not.toBe(
+      true,
+    )
+    expect(s.store.task(task.id).linkedCheckouts).toBeUndefined()
+    expect(s.store.task(task.id).pendingLinkedCheckouts).toEqual([checkout])
+    expect(
+      (
+        await client.callTool({
+          name: 'linked_projects',
+          arguments: { ...add, checkout: { ...checkout, access: 'read-only' } },
+        })
+      ).isError,
+    ).toBe(true)
+    expect(
+      (
+        await client.callTool({
+          name: 'linked_projects',
+          arguments: { ...add, checkout: { ...checkout, id: 'bad', repositoryId: scratch.id } },
+        })
+      ).isError,
+    ).toBe(true)
+    expect(
+      (await client.callTool({ name: 'linked_projects', arguments: { action: 'add' } })).isError,
+    ).toBe(true)
+    const post = (input: unknown, credential = token) =>
+      fetch('http://127.0.0.1:' + runtime.port + '/api/linked-projects', {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + credential, 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+    expect((await post({ taskId: 'other', parentRunId: runId, command: add })).status).toBe(403)
+    expect((await post({ taskId: task.id, command: add })).status).toBe(403)
+    expect((await post({ taskId: task.id, parentRunId: 'wrong', command: add })).status).toBe(403)
+    const pendingLinks = s.store.taskSummary(task.id).pendingLinkedCheckouts
+    s.preferences.save({ enableLinkedProjectsTool: false })
+    const disabledCall = await client.callTool({
+      name: 'linked_projects',
+      arguments: { action: 'list' },
+    })
+    expect(disabledCall.isError).toBe(true)
+    expect(decodeToolText(disabledCall)).toContain('disabled on this computer')
+    expect((await post({ taskId: task.id, parentRunId: runId, command: add })).status).toBe(403)
+    expect(s.store.taskSummary(task.id).pendingLinkedCheckouts).toEqual(pendingLinks)
+    const disabledClient = new Client({ name: 'disabled-linked-projects-test', version: '1' })
+    const disabledTransport = new StdioClientTransport({
+      command: config.command,
+      args: config.args,
+      env: { ...config.envValues, DOVO_TASK_LINKED_PROJECTS_ENABLED: '0' },
+      stderr: 'ignore',
+    })
+    try {
+      await disabledClient.connect(disabledTransport)
+      expect((await disabledClient.listTools()).tools.map((tool) => tool.name)).not.toContain(
+        'linked_projects',
+      )
+      expect((await disabledClient.listTools()).tools.map((tool) => tool.name)).toContain('todos')
+    } finally {
+      await disabledClient.close()
+      await disabledTransport.close()
+    }
+    s.preferences.save({ enableLinkedProjectsTool: true })
+    expect(
+      (await client.callTool({ name: 'linked_projects', arguments: { action: 'list' } })).isError,
+    ).not.toBe(true)
+    const reader = s.runCredentials.issue(
+      {
+        taskId: task.id,
+        runId,
+        permissions: { provider: 'codex', permission: 'read-only' },
+        readOnly: true,
+        artifacts: false,
+        pipelineWatching: false,
+        pullRequestWatching: false,
+        deviceHub: false,
+        memoryScopes: [],
+      },
+      new AbortController().signal,
+    )
+    expect(
+      (await post({ taskId: task.id, parentRunId: runId, command: { action: 'list' } }, reader))
+        .status,
+    ).toBe(200)
+    expect(
+      (await post({ taskId: task.id, parentRunId: runId, command: { action: 'projects' } }, reader))
+        .status,
+    ).toBe(200)
+    expect((await post({ taskId: task.id, parentRunId: runId, command: add }, reader)).status).toBe(
+      403,
+    )
+    // The replaced run credential is rejected even by an already connected MCP transport.
+    expect(
+      (await client.callTool({ name: 'linked_projects', arguments: { action: 'list' } })).isError,
+    ).toBe(true)
+  } finally {
+    await client.close()
+    await transport?.close()
+    await rm(runtime.services.scratch.root, { recursive: true, force: true })
+    await runtime.close()
+    await f.cleanup()
+  }
+}, 30000)

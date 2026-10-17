@@ -5,7 +5,7 @@ import {
   type StudioView,
 } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { settingsScopeLabels } from '@dovo/protocol'
+import { projectDisplayName, settingsScopeLabels } from '@dovo/protocol'
 import { useLeftSidebar, SidebarHeader, ChoicePicker, Input } from '@dovo/studio-ui'
 import {
   Archive,
@@ -102,7 +102,10 @@ export function SettingsNav({
       view.title.toLowerCase().includes(needle)
     )
   })
-  const project = repository?.name ?? (target.projectId ? 'Unavailable project' : 'All projects')
+  const project = projectDisplayName(
+    repository,
+    target.projectId ? 'Unavailable project' : 'All projects',
+  )
   const computer = target.environmentId ? (source?.name ?? 'Unavailable computer') : 'All computers'
   const [sidebarVisible] = useLeftSidebar()
   return (
@@ -228,16 +231,14 @@ export function SettingsNav({
         >
           <p className="flex items-center gap-1.5">
             <Layers className="size-3 text-primary/70" aria-hidden="true" />
-            Shared settings target
+            Settings scope · {settingsScopeLabels[scope]}
           </p>
           <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
             {project} · {computer}
           </p>
           <p>
-            {settingsScopeLabels[scope]} level, kept while you move between pages. Pages marked{' '}
-            <Layers className="inline size-3 align-[-2px]" aria-hidden="true" /> use it;{' '}
-            <Monitor className="inline size-3 align-[-2px]" aria-hidden="true" /> pages save per
-            computer; other pages save on this device.
+            Change the scope on pages with layered settings. Each page shows where changes are
+            saved.
           </p>
         </div>
       </div>

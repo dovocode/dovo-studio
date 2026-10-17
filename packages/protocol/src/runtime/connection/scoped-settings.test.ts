@@ -271,6 +271,15 @@ it('selects one settings layer and shares project identity across computers with
   const localSource = { ...linux, snapshot: { workspace: { repositories: [local] } } }
   expect(settingsProjectChoices([localSource], '')).toEqual([])
   expect(settingsProjectChoices([localSource], 'linux')).toHaveLength(1)
+  const generalSource = {
+    ...linux,
+    snapshot: {
+      workspace: { repositories: [{ ...local, kind: 'scratch' as const, name: 'No project' }] },
+    },
+  }
+  expect(settingsProjectChoices([generalSource], 'linux')).toEqual([
+    { id: settingsProjectId(local, 'linux'), name: 'General' },
+  ])
   expect(
     resolveSettingsTarget([localSource], {
       environmentId: '',

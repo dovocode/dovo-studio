@@ -10,6 +10,7 @@ import {
 } from '@dovo/studio-core'
 import {
   artifactReferences,
+  hasToolImages,
   turnSummary,
   type PendingMessage,
   type recentTools,
@@ -78,14 +79,16 @@ export const ChatMessage = memo(function ChatMessage({
   const hasFailure = tools.some((tool) =>
     ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status),
   )
-  const hasArtifacts = tools.some((tool) => artifactReferences(tool.payload).length > 0)
+  const hasRichResults = tools.some(
+    (tool) => artifactReferences(tool.payload).length > 0 || hasToolImages(tool.payload),
+  )
   if (
     message.role === 'assistant' &&
     !workOpen &&
     !final &&
     !footer &&
     !hasFailure &&
-    !hasArtifacts
+    !hasRichResults
   )
     return null
   const ownsFooter = turn?.assistantId === message.id && (workOpen || footer)
@@ -140,7 +143,8 @@ export const ChatMessage = memo(function ChatMessage({
                 block.tools.some(
                   (tool) =>
                     ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status) ||
-                    artifactReferences(tool.payload).length > 0,
+                    artifactReferences(tool.payload).length > 0 ||
+                    hasToolImages(tool.payload),
                 )
               ) ? null : block.kind === 'activity' ? (
                 <TaskActivity

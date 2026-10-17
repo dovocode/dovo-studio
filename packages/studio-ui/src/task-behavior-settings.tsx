@@ -189,6 +189,7 @@ export function TaskBehaviorSettings({
                     repository,
                     scope,
                     value: draft[key],
+                    inheritedValue: fallback(key),
                   }}
                   origin={taskBehaviorOrigin(
                     snapshot?.defaults,
@@ -233,6 +234,7 @@ export function TaskBehaviorSettings({
                   repository,
                   scope,
                   value: draft.inactiveDays,
+                  inheritedValue: inherited?.inactiveDays ?? 3,
                 }}
                 origin={taskBehaviorOrigin(
                   snapshot?.defaults,
@@ -276,6 +278,7 @@ export function TaskBehaviorSettings({
                   repository,
                   scope,
                   value: draft.archiveAfterSettledDays,
+                  inheritedValue: inherited?.archiveAfterSettledDays ?? 7,
                 }}
                 origin={taskBehaviorOrigin(
                   snapshot?.defaults,

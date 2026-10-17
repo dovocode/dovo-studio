@@ -90,9 +90,7 @@ it('registers all shipped settings and feature views without ID collisions', asy
     ],
     api,
   )
-  expect(catalog.views.find((view) => view.id === 'pull-request-settings')?.title).toBe(
-    'Pull requests',
-  )
+  expect(catalog.views.some((view) => view.id === 'pull-request-settings')).toBe(false)
   expect(catalog.views.find((view) => view.id === 'pull-request-monitoring-settings')?.title).toBe(
     'Pull requests & pipelines',
   )

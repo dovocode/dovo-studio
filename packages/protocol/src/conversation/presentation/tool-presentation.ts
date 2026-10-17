@@ -169,6 +169,20 @@ function computePresentation(
     }
   }
   const item = object(event.item)
+  if (item.type === 'imageGeneration' || item.type === 'imageView') {
+    const path = text(item.path) || text(item.savedPath)
+    const failure = object(item.failure)
+    return {
+      title: item.type === 'imageView' ? `View ${baseName(path) || 'image'}` : 'Generate image',
+      input: item.type === 'imageView' ? path : text(item.revisedPrompt),
+      output:
+        failure.type === 'usageLimitExceeded'
+          ? `Image generation limit reached${text(failure.limitId) ? ` (${text(failure.limitId)})` : ''}.`
+          : '',
+      kind: item.type === 'imageView' ? 'file' : 'tool',
+      ...(path ? { detail: path } : {}),
+    }
+  }
   const part = object(object(event.properties).part)
   const state = object(part.state)
   const update = object(event.update)

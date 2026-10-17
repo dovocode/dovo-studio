@@ -199,6 +199,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       () => deviceHosts.settings.get().enabled ?? false,
       (id, text) => modelSelection.resolveEffect(id, text),
       () => enabledStudioTools(preferences.get()),
+      () => preferences.get().enableLinkedProjectsTool,
     ),
     jobs = new Jobs(db, store, tasks, activity, (text) => titles.generate({ text }), git)
   const taskReviews = new TaskReviews(db, { store, tasks, git, checkouts, activity })

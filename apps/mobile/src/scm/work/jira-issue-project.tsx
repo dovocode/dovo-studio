@@ -1,7 +1,7 @@
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { View } from 'react-native'
-import { responses } from '@dovo/protocol'
+import { projectDisplayName, responses } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
@@ -35,7 +35,7 @@ export function JiraIssueProject({
         gap: 6,
       }}
     >
-      <Text style={styles.muted}>Dovo project · {project?.name ?? 'Not linked'}</Text>
+      <Text style={styles.muted}>Dovo project · {projectDisplayName(project, 'Not linked')}</Text>
       <Action
         secondary
         label={project ? 'Change linked project' : 'Link a project'}
@@ -62,7 +62,7 @@ export function JiraIssueProject({
               },
               ...projects.map((project) => ({
                 id: project.id,
-                name: project.name,
+                name: projectDisplayName(project),
               })),
             ]}
           />

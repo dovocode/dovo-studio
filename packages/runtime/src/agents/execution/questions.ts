@@ -1,5 +1,6 @@
 import { decode } from '@dovo/protocol'
 import { randomUUID, createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import {
   questionPromptSchema,
   questionAnswersSchema,
@@ -32,6 +33,13 @@ export class Questions {
   list() {
     return [...this.requests.values()].map((r) => r.info)
   }
+  status(id: string) {
+    return this.requests.has(id)
+      ? 'pending'
+      : this.answered.has(id) || this.receipts?.questionResponse(id)
+        ? 'answered'
+        : undefined
+  }
   request(
     taskId: string,
     value: QuestionPrompt,
@@ -41,10 +49,22 @@ export class Questions {
       answers: QuestionAnswers | null,
       receipt: { id: string; fingerprint: string },
     ) => void,
+    requestId?: string,
   ) {
     if (signal.aborted) return Promise.resolve(null)
     const prompt = decode(questionPromptSchema, value),
-      id = randomUUID()
+      id = requestId ?? randomUUID()
+    // Stable IDs are used by fire-and-forget task-tool forms. Retrying registration
+    // never opens a second card or delivers a second follow-up.
+    if (requestId) {
+      const existing = this.requests.get(id)
+      if (existing) {
+        if (existing.info.taskId !== taskId || !isDeepStrictEqual(existing.info.prompt, prompt))
+          throw new HttpError(409, 'This question key is already in use. Use a new key.')
+        return Promise.resolve(null)
+      }
+      if (this.status(id) === 'answered') return Promise.resolve(null)
+    }
     const info = {
       id,
       taskId,

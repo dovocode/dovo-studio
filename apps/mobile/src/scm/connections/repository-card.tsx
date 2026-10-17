@@ -8,7 +8,7 @@ import { BranchPicker } from './branch-picker'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { Schema } from 'effect'
-import { responses, type Repository, type ChangedFile } from '@dovo/protocol'
+import { projectDisplayName, responses, type Repository, type ChangedFile } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { useTheme } from '../../ui/theme'
@@ -53,7 +53,7 @@ export function RepositoryCard({
   }
   return (
     <View style={styles.card}>
-      <Text style={styles.text}>{repository.name}</Text>
+      <Text style={styles.text}>{projectDisplayName(repository)}</Text>
       <Text selectable style={styles.muted}>
         {checkout ||
           (taskId

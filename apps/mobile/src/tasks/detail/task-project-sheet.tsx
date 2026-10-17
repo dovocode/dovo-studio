@@ -76,6 +76,7 @@ export function TaskProjectSheet({
   scripts,
   branchActions,
   onChanges,
+  onProjects,
   onPulls,
   onAgents,
   onClose,
@@ -85,6 +86,7 @@ export function TaskProjectSheet({
   scripts: HeaderAction[]
   branchActions: HeaderAction[]
   onChanges: () => void
+  onProjects?: () => void
   onPulls: (url?: string) => void
   onAgents?: () => void
   onClose: () => void
@@ -163,7 +165,7 @@ export function TaskProjectSheet({
           </Text>
         </View>
         <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
-          {repository?.name ?? 'No project'}
+          {repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'No project')}
         </Text>
         <View style={styles.row}>
           <ProjectRow
@@ -268,6 +270,20 @@ export function TaskProjectSheet({
           icon="changes"
           onPress={() => dismissThen(onChanges)}
         />
+        {onProjects && (
+          <>
+            <ProjectRow
+              label={
+                (task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length
+                  ? `Linked projects (${(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length})`
+                  : 'Link projects'
+              }
+              icon="projects"
+              onPress={() => dismissThen(onProjects)}
+            />
+            <Text style={styles.muted}>Use project checkouts or worktrees on this computer.</Text>
+          </>
+        )}
         <View style={styles.separator} />
         <TaskSource task={task} />
         <TaskWaitingPanel taskId={task.id} onPull={(url) => dismissThen(() => onPulls(url))} />

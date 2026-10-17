@@ -11,7 +11,7 @@ const ui = `${root}/packages/studio-ui/src`
 const mocks = {
   '@xyflow/react': `export const Handle=()=>null;export const Position={Left:'left',Right:'right'};export const ReactFlowProvider=({children})=>children;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const providers={};export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});export const useRuntimeSources=()=>window.sources;export const useConfirmSettingsNavigation=()=>()=>true;export const WorkspaceScope=({children})=>children;export const WorkspaceRuntimeScope=WorkspaceScope;export const useSettingsTarget=()=>({target:{projectId:'',environmentId:''},setTarget:()=>{},sources:window.sources,source:window.sources[0],scope:'global'});export const resolveTaskAgent=()=>undefined;export const acpHarnessName=()=>'';export const formatDateTime=String;`,
+  '@dovo/studio-core': `export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const providers={};export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});export const useRuntimeSources=()=>window.sources;export const useConfirmSettingsNavigation=()=>()=>true;export const WorkspaceScope=({children})=>children;export const WorkspaceRuntimeScope=WorkspaceScope;export const useOptionalSettingsTarget=()=>null;export const useSettingsTarget=()=>({target:{projectId:'',environmentId:''},setTarget:()=>{},sources:window.sources,source:window.sources[0],scope:'global'});export const resolveTaskAgent=()=>undefined;export const acpHarnessName=()=>'';export const formatDateTime=String;`,
   '@dovo/studio-ui': `export {PageHeader} from '${ui}/page-header';export * from '${ui}/sidebar-header';export {Button} from '${ui}/components/ui/button';export {IconButton} from '${ui}/components/icon-button';export {Input} from '${ui}/components/ui/input';export * from '${ui}/components/ui/dialog';export {ChoicePicker} from '${ui}/choice-picker';export {cn} from '${ui}/lib/utils';export {ProjectIcon} from '${ui}/project-icon';export * from '${ui}/components/ui/tooltip';export * as Popover from '@radix-ui/react-popover';export {EmptyState} from '${ui}/components/empty-state';export {useCompactLayout} from '${ui}/use-compact-layout';export const useModelLabel=()=>'';export const AgentAvatar=()=>null;export const PullRequestIcon=()=>null;export const pullRequestIconTone=()=>'';`,
   './task-context-menu': `export const TaskContextMenu=({children})=>children;`,
   './task-branch-menu': `export const TaskBranchMenu=({label})=><button className="min-w-0 max-w-48 truncate">{label}</button>;`,
@@ -38,14 +38,14 @@ const bundle = await build({
     loader: 'tsx',
     contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {TooltipProvider} from '@radix-ui/react-tooltip';import * as Popover from '@radix-ui/react-popover';import {ReactFlowProvider} from '@xyflow/react';
-import {TaskHeader} from './packages/extension-tasks/src/detail/task-header';import {TaskRow} from './packages/extension-tasks/src/list/task-row';import {HostSettingsPage} from './packages/studio-ui/src/host-settings-page';import {SettingsScopePage} from './packages/studio-ui/src/settings-scope-page';import {AutomationNodeView} from './packages/extension-jobs/src/automation-node';import JobsView from './packages/extension-jobs/src/view';import IssuesView,{JiraView,PipelinesView} from './packages/extension-scm/src/work/work-view';
+import {SettingSource} from './packages/studio-ui/src/setting-source';import {SettingRow} from './packages/studio-ui/src/settings-layout';import {TaskHeader} from './packages/extension-tasks/src/detail/task-header';import {TaskRow} from './packages/extension-tasks/src/list/task-row';import {HostSettingsPage} from './packages/studio-ui/src/host-settings-page';import {SettingsScopePage} from './packages/studio-ui/src/settings-scope-page';import {AutomationNodeView} from './packages/extension-jobs/src/automation-node';import JobsView from './packages/extension-jobs/src/view';import IssuesView,{JiraView,PipelinesView} from './packages/extension-scm/src/work/work-view';
 const repo={id:'repo',name:'Audit project',path:'/repo',branch:'feature/long-branch-name-for-layout'};
 const workspace={repositories:[repo],agents:[],tasks:[],automations:[]};const snapshot={workspace,runs:[],questions:[],approvals:[],terminals:[],artifactsEnabled:true};
 window.sources=['MacBook Pro','Linux workstation with an unusually long saved computer name'].map((name,index)=>({name,scope:String(index),connected:true,profile:{id:String(index),name,connection:{address:'http://computer'+index,token:'paired'}},snapshot}));
 window.store={workspace,snapshot,connected:true,activeRuntimeId:'0',runtimes:window.sources,connection:window.sources[0].profile.connection,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
 window.owner={name:'MacBook Pro',online:true,repositories:[repo],agents:[],acpInstallations:[]};window.workSource={key:'repo',scope:'0',connected:true,repository:repo,name:repo.name,runtimeName:'MacBook Pro',request:async()=>({issues:true,pipelineActions:['run']})};
 const baseTask={id:'task',repositoryId:'repo',title:'Short title',status:'draft',files:[],linkedCheckouts:[],turns:[]};
-function App(){const[view,setView]=useState('header'),[long,setLong]=useState(false),[panel,setPanel]=useState(false),[wide,setWide]=useState(false),[unread,setUnread]=useState(false);window.show=(next,options={})=>{setView(next);setLong(!!options.long);setPanel(!!options.panel);setWide(!!options.wide);setUnread(!!options.unread)};const task={...baseTask,status:unread?'running':'draft',title:long?'A_very_long_task_title_'.repeat(12):'Short title'};return <TooltipProvider><div id="fixture" style={{width:'100%',height:'100vh',display:'flex',flexDirection:'column',minWidth:0}}>{view==='header'?<Popover.Root><TaskHeader task={task} compact sidebarVisible hasDiff surface="chat" onSurface={value=>window.lastSurface=value} projectPanelOpen={panel} onProjectPanel={()=>{}} onCreate={()=>{}} onDeselect={()=>{}} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}}/></Popover.Root>:view==='rows'?<div style={{background:'var(--sidebar)'}}><TaskRow task={task} owner={window.owner} subagents={[]} selected={false} onSelect={()=>{}} needsInput={false} terminals={0} editable={false} disabled={false} onOpenSubagent={()=>{}}/></div>:view==='host'?<HostSettingsPage title="Computer settings" description="Per computer"><p>Computer body</p></HostSettingsPage>:view==='scope'?<SettingsScopePage title="Settings" description="Scoped settings" wide={wide}>{()=> <p data-testid="body-start">Settings body</p>}</SettingsScopePage>:view==='node'?<ReactFlowProvider><AutomationNodeView data={{kind:'task',label:'nightly_dependency_security_review_'.repeat(long?8:1),objective:'Review dependencies'}} selected={false}/></ReactFlowProvider>:view==='jobs'?<JobsView/>:view==='jira'?<JiraView/>:view==='pipelines'?<PipelinesView/>:<IssuesView/>}</div></TooltipProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[view,setView]=useState('header'),[long,setLong]=useState(false),[panel,setPanel]=useState(false),[wide,setWide]=useState(false),[unread,setUnread]=useState(false);window.show=(next,options={})=>{setView(next);setLong(!!options.long);setPanel(!!options.panel);setWide(!!options.wide);setUnread(!!options.unread)};const task={...baseTask,status:unread?'running':'draft',title:long?'A_very_long_task_title_'.repeat(12):'Short title'};return <TooltipProvider><div id="fixture" style={{width:'100%',height:'100vh',display:'flex',flexDirection:'column',minWidth:0}}>{view==='header'?<Popover.Root><TaskHeader task={task} compact sidebarVisible hasDiff surface="chat" onSurface={value=>window.lastSurface=value} projectPanelOpen={panel} onProjectPanel={()=>{}} onCreate={()=>{}} onDeselect={()=>{}} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}}/></Popover.Root>:view==='rows'?<div style={{background:'var(--sidebar)'}}><TaskRow task={task} owner={window.owner} subagents={[]} selected={false} onSelect={()=>{}} needsInput={false} terminals={0} editable={false} disabled={false} onOpenSubagent={()=>{}}/></div>:(view==='host'||view==='mixed')?<HostSettingsPage title="Computer settings" description="Per computer" localSettings={view==='mixed'?<button onClick={()=>window.localChanged=true}>Device default</button>:undefined}><p>Computer body</p></HostSettingsPage>:view==='scope'?<SettingsScopePage title="Settings" description="Scoped settings" wide={wide}>{()=> <div data-testid="body-start"><p>Settings body</p><SettingRow label="Worktree setup" source={<SettingSource label="Worktree setup" origin={{source:'global',overridden:true}} setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:'pnpm install',inheritedValue:'a_very_long_setup_command_'.repeat(16)}} onReset={()=>window.inheritanceReset=true}/>}>Custom setup</SettingRow></div>}</SettingsScopePage>:view==='node'?<ReactFlowProvider><AutomationNodeView data={{kind:'task',label:'nightly_dependency_security_review_'.repeat(long?8:1),objective:'Review dependencies'}} selected={false}/></ReactFlowProvider>:view==='jobs'?<JobsView/>:view==='jira'?<JiraView/>:view==='pipelines'?<PipelinesView/>:<IssuesView/>}</div></TooltipProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
   },
   bundle: true,
   write: false,
@@ -179,6 +179,26 @@ try {
       assert.ok(Math.abs(controls.width - body.width) <= 1)
     }
   }
+  await page.evaluate(() => {
+    window.savedSources = window.sources
+    window.sources = window.sources.map((s) => ({ ...s, connected: false }))
+  })
+  await show('mixed')
+  await page.getByText(/is offline. Reconnect/).waitFor()
+  assert.equal(await page.getByText('Computer body', { exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Device default', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.localChanged), true)
+  await page.evaluate(() => {
+    window.sources = []
+    window.localChanged = false
+  })
+  await show('host')
+  await show('mixed')
+  await page.getByRole('button', { name: 'Device default', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.localChanged), true)
+  await page.evaluate(() => {
+    window.sources = window.savedSources
+  })
   await setWidth(390)
   for (const view of ['issues', 'jira', 'pipelines', 'jobs']) {
     await show(view)
@@ -203,6 +223,36 @@ try {
       await node.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
       true,
     )
+  }
+  for (const mode of ['light', 'dark']) {
+    await page.evaluate(
+      (mode) => document.documentElement.classList.toggle('dark', mode === 'dark'),
+      mode,
+    )
+    await show('scope')
+    for (const width of [320, 390, 976]) {
+      await setWidth(width)
+      const source = page.getByText('At this level: pnpm install', { exact: true })
+      const reset = page.getByRole('button', { name: /^Use inherited worktree setup:/ })
+      await contained(source, page.locator('#fixture'))
+      await contained(reset, page.locator('#fixture'))
+      assert.equal(
+        await reset.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        true,
+      )
+      const target = page.getByLabel('Settings target', { exact: true })
+      const before = await target.boundingBox()
+      await source.evaluate((element) => (element.closest('.overflow-y-auto').scrollTop = 10000))
+      assert.equal((await target.boundingBox()).y, before.y, 'Settings target must remain fixed')
+    }
+    await page.screenshot({ path: '/tmp/dovo-inheritance-' + mode + '.png' })
+    await page
+      .getByRole('button', { name: 'View inheritance for worktree setup', exact: true })
+      .click()
+    await page.getByText('Worktree setup · inheritance', { exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: /^Use inherited worktree setup:/ }).click()
+    assert.equal(await page.evaluate(() => window.inheritanceReset), true)
   }
   const contrasts = []
   for (const mode of ['light', 'dark']) {
@@ -261,9 +311,9 @@ try {
           weight: getComputedStyle(title).fontWeight,
         }
       })
-      assert.equal(contrast.titleAlpha, unread ? 1 : 0.4)
+      assert.ok(Math.abs(contrast.titleAlpha - (unread ? 1 : 0.65)) <= 1 / 255)
       if (unread) assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
-      assert.deepEqual(contrast.metadataOpacity, unread ? [1, 1] : [0.4, 0.4])
+      assert.deepEqual(contrast.metadataOpacity, unread ? [1, 1] : [0.65, 0.65])
       if (unread) assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
       contrasts.push({ mode, unread, ...contrast })
     }

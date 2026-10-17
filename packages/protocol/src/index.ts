@@ -30,6 +30,7 @@ export * from './scm/pulls/pull-stack.js'
 
 export * from './automation/activity.js'
 export * from './conversation/workflow/questions.js'
+export * from './conversation/workflow/agent-interactions.js'
 
 export * from './scm/repositories/branches.js'
 
@@ -247,3 +248,5 @@ export * from './tasks/task-project-selection.js'
 
 export * from './runtime/studio-tools.js'
 export * from './runtime/studio-peers.js'
+
+export * from './runtime/linked-project-tools.js'

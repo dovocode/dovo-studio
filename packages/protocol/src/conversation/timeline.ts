@@ -1,6 +1,7 @@
 import type { Task, TaskTurn } from '../workspace.js'
 import type { recentTools } from '../automation/activity.js'
 import { artifactReferences } from './artifacts.js'
+import { hasToolImages } from './tool-images.js'
 
 type Conversation = Pick<Task, 'messages' | 'turns'>
 type Tool = ReturnType<typeof recentTools>[number]
@@ -151,14 +152,19 @@ export function conversationToolsByMessage(task: Conversation, tools: Tool[]) {
   return result
 }
 
-/** Artifacts belong only to their producing message, including when that history is not loaded yet. */
+/** Rich results belong only to their producing message, including when history is not loaded yet. */
 export function unassignedConversationTools(
   task: Conversation,
   tools: Tool[],
   byMessage = conversationToolsByMessage(task, tools),
 ) {
   const assigned = new Set(task.messages.flatMap((message) => byMessage.get(message.id) ?? []))
-  return tools.filter((tool) => !assigned.has(tool) && !artifactReferences(tool.payload).length)
+  return tools.filter(
+    (tool) =>
+      !assigned.has(tool) &&
+      !artifactReferences(tool.payload).length &&
+      !hasToolImages(tool.payload),
+  )
 }
 
 export type ThreadBlock =

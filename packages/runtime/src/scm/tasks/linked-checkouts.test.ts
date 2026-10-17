@@ -1,3 +1,4 @@
+import { linkedProjectsTool } from './linked-project-tools.js'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { readFile, writeFile, rm, realpath, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -686,4 +687,250 @@ it('cancels and drains the owned setup shell and its background process', async 
   controller.abort()
   await expect(running).rejects.toThrow('setup cancelled')
   expect(() => process.kill(pid, 0)).toThrow('ESRCH')
+})
+
+it.each(['main', 'worktree', 'existing'] as const)(
+  'runs a General thread with a linked %s checkout and captures its changes',
+  async (mode) => {
+    const { s, secondary } = await setup()
+    const scratch = await s.scratch.ensure()
+    cleanups.push(() => rm(s.scratch.root, { recursive: true, force: true }))
+    const root = await mkdtemp(join(tmpdir(), 'dovo-general-linked-'))
+    cleanups.push(() => rm(root, { recursive: true, force: true }))
+    s.preferences.save({ worktreesRoot: join(root, 'worktrees') })
+    const existing = join(root, 'existing')
+    if (mode === 'existing')
+      await s.git.command(secondary.directory, [
+        'worktree',
+        'add',
+        '-b',
+        'general-existing',
+        existing,
+      ])
+    const task = s.tasks.create({
+      title: 'General with linked project',
+      agentId: 'agent',
+      repositoryId: scratch.id,
+      objective: 'Update the linked project',
+    })
+    s.checkouts.linked.save(
+      task.id,
+      [],
+      [
+        {
+          id: 'backend-link',
+          repositoryId: 'backend',
+          execution: mode === 'main' ? 'main' : 'worktree',
+          access: 'edit',
+          ...(mode === 'existing' ? { existingWorktreePath: existing } : {}),
+        },
+      ],
+    )
+    let linkedPath = ''
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        expect(run.cwd).toBe(await s.scratch.directory(task.id))
+        expect(run.linkedDirectories).toHaveLength(1)
+        const link = run.linkedDirectories?.[0]
+        if (!link) throw new Error('Missing linked checkout')
+        expect(link).toMatchObject({ id: 'backend-link', access: 'edit' })
+        linkedPath = link.path
+        const newWorktreeDirectory = expect.stringContaining(
+          join(await realpath(root), 'worktrees'),
+        )
+        const expectedDirectory =
+          mode === 'main'
+            ? await realpath(secondary.directory)
+            : mode === 'existing'
+              ? await realpath(existing)
+              : newWorktreeDirectory
+        expect(linkedPath).toEqual(expectedDirectory)
+        await writeFile(join(linkedPath, 'hello.txt'), 'General thread change\n')
+        run.onText('Updated linked project')
+      },
+    })
+    await (
+      await s.tasks.start(task.id)
+    ).done
+    const saved = s.store.task(task.id)
+    expect(saved.status).toBe('review')
+    expect(saved.repositoryId).toBe(scratch.id)
+    expect(saved.turns?.at(-1)?.checkpoint?.linked?.[0]).toMatchObject({
+      checkoutId: 'backend-link',
+      files: [expect.objectContaining({ path: 'hello.txt', after: 'General thread change\n' })],
+    })
+    expect(await readFile(join(secondary.directory, 'hello.txt'), 'utf8')).toBe(
+      mode === 'main' ? 'General thread change\n' : 'original\n',
+    )
+  },
+)
+
+it('keeps agent-added linked worktrees out of the current turn and activates them with a fresh session next turn', async () => {
+  const { s, secondary } = await setup()
+  const scratch = await s.scratch.ensure()
+  cleanups.push(() => rm(s.scratch.root, { recursive: true, force: true }))
+  const root = await mkdtemp(join(tmpdir(), 'dovo-next-turn-links-'))
+  cleanups.push(() => rm(root, { recursive: true, force: true }))
+  s.preferences.save({ worktreesRoot: join(root, 'worktrees') })
+  const task = s.tasks.create({
+    title: 'General linked next turn',
+    repositoryId: scratch.id,
+    agentId: 'agent',
+    objective: 'Configure a linked project',
+  })
+  const checkout = {
+    id: 'next-link',
+    repositoryId: 'backend',
+    execution: 'worktree' as const,
+    access: 'edit' as const,
+    branch: 'feature/next-turn',
+  }
+  let turns = 0
+  const executions: AgentAdapter['run'][] = [
+    async (run) => {
+      expect(run.linkedDirectories ?? []).toEqual([])
+      await linkedProjectsTool(s, {
+        taskId: task.id,
+        parentRunId: 'current',
+        command: { action: 'add', checkout },
+      })
+      expect(s.store.task(task.id).linkedCheckouts).toBeUndefined()
+      expect(s.store.task(task.id).pendingLinkedCheckouts).toEqual([checkout])
+      expect(run.linkedDirectories ?? []).toEqual([])
+      run.onSession('original-session')
+      run.onText('Configured for the next turn')
+    },
+    async (run) => {
+      expect(run.sessionId).toBeUndefined()
+      expect(s.store.task(task.id).pendingLinkedCheckouts).toBeUndefined()
+      expect(s.store.task(task.id).linkedCheckouts).toEqual([checkout])
+      const linked = run.linkedDirectories?.[0]
+      if (!linked) throw new Error('Missing activated linked project')
+      expect(linked.access).toBe('edit')
+      await writeFile(join(linked.path, 'hello.txt'), 'Next turn edit\n')
+      run.onText('Edited linked project')
+    },
+  ]
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      const execute = executions[turns++]
+      if (!execute) throw new Error('Unexpected provider turn')
+      await execute(run)
+    },
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(s.store.task(task.id).turns?.[0].checkpoint?.linked).toBeUndefined()
+  expect(s.store.task(task.id).pendingLinkedCheckouts).toEqual([checkout])
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(turns).toBe(2)
+  expect(s.store.task(task.id).turns?.at(-1)?.checkpoint?.linked?.[0].files).toContainEqual(
+    expect.objectContaining({ path: 'hello.txt', after: 'Next turn edit\n' }),
+  )
+  expect(await readFile(join(secondary.directory, 'hello.txt'), 'utf8')).toBe('original\n')
+})
+
+it('defers pending links while recovering an interrupted turn', async () => {
+  const { s } = await setup()
+  const task = s.tasks.create({
+    title: 'Interrupted with pending links',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Continue original work',
+  })
+  const checkout = {
+    id: 'after-recovery',
+    repositoryId: 'backend',
+    execution: 'main' as const,
+    access: 'read-only' as const,
+  }
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    pendingLinkedCheckouts: [checkout],
+    restartRecovery: { kind: 'turn', automatic: false },
+  }))
+  const run = vi.fn<AgentAdapter['run']>(async (context) => {
+    expect(context.linkedDirectories ?? []).toEqual([])
+    context.onText('Recovered original turn')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run,
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(run).toHaveBeenCalledOnce()
+  expect(s.store.task(task.id).pendingLinkedCheckouts).toEqual([checkout])
+  expect(s.store.task(task.id).linkedCheckouts).toBeUndefined()
+})
+
+it('lets idle UI edits replace pending links without overwriting a newer configuration', async () => {
+  const { s } = await setup()
+  const task = s.tasks.create({
+    title: 'Pending links',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Configure',
+  })
+  const checkout = {
+    id: 'pending',
+    repositoryId: 'backend',
+    execution: 'main' as const,
+    access: 'read-only' as const,
+  }
+  await linkedProjectsTool(s, {
+    taskId: task.id,
+    parentRunId: 'current',
+    command: { action: 'add', checkout },
+  })
+  expect(() => s.checkouts.linked.save(task.id, [], [])).toThrow('changed')
+  s.checkouts.linked.save(task.id, [checkout], [])
+  expect(s.store.task(task.id).pendingLinkedCheckouts).toBeUndefined()
+  expect(s.store.task(task.id).linkedCheckouts).toEqual([])
+})
+
+it('protects a pending existing worktree from removal before the next turn', async () => {
+  const { s, secondary } = await setup()
+  const root = await mkdtemp(join(tmpdir(), 'dovo-pending-existing-'))
+  cleanups.push(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, 'existing')
+  await s.git.command(secondary.directory, ['worktree', 'add', '-b', 'pending-existing', path])
+  const common = (
+    await s.git.command(secondary.directory, [
+      'rev-parse',
+      '--path-format=absolute',
+      '--git-common-dir',
+    ])
+  ).trim()
+  s.store.rememberWorktree(common, await realpath(path))
+  const task = s.tasks.create({
+    title: 'Pending existing',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Configure',
+  })
+  await linkedProjectsTool(s, {
+    taskId: task.id,
+    parentRunId: 'current',
+    command: {
+      action: 'add',
+      checkout: {
+        id: 'pending',
+        repositoryId: 'backend',
+        execution: 'worktree',
+        existingWorktreePath: path,
+        access: 'edit',
+      },
+    },
+  })
+  expect((await runClientEffect(listWorktreesEffect(s))).worktrees).toContainEqual(
+    expect.objectContaining({ path: await realpath(path), state: 'active' }),
+  )
+  await expect(runClientEffect(removeWorktreeEffect(s, path))).rejects.toThrow('active task')
 })

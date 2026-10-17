@@ -54,6 +54,8 @@ function App(){
   const [mounted,setMounted]=useState(true);
   const [selectedId,setSelectedId]=useState('');
   const [revision,setRevision]=useState(1);
+  const [project,setProject]=useState('');window.setProject=setProject;
+  const [remoteTasks,setRemoteTasks]=useState([]);window.setRemoteTasks=setRemoteTasks;
   window.publish=next=>flushSync(()=>{setTasks(next);setRevision(value=>value+1)});
   window.setMounted=value=>flushSync(()=>setMounted(value));
   window.tasks=tasks;
@@ -63,9 +65,9 @@ function App(){
   return <WorkspaceValueProvider value={{...actions,workspace,snapshot,connected:true,runtimes:[]}}>
     <BroadProbe/><SelectedProbe/>
     <div style={{height:'600px',display:'flex'}}>
-      {mounted&&<TaskList projectId="" onProjectChange={()=>{}} selectedId={selectedId} onSelect={entry=>{window.selected=entry;setSelectedId(entry.key)}}
+      {mounted&&<TaskList projectId={project} onProjectChange={setProject} selectedId={selectedId} onSelect={entry=>{window.selected=entry;setSelectedId(entry.key)}}
         onCreate={()=>{}} onNewThread={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>{window.order=entries.map(entry=>entry.task.id)}}
-        sources={[source]} activeRuntimeId="local" busy={false} error=""/>}
+        sources={[source,...(remoteTasks.length?[{...source,runtimeId:'remote',name:'Remote',workspace:{...workspace,tasks:remoteTasks,repositories:[{id:'remote-scratch',kind:'scratch',name:'Private folder',path:'/remote/private',branch:''}]}}]:[])]} activeRuntimeId="local" busy={false} error=""/>}
     </div>
   </WorkspaceValueProvider>;
 }
@@ -319,6 +321,12 @@ try {
 
   // Opening a collapsed section renders its rows on demand, still windowed.
   await page.locator('summary').filter({ hasText: 'Settled' }).click()
+  const settledSection = page
+    .locator('details')
+    .filter({ has: page.locator('summary').filter({ hasText: 'Settled' }) })
+  await page.getByRole('button', { name: 'Show all 120 settled threads', exact: true }).waitFor()
+  assert.equal(await settledSection.getByRole('button', { name: /Settled thread/ }).count(), 5)
+  await page.getByRole('button', { name: 'Show all 120 settled threads', exact: true }).click()
   await page.getByText('Settled thread 0', { exact: true }).waitFor({ state: 'attached' })
   const settledRow = page.getByRole('button', { name: /Settled thread 0/, exact: true })
   // The project badge falls back to its initial; no status, branch or device text remains.
@@ -327,6 +335,14 @@ try {
   assert.equal(await settledRow.locator('[data-row-icon]').count(), 0)
   await settledRow.click()
   assert.equal(await page.evaluate(() => window.selected.task.id), 'settled-0')
+  await page.getByRole('button', { name: 'Show fewer settled threads', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'Search threads', exact: true })
+    .fill('Settled thread 110')
+  await page.getByText('Settled thread 110', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: /Show all \d+ settled threads/ }).count(), 0)
+  await page.getByRole('textbox', { name: 'Search threads', exact: true }).fill('')
+  await page.getByRole('button', { name: 'Show all 120 settled threads', exact: true }).waitFor()
   await page.locator('summary').filter({ hasText: 'Settled' }).click()
   await page.waitForFunction(
     () =>
@@ -349,7 +365,6 @@ try {
     element.scrollTop = 9000
     element.dispatchEvent(new Event('scroll'))
   })
-  await page.waitForTimeout(100)
   const firstVisible = () =>
     scroller.evaluate((element) => {
       const top = element.getBoundingClientRect().top
@@ -362,10 +377,20 @@ try {
     top: await scroller.evaluate((element) => element.scrollTop),
     row: await firstVisible(),
   })
+  const waitForVisibleRows = () =>
+    page.waitForFunction(() => {
+      const element = document.querySelector('[aria-label="Task sidebar"] [aria-busy]')
+      const bounds = element.getBoundingClientRect()
+      return [...element.querySelectorAll('[data-row-icon]')].some((icon) => {
+        const row = icon.closest('button').getBoundingClientRect()
+        return row.bottom > bounds.top && row.top < bounds.bottom
+      })
+    })
+  await waitForVisibleRows()
   const before = await position()
   await page.evaluate(() => window.setMounted(false))
   await page.evaluate(() => window.setMounted(true))
-  await page.waitForTimeout(100)
+  await waitForVisibleRows()
   assert.deepEqual(await position(), before)
 
   // Removed tasks are not retained by row commands, measured heights or selectors.
@@ -411,6 +436,42 @@ try {
   const tooltip = page.getByRole('tooltip')
   await tooltip.waitFor()
   assert.ok(!/stale-branch|Unknown branch|No project/.test(await tooltip.textContent()))
+  // The General filter includes scratch threads on every computer, with distinct IDs.
+  await page.evaluate(() => {
+    window.setRemoteTasks([
+      {
+        ...window.tasks[0],
+        id: 'remote-general',
+        title: 'Remote General conversation',
+        repositoryId: 'remote-scratch',
+      },
+    ])
+    window.publish([
+      ...window.tasks,
+      {
+        ...window.tasks[0],
+        id: 'regular',
+        title: 'Regular project conversation',
+        repositoryId: 'repo',
+      },
+    ])
+    window.setProject('scratch')
+  })
+  await page
+    .getByRole('button', { name: /Remote General conversation/ })
+    .first()
+    .waitFor()
+  await general.waitFor()
+  assert.deepEqual(
+    await page.evaluate(() => [...window.order].sort((a, b) => a.localeCompare(b))),
+    ['general', 'remote-general'],
+  )
+  await page.evaluate(() => window.setProject(JSON.stringify(['local', 'scratch'])))
+  await page
+    .getByRole('button', { name: /Remote General conversation/ })
+    .first()
+    .waitFor({ state: 'detached' })
+  await general.waitFor()
   assert.deepEqual(errors, [])
   console.log(
     `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero pill renders for 30 large child-payload updates and one render for visible activity; selector isolation, latest-entry commands, subagent navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,

@@ -70,7 +70,12 @@ try {
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     page.on('dialog', (dialog) => dialog.accept())
-    if (mobile) await page.getByRole('button', { name: 'Change scope', exact: true }).click()
+    await page.getByText('Editing Global defaults', { exact: true }).waitFor()
+    await page.getByText('Shared across paired computers', { exact: true }).waitFor()
+    if (mobile) {
+      assert.equal(await page.getByLabel('Project', { exact: true }).count(), 0)
+      await page.getByRole('button', { name: 'Change scope', exact: true }).click()
+    }
     const projects = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
     const environments = page.getByLabel(mobile ? 'Computer' : 'Settings computer', {
       exact: true,
@@ -79,6 +84,8 @@ try {
     assert.equal(await page.getByLabel('Settings scope', { exact: true }).count(), 0)
     await projects.selectOption('git:github.com/team/repo')
     await environments.selectOption('linux')
+    await page.getByText('Editing Shared project on Linux', { exact: true }).waitFor()
+    await page.getByText('Saved on Linux', { exact: true }).waitFor()
     await page.getByLabel('Setup command', { exact: true }).fill('project setup')
     await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
     await page
@@ -110,7 +117,9 @@ try {
     await projects.selectOption('')
     assert.equal(await page.getByTestId('target').textContent(), 'global:')
     await page.getByRole('button', { name: 'Defaults page', exact: true }).click()
-    await page.getByRole('button', { name: 'Use inherited worktree setup', exact: true }).click()
+    await page
+      .getByRole('button', { name: 'Use inherited worktree setup: No setup command', exact: true })
+      .click()
     await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
     await page
       .getByText(mobile ? /^Settings saved at / : 'Defaults saved for new tasks.', {
@@ -122,7 +131,9 @@ try {
     assert.equal(last.after.taskDefaults.setupCommand, undefined)
     // Later levels stay visible from Global; opening one moves the shared target there.
     const overridden = page.getByRole('button', {
-      name: 'Worktree setup: overridden at 1 later level',
+      name: mobile
+        ? '1 override keeps its own value for worktree setup'
+        : 'Worktree setup: overridden at 1 later level',
       exact: true,
     })
     await overridden.click()

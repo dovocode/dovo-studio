@@ -413,6 +413,10 @@ export const runtimePreferencesSchema = mutableStruct({
   enablePipelineWatching: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
+  /** Let agents discover and stage linked projects for their own thread. */
+  enableLinkedProjectsTool: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => true)),
+  ),
   enableStudioThreads: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),

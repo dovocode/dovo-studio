@@ -21,15 +21,30 @@ export function toolEvent(provider: Agent['provider'], name: string, payload: un
     const item = object(data.item),
       type = string(item.type)
     if (
-      !['commandExecution', 'fileChange', 'mcpToolCall', 'webSearch', 'dynamicToolCall'].includes(
-        type,
-      )
+      ![
+        'commandExecution',
+        'fileChange',
+        'mcpToolCall',
+        'webSearch',
+        'dynamicToolCall',
+        'imageGeneration',
+        'imageView',
+      ].includes(type)
     )
       return
     return {
       toolId: string(item.id),
-      title: string(item.command) || string(item.tool) || type,
-      status: name.endsWith('completed') ? string(item.status) || 'completed' : 'running',
+      title:
+        type === 'imageGeneration'
+          ? 'Generate image'
+          : type === 'imageView'
+            ? 'View image'
+            : string(item.command) || string(item.tool) || type,
+      status: name.endsWith('completed')
+        ? item.failure
+          ? 'failed'
+          : string(item.status) || 'completed'
+        : 'running',
     }
   }
   if (provider === 'vibe' && name === 'vibe/effect') {

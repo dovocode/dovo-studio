@@ -33,6 +33,8 @@ import {
 } from '@dovo/studio-ui'
 import {
   FolderOpen,
+  FolderSymlink,
+  MessageCircle,
   ChevronDown,
   Download,
   GitCommitHorizontal,
@@ -457,10 +459,14 @@ export function TaskProjectPanel({
               .filter(Boolean)
               .join(' · ')}
           >
-            <ProjectIcon repository={repo} className="size-9 shrink-0 rounded-lg" />
+            {repo?.kind === 'scratch' ? (
+              <MessageCircle className="size-9 shrink-0 text-muted-foreground" />
+            ) : (
+              <ProjectIcon repository={repo} className="size-9 shrink-0 rounded-lg" />
+            )}
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-sm font-medium text-foreground">
-                {repo?.name ?? 'Project'}
+                {repo?.kind === 'scratch' ? 'General' : (repo?.name ?? 'Project')}
               </h2>
               <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span
@@ -470,12 +476,14 @@ export function TaskProjectPanel({
                 {executionHost ?? 'Selected computer'}
                 {!connected && ' · Offline'}
               </p>
-              <p
-                className="studio-project-path mt-0.5 truncate text-xs text-muted-foreground"
-                title={task.existingWorktreePath || repo?.path || 'No local checkout'}
-              >
-                {task.existingWorktreePath || repo?.path || 'No local checkout'}
-              </p>
+              {repo?.kind !== 'scratch' && (
+                <p
+                  className="studio-project-path mt-0.5 truncate text-xs text-muted-foreground"
+                  title={task.existingWorktreePath || repo?.path || 'No local checkout'}
+                >
+                  {task.existingWorktreePath || repo?.path || 'No local checkout'}
+                </p>
+              )}
             </div>
           </div>
           {repo && !repo.kind && (
@@ -566,6 +574,21 @@ export function TaskProjectPanel({
               <DiffAmounts stats={stats} />
             </span>
           </Button>
+        </div>
+        <div className="studio-project-section border-t border-border/60">
+          <Button
+            variant="ghost"
+            className="studio-project-row w-full justify-start"
+            onClick={() => onSurface('projects')}
+          >
+            <FolderSymlink size={18} />
+            {(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length
+              ? `Linked projects (${(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length})`
+              : 'Link projects'}
+          </Button>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Use project checkouts or worktrees on this computer.
+          </p>
         </div>
         <TaskWaitingPanel
           onPullLink={onPullLink}

@@ -80,7 +80,7 @@ const built = await build({
     const root=createRoot(document.getElementById('app'));
     let initial={id:'thread',title:'Fix reconnection',repositoryId:'repo',agentId:'',status:'done',createdAt:'2026-10-14',messages:[],files:[{path:'connection.ts',before:'old connection\\nremove timeout\\n',after:'new connection\\nrestore session\\nhandle network switch\\n'}],draft:'',example:false,execution:'worktree',checkoutBranch:'fix/reconnection',turns:[],linkedPullRequests:[{number:7,url:'https://github.com/test/project/pull/7',repositoryUrl:'https://github.com/test/project',title:'Fix iOS reconnection across Wi-Fi switches'},{number:9,url:'https://github.com/test/project/pull/9',repositoryUrl:'https://github.com/test/project',title:'Preserve the runtime session'}],pullStatus:{number:7,url:'https://github.com/test/project/pull/7',state:'open',checks:'passed',checkedAt:''}};
     function App(){
-      const [task,setTask]=useState(initial),[panel,setPanel]=useState(false),[surface,setSurface]=useState('chat'),[hideSidebar,setHideSidebar]=useState(false),[toolsWidth,setToolsWidth]=useState(0);window.hideSidebar=setHideSidebar;window.setToolsWidth=setToolsWidth;
+      const [task,setTask]=useState(initial),[panel,setPanel]=useState(false),[surface,setSurface]=useState('chat'),[hideSidebar,setHideSidebar]=useState(false),[toolsWidth,setToolsWidth]=useState(0);window.generalProject=()=>{repo.kind='scratch';repo.name='No project';setPanel(true)};window.hideSidebar=setHideSidebar;window.setToolsWidth=setToolsWidth;
       window.switchThread=()=>setTask(task=>({...task,id:task.id==='other-thread'?'thread':'other-thread',title:task.id==='other-thread'?'Fix reconnection':'Another thread'}));window.setPullState=(state,draft=false)=>setTask(task=>({...task,pullStatus:{...task.pullStatus,state,draft,checks:'failed'}}));
       window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));
       const request=async(path,input)=>{
@@ -378,6 +378,13 @@ try {
       await page.getByRole('button', { name: 'Threads', exact: true }).click()
       await page.locator('.studio-titlebar[data-sidebar-brand=true]').waitFor()
     }
+    await page.evaluate(() => window.generalProject())
+    const generalProject = page.getByRole('region', { name: 'Thread project', exact: true })
+    await generalProject.getByRole('heading', { name: 'General', exact: true }).waitFor()
+    assert.equal(await generalProject.locator('.studio-project-path').count(), 0)
+    await generalProject.getByRole('button', { name: 'Link projects', exact: true }).click()
+    await page.waitForFunction(() => window.surface === 'projects')
+    await generalProject.waitFor({ state: 'detached' })
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Compact' : 'Desktop'} thread menu/project panel: custom archive period, settle override, editor, branch reuse, related links and watcher removal passed`,

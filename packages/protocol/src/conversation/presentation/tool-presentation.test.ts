@@ -3,6 +3,33 @@ import { expect, it } from 'vite-plus/test'
 import { recentTools, activitySchema } from '../../automation/activity'
 import { activitySummary, toolPresentation } from './tool-presentation'
 type Event = Schema.Schema.Type<typeof activitySchema>['events'][number]
+
+it('presents native Codex images with useful labels, paths and failure messages rather than base64 output', () => {
+  const present = (item: unknown) => toolPresentation(JSON.stringify({ event: { item } }), 'Image')
+  expect(present({ type: 'imageView', path: '/tmp/preview.png' })).toMatchObject({
+    title: 'View preview.png',
+    kind: 'file',
+    input: '/tmp/preview.png',
+    detail: '/tmp/preview.png',
+    output: '',
+  })
+  const generated = {
+    type: 'imageGeneration',
+    result: 'private-base64',
+    savedPath: '/tmp/result.png',
+    revisedPrompt: 'A blue sky',
+  }
+  expect(present(generated)).toMatchObject({
+    title: 'Generate image',
+    input: 'A blue sky',
+    detail: '/tmp/result.png',
+    output: '',
+  })
+  expect(JSON.stringify(present(generated))).not.toContain('private-base64')
+  expect(
+    present({ ...generated, failure: { type: 'usageLimitExceeded', limitId: 'images' } }).output,
+  ).toBe('Image generation limit reached (images).')
+})
 const event = (
   id: string,
   toolId: string,

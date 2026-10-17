@@ -7,9 +7,12 @@ import {
   settingLayers,
   settingOverrides,
   settingValueLabel,
+  settingSourceName,
+  settingInheritanceIsCurrent,
+  settingValueDescription,
+  settingValuePreview,
   runtimeComputerName,
-  type Repository,
-  type SettingField,
+  type SettingSourceSetting,
   type SettingOverride,
 } from '@dovo/protocol'
 import { Alert, View } from 'react-native'
@@ -29,7 +32,7 @@ export function SettingSource({
   onReset,
   setting,
 }: {
-  setting?: { field: SettingField; repository?: Repository; scope: SettingsScope; value: unknown }
+  setting?: SettingSourceSetting
   source: SettingsScope | 'built-in' | 'computer-default'
   overridden: boolean
   label: string
@@ -43,12 +46,27 @@ export function SettingSource({
   const settingsTarget = useOptionalSettingsTarget()
   const { colors, styles } = useTheme()
 
-  const name =
-    source === 'built-in'
-      ? 'Dovo default'
-      : source === 'computer-default'
-        ? 'Computer preference'
-        : settingsScopeLabels[source]
+  const computers = overviews.map((entry) => ({
+    id: entry.profile.id,
+    name: runtimeComputerName(entry),
+  }))
+  const computer = overviews.find((entry) => entry.profile.id === activeId)
+  const name = settingSourceName(source, {
+    project: setting?.repository?.name,
+    computer: computer ? runtimeComputerName(computer) : undefined,
+  })
+  const sourceCurrent =
+    !setting || overridden || settingInheritanceIsCurrent(snapshot?.defaults, setting, source)
+  const inheritedLabel = setting
+    ? settingValueDescription(setting.field, setting.inheritedValue, computers)
+    : undefined
+  const valueLabel = setting
+    ? settingValueDescription(
+        setting.field,
+        setting.value === undefined ? setting.inheritedValue : setting.value,
+        computers,
+      )
+    : undefined
   // Origin-only badges render outside scoped pages; only field badges read the fleet.
   const sources = setting
     ? overviews.map((entry) => ({
@@ -127,15 +145,24 @@ export function SettingSource({
         paddingHorizontal: 4,
       }}
     >
+      {setting && (
+        <Text style={[styles.text, { fontSize: 14, fontWeight: '600' }]}>
+          At this level: {valueLabel && settingValuePreview(valueLabel)}
+        </Text>
+      )}
       <Text
         style={[styles.muted, { fontSize: 13, color: overridden ? colors.accent : colors.muted }]}
       >
-        {overridden ? `Set here · ${name}` : `Inherited · ${name}`}
+        {overridden
+          ? `Set here · ${name}`
+          : sourceCurrent
+            ? `Inherited from ${name}`
+            : 'Inherited · source snapshot outdated'}
       </Text>
       {setting && (
         <Action
           secondary
-          label={open ? 'Hide sources' : `Sources for ${label.toLowerCase()}`}
+          label={open ? 'Hide inheritance' : `View inheritance for ${label.toLowerCase()}`}
           onPress={() => setOpen(!open)}
         />
       )}
@@ -145,13 +172,24 @@ export function SettingSource({
           label={
             showOverrides
               ? 'Hide later overrides'
-              : `${label}: overridden at ${overrides.length} later ${overrides.length === 1 ? 'level' : 'levels'}`
+              : `${overrides.length} ${overrides.length === 1 ? 'override keeps its own value' : 'overrides keep their own values'} for ${label.toLowerCase()}`
           }
           onPress={() => setShowOverrides(!showOverrides)}
         />
       )}
       {open && setting && (
         <View style={{ width: '100%', gap: 12 }}>
+          <Text style={[styles.muted, { fontSize: 13 }]}>
+            Project overrides Computer; Project on computer wins over both. The check marks the
+            effective value for each computer, including later overrides.
+          </Text>
+          {!sourceCurrent && (
+            <Text style={styles.muted}>
+              The value above comes from the latest settings read. Source details below use saved
+              snapshots.
+            </Text>
+          )}
+          <Text style={styles.text}>Use inherited value: {inheritedLabel}</Text>
           {overviews.map((entry) => {
             const active = entry.profile.id === activeId
             const state = active ? snapshot : entry.snapshot
@@ -181,9 +219,29 @@ export function SettingSource({
                 ) : (
                   <>
                     {rows.map((row) => (
-                      <Text key={row.scope} style={styles.muted}>
+                      <Text
+                        key={row.scope}
+                        style={[
+                          styles.muted,
+                          row.effective && {
+                            color: colors.text,
+                            backgroundColor: colors.selection,
+                            borderRadius: 8,
+                            padding: 8,
+                            fontWeight: '600',
+                          },
+                        ]}
+                      >
                         {row.effective ? '✓ ' : ''}
-                        {settingValueLabel(row.value)} · {settingsScopeLabels[row.scope]}
+                        {row.value === undefined
+                          ? 'Inherit'
+                          : settingValueDescription(setting.field, row.value, computers)}{' '}
+                        ·{' '}
+                        {settingSourceName(row.scope, {
+                          project: repository?.name,
+                          computer: runtimeComputerName(entry),
+                        })}
+                        {row.effective ? ' · effective' : ''}
                         {active && row.scope === setting.scope ? ' · current draft' : ''}
                       </Text>
                     ))}
@@ -243,7 +301,7 @@ export function SettingSource({
         <Action
           secondary
           icon="reopen"
-          label={`Use inherited ${label.toLowerCase()}`}
+          label={`Use inherited ${label.toLowerCase()}${inheritedLabel ? `: ${settingValuePreview(inheritedLabel)}` : ''}`}
           disabled={disabled}
           onPress={onReset}
         />

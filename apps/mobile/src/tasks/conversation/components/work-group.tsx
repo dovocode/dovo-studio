@@ -13,6 +13,7 @@ import { Icon } from '../../../ui/controls/icon'
 import { activityOutcome } from '../state/tool-events'
 import { artifactReferences } from '@dovo/protocol'
 import { ArtifactCard } from '../../../ui/content/artifacts'
+import { ToolResultImages } from './tool-result-images'
 
 const toolSchema = mutableStruct({
   ...activitySchema.fields.events.schema.value.fields,
@@ -69,7 +70,14 @@ export function ConversationWorkGroup({
     .map((reference) => (
       <ArtifactCard key={`${reference.id}:${reference.revision}`} reference={reference} />
     ))
-  if (artifactsOnly) return <>{cards}</>
+  const images = groupEvents.map((event) => <ToolResultImages key={event.id} event={event} />)
+  if (artifactsOnly)
+    return (
+      <>
+        {cards}
+        {images}
+      </>
+    )
   return (
     <View>
       <Pressable
@@ -101,6 +109,7 @@ export function ConversationWorkGroup({
       )}
       {open && <View style={{ paddingBottom: 6 }}>{children}</View>}
       {!open && cards}
+      {!open && images}
     </View>
   )
 }

@@ -5,6 +5,7 @@ import {
   settingsScopeLabels,
   settingsScopeDescriptions,
   settingsScopes,
+  settingsScopeSummary,
   settingsTargetAtScope,
   type Repository,
   type SettingsScope,
@@ -38,19 +39,28 @@ export function SettingsScopePage({
   const { target, setTarget, sources, source, scope, repository } = useSettingsTarget()
   const projects = settingsProjectChoices(sources, target.environmentId)
   const width = wide ? 'max-w-6xl' : 'max-w-3xl'
-  const detail = target.environmentId
-    ? `${source?.name ?? 'Selected computer'}${repository ? ` · ${repository.name}` : ''}`
-    : repository
-      ? `${repository.name} · shared across computers`
-      : 'Shared across your connected computers'
+  const summary = settingsScopeSummary(scope, { project: repository?.name, computer: source?.name })
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader title={title} description={description} />
       <div className="shrink-0 border-b bg-card/40 px-4 py-3 sm:px-6" aria-label="Settings target">
         <div className={`mx-auto ${width} space-y-2.5`}>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold [overflow-wrap:anywhere]">
+                Editing {summary.title}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {summary.description}
+              </p>
+            </div>
+            <span className="max-w-full rounded-md border bg-background/60 px-2 py-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+              {summary.storage}
+            </span>
+          </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-xs">
             <Layers className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span className="font-medium">Apply to</span>
+            <span className="font-medium">Edit defaults for</span>
             <ChoicePicker
               aria-label="Settings project"
               className="h-8 w-auto min-w-40 max-w-full bg-background/60"
@@ -86,13 +96,6 @@ export function SettingsScopePage({
                 </option>
               ))}
             </ChoicePicker>
-            <span className="min-w-0 text-muted-foreground sm:ml-auto">
-              <span className="font-medium text-foreground">
-                Editing {settingsScopeLabels[scope]}
-              </span>
-              {' · '}
-              {detail}
-            </span>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <ol aria-label="Settings inheritance" className="flex flex-wrap items-center gap-1">
@@ -142,10 +145,11 @@ export function SettingsScopePage({
                 How inheritance works
               </summary>
               <p className="mt-2 max-w-xl leading-relaxed">
-                Global defaults apply everywhere. Computer and project settings override them;
-                Project on computer is the most specific level. Each control shows its source.
-                Choose “Inherit” or reset an override to use the earlier value. Global and project
-                defaults sync to paired computers; computer overrides stay on their computer.
+                Global defaults apply everywhere. Computer overrides Global; Project overrides
+                Computer. Project on computer is the most specific level. Each control shows its
+                source. Choose “Inherit” or reset an override to use the earlier value. Global and
+                project defaults sync to paired computers; computer overrides stay on their
+                computer.
               </p>
             </details>
           </div>

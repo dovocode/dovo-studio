@@ -169,7 +169,7 @@ it('maps enabled MCP transports and resolves environment references for each har
     ]),
   ).toThrow('DOES_NOT_EXIST_DOVO')
 })
-it('permits only built-in child controls without Codex approval for read-only delegation', () => {
+it('permits scoped conversation, progress and child controls without extra Codex approval', () => {
   const builtin = taskToolsServer('parent', 1234, 'token', '127.0.0.1', true, false, 'attempt')
   const external = decode(mcpServerSchema, {
     name: 'external',
@@ -180,6 +180,8 @@ it('permits only built-in child controls without Codex approval for read-only de
   })
   const configured = codexMcpServers([builtin, external])
   expect(configured.dovo_task.tools).toEqual({
+    ask_question: { approval_mode: 'approve' },
+    todos: { approval_mode: 'approve' },
     subagent_spawn: { approval_mode: 'approve' },
     subagent_list: { approval_mode: 'approve' },
     subagent_read: { approval_mode: 'approve' },

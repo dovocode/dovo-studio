@@ -18,6 +18,7 @@ it('defaults new preferences and accepts only Git-safe branch prefixes', () => {
     autoProjectModelSelection: 'inherit',
     enablePullRequestWatching: false,
     enablePipelineWatching: false,
+    enableLinkedProjectsTool: true,
     enableStudioThreads: false,
     enableStudioAutomations: false,
     enableStudioBrowsers: false,

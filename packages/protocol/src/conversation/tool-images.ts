@@ -5,11 +5,58 @@ const index = Schema.Number.pipe(
   Schema.check(Schema.isInt()),
   Schema.check(Schema.isBetween({ minimum: 0, maximum: 7 })),
 )
-export const toolImageReferenceSchema = mutableStruct({ eventId: Schema.String, index, mime })
+export const toolImageReferenceSchema = mutableStruct({
+  eventId: Schema.String,
+  index,
+  mime: Schema.optional(mime),
+})
 export const taskImageReadSchema = mutableStruct({ uri: Schema.String })
 export type ToolImageReference = Schema.Schema.Type<typeof toolImageReferenceSchema>
 type ToolImage = { uri: string; mime: Schema.Schema.Type<typeof mime> }
 const referencesSchema = mutableStruct({ toolImages: mutableArray(toolImageReferenceSchema) })
+const object = (value: unknown) =>
+  decodeResult(Schema.Record(Schema.String, Schema.Unknown), value).data ?? {}
+function envelope(payload: unknown) {
+  if (typeof payload !== 'string') return object(payload)
+  try {
+    return object(JSON.parse(payload))
+  } catch {
+    return {}
+  }
+}
+function rasterFormat(value: string) {
+  try {
+    const header = atob(value.slice(0, 16))
+    if (header.startsWith('\x89PNG\r\n\x1a\n')) return 'png'
+    if (header.startsWith('\xff\xd8\xff')) return 'jpeg'
+    if (header.startsWith('GIF87a') || header.startsWith('GIF89a')) return 'gif'
+    if (header.startsWith('RIFF') && header.slice(8, 12) === 'WEBP') return 'webp'
+  } catch {
+    /* Non-base64 results are not images. */
+  }
+  return undefined
+}
+/** Only a completed native item can share a file; clients cannot supply the path in an image reference. */
+export function nativeToolImagePath(payload: unknown): string | undefined {
+  const data = envelope(payload)
+  const item = object(object(data.event).item)
+  if (data.status !== 'completed' || item.failure) return
+  const path =
+    item.type === 'imageView'
+      ? item.path
+      : item.type === 'imageGeneration' && item.status === 'completed'
+        ? item.savedPath
+        : undefined
+  if (
+    typeof path !== 'string' ||
+    !path ||
+    path.length > 4000 ||
+    path.includes('\0') ||
+    (/^[a-z][a-z0-9+.-]*:/i.test(path) && !/^[a-z]:[\\/]/i.test(path))
+  )
+    return
+  return path
+}
 /** Only raster image content blocks and screenshot data URLs are displayed, never arbitrary URLs. */
 export function toolImages(payload: unknown): ToolImage[] {
   if (typeof payload === 'string') {
@@ -39,6 +86,21 @@ export function toolImages(payload: unknown): ToolImage[] {
     if (!value || typeof value !== 'object') return
     const data = decodeResult(Schema.Record(Schema.String, Schema.Unknown), value).data
     if (!data) return
+    if (
+      data.type === 'imageGeneration' &&
+      data.status === 'completed' &&
+      !data.failure &&
+      typeof data.result === 'string' &&
+      data.result.length <= 24 * 1024 * 1024
+    ) {
+      const result = data.result
+      if (result.startsWith('data:')) add(result)
+      else {
+        // Codex returns raw base64. Identify the raster signature instead of assuming PNG.
+        const format = rasterFormat(result)
+        if (format) add(`data:image/${format};base64,${result}`)
+      }
+    }
     if (data.type === 'image') {
       if (typeof data.data === 'string' && typeof data.mimeType === 'string')
         add(`data:${data.mimeType};base64,${data.data}`)
@@ -78,15 +140,25 @@ export function toolImages(payload: unknown): ToolImage[] {
   visit(payload, 0)
   return images
 }
-export function toolImageReferences(payload: unknown): ToolImageReference[] {
+export function toolImageReferences(payload: unknown, eventId?: string): ToolImageReference[] {
   try {
     return (
       decodeResult(referencesSchema, typeof payload === 'string' ? JSON.parse(payload) : payload)
-        .data?.toolImages ?? []
+        .data?.toolImages ??
+      (eventId && nativeToolImagePath(payload) && !toolImages(payload).length
+        ? [{ eventId, index: 0 }]
+        : [])
     )
   } catch {
     return []
   }
+}
+export function hasToolImages(payload: unknown): boolean {
+  return (
+    toolImageReferences(payload).length > 0 ||
+    nativeToolImagePath(payload) !== undefined ||
+    toolImages(payload).length > 0
+  )
 }
 export const taskImageRequestSchema = mutableStruct({
   taskId: Schema.String,

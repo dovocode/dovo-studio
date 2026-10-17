@@ -524,3 +524,106 @@ it('routes only live native-agent approvals and questions through the session af
     pressure.mockRestore()
   }
 })
+
+it('publishes successful main-thread todo hooks and excludes child hooks', async () => {
+  mocks.query.mockImplementation(({ options }) => ({
+    async *[Symbol.asyncIterator]() {
+      const hook = options.hooks?.PostToolUse?.[0].hooks[0]
+      if (!hook) throw new Error('Expected checklist hook')
+      const input = {
+        hook_event_name: 'PostToolUse' as const,
+        session_id: 'session',
+        transcript_path: '/fixture/transcript',
+        cwd: '/tmp',
+        tool_name: 'TodoWrite',
+        tool_use_id: 'todo',
+        tool_input: { todos: [] },
+        tool_response: { newTodos: [] },
+      }
+      await hook({ ...input, agent_id: 'child' }, 'todo', { signal: new AbortController().signal })
+      await hook(input, 'todo', { signal: new AbortController().signal })
+      yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+    },
+    close: vi.fn<() => void>(),
+  }))
+  const events = vi.fn<NonNullable<AgentRun['onEvent']>>()
+  const adapter = createClaudeAdapter()
+  try {
+    await adapter.run({
+      agent: {
+        id: 'agent',
+        name: 'Claude',
+        provider: 'claude',
+        endpoint: '',
+        model: '',
+        instructions: '',
+        permission: 'ask',
+      },
+      cwd: '/tmp',
+      prompt: 'Track work',
+      signal: new AbortController().signal,
+      onSession: () => {},
+      onText: () => {},
+      onActivity: () => {},
+      onEvent: events,
+      approve: async () => 'deny',
+      ask: async () => null,
+    })
+    expect(events.mock.calls.filter(([name]) => name === 'claude/checklist')).toEqual([
+      [
+        'claude/checklist',
+        expect.objectContaining({ tool_name: 'TodoWrite', tool_response: { newTodos: [] } }),
+      ],
+    ])
+  } finally {
+    await adapter.dispose?.()
+  }
+})
+
+it.each([true, false])(
+  'allows only configured conversation/progress tools in a read-only Claude run (managed=%s)',
+  async (managed) => {
+    const adapter = createClaudeAdapter()
+    const decisions: string[] = []
+    mocks.query.mockImplementation(({ prompt, options }) => ({
+      async *[Symbol.asyncIterator]() {
+        if (typeof prompt === 'string' || !options.canUseTool)
+          throw new Error('Expected a managed stream')
+        for await (const _message of prompt) {
+          for (const name of [
+            'mcp__dovo_task__ask_question',
+            'mcp__dovo_task__todos',
+            'mcp__other__todos',
+            'mcp__dovo_task__linked_projects',
+          ]) {
+            const decision = await options.canUseTool(
+              name,
+              {},
+              { signal: new AbortController().signal, toolUseID: 'tool', requestId: 'request' },
+            )
+            decisions.push(decision?.behavior ?? 'cancelled')
+          }
+          yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+        }
+      },
+      close: () => {},
+    }))
+    const run = nativeRun(vi.fn())
+    run.agent.permission = 'read-only'
+    run.agent.resources = decode(resourceSettingsSchema, {
+      mcpServers: managed ? [taskToolsServer(run.taskId!, 1234, 'token', '127.0.0.1', true)] : [],
+    })
+    try {
+      await adapter.run(run)
+      expect(decisions).toEqual([
+        managed ? 'allow' : 'deny',
+        managed ? 'allow' : 'deny',
+        'deny',
+        'deny',
+      ])
+      expect(run.approve).not.toHaveBeenCalled()
+    } finally {
+      await adapter.dispose?.()
+    }
+  },
+)

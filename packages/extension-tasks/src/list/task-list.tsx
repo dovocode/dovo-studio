@@ -1,5 +1,5 @@
 import { taskSnoozeOptions } from '@dovo/protocol'
-import { orderThreadSections } from '@dovo/protocol'
+import { orderThreadSections, settledThreadPreviewLimit } from '@dovo/protocol'
 import { SectionOrderDialog } from './section-order-dialog'
 import { useTaskSearch } from './use-task-search'
 import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
@@ -95,6 +95,7 @@ export function TaskList({
   const host = useStudioHost()
   const store = useTaskActionStore()
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
+  const [showAllSettled, setShowAllSettled] = useApplicationState(false)
   const selecting = selected.size > 0
   const selectionAnchor = useRef<string | null>(null)
   const bulkLock = useRef(false)
@@ -259,8 +260,8 @@ export function TaskList({
               source.workspace.repositories.some(
                 (repo) =>
                   repo.id === t.repositoryId &&
-                  repo.gitIdentity &&
-                  `git:${repo.gitIdentity}` === projectId,
+                  ((projectId === 'scratch' && repo.kind === 'scratch') ||
+                    (!!repo.gitIdentity && `git:${repo.gitIdentity}` === projectId)),
               )) &&
               (!environment || JSON.stringify(source.runtimeId) === environment) &&
               !t.archivedAt &&
@@ -380,7 +381,9 @@ export function TaskList({
         ? !preferences.collapsedThreadSections.includes(id)
         : expanded[id]
 
-    const ordered = (sections: { id: string; name: string; tasks: TaskEntry[]; open: boolean }[]) =>
+    const ordered = (
+      sections: { id: string; name: string; tasks: TaskEntry[]; open: boolean; total?: number }[],
+    ) =>
       orderThreadSections(sections, (group) => group.id, preferences.threadSectionOrder).map(
         (group, index) => (index === 0 && group.id === 'active' ? { ...group, open: true } : group),
       )
@@ -392,6 +395,7 @@ export function TaskList({
         !isSnoozed(task, now) &&
         (!task.waitingForFeedback || needsInput),
     )
+    const settledTasks = tasks.filter(({ task }) => task.archived || !!task.archivedAt)
     const statusGroups = [
       {
         id: 'pinned',
@@ -445,7 +449,11 @@ export function TaskList({
       {
         id: 'settled',
         name: 'Settled',
-        tasks: tasks.filter(({ task }) => task.archived || !!task.archivedAt),
+        tasks: settledTasks.slice(
+          0,
+          showAllSettled || query.trim() || selecting ? undefined : settledThreadPreviewLimit,
+        ),
+        total: settledTasks.length,
         open: false,
       },
     ].filter((group) => group.tasks.length)
@@ -496,7 +504,9 @@ export function TaskList({
         (repo) => repo.id === entry.task.repositoryId,
       )
       const key = preferences.projectGrouping
-        ? (repository?.gitIdentity ?? entry.projectKey)
+        ? repository?.kind === 'scratch'
+          ? 'scratch'
+          : (repository?.gitIdentity ?? entry.projectKey)
         : entry.projectKey
       const group = byProject.get(key) ?? {
         id: `project:${key}`,
@@ -527,6 +537,9 @@ export function TaskList({
     preferences.threadSectionOrder,
     preferences.collapsedThreadSections,
     revealedEntryKey,
+    showAllSettled,
+    query,
+    selecting,
   ])
   useEffect(() => {
     onOrderChange?.(
@@ -561,10 +574,16 @@ export function TaskList({
   const createRow = useCommittedCallback(withEntry((entry) => onCreate(entry.projectKey)))
   const filterRow = useCommittedCallback(
     withEntry((entry) => {
-      const gitIdentity = entry.source.workspace.repositories.find(
+      const repository = entry.source.workspace.repositories.find(
         (repo) => repo.id === entry.task.repositoryId,
-      )?.gitIdentity
-      onProjectChange(gitIdentity ? `git:${gitIdentity}` : entry.projectKey)
+      )
+      onProjectChange(
+        repository?.kind === 'scratch' && preferences.projectGrouping
+          ? 'scratch'
+          : repository?.gitIdentity
+            ? `git:${repository.gitIdentity}`
+            : entry.projectKey,
+      )
       setQuery('')
     }),
   )
@@ -880,9 +899,25 @@ export function TaskList({
               >
                 <ChevronDown size={11} />
                 <span className="min-w-0 flex-1 truncate">{group.name}</span>
-                <span>{group.tasks.length}</span>
+                <span>{group.total ?? group.tasks.length}</span>
               </summary>
               {rows}
+              {group.open &&
+                group.id === 'settled' &&
+                (group.total ?? 0) > settledThreadPreviewLimit &&
+                !query.trim() &&
+                !selecting && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mx-2 text-xs text-muted-foreground"
+                    onClick={() => setShowAllSettled((value) => !value)}
+                  >
+                    {showAllSettled
+                      ? 'Show fewer settled threads'
+                      : `Show all ${group.total} settled threads`}
+                  </Button>
+                )}
             </details>
           )
         })}

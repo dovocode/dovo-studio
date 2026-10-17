@@ -3,7 +3,7 @@ import type { Repository } from '@dovo/studio-core'
 import { ComposerProject } from './composer-project'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Schema } from 'effect'
-import { Check, ChevronDown, Folder, GitBranch, GitFork } from 'lucide-react'
+import { Check, ChevronDown, Folder, GitBranch, GitFork, Link2 } from 'lucide-react'
 import {
   branchesSchema,
   defaultWorktreeBase,
@@ -23,6 +23,7 @@ import {
   DialogTitle,
   DropdownMenu,
   Popover,
+  LinkedCheckoutEditor,
 } from '@dovo/studio-ui'
 export function ComposerWorkspace({
   task,
@@ -54,6 +55,7 @@ export function ComposerWorkspace({
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [worktreePicker, setWorktreePicker] = useApplicationState(false)
+  const [linkingProjects, setLinkingProjects] = useApplicationState(false)
   const [worktrees, setWorktrees] = useApplicationState<WorktreeChoices | null>(null)
   const [worktreeError, setWorktreeError] = useApplicationState('')
   const showWorktrees = () => {
@@ -121,10 +123,45 @@ export function ComposerWorkspace({
           onMoving={onMachineMoving}
           onSelectRemote={onSelectRemote}
         />
-        <span className="ml-auto inline-flex h-6 items-center gap-1.5 px-2 text-[0.6875rem]">
-          <Folder className="size-3 shrink-0" />
-          {repository.kind === 'scratch' ? 'Private thread folder' : 'Project folder'}
-        </span>
+        {repository.kind === 'scratch' ? (
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label="Link projects"
+              className="h-6 gap-1.5 px-2 text-[0.6875rem] font-normal"
+              disabled={disabled || !editable || !connected}
+              onClick={() => setLinkingProjects(true)}
+            >
+              <Link2 className="size-3.5" />
+              Link projects{task.linkedCheckouts?.length ? ` (${task.linkedCheckouts.length})` : ''}
+            </Button>
+            <Dialog open={linkingProjects} onOpenChange={setLinkingProjects}>
+              <DialogContent className="max-h-[85vh] overflow-y-auto">
+                <DialogTitle>Linked projects</DialogTitle>
+                <LinkedCheckoutEditor
+                  value={task.linkedCheckouts ?? []}
+                  disabled={disabled || !editable || !connected}
+                  onChange={(links) =>
+                    setWorkspace((workspace) =>
+                      updateTask(workspace, task.id, (current) =>
+                        canChangeTaskCheckout(current)
+                          ? { ...current, linkedCheckouts: links }
+                          : current,
+                      ),
+                    )
+                  }
+                />
+                <Button onClick={() => setLinkingProjects(false)}>Done</Button>
+              </DialogContent>
+            </Dialog>
+          </>
+        ) : (
+          <span className="ml-auto inline-flex h-6 items-center gap-1.5 px-2 text-[0.6875rem]">
+            <Folder className="size-3 shrink-0" />
+            Project folder
+          </span>
+        )}
       </ComposerWorkspaceBar>
     )
   return (
