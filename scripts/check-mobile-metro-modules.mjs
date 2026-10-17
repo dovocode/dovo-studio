@@ -14,6 +14,8 @@ const fixture = join(root, 'packages/studio-core', `.metro-modules-${process.pid
 try {
   process.chdir(mobile)
   const require = createRequire(join(mobile, 'package.json'))
+  const clientRuntime = await import(require.resolve('@dovo/client-runtime'))
+  assert.equal(typeof clientRuntime.ModelCatalogCache, 'function')
   const metro = createRequire(require.resolve('@expo/metro-config'))('metro')
   const config = await require('@expo/metro-config').loadUserConfig({
     projectRoot: mobile,
@@ -49,7 +51,9 @@ try {
   }
   runInNewContext(await readFile(output, 'utf8'), context, { timeout: 10000 })
   assert.equal(context.metroThemeResult.name, 'Native theme')
-  console.log('Production iOS Metro bundle executes the shared JSONC theme parser successfully.')
+  console.log(
+    'Compiled model catalog constructor and production iOS theme parser load successfully.',
+  )
 } finally {
   process.chdir(previousDirectory)
   await rm(fixture, { force: true })

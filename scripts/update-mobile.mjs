@@ -25,6 +25,10 @@ try {
   )
   if (!target)
     throw new Error('The requested iPhone is unavailable. Connect and unlock it, then try again.')
+  // Build metadata can survive copied/restored checkouts with stale dist files.
+  // Always emit the workspace dependencies used by the release bundle.
+  for (const name of ['protocol', 'client-runtime'])
+    rmSync(join(root, 'packages', name, 'tsconfig.build.tsbuildinfo'), { force: true })
   run('pnpm', ['--filter', '@dovo/protocol', '--filter', '@dovo/client-runtime', '-r', 'build'])
   run('pnpm', ['--filter', '@dovo/mobile', 'build'])
   // CNG regenerates the widget extension and its capabilities; CocoaPods installs native dependencies.

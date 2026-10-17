@@ -81,8 +81,8 @@ it('starts independent discovery sources together and preserves device readiness
   })
   const pending = previewDevices()
   try {
-    // None of these sources has completed; sequential discovery cannot reach five calls.
-    await vi.waitFor(() => expect(command).toHaveBeenCalledTimes(5))
+    // Android discovery proceeds alongside the shared Apple readiness check.
+    await vi.waitFor(() => expect(command).toHaveBeenCalledTimes(4))
     release()
     const result = await pending
     expect(result.diagnostics).toEqual([])
@@ -108,8 +108,8 @@ it('opening an iPhone skips simulator, Android and emulator discovery', async ()
     { id: 'physical-ios:phone', state: 'booted', liveSupported: true },
   ])
   expect(result.diagnostics).toEqual([])
-  expect(command).toHaveBeenCalledTimes(1)
-  expect(command.mock.calls[0].slice(0, 2)).toEqual([
+  expect(command).toHaveBeenCalledTimes(2)
+  expect(command.mock.calls[1].slice(0, 2)).toEqual([
     'xcrun',
     ['devicectl', 'list', 'devices', '--json-output', expect.any(String)],
   ])
@@ -125,7 +125,37 @@ it('keeps usable sources when an independent discovery command fails', async () 
   const result = await previewDevices()
   expect(result.devices).toHaveLength(4)
   expect(result.diagnostics).toEqual([
-    'iOS: install Xcode, select its developer directory and install a Simulator runtime.',
+    "iOS simulator discovery failed: Xcode runtime missing. Check Xcode's selected developer directory and Simulator runtime on this host.",
+  ])
+})
+
+it('reports the actual iPhone command failure while preserving simulator discovery', async () => {
+  setup()
+  command.mockImplementation(async (file, args) => {
+    if (file === 'xcrun' && args[0] === 'devicectl')
+      throw new Error('Apple device command timed out in the logged-in session')
+    return respond(file, args)
+  })
+  const result = await previewDevices()
+  expect(result.devices.some((device) => device.id === 'ios:sim')).toBe(true)
+  expect(result.diagnostics).toEqual([
+    expect.stringContaining('Physical iPhone discovery failed: Apple device command timed out'),
+  ])
+})
+
+it('distinguishes invalid device output from a missing Xcode installation', async () => {
+  setup()
+  command.mockImplementation(async (file, args) => {
+    if (file === 'xcrun' && args[0] === 'devicectl') {
+      await files.writeFile(args[args.indexOf('--json-output') + 1], 'not JSON')
+      return { stdout: '', stderr: '' }
+    }
+    return respond(file, args)
+  })
+  const result = await previewDevices('physical-ios:phone')
+  expect(result.devices).toEqual([])
+  expect(result.diagnostics).toEqual([
+    expect.stringMatching(/Physical iPhone discovery failed:.*JSON/),
   ])
 })
 
@@ -155,7 +185,21 @@ it('reports missing local Android tools with remote Hub guidance while keeping A
   expect(result.devices.map((device) => device.id)).toEqual(['physical-ios:phone', 'ios:sim'])
   expect(result.diagnostics).toContainEqual(expect.stringContaining('adb is missing on this host'))
   expect(result.diagnostics).toContainEqual(expect.stringContaining('authorized remote host'))
-  expect(command.mock.calls.every(([file]) => file === 'xcrun')).toBe(true)
+  expect(command.mock.calls.every(([file]) => file === 'xcrun' || file === 'xcodebuild')).toBe(true)
+})
+
+it('reports incomplete Xcode setup without starting wrappers that wait for authorization', async () => {
+  setup()
+  command.mockImplementation(async (file, args) => {
+    if (file === 'xcodebuild') throw Object.assign(new Error('setup required'), { code: 69 })
+    return respond(file, args)
+  })
+  const result = await previewDevices()
+  expect(result.devices.some((device) => device.platform === 'android')).toBe(true)
+  expect(command.mock.calls.some(([file]) => file === 'xcrun')).toBe(false)
+  expect(result.diagnostics).toEqual([
+    expect.stringContaining('Xcode first-launch setup is incomplete'),
+  ])
 })
 
 it('opens native deep links with the correct platform transport and destination app', async () => {

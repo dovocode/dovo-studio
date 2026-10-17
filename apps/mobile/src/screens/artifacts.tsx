@@ -1,4 +1,5 @@
 import { artifactFormatLabels, runtimeComputerName } from '@dovo/protocol'
+import { router } from 'expo-router'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from 'react-native'
 import {
@@ -101,6 +102,7 @@ export default function ArtifactsScreen() {
     <View style={styles.screen}>
       <ScreenHeader
         title="Artifacts"
+        onBack={() => router.dismissTo('/')}
         subtitle="Your creations, all in one place."
         buttons={[
           {

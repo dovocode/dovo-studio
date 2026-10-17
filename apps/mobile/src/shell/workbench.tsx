@@ -5,7 +5,7 @@ import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { ConnectionPill, FloatingPills } from '../runtime/connection/connection-status'
 import { NativeTabs } from 'expo-router/unstable-native-tabs'
-import { router, useGlobalSearchParams, useIsFocused, usePathname } from 'expo-router'
+import { Stack, router, useGlobalSearchParams, useIsFocused, usePathname } from 'expo-router'
 import { taskHref } from './task-route'
 import { issueHref, jiraIssueHref, pipelineHref } from './source-route'
 import { collectionPaths as routes, workbenchRoute, type WorkbenchTab as Tab } from './route-paths'
@@ -38,7 +38,6 @@ import {
   View as NativeView,
 } from 'react-native'
 import { IconButton } from '../ui/controls/icon-button'
-import { MoreMenu } from './more-menu'
 import { Text } from '../ui/content/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { SafeAreaView as NativeSafeAreaView } from 'react-native-screens/experimental'
@@ -50,7 +49,73 @@ const SceneContext = createContext<{
   navigations: Record<Tab, StudioNavigation>
   shortcutSaved: boolean
   error: string
+  tabBar: {
+    hidden: boolean
+    active: Tab
+    car: boolean
+    hasProfiles: boolean
+    hasOnlineComputer: boolean
+    newThread: () => void
+  }
 } | null>(null)
+/** Only actual bottom tabs live in this navigator; menu destinations use the parent stack. */
+export function WorkbenchTabs() {
+  const context = useContext(SceneContext)
+  const { colors } = useTheme()
+  if (!context) return null
+  const { hidden, active, car, hasProfiles, hasOnlineComputer, newThread } = context.tabBar
+  return (
+    <NativeTabs
+      hidden={hidden}
+      tintColor={colors.accent}
+      backBehavior="history"
+      unstable_nativeProps={{ ios: { prominentScreenKey: 'compose' } }}
+    >
+      <NativeTabs.Trigger
+        name="(tasks)"
+        disableAutomaticContentInsets={Platform.OS === 'ios'}
+        testID="Tab Tasks"
+        listeners={{
+          tabPress: () => {
+            if (active === 'tasks') router.dismissTo('/')
+          },
+        }}
+      >
+        <NativeTabs.Trigger.Icon src={iconAssets.tasks} renderingMode="template" />
+        <NativeTabs.Trigger.Label>Tasks</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger
+        name="pulls"
+        hidden={car}
+        disableAutomaticContentInsets={Platform.OS === 'ios'}
+        testID="Tab PRs"
+        disabled={!hasProfiles}
+        listeners={{
+          tabPress: () => active === 'pulls' && router.dismissTo('/pulls'),
+        }}
+      >
+        <NativeTabs.Trigger.Icon src={iconAssets.pulls} renderingMode="template" />
+        <NativeTabs.Trigger.Label>PRs</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger
+        name="compose"
+        role="search"
+        hidden={Platform.OS !== 'ios'}
+        accessibilityLabel="New thread"
+        testID="New thread"
+        disabled={!hasOnlineComputer}
+        // This is an action: preserve the current tab and its navigation history.
+        unstable_nativeProps={{ preventNativeSelection: true }}
+        listeners={{
+          tabPress: newThread,
+        }}
+      >
+        <NativeTabs.Trigger.Icon src={iconAssets.add} renderingMode="template" />
+        <NativeTabs.Trigger.Label hidden>New thread</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
+  )
+}
 function WorkbenchNotices() {
   const { styles } = useTheme()
 
@@ -190,8 +255,6 @@ export function Workbench() {
   ])
   const { tab: active, detail: routeDetail } = workbenchRoute(pathname)
   const car = useCarMode()
-  const [moreOpen, setMoreOpen] = useApplicationState(false)
-  useEffect(() => setMoreOpen(false), [pathname])
   const artifactsEnabled = runtime.overviews.some((entry) => entry.snapshot?.artifactsEnabled)
   useEffect(() => {
     if (runtime.ready && active === 'artifacts' && (!artifactsEnabled || car)) router.replace('/')
@@ -490,8 +553,28 @@ export function Workbench() {
       navigations,
       shortcutSaved,
       error,
+      tabBar: {
+        hidden: keyboard || detail,
+        active,
+        car,
+        hasProfiles: !!runtime.profiles.length,
+        hasOnlineComputer,
+        newThread,
+      },
     }),
-    [content, navigations, shortcutSaved, error],
+    [
+      content,
+      navigations,
+      shortcutSaved,
+      error,
+      keyboard,
+      detail,
+      active,
+      car,
+      runtime.profiles.length,
+      hasOnlineComputer,
+      newThread,
+    ],
   )
   return (
     <SafeAreaView style={styles.screen} edges={Platform.OS === 'ios' ? [] : ['top']}>
@@ -501,80 +584,11 @@ export function Workbench() {
       >
         <TaskListViewProvider>
           <SceneContext.Provider value={sceneContext}>
-            <NativeTabs
-              hidden={keyboard || detail}
-              tintColor={colors.accent}
-              backBehavior="history"
-              unstable_nativeProps={{ ios: { prominentScreenKey: 'compose' } }}
-            >
-              <NativeTabs.Trigger
-                name="(tasks)"
-                disableAutomaticContentInsets={Platform.OS === 'ios'}
-                testID="Tab Tasks"
-                listeners={{
-                  tabPress: () => {
-                    if (active === 'tasks') router.dismissTo('/')
-                  },
-                }}
-              >
-                <NativeTabs.Trigger.Icon src={iconAssets.tasks} renderingMode="template" />
-                <NativeTabs.Trigger.Label>Tasks</NativeTabs.Trigger.Label>
-              </NativeTabs.Trigger>
-              <NativeTabs.Trigger
-                name="pulls"
-                hidden={car}
-                disableAutomaticContentInsets={Platform.OS === 'ios'}
-                testID="Tab PRs"
-                disabled={!runtime.profiles.length}
-                listeners={{
-                  tabPress: () => active === 'pulls' && router.dismissTo('/pulls'),
-                }}
-              >
-                <NativeTabs.Trigger.Icon src={iconAssets.pulls} renderingMode="template" />
-                <NativeTabs.Trigger.Label>PRs</NativeTabs.Trigger.Label>
-              </NativeTabs.Trigger>
-              <NativeTabs.Trigger
-                name="(more)"
-                testID="Tab More"
-                accessibilityLabel="More"
-                disablePopToTop
-                disableScrollToTop
-                unstable_nativeProps={{ preventNativeSelection: true }}
-                listeners={{ tabPress: () => setMoreOpen(true) }}
-              >
-                <NativeTabs.Trigger.Icon src={iconAssets.more} renderingMode="template" />
-                <NativeTabs.Trigger.Label>More</NativeTabs.Trigger.Label>
-              </NativeTabs.Trigger>
-              <NativeTabs.Trigger
-                name="compose"
-                role="search"
-                hidden={Platform.OS !== 'ios'}
-                accessibilityLabel="New thread"
-                testID="New thread"
-                disabled={!hasOnlineComputer}
-                // This is an action: preserve the current tab and its navigation history.
-                unstable_nativeProps={{ preventNativeSelection: true }}
-                listeners={{
-                  tabPress: newThread,
-                }}
-              >
-                <NativeTabs.Trigger.Icon src={iconAssets.add} renderingMode="template" />
-                <NativeTabs.Trigger.Label hidden>New thread</NativeTabs.Trigger.Label>
-              </NativeTabs.Trigger>
-              <NativeTabs.Trigger name="jobs" hidden />
-            </NativeTabs>
-            {moreOpen && (
-              <MoreMenu
-                active={active}
-                artifactsEnabled={artifactsEnabled}
-                car={car}
-                onClose={() => setMoreOpen(false)}
-                onSelect={(tab) => {
-                  setMoreOpen(false)
-                  router.navigate(routes[tab], { withAnchor: true })
-                }}
-              />
-            )}
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="(more)" />
+              <Stack.Screen name="jobs" />
+            </Stack>
           </SceneContext.Provider>
         </TaskListViewProvider>
       </KeyboardAvoidingView>

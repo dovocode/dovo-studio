@@ -1,9 +1,32 @@
 import assert from 'node:assert/strict'
+import { readdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const workbench = root + 'apps/mobile/src/shell/workbench.tsx'
+// Use Expo Router's real route-tree builder: menu screens must remain reachable
+// outside the native tab navigator even though they have no tab trigger.
+const mobileRequire = createRequire(root + 'apps/mobile/package.json')
+const { getRoutes } = mobileRequire('expo-router/build/getRoutesCore')
+const appRoot = root + 'apps/mobile/src/app/'
+const routeContext = () => ({ default: () => null })
+routeContext.keys = () =>
+  readdirSync(appRoot, { recursive: true })
+    .filter((path) => path.endsWith('.tsx'))
+    .map((path) => './' + path)
+const routeTree = getRoutes(routeContext, { ignoreEntryPoints: true, importMode: 'lazy' })
+const tabs = routeTree.children.find((route) => route.route === '(tabs)')
+const more = routeTree.children.find((route) => route.route === '(more)')
+assert.ok(tabs && more, 'Tabs and menu destinations must be sibling stacks')
+assert.ok(tabs.children.some((route) => route.route === '(tasks)'))
+for (const name of ['settings', 'issues', 'artifacts'])
+  assert.ok(
+    more.children.some((route) => route.route === name),
+    `${name} remains reachable outside tabs`,
+  )
+
 const stubs = [
   {
     path: 'react-native',
@@ -17,13 +40,14 @@ export const Keyboard={dismiss(){},addListener:(name,callback)=>{window.keyboard
     path: 'expo-router',
     contents: `
 export const router=Object.fromEntries(['push','replace','navigate','dismissTo'].map(method=>[method,(...args)=>window.routes.push({method,args})]));
+function Stack(){const Scene=window.WorkbenchScene;const Tabs=window.WorkbenchTabs;return window.fixture.path.startsWith('/settings')?<Scene tab="settings"/>:<Tabs/>}Stack.Screen=()=>null;export {Stack};
 export const usePathname=()=>window.fixture.path;export const useGlobalSearchParams=()=>({});export const useIsFocused=()=>true;`,
   },
   {
     path: 'expo-router/unstable-native-tabs',
     contents: `
 import {Children} from 'react';
-function NativeTabs({children,hidden,unstable_nativeProps}){const Scene=window.WorkbenchScene;return <><nav hidden={hidden} data-prominent={unstable_nativeProps?.ios?.prominentScreenKey}>{Children.toArray(children).filter(child=>!child.props.hidden).map(({props})=>{if(props.name==='compose')window.compose=props;if(props.name==='(more)')window.more=props;return <button key={props.name} data-testid={props.testID} data-role={props.role} aria-label={props.accessibilityLabel??props.testID} disabled={props.disabled} onClick={()=>{props.listeners?.tabPress?.({data:{isPrevented:props.unstable_nativeProps?.preventNativeSelection??false}});if(!props.unstable_nativeProps?.preventNativeSelection)window.nativeSelections.push(props.name)}}>{props.testID}</button>})}</nav><Scene tab={window.fixture.path.startsWith('/settings')?'settings':'pulls'}/></>}
+function NativeTabs({children,hidden,unstable_nativeProps}){const Scene=window.WorkbenchScene;return <><nav hidden={hidden} data-prominent={unstable_nativeProps?.ios?.prominentScreenKey}>{Children.toArray(children).filter(child=>!child.props.hidden).map(({props})=>{if(props.name==='compose')window.compose=props;return <button key={props.name} data-testid={props.testID} data-role={props.role} aria-label={props.accessibilityLabel??props.testID} disabled={props.disabled} onClick={()=>{props.listeners?.tabPress?.({data:{isPrevented:props.unstable_nativeProps?.preventNativeSelection??false}});if(!props.unstable_nativeProps?.preventNativeSelection)window.nativeSelections.push(props.name)}}>{props.testID}</button>})}</nav><Scene tab={window.fixture.path.startsWith('/settings')?'settings':'pulls'}/></>}
 NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export {NativeTabs};`,
   },
   {
@@ -83,11 +107,6 @@ NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export
     contents: 'export const TaskListViewProvider=({children})=>children;',
   },
   {
-    path: '../ui/controls/icon',
-    importer: root + 'apps/mobile/src/shell/',
-    contents: 'export const Icon=()=>null;',
-  },
-  {
     path: '../ui/controls/icon-assets',
     importer: workbench,
     contents: 'export const iconAssets={};',
@@ -116,8 +135,8 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
-import {Workbench,WorkbenchScene} from './apps/mobile/src/shell/workbench.tsx';
-window.WorkbenchScene=WorkbenchScene;window.routes=[];window.nativeSelections=[];window.keyboardListeners={};
+import {Workbench,WorkbenchScene,WorkbenchTabs} from './apps/mobile/src/shell/workbench.tsx';
+window.WorkbenchScene=WorkbenchScene;window.WorkbenchTabs=WorkbenchTabs;window.routes=[];window.nativeSelections=[];window.keyboardListeners={};
 window.fixture={path:'/pulls',platform:'ios',car:false,runtime:{ready:true,activeId:'a',profiles:[{id:'a'}],overviews:[{profile:{id:'a'},connected:true,snapshot:{artifactsEnabled:true}}]}};
 function App(){const [version,setVersion]=useState(0);window.updateFixture=changes=>{window.fixture={...window.fixture,...changes};setVersion(v=>v+1)};return <Workbench key={window.fixture.platform}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
@@ -146,9 +165,8 @@ try {
   const plus = page.getByRole('button', { name: 'New thread', exact: true })
   assert.equal(await page.locator('nav').getAttribute('data-prominent'), 'compose')
   assert.equal(await plus.getAttribute('data-role'), 'search')
-  assert.equal(await page.evaluate(() => window.more.disablePopToTop), true)
-  assert.equal(await page.evaluate(() => window.more.disableScrollToTop), true)
-  assert.equal(await page.locator('nav button').count(), 4)
+  assert.equal(await page.locator('nav button').count(), 3)
+  assert.equal(await page.locator('nav button[data-testid="Tab More"]').count(), 0)
   await plus.click()
   assert.deepEqual(await page.evaluate(() => window.routes), [
     { method: 'push', args: ['/new', { withAnchor: true }] },
@@ -156,26 +174,12 @@ try {
   assert.deepEqual(await page.evaluate(() => window.nativeSelections), [])
   assert.equal(await page.evaluate(() => window.fixture.path), '/pulls')
   await page.evaluate(() => window.updateFixture({ path: '/settings' }))
+  await page.locator('nav').waitFor({ state: 'detached' })
+  assert.equal(await page.locator('nav').count(), 0, 'Settings opens outside the tab bar')
+  await page.getByText('Collection content', { exact: true }).waitFor()
+  await page.evaluate(() => window.updateFixture({ path: '/pulls' }))
   await plus.click()
   assert.equal(await page.evaluate(() => window.routes.length), 2)
-  await page.getByRole('button', { name: 'More', exact: true }).click()
-  await page.getByRole('button', { name: 'Issues', exact: true }).click()
-  assert.deepEqual(await page.evaluate(() => window.routes.pop()), {
-    method: 'navigate',
-    args: ['/issues', { withAnchor: true }],
-  })
-  await page.getByRole('dialog').waitFor({ state: 'hidden' })
-  assert.deepEqual(await page.evaluate(() => window.nativeSelections), [])
-  await page.getByRole('button', { name: 'More', exact: true }).click()
-  await page.getByRole('button', { name: 'Artifacts', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Settings', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Close navigation menu', exact: true }).click()
-  await page.evaluate(() => window.updateFixture({ car: true }))
-  await page.getByRole('button', { name: 'More', exact: true }).click()
-  assert.equal(await page.getByRole('button', { name: 'Issues', exact: true }).count(), 0)
-  assert.equal(await page.getByRole('button', { name: 'Artifacts', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Settings', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Close navigation menu', exact: true }).click()
   await page.evaluate(() => window.updateFixture({ car: false }))
   await page.evaluate(() =>
     window.updateFixture({
@@ -204,13 +208,13 @@ try {
     }),
   )
   await page.getByText('Collection content', { exact: true }).waitFor()
-  assert.equal(await page.locator('nav button').count(), 3, 'Android keeps Tasks, PRs and More')
+  assert.equal(await page.locator('nav button').count(), 2, 'Android keeps Tasks and PRs')
   assert.equal(await page.locator('nav').getByRole('button', { name: 'New thread' }).count(), 0)
   await plus.click()
   assert.equal(await page.evaluate(() => window.routes.length), 3)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile New thread: trailing native action, preserved tab, offline guard, keyboard hiding and More dropdown and Android floating action pass. Native controls use browser adapters.',
+    'Mobile New thread: trailing native action, preserved tab, offline guard, keyboard hiding, no More tab and Android floating action pass. Native controls use browser adapters.',
   )
 } finally {
   await browser.close()

@@ -226,9 +226,9 @@ async function discoverIosSimulators() {
     devices.push(
       ...parseIosDevices(await run('xcrun', ['simctl', 'list', 'devices', 'available', '--json'])),
     )
-  } catch {
+  } catch (error) {
     diagnostics.push(
-      'iOS: install Xcode, select its developer directory and install a Simulator runtime.',
+      `iOS simulator discovery failed: ${discoveryError(error)}. Check Xcode's selected developer directory and Simulator runtime on this host.`,
     )
   }
   if (
@@ -270,9 +270,9 @@ async function discoverPhysicalIos() {
         'Physical iPhone control needs Rust/Cargo for the first native helper build; an existing cached helper does not need Cargo. Install Rust or configure DOVO_IOS_DEVICE_HELPER if setup is incomplete.',
       )
     }
-  } catch {
+  } catch (error) {
     diagnostics.push(
-      'Physical iPhones: connect and trust this Mac, enable Developer Mode, and use Xcode 15 or newer.',
+      `Physical iPhone discovery failed: ${discoveryError(error)}. Check this Mac's Xcode environment and the iPhone's connection, trust and Developer Mode.`,
     )
   } finally {
     await rm(directory, {
@@ -281,6 +281,38 @@ async function discoverPhysicalIos() {
     })
   }
   return { devices, diagnostics }
+}
+function discoveryError(error: unknown) {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 2000)
+}
+async function discoverAppleDevices(deviceId?: string) {
+  try {
+    // Apple's simctl/devicectl wrappers run first-launch setup when components are
+    // outdated. In a desktop session this can wait for authorization indefinitely.
+    await appleDeviceCommand('xcodebuild', ['-checkFirstLaunchStatus'], {
+      timeout: 5000,
+      maxBuffer: 64 * 1024,
+      windowsHide: true,
+    })
+  } catch (error) {
+    const incomplete = error instanceof Error && 'code' in error && error.code === 69
+    return {
+      devices: [] as PreviewDevice[],
+      diagnostics: [
+        incomplete
+          ? 'Xcode first-launch setup is incomplete on this Mac. Open Xcode and finish installing its required components, then retry Device Hub. Device discovery was skipped to avoid waiting for an authorization dialog.'
+          : `Xcode readiness check failed: ${discoveryError(error)}`,
+      ],
+    }
+  }
+  const results = await Promise.all([
+    !deviceId || deviceId.startsWith('ios:') ? discoverIosSimulators() : undefined,
+    !deviceId || deviceId.startsWith('physical-ios:') ? discoverPhysicalIos() : undefined,
+  ])
+  return {
+    devices: results.flatMap((result) => result?.devices ?? []),
+    diagnostics: results.flatMap((result) => result?.diagnostics ?? []),
+  }
 }
 async function discoverPhysicalAndroid() {
   const devices: PreviewDevice[] = [],
@@ -364,8 +396,9 @@ export async function previewDevices(deviceId?: string) {
   const requested = (prefix: string) => !deviceId || deviceId.startsWith(prefix)
   const mac = process.platform === 'darwin'
   const results = await Promise.all([
-    mac && requested('ios:') ? discoverIosSimulators() : undefined,
-    mac && requested('physical-ios:') ? discoverPhysicalIos() : undefined,
+    mac && (requested('ios:') || requested('physical-ios:'))
+      ? discoverAppleDevices(deviceId)
+      : undefined,
     requested('physical-android:') ? discoverPhysicalAndroid() : undefined,
     requested('android:') ? discoverAndroidEmulators() : undefined,
   ])

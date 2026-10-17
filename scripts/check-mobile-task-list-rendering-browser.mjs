@@ -268,6 +268,12 @@ try {
   }
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByTestId('Task task-99').waitFor()
+  const header = page.locator('header')
+  for (const label of ['Projects', 'Quick task', 'Issues', 'Settings'])
+    assert.equal(await header.getByRole('button', { name: label, exact: true }).count(), 1)
+  assert.equal(await header.getByRole('button', { name: 'More', exact: true }).count(), 0)
+  await header.getByRole('button', { name: 'Issues', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.navigations.at(-1)[0]), 'issues')
   if (process.env.DOVO_MOBILE_DENSITY_LAYOUT) {
     const ids = ['running', 'parent', 'task-0', 'task-1', 'task-2', 'task-3']
     for (const width of [320, 390, 430]) {

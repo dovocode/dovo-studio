@@ -194,7 +194,11 @@ export default function SettingsScreen() {
     .filter((group) => group.items.length)
   return (
     <SettingsPage>
-      <ScreenHeader title="Settings" testID="Settings heading" />
+      <ScreenHeader
+        title="Settings"
+        testID="Settings heading"
+        onBack={() => router.dismissTo('/')}
+      />
       <ScrollView
         contentContainerStyle={[styles.content, { paddingTop: 8, gap: 28 }]}
         keyboardShouldPersistTaps="handled"

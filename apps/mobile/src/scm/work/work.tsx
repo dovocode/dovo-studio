@@ -215,6 +215,7 @@ export function WorkScreen({
     <View style={styles.screen}>
       <ScreenHeader
         title={mode === 'issues' ? 'Issues' : pullNumber ? `PR #${pullNumber} runs` : 'PR runs'}
+        onBack={mode === 'issues' ? () => router.dismissTo('/') : undefined}
         subtitle={
           mode === 'issues'
             ? `${visible.length} issue${visible.length === 1 ? '' : 's'} · ${selected ? workSourceName(selected) : 'All sources'}${busy && visible.length ? ' · Updating' : ''}`

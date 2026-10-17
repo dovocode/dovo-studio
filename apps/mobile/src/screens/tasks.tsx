@@ -23,6 +23,7 @@ import {
   type RuntimeTask,
 } from '@dovo/protocol'
 import { useNavigation } from '../shell/navigation'
+import { useMoreActions } from '../shell/more-actions'
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { Alert, FlatList, Pressable, ScrollView, View } from 'react-native'
 import { Schema } from 'effect'
@@ -62,6 +63,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     { busy, error, act } = useAction()
   const { view, setView, scrollOffset } = useTaskListView()
   const car = useCarMode() && !archived
+  const moreActions = useMoreActions(navigate)
   // List ordering and grouping follow Settings → General.
   const preferences = useMobilePreferences()
   const grouping = archived || car ? 'none' : preferences.taskGrouping
@@ -498,6 +500,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                   overflow: true,
                   onPress: () => router.push('/launch'),
                 },
+                ...moreActions,
               ]
         }
       />
@@ -876,10 +879,12 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
 /** First run: one clear step instead of a settings list full of disabled rows. */
 function Welcome() {
   const { colors, styles } = useTheme()
+  const { navigate } = useNavigation()
+  const moreActions = useMoreActions(navigate)
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="Tasks" />
+      <ScreenHeader title="Tasks" buttons={moreActions} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24, gap: 24 }}
