@@ -25,8 +25,12 @@ local builds, not an App Store release. Detailed guides link to the repository d
 there is one maintained full manual. The homepage uses real screenshots of the production workbench
 with an isolated demo runtime. The site uses the same graphite, pearl-white and ice-blue palette as
 the app, with bold typography, actual product screenshots, an interactive product tour and
-expandable FAQs. Entrance and scroll animations respect reduced-motion preferences; all content
-remains available without JavaScript.
+expandable FAQs. A three-step workflow and responsive feature showcase cover host browser previews,
+Device Hub, artifacts, memory, issue/pipeline integrations, usage, child agents and experimental
+Studio Tools. The homepage and docs share `src/components/feature-catalog.ts` so guide links and
+availability labels stay consistent. The agent directory includes current native providers and
+custom ACP agents; capabilities remain provider-dependent. Entrance and scroll animations respect
+reduced-motion preferences; all content remains available without JavaScript.
 
 The homepage WebGL fleet animation grows from 1 to 4 to 16 to 64 to 256 possible agents, with
 luminous runtime constellations, traveling delegation signals and pointer-driven depth. The final

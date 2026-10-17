@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ServerQuickStart } from '../../components/server-quick-start'
+import { featureCatalog } from '../../components/feature-catalog'
 import { guide, serverGuide, mobileGuide, repository } from '../../components/site-links'
 
 export const metadata: Metadata = {
@@ -32,7 +33,7 @@ export default function Docs() {
           <a href="#agents">02 · Connect agents</a>
           <a href="#project">03 · Add a project</a>
           <a href="#devices">04 · Pair a device</a>
-          <a href="#more">More guides ↗</a>
+          <a href="#more">Feature guides ↗</a>
         </nav>
         <div className="docs-steps">
           <section id="install">
@@ -53,14 +54,15 @@ export default function Docs() {
             <h2>Connect your coding agents.</h2>
             <p>
               Install and authenticate the agents you want to use on the runtime host, under the
-              same operating-system account that runs Dovo. Dovo supports Codex, Claude, OpenCode
-              and ACP agents.
+              same operating-system account that runs Dovo. Choose from Codex, Claude, OpenCode,
+              Cursor, GitHub Copilot, Hermes, Grok Build, Muse Code, Mistral Vibe and custom ACP
+              agents. Setup and capabilities vary by provider.
             </p>
             <p>
               Open Settings to configure agents and reusable profiles. If your runtime is on another
               computer, agent tools and credentials belong on that computer.
             </p>
-            <a className="text-link" href={guide}>
+            <a className="text-link" href={`${repository}/blob/main/docs/agent-providers.md`}>
               Agent setup and provider instructions ↗
             </a>
           </section>
@@ -118,6 +120,14 @@ export default function Docs() {
             <strong>Build from source ↗</strong>
             <span>Development setup and repository conventions.</span>
           </a>
+          {featureCatalog.map((feature) => (
+            <a key={feature.id} href={feature.guide}>
+              <strong>{feature.category} ↗</strong>
+              <span>
+                {feature.title} {feature.detail}.
+              </span>
+            </a>
+          ))}
         </div>
       </section>
     </div>

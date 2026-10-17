@@ -9,12 +9,12 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://dovo.studio'),
   title: { default: 'Dovo Studio — A workspace for coding agents', template: '%s · Dovo Studio' },
   description:
-    'Bring coding agents, projects, Git and automations together. Run Dovo Studio on your computer and connect from desktop or web. iPhone is work in progress; Android is coming soon.',
+    'Bring coding agents, code review, browser previews, artifacts and automations together. Run Dovo Studio on your computer and connect from desktop or web. iPhone is work in progress; Android is coming soon.',
   applicationName: 'Dovo Studio',
   icons: { icon: '/dovo-logo.png', apple: '/dovo-logo.png' },
   openGraph: {
     title: 'Dovo Studio',
-    description: 'Think big. Build bigger. Your agents, code and automations in one workspace.',
+    description: 'Your agents. One workspace. Build, preview and review on your own computers.',
     type: 'website',
     siteName: 'Dovo Studio',
     images: [{ url: '/dovo-logo.png', width: 96, height: 96, alt: 'Dovo Studio' }],
@@ -46,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Product
             </Link>
             <Link href="/docs/">Docs</Link>
-            <a href={repository}>
+            <a className="source-nav" href={repository}>
               GitHub <span aria-hidden="true">↗</span>
             </a>
             <Link className="button button-small" href="/download/">

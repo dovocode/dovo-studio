@@ -5,6 +5,9 @@ import { MobileAvailability } from '../components/mobile-availability'
 import { ServerQuickStart } from '../components/server-quick-start'
 import { ProductTour } from '../components/product-tour'
 import { AgentFleet } from '../components/agent-fleet'
+import { FeatureShowcase } from '../components/feature-showcase'
+import { agentProviders } from '../components/feature-catalog'
+import { repository } from '../components/site-links'
 
 export const metadata: Metadata = { alternates: { canonical: '/' } }
 
@@ -18,15 +21,15 @@ export default function Home() {
               <span className="status-dot" /> THE WORKSPACE FOR CODING AGENTS
             </p>
             <h1>
-              Think big.
+              Your agents.
               <br />
-              <span>Build bigger.</span>
+              <span>One workspace.</span>
             </h1>
           </div>
           <div className="hero-aside">
             <p className="hero-description">
-              From the first idea to the final diff. Bring your agents, code and automations into
-              one workspace. Keep every decision in your hands.
+              Run coding agents on your own computers. Keep conversations, code review, browser
+              previews and automations together, from the first idea to the final diff.
             </p>
             <div className="actions">
               <Link href="/download/" className="button">
@@ -59,31 +62,41 @@ export default function Home() {
           </div>
         </div>
       </div>
-      <section className="platform-strip wrap" aria-label="Supported coding agents">
-        <span>YOUR AGENTS. YOUR CHOICE.</span>
-        <strong>Codex</strong>
-        <strong>Claude</strong>
-        <strong>OpenCode</strong>
-        <strong>ACP agents</strong>
-      </section>
-      <section className="manifesto" aria-labelledby="manifesto-heading">
-        <div className="wrap manifesto-inner">
-          <p className="eyebrow">BUILT AROUND YOUR CONTROL</p>
-          <h2 id="manifesto-heading">
-            Ambitious work.
-            <br />
-            <span>On your terms.</span>
-          </h2>
-          <div className="manifesto-bottom">
-            <p>
-              The speed of coding agents. The clarity of a single workspace. The freedom to run it
-              all on your own machine. You decide what happens next.
-            </p>
-            <a href="#product" className="manifesto-link">
-              Take a look inside <span aria-hidden="true">↗</span>
-            </a>
-          </div>
+      <section className="agent-directory wrap" aria-labelledby="agents-heading">
+        <div>
+          <p className="eyebrow" id="agents-heading">
+            YOUR AGENTS. YOUR CHOICE.
+          </p>
+          <a className="text-link" href={`${repository}/blob/main/docs/agent-providers.md`}>
+            Provider setup <span aria-hidden="true">↗</span>
+          </a>
         </div>
+        <ul>
+          {agentProviders.map((provider) => (
+            <li key={provider}>{provider}</li>
+          ))}
+        </ul>
+        <p>
+          Install and authenticate providers on your runtime host. Models, tools and permissions
+          vary by provider.
+        </p>
+      </section>
+      <section className="workflow-strip wrap" aria-label="From idea to release">
+        <a href="#product">
+          <span>01 / START</span>
+          <strong>Give the work a thread.</strong>
+          <p>Choose a project and agent. Keep questions and decisions in context.</p>
+        </a>
+        <a href="#capabilities">
+          <span>02 / BUILD</span>
+          <strong>See the result take shape.</strong>
+          <p>Inspect the app, test on devices and save useful artifacts.</p>
+        </a>
+        <a href={`${repository}/blob/main/docs/file-review.md`}>
+          <span>03 / REVIEW</span>
+          <strong>Decide what ships.</strong>
+          <p>Follow related changes, track viewed files and review the final diff.</p>
+        </a>
       </section>
       <section className="section wrap" id="features">
         <div className="section-heading">
@@ -154,6 +167,7 @@ export default function Home() {
           <WorkspaceScreenshot automation />
         </div>
       </section>
+      <FeatureShowcase />
       <AgentFleet />
       <section className="ownership wrap">
         <div>
@@ -224,9 +238,10 @@ export default function Home() {
           <details>
             <summary>Can I use my existing coding agents?</summary>
             <p>
-              Yes. Work with Codex, Claude, OpenCode and compatible ACP agents. Agent credentials
-              stay with your runtime; provider subscriptions and usage are managed with your chosen
-              provider.
+              Yes. Work with Codex, Claude, OpenCode, Cursor, GitHub Copilot, Hermes, Grok Build,
+              Muse Code, Mistral Vibe and compatible ACP agents. Capabilities vary by provider.
+              Agent credentials stay with your runtime; provider subscriptions and usage are managed
+              with your chosen provider.
             </p>
           </details>
           <details>

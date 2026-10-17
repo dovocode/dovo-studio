@@ -565,7 +565,7 @@ figcaption {
     gap: 17px;
     font-size: 12px;
   }
-  .site-header nav > a:nth-child(2) {
+  .site-header nav > .source-nav {
     display: none;
   }
   .button-small {
@@ -1041,7 +1041,7 @@ h3 {
   margin-bottom: 30px;
 }
 .hero h1 {
-  font-size: clamp(76px, 8.1vw, 112px);
+  font-size: clamp(64px, 7.2vw, 98px);
   font-weight: 750;
   line-height: 0.97;
   letter-spacing: -0.075em;
@@ -1614,12 +1614,6 @@ summary:focus-visible {
     gap: 15px;
   }
   .site-header nav > a.product-nav {
-    display: none;
-  }
-  .site-header nav > a:nth-child(2) {
-    display: inline;
-  }
-  .site-header nav > a:nth-child(3) {
     display: none;
   }
   .hero .eyebrow {
@@ -2830,5 +2824,187 @@ summary:focus-visible {
   .webgl-legend {
     gap: 15px;
     font-size: 8px;
+  }
+}
+
+/* Product discovery: clear steps and a guide for each current capability. */
+.agent-directory {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 24px 40px;
+  padding-block: 38px;
+  border-bottom: 1px solid var(--line);
+}
+.agent-directory .eyebrow {
+  margin-bottom: 14px;
+}
+.agent-directory ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.agent-directory li {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px 13px;
+  background: var(--surface);
+  font-size: 14px;
+}
+.agent-directory > p {
+  grid-column: 2;
+  font-size: 12px;
+  margin: 0;
+}
+.workflow-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding-top: 40px;
+  gap: 32px;
+}
+.workflow-strip a {
+  border-top: 2px solid #39576b;
+  padding-top: 22px;
+}
+.workflow-strip a:hover {
+  border-color: var(--accent);
+}
+.workflow-strip span {
+  color: var(--accent);
+  font:
+    11px ui-monospace,
+    monospace;
+  letter-spacing: 1px;
+}
+.workflow-strip strong {
+  display: block;
+  font-size: 20px;
+  font-weight: 550;
+  margin-block: 16px 10px;
+  letter-spacing: -0.03em;
+}
+.workflow-strip p {
+  margin: 0;
+  font-size: 14px;
+}
+.capabilities {
+  padding-top: 20px;
+}
+.capabilities .section-heading > p:last-child {
+  position: static;
+  max-width: 600px;
+}
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 36px;
+}
+.capability-card {
+  display: flex;
+  flex-direction: column;
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.capability-browser,
+.capability-devices {
+  background: linear-gradient(145deg, #14232e, var(--surface) 75%);
+  border-color: #2d4353;
+}
+.capability-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+.capability-heading .eyebrow {
+  margin: 0;
+}
+.capability-number {
+  color: var(--muted);
+  font:
+    11px ui-monospace,
+    monospace;
+}
+.capability-card h3 {
+  font-size: 28px;
+  line-height: 1.2;
+  max-width: 360px;
+  margin-bottom: 16px;
+}
+.capability-card > p {
+  font-size: 14px;
+  margin-bottom: 28px;
+}
+.capability-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 18px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.capability-footer > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.capability-footer a {
+  color: var(--accent);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.capability-footer a:hover {
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+@media (max-width: 1000px) and (min-width: 701px) {
+  .hero h1 {
+    font-size: clamp(52px, 6.8vw, 76px);
+  }
+}
+@media (max-width: 700px) {
+  .agent-directory {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+  .agent-directory > p {
+    grid-column: 1;
+  }
+  .workflow-strip {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .capability-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 640px) {
+  .hero h1 {
+    font-size: clamp(38px, 10vw, 64px);
+    letter-spacing: -0.06em;
+  }
+  .site-header nav {
+    gap: 14px;
+  }
+  .site-header nav > a:not(.product-nav):not(.source-nav) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .site-header nav > .source-nav {
+    display: none;
+  }
+  .capability-card {
+    padding: 25px;
+  }
+  .capability-card h3 {
+    font-size: 26px;
   }
 }
