@@ -24,10 +24,15 @@ export function StudioPairedComputersBridge() {
     if (
       runtime.connected &&
       local(runtime.profile.connection) &&
-      enabled(runtime.snapshot?.studioTools)
+      (enabled(runtime.snapshot?.studioTools) || runtime.snapshot?.doEnabled === true)
     )
       targets.set(runtime.profile.connection.address, runtime.profile.connection)
-  if (connection && connected && local(connection) && enabled(snapshot?.studioTools))
+  if (
+    connection &&
+    connected &&
+    local(connection) &&
+    (enabled(snapshot?.studioTools) || snapshot?.doEnabled === true)
+  )
     targets.set(connection.address, connection)
   const registrations = JSON.stringify(
     [...targets.values()].map((target) => ({

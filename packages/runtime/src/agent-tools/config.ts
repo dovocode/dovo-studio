@@ -25,6 +25,7 @@ export function taskToolsServer(
   credentialFile?: string,
   studioTools: StudioTools = noStudioTools(),
   linkedProjectsEnabled = true,
+  doCoordinator = false,
 ): McpServer {
   const localHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const urlHost = localHost.includes(':') ? `[${localHost}]` : localHost
@@ -40,6 +41,7 @@ export function taskToolsServer(
     args: [fileURLToPath(script)],
     envValues: {
       ELECTRON_RUN_AS_NODE: '1',
+      DOVO_TASK_DO_COORDINATOR: doCoordinator ? '1' : '0',
       DOVO_TASK_ID: taskId,
       DOVO_STUDIO_TOOLS: JSON.stringify(studioTools),
       ...(parentRunId ? { DOVO_TASK_RUN_ID: parentRunId } : {}),

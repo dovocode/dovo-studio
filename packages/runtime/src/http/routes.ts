@@ -1,3 +1,8 @@
+import {
+  doAgentCommandSchema,
+  doChatCreateRequestSchema,
+  doChatPlansRequestSchema,
+} from '@dovo/protocol'
 import { requireLocalStudioUI } from '../studio/local-ui.js'
 import { studioTool } from '../studio/tools.js'
 import { studioPeers, routedStudioTool } from '../studio/peers.js'
@@ -20,6 +25,7 @@ import { shareTaskFile, openTaskFile, readTaskVisualization } from './endpoints/
 import { readTaskImage } from './endpoints/task-images.js'
 import { deviceHostRoute } from './endpoints/device-host-routes.js'
 import { memoryRoute } from './endpoints/memory-routes.js'
+import { doRoute } from '../do/routes.js'
 import { linkedProjectsTool } from '../scm/tasks/linked-project-tools.js'
 import { agentInteraction } from '../agent-tools/interactions.js'
 import { pipelineWatchRequestSchema } from '../scm/tasks/pipeline-watch.js'
@@ -235,6 +241,11 @@ export function route(
             run.runId,
           ),
         )
+      }
+      if (method === 'POST' && path === '/api/do/agent') {
+        if (!run) throw new HttpError(403, 'Do coordinator tools require an active agent run')
+        const input = decode(doAgentCommandSchema, yield* serviceResult(body(request, 4_000_000)))
+        return yield* serviceResult(s.doChat.command(input))
       }
       if (method === 'POST' && path === '/api/pipeline-watch') {
         if (!device.owner && !run)
@@ -503,6 +514,7 @@ export function route(
       if (
         path !== '/api/activity' &&
         path !== '/api/tasks/viewed' &&
+        !['/api/do/list', '/api/do/discover', '/api/do/remote/inspect'].includes(path) &&
         method !== 'GET' &&
         !path.endsWith('/read') &&
         !path.endsWith('/overview') &&
@@ -528,6 +540,37 @@ export function route(
       }
       if (method === 'POST' && path.startsWith('/api/memory/'))
         return yield* memoryRoute(request, path, device.owner || !!run)
+      if (method === 'POST' && path === '/api/do/chat/create') {
+        if (run) throw new HttpError(403, 'Do chats are created by paired clients')
+        return yield* serviceResult(
+          s.doChat.create(decode(doChatCreateRequestSchema, yield* serviceResult(body(request)))),
+        )
+      }
+      if (method === 'POST' && path === '/api/do/chat/plans') {
+        if (run) throw new HttpError(403, 'Do proposal review requires a paired client')
+        const { taskId } = decode(doChatPlansRequestSchema, yield* serviceResult(body(request)))
+        if (!s.doChat.coordinator(taskId)) throw new HttpError(404, 'Do chat not found')
+        const rows = decode(
+          mutableArray(mutableStruct({ run_id: Schema.String })),
+          s.db
+            .prepare('SELECT run_id FROM do_chat_runs WHERE task_id=? ORDER BY created_at DESC')
+            .all(taskId),
+        )
+        return {
+          runs: rows.flatMap(({ run_id }) => {
+            try {
+              return [s.doRuns.read(run_id)]
+            } catch (error) {
+              if (error instanceof HttpError && error.status === 404) return []
+              throw error
+            }
+          }),
+        }
+      }
+      if (path.startsWith('/api/do/')) {
+        if (run) throw new HttpError(403, 'Do runs are controlled by paired clients')
+        return yield* doRoute(request, path)
+      }
       if (method === 'GET' && path === '/api/notifications/status')
         return yield* serviceResult(s.pushNotifications.status(device.id))
       if (method === 'POST' && path === '/api/notifications/register')

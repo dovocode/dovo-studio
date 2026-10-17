@@ -248,5 +248,8 @@ export * from './tasks/task-project-selection.js'
 
 export * from './runtime/studio-tools.js'
 export * from './runtime/studio-peers.js'
+export * from './runtime/do.js'
+export * from './runtime/do-chat.js'
+export * from './runtime/do-chat-plans.js'
 
 export * from './runtime/linked-project-tools.js'

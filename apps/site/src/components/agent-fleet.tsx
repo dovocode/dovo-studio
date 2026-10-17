@@ -71,17 +71,17 @@ const stages = [
   },
   {
     name: 'Do',
-    title: 'One goal. Do leads the fleet.',
+    title: 'One conversation. Do coordinates.',
     description:
-      'Coming soon: give Do your goal. The Do agent plans the work, coordinates a possible fleet of 256 agents across your runtimes, gathers their findings and coordinates the next steps. You keep the direction and final approval.',
-    count: 'Coming soon · Do + 256 possible agents',
+      'Start a normal chat with experimental Do. Describe your goal and your configured agent proposes work across your projects and connected computers. Review the proposal before starting; progress and results return to the conversation. This fleet illustrates the direction, not a promised agent count.',
+    count: 'Experimental · illustrative multi-runtime fleet',
     event: [
       'You give Do the goal',
-      'Do breaks the goal into focused work',
-      'Do dispatches agents across runtimes',
+      'Do proposes focused work',
+      'You review and start the proposal',
       'Agents delegate implementation and checks',
       'Findings return to Do',
-      'Do coordinates the next steps',
+      'Dependencies guide the next steps',
       'You review what ships',
     ],
   },
@@ -531,9 +531,7 @@ export function AgentFleet() {
             >
               <span>0{index + 1}</span>
               {item.name}
-              {index >= 3 && (
-                <small className="fleet-soon">{index === 3 ? 'Experimental' : 'Soon'}</small>
-              )}
+              {index >= 3 && <small className="fleet-soon">Experimental</small>}
               <i
                 aria-hidden="true"
                 className={index < stage ? 'complete' : ''}
@@ -556,14 +554,18 @@ export function AgentFleet() {
             {stage >= 3 && (
               <span className="fleet-future">
                 {stage === 4
-                  ? 'Coming soon · Do fleet orchestration'
+                  ? 'Available · Experimental Do'
                   : 'Available · Experimental Studio Tools'}
               </span>
             )}
             <p>{current.description}</p>
-            {stage === 3 && (
-              <a className="text-link" href={`${repository}/blob/main/docs/studio-tools.md`}>
-                Set up connected runtimes <span aria-hidden="true">↗</span>
+            {stage >= 3 && (
+              <a
+                className="text-link"
+                href={`${repository}/blob/main/docs/${stage === 4 ? 'do' : 'studio-tools'}.md`}
+              >
+                {stage === 4 ? 'Get started with Do' : 'Set up connected runtimes'}{' '}
+                <span aria-hidden="true">↗</span>
               </a>
             )}
           </div>

@@ -240,7 +240,7 @@ try {
   assert.equal(await fleet.getAttribute('data-stage'), '4')
   assert.equal(await fleet.locator('.fleet-dovo-orchestrator strong').textContent(), 'Do')
   assert.equal(
-    await fleet.getByText('Coming soon · Do fleet orchestration', { exact: true }).isVisible(),
+    await fleet.getByText('Available · Experimental Do', { exact: true }).isVisible(),
     true,
   )
   assert.equal(await fleet.locator('.fleet-scale > strong').textContent(), '256')

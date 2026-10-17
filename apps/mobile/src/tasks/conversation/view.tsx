@@ -1,3 +1,4 @@
+import { DoProposals } from './components/do-proposals'
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { TaskEmptyState } from '../creation/task-empty-state'
 import { formatTurnDuration } from '@dovo/protocol'
@@ -565,6 +566,7 @@ export function Conversation({
         flex: 1,
       }}
     >
+      <DoProposals task={task} active={visible} />
       {!!bookmarks.length && (
         <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingVertical: 5 }}>
           {bookmarks.map(({ message, index }, position) => (

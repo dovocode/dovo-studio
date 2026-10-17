@@ -153,6 +153,9 @@ export class Tasks {
     this.mcpApps = apps
     this.runner.setMcpApps(apps)
   }
+  setDoCoordinator(instructions: (taskId: string) => string | undefined) {
+    this.runner.setDoCoordinator(instructions)
+  }
   setTaskTools(port: number, token: string, host: string) {
     this.runner.setTaskTools(port, token, host)
   }
@@ -771,7 +774,8 @@ export class Tasks {
     }))
     return { ok: true }
   }
-  /** Explicit sends can resume an idle queue; scheduled input keeps its paused state. */
+  /** Explicit sends can resume an idle queue; scheduled input keeps its paused state.
+   * Owned dispatch can recheck admission after model resolution, before enqueue and start. */
   sendEffect(
     id: string,
     messageId: string,
@@ -779,11 +783,13 @@ export class Tasks {
     attachmentIds: string[] = [],
     review = false,
     resumePaused = false,
+    admit?: () => boolean,
   ) {
     return runtimeOperation(() => this.attachments.metadata(id, attachmentIds)).pipe(
       Effect.tap(() => this.resolveModel(id, text)),
       Effect.flatMap((attachments) =>
         runtimeOperation(() => {
+          if (admit && !admit()) return false
           this.queue.add(
             id,
             messageId,
@@ -804,7 +810,7 @@ export class Tasks {
       ),
       Effect.flatMap((start) =>
         start
-          ? this.startEffect(id).pipe(
+          ? this.startEffect(id, false, admit).pipe(
               // Input is accepted durably; start failures are persisted on the task.
               Effect.catch(() => Effect.void),
               Effect.asVoid,

@@ -10,6 +10,11 @@ import { DeviceHosts, splitDeviceId } from './previews/device-hosts.js'
 import { previewDevices } from './previews/devices.js'
 import { DeviceHostUploads } from './previews/device-host-install.js'
 import { Memory } from './memory/memory.js'
+import { DoPeers } from './do/peers.js'
+import { DoRuns } from './do/runs.js'
+import { DoThreads } from './do/threads.js'
+import { DoChat } from './do/chat.js'
+import { studioPeers } from './studio/peers.js'
 import { RuntimeBackups } from './storage/backups.js'
 import { MutationReceipts } from './storage/mutation-receipts.js'
 import { McpApps } from './mcp-apps/bridge.js'
@@ -272,7 +277,20 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     })
   })
 
-  return {
+  const doThreads = new DoThreads(db, { store, tasks, approvals, questions, activity })
+  // Paired computers are known only while Studio on this computer keeps them registered.
+  const doRuns = new DoRuns(
+    db,
+    { store, preferences, activity, runtimeId },
+    doThreads,
+    new DoPeers(runtimeId, () => studioPeers(services).list()),
+  )
+  const doChat = new DoChat(db, { store, tasks, scratch, doRuns, activity })
+  tasks.setDoCoordinator((taskId) => doChat.instructions(taskId))
+  const services: Services = {
+    doChat,
+    doRuns,
+    doThreads,
     runCredentials: runCredentials(store),
     fileReviews,
     taskReviews,
@@ -328,8 +346,12 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     checkouts,
     projectFiles: new ProjectFiles(git),
   }
+  return services
 }
 export interface Services {
+  doRuns: DoRuns
+  doChat: DoChat
+  doThreads: DoThreads
   runCredentials: RunCredentials
   memory: Memory
   backups: RuntimeBackups
