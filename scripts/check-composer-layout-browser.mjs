@@ -319,7 +319,7 @@ try {
       )
       await page.getByRole('textbox', { name: 'Search projects' }).fill('notes')
       assert.equal(
-        await page.getByRole('button', { name: 'No project', exact: true }).isVisible(),
+        await page.getByRole('button', { name: 'General', exact: true }).isVisible(),
         true,
       )
       await page.screenshot({ path: screenshots + '/' + device.name + '-searched-projects.png' })

@@ -207,7 +207,7 @@ try {
         .getByRole('button', { name: 'Choose agent and model' })
         .filter({ hasText: 'Inherit' })
         .waitFor()
-      await projects.selectOption({ label: 'No project' })
+      await projects.selectOption({ label: 'General' })
       assert.notEqual(await projects.inputValue(), 'auto-project')
       await projects.selectOption('auto-project')
       await projects.selectOption({ label: 'Project with Sonnet default' })
@@ -313,13 +313,19 @@ try {
       await page.evaluate(() => window.setEntity(window.saved.find((task) => task.harness).id))
       const watchers = page.getByRole('region', { name: 'Related items and watchers' })
       await watchers.waitFor()
+      // Task switching remounts the workspace observer; wait for its wide-pane
+      // docked layout rather than inspecting the initial floating preview.
+      await page.waitForFunction(() => {
+        const sidebar = document.querySelector('[data-sidebar="tools sidebar"]')
+        return sidebar && getComputedStyle(sidebar).position !== 'absolute'
+      })
       assert.ok(
         await sidebar.evaluate((element) => {
-          const watchers = document.querySelector(
+          const watchers = element.parentElement.querySelector(
             'section[aria-label="Related items and watchers"]',
           )
           return (
-            element.parentElement.contains(watchers) &&
+            watchers !== null &&
             !element.contains(watchers) &&
             element.getBoundingClientRect().top ===
               element.parentElement.getBoundingClientRect().top

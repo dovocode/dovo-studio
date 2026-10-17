@@ -63,11 +63,12 @@ permissions. An HTTPS web app still requires an HTTPS/WSS runtime endpoint. No d
 ports need to be exposed to the phone.
 
 Binary frame flow adapts to network round-trip time and decoder speed, with at most eight frames and
-256 KiB in flight (larger detail images travel alone). Rising delay reduces the window to avoid
-queuing stale images on bandwidth-limited links; recovery is gradual. Older viewers retain the
-two-frame window. Browser movement sends immediately, coalescing only bursts within 4 ms. Native
-device gestures retain frame pacing. Lighter JPEGs carry motion, and sharp 2× stills restore detail
-after interaction settles. Resize detail capture does not block subsequent input.
+256 KiB in flight (larger detail images travel alone). Acknowledgement spacing also bounds the
+window to the link’s delivery rate. Rising delay reduces the window to avoid queuing stale images on
+bandwidth-limited links; recovery is gradual. Older viewers retain the two-frame window. Browser
+movement sends immediately, coalescing only bursts within 4 ms. Native device gestures retain frame
+pacing. Lighter JPEGs carry motion, and sharp 2× stills restore detail after interaction settles.
+Resize detail capture does not block subsequent input.
 
 The stream indicator shows painted frames per second, transport round-trip time, and image scale.
 Its disclosure also shows decode/draw time and image dimensions. Still pages show Idle; older

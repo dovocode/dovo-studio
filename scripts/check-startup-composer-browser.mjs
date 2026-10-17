@@ -313,7 +313,7 @@ try {
   // The shortcut was registered before this thread existed; it must use the current thread.
   const sideTask = await page.locator('[data-thread-header]').getAttribute('data-thread-header')
   await editor.fill('Shortcut from the current thread')
-  await page.keyboard.press('Control+;')
+  await page.keyboard.press('ControlOrMeta+;')
   await page.waitForFunction(() =>
     window.requests.some((request) => request.path === '/api/tasks/side-chat/ask'),
   )
@@ -332,7 +332,7 @@ try {
   await page.evaluate(() => {
     window.delaySideSave = true
   })
-  await page.keyboard.press('Control+;')
+  await page.keyboard.press('ControlOrMeta+;')
   await page.waitForFunction(() => typeof window.finishSideSave === 'function')
   await page.getByRole('button', { name: 'Existing · draft', exact: true }).click()
   await page.waitForFunction(() =>

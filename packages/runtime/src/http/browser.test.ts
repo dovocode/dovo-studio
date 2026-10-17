@@ -353,6 +353,97 @@ it('pipelines high-RTT viewers but bounds bytes and contracts when their decoder
   expect(received).toHaveLength(17)
 })
 
+it('bounds a high-RTT window by frame delivery spacing on a narrow link', async () => {
+  vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  const attach = vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
+  const input = vi.spyOn(RemoteBrowsers.prototype, 'input').mockResolvedValue()
+  const token = 'serialized-browser-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      {
+        id: 'task',
+        title: 'Browser',
+        repositoryId: '',
+        agentId: '',
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+      },
+    ],
+  }))
+  const ticket = runtime.services.browserTickets.issue(token, 'task', 'task')
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${runtime.port}/ws/browser?ticket=${ticket}&frames=binary-v1`,
+  )
+  cleanups.unshift(async () => {
+    socket.terminate()
+  })
+  const received: number[] = []
+  socket.on('message', (raw, binary) => {
+    if (!binary) return
+    const data = Array.isArray(raw)
+      ? Buffer.concat(raw)
+      : Buffer.isBuffer(raw)
+        ? raw
+        : Buffer.from(raw)
+    received.push(decodeBrowserFrame(Uint8Array.from(data).buffer).data[0]!)
+  })
+  await once(socket, 'open')
+  await vi.waitFor(() => expect(attach).toHaveBeenCalledOnce())
+  const now = vi.spyOn(performance, 'now').mockReturnValue(1000)
+  const publish = (time: number, value: number) => {
+    now.mockReturnValue(time)
+    attach.mock.calls[0][1]({
+      type: 'frame',
+      width: 390,
+      height: 844,
+      data: Buffer.alloc(24 * 1024, value),
+    })
+  }
+  let barriers = 0
+  const ack = async (time: number, sequence: number) => {
+    now.mockReturnValue(time)
+    socket.send(JSON.stringify({ type: 'frameAck', sequence, decodeMs: 0 }))
+    socket.send(JSON.stringify({ type: 'status' }))
+    barriers++
+    await vi.waitFor(() => expect(input).toHaveBeenCalledTimes(barriers))
+  }
+  publish(1000, 1)
+  publish(1016, 2)
+  await vi.waitFor(() => expect(received).toEqual([1, 2]))
+  await ack(1180, 1)
+  publish(1180, 3)
+  publish(1196, 4)
+  await vi.waitFor(() => expect(received).toHaveLength(4))
+  // Frames sent 16ms apart arrive 98ms apart: raising the window from
+  // their higher RTT would add queueing instead of useful throughput.
+  await ack(1278, 2)
+  publish(1278, 5)
+  publish(1294, 6)
+  socket.send(JSON.stringify({ type: 'status' }))
+  barriers++
+  await vi.waitFor(() => expect(input).toHaveBeenCalledTimes(barriers))
+  expect(received).toEqual([1, 2, 3, 4])
+  await ack(1360, 3)
+  await vi.waitFor(() => expect(received).toEqual([1, 2, 3, 4, 6]))
+  await ack(1458, 4)
+  await ack(1540, 5)
+  // A recovered route must not keep a stale bandwidth estimate indefinitely.
+  publish(12000, 7)
+  await vi.waitFor(() => expect(received).toHaveLength(6))
+  await ack(12080, 6)
+  publish(12080, 8)
+  publish(12096, 9)
+  publish(12112, 10)
+  await vi.waitFor(() => expect(received.slice(-3)).toEqual([8, 9, 10]))
+})
+
 it('isolates remote tabs, binds their tickets to the task, and closes only the requested tab', async () => {
   const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
   const close = vi.spyOn(RemoteBrowsers.prototype, 'close').mockResolvedValue()

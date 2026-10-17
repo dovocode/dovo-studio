@@ -37,6 +37,9 @@ export function attachBrowserSocket(
   let transportMs: number | undefined
   let minimumTransportMs = Infinity
   let minimumTransportAt = 0
+  let deliveryIntervalMs = 16
+  let deliveryMeasuredAt = 0
+  let previousDelivery: { sentAt: number; receivedAt: number } | undefined
   let congestedSamples = 0
   let growAfter = 0
   let resumedAt = 0
@@ -147,6 +150,26 @@ export function attachBrowserSocket(
           const now = performance.now()
           const sample = Math.max(0, now - sent.sentAt - ack.data.decodeMs)
           transportMs = transportMs === undefined ? sample : transportMs * 0.8 + sample * 0.2
+          // Closely sent frames reveal link serialization through their ACK
+          // spacing. RTT alone includes that serialization and would open an
+          // ever larger window on a narrow link. Ignore idle/burst ACK samples;
+          // learn slower delivery promptly and recover as delivery speeds up.
+          // Re-probe after a route/bandwidth change even if the constrained
+          // window no longer produces closely spaced frames to measure.
+          if (now - deliveryMeasuredAt > 10000) deliveryIntervalMs = 16
+          if (previousDelivery && ack.data.decodeMs <= 24) {
+            const sentGap = sent.sentAt - previousDelivery.sentAt
+            const deliveredGap = now - previousDelivery.receivedAt
+            if (sentGap > 0 && sentGap <= 32 && deliveredGap > 0) {
+              deliveryMeasuredAt = now
+              deliveryIntervalMs = Math.max(
+                16,
+                deliveredGap,
+                deliveryIntervalMs * 0.8 + deliveredGap * 0.2,
+              )
+            }
+          }
+          previousDelivery = { sentAt: sent.sentAt, receivedAt: now }
           // Age the baseline so a VPN/Wi-Fi route change can establish its new
           // RTT instead of being mistaken for congestion for this whole session.
           if (sample < minimumTransportMs || now - minimumTransportAt > 10000) {
@@ -165,7 +188,10 @@ export function attachBrowserSocket(
             if (ack.data.decodeMs > 24 || frameWindow > 2) growAfter = now + 1000
             frameWindow = ack.data.decodeMs > 24 ? 2 : Math.max(2, Math.floor(frameWindow / 2))
           } else {
-            const target = Math.min(8, Math.max(2, Math.ceil(transportMs / 16) + 1))
+            const target = Math.min(
+              8,
+              Math.max(2, Math.floor(minimumTransportMs / deliveryIntervalMs)),
+            )
             if (!growAfter) frameWindow = Math.min(target, frameWindow + 1)
             else if (now >= growAfter) {
               frameWindow = Math.min(target, frameWindow + 1)

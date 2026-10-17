@@ -58,7 +58,7 @@ try {
   await page.getByRole('button', { name: 'Stop forwarding', exact: true }).waitFor()
   const id = await page.evaluate(() => window.forwards[0].id)
   await page.evaluate(() => window.hide())
-  await page.locator('form').waitFor({ state: 'detached' })
+  await page.waitForFunction(() => document.querySelectorAll('form').length === 0)
   await page.evaluate(() => window.show())
   await page.getByRole('button', { name: 'Stop forwarding', exact: true }).waitFor()
   assert.equal(

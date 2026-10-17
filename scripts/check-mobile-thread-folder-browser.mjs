@@ -63,13 +63,13 @@ try {
   }
   await load()
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
-  assert.equal(await page.getByRole('button', { name: 'No project', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)
   assert.equal(
     await page.getByRole('button', { name: 'Broken folder', exact: true }).isDisabled(),
     true,
   )
   await page.getByLabel('Search projects').fill('local')
-  assert.equal(await page.getByRole('button', { name: 'No project', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)
   await page.getByRole('button', { name: 'Local folder', exact: true }).click()
   assert.equal(await page.getByText('a|local').count(), 1)
   await load()
@@ -83,7 +83,7 @@ try {
   assert.equal(await page.getByText('b|added').count(), 1)
   await page.evaluate(() => window.transfer(false))
   await page.getByRole('button', { name: 'Folder', exact: true }).click()
-  await page.getByRole('button', { name: 'No project', exact: true }).click()
+  await page.getByRole('button', { name: 'General', exact: true }).click()
   await page.waitForFunction(() => window.navigation)
   assert.deepEqual(
     await page.evaluate(() =>

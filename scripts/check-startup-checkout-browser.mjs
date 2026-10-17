@@ -5,7 +5,7 @@ const mocks = {
   '../../list/task-collection': `export const taskSources=store=>[{runtimeId:store.activeRuntimeId,name:'Selected machine',online:true,workspace:store.workspace,snapshot:null},...(store.otherSources??[]).filter(source=>source.runtimeId!==store.activeRuntimeId)];`,
   '@dovo/studio-core': `export const useStudioHost=()=>({navigate:()=>{}});export const WorkspaceScope=({children})=>children;export * from '@dovo/protocol';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export {WorkspaceContext as Context,useWorkspace} from '../studio-core/src/workspace/context';export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `export {ChoicePicker} from './src/choice-picker';export const ComposerWorkspaceBar=({children})=><div>{children}</div>;export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {Dialog,DialogContent,DialogTitle} from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';`,
+  '@dovo/studio-ui': `export {LinkedCheckoutEditor} from './src/linked-checkouts';export {ChoicePicker} from './src/choice-picker';export const ComposerWorkspaceBar=({children})=><div>{children}</div>;export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {Dialog,DialogContent,DialogTitle} from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';`,
   '../chat/composer/composer': `import {useWorkspace,updateTask} from '@dovo/studio-core';export const Composer=({task,workspaceControls})=>{const store=useWorkspace();return <><input aria-label="Message" value={task.draft} onChange={e=>store.setWorkspace(w=>updateTask(w,task.id,t=>({...t,draft:e.target.value})))}/>{workspaceControls}</>};`,
   '../list/task-collection': `export const taskSources=store=>[{runtimeId:'machine',name:'Selected machine',online:true,workspace:store.workspace}];`,
   '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=()=>null;`,
@@ -71,7 +71,7 @@ try {
   await autoCheckout.click()
   await page.getByRole('option', { name: 'Local checkouts', exact: true }).click()
   await page.waitForFunction(() => window.saved[0]?.autoProjectExecution === 'main')
-  await chooseFolder('No project')
+  await chooseFolder('General')
   assert.equal(await page.evaluate(() => window.saved[0].autoProject), undefined)
   assert.equal(await page.evaluate(() => window.saved[0].autoProjectExecution), undefined)
   // Start the existing blank-draft checkout scenarios in a fresh startup composer.

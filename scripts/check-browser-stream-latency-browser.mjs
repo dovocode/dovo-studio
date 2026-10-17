@@ -8,7 +8,7 @@ import { chromium } from './browser/harness.mjs'
 import { attachBrowserSocket } from '../packages/runtime/dist/http/support/browser-socket.js'
 import { remoteBrowserHtml } from '../packages/protocol/dist/generated/browser-viewer.js'
 const require = createRequire(new URL('../packages/runtime/package.json', import.meta.url))
-const { WebSocketServer } = require('ws')
+const { WebSocketServer, WebSocket } = require('ws')
 const sharp = require('sharp')
 const width = 480,
   height = 320
@@ -64,19 +64,58 @@ const server = createServer((_request, response) => {
   response.end(remoteBrowserHtml)
 })
 const sockets = new WebSocketServer({ server })
-sockets.on('connection', (client) =>
-  attachBrowserSocket(
-    client,
-    'task',
-    'token',
-    services,
-    true,
-    undefined,
-    undefined,
-    undefined,
-    true,
-  ),
-)
+sockets.on('connection', (client, request) => {
+  const url = new URL(request.url, 'http://fixture')
+  if (url.pathname === '/source') {
+    attachBrowserSocket(
+      client,
+      'task',
+      'token',
+      services,
+      true,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    )
+    return
+  }
+  // Emulate the link outside Chromium: background-tab timer coalescing must
+  // not turn a 40ms network hop into a browser scheduling benchmark.
+  const upstream = new WebSocket(`ws://${address}/source`)
+  const mbps = Number(url.searchParams.get('mbps'))
+  const timers = new Set()
+  let available = 0
+  const later = (work, ms) => {
+    const timer = setTimeout(() => {
+      timers.delete(timer)
+      work()
+    }, ms)
+    timers.add(timer)
+  }
+  upstream.on('message', (data, binary) => {
+    const now = performance.now()
+    const transfer = mbps ? (data.byteLength * 8) / (mbps * 1000) : 0
+    available = Math.max(now, available) + transfer
+    later(
+      () => {
+        if (client.readyState === WebSocket.OPEN) client.send(data, { binary })
+      },
+      40 + available - now,
+    )
+  })
+  client.on('message', (data, binary) => {
+    later(() => {
+      if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary })
+    }, 40)
+  })
+  client.on('close', () => {
+    for (const timer of timers) clearTimeout(timer)
+    upstream.terminate()
+  })
+  upstream.on('error', () => client.close())
+  upstream.on('close', () => client.close())
+})
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const address = `127.0.0.1:${server.address().port}`
 const browser = await chromium.launch({ headless: true })
@@ -93,33 +132,20 @@ try {
     const page = await browser.newPage({ viewport: { width, height: 400 } })
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
-    await page.addInitScript(({ legacy, decodeDelay, mbps }) => {
+    await page.addInitScript(({ legacy, decodeDelay }) => {
       window.draws = []
       window.decodeSamples = []
       window.movementDelays = []
       window.decodeDelay = decodeDelay
-      let available = 0
       const NativeSocket = WebSocket
       window.WebSocket = class extends NativeSocket {
-        set onmessage(handler) {
-          super.onmessage = (event) => {
-            const now = performance.now()
-            const transfer = mbps
-              ? ((event.data.byteLength ?? event.data.length) * 8) / (mbps * 1000)
-              : 0
-            available = Math.max(now, available) + transfer
-            setTimeout(() => handler(event), 40 + available - now)
-          }
-        }
         send(data) {
           const value = JSON.parse(data)
           if (value.type === 'scroll')
             window.movementDelays.push(performance.now() - window.inputStarted)
           if (value.type === 'frameAck' && !value.dropped) window.decodeSamples.push(value.decodeMs)
           if (legacy) delete value.decodeMs
-          setTimeout(() => {
-            if (this.readyState === NativeSocket.OPEN) super.send(JSON.stringify(value))
-          }, 40)
+          super.send(JSON.stringify(value))
         }
       }
       const decode = window.createImageBitmap.bind(window)
@@ -142,7 +168,7 @@ try {
     await page.goto(`http://${address}/`)
     await page.evaluate(
       (url) => window.postMessage({ channel: 'dovo-browser', type: 'connect', url }, '*'),
-      `ws://${address}/`,
+      `ws://${address}/?mbps=${scenario.mbps ?? 0}`,
     )
     await page.waitForFunction(() => !document.querySelector('#go').disabled)
     await page.waitForTimeout(150)
