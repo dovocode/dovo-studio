@@ -35,6 +35,8 @@ const stubs = [
   { path: '@dovo/studio-core', contents: core },
   { path: '@dovo/studio-ui', contents: ui },
   ...Object.entries({
+    // Pair registration is covered by check-studio-tools-browser; this fixture tests navigation.
+    './studio-paired-computers-bridge': 'export const StudioPairedComputersBridge=()=>null;',
     './app-extension': 'export const appSettingsExtension={views:[]};',
     './appearance': 'export const useAppearance=()=>{};',
     './task-notifications': 'export const useTaskNotifications=()=>({});',
