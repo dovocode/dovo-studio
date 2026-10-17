@@ -1,4 +1,4 @@
-import { mutableStruct, decode, decodeResult } from '@dovo/protocol'
+import { mutableArray, mutableStruct, decode, decodeResult } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -39,6 +39,21 @@ export class ForgeWorkCache {
     db.exec(
       'CREATE TABLE IF NOT EXISTS forge_work_cache (key TEXT PRIMARY KEY, source TEXT NOT NULL, value TEXT NOT NULL, updated INTEGER NOT NULL)',
     )
+  }
+
+  clear() {
+    const sources = decode(
+      mutableArray(mutableStruct({ source: Schema.String })),
+      this.db.prepare('SELECT DISTINCT source FROM forge_work_cache').all(),
+    )
+    for (const source of new Set([
+      ...sources.map((row) => row.source),
+      ...[...this.loads.values()].map((load) => load.source),
+    ]))
+      this.versions.set(source, (this.versions.get(source) ?? 0) + 1)
+    this.db.prepare('DELETE FROM forge_work_cache').run()
+    this.loads.clear()
+    this.failures.clear()
   }
 
   invalidateEffect(source: string): Effect.Effect<void, RuntimeFailure> {

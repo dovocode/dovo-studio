@@ -1,3 +1,5 @@
+import { githubRead } from '../../retrieval/request.js'
+import { retrievalContext, retrievalLocal, type RetrievalHook } from '../../retrieval/context.js'
 import { includedWorktreeFiles, copyWorktreeFiles } from './worktree-include.js'
 import { stopOwnedChild } from '../../agents/execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
@@ -10,7 +12,12 @@ import type { RepositoryOpenTarget } from '@dovo/protocol'
 import type { FilePreviewMetadata } from '@dovo/protocol'
 import { GithubBudget } from './github-budget.js'
 import type { GithubResponseInfo } from './github-rate-limit.js'
-import { GithubCredentials, GithubTransport, parseGithubApiArgs } from './github-transport.js'
+import {
+  GithubApiError,
+  GithubCredentials,
+  GithubTransport,
+  parseGithubApiArgs,
+} from './github-transport.js'
 import { gitRemoteIdentity } from '@dovo/protocol'
 import { defaultShell, shellArguments } from '../../terminal/shell.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
@@ -46,6 +53,45 @@ export type GithubAccount = {
   beforeDispatch?: () => void
 }
 export class GitService {
+  retrieval?: RetrievalHook
+  private sharedReaders = new Map<string, { until: number; value: Promise<string> }>()
+  async retrievalReader(account: GithubAccount) {
+    const key = createHash('sha256')
+      .update(account.host + account.token)
+      .digest('hex')
+    let reader = this.sharedReaders.get(key)
+    if (!reader || reader.until < Date.now()) {
+      const value = retrievalLocal(async () => {
+        const user = decode(
+          mutableStruct({
+            id: Schema.Number.pipe(
+              Schema.check(Schema.isInt()),
+              Schema.check(Schema.isGreaterThan(0)),
+            ),
+          }),
+          JSON.parse(
+            await this.githubAccount(
+              ['api', '--hostname', account.host, 'user'],
+              undefined,
+              undefined,
+              account,
+            ),
+          ),
+        )
+        return createHash('sha256')
+          .update(JSON.stringify(['github', account.host.toLowerCase(), String(user.id)]))
+          .digest('hex')
+      })
+      reader = { until: Date.now() + 600000, value }
+      this.sharedReaders.set(key, reader)
+      if (this.sharedReaders.size > 100)
+        this.sharedReaders.delete(this.sharedReaders.keys().next().value!)
+      void value.catch(() => {
+        if (this.sharedReaders.get(key)?.value === value) this.sharedReaders.delete(key)
+      })
+    }
+    return reader.value
+  }
   private githubBudget = new GithubBudget()
   private githubCredentials = new GithubCredentials(() => this.settings().gh)
   private githubTransport = new GithubTransport()
@@ -77,30 +123,57 @@ export class GitService {
       const key = createHash('sha256')
         .update(JSON.stringify([request.host, token]))
         .digest('hex')
-      const result = await this.githubBudget.run(
-        key,
-        async () => {
-          beforeDispatch?.()
-          const text = await this.githubTransport.send(request, token, {
-            maxBytes,
-            onResponse: (info) => {
-              responses.push(info)
-              if (info.quota) this.githubBudget.observe(key, info.quota, info.resource)
-            },
-            onUnauthorized: () => {
-              this.githubCredentials.invalidate(request.host, cwd, env)
-              onUnauthorized?.()
-            },
-          })
-          return text
-        },
-        () =>
-          this.githubTransport.send(
-            parseGithubApiArgs(['api', '--hostname', request.host, 'rate_limit']),
-            token,
-          ),
-        { background, resource: request.graphql ? 'graphql' : 'core' },
-      )
+      const load = () =>
+        this.githubBudget.run(
+          key,
+          async () => {
+            beforeDispatch?.()
+            const text = await this.githubTransport.send(request, token, {
+              maxBytes,
+              onResponse: (info) => {
+                responses.push(info)
+                if (info.quota) this.githubBudget.observe(key, info.quota, info.resource)
+              },
+              onUnauthorized: () => {
+                this.githubCredentials.invalidate(request.host, cwd, env)
+                onUnauthorized?.()
+              },
+            })
+            return text
+          },
+          () =>
+            this.githubTransport.send(
+              parseGithubApiArgs(['api', '--hostname', request.host, 'rate_limit']),
+              token,
+            ),
+          { background, resource: request.graphql ? 'graphql' : 'core' },
+        )
+      let result: string
+      if (
+        this.retrieval?.active() &&
+        !retrievalContext()?.local &&
+        request.path !== 'user' &&
+        request.path !== 'rate_limit'
+      ) {
+        const reader = await this.retrievalReader({ host: request.host, token })
+        beforeDispatch?.()
+        if (githubRead(args, input)) {
+          result = await this.retrieval.read(
+            { provider: 'github', instance: request.host, reader, args, input, watch: background },
+            load,
+          )
+        } else {
+          await this.retrieval.invalidate('github', request.host, reader)
+          try {
+            result = await load()
+          } finally {
+            await this.retrieval.invalidate('github', request.host, reader)
+          }
+        }
+        beforeDispatch?.()
+      } else result = await load()
+      if (maxBytes !== undefined && Buffer.byteLength(result) > maxBytes)
+        throw new GithubApiError(502, 'GitHub response exceeded its byte limit')
       this.audit?.(cwd, audited, { github: diagnostics })
       return result
     } catch (error) {

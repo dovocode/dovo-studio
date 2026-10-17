@@ -343,7 +343,7 @@ export class PullRequestWatch {
           const readKey = JSON.stringify([repository.path, state.number])
           let reading = reads.get(readKey)
           if (!reading) {
-            reading = this.s.pullCache.feedback(repository.path, state.number, true)
+            reading = this.s.pullCache.feedback(repository.path, state.number, true, true)
             reads.set(readKey, reading)
           }
           const detail = await reading

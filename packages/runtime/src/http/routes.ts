@@ -1,3 +1,5 @@
+import { serveRetrieval } from '../retrieval/host.js'
+import { retrievalRequestSchema } from '../retrieval/request.js'
 import { requireLocalStudioUI } from '../studio/local-ui.js'
 import { studioTool } from '../studio/tools.js'
 import { studioPeers, routedStudioTool } from '../studio/peers.js'
@@ -377,6 +379,26 @@ export function route(
           yield* serviceResult(body(request, 4096)),
         )
         return yield* serviceResult({ app: s.mcpApps.read(taskId, id) })
+      }
+      if (method === 'POST' && path === '/api/retrieval/peers') {
+        return s.retrievalPeers.register(device.id, yield* serviceResult(body(request, 256 * 1024)))
+      }
+      if (method === 'POST' && path === '/api/retrieval/host') return s.retrieval.status()
+      if (method === 'POST' && path === '/api/retrieval/read')
+        return yield* serviceResult(
+          serveRetrieval(s, yield* serviceResult(body(request, 512 * 1024))),
+        )
+      if (method === 'POST' && path === '/api/retrieval/invalidate') {
+        const input = decode(
+          mutableStruct({
+            provider: retrievalRequestSchema.fields.provider,
+            instance: retrievalRequestSchema.fields.instance,
+            reader: retrievalRequestSchema.fields.reader,
+          }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        s.retrieval.forget(input.provider, input.instance, input.reader)
+        return { ok: true }
       }
       if (method === 'POST' && path === '/api/studio/peers') {
         requireLocalStudioUI(request.socket.remoteAddress)

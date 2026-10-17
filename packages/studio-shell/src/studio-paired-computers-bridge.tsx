@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Schema } from 'effect'
 import {
   decode,
   mutableArray,
@@ -16,22 +17,23 @@ const local = (connection: RuntimeConnection) => {
 const enabled = (tools?: StudioTools) =>
   tools && (tools.threads || tools.automations || tools.browsers || tools.diagnostics)
 
-/** Share existing pairings only with a local runtime. Tokens never enter tool results or disk. */
+/** Share the authenticated fleet for retrieval. Studio Tools forwarding stays local-only. */
 export function StudioPairedComputersBridge() {
   const { connection, connected, snapshot, runtimeRegistry, runtimes } = useWorkspace()
   const targets = new Map<string, RuntimeConnection>()
   for (const runtime of runtimes)
-    if (
-      runtime.connected &&
-      local(runtime.profile.connection) &&
-      enabled(runtime.snapshot?.studioTools)
-    )
+    if (runtime.connected)
       targets.set(runtime.profile.connection.address, runtime.profile.connection)
-  if (connection && connected && local(connection) && enabled(snapshot?.studioTools))
-    targets.set(connection.address, connection)
+  if (connection && connected) targets.set(connection.address, connection)
   const registrations = JSON.stringify(
     [...targets.values()].map((target) => ({
       target,
+      studio:
+        local(target) &&
+        !!enabled(
+          runtimes.find((runtime) => runtime.profile.connection.address === target.address)
+            ?.snapshot?.studioTools ?? snapshot?.studioTools,
+        ),
       peers: runtimeRegistry.profiles
         .filter(
           (profile) =>
@@ -47,6 +49,7 @@ export function StudioPairedComputersBridge() {
       mutableArray(
         mutableStruct({
           target: connectionSchema,
+          studio: Schema.Boolean,
           peers: studioPeerRegistrationSchema.fields.peers,
         }),
       ),
@@ -54,29 +57,32 @@ export function StudioPairedComputersBridge() {
     )
     const controller = new AbortController()
     const sessions = sources.map((source) => ({ ...source, sessionId: crypto.randomUUID() }))
-    const send = async (source: (typeof sessions)[number]) => {
+    const sendEndpoint = async (source: (typeof sessions)[number], endpoint: string) => {
       try {
-        const response = await fetch(
-          source.target.address.replace(/\/$/, '') + '/api/studio/peers',
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${source.target.token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ sessionId: source.sessionId, peers: source.peers }),
-            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
+        const response = await fetch(source.target.address.replace(/\/$/, '') + endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${source.target.token}`,
+            'Content-Type': 'application/json',
           },
-        )
+          body: JSON.stringify({ sessionId: source.sessionId, peers: source.peers }),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
+        })
         // Older runtimes have no pairing bridge; the local tools remain usable.
         if (!response.ok && response.status !== 404 && !controller.signal.aborted)
           console.warn(`Studio paired-computer bridge: HTTP ${response.status}`)
       } catch {
         if (!controller.signal.aborted)
           console.warn(
-            'Studio paired-computer bridge disconnected; pairings expire unless it reconnects.',
+            'Paired-computer registration disconnected; Studio Tools sessions expire until it reconnects.',
           )
       }
+    }
+    const send = async (source: (typeof sessions)[number]) => {
+      await Promise.all([
+        sendEndpoint(source, '/api/retrieval/peers'),
+        ...(source.studio ? [sendEndpoint(source, '/api/studio/peers')] : []),
+      ])
     }
     for (const source of sessions) void send(source)
     const timer = setInterval(() => {

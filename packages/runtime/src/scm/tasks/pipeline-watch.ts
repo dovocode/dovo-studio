@@ -1,3 +1,4 @@
+import { retrievalWatching } from '../../retrieval/context.js'
 import { permissionPolicyReadOnly } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
@@ -202,10 +203,14 @@ export class PipelineWatch {
     do {
       detail = decode(
         forgePipelineDetailSchema,
-        await this.s.forgeWork.request(
-          repositoryId,
-          'pipelines/detail',
-          { id: runId, refresh, ...(cursor ? { cursor } : {}) },
+        await retrievalWatching(
+          () =>
+            this.s.forgeWork.request(
+              repositoryId,
+              'pipelines/detail',
+              { id: runId, refresh, ...(cursor ? { cursor } : {}) },
+              background,
+            ),
           background,
         ),
       )

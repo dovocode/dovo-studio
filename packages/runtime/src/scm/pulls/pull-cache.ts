@@ -1,3 +1,4 @@
+import { retrievalFresh, retrievalWatching } from '../../retrieval/context.js'
 import {
   pullStacks,
   pullOverviewStacks,
@@ -141,7 +142,7 @@ export class PullCache {
         const worker = Effect.gen({ self: this }, function* () {
           // Register ownership before a synchronous SDK failure can finish this worker.
           yield* Effect.yieldNow
-          const fetched = yield* runtimeOperation(fetch)
+          const fetched = yield* runtimeOperation(() => retrievalFresh(force, fetch))
           return yield* runtimeOperation(() => {
             const updated = Date.now()
             const value = {
@@ -500,7 +501,7 @@ export class PullCache {
     return runClientEffect(this.detailEffect(cwd, number, force))
   }
   /** Feedback watches share a credential-scoped cache without loading files or annotations. */
-  feedback(cwd: string, number: number, force = false) {
+  feedback(cwd: string, number: number, force = false, background = false) {
     return runClientEffect(
       Effect.gen({ self: this }, function* () {
         const identify = this.identity
@@ -509,14 +510,15 @@ export class PullCache {
         return yield* this.readEffect(
           JSON.stringify(['feedback', scope, number]),
           pullDetailSchema,
-          async () => {
-            const reader = this.pulls.forDestination?.(scope) ?? this.pulls
-            const result = await (reader.feedback
-              ? reader.feedback(cwd, number)
-              : reader.detail(cwd, number))
-            this.validateDestination(result, scope)
-            return result
-          },
+          () =>
+            retrievalWatching(async () => {
+              const reader = this.pulls.forDestination?.(scope) ?? this.pulls
+              const result = await (reader.feedback
+                ? reader.feedback(cwd, number)
+                : reader.detail(cwd, number))
+              this.validateDestination(result, scope)
+              return result
+            }, background),
           force,
           retainUnavailableSections,
         )

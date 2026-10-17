@@ -271,6 +271,10 @@ export function RunningTaskPreferences() {
 
 /** PR lifecycle and explicit monitoring tools, saved per computer. */
 export function PullRequestPreferences() {
+  const { runtimeRegistry } = useWorkspace()
+  const retrievalHosts = runtimeRegistry.profiles.flatMap((profile) =>
+    profile.connection.runtimeId ? [{ id: profile.connection.runtimeId, name: profile.name }] : [],
+  )
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
@@ -325,6 +329,46 @@ export function PullRequestPreferences() {
             disabled={disabled}
             onChange={(archiveOnPullMerge) => save({ archiveOnPullMerge })}
           />
+        </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup
+        title="Shared GitHub and Jira retrieval"
+        description="Paired computers share reads and monitoring results. Servers are preferred, then desktops, then laptops. Provider credentials stay on their computer."
+      >
+        <SettingRow label="Share retrieval with paired computers">
+          <Toggle
+            label="Share retrieval with paired computers"
+            checked={value?.enableSharedRetrieval ?? true}
+            disabled={disabled}
+            onChange={(enableSharedRetrieval) => save({ enableSharedRetrieval })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Preferred retrieval computer"
+          description="Automatic selection falls back when the preferred computer is unavailable or uses another account."
+        >
+          <Select
+            value={value?.preferredRetrievalHost || 'auto'}
+            disabled={disabled || value?.enableSharedRetrieval === false}
+            onValueChange={(preferredRetrievalHost) =>
+              save({
+                preferredRetrievalHost:
+                  preferredRetrievalHost === 'auto' ? '' : preferredRetrievalHost,
+              })
+            }
+          >
+            <SelectTrigger aria-label="Preferred retrieval computer">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Automatic</SelectItem>
+              {retrievalHosts.map((profile) => (
+                <SelectItem key={profile.id} value={profile.id}>
+                  {profile.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SettingRow>
       </SettingsGroup>
       <SettingsGroup

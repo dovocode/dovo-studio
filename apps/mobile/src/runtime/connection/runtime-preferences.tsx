@@ -31,7 +31,7 @@ type Preferences = typeof runtimePreferencesSchema.Type
 export function RuntimePreferences() {
   const { styles } = useTheme()
 
-  const { connected, snapshot, readEffect, callEffect } = useRuntime()
+  const { connected, snapshot, readEffect, callEffect, overviews } = useRuntime()
   const webRulesSupported = snapshot?.allowWebRequests !== undefined
   const [value, setValue] = useApplicationState<Preferences | null>(null)
   const [memoryProjects, setMemoryProjects] = useApplicationState<
@@ -384,6 +384,38 @@ export function RuntimePreferences() {
                 queues stay paused; settling or archiving cancels watches.
               </Text>
             </View>
+          </Section>
+          <Section title="Shared GitHub and Jira retrieval">
+            <SettingsSwitchRow
+              first
+              label="Share retrieval with paired computers"
+              value={value?.enableSharedRetrieval ?? true}
+              disabled={disabled}
+              onValueChange={(enableSharedRetrieval) => save({ enableSharedRetrieval })}
+            />
+            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+              Servers are preferred, then desktops, then laptops. Provider credentials stay on their
+              computer.
+            </Text>
+            <Choice
+              label="Preferred retrieval computer"
+              value={value?.preferredRetrievalHost || 'auto'}
+              disabled={disabled || value?.enableSharedRetrieval === false}
+              items={[
+                { id: 'auto', name: 'Automatic' },
+                ...overviews.flatMap((entry) =>
+                  entry.profile.connection.runtimeId
+                    ? [{ id: entry.profile.connection.runtimeId, name: entry.profile.name }]
+                    : [],
+                ),
+              ]}
+              onChange={(preferredRetrievalHost) =>
+                save({
+                  preferredRetrievalHost:
+                    preferredRetrievalHost === 'auto' ? '' : preferredRetrievalHost,
+                })
+              }
+            />
           </Section>
           <Section title="Studio Tools (experimental)">
             {studioToolSettings.map(({ key, label, description }) => (

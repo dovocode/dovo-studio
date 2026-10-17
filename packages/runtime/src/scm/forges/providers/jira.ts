@@ -1,3 +1,6 @@
+import { jiraRead } from '../../../retrieval/request.js'
+import { retrievalContext, type RetrievalHook } from '../../../retrieval/context.js'
+import { createHash } from 'node:crypto'
 import { captureJiraContext, type JiraCliContext } from './jira-context.js'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -254,6 +257,16 @@ export function jiraIssuePage<T>(rows: readonly T[], offset: number) {
   }
 }
 export class JiraWork implements ForgeWorkProvider {
+  retrieval?: RetrievalHook
+  async retrievalReader() {
+    return createHash('sha256')
+      .update(JSON.stringify(['jira', new URL(this.binding.site).origin, await this.identity()]))
+      .digest('hex')
+  }
+  async sharedRead(args: string[]) {
+    if (!jiraRead(args)) throw new HttpError(400, 'Only Jira reads may be shared')
+    return this.execute(args)
+  }
   private context?: Promise<JiraCliContext>
   private closeRequested = false
   private leases = 1
@@ -277,7 +290,25 @@ export class JiraWork implements ForgeWorkProvider {
     const dataCommand =
       args[0] === 'jira' && ['workitem', 'board', 'sprint'].includes(args[1] ?? '')
     if (dataCommand) await this.assertAccount()
-    const result = await this.run(this.executable, args, undefined, this.cwd, context.env)
+    const load = () => this.run(this.executable, args, undefined, this.cwd, context.env)
+    let result: string
+    if (this.retrieval?.active() && dataCommand && !retrievalContext()?.local) {
+      const reader = await this.retrievalReader()
+      const instance = new URL(this.binding.site).origin
+      if (jiraRead(args))
+        result = await this.retrieval.read(
+          { provider: 'jira', instance, project: this.binding.project, reader, args },
+          load,
+        )
+      else {
+        await this.retrieval.invalidate('jira', instance, reader)
+        try {
+          result = await load()
+        } finally {
+          await this.retrieval.invalidate('jira', instance, reader)
+        }
+      }
+    } else result = await load()
     if (dataCommand) await this.assertAccount()
     this.validateSource?.()
     return result

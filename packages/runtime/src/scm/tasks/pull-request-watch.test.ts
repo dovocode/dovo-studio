@@ -571,7 +571,7 @@ it('waits for fresh feedback on each poll instead of rejecting expired cache ent
     }),
   )
   await f.s.pullRequestWatch.tick()
-  expect(f.read).toHaveBeenLastCalledWith(f.f.directory, 7, true)
+  expect(f.read).toHaveBeenLastCalledWith(f.f.directory, 7, true, true)
   expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('Feedback fresh')
 })
 

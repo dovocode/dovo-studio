@@ -248,3 +248,24 @@ it('caches board/sprint discovery by account and board, with explicit refresh', 
   await f.work.requestJira('jira', 'jira/boards', {})
   expect(boards).toHaveBeenCalledTimes(3)
 })
+
+it('shares Jira data reads with the verified account while keeping account probes local', async () => {
+  const f = setup()
+  const read = vi
+    .fn<NonNullable<ForgeWork['retrieval']>['read']>()
+    .mockImplementation(async (_request, load) => load())
+  f.work.retrieval = { active: () => true, read, invalidate: async () => {} }
+  await f.work.requestJira('jira', 'issues/list', {})
+  expect(read).toHaveBeenCalledWith(
+    expect.objectContaining({
+      provider: 'jira',
+      instance: 'https://first.atlassian.net',
+      project: 'TEAM',
+      reader: expect.stringMatching(/^[a-f0-9]{64}$/),
+      args: expect.arrayContaining(['workitem', 'search']),
+    }),
+    expect.any(Function),
+  )
+  expect(read.mock.calls.some(([request]) => request.args.includes('auth'))).toBe(false)
+  expect(read.mock.calls.some(([request]) => request.args.includes('project'))).toBe(false)
+})

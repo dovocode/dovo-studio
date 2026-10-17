@@ -1,3 +1,5 @@
+import { SharedRetrieval } from './retrieval/coordinator.js'
+import { RetrievalPeers } from './retrieval/peers.js'
 import { enabledStudioTools } from '@dovo/protocol'
 import { ModelSelection } from './agents/tasks/model-selection.js'
 import { runCredentials, type RunCredentials } from './auth/run-credentials.js'
@@ -237,6 +239,18 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         })),
     ]
   })
+  const retrievalPeers = new RetrievalPeers(db, devices)
+  const retrieval = new SharedRetrieval(
+    db,
+    () => ({
+      id: runtimeId,
+      role: preferences.get().runtimeIcon,
+      enabled: preferences.get().enableSharedRetrieval !== false,
+      preferredHost: preferences.get().preferredRetrievalHost,
+    }),
+    () => retrievalPeers.list(),
+  )
+  git.retrieval = retrieval
   const forgeWork = new ForgeWork(db, store, git, forges, pulls, () => commands.get())
   const pullRequestWatch = new PullRequestWatch(db, {
     store,
@@ -245,6 +259,11 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     tasks,
     activity,
   })
+  forgeWork.retrieval = retrieval
+  retrieval.onInvalidate = () => {
+    forgeWork.invalidateShared()
+    for (const repo of store.get().repositories) pullCache.invalidate(repo.path)
+  }
   const pipelineWatch = new PipelineWatch(db, { store, preferences, forgeWork, tasks, activity })
   // Older runtimes retained watches on settled threads; do not resume those after an upgrade.
   pullRequestWatch.reconcile(store.get().tasks)
@@ -297,6 +316,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     forges,
     forgeCli,
     forgeWork,
+    retrieval,
+    retrievalPeers,
     db,
     titles,
     activity,
@@ -349,6 +370,8 @@ export interface Services {
   pushNotifications: PushNotifications
   liveActivities: LiveActivities
   forgeCli: ForgeCliAccounts
+  retrieval: SharedRetrieval
+  retrievalPeers: RetrievalPeers
   forgeWork: ForgeWork
   forges: ForgeConnections
   defaults: RuntimeDefaults

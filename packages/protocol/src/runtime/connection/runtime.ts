@@ -366,6 +366,12 @@ export const responses = {
 }
 
 export const runtimePreferencesSchema = mutableStruct({
+  /** Share provider reads with paired computers; server/desktop preference is automatic. */
+  enableSharedRetrieval: Schema.optional(Schema.Boolean),
+  preferredRetrievalHost: Schema.optional(
+    Schema.String.pipe(Schema.check(Schema.isMaxLength(200))),
+  ),
+
   runtimeIcon: runtimeIconSchema.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => 'desktop' as const)),
   ),

@@ -1,3 +1,4 @@
+import { serveRetrieval } from './retrieval/host.js'
 import { disposeRuntimeSync } from './http/support/runtime-sync.js'
 import { Housekeeping } from './agents/tasks/housekeeping.js'
 import { TaskPullWatcher } from './scm/tasks/task-pulls.js'
@@ -68,7 +69,11 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       const housekeeping = new Housekeeping(services)
       const taskPulls = new TaskPullWatcher(services)
       let network: ExternalListener | undefined
+      services.retrieval.start(
+        async (request) => (await serveRetrieval(services, request, true)).value,
+      )
       const finalizers = [
+        () => services.retrieval.stop(),
         () => housekeeping.dispose(),
         () => taskPulls.dispose(),
         () => services.pullRequestWatch.dispose(),
@@ -120,6 +125,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                   Effect.gen(function* () {
                     const schedulers = yield* Effect.all(
                       [
+                        () => services.retrieval.stop(),
                         () => housekeeping.dispose(),
                         () => taskPulls.dispose(),
                         () => services.pullRequestWatch.dispose(),

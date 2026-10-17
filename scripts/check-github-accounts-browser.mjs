@@ -272,6 +272,16 @@ try {
       await repository.fill('team/third-project')
       assert.equal(await name.inputValue(), 'My custom name')
       await page.evaluate(() => window.renderPreferences())
+      const retrievalSwitch = page.getByRole('switch', {
+        name: 'Share retrieval with paired computers',
+        exact: true,
+      })
+      await retrievalSwitch.waitFor()
+      assert.equal(await retrievalSwitch.isChecked(), true)
+      await retrievalSwitch.click()
+      await page.waitForFunction(() => window.preferences.enableSharedRetrieval === false)
+      await retrievalSwitch.click()
+      await page.waitForFunction(() => window.preferences.enableSharedRetrieval === true)
       const toolSwitch = page.getByRole('switch', { name: 'Linked projects tool', exact: true })
       await toolSwitch.waitFor()
       assert.equal(await toolSwitch.isChecked(), true)

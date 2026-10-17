@@ -1,3 +1,4 @@
+import { retrievalFresh, type RetrievalHook } from '../../retrieval/context.js'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode, maxValue, minValue } from '@dovo/protocol'
 import { homedir } from 'node:os'
@@ -54,6 +55,10 @@ const jiraPrefixSchema = mutableStruct({
   refreshError: Schema.optional(Schema.String),
 })
 export class ForgeWork {
+  retrieval?: RetrievalHook
+  invalidateShared() {
+    this.cache.clear()
+  }
   private cache: ForgeWorkCache
   constructor(
     db: Database.Database,
@@ -134,7 +139,24 @@ export class ForgeWork {
       ),
     }
   }
-  async request(repositoryId: string, operation: string, input: unknown, background?: boolean) {
+  request(repositoryId: string, operation: string, input: unknown, background?: boolean) {
+    const query = decode(forgeWorkQuerySchema, input)
+    return retrievalFresh(query.refresh === true || !!query.revision, () =>
+      this.requestLocal(repositoryId, operation, input, background),
+    )
+  }
+  requestJira(sourceId: string, operation: string, input: unknown) {
+    const query = decode(forgeWorkQuerySchema, input)
+    return retrievalFresh(query.refresh === true || !!query.revision, () =>
+      this.requestJiraLocal(sourceId, operation, input),
+    )
+  }
+  private async requestLocal(
+    repositoryId: string,
+    operation: string,
+    input: unknown,
+    background?: boolean,
+  ) {
     const query = decode(forgeWorkQuerySchema, input)
     if (query.jiraFilters !== undefined)
       throw new HttpError(400, 'Jira filters require a Jira issue source')
@@ -166,7 +188,7 @@ export class ForgeWork {
       scope,
     )
   }
-  async requestJira(sourceId: string, operation: string, input: unknown) {
+  private async requestJiraLocal(sourceId: string, operation: string, input: unknown) {
     const selected = this.store.get().jiraSources?.find((source) => source.id === sourceId)
     if (!selected) throw new HttpError(404, 'Jira source not found')
     const cwd = homedir()
@@ -177,6 +199,7 @@ export class ForgeWork {
     }
     const executable = this.commands().acli
     const provider = new JiraWork(executable, selected, this.jiraRun, cwd, validateSource)
+    provider.retrieval = this.retrieval
     try {
       const readerIdentity = opaqueIdentity([
         'jira',
