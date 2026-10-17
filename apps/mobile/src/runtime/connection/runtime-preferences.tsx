@@ -304,6 +304,19 @@ export function RuntimePreferences() {
               tool visibility updates next turn.
             </Text>
           </Section>
+          <Section title="Do (experimental)">
+            <SettingsSwitchRow
+              first
+              label="Enable experimental Do"
+              value={value.enableDo}
+              disabled={disabled || snapshot?.doEnabled === undefined}
+              onValueChange={(enableDo) => save({ enableDo })}
+            />
+            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+              Save an explicit plan, start it yourself, follow bounded agent work and review its
+              results. Keep Studio open for work on paired computers.
+            </Text>
+          </Section>
           <Section title="Code reviews (experimental)">
             <SettingsSwitchRow
               first

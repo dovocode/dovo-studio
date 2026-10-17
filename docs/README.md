@@ -18,6 +18,8 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Bitbucket and Azure DevOps](bitbucket-azure.md): provider setup and capabilities.
 - [Issues, pipelines, and Jira](issues-pipelines-jira.md): connected issue and pipeline sources.
 - [Automations](automations.md): triggers, execution, reviews, and recovery.
+- [Do (experimental)](do.md): describe a goal in chat, review an agent's proposed plan, explicitly
+  start paired-computer work, and review results; an explicit plan editor is also available.
 - [Scoped settings](scoped-settings.md): global, environment, shared project and local project
   inheritance.
 - [Memory](memory.md): optional project, system-wide and projectless notes shared across threads.

@@ -126,6 +126,18 @@ export default function SettingsScreen() {
           storage: 'computer',
           keywords: 'git accounts forge tokens repositories',
         },
+        ...(overviews.some((entry) => entry.snapshot?.doEnabled)
+          ? [
+              {
+                title: 'Do (experimental)',
+                subtitle: 'Chat through a goal, then review proposed plans',
+                icon: 'jobs' as const,
+                path: '/settings/do',
+                storage: 'computer' as const,
+                keywords: 'goal plan work items dependencies experimental',
+              },
+            ]
+          : []),
         {
           title: 'Automations',
           subtitle: 'Scheduled tasks, workflows and runs',

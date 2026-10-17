@@ -94,6 +94,10 @@ export class TaskTurnRunner {
   setMcpApps(apps: McpApps) {
     this.mcpApps = apps
   }
+  private doCoordinator: (taskId: string) => string | undefined = () => undefined
+  setDoCoordinator(instructions: (taskId: string) => string | undefined) {
+    this.doCoordinator = instructions
+  }
   private taskTools?: { port: number; host: string }
   setTaskTools(port: number, _token: string, host: string) {
     this.taskTools = { port, host }
@@ -210,6 +214,7 @@ export class TaskTurnRunner {
         const pullRequestWatchingEnabled = this.pullRequestWatchingEnabled()
         const pipelineWatchingEnabled = this.pipelineWatchingEnabled()
         const linkedProjectsEnabled = this.linkedProjectsEnabled()
+        const doInstructions = this.doCoordinator(id)
         const selectedAgent = resolveTaskAgent(task, this.store.get().agents)
         if (!selectedAgent) throw new HttpError(400, 'Choose a harness or agent first')
         const policyIssue = permissionPolicyIssue(selectedAgent)
@@ -296,6 +301,7 @@ export class TaskTurnRunner {
               credentialFile,
               studioTools,
               linkedProjectsEnabled,
+              !!doInstructions,
             ),
           )
         }
@@ -370,6 +376,7 @@ ${
                 commands,
                 cuaServer,
                 taskToolFeatures: {
+                  doCoordinator: !!doInstructions,
                   linkedProjectsEnabled,
                   studioTools,
                   artifactsEnabled,
@@ -800,6 +807,7 @@ ${
                   env: { ...agent.env, ...githubEnvironment },
                   instructions: [
                     agent.instructions,
+                    doInstructions,
                     browserCdpInstructions(id),
                     this.taskTools
                       ? 'Regular dovo_task ask_question and todos tools are available independently of Studio Tools, including in read-only runs where the provider permits MCP. Prefer native question tools when available; do not duplicate questions. ask_question opens a non-blocking desktop/mobile form using a stable key; answers steer the active turn or become a follow-up conversation message. Do not request secrets through this fallback tool. Continue independent work or finish the turn if you need the answer; do not poll or treat silence as approval. Codex, Claude, Muse, OpenCode, ACP/Grok and Mistral Vibe native planning/todo tools feed the shared checklist; prefer those native tools there. Other providers can use todos to list or replace that checklist for useful multi-step tracking. Do not maintain parallel checklists.'

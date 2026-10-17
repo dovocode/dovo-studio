@@ -19,6 +19,7 @@ import {
   linkedProjectsCommandSchema,
   agentQuestionCommandSchema,
   agentTodosCommandSchema,
+  doAgentActionSchema,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -63,6 +64,7 @@ const studioTools = decode(
   JSON.parse(process.env.DOVO_STUDIO_TOOLS ?? JSON.stringify(noStudioTools())),
 )
 const linkedProjectsEnabled = process.env.DOVO_TASK_LINKED_PROJECTS_ENABLED !== '0'
+const doCoordinator = process.env.DOVO_TASK_DO_COORDINATOR === '1'
 const artifactsEnabled = process.env.DOVO_TASK_ARTIFACTS_ENABLED === '1'
 const pipelineWatchingEnabled = process.env.DOVO_TASK_PIPELINE_WATCHING_ENABLED === '1'
 const pullRequestWatchingEnabled = process.env.DOVO_TASK_PR_WATCHING_ENABLED === '1'
@@ -163,6 +165,19 @@ const tools: Array<
   }
 > = [
   ...studioToolDefinitions(studioTools),
+  ...(doCoordinator
+    ? [
+        {
+          name: 'do_plan',
+          description:
+            'Coordinate this Do chat’s work. Discover available computers, projects and agents; propose a saved draft plan; list/read this chat’s proposals; cancel owned work only when the user requests it. Plans require human review and Start in Do. This tool cannot start, retry, complete or delete runs. Use discovered IDs and stable proposal UUIDs. Runtime notices return to this conversation; do not poll.',
+          inputSchema: (() => {
+            const document = Schema.toJsonSchemaDocument(doAgentActionSchema)
+            return { ...document.schema, type: 'object' as const, $defs: document.definitions }
+          })(),
+        },
+      ]
+    : []),
   {
     name: 'ask_question',
     description:
@@ -715,6 +730,10 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
       return text(result)
     }
     switch (name) {
+      case 'do_plan':
+        if (!doCoordinator) throw new Error('This thread is not a Do coordinator')
+        if (input.action === 'propose' || input.action === 'cancel') writable()
+        return text(await post('/api/do/agent', { taskId: task, parentRunId, command: input }))
       case 'ask_question':
       case 'todos':
         return text(

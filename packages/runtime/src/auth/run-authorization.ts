@@ -7,6 +7,7 @@ import { isRunToken } from './run-credentials.js'
 
 const allowed = new Set([
   '/api/studio/tools',
+  '/api/do/agent',
   '/api/linked-projects',
   '/api/agent/question',
   '/api/agent/todos',
@@ -80,6 +81,12 @@ export function authorizeRunRoute(
     !ownsRun
   )
     denied()
+  if (path === '/api/do/agent') {
+    if (!ownsRun || !s.doChat.coordinator(grant.taskId)) denied()
+    const command = record(input.command)
+    if (grant.readOnly && !['discover', 'list', 'read'].includes(String(command.action))) denied()
+    return grant
+  }
   // Conversation questions and progress are allowed in read-only runs. They never
   // grant filesystem access or change another thread's configuration.
   if (path.startsWith('/api/agent/')) return grant

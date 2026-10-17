@@ -77,6 +77,9 @@ import { ProjectApprovalRules } from './project-approval-rules'
 import { ReviewFindings } from '../conversation/components/review-findings'
 import { randomUUID } from 'expo-crypto'
 import { ArtifactBrowser } from '../../ui/content/artifacts'
+import { router } from 'expo-router'
+import { DO_CHAT_ORIGIN } from '@dovo/protocol'
+import { doPlansHref } from '../../do/route'
 type StartupControls = {
   temporary: boolean
   onBrowse: () => void
@@ -658,6 +661,19 @@ function TaskDetailContent({
                   worktreeActions,
                   moveActions,
                   [
+                    ...(task.origin === DO_CHAT_ORIGIN && snapshot?.doEnabled && profile
+                      ? [
+                          {
+                            label: 'Review plans',
+                            icon: 'jobs' as const,
+                            overflow: true,
+                            onPress: () => {
+                              Keyboard.dismiss()
+                              router.push(doPlansHref(profile.id))
+                            },
+                          },
+                        ]
+                      : []),
                     {
                       label: 'Project information',
                       icon: 'info',

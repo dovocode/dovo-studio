@@ -106,6 +106,8 @@ export const snapshotSchema = mutableStruct({
   studioTools: Schema.optional(studioToolsSchema),
   artifactsEnabled: Schema.optional(Schema.Boolean),
   codeReviewsEnabled: Schema.optional(Schema.Boolean),
+  /** Experimental Do runs; older runtimes omit it. */
+  doEnabled: Schema.optional(Schema.Boolean),
   autoProjectSelectionEnabled: Schema.optional(Schema.Boolean),
   smartModelSelectionEnabled: Schema.optional(Schema.Boolean),
   autoProjectModelSelection: Schema.optional(taskModelSelectionSchema),
@@ -413,6 +415,8 @@ export const runtimePreferencesSchema = mutableStruct({
   enablePipelineWatching: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
+  /** Experimental: runtime-owned Do runs of saved goals and explicit work-item plans. */
+  enableDo: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   /** Let agents discover and stage linked projects for their own thread. */
   enableLinkedProjectsTool: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => true)),

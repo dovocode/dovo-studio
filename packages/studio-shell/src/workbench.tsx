@@ -1,7 +1,12 @@
 import { StudioToolsBridge } from './studio-tools-bridge'
 import { StudioPairedComputersBridge } from './studio-paired-computers-bridge'
 import { resolveLinkTargets, type LinkTarget, type LinkOrigin } from '@dovo/studio-core/links'
-import { configuredTaskHarness, decodeWorkTarget, encodeWorkTarget } from '@dovo/protocol'
+import {
+  configuredTaskHarness,
+  decodeWorkTarget,
+  encodeWorkTarget,
+  DO_CHAT_ORIGIN,
+} from '@dovo/protocol'
 import { useLinkChooser } from './link-chooser'
 import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -190,6 +195,7 @@ function WorkbenchContent({
     retrySync,
     switchRuntime,
   } = useWorkspace()
+  const doEnabled = connected && snapshot?.doEnabled === true
   const artifactsEnabled =
     snapshot?.artifactsEnabled === true ||
     runtimes.some((runtime) => runtime.snapshot?.artifactsEnabled === true)
@@ -574,6 +580,7 @@ function WorkbenchContent({
       (view) =>
         view.navigationGroup !== 'hidden' &&
         (view.id !== 'artifacts' || artifactsEnabled) &&
+        (view.id !== 'do' || doEnabled) &&
         (view.id !== 'issues' || showIssues) &&
         (view.id !== 'jira' || showJira),
     )
@@ -650,13 +657,15 @@ function WorkbenchContent({
               onUpdate={updates ? () => void updates.install() : undefined}
               onCheckUpdates={updates ? () => void updates.check() : undefined}
               views={catalog.views.filter((view) =>
-                view.id === 'artifacts'
-                  ? artifactsEnabled
-                  : view.id === 'issues'
-                    ? showIssues
-                    : view.id === 'jira'
-                      ? showJira
-                      : true,
+                view.id === 'do'
+                  ? doEnabled
+                  : view.id === 'artifacts'
+                    ? artifactsEnabled
+                    : view.id === 'issues'
+                      ? showIssues
+                      : view.id === 'jira'
+                        ? showJira
+                        : true,
               )}
               activeId={target.viewId}
               onSelect={(viewId) => {
@@ -698,6 +707,24 @@ function WorkbenchContent({
                   />
                 )}
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  {doEnabled &&
+                    target.viewId === 'tasks' &&
+                    workspace.tasks.some(
+                      (task) => task.id === target.entityId && task.origin === DO_CHAT_ORIGIN,
+                    ) && (
+                      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-4 py-2">
+                        <p className="text-xs text-muted-foreground">
+                          Do · Review saved proposals before starting a plan.
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigate({ viewId: 'do', entityId: 'plans' })}
+                        >
+                          Review plans
+                        </Button>
+                      </div>
+                    )}
                   <ErrorBoundary key={target.viewId}>
                     <Suspense
                       fallback={

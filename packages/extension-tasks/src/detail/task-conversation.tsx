@@ -1,3 +1,4 @@
+import { DoProposals } from './do-proposals'
 import { CodeReviewCard } from '../review/code-review-card'
 import type { CodeFinding } from '@dovo/protocol'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -198,6 +199,7 @@ export function TaskConversation({
     )
   return (
     <div data-task-conversation={task.id} className="flex h-full min-h-0 flex-col">
+      <DoProposals task={task} active={visible} />
       {temporary ? (
         <TaskEmptyState />
       ) : (

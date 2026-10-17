@@ -4,6 +4,14 @@ export const tasksExtension = defineStudioExtension(
   [
     { id: 'tasks', title: 'Tasks', icon: 'tasks', order: 0, load: () => import('./view') },
     {
+      id: 'do',
+      title: 'Do',
+      icon: 'jobs',
+      order: 0.25,
+      keywords: 'experimental chat assistant goals proposals plans work items',
+      load: () => import('./do-view'),
+    },
+    {
       id: 'artifacts',
       title: 'Artifacts',
       icon: 'artifacts',

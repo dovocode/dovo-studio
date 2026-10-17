@@ -231,6 +231,17 @@ try {
   })
   await page.waitForTimeout(100)
   await call('diagnostics', { action: 'health' }, 404, paired.id)
+  // Do alone also keeps the local pairing bridge alive; Studio Tools can stay disabled.
+  const doRegistration = page.waitForResponse(
+    (response) => response.url() === origin + '/api/studio/peers' && response.ok(),
+  )
+  await page.evaluate((profile) => {
+    window.studio.snapshot = { studioTools: { ui: true }, doEnabled: true }
+    window.studio.runtimeRegistry = { profiles: [profile] }
+    window.refreshStudio()
+  }, paired)
+  await doRegistration
+  assert.ok((await call('discover', {})).computers.some((computer) => computer.id === paired.id))
   await page.getByRole('switch', { name: 'UI interaction', exact: true }).click()
   await page.waitForFunction(
     () =>

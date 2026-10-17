@@ -113,6 +113,19 @@ export function RunningTaskPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
+      <SettingsGroup title="Do (experimental)">
+        <SettingRow
+          label="Do (experimental)"
+          description="Chat about a goal, review saved proposals, then approve a plan’s start. Off by default. Paired remote execution requires Studio open on the owner computer."
+        >
+          <Toggle
+            label="Do (experimental)"
+            checked={value?.enableDo ?? false}
+            disabled={disabled || snapshot?.doEnabled === undefined}
+            onChange={(enableDo) => save({ enableDo })}
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Model modes (experimental)">
         <SettingRow
           label="Tune & Maestro modes (experimental)"

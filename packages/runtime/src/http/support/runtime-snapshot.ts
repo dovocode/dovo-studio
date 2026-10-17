@@ -212,6 +212,7 @@ export function runtimeSnapshot(
       studioTools: enabledStudioTools(preferences),
       artifactsEnabled: preferences.enableArtifacts,
       codeReviewsEnabled: preferences.enableCodeReviews,
+      doEnabled: preferences.enableDo,
       autoProjectModelSelection: preferences.autoProjectModelSelection,
       smartModelSelectionEnabled: preferences.enableSmartModelSelection,
       autoProjectSelectionEnabled: preferences.enableAutoProjectSelection,

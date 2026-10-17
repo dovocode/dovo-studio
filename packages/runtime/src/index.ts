@@ -1,3 +1,4 @@
+import { startPolling } from '@dovo/client-runtime'
 import { disposeRuntimeSync } from './http/support/runtime-sync.js'
 import { Housekeeping } from './agents/tasks/housekeeping.js'
 import { TaskPullWatcher } from './scm/tasks/task-pulls.js'
@@ -67,12 +68,15 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       const closeTasks = () => (tasksClosing ??= services.tasks.dispose())
       const housekeeping = new Housekeeping(services)
       const taskPulls = new TaskPullWatcher(services)
+      let chatNotices: ReturnType<typeof startPolling> | undefined
       let network: ExternalListener | undefined
       const finalizers = [
         () => housekeeping.dispose(),
         () => taskPulls.dispose(),
         () => services.pullRequestWatch.dispose(),
         () => services.pipelineWatch.dispose(),
+        () => services.doRuns.dispose(),
+        () => chatNotices?.stop(),
         () => services.acpInstallations.dispose(),
         () => services.acpController.abort(),
         closeTitles,
@@ -124,6 +128,8 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                         () => taskPulls.dispose(),
                         () => services.pullRequestWatch.dispose(),
                         () => services.pipelineWatch.dispose(),
+                        () => services.doRuns.dispose(),
+                        () => chatNotices?.stop(),
                       ].map((close) => Effect.exit(release(close))),
                       { concurrency: 'unbounded' },
                     )
@@ -187,7 +193,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         services.tasks.setTaskTools(address.port, options.ownerToken, address.address)
         services.tasks.continueAfterRestart(
           () => services.preferences.get().autoContinueAfterRestart,
-          (id) => services.jobs.ownsTask(id),
+          (id) => services.jobs.ownsTask(id) || services.doThreads.ownsTask(id),
         )
         services.liveActivities.start()
         services.pushNotifications.start()
@@ -198,6 +204,14 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         taskPulls.start()
         services.pullRequestWatch.start()
         services.pipelineWatch.start()
+        services.doRuns.startScheduler()
+        chatNotices = startPolling(
+          Effect.tryPromise(() => services.doChat.tick()),
+          {
+            interval: 5_000,
+            onError: (error) => console.error('Do chat updates failed', error),
+          },
+        )
       })
       return { services, port: address.port }
     }),

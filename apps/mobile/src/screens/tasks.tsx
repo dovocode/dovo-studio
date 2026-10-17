@@ -468,6 +468,16 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                       },
                     ]
                   : []),
+                ...(overviews.some((entry) => entry.snapshot?.doEnabled)
+                  ? [
+                      {
+                        label: 'Do (experimental)',
+                        icon: 'jobs' as const,
+                        overflow: true,
+                        onPress: () => router.push('/settings/do'),
+                      },
+                    ]
+                  : []),
                 {
                   label: 'Quick task',
                   icon: 'jobs',
