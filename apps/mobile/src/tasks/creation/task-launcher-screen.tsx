@@ -1,6 +1,6 @@
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FolderPicker } from './folder-picker'
-import { TaskLauncherControls } from './task-launcher-controls'
+import { TaskLauncherPicker } from './task-launcher-controls'
 import { useEffect, useRef } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
 import {
@@ -233,7 +233,7 @@ export function TaskLauncherScreen() {
               {loading && <ActivityIndicator color={colors.accent} />}
               {selection && snapshot && selectedRepository && loadedRuntimeId === runtimeId && (
                 <RuntimeScope runtimeId={runtimeId}>
-                  <TaskLauncherControls
+                  <TaskLauncherPicker
                     selection={selection}
                     onChange={setSelection}
                     snapshot={snapshot}

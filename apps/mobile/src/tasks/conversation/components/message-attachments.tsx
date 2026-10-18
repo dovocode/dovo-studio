@@ -22,12 +22,14 @@ export function MessageAttachments({
   taskId,
   files = [],
   removable,
+  edit,
   disabled,
   onBusy,
 }: {
   taskId: string
   files?: Attachment[]
   removable?: boolean
+  edit?: (id: string) => Promise<void>
   disabled?: boolean
   onBusy?: (busy: boolean) => void
 }) {
@@ -97,6 +99,14 @@ export function MessageAttachments({
               })
             }
           />
+          {removable && edit && ['image/png', 'image/jpeg', 'image/webp'].includes(file.mime) && (
+            <Action
+              secondary
+              label={`Edit ${file.name}`}
+              disabled={!connected || busy || disabled}
+              onPress={() => void edit(file.id)}
+            />
+          )}
           {removable && (
             <Action
               secondary
@@ -166,9 +176,7 @@ export function MessageAttachments({
                         Paths.cache,
                         `${preview.attachment.id}-${preview.attachment.name}`,
                       )
-                      file.write(preview.data, {
-                        encoding: 'base64',
-                      })
+                      yield* nativeEffect(() => file.write(preview.data, { encoding: 'base64' }))
                       yield* nativeEffect(() =>
                         Sharing.shareAsync(file.uri, {
                           mimeType: preview.attachment.mime,

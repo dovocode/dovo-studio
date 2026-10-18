@@ -238,3 +238,8 @@ export { terminalInputFrames } from '@dovo/client-runtime'
 export { useFileReview } from './review/use-file-review'
 
 export * from './code-themes'
+export {
+  imageEditorDocument,
+  parseImageEditorResult,
+  type ImageEditorResult,
+} from '@dovo/client-runtime'

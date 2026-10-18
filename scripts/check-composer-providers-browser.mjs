@@ -8,11 +8,18 @@ const require = createRequire(new URL('../packages/studio-ui/package.json', impo
 const mocks = {
   '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';export {providers} from '../studio-core/src/providers';export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
+  '../ui/controls/field': `export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;`,
+  '../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
+  '@react-native-async-storage/async-storage': `export default {getItem:async()=>null,setItem:async()=>{}};`,
+  'expo-crypto': `export const CryptoDigestAlgorithm={SHA256:'SHA-256'};export const digestStringAsync=async(_,text)=>text;`,
   './agent-avatar': `export const AgentAvatar=()=>null;`,
+  '../../agents/harness-icon': `export const HarnessIcon=()=>null;`,
+  '../../ui/layout/sheet': `export const Sheet=({children,onClose,title})=><section aria-label={title}>{children}<button onClick={onClose}>Close picker</button></section>;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
-  'react-native': `export const Pressable=({children,onPress,disabled,accessibilityRole,accessibilityState})=><button role={accessibilityRole} aria-expanded={accessibilityState?.expanded} onClick={onPress} disabled={disabled}>{children}</button>;export const View=({children})=><div>{children}</div>;export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
+  'react-native': `export const ScrollView=({children})=><div>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} onClick={onPress} disabled={disabled}>{children}</button>;export const View=({children})=><div>{children}</div>;export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const MobileContext=createContext(null);export const useRuntime=()=>useContext(MobileContext);export const useRuntimeSelector=select=>select(useContext(MobileContext));`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
+  '../../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   '../../agents/model-settings': `export const ModelSettings=()=>null;`,
   '../../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled,selectedLabel})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{!items.some(item=>item.id===value)&&<option value={value} disabled hidden>{selectedLabel}</option>}{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
@@ -31,7 +38,7 @@ const built = await build({
   },
   stdin: {
     contents: `
-import {useState,useCallback} from 'react';import {createRoot} from 'react-dom/client';import {Context,defaultTaskHarness} from '@dovo/studio-core';import {MobileContext} from '../runtime/connection/provider';import {ComposerModelPicker} from './src/composer-model-picker';import {TaskLauncherControls} from '../../apps/mobile/src/tasks/creation/task-launcher-controls';
+import {useState,useCallback} from 'react';import {createRoot} from 'react-dom/client';import {Context,defaultTaskHarness} from '@dovo/studio-core';import {MobileContext} from '../runtime/connection/provider';import {ComposerModelPicker} from './src/composer-model-picker';import {TaskLauncherPicker as TaskLauncherControls} from '../../apps/mobile/src/tasks/creation/task-launcher-controls';
 const agents=[{...defaultTaskHarness('codex'),id:'custom',name:'Custom Codex'},{...defaultTaskHarness('cursor'),id:'missing',name:'Missing Cursor'}];
 const installations=[{id:'installed',registryId:'installed',name:'Installed ACP',version:'1',distribution:'npx',installedAt:'2026-10-01T00:00:00Z'}];
 const repository={id:'repo',name:'Repo',path:'/repo',branch:'main'};
@@ -161,21 +168,31 @@ try {
   if (await page.evaluate(() => window.changes.length))
     throw new Error('Availability changed saved selection')
   await page.evaluate(() => window.mode('mobile'))
+  if (await page.getByRole('textbox', { name: 'Search harnesses and models' }).count())
+    throw new Error('New-thread picker was expanded before opening')
+  await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
   await waitRequests(7)
   await finish(6, ['harness:claude', 'harness:vibe', 'agent:custom', 'acp:installed'])
-  const choice = page.getByRole('combobox', { name: 'Agent', exact: true })
-  await choice.getByRole('option', { name: 'Claude', exact: true }).waitFor({ state: 'attached' })
-  await absent(choice.getByRole('option', { name: 'Cursor', exact: true }))
-  await choice.getByRole('option', { name: 'Vibe', exact: true }).waitFor({ state: 'attached' })
-  await choice.selectOption('harness:vibe')
+  await page.getByRole('button', { name: 'More settings', exact: true }).click()
+  if (await page.getByRole('textbox', { name: 'Search harnesses and models' }).count())
+    throw new Error('New-thread settings were appended below the picker')
+  await page.getByRole('button', { name: 'Back to models', exact: true }).click()
+  const harness = (name) => page.getByRole('button', { name, exact: true })
+  await harness('Claude').waitFor()
+  await absent(harness('Cursor'))
+  await harness('Vibe').click()
+  if (await page.evaluate(() => window.changes.length))
+    throw new Error('Browsing a harness changed selection')
+  await harness('Provider default').click()
   if (await page.evaluate(() => window.changes.at(-1)?.provider !== 'vibe'))
     throw new Error('Available mobile Vibe provider was not selectable')
-  await choice.selectOption('harness:claude')
+  await harness('Claude').click()
+  await harness('Provider default').click()
   if (await page.evaluate(() => window.changes.at(-1)?.provider !== 'claude'))
     throw new Error('Available mobile provider was not selectable')
   await page.evaluate(() => window.host('four'))
   await waitRequests(8)
-  await absent(choice.getByRole('option', { name: 'Claude', exact: true }))
+  await absent(harness('Claude'))
   await page.evaluate(() => window.pending[7].reject(new Error('Offline')))
   await page.getByText('Could not check available providers: Error: Offline').waitFor()
   await page.evaluate(() => {

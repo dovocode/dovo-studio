@@ -347,3 +347,66 @@ it.each([false, true])(
     expect(s.store.task(task.id).archived).toBe(true)
   },
 )
+
+it('atomically replaces only a current draft image, including at the attachment limit, and keeps original bytes immutable', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const r = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(r.close)
+  r.services.store.update(() => f.workspace)
+  const task = r.services.tasks.create({
+    title: 'Edit image',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const uploaded = []
+  for (let n = 0; n < 5; n++)
+    uploaded.push(
+      (
+        await r.services.attachments.upload({
+          taskId: task.id,
+          id: randomUUID(),
+          name: `image-${n}.png`,
+          data: png,
+        })
+      ).attachment,
+    )
+  const original = uploaded[2]
+  const input = {
+    taskId: task.id,
+    id: randomUUID(),
+    replaceId: original.id,
+    name: 'edited.png',
+    data: png,
+  }
+  const response = await fetch(`http://127.0.0.1:${r.port}/api/attachments/replace`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  expect(response.status).toBe(200)
+  const files = r.services.store.task(task.id).draftAttachments!
+  expect(files).toHaveLength(5)
+  expect(files[2]).toMatchObject({ id: input.id, name: 'edited.png' })
+  expect(files.filter((file) => file.id !== input.id)).toEqual(
+    uploaded.filter((file) => file.id !== original.id),
+  )
+  expect(r.services.attachments.read(task.id, original.id).data).toBe(png)
+  await expect(r.services.attachments.replace(input)).resolves.toMatchObject({
+    attachment: { id: input.id },
+  })
+  await expect(r.services.attachments.replace({ ...input, id: randomUUID() })).rejects.toThrow(
+    'no longer in the composer',
+  )
+  await expect(
+    r.services.attachments.replace({
+      ...input,
+      id: randomUUID(),
+      replaceId: files[2].id,
+      data: 'invalid!',
+    }),
+  ).rejects.toThrow('Invalid file data')
+  expect(r.services.store.task(task.id).draftAttachments).toEqual(files)
+  expect(JSON.stringify(r.services.activity.list('', '', 0))).not.toContain(png)
+})

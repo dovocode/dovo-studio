@@ -543,6 +543,7 @@ export function route(
               '/api/live-activities/register',
               '/api/notifications/register',
               '/api/attachments/upload',
+              '/api/attachments/replace',
               '/api/scm/connections/save',
               '/api/scm/work/pipelines/action',
             ].includes(path),
@@ -741,6 +742,8 @@ export function route(
           }),
         )
       }
+      if (method === 'POST' && path === '/api/attachments/replace')
+        return yield* serviceResult(s.attachments.replace(yield* serviceResult(body(request))))
       if (method === 'POST' && path === '/api/attachments/upload')
         return yield* serviceResult(s.attachments.upload(yield* serviceResult(body(request))))
       if (

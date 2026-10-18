@@ -477,6 +477,7 @@ export function Composer({
           </Button>
         </div>
       )}
+      {attachments.editor}
       {queuedMessages}
       <ComposerSurface
         collapsed={collapsed}
@@ -683,6 +684,7 @@ export function Composer({
             files={submitBusy ? [] : attachments.files}
             previews={attachments.previews}
             remove={attachments.remove}
+            edit={attachments.edit}
             disabled={sending || attachments.busy}
           />
         </div>

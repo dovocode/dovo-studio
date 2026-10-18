@@ -23,6 +23,11 @@ const result = await bundleBrowser(
   },
   [
     {
+      path: './image-editor',
+      importer: mobile,
+      contents: `export const useImageEditor=()=>({edit:async asset=>asset,editor:null});`,
+    },
+    {
       path: 'expo',
       contents: `import {useEffect} from 'react';export const requireOptionalNativeModule=()=>({releaseFiles:async uris=>window.released.push(uris)});export const requireNativeView=()=>({children,...props})=>{window.dropProps=props;return <div>{children}</div>};`,
     },
@@ -46,7 +51,7 @@ const result = await bundleBrowser(
     },
     {
       path: 'expo-file-system',
-      contents: `export class File{constructor(uri){this.uri=uri;this.size=uri.includes('large-image')?8*1024*1024:uri.includes('large')?5*1024*1024+1:uri.includes('boundary')?5*1024*1024:10}async bytes(){return new Uint8Array(20)}async base64(){return btoa(this.uri)}delete(){window.deleted.push(this.uri)}}`,
+      contents: `export const Paths={cache:'file:///cache'};export class File{constructor(uri){this.uri=uri;this.size=uri.includes('large-image')?8*1024*1024:uri.includes('large')?5*1024*1024+1:uri.includes('boundary')?5*1024*1024:10}async bytes(){return new Uint8Array(20)}async base64(){return btoa(this.uri)}delete(){window.deleted.push(this.uri)}}`,
     },
     { path: 'expo-crypto', contents: `export const randomUUID=()=>crypto.randomUUID();` },
     {

@@ -10,17 +10,18 @@ const mocks = {
   '../ui/content/format-date': `export const formatDateTime=value=>value;`,
   '../ui/controls/pill': `export const Pill=({label,onPress})=><button onClick={onPress}>{label}</button>;`,
   '../screens/settings-controls': `export {Choice as SettingsChoice} from '../ui/controls/choice';export {Field as SettingsField} from '../ui/controls/field';export {Action as SettingsAction} from '../ui/controls/action';`,
-  'react-native': `export const View=({children})=><div>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button onClick={onPress} disabled={disabled} aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded}>{children}</button>;export const Alert={alert:()=>{}};export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
+  'react-native': `const css=value=>{const s=Object.assign({},...[value??{}].flat());if(s.paddingHorizontal!==undefined){s.paddingLeft=s.paddingRight=s.paddingHorizontal;delete s.paddingHorizontal}if(s.paddingVertical!==undefined){s.paddingTop=s.paddingBottom=s.paddingVertical;delete s.paddingVertical}return s};export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel})=><div aria-label={accessibilityLabel} style={{minHeight:0,overflow:'auto',...css(style)}}><div style={css(contentContainerStyle)}>{children}</div></div>;export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',boxSizing:'border-box',...css(style)}}>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState,style})=><button onClick={onPress} disabled={disabled} aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} style={{display:'flex',textAlign:'left',fontFamily:'inherit',border:0,...css(style)}}>{children}</button>;export const Alert={alert:()=>{}};export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,
   'expo-crypto': `export const CryptoDigestAlgorithm={SHA256:'SHA-256'};export const digestStringAsync=async(_,text)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('');`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const Context=createContext(null);export const useRuntime=()=>useContext(Context);export const useRuntimeSelector=select=>select(useContext(Context));`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../runtime/preferences/app-preferences': `export const useMobilePreferences=()=>({globalModelPreferences:{},globalModelPreferencesUpdatedAt:0});export const updateMobilePreferences=()=>{};`,
-  '../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
+  '../ui/content/text': `export const Text=({children,style})=><span style={Object.assign({},...[style??{}].flat())}>{children}</span>;`,
   '../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
   '../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
-  '../ui/controls/field': `export const Field=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;`,
-  '../ui/theme': `export const useTheme=()=>({styles:{}});`,
+  './harness-icon': `export const HarnessIcon=()=>null;`,
+  '../ui/controls/field': `export const SearchField=({label,value,onChangeText,placeholder})=><input placeholder={placeholder} aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;export const Field=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;`,
+  '../ui/theme': `export const useTheme=()=>({styles:{muted:{color:'#a1a1aa'},error:{color:'#f66'}},colors:{text:'#fafafa',muted:'#a1a1aa',border:'#333',selection:'#303036',accent:'#8bd5ff'}});`,
 }
 const built = await build({
   alias: {
@@ -43,7 +44,7 @@ function App(){
  const entry={profile,snapshot};const visible=previewTasks(entry,pending).snapshot.workspace.tasks[0];window.visibleTask=visible;window.rawTask=task;
  window.publishTask=(nextRevision,nextTask)=>{setRevision(nextRevision);if(nextTask)setTask(nextTask)};
  useEffect(()=>setPending(items=>{const next=items.filter(item=>!optimisticTaskConfirmed(item,entry,items));return next.length===items.length?items:next}),[task,revision]);
- const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/workspace'){if(method!=='PATCH')throw Error('Workspace changes require PATCH');const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after??undefined]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
+ const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/agents/models/preference')return Promise.resolve({modelPreferences:{[input.key]:{favorite:input.favorite,disabled:false}}});if(path==='/api/workspace'){if(method!=='PATCH')throw Error('Workspace changes require PATCH');const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after??undefined]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
  return <Context.Provider value={value}>{task?<><span data-selected-model>{resolveTaskAgent(visible,[])?.model||'Default'}</span>{editing&&<HarnessSettings task={visible} onClose={()=>setEditing(false)}/>}</>:<ModelSettings agent={agent} onChange={setAgent}/>}<ConnectionPill/></Context.Provider>
 };createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -233,9 +234,61 @@ try {
     models: [{ id: 'task-model', name: 'Task Model', reasoning: [{ id: 'high', name: 'High' }] }],
     reasoning: [],
   })
-  await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('task-model')
+  if (await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).count())
+    throw new Error('Secondary settings clutter the initial picker')
+  await page.addStyleTag({
+    content:
+      'body{margin:12px;background:#1c1c1e;color:#fafafa;font-family:system-ui}input{width:100%;min-width:0;box-sizing:border-box;background:transparent;border:0;border-bottom:1px solid #444;color:inherit;padding:10px;font-size:14px}button{font-size:14px}h2{font-size:18px}',
+  })
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 700 })
+    for (const label of ['Models', 'Favorites', 'Agents', 'Codex']) {
+      const visible = await page
+        .getByRole('button', { name: label, exact: true })
+        .evaluate((button) => {
+          const text = Array.from(button.querySelectorAll('span')).find(
+            (node) => node.textContent === button.getAttribute('aria-label'),
+          )
+          return (
+            !!text &&
+            text.getBoundingClientRect().width > 20 &&
+            text.getBoundingClientRect().height > 8
+          )
+        })
+      if (!visible) throw new Error(`Picker navigation label ${label} collapsed at ${width}px`)
+    }
+    if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth))
+      throw new Error(`Picker overflowed at ${width}px`)
+  }
+  await page.screenshot({ path: '/tmp/dovo-mobile-picker.png', fullPage: true })
+  await page.getByRole('button', { name: 'Favorites', exact: true }).click()
+  await page.getByText('No favorite models for this harness.', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Agents', exact: true }).click()
+  await page.getByText('No matching saved agents.', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Models', exact: true }).click()
+  await page.getByRole('button', { name: 'Favorite Task Model', exact: true }).click()
+  await page.getByRole('button', { name: 'Unfavorite Task Model', exact: true }).waitFor()
+  if (await page.evaluate(() => !!window.saved))
+    throw new Error('Favoriting changed the selected model')
+  await page.getByRole('button', { name: 'Favorites', exact: true }).click()
+  await page.getByRole('button', { name: 'Task Model', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Unfavorite Task Model', exact: true }).click()
+  await page.getByText('No favorite models for this harness.', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Models', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Search harnesses and models' }).fill('missing model')
+  await page.getByText('No matching models.', { exact: true }).waitFor()
+  await page.getByRole('textbox', { name: 'Search harnesses and models' }).fill('Task Model')
+  await page.getByRole('button', { name: 'Task Model', exact: true }).click()
+  await page.waitForFunction(
+    () => window.saved?.input.changes.harness?.after.model === 'task-model',
+  )
+  if (await page.getByRole('button', { name: 'Save agent & model', exact: true }).count())
+    throw new Error('Picker still requires manual save')
+  await page.evaluate(() => window.finishSave(false))
+  await page.getByRole('button', { name: 'More settings', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'More settings', exact: true }).click()
   await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).selectOption('high')
-  await page.getByRole('button', { name: 'Save agent & model', exact: true }).click()
+  await page.waitForFunction(() => window.saved?.input.changes.harness?.after.reasoning === 'high')
   await page.waitForFunction(() => window.saved)
   const saved = await page.evaluate(() => window.saved)
   if (
@@ -270,9 +323,11 @@ try {
       window.visibleTask?.harness?.model === 'task-model',
   )
   await page.evaluate(() => window.openTask())
-  await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('__custom__')
+  await page.getByRole('button', { name: 'Back to models', exact: true }).click()
+  await page.getByRole('button', { name: 'More model options', exact: true }).click()
+  await page.getByRole('button', { name: 'Custom model…', exact: true }).click()
   await page.getByRole('textbox', { name: 'Custom model ID', exact: true }).fill('rejected-model')
-  await page.getByRole('button', { name: 'Save agent & model', exact: true }).click()
+  await page.getByRole('button', { name: 'Use model', exact: true }).click()
   await page.waitForFunction(() => window.visibleTask?.harness?.model === 'rejected-model')
   await page.evaluate(() => window.finishSave(true))
   await page.getByText('Model save rejected', { exact: true }).waitFor()
@@ -295,6 +350,7 @@ try {
     .waitFor({ state: 'detached' })
   // Automatic modes must use the workspace mutation contract and stay selected
   // while the confirming snapshot is still in flight.
+  await page.getByRole('button', { name: 'More settings', exact: true }).click()
   const mode = page.getByRole('combobox', { name: 'Model selection', exact: true })
   await mode.selectOption('smart')
   await page.waitForFunction(() => window.visibleTask?.modelSelection === 'smart')
@@ -341,6 +397,7 @@ try {
   await page.evaluate(() => window.finishSave(false))
   await mode.waitFor({ state: 'detached' })
   await page.evaluate(() => window.openTask())
+  await page.getByRole('button', { name: 'More settings', exact: true }).click()
   await mode.waitFor()
   if ((await mode.inputValue()) !== 'fixed') throw new Error('Fixed mode reverted after reopening')
   if (errors.length) throw new Error(errors.join('\n'))

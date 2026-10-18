@@ -42,6 +42,10 @@ export const attachmentUploadSchema = mutableStruct({
   name: maxValue(minValue(Schema.String, 1), 250),
   data: maxValue(Schema.String, Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4),
 })
+export const attachmentReplaceSchema = mutableStruct({
+  ...attachmentUploadSchema.fields,
+  replaceId: uuidSchema,
+})
 export const attachmentIdsSchema = refine(
   maxValue(mutableArray(uuidSchema), MAX_ATTACHMENTS),
   (ids) => new Set(ids).size === ids.length,

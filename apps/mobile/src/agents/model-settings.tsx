@@ -31,9 +31,11 @@ export function ModelSettings({
   agent,
   onChange,
   serviceTier = true,
+  selectionControls = true,
   disabled = false,
 }: {
   agent: Agent
+  selectionControls?: boolean
   serviceTier?: boolean
   disabled?: boolean
   onChange: (agent: Agent) => void
@@ -180,52 +182,56 @@ export function ModelSettings({
           }}
         />
       )}
-      {!!models.some((model) => preferences[preferenceKey(model.id)]?.favorite) && (
-        <Choice
-          row
-          label="Favorites"
-          disabled={disabled}
-          value={agent.model}
-          items={models.filter((model) => preferences[preferenceKey(model.id)]?.favorite)}
-          onChange={changeModel}
-        />
-      )}
-      <Choice
-        row
-        label="Model"
-        disabled={disabled}
-        value={custom ? '__custom__' : agent.model}
-        items={[
-          {
-            id: '',
-            name: 'Provider default',
-          },
-          ...models,
-          ...(agent.model && !selected
-            ? [
-                {
-                  id: agent.model,
-                  name: `${modelDisplayName(agent.model)} (saved/custom)`,
-                },
-              ]
-            : []),
-          {
-            id: '__custom__',
-            name: 'Custom model…',
-          },
-        ]}
-        onChange={(value) => {
-          setCustom(value === '__custom__' ? customKey : '')
-          changeModel(value === '__custom__' ? '' : value)
-        }}
-      />
-      {(custom || (!!agent.model && !selected)) && (
-        <Field
-          label="Custom model ID"
-          value={agent.model}
-          editable={!disabled}
-          onChangeText={changeModel}
-        />
+      {selectionControls && (
+        <>
+          {!!models.some((model) => preferences[preferenceKey(model.id)]?.favorite) && (
+            <Choice
+              row
+              label="Favorites"
+              disabled={disabled}
+              value={agent.model}
+              items={models.filter((model) => preferences[preferenceKey(model.id)]?.favorite)}
+              onChange={changeModel}
+            />
+          )}
+          <Choice
+            row
+            label="Model"
+            disabled={disabled}
+            value={custom ? '__custom__' : agent.model}
+            items={[
+              {
+                id: '',
+                name: 'Provider default',
+              },
+              ...models,
+              ...(agent.model && !selected
+                ? [
+                    {
+                      id: agent.model,
+                      name: `${modelDisplayName(agent.model)} (saved/custom)`,
+                    },
+                  ]
+                : []),
+              {
+                id: '__custom__',
+                name: 'Custom model…',
+              },
+            ]}
+            onChange={(value) => {
+              setCustom(value === '__custom__' ? customKey : '')
+              changeModel(value === '__custom__' ? '' : value)
+            }}
+          />
+          {(custom || (!!agent.model && !selected)) && (
+            <Field
+              label="Custom model ID"
+              value={agent.model}
+              editable={!disabled}
+              onChangeText={changeModel}
+            />
+          )}
+        </>
       )}
       <Choice
         row
@@ -378,12 +384,14 @@ export function ModelSettings({
           Install or select an ACP agent, or enter a custom command to discover its models.
         </Text>
       )}
-      <Action
-        secondary
-        label="Refresh models"
-        disabled={disabled || !connected || loading}
-        onPress={refresh}
-      />
+      {selectionControls && (
+        <Action
+          secondary
+          label="Refresh models"
+          disabled={disabled || !connected || loading}
+          onPress={refresh}
+        />
+      )}
       {!!(error || discoveryError) && (
         <Text style={styles.error}>
           {error || discoveryError} Custom model entry is still available.

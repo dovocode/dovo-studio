@@ -1,3 +1,4 @@
+import { useImageEditor } from './image-editor'
 import { randomUUID } from '@dovo/protocol'
 import { draftAttachments, type LocalAttachment } from './draft-attachments'
 import { optimizeAttachmentImage } from './attachment-images'
@@ -5,6 +6,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef, useState } from 'react'
 import {
   attachmentUploadResultSchema,
+  attachmentReadSchema,
   attachmentMutationSchema,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
@@ -13,6 +15,7 @@ import {
 import { useWorkspace } from '@dovo/studio-core'
 export function useAttachments(task: Task) {
   const { request, snapshot, connected } = useWorkspace()
+  const imageEditor = useImageEditor()
   const lock = useRef(false)
   const urls = useRef(new Set<string>())
   const [uploads, setUploads] = useState<LocalAttachment[]>([])
@@ -55,7 +58,7 @@ export function useAttachments(task: Task) {
       current.filter((item) => !removed.some((old) => old.attachment.id === item.attachment.id)),
     )
   }, [snapshot, uploads, savedFiles])
-  const upload = async (selected: File[]) => {
+  const upload = async (selected: File[], replaceId?: string) => {
     if (lock.current) {
       setError('Wait for the current attachment operation to finish.')
       return
@@ -64,16 +67,33 @@ export function useAttachments(task: Task) {
     setWorking(true)
     setError('')
     try {
+      if (replaceId) {
+        const previous = await request(
+          '/api/attachments/read',
+          { taskId: task.id, id: replaceId },
+          attachmentReadSchema,
+        )
+        selected = [
+          new File(
+            [Uint8Array.from(atob(previous.data), (char) => char.charCodeAt(0))],
+            previous.attachment.name,
+            { type: previous.attachment.mime },
+          ),
+        ]
+      }
       const accepted: File[] = []
       const rejected: string[] = []
       for (const original of selected) {
-        if (files.length + accepted.length >= MAX_ATTACHMENTS) {
+        if (files.length - (replaceId ? 1 : 0) + accepted.length >= MAX_ATTACHMENTS) {
           rejected.push(`${original.name}: attach up to 5 files per message.`)
           continue
         }
         let file: File
         try {
-          file = await optimizeAttachmentImage(original)
+          const prepared = await optimizeAttachmentImage(original)
+          const edited = await imageEditor.edit(prepared)
+          if (!edited || (replaceId && edited === prepared)) continue
+          file = edited === prepared ? prepared : await optimizeAttachmentImage(edited)
         } catch (cause) {
           rejected.push(
             `${original.name}: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -98,7 +118,7 @@ export function useAttachments(task: Task) {
       })
       setUploads((current) => [
         ...current,
-        ...batch.map(({ attachment, url }) => ({ attachment, url })),
+        ...batch.map(({ attachment, url }) => ({ attachment, url, replaces: replaceId })),
       ])
       await Promise.all(
         batch.map(async ({ file, attachment, url }) => {
@@ -113,12 +133,13 @@ export function useAttachments(task: Task) {
               reader.readAsDataURL(file)
             })
             const result = await request(
-              '/api/attachments/upload',
+              replaceId ? '/api/attachments/replace' : '/api/attachments/upload',
               {
                 taskId: task.id,
                 id: attachment.id,
                 name: file.name,
                 data,
+                ...(replaceId ? { replaceId } : {}),
               },
               attachmentUploadResultSchema,
             )
@@ -171,6 +192,8 @@ export function useAttachments(task: Task) {
     }
   }
   return {
+    edit: (id: string) => upload([], id),
+    editor: imageEditor.editor,
     upload,
     remove,
     error,

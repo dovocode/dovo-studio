@@ -1,3 +1,4 @@
+import { useImageEditor } from './image-editor'
 import { Effect } from 'effect'
 import { useRef } from 'react'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
@@ -5,9 +6,14 @@ import { Alert, Keyboard, Linking, Platform } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import { optimizeAttachmentImage } from './optimize-attachment-image'
 import * as DocumentPicker from 'expo-document-picker'
-import { File } from 'expo-file-system'
+import { File, Paths } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
-import { attachmentResultSchema, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '@dovo/protocol'
+import {
+  attachmentResultSchema,
+  attachmentReadSchema,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS,
+} from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 
@@ -17,20 +23,37 @@ export type AttachmentAsset = { uri: string; name: string; mimeType?: string | n
 export function useAttachmentPicker(taskId: string) {
   const { connected, callEffect, snapshot } = useRuntime()
   const { busy, error, act, run } = useAction()
+  const imageEditor = useImageEditor()
   const uploading = useRef(false)
-  const uploadAssets = (assets: AttachmentAsset[]) =>
+  const prepare = async (asset: AttachmentAsset, replacing: boolean) => {
+    const temporary = new Set<string>()
+    let prepared: AttachmentAsset | null = null
+    try {
+      const optimized = await optimizeAttachmentImage(asset)
+      if (optimized.uri !== asset.uri) temporary.add(optimized.uri)
+      const edited = await imageEditor.edit(optimized)
+      if (!edited || (replacing && edited === optimized)) return null
+      if (edited.uri !== optimized.uri) temporary.add(edited.uri)
+      prepared = edited === optimized ? optimized : await optimizeAttachmentImage(edited)
+      return prepared
+    } finally {
+      for (const uri of temporary) if (uri !== prepared?.uri) new File(uri).delete()
+    }
+  }
+  const uploadAssets = (assets: AttachmentAsset[], replaceId?: string) =>
     mobileWorkflow(function* () {
       const count =
         snapshot?.workspace.tasks.find((task) => task.id === taskId)?.draftAttachments?.length ?? 0
       let accepted = 0
       const rejected: string[] = []
       for (const asset of assets) {
-        if (count + accepted >= MAX_ATTACHMENTS) {
+        if (count - (replaceId ? 1 : 0) + accepted >= MAX_ATTACHMENTS) {
           rejected.push(`${asset.name}: attach up to 5 files per message.`)
           continue
         }
         yield* mobileWorkflow(function* () {
-          const prepared = yield* nativeEffect(() => optimizeAttachmentImage(asset))
+          const prepared = yield* nativeEffect(() => prepare(asset, !!replaceId))
+          if (!prepared) return
           const data = yield* nativeEffect(async () => {
             const file = new File(prepared.uri)
             try {
@@ -42,8 +65,14 @@ export function useAttachmentPicker(taskId: string) {
             }
           })
           yield* callEffect(
-            '/api/attachments/upload',
-            { taskId, id: randomUUID(), name: prepared.name, data },
+            replaceId ? '/api/attachments/replace' : '/api/attachments/upload',
+            {
+              taskId,
+              id: randomUUID(),
+              name: prepared.name,
+              data,
+              ...(replaceId ? { replaceId } : {}),
+            },
             attachmentResultSchema,
           )
           accepted++
@@ -63,6 +92,35 @@ export function useAttachmentPicker(taskId: string) {
       return Promise.reject(new Error('Wait for the current attachment operation to finish.'))
     uploading.current = true
     return run(() => uploadAssets(assets)).finally(() => {
+      uploading.current = false
+    })
+  }
+  const edit = (id: string) => {
+    if (!connected || busy || uploading.current) return Promise.resolve()
+    uploading.current = true
+    return run(() =>
+      mobileWorkflow(function* () {
+        const previous = yield* callEffect(
+          '/api/attachments/read',
+          { taskId, id },
+          attachmentReadSchema,
+        )
+        const file = new File(Paths.cache, `image-edit-${randomUUID()}`)
+        yield* mobileWorkflow(function* () {
+          yield* nativeEffect(() => file.write(previous.data, { encoding: 'base64' }))
+          yield* uploadAssets(
+            [{ uri: file.uri, name: previous.attachment.name, mimeType: previous.attachment.mime }],
+            id,
+          )
+        }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (file.exists) file.delete()
+            }),
+          ),
+        )
+      }),
+    ).finally(() => {
       uploading.current = false
     })
   }
@@ -126,6 +184,8 @@ export function useAttachmentPicker(taskId: string) {
     )
   }
   return {
+    edit,
+    editor: imageEditor.editor,
     busy,
     error,
     pick,

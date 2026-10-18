@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
-import { Paperclip, X } from 'lucide-react'
+import { Paperclip, X, Pencil } from 'lucide-react'
 import { attachmentReadSchema, isImageAttachment, type Attachment } from '@dovo/studio-core'
 import { useWorkspace } from '@dovo/studio-core'
 import { Button, Dialog, DialogContent, DialogTitle, DialogDescription } from '@dovo/studio-ui'
@@ -8,6 +8,7 @@ export function MessageAttachments({
   taskId,
   files = [],
   remove,
+  edit,
   disabled,
   previews,
   compact = false,
@@ -16,6 +17,7 @@ export function MessageAttachments({
   compact?: boolean
   files?: Attachment[]
   remove?: (id: string) => Promise<void>
+  edit?: (id: string) => Promise<void>
   previews?: Map<string, string>
   disabled?: boolean
 }) {
@@ -85,6 +87,19 @@ export function MessageAttachments({
               </span>
             )}
           </button>
+          {edit && ['image/png', 'image/jpeg', 'image/webp'].includes(file.mime) && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-6 shrink-0"
+              aria-label={`Edit ${file.name}`}
+              disabled={!connected || busy || disabled}
+              onClick={() => void edit(file.id)}
+            >
+              <Pencil className="size-3" />
+            </Button>
+          )}
           {remove && (
             <Button
               type="button"

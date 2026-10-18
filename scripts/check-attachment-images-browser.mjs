@@ -21,6 +21,11 @@ function App(){const attachments=useAttachments({id:'task',draftAttachments:[]})
   },
   [
     {
+      path: './image-editor',
+      importer: resolveDir,
+      contents: `export const useImageEditor=()=>({edit:async file=>file,editor:null});`,
+    },
+    {
       path: '@dovo/studio-core',
       contents: `export * from '@dovo/protocol';export const useWorkspace=()=>({request:window.request,connected:true,snapshot:undefined});`,
     },

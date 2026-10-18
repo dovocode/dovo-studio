@@ -12,6 +12,11 @@ const require = createRequire(`${ui}package.json`)
 // Real desktop and native permission components; native platform primitives render to DOM.
 // Discovery/provider execution is outside this test, and all writes stay in the fixture.
 const moduleMocks = new Map([
+  [`${mobile}agents/harness-icon.tsx`, `export const HarnessIcon=()=>null;`],
+  [
+    `${mobile}agents/use-model-catalog.ts`,
+    `export const useModelCatalog=()=>({catalog:{models:[],reasoning:[]},loading:false,refresh:()=>{}});`,
+  ],
   [
     `${ui}src/harness-catalog.ts`,
     `export const useHarnessCatalog=()=>({catalog:{models:[{id:'model',name:'Model',isDefault:true}],reasoning:[]},loading:false,error:null});`,
@@ -137,7 +142,7 @@ const result = await build({
         const save=async(next)=>{window.saved.push(next)};
         window.value=value;window.setSupported=setSupported;window.setDisabled=setDisabled;
         const workspace={connected:!disabled,workspace:snapshot.workspace,snapshot,request,runtimes:[],flush:async()=>{},setWorkspace:update=>setStoredTask(current=>update({...snapshot.workspace,tasks:[current]}).tasks[0])};
-        const runtime={connected:!disabled,snapshot,profile:{id:'runtime',name:'Runtime',connection:{address:'http://fixture',token:'fixture'}},overviews:[],call:request,callEffect:(...args)=>Effect.tryPromise(()=>request(...args)),previewTaskEffect:(_profile,_id,_preview,effect)=>effect};
+        const runtime={connected:!disabled,snapshot,profile:{id:'runtime',name:'Runtime',connection:{address:'http://fixture',token:'fixture'}},overviews:[],call:request,callEffect:(...args)=>Effect.tryPromise(()=>request(...args)),previewTaskEffect:(_profile,_id,preview,effect)=>effect.pipe(Effect.tap(()=>Effect.sync(()=>setStoredTask(current=>({...current,...preview})))))};
         const kind=window.fixture.kind;
         return <WorkspaceContext.Provider value={workspace}><RuntimeContext.Provider value={runtime}>
           <main style={{maxWidth:kind.startsWith('native')?390:800,padding:20}}>
@@ -148,7 +153,7 @@ const result = await build({
             {kind==='desktop-defaults'&&<DesktopDefaults inline scope="environment" repository={repository}/>}
             {kind==='native-agent'&&<NativeAgent original={initial} creating={false} onClose={()=>{}} onSave={save}/>}
             {kind==='native-launcher'&&<NativeLauncher selection={{key:'harness:'+value.provider,provider:value.provider,name:value.name,model:value.model,harness:value}} onChange={next=>change(next.harness)} snapshot={snapshot} repository={repository} disabled={disabled}/>}
-            {kind==='native-harness'&&<NativeHarness task={task} inline onClose={()=>{}}/>}
+            {kind==='native-harness'&&<NativeHarness task={storedTask} inline onClose={()=>{}}/>}
             {kind==='native-defaults'&&<NativeDefaults inline scope="environment" repository={repository}/>}
           </main>
         </RuntimeContext.Provider></WorkspaceContext.Provider>
@@ -217,6 +222,8 @@ async function pageFor(fixture) {
   return page
 }
 async function expandAdvanced(page) {
+  const more = page.getByRole('button', { name: 'More settings', exact: true })
+  if (await more.count()) await more.click()
   for (const details of await page.locator('details').all()) {
     if (
       (await details.locator('summary').textContent())?.startsWith('Advanced') &&
@@ -476,8 +483,8 @@ try {
       )
     if (kind === 'native-harness')
       assert.equal(
-        await page.getByRole('button', { name: 'Save agent & model', exact: true }).isDisabled(),
-        true,
+        await page.getByRole('button', { name: 'Save agent & model', exact: true }).count(),
+        0,
       )
     await page.close()
   }
@@ -506,14 +513,13 @@ try {
       assert.equal(await page.evaluate(() => window.saved[0].sandboxMode), 'workspace-write')
     } else if (kind === 'native-harness') {
       await nativeChoice(page, 'Sandbox', 'Inherit from access mode')
-      await page.getByRole('button', { name: 'Save agent & model', exact: true }).click()
-      await page.waitForFunction(() => window.saved.length === 1)
+      await page.waitForFunction(() => window.saved.length === 3)
       assert.equal(
-        await page.evaluate(() => window.saved[0].agentOverrides.after.sandboxMode),
+        await page.evaluate(() => window.saved.at(-1).agentOverrides.after.sandboxMode),
         null,
       )
       assert.equal(
-        await page.evaluate(() => window.saved[0].agentOverrides.after.approvalPolicy),
+        await page.evaluate(() => window.saved.at(-1).agentOverrides.after.approvalPolicy),
         'on-request',
       )
     } else {
@@ -531,11 +537,12 @@ try {
       kind,
       policy: { sandboxMode: 'workspace-write', approvalPolicy: 'untrusted' },
     })
-    await nativeChoice(
-      page,
-      kind === 'native-agent' ? 'Provider' : 'Agent',
-      kind === 'native-agent' ? 'Claude Code' : 'Claude',
-    )
+    if (kind === 'native-agent') await nativeChoice(page, 'Provider', 'Claude Code')
+    else {
+      await page.getByRole('button', { name: 'Back to models', exact: true }).click()
+      await page.getByRole('button', { name: 'Claude', exact: true }).click()
+      await page.getByRole('button', { name: 'Provider default', exact: true }).click()
+    }
     if (kind === 'native-agent') {
       await page.getByRole('button', { name: 'Save agent', exact: true }).click()
       await page.waitForFunction(() => window.saved.length === 1)

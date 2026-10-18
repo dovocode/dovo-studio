@@ -658,6 +658,7 @@ export function Composer({
           taskId={task.id}
           files={actions.draftAttachments}
           removable
+          edit={attachmentPicker.edit}
           disabled={busy || attaching}
           onBusy={setAttaching}
         />
@@ -1111,6 +1112,7 @@ export function Composer({
           {error || checkoutAction.error || draft.error || attachmentPicker.error}
         </Text>
       )}
+      {attachmentPicker.editor}
       {settings && <HarnessSettings task={task} onClose={() => setSettings(false)} />}
     </FileDropTarget>
   )

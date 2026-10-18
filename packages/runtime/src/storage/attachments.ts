@@ -10,6 +10,8 @@ import { Schema } from 'effect'
 import {
   attachmentSchema,
   attachmentUploadSchema,
+  attachmentReplaceSchema,
+  isImageAttachment,
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
   type Attachment,
@@ -71,7 +73,12 @@ export class Attachments {
       return attachment
     })
   }
-  async upload(value: unknown) {
+  replace(value: unknown) {
+    const { replaceId, ...input } = decode(attachmentReplaceSchema, value)
+    if (replaceId === input.id) throw new HttpError(400, 'Edited images need a new attachment ID')
+    return this.upload(input, replaceId)
+  }
+  async upload(value: unknown, replaceId?: string) {
     const input = decode(attachmentUploadSchema, value)
     const task = this.store.taskSummary(input.taskId)
     if (task.archivedAt) throw new HttpError(409, 'Restore the task before attaching files')
@@ -85,6 +92,12 @@ export class Attachments {
       const previous = this.read(input.taskId, input.id)
       if (previous.data !== input.data || previous.attachment.name !== name)
         throw new HttpError(409, 'Upload ID already has different contents')
+      if (
+        replaceId &&
+        (task.draftAttachments?.some((file) => file.id === replaceId) ||
+          !task.draftAttachments?.some((file) => file.id === input.id))
+      )
+        throw new HttpError(409, 'The draft attachment has changed. Reopen the image to edit it.')
       return {
         attachment: previous.attachment,
         revision: this.store.version(),
@@ -109,14 +122,26 @@ export class Attachments {
           throw new HttpError(409, 'Upload ID already has different contents')
         return
       }
-      if ((current.draftAttachments?.length ?? 0) >= MAX_ATTACHMENTS)
+      if (replaceId) {
+        const original = current.draftAttachments?.find((file) => file.id === replaceId)
+        if (!original)
+          throw new HttpError(
+            409,
+            'The image is no longer in the composer. Reopen it before editing.',
+          )
+        if (!isImageAttachment(original) || !isImageAttachment(attachment))
+          throw new HttpError(400, 'Only image attachments can be edited')
+      }
+      if (!replaceId && (current.draftAttachments?.length ?? 0) >= MAX_ATTACHMENTS)
         throw new HttpError(409, 'Attach up to 5 files per message')
       this.db
         .prepare('INSERT INTO attachments VALUES(?,?,?,?)')
         .run(input.id, input.taskId, JSON.stringify(attachment), data)
       this.store.updateTask(input.taskId, (t) => ({
         ...t,
-        draftAttachments: [...(t.draftAttachments ?? []), attachment],
+        draftAttachments: replaceId
+          ? (t.draftAttachments ?? []).map((file) => (file.id === replaceId ? attachment : file))
+          : [...(t.draftAttachments ?? []), attachment],
       }))
       this.activity.add('attachment', input.taskId, `Attached ${attachment.name}`, attachment)
     })

@@ -33,3 +33,8 @@ export {
   type ModelCatalogCacheScope,
   type ModelCatalogCacheStorage,
 } from './effects/model-catalog-cache.js'
+export {
+  imageEditorDocument,
+  parseImageEditorResult,
+  type ImageEditorResult,
+} from './images/image-editor.js'
