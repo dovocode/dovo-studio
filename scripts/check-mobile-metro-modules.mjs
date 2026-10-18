@@ -16,6 +16,8 @@ try {
   const require = createRequire(join(mobile, 'package.json'))
   const clientRuntime = await import(require.resolve('@dovo/client-runtime'))
   assert.equal(typeof clientRuntime.ModelCatalogCache, 'function')
+  assert.equal(typeof clientRuntime.imageEditorDocument, 'function')
+  assert.equal(typeof clientRuntime.parseImageEditorResult, 'function')
   const metro = createRequire(require.resolve('@expo/metro-config'))('metro')
   const config = await require('@expo/metro-config').loadUserConfig({
     projectRoot: mobile,
@@ -28,6 +30,9 @@ try {
     fixture,
     `
     import {parse} from 'jsonc-parser';
+    import {imageEditorDocument,parseImageEditorResult} from '../client-runtime/dist/images/image-editor.js';
+    globalThis.metroEditorDocument = imageEditorDocument('data:image/png;base64,AA==');
+    globalThis.metroEditorCancel = parseImageEditorResult({channel:'dovo-image-editor',type:'cancel'});
     globalThis.metroThemeResult = parse('{ /* theme */ "name": "Native theme", "colors": {}, }');
   `,
   )
@@ -51,8 +56,10 @@ try {
   }
   runInNewContext(await readFile(output, 'utf8'), context, { timeout: 10000 })
   assert.equal(context.metroThemeResult.name, 'Native theme')
+  assert.ok(context.metroEditorDocument.includes('Edit image'))
+  assert.equal(context.metroEditorCancel.type, 'cancel')
   console.log(
-    'Compiled model catalog constructor and production iOS theme parser load successfully.',
+    'Compiled model catalog, production iOS theme parser and image editor exports load successfully.',
   )
 } finally {
   process.chdir(previousDirectory)
