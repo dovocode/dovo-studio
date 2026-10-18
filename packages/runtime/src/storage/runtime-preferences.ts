@@ -1,3 +1,4 @@
+import { detectRuntimeType } from './runtime-type.js'
 import type Database from 'better-sqlite3'
 import { decode, mutableStruct, runtimePreferencesSchema } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -7,6 +8,7 @@ import { HttpError } from '../errors.js'
 import { worktreesRoot } from '../scm/tasks/task-worktree-keys.js'
 import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/protocol/local-settings'
 export class RuntimePreferences {
+  private readonly detectedType = detectRuntimeType()
   private readonly settingsPath: string | null
   constructor(
     private db: Database.Database,
@@ -19,14 +21,20 @@ export class RuntimePreferences {
   }
   get() {
     const saved = this.settingsPath && readLocalSettingsSection('runtime', this.settingsPath)
-    if (saved !== undefined && saved !== null) return decode(runtimePreferencesSchema, saved)
+    if (saved !== undefined && saved !== null) return this.decode(saved)
     const row = decode(
       Schema.UndefinedOr(mutableStruct({ value: Schema.String })),
       this.db.prepare('SELECT value FROM documents WHERE id = ?').get('runtime-preferences'),
     )
-    const settings = decode(runtimePreferencesSchema, row ? JSON.parse(row.value) : {})
+    const settings = this.decode(row ? JSON.parse(row.value) : {})
     if (row && this.settingsPath)
       writeLocalSettingsSection('runtime', () => settings, this.settingsPath)
+    return settings
+  }
+  private decode(value: unknown) {
+    const settings = decode(runtimePreferencesSchema, value)
+    if (value && typeof value === 'object' && !('runtimeIcon' in value))
+      settings.runtimeIcon = this.detectedType
     return settings
   }
   /** Partial saves merge into the current preferences, so a client that knows only some fields

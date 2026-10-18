@@ -104,3 +104,21 @@ it('defaults child concurrency to four and preserves validated overrides across 
     db.close()
   }
 })
+
+it('uses detected server type for unset preferences and preserves explicit choices', () => {
+  vi.stubEnv('DOVO_SERVER_DISTRIBUTION', 'archive')
+  const db = openDatabase(':memory:')
+  try {
+    const preferences = new RuntimePreferences(db)
+    expect(preferences.get().runtimeIcon).toBe('server')
+    preferences.save({ autoArchiveDays: 7 })
+    expect(new RuntimePreferences(db).get().runtimeIcon).toBe('server')
+    preferences.save({ runtimeIcon: 'desktop' })
+    expect(new RuntimePreferences(db).get().runtimeIcon).toBe('desktop')
+    preferences.save({ runtimeIcon: 'laptop' })
+    expect(new RuntimePreferences(db).get().runtimeIcon).toBe('laptop')
+  } finally {
+    db.close()
+    vi.unstubAllEnvs()
+  }
+})

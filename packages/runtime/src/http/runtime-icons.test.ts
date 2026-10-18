@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { startRuntime } from '../index'
 import { decode, snapshotSchema } from '@dovo/protocol'
 
@@ -45,5 +45,23 @@ it('shares validated icons with paired devices and invalidates their cached snap
     ).toBe(401)
   } finally {
     await runtime.close()
+  }
+})
+
+it('advertises detected server priority to paired retrieval clients', async () => {
+  vi.stubEnv('DOVO_SERVER_DISTRIBUTION', 'archive')
+  const owner = 'detected-server-owner-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: owner, port: 0 })
+  try {
+    const response = await fetch(`http://127.0.0.1:${runtime.port}/api/retrieval/host`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ role: 'server', enabled: true })
+  } finally {
+    await runtime.close()
+    vi.unstubAllEnvs()
   }
 })

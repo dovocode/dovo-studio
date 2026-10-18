@@ -14,7 +14,9 @@ registration when Studio reconnects; revoking the registering device removes its
 Computer preferences include **Share retrieval with paired computers** and **Preferred retrieval
 computer**. Automatic preference uses the existing computer icon/type: Server and Cloud first,
 Desktop (including CPU/Terminal) second, Laptop last. Equal-priority hosts use runtime ID order, so
-connected machines converge on the same executor. A preferred computer overrides that order. An
+connected machines converge on the same executor. When no computer type is saved, Dovo server
+deployments default to Server, Linux portable chassis default to Laptop, and other hosts default to
+Desktop. A saved type always overrides detection. A preferred computer overrides that order. An
 unavailable, disabled, older or differently authenticated host falls back to the next eligible host
 and eventually local execution.
 
