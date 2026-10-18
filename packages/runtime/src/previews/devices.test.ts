@@ -65,3 +65,29 @@ it('includes Android authorization problems without presenting phones as emulato
     { id: 'physical-android:usb-three', connection: 'offline', state: 'stopped' },
   ])
 })
+
+it('accepts physical CoreDevice entries without reality while excluding simulators', () => {
+  expect(
+    parsePhysicalIosDevices(
+      JSON.stringify({
+        result: {
+          devices: [
+            {
+              identifier: 'phone',
+              hardwareProperties: { platform: 'iOS', udid: '00008140-001248612E44801C' },
+              deviceProperties: { name: 'iPhone' },
+            },
+            {
+              identifier: 'sim',
+              hardwareProperties: { platform: 'iOS', udid: 'sim', reality: 'simulated' },
+            },
+            {
+              identifier: 'unknown-reality',
+              hardwareProperties: { platform: 'iOS', udid: 'BBAEC153-BE35-4E35-94DA-977683EFA659' },
+            },
+          ],
+        },
+      }),
+    ),
+  ).toMatchObject([{ id: 'physical-ios:00008140-001248612E44801C', name: 'iPhone' }])
+})

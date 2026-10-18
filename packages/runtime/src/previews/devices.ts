@@ -70,7 +70,7 @@ const physicalIosSchema = mutableStruct({
         identifier: Schema.String,
         hardwareProperties: Schema.optional(
           mutableStruct({
-            reality: Schema.String,
+            reality: Schema.optional(Schema.String),
             platform: Schema.String,
             udid: Schema.String,
           }),
@@ -90,7 +90,7 @@ const physicalIosSchema = mutableStruct({
         properties: Schema.optional(
           mutableStruct({
             hardware: mutableStruct({
-              reality: Schema.String,
+              reality: Schema.optional(Schema.String),
               platform: Schema.String,
               udid: Schema.String,
             }),
@@ -119,7 +119,14 @@ const physicalIosSchema = mutableStruct({
 export function parsePhysicalIosDevices(raw: string): PreviewDevice[] {
   return decode(physicalIosSchema, JSON.parse(raw)).result.devices.flatMap((device) => {
     const hardware = device.properties?.hardware ?? device.hardwareProperties
-    if (hardware?.reality !== 'physical' || hardware.platform !== 'iOS') return []
+    if (!hardware || hardware.platform !== 'iOS' || hardware.reality === 'simulated') return []
+    // Recent CoreDevice omits reality for physical devices; require a hardware UDID.
+    if (hardware.reality !== undefined && hardware.reality !== 'physical') return []
+    if (
+      hardware.reality === undefined &&
+      !/^(?:[a-f0-9]{8}-[a-f0-9]{16}|[a-f0-9]{40})$/i.test(hardware.udid)
+    )
+      return []
     const state =
       device.properties?.connection.state ??
       device.connectionProperties?.tunnelState ??
