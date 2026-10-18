@@ -17,6 +17,13 @@ export const Choice=({label,value,items,onChange})=><select aria-label={label} v
 `
 const stubs = [
   {
+    path: './screenshot-attachment',
+    importer: mobile,
+    contents:
+      'export const useScreenshotAttachment=()=>({editor:null,error:"",busy:false,attach:async image=>{window.screenshots=(window.screenshots??[]).concat(image)}});',
+  },
+  { path: 'react-native-view-shot', contents: 'export const captureRef=async()=>"c2NyZWVu";' },
+  {
     path: 'react-native',
     contents: `${controls}
 const listeners=new Set();

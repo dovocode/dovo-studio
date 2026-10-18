@@ -13,7 +13,7 @@ import {
   type Task,
 } from '@dovo/studio-core'
 import { useWorkspace } from '@dovo/studio-core'
-export function useAttachments(task: Task) {
+export function useAttachments(task: Pick<Task, 'id' | 'draftAttachments'>) {
   const { request, snapshot, connected } = useWorkspace()
   const imageEditor = useImageEditor()
   const lock = useRef(false)

@@ -13,6 +13,7 @@ import {
   Ellipsis,
   Plus,
   MonitorUp,
+  Camera,
   X,
 } from 'lucide-react'
 import {
@@ -42,6 +43,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@dovo/studio-ui'
+import { useScreenshotAttachment } from './screenshot-attachment'
 import { RemoteBrowser } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
@@ -125,6 +127,7 @@ function BrowserContent({
 }) {
   const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace(),
     { browser } = useStudioHost()
+  const screenshots = useScreenshotAttachment(taskId)
   const preferences = useAppPreferences()
   const profiles = preferences.browserProfiles.length
     ? preferences.browserProfiles
@@ -496,7 +499,12 @@ function BrowserContent({
         },
         previewResultSchema,
       )
-      if (mount.current && result.image) setImage(result.image)
+      if (action === 'screenshot' && !result.image)
+        throw new Error('The device did not return a screenshot. Please try again.')
+      if (mount.current && result.image) {
+        setImage(result.image)
+        if (action === 'screenshot') await screenshots.attach(result.image)
+      }
       await loadDevices()
     })
   const closeTab = (tab: BrowserTab) => {
@@ -819,6 +827,12 @@ function BrowserContent({
       className="flex h-full min-h-0 flex-col"
       aria-label={initialMode === 'devices' ? 'Device previews' : 'Browser previews'}
     >
+      {screenshots.editor}
+      {screenshots.error && (
+        <p role="alert" className="p-2 text-xs text-destructive">
+          {screenshots.error}
+        </p>
+      )}
       {deploymentDevice && (
         <Dialog
           open
@@ -946,6 +960,26 @@ function BrowserContent({
             placeholder="Search or enter URL"
             className="h-8 min-w-0 flex-1 border-transparent bg-transparent px-2 text-xs shadow-none focus-visible:ring-1"
           />
+          {browser && (
+            <IconButton
+              type="button"
+              label="Take screenshot"
+              className="size-7 shrink-0"
+              disabled={busy || screenshots.busy || !connected || !url}
+              onClick={() =>
+                void act(async () => {
+                  const result = await browser({ action: 'screenshot', key: browserKey })
+                  if (!result?.image)
+                    throw new Error(
+                      'Could not capture the browser. Update the desktop app and try again.',
+                    )
+                  await screenshots.attach(result.image)
+                })
+              }
+            >
+              <Camera size={15} />
+            </IconButton>
+          )}
           {newTabMenu}
           {browserOptions}
         </form>

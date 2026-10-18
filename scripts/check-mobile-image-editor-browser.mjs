@@ -8,10 +8,10 @@ const built = await bundleBrowser(
       resolveDir: mobile,
       loader: 'tsx',
       contents: `
-import {createRoot} from 'react-dom/client';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';
+import {useScreenshotAttachment} from './src/tasks/preview/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';
 window.data={};window.deleted=[];window.calls=[];window.rows=[];window.stored={};window.fail=false;
 window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(window.fail)throw Error('Mobile upload rejected');const attachment={id:input.id,name:input.name,mime:input.name.endsWith('.png')?'image/png':'application/octet-stream',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:1}};
-function App(){const picker=useAttachmentPicker('task');window.upload=picker.upload;window.edit=picker.edit;window.busy=picker.busy;return <>{picker.editor}<div role="alert">{picker.error}</div><textarea aria-label="Message" defaultValue="Keep mobile draft"/></>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const picker=useAttachmentPicker('task');const screenshots=useScreenshotAttachment('task');window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.captureError=screenshots.error;window.upload=picker.upload;window.edit=picker.edit;window.busy=picker.busy;return <>{picker.editor}{screenshots.editor}<div role="alert">{picker.error}</div><textarea aria-label="Message" defaultValue="Keep mobile draft"/></>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -42,11 +42,28 @@ function App(){const picker=useAttachmentPicker('task');window.upload=picker.upl
     {
       path: '../../ui/layout/safe-modal',
       importer: mobile,
-      contents: `export const SafeModal=({children})=><section>{children}</section>;`,
+      contents: `export const SafeModal=({children})=><section style={{height:780,display:"flex",flexDirection:"column",background:"#18181b",color:"white"}}>{children}</section>;`,
     },
     {
-      path: 'react-native-webview',
-      contents: `import {useEffect,useRef} from 'react';export default function WebView({source,onMessage}){const ref=useRef(null);useEffect(()=>{const receive=event=>{if(event.source===ref.current?.contentWindow)onMessage({nativeEvent:{data:JSON.stringify(event.data)}})};window.addEventListener('message',receive);return()=>window.removeEventListener('message',receive)},[onMessage]);return <iframe ref={ref} title="Native image editor" sandbox="allow-scripts" style={{width:'100%',height:700,border:0}} srcDoc={source.html}/>}`,
+      path: '../../ui/theme',
+      importer: mobile,
+      contents: `export const useTheme=()=>({colors:{text:'#eee',muted:'#aaa',background:'#18181b',accent:'#38bdf8',selection:'#164e63',border:'#555',error:'#f44'},styles:{title:{fontSize:19},muted:{fontSize:13,color:'#aaa'},error:{color:'#f44'}}});`,
+    },
+    {
+      path: '../../ui/content/text',
+      importer: mobile,
+      contents: `export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole} style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;`,
+    },
+    {
+      path: 'react-native-svg',
+      contents: `import {forwardRef,useImperativeHandle,useLayoutEffect,useRef} from 'react';
+export default forwardRef(function Svg({children,pointerEvents,onLayout,accessible,...props},ref){const node=useRef(null);useLayoutEffect(()=>{onLayout?.()},[]);useImperativeHandle(ref,()=>({toDataURL(callback,size){if(window.exportFail){callback('');return}const element=node.current.cloneNode(true);const width=(size?.width??Number(element.getAttribute('width')))*3,height=(size?.height??Number(element.getAttribute('height')))*3;element.removeAttribute('style');element.setAttribute('width',width);element.setAttribute('height',height);const image=new window.Image();image.onload=()=>{const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;canvas.getContext('2d').drawImage(image,0,0);callback(canvas.toDataURL().split(',')[1])};image.src='data:image/svg+xml;base64,'+btoa(new XMLSerializer().serializeToString(element))}}));return <svg xmlns="http://www.w3.org/2000/svg" {...props} ref={node} style={{pointerEvents}}>{children}</svg>});
+export const Image=({href,onLoad,...props})=><image {...props} href={'data:image/png;base64,'+window.data[href]} onLoad={onLoad}/>;
+export const Path=props=><path {...props}/>;export const Rect=props=><rect {...props}/>;`,
+    },
+    {
+      path: 'expo-image-manipulator',
+      contents: `let sequence=0;export const SaveFormat={PNG:'png'};export const ImageManipulator={manipulate(uri){let size;return {resize(next){size=next;return this},release(){},async renderAsync(){return {release(){},async saveAsync(){const image=new window.Image();image.src='data:image/png;base64,'+window.data[uri];await image.decode();const canvas=document.createElement('canvas');canvas.width=size.width;canvas.height=size.height;canvas.getContext('2d').drawImage(image,0,0,size.width,size.height);const output='cache/normalized-'+ ++sequence+'.png';window.data[output]=canvas.toDataURL().split(',')[1];return {uri:output}}}}}}};`,
     },
     {
       path: 'expo-file-system',
@@ -58,7 +75,14 @@ function App(){const picker=useAttachmentPicker('task');window.upload=picker.upl
     },
     {
       path: 'react-native',
-      contents: `export const Alert={alert(){}};export const Keyboard={dismiss(){}};export const Linking={openSettings:async()=>{}};export const Platform={OS:'ios'};`,
+      contents: `import {useLayoutEffect,useRef} from 'react';
+const flatten=s=>Array.isArray(s)?Object.assign({},...s):s;
+export function View({children,style,onLayout,accessibilityLabel,onStartShouldSetResponder,onMoveShouldSetResponder,onResponderGrant,onResponderMove,onResponderRelease,onResponderTerminate,onResponderTerminationRequest,pointerEvents}){const ref=useRef(null);useLayoutEffect(()=>{if(!onLayout)return;const observer=new ResizeObserver(()=>{const box=ref.current.getBoundingClientRect();onLayout({nativeEvent:{layout:{width:box.width,height:box.height}}})});observer.observe(ref.current);return()=>observer.disconnect()},[onLayout]);const active=useRef(false);const event=e=>{const box=ref.current.getBoundingClientRect();return {nativeEvent:{locationX:e.clientX-box.x,locationY:e.clientY-box.y}}};return <div ref={ref} aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',minHeight:0,boxSizing:'border-box',...flatten(style),pointerEvents,touchAction:onResponderGrant?'none':undefined}} onPointerDown={e=>{if(onStartShouldSetResponder?.()){active.current=true;e.currentTarget.setPointerCapture(e.pointerId);onResponderGrant(event(e))}}} onPointerMove={e=>{if(active.current)onResponderMove?.(event(e))}} onPointerUp={e=>{if(active.current){active.current=false;onResponderRelease?.(event(e))}}} onPointerCancel={()=>{active.current=false;onResponderTerminate?.()}}>{children}</div>}
+export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState})=><button aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress} style={{border:0,font:'inherit',...flatten(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const ScrollView=({children,style,contentContainerStyle})=><div style={{...flatten(style),overflowX:'auto',flexShrink:0}}><div style={{display:'flex',...contentContainerStyle}}>{children}</div></div>;
+export const ActivityIndicator=({accessibilityLabel})=><span aria-label={accessibilityLabel}/>;
+export const Image={getSize:async uri=>{const img=new window.Image();img.src='data:image/png;base64,'+window.data[uri];await img.decode();return {width:img.width,height:img.height}}};
+export const PixelRatio={get:()=>3};export const Alert={alert(){}};export const Keyboard={dismiss(){}};export const Linking={openSettings:async()=>{}};export const Platform={OS:'ios'};`,
     },
     {
       path: 'expo-image-picker',
@@ -87,7 +111,7 @@ try {
     window.asset = { uri: 'photo.png', name: 'photo.png', mimeType: 'image/png' }
     window.operation = window.upload([window.asset])
   })
-  const editor = page.frameLocator('iframe')
+  const editor = page.locator('section')
   await editor.getByRole('button', { name: 'Use original', exact: true }).click()
   await page.waitForFunction(() => !window.busy && window.rows.length === 1)
   const originalId = await page.evaluate(() => window.rows[0].id)
@@ -95,12 +119,16 @@ try {
     window.operation = window.edit(window.rows[0].id)
   })
   await editor.getByRole('button', { name: 'Crop', exact: true }).click()
-  const box = await editor.locator('canvas').boundingBox()
+  const box = await editor.getByLabel('Image drawing area').boundingBox()
   await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.25)
   await page.mouse.down()
   await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.75, { steps: 10 })
   await page.mouse.up()
-  await editor.getByRole('button', { name: 'Attach image', exact: true }).click()
+  await editor.getByRole('button', { name: 'Undo', exact: true }).click()
+  assert.equal(await editor.locator('svg').first().getAttribute('viewBox'), '0 0 400 240')
+  await editor.getByRole('button', { name: 'Redo', exact: true }).click()
+  assert.equal(await editor.locator('svg').first().getAttribute('viewBox'), '100 60 200 120')
+  await editor.getByRole('button', { name: 'Done', exact: true }).click()
   await page.waitForFunction(
     () => !window.busy && window.calls.some((c) => c.path === '/api/attachments/replace'),
   )
@@ -110,6 +138,65 @@ try {
   assert.equal(
     await page.getByRole('textbox', { name: 'Message' }).inputValue(),
     'Keep mobile draft',
+  )
+  assert.deepEqual(
+    await page.evaluate(async () => {
+      const blob = await (
+        await fetch('data:image/png;base64,' + window.stored[window.rows[0].id].data)
+      ).blob()
+      const image = await createImageBitmap(blob)
+      return [image.width, image.height]
+    }),
+    [200, 120],
+  )
+  await page.evaluate(() => {
+    window.operation = window.edit(window.rows[0].id)
+  })
+  for (const tool of ['Draw', 'Highlight', 'Arrow', 'Box']) {
+    await editor.getByRole('button', { name: tool, exact: true }).click()
+    const area = await editor.getByLabel('Image drawing area').boundingBox()
+    await page.mouse.move(area.x + area.width * 0.2, area.y + area.height * 0.5)
+    await page.mouse.down()
+    await page.mouse.move(area.x + area.width * 0.8, area.y + area.height * 0.6, { steps: 8 })
+    await page.mouse.up()
+  }
+  assert.equal(await editor.locator('path').count(), 4)
+  assert.equal(await editor.locator('path').nth(1).getAttribute('opacity'), '0.35')
+  await editor.getByRole('button', { name: 'Undo', exact: true }).click()
+  assert.equal(await editor.locator('path').count(), 3)
+  await editor.getByRole('button', { name: 'Redo', exact: true }).click()
+  assert.equal(await editor.locator('path').count(), 4)
+  await editor.getByRole('button', { name: 'Reset', exact: true }).click()
+  assert.equal(await editor.locator('path').count(), 0)
+  await editor.getByRole('button', { name: 'Draw', exact: true }).click()
+  await editor.getByRole('button', { name: 'Blue', exact: true }).click()
+  await editor.getByRole('button', { name: 'Thick', exact: true }).click()
+  const drawing = await editor.getByLabel('Image drawing area').boundingBox()
+  await page.mouse.move(drawing.x + drawing.width * 0.2, drawing.y + drawing.height * 0.5)
+  await page.mouse.down()
+  await page.mouse.move(drawing.x + drawing.width * 0.8, drawing.y + drawing.height * 0.5, {
+    steps: 8,
+  })
+  await page.mouse.up()
+  await page.screenshot({ path: '/tmp/dovo-native-image-editor.png' })
+  await editor.getByRole('button', { name: 'Done', exact: true }).click()
+  await page.waitForFunction(() => !window.busy)
+  assert.equal(
+    await page.evaluate(async () => {
+      const image = await createImageBitmap(
+        await (
+          await fetch('data:image/png;base64,' + window.stored[window.rows[0].id].data)
+        ).blob(),
+      )
+      const canvas = document.createElement('canvas')
+      canvas.width = image.width
+      canvas.height = image.height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(image, 0, 0)
+      const pixel = ctx.getImageData(100, 60, 1, 1).data
+      return pixel[2] > 200 && pixel[0] < 100
+    }),
+    true,
   )
   const editedId = await page.evaluate(() => window.rows[0].id)
   await page.evaluate(() => {
@@ -123,21 +210,56 @@ try {
     window.fail = true
     window.operation = window.edit(window.rows[0].id)
   })
-  await editor.getByRole('button', { name: 'Pen', exact: true }).click()
-  const b = await editor.locator('canvas').boundingBox()
+  await editor.getByRole('button', { name: 'Draw', exact: true }).click()
+  const b = await editor.getByLabel('Image drawing area').boundingBox()
   await page.mouse.move(b.x + b.width * 0.2, b.y + b.height * 0.5)
   await page.mouse.down()
   await page.mouse.move(b.x + b.width * 0.8, b.y + b.height * 0.5, { steps: 8 })
   await page.mouse.up()
-  await editor.getByRole('button', { name: 'Attach image', exact: true }).click()
+  await page.evaluate(() => {
+    window.exportFail = true
+  })
+  await editor.getByRole('button', { name: 'Done', exact: true }).click()
+  await editor.getByRole('alert').filter({ hasText: 'Could not export this image' }).waitFor()
+  assert.equal(await page.evaluate(() => window.rows[0].id), editedId)
+  assert.equal(
+    await page.evaluate(
+      () => Object.keys(window.data).filter((key) => key.startsWith('cache/image-edit-')).length,
+    ),
+    1,
+  )
+  await page.evaluate(() => {
+    window.exportFail = false
+  })
+  await editor.getByRole('button', { name: 'Done', exact: true }).click()
   await page.waitForFunction(() => !window.busy)
   await page.getByRole('alert').filter({ hasText: 'Mobile upload rejected' }).waitFor()
   await page.waitForFunction(() => !window.busy)
   assert.equal(await page.evaluate(() => window.rows[0].id), editedId)
   assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
+  await page.evaluate(() => {
+    window.fail = false
+    window.operation = window.capture('data:image/png;base64,' + window.data['photo.png'])
+  })
+  await editor.getByRole('button', { name: 'Use original', exact: true }).click()
+  await page.waitForFunction(() => !window.captureBusy && window.rows.length === 2)
+  assert.match(await page.evaluate(() => window.rows[1].name), /^screenshot-/)
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
+  await page.evaluate(() => {
+    window.operation = window.capture('data:image/png;base64,' + window.data['photo.png'])
+  })
+  await editor.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.waitForFunction(() => !window.captureBusy)
+  assert.equal(await page.evaluate(() => window.rows.length), 2)
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
+  await page.evaluate(async () => {
+    await window.capture('https://external.test/image.png')
+  })
+  await page.waitForFunction(() => window.captureError.includes('Could not read the screenshot'))
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile image editor: real picker/WebView bridge, initial upload, cropped replacement, asynchronous file writes, cancel/failure preservation and cache cleanup passed.',
+    'Mobile image editor: real native picker/editor with SVG and touch adapters, drawing pixels, all tools, crop bounds, undo/redo/reset, composer replacement, asynchronous writes, export/upload failures, cancellation, screenshot edit/attach/cancel/validation and cache cleanup passed.',
   )
 } finally {
   await browser.close()

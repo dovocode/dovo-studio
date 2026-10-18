@@ -3,7 +3,8 @@ import { useOpenAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { type ComponentRef, useEffect, useLayoutEffect, useRef } from 'react'
+import { captureRef } from 'react-native-view-shot'
 import { Image, Platform, ScrollView, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import {
@@ -22,6 +23,7 @@ import { IconButton } from '../../ui/controls/icon-button'
 import { Choice } from '../../ui/controls/choice'
 import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
+import { useScreenshotAttachment } from './screenshot-attachment'
 import { RemoteBrowser } from './remote-browser'
 import { PhysicalControls } from './physical-controls'
 import { DeviceActions, type DeviceForward } from './device-actions'
@@ -151,6 +153,8 @@ function BrowserContent({
 }) {
   const { colors, styles } = useTheme()
 
+  const screenshots = useScreenshotAttachment(taskId)
+  const browserCapture = useRef<ComponentRef<typeof View>>(null)
   const openLink = useOpenAppLink(taskId)
   const { profile, profiles, connected, read, callEffect } = useRuntime(),
     { busy, error, act } = useAction()
@@ -276,7 +280,13 @@ function BrowserContent({
           },
           previewResultSchema,
         )
-        if (result.image) setImage(result.image)
+        if (action === 'screenshot' && !result.image)
+          throw new Error('The device did not return a screenshot. Please try again.')
+        if (result.image) {
+          setImage(result.image)
+          const captured = result.image
+          if (action === 'screenshot') yield* nativeEffect(() => screenshots.attach(captured))
+        }
         yield* nativeEffect(() => load())
       }),
     )
@@ -364,6 +374,12 @@ function BrowserContent({
         flex: 1,
       }}
     >
+      {screenshots.editor}
+      {screenshots.error ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {screenshots.error}
+        </Text>
+      ) : null}
       <View
         style={{
           display: expanded ? 'none' : 'flex',
@@ -412,6 +428,26 @@ function BrowserContent({
                 setLoadError('')
                 web.current?.reload()
               }}
+            />
+            <Action
+              secondary
+              label="Take screenshot"
+              disabled={
+                !connected || busy || screenshots.busy || !url || !active || Platform.OS === 'web'
+              }
+              onPress={() =>
+                act(() =>
+                  nativeEffect(async () => {
+                    if (!browserCapture.current)
+                      throw new Error('Open the browser page before taking a screenshot.')
+                    const data = await captureRef(browserCapture.current, {
+                      format: 'png',
+                      result: 'base64',
+                    })
+                    await screenshots.attach(`data:image/png;base64,${data}`)
+                  }),
+                )
+              }
             />
             <IconButton
               label="Open externally"
@@ -501,41 +537,43 @@ function BrowserContent({
                     <Text style={styles.text}>Open this preview externally in Safari.</Text>
                   </View>
                 ) : active ? (
-                  <WebView
-                    key={previewGeneration}
-                    ref={web}
-                    source={{
-                      uri: url,
-                    }}
-                    style={{
-                      flex: 1,
-                    }}
-                    originWhitelist={['http://*', 'https://*']}
-                    setSupportMultipleWindows={false}
-                    allowsInlineMediaPlayback
-                    allowsBackForwardNavigationGestures={false}
-                    onShouldStartLoadWithRequest={(request) =>
-                      /^https?:\/\//i.test(request.url) || request.url === 'about:blank'
-                    }
-                    onError={(event) => setLoadError(event.nativeEvent.description)}
-                    onContentProcessDidTerminate={recoverPreview}
-                    onRenderProcessGone={recoverPreview}
-                    onHttpError={(event) =>
-                      setLoadError(`Page returned HTTP ${event.nativeEvent.statusCode}`)
-                    }
-                    onNavigationStateChange={(state) => {
-                      const pageUrl = /^https?:\/\//i.test(state.url)
-                      setHistory((previous) => ({
-                        back: state.canGoBack,
-                        forward: state.canGoForward,
-                        url: pageUrl ? state.url : previous.url,
-                      }))
-                      if (pageUrl) {
-                        setInput(state.url)
-                        rememberAddress(scope, state.url)
+                  <View ref={browserCapture} collapsable={false} style={{ flex: 1 }}>
+                    <WebView
+                      key={previewGeneration}
+                      ref={web}
+                      source={{
+                        uri: url,
+                      }}
+                      style={{
+                        flex: 1,
+                      }}
+                      originWhitelist={['http://*', 'https://*']}
+                      setSupportMultipleWindows={false}
+                      allowsInlineMediaPlayback
+                      allowsBackForwardNavigationGestures={false}
+                      onShouldStartLoadWithRequest={(request) =>
+                        /^https?:\/\//i.test(request.url) || request.url === 'about:blank'
                       }
-                    }}
-                  />
+                      onError={(event) => setLoadError(event.nativeEvent.description)}
+                      onContentProcessDidTerminate={recoverPreview}
+                      onRenderProcessGone={recoverPreview}
+                      onHttpError={(event) =>
+                        setLoadError(`Page returned HTTP ${event.nativeEvent.statusCode}`)
+                      }
+                      onNavigationStateChange={(state) => {
+                        const pageUrl = /^https?:\/\//i.test(state.url)
+                        setHistory((previous) => ({
+                          back: state.canGoBack,
+                          forward: state.canGoForward,
+                          url: pageUrl ? state.url : previous.url,
+                        }))
+                        if (pageUrl) {
+                          setInput(state.url)
+                          rememberAddress(scope, state.url)
+                        }
+                      }}
+                    />
+                  </View>
                 ) : null}
               </View>
             </ScrollView>
@@ -668,7 +706,7 @@ function BrowserContent({
                     )}
                     <Action
                       secondary
-                      label="Screenshot"
+                      label="Take screenshot"
                       disabled={!connected || busy}
                       onPress={() => deviceAction(device, 'screenshot')}
                     />
@@ -691,7 +729,7 @@ function BrowserContent({
                     />
                     <Action
                       secondary
-                      label="Screenshot"
+                      label="Take screenshot"
                       disabled={!connected || busy || device.state !== 'booted'}
                       onPress={() => deviceAction(device, 'screenshot')}
                     />
@@ -704,7 +742,9 @@ function BrowserContent({
           {actions}
           {image && (
             <>
-              <Text style={styles.muted}>Captured screenshot · refresh with Screenshot</Text>
+              <Text style={styles.muted}>
+                Captured screenshot · capture again with Take screenshot
+              </Text>
               <Image
                 source={{
                   uri: image,

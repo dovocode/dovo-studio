@@ -132,7 +132,7 @@
     "test:workspace-recovery:browser": "node scripts/check-workspace-recovery-browser.mjs",
     "test:browser": "node scripts/run-browser-suites.mjs",
     "test:code-review:browser": "node scripts/check-code-review-browser.mjs && node scripts/check-mobile-review-browser.mjs && node scripts/check-mobile-review-report-browser.mjs",
-    "test:attachment-images:browser": "node scripts/build-image-editor.mjs --check && node scripts/check-image-editor-browser.mjs && node scripts/check-image-attachments-browser.mjs && node scripts/check-mobile-image-editor-browser.mjs && node scripts/check-attachment-images-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs",
+    "test:attachment-images:browser": "node scripts/build-image-editor.mjs --check && node scripts/build-browser-viewer.mjs && node scripts/check-preview-screenshots-browser.mjs && node scripts/check-image-editor-browser.mjs && node scripts/check-image-attachments-browser.mjs && node scripts/check-mobile-image-editor-browser.mjs && node scripts/check-attachment-images-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs",
     "test:file-drop:browser": "node scripts/check-composer-send-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs",
     "test:native-project-panels:browser": "node scripts/check-native-project-panels-browser.mjs && node scripts/check-native-audit-browser.mjs",
     "test:shared-pages:browser": "node scripts/check-shared-pages-browser.mjs",

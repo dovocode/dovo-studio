@@ -25,20 +25,25 @@ const built = await build({
           path,
           namespace: 'fixture',
         }))
-        builder.onResolve({ filter: /^\.\/(device-list|physical-controls)$/ }, ({ path }) => ({
-          path,
-          namespace: 'fixture',
-        }))
+        builder.onResolve(
+          { filter: /^\.\/(device-list|physical-controls|screenshot-attachment)$/ },
+          ({ path }) => ({
+            path,
+            namespace: 'fixture',
+          }),
+        )
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
           loader: 'js',
           resolveDir: root + 'packages/extension-tasks',
           contents: path.endsWith('/state')
             ? `export {useState as useApplicationState} from 'react';`
-            : path === './device-list'
-              ? 'export const DeviceList=()=>null;'
-              : path === './physical-controls'
-                ? 'export const PhysicalControls=()=>null;'
-                : `
+            : path === './screenshot-attachment'
+              ? 'export const useScreenshotAttachment=()=>({editor:null,error:"",busy:false,attach:async()=>{}});'
+              : path === './device-list'
+                ? 'export const DeviceList=()=>null;'
+                : path === './physical-controls'
+                  ? 'export const PhysicalControls=()=>null;'
+                  : `
 import {createContext,createElement,useContext,useState} from 'react';
 import {resolveSettingsTarget} from '@dovo/protocol';
 export * from '@dovo/protocol';

@@ -235,6 +235,7 @@ export const browserCommandSchema = Schema.Union([
       'hard-reload',
       'devtools',
       'status',
+      'screenshot',
     ]),
     key: maxValue(minValue(Schema.String, 1), 500),
   }),
@@ -245,6 +246,7 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       url: string
       title?: string
       cdp?: string
+      image?: string
       back: boolean
       forward: boolean
     }

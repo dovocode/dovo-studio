@@ -15,6 +15,12 @@ const mocks = vi.hoisted(() => {
     disableDeviceEmulation: vi.fn<(...args: unknown[]) => void>(),
     navigationHistory: { canGoBack: () => false, canGoForward: () => false },
     getURL: () => 'https://example.com/',
+    capturePage: vi.fn<() => Promise<{ isEmpty: () => boolean; toDataURL: () => string }>>(
+      async () => ({
+        isEmpty: () => false,
+        toDataURL: () => 'data:image/png;base64,c2NyZWVu',
+      }),
+    ),
   }
   const view = {
     webContents: contents,
@@ -379,4 +385,21 @@ it('keeps hidden views while an agent is connected and evicts them after it disc
   await vi.advanceTimersByTimeAsync(30_000)
   expect(mocks.contents.close).toHaveBeenCalledOnce()
   expect(bridge.remove).toHaveBeenCalledWith(JSON.stringify([1, 'agent']))
+})
+
+it('captures only the requested browser view and rejects empty images', async () => {
+  const call = handler()
+  await call(event, {
+    action: 'show',
+    key: 'capture',
+    url: 'https://example.com/',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  })
+  await expect(call(event, { action: 'screenshot', key: 'missing' })).resolves.toBeUndefined()
+  expect(mocks.contents.capturePage).not.toHaveBeenCalled()
+  await expect(call(event, { action: 'screenshot', key: 'capture' })).resolves.toMatchObject({
+    image: 'data:image/png;base64,c2NyZWVu',
+  })
+  mocks.contents.capturePage.mockResolvedValueOnce({ isEmpty: () => true, toDataURL: () => '' })
+  await expect(call(event, { action: 'screenshot', key: 'capture' })).rejects.toThrow('no image')
 })

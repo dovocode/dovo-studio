@@ -1,3 +1,4 @@
+import { useScreenshotAttachment } from './screenshot-attachment'
 import { runtimeTransportAddress } from '@dovo/protocol'
 import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 import {
@@ -28,6 +29,8 @@ export function RemoteBrowser({
   reloadToken?: number
 }) {
   const { connection, request } = useWorkspace()
+  const screenshots = useScreenshotAttachment(taskId)
+  const attachScreenshot = useEffectEvent((image: string) => screenshots.attach(image))
   const reportState = useEffectEvent((state: Extract<RemoteBrowserMessage, { type: 'state' }>) =>
     onState?.(state),
   )
@@ -97,6 +100,16 @@ export function RemoteBrowser({
         !('type' in data)
       )
         return
+      if (
+        data.type === 'screenshot' &&
+        'image' in data &&
+        typeof data.image === 'string' &&
+        visibility.current &&
+        !screenshots.busy
+      )
+        void attachScreenshot(data.image).catch((error) =>
+          post({ type: 'error', message: String(error) }),
+        )
       if (data.type === 'state') {
         const state = decodeResult(remoteBrowserMessageSchema, data)
         if (state.success && state.data.type === 'state') {
@@ -116,7 +129,7 @@ export function RemoteBrowser({
     return () => {
       window.removeEventListener('message', receive)
     }
-  }, [connect, request, taskId, deviceId, tabId, profileId, post])
+  }, [connect, request, taskId, deviceId, tabId, profileId, post, screenshots.busy])
   useEffect(
     () => () => {
       version.current++
@@ -124,13 +137,21 @@ export function RemoteBrowser({
     [],
   )
   return (
-    <iframe
-      ref={frame}
-      title="Host browser"
-      srcDoc={remoteBrowserHtml}
-      className="h-0 min-h-0 w-full flex-1 border-0"
-      sandbox="allow-scripts allow-forms"
-      onLoad={() => void connect()}
-    />
+    <>
+      {screenshots.editor}
+      {screenshots.error && (
+        <p role="alert" className="p-2 text-xs text-destructive">
+          {screenshots.error}
+        </p>
+      )}
+      <iframe
+        ref={frame}
+        title="Host browser"
+        srcDoc={remoteBrowserHtml}
+        className="h-0 min-h-0 w-full flex-1 border-0"
+        sandbox="allow-scripts allow-forms"
+        onLoad={() => void connect()}
+      />
+    </>
   )
 }

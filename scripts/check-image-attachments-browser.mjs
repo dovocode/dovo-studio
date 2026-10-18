@@ -8,10 +8,10 @@ const built = await bundleBrowser(
       resolveDir,
       loader: 'tsx',
       contents: `
-import {createRoot} from 'react-dom/client';import {useState} from 'react';import {useAttachments} from './src/chat/composer/use-attachments';
+import {useScreenshotAttachment} from './src/browser/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useState} from 'react';import {useAttachments} from './src/chat/composer/use-attachments';
 window.calls=[];window.rows=[];window.stored={};window.failed=false;window.revision=1;
 window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(window.failed)throw Error('Upload rejected');const attachment={id:input.id,name:input.name,mime:'image/png',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:++window.revision}};
-function App(){const [snapshot,setSnapshot]=useState({revision:1,workspace:{tasks:[{id:'task',draftAttachments:[]}]}});window.snapshot=snapshot;window.publish=()=>setSnapshot({revision:window.revision,workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}});const a=useAttachments(snapshot.workspace.tasks[0]);window.upload=a.upload;window.edit=a.edit;window.files=a.files;window.working=a.busy;return <>{a.editor}<textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{a.error}</div>{a.files.map(f=><button key={f.id} disabled={a.busy} onClick={()=>void a.edit(f.id)}>{f.name}</button>)}</>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const [snapshot,setSnapshot]=useState({revision:1,workspace:{tasks:[{id:'task',draftAttachments:[]}]}});window.snapshot=snapshot;window.publish=()=>setSnapshot({revision:window.revision,workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}});const a=useAttachments(snapshot.workspace.tasks[0]);const screenshots=useScreenshotAttachment("task");window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.upload=a.upload;window.edit=a.edit;window.files=a.files;window.working=a.busy;return <>{a.editor}{screenshots.editor}<textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{a.error}</div>{a.files.map(f=><button key={f.id} disabled={a.busy} onClick={()=>void a.edit(f.id)}>{f.name}</button>)}</>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -136,9 +136,34 @@ try {
   await page.waitForFunction(() => !window.working)
   assert.equal(await page.evaluate(() => window.files[0].id), editedId)
   assert.equal(await page.evaluate(() => window.files.length), 1)
+  await page.evaluate(() => {
+    window.failed = false
+    window.operation = window.capture(window.source)
+  })
+  await editor.getByRole('button', { name: 'Use original', exact: true }).click()
+  await page.waitForFunction(() => !window.captureBusy && window.rows.length === 2)
+  assert.match(await page.evaluate(() => window.rows[1].name), /^screenshot-/)
+  assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Keep draft')
+  await page.evaluate(() => {
+    window.operation = window.capture(window.source)
+  })
+  await editor.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.waitForFunction(() => !window.captureBusy)
+  assert.equal(await page.evaluate(() => window.rows.length), 2)
+  assert.equal(
+    await page.evaluate(async () => {
+      try {
+        await window.capture('https://external.test/image.png')
+        return false
+      } catch {
+        return true
+      }
+    }),
+    true,
+  )
   assert.deepEqual(errors, [])
   console.log(
-    'Image attachments: real desktop editor uploads, cropped replacement before snapshot acknowledgement, cancel, failed replacement and draft preservation passed.',
+    'Image attachments: real desktop editor uploads, cropped replacement before snapshot acknowledgement, cancel, failed replacement, screenshot edit/attach/cancel, input validation and draft preservation passed.',
   )
 } finally {
   await browser.close()

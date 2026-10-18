@@ -53,7 +53,11 @@ export function DeviceList({
                   (running && device.liveSupported === false)
                 const Icon = /ipad|tablet/i.test(device.name) ? Tablet : Smartphone
                 const actions: Array<{ action: Action; label: string; disabled?: boolean }> = [
-                  { action: 'screenshot', label: 'Take screenshot', disabled: !running },
+                  {
+                    action: 'screenshot',
+                    label: 'Take screenshot',
+                    disabled: !physical && !running,
+                  },
                   ...(physical && device.platform === 'ios'
                     ? [{ action: 'devicehub' as const, label: 'Open in Device Hub' }]
                     : []),

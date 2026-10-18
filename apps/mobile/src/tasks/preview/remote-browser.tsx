@@ -1,3 +1,5 @@
+import { useScreenshotAttachment } from './screenshot-attachment'
+import { Text } from '../../ui/content/text'
 import { runtimeTransportAddress } from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -16,7 +18,8 @@ import { deviceHostMessage } from '../../screens/device-host-form'
 import { usePreviewActive } from './use-preview-active'
 const bridgeSchema = mutableStruct({
   channel: Schema.Literal('dovo-browser'),
-  type: Schema.Literals(['ready', 'reconnect', 'close']),
+  type: Schema.Literals(['ready', 'reconnect', 'close', 'screenshot']),
+  image: Schema.optional(Schema.String),
 })
 export function RemoteBrowser({
   taskId,
@@ -32,6 +35,7 @@ export function RemoteBrowser({
   reloadToken?: number
 }) {
   const { styles } = useTheme()
+  const screenshots = useScreenshotAttachment(taskId)
 
   const { connection, profiles, readEffect } = useRuntime()
   const active = usePreviewActive()
@@ -162,6 +166,12 @@ export function RemoteBrowser({
   }, [])
   return (
     <View style={styles.screen}>
+      {screenshots.editor}
+      {screenshots.error ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {screenshots.error}
+        </Text>
+      ) : null}
       <WebView
         key={generation}
         ref={web}
@@ -200,6 +210,16 @@ export function RemoteBrowser({
           }
           const parsed = decodeResult(bridgeSchema, message)
           if (!parsed.success) return
+          if (parsed.data.type === 'screenshot') {
+            if (
+              visible.current &&
+              AppState.currentState !== 'background' &&
+              parsed.data.image &&
+              !screenshots.busy
+            )
+              void screenshots.attach(parsed.data.image)
+            return
+          }
           if (parsed.data.type === 'close') {
             if (!visible.current || AppState.currentState === 'background') return
             current.current++

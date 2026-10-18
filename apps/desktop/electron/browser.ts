@@ -247,6 +247,16 @@ export function registerBrowser(indexPath: string, directory?: string) {
     }
     if (entry?.key !== command.key) return
     const navigation = entry.view.webContents.navigationHistory
+    if (command.action === 'screenshot') {
+      const image = await entry.view.webContents.capturePage()
+      if (image.isEmpty()) throw new Error('The browser has no image to capture yet.')
+      return {
+        url: entry.view.webContents.getURL(),
+        back: navigation.canGoBack(),
+        forward: navigation.canGoForward(),
+        image: image.toDataURL(),
+      }
+    }
     if (command.action === 'status')
       return {
         url: entry.view.webContents.getURL(),

@@ -48,6 +48,14 @@ createRoot(document.getElementById('app')).render(<App/>);
     {
       name: 'host-boundary',
       setup(builder) {
+        builder.onResolve({ filter: /^\.\/screenshot-attachment$/ }, () => ({
+          path: 'screenshot',
+          namespace: 'screenshots',
+        }))
+        builder.onLoad({ filter: /.*/, namespace: 'screenshots' }, () => ({
+          contents:
+            'export const useScreenshotAttachment=()=>({editor:null,error:"",busy:false,attach:async image=>{window.host.screenshots=(window.host.screenshots??[]).concat(image)}});',
+        }))
         builder.onResolve({ filter: /^@dovo\/studio-core$/ }, () => ({
           path: 'core',
           namespace: 'host',
@@ -94,6 +102,15 @@ try {
   assert.equal(
     await page.evaluate(() => window.host.states.at(-1)),
     'http://localhost:3000/current',
+  )
+
+  await page.evaluate(() =>
+    window.bridge({ type: 'screenshot', image: 'data:image/png;base64,c2NyZWVu' }),
+  )
+  await page.waitForFunction(() => window.host.screenshots?.length === 1)
+  assert.equal(
+    await page.evaluate(() => window.host.screenshots[0]),
+    'data:image/png;base64,c2NyZWVu',
   )
 
   // A remounted iframe (for example after switching profiles) retains the current tab URL.

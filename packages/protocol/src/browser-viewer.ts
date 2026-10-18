@@ -108,10 +108,23 @@ function scheduleReconnect() {
 let keyboardOpen = false,
   composing = false
 const sentinel = '\u200b'
-const bridge = (type: 'ready' | 'reconnect' | 'close') => {
-  const message = { channel: 'dovo-browser', type }
+const bridge = (type: 'ready' | 'reconnect' | 'close' | 'screenshot', image?: string) => {
+  const message = { channel: 'dovo-browser', type, ...(image ? { image } : {}) }
   if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(message))
   else window.parent.postMessage(message, '*')
+}
+let screenshotReady = false
+element('screenshot', HTMLButtonElement).onclick = () => {
+  element('more', HTMLDetailsElement).open = false
+  if (canvas.hidden || !screenshotReady || !online) {
+    notice('Wait for a preview image before taking a screenshot.')
+    return
+  }
+  try {
+    bridge('screenshot', canvas.toDataURL('image/png'))
+  } catch {
+    notice('Could not capture the preview. Please try again.', true)
+  }
 }
 function send(message: RemoteBrowserInput) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
@@ -254,6 +267,7 @@ async function decodeImage(blob: Blob) {
   }
 }
 function connect(url: string) {
+  screenshotReady = false
   const target = new URL(url)
   if (!['ws:', 'wss:'].includes(target.protocol)) throw new Error('Invalid browser connection')
   intentionallyClosed = false
@@ -324,6 +338,7 @@ function connect(url: string) {
           try {
             if (socket !== next || next.readyState !== WebSocket.OPEN) continue
             hasFrame = true
+            screenshotReady = true
             const resized = width !== current.width || height !== current.height
             width = current.width
             height = current.height
