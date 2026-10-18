@@ -155,8 +155,8 @@ function TaskListRowView({
   const StatusIcon = statusIcons[state]
   const settled = task.archived || !!task.archivedAt
   const unread = hasUnreadTaskActivity(task)
-  const readOpacity = unread ? 1 : 0.8
-  const contextOpacity = unread ? 1 : 0.75
+  const readOpacity = unread ? 1 : 0.65
+  const contextOpacity = unread ? 1 : 0.6
 
   const compactTitleHeight = Math.ceil(18 * fontScale)
   const compactContextHeight = Math.max(24, Math.ceil(16 * fontScale))
@@ -237,24 +237,9 @@ function TaskListRowView({
       style={{
         marginVertical: dense ? 1 : 2,
         borderRadius: 12,
-        backgroundColor: colors.surface,
+        backgroundColor: colors.background,
       }}
     >
-      {unread && (
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            left: 0,
-            borderRadius: 12,
-            backgroundColor: colors.text,
-            opacity: 0.05,
-          }}
-        />
-      )}
       <View style={{ flexDirection: 'row', alignItems: settled ? 'center' : 'flex-start' }}>
         {settled && (
           <Pressable

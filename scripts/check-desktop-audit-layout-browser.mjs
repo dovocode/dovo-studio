@@ -311,9 +311,9 @@ try {
           weight: getComputedStyle(title).fontWeight,
         }
       })
-      assert.ok(Math.abs(contrast.titleAlpha - (unread ? 1 : 0.8)) <= 1 / 255)
+      assert.ok(Math.abs(contrast.titleAlpha - (unread ? 1 : 0.65)) <= 1 / 255)
       if (unread) assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
-      assert.deepEqual(contrast.metadataOpacity, unread ? [1, 1] : [0.75, 0.75])
+      assert.deepEqual(contrast.metadataOpacity, unread ? [1, 1] : [0.6, 0.6])
       if (unread) assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
       contrasts.push({ mode, unread, ...contrast })
     }

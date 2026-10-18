@@ -1089,9 +1089,10 @@ a.studio-project-row:hover {
 /* Secondary thread details follow the title’s read/unread emphasis, keeping their hues. */
 .studio-thread-card-context {
   color: var(--muted-foreground);
-  opacity: 0.75;
+  opacity: 0.6;
 }
 
 [data-unread] .studio-thread-card-context {
+  color: var(--foreground);
   opacity: 1;
 }

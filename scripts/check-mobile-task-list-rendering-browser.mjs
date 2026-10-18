@@ -549,7 +549,7 @@ try {
       const style = getComputedStyle(element)
       return { color: style.color, opacity: Number(style.opacity), weight: style.fontWeight }
     })
-    assert.equal(style.opacity, 0.8, palette.name + ' read title must be dimmed')
+    assert.equal(style.opacity, 0.65, palette.name + ' read title must be dimmed')
     assert.equal(style.weight, '500')
     const metadataOpacity = () =>
       title.evaluate((element) =>
@@ -560,7 +560,7 @@ try {
       )
     assert.deepEqual(
       await metadataOpacity(),
-      [0.75, 0.75],
+      [0.6, 0.6],
       palette.name + ' read metadata must be slightly dimmer than the title',
     )
     await page.evaluate(() => window.publish({ 'task-0': { status: 'running' } }))
@@ -605,7 +605,7 @@ try {
     await settled
       .getByText('Task 1', { exact: true })
       .evaluate((el) => getComputedStyle(el).opacity),
-    '0.8',
+    '0.65',
   )
   assert.equal(
     await page

@@ -161,9 +161,7 @@ function TaskRowView({
                 : 'min-h-[68px] flex-col items-stretch gap-0.5 py-1.5',
               selected || multiSelected || selectedChildId
                 ? 'border-border/50 bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
-                : unread
-                  ? 'bg-foreground/5 hover:bg-accent/40 group-hover/task:bg-accent/40'
-                  : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
+                : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
             )}
             onClick={onSelect}
             disabled={disabled}
@@ -208,7 +206,7 @@ function TaskRowView({
               className={cn(
                 'block min-w-0 truncate text-sm font-medium leading-5',
                 compact ? 'flex-1' : 'w-full',
-                unread ? 'text-foreground' : 'text-foreground/80',
+                unread ? 'text-foreground' : 'text-foreground/65',
                 editable &&
                   'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
               )}
