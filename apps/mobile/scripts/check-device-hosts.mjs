@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 const mocks = {
+  'react-native-view-shot': `export const captureRef=async()=>"c2NyZWVu";`,
+  './screenshot-attachment': `export const useScreenshotAttachment=()=>({editor:null,error:'',busy:false,attach:async()=>{}});`,
   'expo-router': 'export const router={push:path=>window.settingsRoute=path};',
   'react-native': `
     const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style??{};
