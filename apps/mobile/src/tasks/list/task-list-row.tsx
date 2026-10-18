@@ -234,8 +234,27 @@ function TaskListRowView({
 
   const content = (
     <View
-      style={{ marginVertical: dense ? 1 : 2, borderRadius: 12, backgroundColor: colors.surface }}
+      style={{
+        marginVertical: dense ? 1 : 2,
+        borderRadius: 12,
+        backgroundColor: colors.surface,
+      }}
     >
+      {unread && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            borderRadius: 12,
+            backgroundColor: colors.text,
+            opacity: 0.05,
+          }}
+        />
+      )}
       <View style={{ flexDirection: 'row', alignItems: settled ? 'center' : 'flex-start' }}>
         {settled && (
           <Pressable

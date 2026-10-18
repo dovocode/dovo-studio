@@ -161,7 +161,9 @@ function TaskRowView({
                 : 'min-h-[68px] flex-col items-stretch gap-0.5 py-1.5',
               selected || multiSelected || selectedChildId
                 ? 'border-border/50 bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
-                : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
+                : unread
+                  ? 'bg-foreground/5 hover:bg-accent/40 group-hover/task:bg-accent/40'
+                  : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
             )}
             onClick={onSelect}
             disabled={disabled}
