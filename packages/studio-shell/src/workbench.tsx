@@ -335,6 +335,10 @@ function WorkbenchContent({
     },
     [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
   )
+  // Runtime snapshots change frequently. Keep the host API (and extension catalog) stable
+  // while resolving navigation against the latest paired computers.
+  const threadRuntimes = useRef({ profiles: runtimeRegistry.profiles, runtimes })
+  threadRuntimes.current = { profiles: runtimeRegistry.profiles, runtimes }
   const openThread = useCallback<NonNullable<StudioHostApi['openThread']>>(
     (destination) => {
       if (!canLeave()) return
@@ -342,10 +346,10 @@ function WorkbenchContent({
         target: settingsNavigation.current.target,
         runtimeId: currentRuntime.current,
       }
+      const { profiles, runtimes } = threadRuntimes.current
       const runtimeId = destination.runtimeIdentity
-        ? (runtimeRegistry.profiles.find(
-            (profile) => profile.connection.runtimeId === destination.runtimeIdentity,
-          )?.id ??
+        ? (profiles.find((profile) => profile.connection.runtimeId === destination.runtimeIdentity)
+            ?.id ??
           runtimes.find((entry) => entry.snapshot?.runtimeId === destination.runtimeIdentity)
             ?.profile.id ??
           destination.runtimeId)
@@ -369,7 +373,7 @@ function WorkbenchContent({
           setSwitchError(error instanceof Error ? error.message : String(error))
       })
     },
-    [canLeave, runtimeRegistry.profiles, runtimes, switchRuntime, navigate, setSwitchError],
+    [canLeave, switchRuntime, navigate, setSwitchError],
   )
   const openLinkTarget = (destination: LinkTarget) => {
     if (destination.kind === 'pull') {

@@ -9,9 +9,10 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {createRoot} from 'react-dom/client';
+import {StrictMode} from 'react';
 import {decode,runtimeProfile,snapshotSchema} from '@dovo/protocol';
 import {Workbench} from './packages/studio-shell/src/workbench.tsx';
-import {useWorkspace,useStudioHost} from '@dovo/studio-core';
+import {useWorkspace,useStudioHost,defineStudioExtension} from '@dovo/studio-core';
 import {TaskContextMenu} from './packages/extension-tasks/src/detail/task-context-menu.tsx';
 import {mergeRuntimeRegistry} from './packages/studio-core/src/workspace/runtime-registry.ts';
 const profiles=[0,1].map(i=>runtimeProfile({address:'http://host'+i+'.lan:8787',token:'device-token-at-least-32-characters-'+i},'Computer '+i));
@@ -19,19 +20,22 @@ if(!localStorage.getItem('desktop.registry'))localStorage.setItem('desktop.regis
 window.registryWrites=0;const registryListeners=new Set();
 window.addEventListener('storage',event=>{if(event.key==='desktop.registry')for(const listener of registryListeners)listener()});
 window.dovo={readRuntimeRegistry:async()=>localStorage.getItem('desktop.registry'),writeRuntimeRegistry:async(value,before)=>{window.registryWrites++;const saved=JSON.stringify(mergeRuntimeRegistry(JSON.parse(localStorage.getItem('desktop.registry')),JSON.parse(before),JSON.parse(value)));localStorage.setItem('desktop.registry',saved);for(const listener of registryListeners)listener();return saved},subscribeRuntimeRegistry:listener=>{registryListeners.add(listener);return()=>registryListeners.delete(listener)},runtimeConnection:async()=>profiles[0].connection};
-window.calls=[];window.popped=[];
+window.calls=[];window.popped=[];window.snapshotRevision=1;
 window.fetch=async(url,init={})=>{
  const parsed=new URL(url),path=parsed.pathname,input=init.body?JSON.parse(init.body):undefined;
  window.calls.push({host:parsed.host,path,input});
- if(path==='/api/snapshot')return Response.json(decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[],automations:[],tasks:[{id:'thread',title:'Thread on '+parsed.hostname,agentId:'',repositoryId:'',status:'draft',sessionId:'session',createdAt:'2026-10-12',messages:[],files:[],draft:'',example:false}]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]}));
+ if(path==='/api/snapshot')return Response.json(decode(snapshotSchema,{revision:window.snapshotRevision,owner:false,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[],automations:[],tasks:[{id:'thread',title:'Thread on '+parsed.hostname+(window.snapshotRevision>1?' update '+window.snapshotRevision:''),agentId:'',repositoryId:'',status:'draft',sessionId:'session',createdAt:'2026-10-12',messages:[],files:[],draft:'',example:false}]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]}));
  if(path==='/api/mutations/status')return Response.json({version:1});
  if(path==='/api/tasks/compact')return Response.json({ok:true,revision:1});
  throw new Error('Unexpected request '+url);
 };
 function Thread({entityId}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskContextMenu dropdown task={task} owner={{runtimeId:value.activeRuntimeId,name:'Owner',online:value.connected,agents:[],repositories:[],worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Task actions</button></TaskContextMenu>}</>}
-const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Thread})}]}];
+window.taskViewLoads=0;
+window.featureLoads={};
+function Feature({view}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;return <output id="feature">{view+'|'+value.activeRuntimeId}</output>}
+const extensions=[defineStudioExtension({id:'dovo.tasks',name:'Tasks',version:'1'},[{id:'tasks',title:'Tasks',order:0,load:async()=>{window.taskViewLoads++;return {default:Thread}}}]),...['pulls','agents','runtime'].map(view=>defineStudioExtension({id:'fixture.'+view,name:view,version:'1'},[{id:view,title:view,order:1,load:async()=>{window.featureLoads[view]=(window.featureLoads[view]??0)+1;return {default:()=> <Feature view={view}/>}}}]))];
 const target=location.hash?{runtimeId:profiles[location.hash==='#local'?0:1].id,taskId:'thread',title:'Popped thread'}:undefined;
-createRoot(document.getElementById('app')).render(<Workbench extensions={extensions} threadWindow={target} popOutThread={async target=>{window.popped.push(target)}}/>);
+createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensions={extensions} threadWindow={target} popOutThread={async target=>{window.popped.push(target)}}/></StrictMode>);
 `,
     },
     bundle: true,
@@ -70,13 +74,8 @@ createRoot(document.getElementById('app')).render(<Workbench extensions={extensi
     {
       path: './app-extension',
       importer: root + 'packages/studio-shell/src/',
-      contents: 'export const appSettingsExtension={views:[]};',
-    },
-    {
-      path: './extension-catalog',
-      importer: root + 'packages/studio-shell/src/',
       contents:
-        'export const createExtensionCatalog=extensions=>({views:extensions.flatMap(e=>e.views),host:{dispose:async()=>{}}});',
+        "import {defineStudioExtension} from '@dovo/studio-core';export const appSettingsExtension=defineStudioExtension({id:'app',name:'Settings',version:'1'},[]);",
     },
     {
       path: './activity-bar',
@@ -122,6 +121,33 @@ try {
   await main.goto('http://popout.test/')
   await main.addScriptTag({ content: built.outputFiles[0].text })
   await main.waitForFunction(() => window.store?.ready)
+  // Real extension activation in desktop StrictMode, including multiple screens and live updates.
+  await main.waitForFunction(() => window.host && document.getElementById('selection'))
+  await main.evaluate(() => {
+    window.initialHost = window.host
+  })
+  for (const view of ['pulls', 'agents', 'runtime']) {
+    await main.evaluate((view) => window.host.navigate({ viewId: view }), view)
+    await main.waitForFunction(
+      (view) => document.getElementById('feature')?.textContent === view + '|http://host0.lan:8787',
+      view,
+    )
+    const revision = await main.evaluate(async () => {
+      window.snapshotRevision++
+      await window.store.refreshRuntime(window.store.runtimeRegistry.profiles[0])
+      return window.snapshotRevision
+    })
+    await main.waitForFunction((revision) => window.store.snapshot.revision === revision, revision)
+    assert.equal(await main.evaluate(() => window.initialHost === window.host), true)
+    assert.equal(await main.getByRole('button', { name: 'Retry view' }).count(), 0)
+  }
+  await main.evaluate(() => window.host.navigate({ viewId: 'tasks' }))
+  await main.waitForFunction(() => document.getElementById('selection'))
+  assert.deepEqual(await main.evaluate(() => window.featureLoads), {
+    pulls: 1,
+    agents: 1,
+    runtime: 1,
+  })
   await main.evaluate(() => {
     const saved = JSON.parse(localStorage.getItem('desktop.registry'))
     saved.profiles[0].connection.alternateAddresses = [
@@ -142,7 +168,7 @@ try {
     await detached.evaluate(() => localStorage.getItem('desktop.registry')),
     savedBeforePopout,
   )
-  assert.equal(await detached.locator('#title').textContent(), 'Thread on host1.lan')
+  assert.match(await detached.locator('#title').textContent(), /^Thread on host1\.lan/)
   assert.equal(await detached.locator('#focused').textContent(), 'true')
   const localPopout = await context.newPage()
   localPopout.on('pageerror', (error) => errors.push(error.message))
@@ -224,9 +250,15 @@ try {
   )
   await main.getByRole('alert').waitFor()
   assert.equal(await main.evaluate(() => window.store.activeRuntimeId), 'http://host0.lan:8787')
+  assert.equal(
+    await main.evaluate(() => window.taskViewLoads),
+    1,
+    'snapshot updates and computer navigation keep the extension host alive',
+  )
+  assert.equal(await main.getByRole('button', { name: 'Retry view' }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'Thread popout: focused remote thread, action target, independent computer selection and requests pass.',
+    'Desktop extensions and thread popout: stable commands across screens/updates, remote navigation, and independent window requests pass.',
   )
 } finally {
   await browser.close()
