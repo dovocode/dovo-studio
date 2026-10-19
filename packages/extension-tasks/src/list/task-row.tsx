@@ -159,8 +159,19 @@ function TaskRowView({
     agent?.name ??
     (provider ? providers[provider].short : 'Unassigned agent')
   const agentDetail = `${agentName}${provider ? ` · ${providers[provider].name}` : ''}`
+  const grouped = compact && !!nestedThreads?.length
+  const highlighted = selected || multiSelected || !!selectedChildId
   return (
-    <div className="group/task relative w-full min-w-0">
+    <div
+      className={cn(
+        'group/task relative w-full min-w-0',
+        grouped && 'mb-0.5 rounded-xl border transition-colors',
+        grouped &&
+          (highlighted
+            ? 'border-border/50 bg-accent/70 hover:bg-accent/80'
+            : 'border-border/30 bg-accent/15 hover:bg-accent/30'),
+      )}
+    >
       <Tooltip delayDuration={450}>
         <TooltipTrigger asChild>
           <Button
@@ -172,9 +183,11 @@ function TaskRowView({
               compact
                 ? 'min-h-9 flex-row items-center gap-2 py-1.5'
                 : 'min-h-[68px] flex-col items-stretch gap-0.5 py-1.5',
-              selected || multiSelected || selectedChildId
-                ? 'border-border/50 bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
-                : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
+              grouped
+                ? 'mb-0 rounded-b-none border-0 bg-transparent hover:bg-accent/30'
+                : highlighted
+                  ? 'border-border/50 bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
+                  : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
             )}
             onClick={onSelect}
             disabled={disabled}
@@ -354,6 +367,7 @@ function TaskRowView({
       )}
       {nestedThreads && (
         <NestedThreads
+          className={grouped ? 'mb-0 border-t border-border/30 py-0.5' : undefined}
           threads={nestedThreads}
           acknowledgedFailures={task.acknowledgedSubagentFailures}
           parent={threadParent}

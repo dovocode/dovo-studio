@@ -21,6 +21,7 @@ function NestedThreadsView({
   searching = false,
   acknowledgedFailures = [],
   onAcknowledgeFailure,
+  className,
 }: {
   threads: readonly NestedThread[]
   parent: ThreadTarget
@@ -28,6 +29,7 @@ function NestedThreadsView({
   searching?: boolean
   acknowledgedFailures?: readonly string[]
   onAcknowledgeFailure?: (key: string) => void
+  className?: string
 }) {
   const host = useStudioHost()
   const id = useId()
@@ -59,7 +61,10 @@ function NestedThreadsView({
       },
     })
   return (
-    <div className="mb-1 min-w-0 px-2" aria-label={`Spawned threads for ${parent.title}`}>
+    <div
+      className={cn('mb-1 min-w-0 px-2', className)}
+      aria-label={`Spawned threads for ${parent.title}`}
+    >
       <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
         <button
           type="button"
