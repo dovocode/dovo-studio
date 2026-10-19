@@ -11,6 +11,14 @@ const runtimeSyncError = (id: string, error: unknown) =>
       error instanceof Error ? error.message : 'Could not reach the runtime connection manager.',
   })
 contextBridge.exposeInMainWorld('dovo', {
+  dictation: {
+    status: (): Promise<import('@dovo/protocol').DictationStatus> =>
+      ipcRenderer.invoke('dictation:status'),
+    install: (id: string): Promise<void> => ipcRenderer.invoke('dictation:install', id),
+    transcribe: (id: string, pcm: ArrayBuffer): Promise<string> =>
+      ipcRenderer.invoke('dictation:transcribe', id, pcm),
+    cancel: (id: string): Promise<void> => ipcRenderer.invoke('dictation:cancel', id),
+  },
   runtimeSync: {
     subscribe: (
       input: import('@dovo/protocol').DesktopSyncSubscription,

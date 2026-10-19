@@ -1,3 +1,4 @@
+import { ComposerDictation } from './composer-dictation'
 import { permissionPolicyUIIssue } from '@dovo/studio-ui'
 import { randomUUID, checkpointCanUndo, taskForkResultSchema, taskSchema } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
@@ -76,7 +77,8 @@ export function Composer({
   const [asideBusy, setAsideBusy] = useState(false)
   const [asideCreating, setAsideCreating] = useState(false)
   const asideRequest = useRef<'saving' | 'asking' | null>(null)
-  const sending = submitBusy || machineMoving || asideCreating
+  const [dictating, setDictating] = useState(false)
+  const sending = submitBusy || machineMoving || asideCreating || dictating
   const sendingRequest = useRef(false)
   const [fileDrag, setFileDrag] = useState(false)
   const attachments = useAttachments(task)
@@ -493,6 +495,14 @@ export function Composer({
         actions={
           <>
             <ContextMeter task={task} />
+            {!pendingQuestion && (
+              <ComposerDictation
+                controller={composerDraft.controller}
+                input={input}
+                disabled={submitBusy || machineMoving || asideCreating || !!task.archivedAt}
+                onActive={setDictating}
+              />
+            )}
             {onAside && !firstMessage && (
               <IconButton
                 label="Ask a side question (⌘/Ctrl+;)"

@@ -1,3 +1,4 @@
+import { registerDictation } from './dictation.js'
 import { checkRuntimeConnection } from './runtime-connection-health.js'
 import { configureDesktopRuntimeDirectory, desktopDataRoot } from './runtime-data-directory.js'
 import { registerQuitShortcut } from './quit-shortcut.js'
@@ -146,6 +147,14 @@ if (ownsInstance && !explicitDirectory) {
 registerLinuxDesktop(nightly, appName, rendererPath)
 registerConnectionStorage(join(__dirname, '../dist/index.html'))
 registerAccountStorage(rendererPath)
+const dictation = registerDictation(
+  rendererPath,
+  app.isPackaged
+    ? join(process.resourcesPath, 'dictation')
+    : join(__dirname, '../../../work/dictation', `${process.platform}-${process.arch}`, 'bundle'),
+  dataDirectory,
+)
+app.once('will-quit', () => dictation.dispose())
 const inputPreview = registerInputPreview(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => inputPreview.dispose())
 const browserBridge = registerBrowser(join(__dirname, '../dist/index.html'), dataDirectory)

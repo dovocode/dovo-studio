@@ -1,10 +1,16 @@
-import { expect, it, vi } from 'vite-plus/test'
+import { afterAll, expect, it, vi } from 'vite-plus/test'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const fixture = vi.hoisted(() => {
+  const resourcesDescriptor = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
+  Object.defineProperty(process, 'resourcesPath', {
+    value: '/tmp/dovo-test-resources',
+    configurable: true,
+  })
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   return {
+    resourcesDescriptor,
     handlers,
     windows: 0,
     ipc: vi.fn<
@@ -28,6 +34,12 @@ const fixture = vi.hoisted(() => {
     ),
   }
 })
+afterAll(() => {
+  if (fixture.resourcesDescriptor)
+    Object.defineProperty(process, 'resourcesPath', fixture.resourcesDescriptor)
+  else Reflect.deleteProperty(process, 'resourcesPath')
+})
+vi.mock('./dictation.js', () => ({ registerDictation: () => ({ dispose: () => {} }) }))
 vi.mock('electron', () => ({
   app: {
     isPackaged: true,

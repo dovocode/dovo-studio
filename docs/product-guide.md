@@ -150,6 +150,11 @@ guide before creating a separate workspace.
    another web client, then approve the named device on the host. Revoke it from the device list
    when needed.
 
+Desktop also supports [local dictation](desktop-dictation.md). Click the composer's microphone to
+download the optional 159 MB Parakeet Redux model and allow microphone access. Record, stop and
+review the inserted text before sending. Recognition runs on your desktop without a cloud account,
+including when the conversation uses a remote runtime.
+
 ### Private network access
 
 Bind the desktop runtime to the host's NetBird IP:

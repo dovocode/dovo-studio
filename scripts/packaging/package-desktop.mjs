@@ -1,3 +1,4 @@
+import { prepareDictationEngine } from './dictation-engine.mjs'
 import { verifyMacIconToolchain } from './mac-icon-toolchain.mjs'
 import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
@@ -127,6 +128,7 @@ try {
     throw new Error(
       'Publishing desktop updates requires a Developer ID signing identity (CSC_NAME).',
     )
+  const dictationBundle = await prepareDictationEngine(root)
   await build({
     publish: process.argv.includes('--publish') ? 'always' : 'never',
     targets: platform.createTarget(
@@ -139,10 +141,12 @@ try {
       electronVersion: electron.version,
       directories: { app: application, output: join(root, 'release') },
       files: ['dist/**/*', 'dist-electron/**/*', 'package.json'],
-      extraResources:
-        process.platform === 'linux'
+      extraResources: [
+        { from: dictationBundle, to: 'dictation' },
+        ...(process.platform === 'linux'
           ? [{ from: join(root, 'apps/desktop/build/icon.png'), to: 'icon.png' }]
-          : [],
+          : []),
+      ],
       afterPack: async (context) => {
         const destination = join(
           context.appOutDir,
@@ -191,6 +195,13 @@ try {
         category: 'public.app-category.developer-tools',
         identity: macSigningIdentity?.replace(/^Developer ID Application:\s*/, '') ?? null,
         hardenedRuntime: true,
+        entitlements: join(root, 'apps/desktop/build/entitlements.mac.plist'),
+        entitlementsInherit: join(root, 'apps/desktop/build/entitlements.mac.plist'),
+        binaries: ['Contents/Resources/dictation/transcribe-cli'],
+        extendInfo: {
+          NSMicrophoneUsageDescription:
+            'Dictate messages locally. Your audio stays on this computer.',
+        },
         notarize: !!(
           process.env.APPLE_API_KEY ||
           (process.env.APPLE_ID &&
