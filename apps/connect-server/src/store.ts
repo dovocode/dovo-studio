@@ -89,14 +89,18 @@ export class AccountStore {
       throw error
     }
   }
-  directory(token: string, allowDeleting = false): AccountDirectory | undefined {
-    const user = this.db
-      .prepare(
-        'SELECT users.id,users.name FROM sessions JOIN users ON users.id=sessions.user WHERE token=? AND expires>?',
-      )
+  sessionUser(token: string, allowDeleting = false): string | undefined {
+    const session = this.db
+      .prepare('SELECT user FROM sessions WHERE token=? AND expires>?')
       .get(hash(token), this.now())
+    if (typeof session?.user !== 'string' || (!allowDeleting && this.deleting(session.user))) return
+    return session.user
+  }
+  directory(token: string, allowDeleting = false): AccountDirectory | undefined {
+    const id = this.sessionUser(token, allowDeleting)
+    if (!id) return
+    const user = this.db.prepare('SELECT id,name FROM users WHERE id=?').get(id)
     if (!user || typeof user.id !== 'string' || typeof user.name !== 'string') return
-    if (!allowDeleting && this.deleting(user.id)) return
     const servers = this.db
       .prepare('SELECT id,name,address FROM servers WHERE user=? ORDER BY name,id')
       .all(user.id)

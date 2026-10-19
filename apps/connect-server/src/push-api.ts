@@ -11,8 +11,7 @@ import { PushStore } from './push-store.js'
 import type { PushDelivery } from './push-relay.js'
 import { bearerToken, json, readJson, RequestError } from './http.js'
 
-export function pushApi(accounts: AccountStore, delivery?: PushDelivery) {
-  const store = new PushStore(accounts)
+export function pushApi(accounts: AccountStore, store: PushStore, delivery?: PushDelivery) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> => {
     if (!url.pathname.startsWith('/v1/push/')) return false
     const token = bearerToken(req)

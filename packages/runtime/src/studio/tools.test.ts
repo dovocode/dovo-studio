@@ -2,7 +2,8 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { studioPeers } from './peers.js'
+import { studioPeers, routedStudioTool } from './peers.js'
+import { ThreadWatch } from './thread-watch.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import {
@@ -572,4 +573,364 @@ it('rejects older paired runtimes before attempting an unscoped tool action', as
   expect(response.status).toBe(404)
   expect(await response.text()).toContain('Update this paired runtime')
   expect(paths).toEqual(['/api/studio/forward'])
+})
+
+it('durably monitors remote children, preserves offline facts and delivers each attention/completion once', async () => {
+  const source = await setup()
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
+  source.s.store.updateTask(source.parent.id, (task) => ({ ...task, queuePaused: true }))
+  const response = await source.post(
+    'threads',
+    { action: 'create', title: 'Remote child', repositoryId: 'repo', agentId: 'agent' },
+    pairing.peer.id,
+  )
+  expect(response.status).toBe(200)
+  const child = decode(mutableStruct({ id: Schema.String }), await response.json())
+  expect(source.s.threadWatch.list(source.parent.id)).toMatchObject([
+    { runtimeId: pairing.peer.id, threadId: child.id, relation: 'spawned' },
+  ])
+  await source.s.threadWatch.tick()
+  expect(source.s.threadWatch.list(source.parent.id)[0]?.snapshot?.phase).toBe('draft')
+  const prepare = vi.spyOn(source.s.db, 'prepare')
+  for (let index = 0; index < 10; index++)
+    source.s.store.updateTask(source.parent.id, (task) => ({
+      ...task,
+      activity: `Streaming ${index}`,
+    }))
+  expect(
+    prepare.mock.calls.filter(([sql]) => sql === 'SELECT value FROM task_thread_watches'),
+  ).toHaveLength(0)
+  prepare.mockRestore()
+  target.s.store.updateTask(child.id, (task) => ({ ...task, status: 'review', queuePaused: true }))
+  source.s.db.exec(
+    `CREATE TRIGGER reject_thread_snapshot BEFORE INSERT ON task_thread_watches WHEN json_extract(NEW.value, '$.snapshot.phase') = 'completed' BEGIN SELECT RAISE(ABORT, 'Rejected snapshot'); END`,
+  )
+  const deliveryError = vi.spyOn(console, 'error').mockImplementation(() => {})
+  await source.s.threadWatch.tick()
+  expect(deliveryError).toHaveBeenCalledWith(
+    'Thread watch delivery failed',
+    expect.any(String),
+    expect.any(String),
+    expect.any(String),
+    expect.objectContaining({ message: 'Rejected snapshot' }),
+  )
+  deliveryError.mockRestore()
+  expect(source.s.store.taskSummary(source.parent.id).queue ?? []).toHaveLength(0)
+  source.s.db.exec('DROP TRIGGER reject_thread_snapshot')
+  await source.s.threadWatch.tick()
+  const messages = () => source.s.store.taskSummary(source.parent.id).queue?.length ?? 0
+  expect(messages()).toBe(1)
+  await source.s.threadWatch.tick()
+  expect(messages()).toBe(1)
+  const persisted = new ThreadWatch(
+    source.s.db,
+    source.s,
+    (parentId, runtimeId, threadId, policy) =>
+      routedStudioTool(
+        source.s,
+        parentId,
+        'threads',
+        { action: 'snapshot', id: threadId },
+        runtimeId,
+        () => {},
+        policy,
+      ),
+  )
+  await persisted.tick()
+  expect(messages()).toBe(1)
+  expect((await source.post('threads', { action: 'watches' })).status).toBe(200)
+  const last = persisted.list(source.parent.id)[0]?.lastSuccessAt
+  expect((await pairing.register([])).status).toBe(200)
+  await persisted.tick()
+  expect(persisted.list(source.parent.id)[0]).toMatchObject({
+    offline: true,
+    lastSuccessAt: last,
+    snapshot: { phase: 'completed' },
+  })
+  expect(messages()).toBe(1)
+  expect((await pairing.register([pairing.peer])).status).toBe(200)
+  const controller = new AbortController()
+  cleanups.push(async () => controller.abort())
+  void target.s.questions.request(
+    child.id,
+    {
+      title: 'Review contact',
+      questions: [
+        {
+          id: 'contact',
+          header: 'Contact',
+          question: 'Which review contact?',
+          options: [],
+          multiple: false,
+          custom: true,
+          secret: false,
+          required: true,
+          inputType: 'text',
+        },
+      ],
+    },
+    controller.signal,
+  )
+  await persisted.tick()
+  expect(persisted.list(source.parent.id)[0]).toMatchObject({
+    offline: false,
+    snapshot: { phase: 'needs-input' },
+  })
+  expect(messages()).toBe(2)
+  await persisted.tick()
+  expect(messages()).toBe(2)
+  const secondController = new AbortController()
+  cleanups.push(async () => secondController.abort())
+  void target.s.questions.request(
+    child.id,
+    {
+      title: 'Second question',
+      questions: [
+        {
+          id: 'second',
+          header: 'Second',
+          question: 'Another detail?',
+          options: [],
+          multiple: false,
+          custom: true,
+          secret: false,
+          required: true,
+          inputType: 'text',
+        },
+      ],
+    },
+    secondController.signal,
+  )
+  await persisted.tick()
+  expect(messages()).toBe(3)
+  controller.abort()
+  await persisted.tick()
+  expect(messages()).toBe(3)
+  secondController.abort()
+  await persisted.tick()
+  expect(messages()).toBe(3)
+  source.s.store.updateTask(source.parent.id, (task) => ({ ...task, archived: true }))
+  expect(persisted.list(source.parent.id)[0]?.status).toBe('stopped')
+  await persisted.tick()
+  expect(messages()).toBe(3)
+})
+
+it('links existing remote threads without calling them spawned and respects read-only runs', async () => {
+  const source = await setup()
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
+  const response = await source.post(
+    'threads',
+    { action: 'watch', id: target.parent.id },
+    pairing.peer.id,
+  )
+  expect(response.status).toBe(200)
+  expect(source.s.threadWatch.list(source.parent.id)[0]?.relation).toBe('linked')
+  expect(
+    (await source.post('threads', { action: 'unwatch', id: target.parent.id }, pairing.peer.id))
+      .status,
+  ).toBe(200)
+  expect(source.s.threadWatch.list(source.parent.id)[0]?.status).toBe('stopped')
+  const readonly = await setup(undefined, true)
+  const readonlyPairing = await pairComputers(readonly, target)
+  expect(
+    (
+      await readonly.post(
+        'threads',
+        { action: 'watch', id: target.parent.id },
+        readonlyPairing.peer.id,
+      )
+    ).status,
+  ).toBe(403)
+})
+
+it('uses the existing private pairing registry for background snapshots without enabling unattended control', async () => {
+  const source = await setup()
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
+  expect(
+    (await source.post('threads', { action: 'watch', id: target.parent.id }, pairing.peer.id))
+      .status,
+  ).toBe(200)
+  source.s.retrievalPeers.register('owner', { sessionId: 'durable', peers: [pairing.peer] })
+  expect((await pairing.register([])).status).toBe(200)
+  await source.s.threadWatch.tick()
+  expect(source.s.threadWatch.list(source.parent.id)[0]).toMatchObject({
+    offline: false,
+    snapshot: { phase: 'running' },
+  })
+  expect(
+    (
+      await source.post(
+        'threads',
+        { action: 'create', title: 'Must not create', repositoryId: 'repo' },
+        pairing.peer.id,
+      )
+    ).status,
+  ).toBe(404)
+  expect(JSON.stringify(source.s.store.taskSummary(source.parent.id).threadWatches)).not.toContain(
+    pairing.token,
+  )
+  target.s.devices.revoke(pairing.deviceId)
+  await source.s.threadWatch.tick()
+  expect(source.s.threadWatch.list(source.parent.id)[0]).toMatchObject({
+    offline: true,
+    snapshot: { phase: 'running' },
+  })
+})
+
+it('isolates a full parent queue and retries delivery after capacity returns', async () => {
+  const f = await setup()
+  const other = f.s.tasks.create({
+    title: 'Healthy parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  for (const id of [f.parent.id, other.id])
+    f.s.store.updateTask(id, (task) => ({
+      ...task,
+      status: 'review',
+      activeRunId: undefined,
+      queuePaused: true,
+    }))
+  for (let i = 0; i < 50; i++) f.s.tasks.queue.add(f.parent.id, `full-${i}`, 'queued')
+  const read = vi.fn<() => Promise<unknown>>(async () => ({
+    title: 'Finished child',
+    phase: 'completed',
+    revision: '1',
+    attention: [],
+    watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+  }))
+  const watch = new ThreadWatch(f.s.db, f.s, read)
+  watch.watch(f.parent.id, 'remote', 'blocked', 'Server')
+  watch.watch(other.id, 'remote', 'healthy', 'Server')
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  await watch.tick()
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(f.s.store.taskSummary(other.id).queue).toHaveLength(1)
+  expect(watch.list(f.parent.id)[0]?.snapshot).toBeUndefined()
+  f.s.store.updateTask(f.parent.id, (task) => ({ ...task, queue: [] }))
+  await watch.tick()
+  await watch.tick()
+  expect(f.s.store.taskSummary(f.parent.id).queue).toHaveLength(1)
+  expect(f.s.store.taskSummary(other.id).queue).toHaveLength(1)
+  expect(error).toHaveBeenCalledTimes(1)
+})
+
+it('limits active watches, bounds stopped history and enforces the limit when reactivating', async () => {
+  const f = await setup()
+  for (let i = 0; i < 45; i++) {
+    f.s.threadWatch.watch(f.parent.id, 'remote', `old-${i}`, 'Server')
+    f.s.threadWatch.stop(f.parent.id, 'remote', `old-${i}`)
+  }
+  expect(f.s.threadWatch.list(f.parent.id)).toHaveLength(40)
+  const stopped = f.s.threadWatch.list(f.parent.id)[0]!
+  for (let i = 0; i < 40; i++) f.s.threadWatch.watch(f.parent.id, 'remote', `active-${i}`, 'Server')
+  expect(() => f.s.threadWatch.watch(f.parent.id, 'remote', 'overflow', 'Server')).toThrow(
+    'At most 40',
+  )
+  expect(() => f.s.threadWatch.watch(f.parent.id, 'remote', stopped.threadId, 'Server')).toThrow(
+    'At most 40',
+  )
+  expect(() => f.s.threadWatch.watch(f.parent.id, 'remote', 'active-0', 'Server')).not.toThrow()
+  f.s.threadWatch.stop(f.parent.id, 'remote', 'active-0')
+  f.s.threadWatch.watch(f.parent.id, 'remote', stopped.threadId, 'Server')
+  const history = f.s.threadWatch.list(f.parent.id)
+  expect(history.filter((w) => w.status === 'watching')).toHaveLength(40)
+  expect(history.filter((w) => w.status === 'stopped').length).toBeLessThanOrEqual(40)
+  f.s.store.updateTask(f.parent.id, (task) => ({ ...task, archived: true }))
+  expect(f.s.threadWatch.list(f.parent.id)).toHaveLength(40)
+  expect(f.s.store.taskSummary(f.parent.id).threadWatches).toHaveLength(40)
+})
+
+it('aggregates descendant attention and watch counts on the owning runtime over paired HTTP', async () => {
+  const source = await setup(),
+    target = await setup()
+  const pairing = await pairComputers(source, target)
+  source.s.store.updateTask(source.parent.id, (task) => ({ ...task, queuePaused: true }))
+  const child = target.s.tasks.create({
+    title: 'Nested child',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  target.s.store.updateTask(child.id, (task) => ({
+    ...task,
+    status: 'review',
+    queuePaused: true,
+    delegation: {
+      parentTaskId: target.parent.id,
+      parentRunId: target.runId,
+      key: 'nested',
+      completion: 'read',
+    },
+  }))
+  target.s.preferences.save({ enablePipelineWatching: true })
+  vi.spyOn(target.s.forgeWork, 'request').mockResolvedValue({
+    run: {
+      id: '7',
+      title: 'Build',
+      url: 'https://github.com/team/project/actions/runs/7',
+      ref: 'main',
+      sha: 'a'.repeat(40),
+      actor: 'author',
+      status: 'in_progress',
+      createdAt: '2026-10-19',
+      updatedAt: '2026-10-19',
+    },
+    jobs: [],
+    cachedAt: new Date().toISOString(),
+  })
+  await target.s.pipelineWatch.command({ taskId: child.id, action: 'watch', runIds: ['7'] })
+  const controller = new AbortController()
+  cleanups.push(async () => controller.abort())
+  void target.s.questions.request(
+    child.id,
+    {
+      title: 'Nested input',
+      questions: [
+        {
+          id: 'nested',
+          header: 'Nested',
+          question: 'Continue?',
+          options: [],
+          multiple: false,
+          custom: true,
+          secret: false,
+          required: true,
+          inputType: 'text',
+        },
+      ],
+    },
+    controller.signal,
+  )
+  expect(
+    (await source.post('threads', { action: 'watch', id: target.parent.id }, pairing.peer.id))
+      .status,
+  ).toBe(200)
+  await source.s.threadWatch.tick()
+  const snapshot = source.s.threadWatch.list(source.parent.id)[0]?.snapshot
+  expect(snapshot).toMatchObject({
+    phase: 'needs-input',
+    watches: { pipelines: 1, pullRequests: 0, failures: 0 },
+  })
+  expect(snapshot?.entries).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        runtimeId: target.s.runtimeId,
+        threadId: child.id,
+        phase: 'needs-input',
+        watches: { pipelines: 1, pullRequests: 0, failures: 0 },
+      }),
+    ]),
+  )
+  expect(source.s.store.taskSummary(source.parent.id).watchCounts?.pipelines).toBe(1)
+  const count = source.s.store.taskSummary(source.parent.id).queue?.length
+  await source.s.threadWatch.tick()
+  expect(source.s.store.taskSummary(source.parent.id).queue).toHaveLength(count!)
+  controller.abort()
+  await source.s.threadWatch.tick()
+  expect(source.s.threadWatch.list(source.parent.id)[0]?.snapshot?.attention).toHaveLength(0)
 })

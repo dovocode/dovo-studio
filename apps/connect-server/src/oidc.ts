@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { hash, secret, type Login } from './store.js'
 export type IdentityProvider = {
+  authorizationOrigin: string
   authorize(login: Login): Promise<string>
   exchange(login: Login, code: string): Promise<{ id: string; name: string }>
 }
@@ -49,6 +50,7 @@ export function casdoor(options: {
         throw error
       }))
   return {
+    authorizationOrigin: issuer,
     async authorize(login: Login) {
       const meta = await metadata()
       login.state = secret()

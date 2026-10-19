@@ -1,3 +1,4 @@
+import { threadSnapshot } from './thread-snapshot.js'
 import { randomUUID } from 'node:crypto'
 import { Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -44,7 +45,8 @@ export function requireStudioPart(s: Services, part: string, policy?: StudioPoli
 export function studioReadAction(part: string, action: unknown) {
   return (
     part === 'discover' ||
-    (part === 'threads' && ['list', 'read', 'search', 'wait'].includes(String(action))) ||
+    (part === 'threads' &&
+      ['list', 'read', 'search', 'wait', 'snapshot', 'watches'].includes(String(action))) ||
     (part === 'automations' &&
       ['list', 'read', 'validate', 'runs', 'wait'].includes(String(action))) ||
     (part === 'browsers' && ['list', 'snapshot', 'logs'].includes(String(action))) ||
@@ -180,6 +182,9 @@ export async function studioTool(
         }))
       return { threads: items, before: rows.length > index + 51 ? items.at(-1)?.id : undefined }
     }
+    if (command.action === 'watches' || command.action === 'watch' || command.action === 'unwatch')
+      throw new HttpError(400, 'Manage thread watches on the originating runtime')
+    if (command.action === 'snapshot') return threadSnapshot(s, command.id)
     if (command.action === 'search') return s.store.searchHistory(command.query, command.id)
     if (command.action === 'create') {
       if (

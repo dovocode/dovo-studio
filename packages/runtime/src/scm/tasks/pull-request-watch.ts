@@ -80,6 +80,8 @@ const watchSummary = (state: State) => ({
 /** Opt-in feedback deliveries outlive agent turns; queue receipts and cursors commit together. */
 export class PullRequestWatch {
   private lifecycle = new WatchLifecycleCache()
+  private countsEnabled?: boolean
+  private countsCache?: Map<string, { active: number; failures: number }>
   private poller?: ReturnType<typeof startPolling>
   private busy = false
   private stopped = false
@@ -119,7 +121,25 @@ export class PullRequestWatch {
       ? stateSchema.parse(JSON.parse(z.object({ value: z.string() }).parse(row).value))
       : undefined
   }
+  countsByTask() {
+    const enabled = !!this.s.preferences.get().enablePullRequestWatching
+    if (this.countsCache && this.countsEnabled === enabled) return this.countsCache
+    this.countsEnabled = enabled
+    const counts = new Map<string, { active: number; failures: number }>()
+    for (const state of this.readAll()) {
+      const value = counts.get(state.taskId) ?? { active: 0, failures: 0 }
+      if (enabled && state.status === 'watching') value.active++
+      value.failures += state.status === 'watching' ? state.failedChecks.length : 0
+      counts.set(state.taskId, value)
+    }
+    this.countsCache = counts
+    return counts
+  }
+  counts(taskId: string) {
+    return this.countsByTask().get(taskId) ?? { active: 0, failures: 0 }
+  }
   private save(state: State) {
+    this.countsCache = undefined
     this.lifecycle.invalidate()
     this.db
       .prepare('INSERT OR REPLACE INTO task_pull_watches VALUES (?,?,?)')
@@ -144,6 +164,7 @@ export class PullRequestWatch {
         this.registrations.delete(key)
     }
     return this.lifecycle.reconcile(tasks, this.s.store.version(), this.db.inTransaction, () => {
+      this.countsCache = undefined
       const watching = new Set<string>()
       for (const state of this.readAll()) {
         const task = available.get(state.taskId)
@@ -211,8 +232,8 @@ export class PullRequestWatch {
       })
       return { watches: states.map(watchSummary) }
     }
-    if (task.example || task.delegation || task.archived || task.archivedAt)
-      throw new HttpError(409, 'Register a PR watch in an active, independent thread')
+    if (task.example || task.archived || task.archivedAt)
+      throw new HttpError(409, 'Register a PR watch in an active thread')
     if (!input.url) throw new HttpError(400, 'A PR URL is required for action watch')
     const references = pullReferencesInText(input.url)
     const reference =
@@ -249,7 +270,6 @@ export class PullRequestWatch {
       this.stopped ||
       watchRepositoryError(latest, repositoryId, task.repositoryId) ||
       latest.example ||
-      latest.delegation ||
       latest.archived ||
       latest.archivedAt
     )
@@ -325,7 +345,6 @@ export class PullRequestWatch {
           task.archived ||
           task.archivedAt ||
           task.example ||
-          task.delegation ||
           permissionPolicyReadOnly(resolveTaskAgent(task, this.s.store.get().agents))
         )
           continue
@@ -354,7 +373,6 @@ export class PullRequestWatch {
             latest.archived ||
             latest.archivedAt ||
             latest.example ||
-            latest.delegation ||
             permissionPolicyReadOnly(resolveTaskAgent(latest, this.s.store.get().agents))
           )
             continue

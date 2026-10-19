@@ -60,6 +60,13 @@ Configuration:
 - `DOVO_CONNECT_DATA`: private persistent directory, default `/data`.
 - `DOVO_NOTIFICATION_RELAY_URL` and `DOVO_NOTIFICATION_RELAY_TOKEN`: optional private notification
   relay connection for managed push. Keep these on the backend; never put the shared key in the app.
+- `DOVO_CONNECT_TRUSTED_PROXIES`: optional comma-separated proxy IPs/CIDRs. Configure the actual
+  immediate ingress/proxy hop (and any additional proxy hops) for Dokploy; leave empty for direct
+  access. Only trusted hops may supply `X-Forwarded-For`; the first untrusted address from the right
+  is the client. Never trust arbitrary client-provided forwarding headers or an unnecessarily wide
+  network. Anonymous requests are limited by this address; verified sessions share their account's
+  quota and delivery grants have individual quotas, so users behind the proxy don't block each
+  other.
 - `PORT`: HTTP listener, default `8080`.
 
 Build with `pnpm --filter @dovo/connect-server... -r build`, or use its Dockerfile. The included

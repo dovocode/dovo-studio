@@ -18,6 +18,7 @@ async function fixture(configured = true) {
   const server = createConnectServer({
     store,
     origin: 'http://connect.test',
+    authorizationOrigin: 'https://auth.test',
     authorize: async () => '',
     exchange: async () => ({ id: '', name: '' }),
     ...(configured ? { deleteIdentity: deletion } : {}),

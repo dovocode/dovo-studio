@@ -20,7 +20,7 @@ export function TaskWaitingPanel({
   panel?: boolean
   onPullLink?: (url: string) => boolean
 }) {
-  const { openExternalLink, openPullLink, navigate } = useStudioHost()
+  const { openExternalLink, openPullLink, navigate, openThread } = useStudioHost()
   const { request, connected, activeRuntimeId, connection, workspace } = useWorkspace()
   const [confirmation, setConfirmation] = useState<
     typeof taskWaitingRequestSchema.Type.unlink | undefined
@@ -109,7 +109,7 @@ export function TaskWaitingPanel({
       <div className={panel ? 'flex flex-wrap gap-2' : 'contents'}>
         {data?.dependencies.map((item) => (
           <div
-            key={JSON.stringify([item.kind, item.repositoryId, item.target])}
+            key={JSON.stringify([item.kind, item.runtimeId, item.repositoryId, item.target])}
             className="inline-flex max-w-full shrink-0 items-center rounded-full border bg-muted/30"
             title={[
               item.pausedReason ?? item.status,
@@ -122,31 +122,60 @@ export function TaskWaitingPanel({
               .join(' · ')}
           >
             <Eye size={13} className="ml-2 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="min-w-0 truncate py-1.5 pl-1.5 pr-1 hover:underline"
-              onClick={(event) => {
-                event.preventDefault()
-                if (item.kind === 'pipeline')
-                  navigate({
-                    viewId: 'pipelines',
-                    entityId: encodeWorkTarget({
-                      runtimeId: activeRuntimeId ?? undefined,
-                      repositoryId: item.repositoryId,
-                      id: item.target,
-                      url: item.url,
-                    }),
+            {item.kind === 'thread' ? (
+              <button
+                type="button"
+                className="min-w-0 truncate py-1.5 pl-1.5 pr-1 hover:underline"
+                aria-label={`Open ${item.label}`}
+                disabled={!openThread}
+                onClick={() =>
+                  openThread?.({
+                    ...(item.runtimeIdentity ? { runtimeIdentity: item.runtimeIdentity } : {}),
+                    runtimeId:
+                      !item.runtimeId || item.runtimeId === 'local'
+                        ? activeRuntimeId
+                        : item.runtimeId,
+                    threadId: item.target,
+                    title: item.label,
+                    parent: {
+                      runtimeId: activeRuntimeId,
+                      threadId: taskId,
+                      title:
+                        workspace.tasks.find((task) => task.id === taskId)?.title ??
+                        'Parent thread',
+                    },
                   })
-                else if (!openPull(item.url)) {
-                  if (openExternalLink) void openExternalLink(item.url)
-                  else window.open(item.url, '_blank', 'noopener,noreferrer')
                 }
-              }}
-            >
-              {item.project} · {item.label}
-            </a>
+              >
+                {item.project} · {item.label}
+              </button>
+            ) : (
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-w-0 truncate py-1.5 pl-1.5 pr-1 hover:underline"
+                onClick={(event) => {
+                  event.preventDefault()
+                  if (item.kind === 'pipeline')
+                    navigate({
+                      viewId: 'pipelines',
+                      entityId: encodeWorkTarget({
+                        runtimeId: activeRuntimeId ?? undefined,
+                        repositoryId: item.repositoryId,
+                        id: item.target,
+                        url: item.url,
+                      }),
+                    })
+                  else if (!openPull(item.url)) {
+                    if (openExternalLink) void openExternalLink(item.url)
+                    else window.open(item.url, '_blank', 'noopener,noreferrer')
+                  }
+                }}
+              >
+                {item.project} · {item.label}
+              </a>
+            )}
             {panel && !item.pausedReason && (
               <span className="pr-1 text-[10px] text-muted-foreground">
                 {item.status.replaceAll('_', ' ')}
@@ -174,6 +203,7 @@ export function TaskWaitingPanel({
               onClick={() => {
                 setConfirmation({
                   kind: item.kind,
+                  ...(item.runtimeId ? { runtimeId: item.runtimeId } : {}),
                   repositoryId: item.repositoryId,
                   target: item.target,
                 })

@@ -1310,6 +1310,8 @@ export class WorkspaceStore {
           record.quotaContinuation !== undefined ||
           record.autoSettled !== undefined ||
           record.waitingForFeedback !== undefined ||
+          record.threadWatches !== undefined ||
+          record.watchCounts !== undefined ||
           record.lastViewedTurnId !== undefined ||
           record.viewedRevision !== undefined ||
           record.fileReviewVersion !== undefined ||

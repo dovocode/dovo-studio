@@ -53,7 +53,14 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native'
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react'
 import { Text } from '../../ui/content/text'
 import { type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -88,11 +95,13 @@ export function TaskDetail({
   onBack,
   questionId,
   startup,
+  parentNavigation,
 }: {
   task: Task
   onBack: () => void
   questionId?: string
   startup?: StartupControls
+  parentNavigation?: ReactNode
 }) {
   const { styles } = useTheme()
 
@@ -149,6 +158,7 @@ export function TaskDetail({
     return (
       <View style={{ flex: 1, justifyContent: 'center', gap: 12, padding: 20 }}>
         <ScreenHeader title={task.title} onBack={onBack} />
+        {parentNavigation}
         <ActivityIndicator />
         <Text style={styles.muted}>
           {cacheError?.cache === readCache && cacheError.id === task.id
@@ -166,6 +176,7 @@ export function TaskDetail({
       onBack={onBack}
       questionId={questionId}
       startup={startup}
+      parentNavigation={parentNavigation}
     />
   )
 }
@@ -179,11 +190,13 @@ function TaskDetailContent({
   onBack,
   questionId,
   startup,
+  parentNavigation,
 }: {
   task: Task
   onBack: () => void
   questionId?: string
   startup?: StartupControls
+  parentNavigation?: ReactNode
 }) {
   const { colors, styles } = useTheme()
 
@@ -854,6 +867,7 @@ function TaskDetailContent({
                 })
         }
       />
+      {!native && !expandedPreview && parentNavigation}
       {projectInfo && !native && !car && (
         <TaskProjectSheet
           key={`${activeId}:${task.id}`}

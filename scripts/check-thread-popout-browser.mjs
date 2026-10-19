@@ -28,7 +28,7 @@ window.fetch=async(url,init={})=>{
  if(path==='/api/tasks/compact')return Response.json({ok:true,revision:1});
  throw new Error('Unexpected request '+url);
 };
-function Thread({entityId}){const value=useWorkspace(),host=useStudioHost();window.store=value;const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskContextMenu dropdown task={task} owner={{runtimeId:value.activeRuntimeId,name:'Owner',online:value.connected,agents:[],repositories:[],worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Task actions</button></TaskContextMenu>}</>}
+function Thread({entityId}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskContextMenu dropdown task={task} owner={{runtimeId:value.activeRuntimeId,name:'Owner',online:value.connected,agents:[],repositories:[],worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Task actions</button></TaskContextMenu>}</>}
 const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Thread})}]}];
 const target=location.hash?{runtimeId:profiles[location.hash==='#local'?0:1].id,taskId:'thread',title:'Popped thread'}:undefined;
 createRoot(document.getElementById('app')).render(<Workbench extensions={extensions} threadWindow={target} popOutThread={async target=>{window.popped.push(target)}}/>);
@@ -195,6 +195,35 @@ try {
     detached.evaluate(() => window.store.switchRuntime('http://host0.lan:8787')),
     /stays with its thread/,
   )
+  // Open a child using another client's profile ID but the same paired runtime identity.
+  await main.evaluate(() => {
+    window.store.runtimes.find(
+      (entry) => entry.profile.id === 'http://host1.lan:8787',
+    ).snapshot.runtimeId = 'identity-host1.lan'
+  })
+  await main.evaluate(() =>
+    window.host.openThread({
+      runtimeId: 'another-client-profile-id',
+      runtimeIdentity: 'identity-host1.lan',
+      threadId: 'thread',
+      title: 'Remote child',
+      parent: { runtimeId: 'http://host0.lan:8787', threadId: 'thread', title: 'Release parent' },
+    }),
+  )
+  await main.waitForFunction(
+    () => document.getElementById('selection')?.textContent === 'http://host1.lan:8787|thread',
+  )
+  await main.getByRole('button', { name: 'Back to parent · Release parent', exact: true }).click()
+  await main.waitForFunction(
+    () => document.getElementById('selection')?.textContent === 'http://host0.lan:8787|thread',
+  )
+  assert.equal(await main.getByRole('button', { name: /Back to parent/ }).count(), 0)
+  // Pairing is never bypassed for a removed computer.
+  await main.evaluate(() =>
+    window.host.openThread({ runtimeId: 'missing', threadId: 'thread', title: 'Missing' }),
+  )
+  await main.getByRole('alert').waitFor()
+  assert.equal(await main.evaluate(() => window.store.activeRuntimeId), 'http://host0.lan:8787')
   assert.deepEqual(errors, [])
   console.log(
     'Thread popout: focused remote thread, action target, independent computer selection and requests pass.',

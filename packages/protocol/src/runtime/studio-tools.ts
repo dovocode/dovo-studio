@@ -80,6 +80,9 @@ const page = Schema.optional(id)
 export const studioThreadsCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('list'), query: Schema.optional(text), before: page }),
   mutableStruct({ action: Schema.Literal('read'), id, before: page }),
+  mutableStruct({ action: Schema.Literal('snapshot'), id }),
+  mutableStruct({ action: Schema.Literals(['watch', 'unwatch']), id }),
+  mutableStruct({ action: Schema.Literal('watches') }),
   mutableStruct({ action: Schema.Literal('search'), query: text, id: Schema.optional(id) }),
   mutableStruct({
     action: Schema.Literal('create'),
@@ -90,6 +93,7 @@ export const studioThreadsCommandSchema = Schema.Union([
     agentOverrides: Schema.optional(taskModelSchema),
     execution: Schema.optional(executionSchema),
     prompt: Schema.optional(text),
+    watch: Schema.optional(Schema.Boolean),
   }),
   mutableStruct({ action: Schema.Literal('send'), id, text, messageId: id }),
   mutableStruct({ action: Schema.Literals(['stop', 'resume', 'archive', 'unarchive']), id }),

@@ -78,6 +78,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => taskPulls.dispose(),
         () => services.pullRequestWatch.dispose(),
         () => services.pipelineWatch.dispose(),
+        () => services.threadWatch.dispose(),
         () => services.acpInstallations.dispose(),
         () => services.acpController.abort(),
         closeTitles,
@@ -130,6 +131,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                         () => taskPulls.dispose(),
                         () => services.pullRequestWatch.dispose(),
                         () => services.pipelineWatch.dispose(),
+                        () => services.threadWatch.dispose(),
                       ].map((close) => Effect.exit(release(close))),
                       { concurrency: 'unbounded' },
                     )
@@ -204,6 +206,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         taskPulls.start()
         services.pullRequestWatch.start()
         services.pipelineWatch.start()
+        services.threadWatch.start()
       })
       return { services, port: address.port }
     }),

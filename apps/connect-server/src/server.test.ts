@@ -6,7 +6,7 @@ const resources: Array<() => Promise<void> | void> = []
 afterEach(async () => {
   for (const dispose of resources.splice(0).reverse()) await dispose()
 })
-async function fixture() {
+async function fixture(trustedProxies: string[] = []) {
   let clock = Date.now()
   const store = new AccountStore(':memory:', () => clock)
   resources.push(() => store.db.close())
@@ -14,6 +14,8 @@ async function fixture() {
   const server = createConnectServer({
     store,
     origin,
+    trustedProxies,
+    authorizationOrigin: 'https://auth.test',
     authorize: async (login) => {
       login.state = 'verified-state'
       login.nonce = 'nonce'
@@ -71,6 +73,70 @@ async function fixture() {
   return { store, login, approve, request, advance: (ms: number) => (clock += ms) }
 }
 describe('optional account discovery', () => {
+  it('permits only the configured identity origin in the browser form policy', async () => {
+    const f = await fixture(),
+      login = await f.login()
+    const page = await f.request('/auth/start?id=' + login.id)
+    expect(page.headers.get('Content-Security-Policy')).toBe(
+      "default-src 'none'; form-action 'self' https://auth.test; frame-ancestors 'none'; base-uri 'none'",
+    )
+    await f.approve(login)
+  })
+
+  it('isolates verified accounts while sharing a quota across sessions of the same account', async () => {
+    const f = await fixture()
+    const session = (id: string) => {
+      const { login, token } = f.store.createLogin()
+      f.store.approve(login, { id, name: id })
+      return { Authorization: 'Bearer ' + token }
+    }
+    const first = session('first'),
+      sameAccount = session('first'),
+      second = session('second')
+    for (let index = 0; index < 300; index++)
+      expect((await f.request('/v1/servers', { headers: first })).status).toBe(200)
+    expect((await f.request('/v1/servers', { headers: sameAccount })).status).toBe(429)
+    expect((await f.request('/v1/servers', { headers: second })).status).toBe(200)
+    f.advance(60_001)
+    expect((await f.request('/v1/servers', { headers: first })).status).toBe(200)
+  })
+
+  it('does not let arbitrary bearer tokens or spoofed forwarded IPs bypass anonymous limits', async () => {
+    const f = await fixture()
+    for (let index = 0; index < 300; index++)
+      expect(
+        (
+          await f.request('/v1/servers', {
+            headers: {
+              Authorization: 'Bearer ' + index.toString().padStart(43, '0'),
+              'X-Forwarded-For': `203.0.113.${index % 250}`,
+            },
+          })
+        ).status,
+      ).toBe(401)
+    expect(
+      (
+        await f.request('/v1/login', {
+          method: 'POST',
+          headers: { 'X-Forwarded-For': '198.51.100.1' },
+        })
+      ).status,
+    ).toBe(429)
+  })
+
+  it('isolates anonymous clients forwarded by an explicitly trusted proxy', async () => {
+    const f = await fixture(['127.0.0.1'])
+    for (let index = 0; index < 300; index++)
+      expect(
+        (await f.request('/v1/servers', { headers: { 'X-Forwarded-For': '203.0.113.1' } })).status,
+      ).toBe(401)
+    expect(
+      (await f.request('/v1/servers', { headers: { 'X-Forwarded-For': '203.0.113.1' } })).status,
+    ).toBe(429)
+    expect(
+      (await f.request('/v1/servers', { headers: { 'X-Forwarded-For': '203.0.113.2' } })).status,
+    ).toBe(401)
+  })
   it('preserves public health, API preflight and bounded JSON errors across route groups', async () => {
     const f = await fixture()
     const health = await f.request('/health')

@@ -40,6 +40,7 @@ const stateSchema = z.object({
   sha: z.string(),
   status: z.enum(['watching', 'completed', 'stopped']),
   runStatus: z.string(),
+  failed: z.boolean().optional(),
   attempt: z.number().int().positive().optional(),
   notifiedStatus: z.string().optional(),
   startedAt: z.string(),
@@ -93,6 +94,8 @@ const jobContext = (job: ForgePipelineDetail['jobs'][number]) => {
 /** Explicit runs only; completion and queue admission are persisted atomically. */
 export class PipelineWatch {
   private lifecycle = new WatchLifecycleCache()
+  private countsEnabled?: boolean
+  private countsCache?: Map<string, { active: number; failures: number }>
   private poller?: ReturnType<typeof startPolling>
   private busy = false
   private stopped = false
@@ -133,7 +136,28 @@ export class PipelineWatch {
       .parse(rows)
       .map((row) => stateSchema.parse(JSON.parse(row.value)))
   }
+  countsByTask() {
+    const enabled = !!this.s.preferences.get().enablePipelineWatching
+    if (this.countsCache && this.countsEnabled === enabled) return this.countsCache
+    this.countsEnabled = enabled
+    const counts = new Map<string, { active: number; failures: number }>()
+    for (const state of this.read()) {
+      const value = counts.get(state.taskId) ?? { active: 0, failures: 0 }
+      if (enabled && state.status === 'watching') value.active++
+      value.failures += Number(
+        state.status !== 'stopped' &&
+          (state.failed || pipelineSignal(state.runStatus).tone === 'danger'),
+      )
+      counts.set(state.taskId, value)
+    }
+    this.countsCache = counts
+    return counts
+  }
+  counts(taskId: string) {
+    return this.countsByTask().get(taskId) ?? { active: 0, failures: 0 }
+  }
   private save(state: State) {
+    this.countsCache = undefined
     this.lifecycle.invalidate()
     this.db
       .prepare('INSERT OR REPLACE INTO task_pipeline_watches VALUES (?,?,?,?)')
@@ -152,6 +176,7 @@ export class PipelineWatch {
         this.registrations.delete(token)
     }
     return this.lifecycle.reconcile(tasks, this.s.store.version(), this.db.inTransaction, () => {
+      this.countsCache = undefined
       const watching = new Set<string>()
       for (const state of this.read()) {
         const task = available.get(state.taskId)
@@ -181,7 +206,6 @@ export class PipelineWatch {
   private eligible(task: TaskMetadata) {
     return (
       !task.example &&
-      !task.delegation &&
       !task.archived &&
       !task.archivedAt &&
       !permissionPolicyReadOnly(resolveTaskAgent(task, this.s.store.get().agents))
@@ -276,7 +300,7 @@ export class PipelineWatch {
       return { watches: states.map(summary) }
     }
     if (!this.eligible(task))
-      throw new HttpError(409, 'Register pipeline watches in an active, independent thread')
+      throw new HttpError(409, 'Register pipeline watches in an active thread')
     if (!input.runIds) throw new HttpError(400, 'Run IDs are required for action watch')
     const repositoryId = input.repositoryId ?? task.repositoryId
     const accessError = watchRepositoryError(task, repositoryId, task.repositoryId)
@@ -329,6 +353,7 @@ export class PipelineWatch {
               ? 'completed'
               : 'watching',
           runStatus: detail.run.status,
+          failed: hasFailedPart(detail) || pipelineSignal(detail.run.status).tone === 'danger',
           attempt: detail.run.attempt,
           // Registration returns the current result directly to the agent.
           notifiedStatus: attentionRequired(detail.run.status) ? detail.run.status : undefined,
@@ -428,6 +453,7 @@ export class PipelineWatch {
           const next: State = {
             ...state,
             runStatus: detail.run.status,
+            failed: failedPart || signal.tone === 'danger',
             attempt: detail.run.attempt,
             notifiedStatus: attentionRequired(detail.run.status) ? detail.run.status : undefined,
             checkedAt: new Date().toISOString(),

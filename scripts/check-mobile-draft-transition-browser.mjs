@@ -666,6 +666,26 @@ try {
   await input.waitFor()
   assert.equal(await input.inputValue(), 'Mobile draft while reading a child')
   assert.equal(await input.evaluate((element) => element === window.nativeParentEditor), true)
+  // A remote child route retains its parent, including when the child is unavailable.
+  await page.evaluate(() =>
+    window.openRoute({
+      pathname: '/thread',
+      params: {
+        runtimeId: 'b',
+        taskId: 'remote-child',
+        parentRuntimeId: 'a',
+        parentTaskId: window.task.id,
+        parentTitle: 'Release parent',
+      },
+    }),
+  )
+  await page.getByRole('button', { name: 'Back to parent · Release parent', exact: true }).click()
+  await page.waitForFunction(() => window.navigation.at(-1)?.href?.params?.runtimeId === 'a')
+  assert.equal(
+    await page.evaluate(() => window.navigation.at(-1).href.params.taskId),
+    await page.evaluate(() => window.task.id),
+  )
+  assert.equal(await page.getByRole('button', { name: /Back to parent ·/ }).count(), 0)
   await page.evaluate(async () => {
     await Promise.all(Object.values(window.caches).map((cache) => cache.close()))
   })

@@ -20,6 +20,7 @@ async function fixture(configured = true) {
   const server = createConnectServer({
     store,
     origin: 'http://connect.test',
+    authorizationOrigin: 'https://auth.test',
     authorize: async () => '',
     exchange: async () => ({ id: '', name: '' }),
     ...(configured ? { push: { send } } : {}),
@@ -149,4 +150,16 @@ it('reports missing delivery configuration rather than claiming push is ready', 
   expect(
     (await f.request('/v1/push/subscriptions', f.session(), 'PUT', f.registration)).status,
   ).toBe(503)
+})
+
+it('isolates push grant quotas from other servers and account requests behind one proxy', async () => {
+  const f = await fixture(),
+    account = f.session()
+  const first = await f.subscribe(account),
+    second = await f.subscribe(account, 'server-b')
+  for (let i = 0; i < 300; i++)
+    expect((await f.request('/v1/push/send', first, 'POST', f.message())).status).toBe(200)
+  expect((await f.request('/v1/push/send', first, 'POST', f.message())).status).toBe(429)
+  expect((await f.request('/v1/push/send', second, 'POST', f.message('server-b'))).status).toBe(200)
+  expect((await f.request('/v1/servers', account)).status).toBe(200)
 })

@@ -173,7 +173,18 @@ export function indexTaskSubagents(tasks: readonly TaskMetadata[]) {
 export function taskFamilyInputIds(tasks: readonly TaskMetadata[], inputIds: Iterable<string>) {
   const owners = new Map(tasks.map((task) => [task.id, task]))
   const input = new Set<string>()
-  for (const id of inputIds) {
+  const remoteInput = tasks
+    .filter((task) =>
+      task.threadWatches?.some(
+        (watch) =>
+          watch.status === 'watching' &&
+          !watch.offline &&
+          !watch.paused &&
+          watch.snapshot?.phase === 'needs-input',
+      ),
+    )
+    .map((task) => task.id)
+  for (const id of [...inputIds, ...remoteInput]) {
     let current: string | undefined = id
     while (current && !input.has(current)) {
       input.add(current)

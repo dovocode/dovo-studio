@@ -7,6 +7,7 @@ import {
   runtimeRequestEffect,
   RuntimeRequestError,
   noStudioTools,
+  studioThreadsCommandSchema,
 } from '@dovo/protocol'
 import type { Services } from '../services.js'
 import { HttpError } from '../errors.js'
@@ -66,6 +67,7 @@ export async function routedStudioTool(
   authorize: () => void,
   policy?: StudioPolicy,
   signal?: AbortSignal,
+  durableSnapshot = false,
 ) {
   authorize()
   requireStudioPart(s, part, policy)
@@ -74,6 +76,31 @@ export async function routedStudioTool(
     throw new HttpError(403, 'This agent has read-only Studio Tools access')
   if (runtimeId && part === 'ui')
     throw new HttpError(403, 'Studio UI interaction stays on this machine')
+  if (part === 'threads') {
+    const command = decode(studioThreadsCommandSchema, input)
+    if (command.action === 'watches') return { watches: s.threadWatch.list(taskId) }
+    if (command.action === 'watch' || command.action === 'unwatch') {
+      const computer =
+        runtimeId && runtimeId !== 'local'
+          ? studioPeers(s)
+              .list()
+              .find((peer) => peer.id === runtimeId)
+          : undefined
+      if (command.action === 'unwatch')
+        return { watches: s.threadWatch.stop(taskId, runtimeId ?? 'local', command.id) }
+      if (runtimeId && runtimeId !== 'local' && !computer)
+        throw new HttpError(404, 'Paired computer unavailable')
+      return {
+        watch: s.threadWatch.watch(
+          taskId,
+          runtimeId ?? 'local',
+          command.id,
+          computer?.name ?? 'This computer',
+          policy,
+        ),
+      }
+    }
+  }
   if (!runtimeId || runtimeId === 'local') {
     const result = await studioTool(s, taskId, part, command, authorize, policy)
     if (part !== 'discover') return result
@@ -87,9 +114,15 @@ export async function routedStudioTool(
       ],
     }
   }
-  const peer = studioPeers(s)
-    .list()
-    .find((peer) => peer.id === runtimeId)
+  const peer =
+    studioPeers(s)
+      .list()
+      .find((peer) => peer.id === runtimeId) ??
+    (durableSnapshot && policy?.readOnly && part === 'threads' && input.action === 'snapshot'
+      ? s.retrievalPeers
+          .list()
+          .find((peer) => peer.id === runtimeId || peer.connection.runtimeId === runtimeId)
+      : undefined)
   if (!peer)
     throw new HttpError(
       404,
@@ -112,12 +145,32 @@ export async function routedStudioTool(
         { taskId: `paired:${scope}`, part, command, policy: forwardedPolicy },
         Schema.Unknown,
         'POST',
-        120000,
+        durableSnapshot ? 10000 : 120000,
       ),
       signal,
     )
     authorize()
     requireStudioPart(s, part, policy)
+    if (
+      part === 'threads' &&
+      input.action === 'create' &&
+      input.watch !== false &&
+      s.store.get().tasks.some((task) => task.id === taskId)
+    ) {
+      const created = decode(Schema.Struct({ id: Schema.String }), result)
+      try {
+        s.threadWatch.watch(taskId, runtimeId, created.id, peer.name, policy, 'spawned')
+      } catch (error) {
+        // Creation already succeeded: keep its ID reviewable instead of suggesting a duplicate retry.
+        return {
+          ...decode(Schema.Record(Schema.String, Schema.Unknown), result),
+          watchError:
+            error instanceof HttpError
+              ? error.message
+              : 'Thread created, but monitoring could not be registered. Use watch with this thread ID to retry.',
+        }
+      }
+    }
     return result
   } catch (error) {
     if (error instanceof RuntimeRequestError) {

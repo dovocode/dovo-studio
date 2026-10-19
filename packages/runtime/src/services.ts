@@ -1,3 +1,7 @@
+import { familyWatchCounts } from './studio/thread-snapshot.js'
+import type { ThreadWatchEntry } from '@dovo/protocol'
+import { ThreadWatch } from './studio/thread-watch.js'
+import { routedStudioTool } from './studio/peers.js'
 import { SharedRetrieval } from './retrieval/coordinator.js'
 import { RetrievalPeers } from './retrieval/peers.js'
 import { enabledStudioTools } from '@dovo/protocol'
@@ -265,6 +269,22 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     for (const repo of store.get().repositories) pullCache.invalidate(repo.path)
   }
   const pipelineWatch = new PipelineWatch(db, { store, preferences, forgeWork, tasks, activity })
+  const threadWatch = new ThreadWatch(
+    db,
+    { store, preferences, tasks },
+    (parentId, runtimeId, threadId, policy) =>
+      routedStudioTool(
+        services,
+        parentId,
+        'threads',
+        { action: 'snapshot', id: threadId },
+        runtimeId,
+        () => {},
+        policy,
+        undefined,
+        true,
+      ),
+  )
   // Older runtimes retained watches on settled threads; do not resume those after an upgrade.
   pullRequestWatch.reconcile(store.get().tasks)
   pipelineWatch.reconcile(store.get().tasks)
@@ -272,7 +292,54 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     const pulls = pullRequestWatch.reconcile(entries)
     const pipelines = pipelineWatch.reconcile(entries)
     const settings = preferences.get()
+    const remote = threadWatch.reconcile(entries, agents)
+    const pipelineCounts = pipelineWatch.countsByTask(),
+      pullCounts = pullRequestWatch.countsByTask()
+    const counts = new Map(
+      entries.map((task) => {
+        const pipelines = pipelineCounts.get(task.id) ?? { active: 0, failures: 0 }
+        const pulls = pullCounts.get(task.id) ?? { active: 0, failures: 0 }
+        const result = {
+          pipelines: permissionPolicyReadOnly(resolveTaskAgent(task, agents))
+            ? 0
+            : pipelines.active,
+          pullRequests: permissionPolicyReadOnly(resolveTaskAgent(task, agents)) ? 0 : pulls.active,
+          failures: pipelines.failures + pulls.failures,
+        }
+        return [
+          task.id,
+          {
+            runtimeId,
+            threadId: task.id,
+            attention: [],
+            watches: result,
+            phase: 'completed',
+            revision: '',
+          } satisfies ThreadWatchEntry,
+        ] as const
+      }),
+    )
+    const rolled = familyWatchCounts(
+      entries,
+      counts,
+      settings.enableStudioThreads ? remote : new Map(),
+      runtimeId,
+    )
     return entries.map((task) => {
+      const threadWatches = remote.get(task.id)
+      const rolledCounts = rolled.get(task.id)
+      const watchCounts =
+        rolledCounts &&
+        (rolledCounts.pipelines || rolledCounts.pullRequests || rolledCounts.failures)
+          ? rolledCounts
+          : undefined
+      const remoteWaiting = threadWatches?.some(
+        (watch) =>
+          watch.status === 'watching' &&
+          !watch.paused &&
+          (watch.offline || watch.snapshot?.phase !== 'completed'),
+      )
+
       const waiting =
         !task.archived &&
         !task.archivedAt &&
@@ -284,14 +351,21 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         !task.error &&
         !permissionPolicyReadOnly(resolveTaskAgent(task, agents)) &&
         ((settings.enablePullRequestWatching && pulls.has(task.id)) ||
-          (settings.enablePipelineWatching && pipelines.has(task.id)))
-      return !!task.waitingForFeedback === waiting
-        ? task
-        : { ...task, waitingForFeedback: waiting || undefined }
+          (settings.enablePipelineWatching && pipelines.has(task.id)) ||
+          (settings.enableStudioThreads && remoteWaiting) ||
+          !!(watchCounts?.pipelines || watchCounts?.pullRequests))
+      if (
+        !!task.waitingForFeedback === waiting &&
+        JSON.stringify(task.threadWatches) === JSON.stringify(threadWatches) &&
+        JSON.stringify(task.watchCounts) === JSON.stringify(watchCounts)
+      )
+        return task
+      return { ...task, waitingForFeedback: waiting || undefined, threadWatches, watchCounts }
     })
   })
 
-  return {
+  const services: Services = {
+    threadWatch,
     runCredentials: runCredentials(store),
     fileReviews,
     taskReviews,
@@ -349,8 +423,10 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     checkouts,
     projectFiles: new ProjectFiles(git),
   }
+  return services
 }
 export interface Services {
+  threadWatch: ThreadWatch
   runCredentials: RunCredentials
   memory: Memory
   backups: RuntimeBackups

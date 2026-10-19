@@ -1,3 +1,4 @@
+import { ThreadWatchSummary } from './thread-watch-summary'
 import { WorkingSubagents } from './working-subagents'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { pullStackLabel, taskPullStatusFor } from '@dovo/protocol'
@@ -331,6 +332,9 @@ function TaskRowView({
           </div>
         </TooltipContent>
       </Tooltip>
+      {!compact && (
+        <ThreadWatchSummary task={task} online={owner.online} runtimeId={owner.runtimeId} />
+      )}
       {!compact && (
         <WorkingSubagents
           subagents={subagents}

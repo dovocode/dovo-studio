@@ -18,6 +18,7 @@ export class WatchLifecycleCache {
         task.repositoryId,
         !!task.archived,
         task.archivedAt,
+        task.delegation?.completion,
         task.linkedCheckouts?.map((link) => [link.repositoryId, link.access]),
       ]),
     )
@@ -34,6 +35,9 @@ export function watchRepositoryError(
   repositoryId: string,
   primaryRepositoryId = repositoryId,
 ) {
+  if (task.delegation && !task.delegation.completion)
+    return 'Legacy turn-owned children cannot own durable watches; launch a durable child instead'
+  if (task.delegation?.completion === 'disposed') return 'The child thread was stopped'
   if (task.repositoryId !== primaryRepositoryId) return 'The thread’s project changed'
   if (
     repositoryId !== task.repositoryId &&

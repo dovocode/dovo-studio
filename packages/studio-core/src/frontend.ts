@@ -12,10 +12,17 @@ export type StudioIcon =
   | 'agents'
   | 'jobs'
   | 'runtime'
+export interface StudioThreadReference {
+  runtimeId: string | null
+  runtimeIdentity?: string
+  threadId: string
+  title: string
+}
 export interface StudioNavigation {
   viewId: string
   entityId?: string
   pullTarget?: StudioPullTarget
+  threadParent?: StudioThreadReference
 }
 /** The entity's origin survives transport handoff and shell history. */
 export interface StudioPullTarget {
@@ -80,6 +87,7 @@ export interface StudioHostApi {
   ) => boolean
   openExternalLink?: (url: string) => Promise<void>
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
+  openThread?: (target: StudioThreadReference & { parent?: StudioThreadReference }) => void
   goBack?: () => boolean
   navigate: (target: StudioNavigation, options?: { replace?: boolean }) => void
   registerCommand: (command: StudioCommand) => () => void

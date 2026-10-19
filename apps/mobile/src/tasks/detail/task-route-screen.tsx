@@ -26,6 +26,9 @@ export function TaskRouteScreen() {
   const params = useLocalSearchParams<{
     runtimeId: string
     taskId: string
+    parentRuntimeId?: string
+    parentTaskId?: string
+    parentTitle?: string
     questionId?: string
     draft?: string
   }>()
@@ -52,13 +55,31 @@ export function TaskRouteScreen() {
         onCommit={(runtimeId, taskId) => router.setParams({ runtimeId, taskId, draft: undefined })}
       />
     )
+  const parent =
+    params.parentRuntimeId && params.parentTaskId
+      ? {
+          runtimeId: params.parentRuntimeId,
+          taskId: params.parentTaskId,
+          title: params.parentTitle ?? 'Parent thread',
+        }
+      : undefined
+  const parentButton = parent ? (
+    <Action
+      label={`Back to parent · ${parent.title}`}
+      secondary
+      onPress={() => router.replace(taskHref(parent.runtimeId, parent.taskId))}
+    />
+  ) : null
   if (task)
     return (
       <TaskDetail
         key={`${params.runtimeId}:${task.id}:${params.questionId ?? ''}`}
         task={task}
         questionId={params.questionId}
-        onBack={backToTasks}
+        onBack={
+          parent ? () => router.replace(taskHref(parent.runtimeId, parent.taskId)) : backToTasks
+        }
+        parentNavigation={parentButton}
       />
     )
   return (
@@ -68,6 +89,7 @@ export function TaskRouteScreen() {
         subtitle={owner?.name}
         leading={<Action label="Back" secondary onPress={backToTasks} />}
       />
+      {parentButton}
       <View style={styles.content}>
         {!ready ? (
           <ActivityIndicator color={colors.accent} />

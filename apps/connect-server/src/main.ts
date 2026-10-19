@@ -23,7 +23,17 @@ const deleteIdentity = process.env.DOVO_ACCOUNT_DELETE_CLIENT_SECRET
       clientSecret: process.env.DOVO_ACCOUNT_DELETE_CLIENT_SECRET,
     })
   : undefined
-const server = createConnectServer({ store, origin, push: pushRelay(), deleteIdentity, ...oidc })
+const server = createConnectServer({
+  store,
+  origin,
+  push: pushRelay(),
+  deleteIdentity,
+  ...oidc,
+  trustedProxies: (process.env.DOVO_CONNECT_TRUSTED_PROXIES ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+})
 server.listen(Number(process.env.PORT ?? 8080), '0.0.0.0')
 const cleanup = setInterval(() => store.cleanup(), 60_000)
 cleanup.unref()

@@ -100,3 +100,42 @@ active child work blocks settling/reopening. Deleting a child removes its descen
 its parent and siblings.
 
 Automation steps and chained tasks wait for delegated work and result handling before advancing.
+
+## Cross-computer thread monitoring
+
+`studio_threads` automatically monitors threads created on a paired computer. Set `watch: false`
+when creating an independent conversation. To follow an existing conversation, use `watch` with its
+`id` and owning `runtimeId`; this records a **linked** relationship, not spawned ancestry. `watches`
+lists the current conversation's monitors; `unwatch` removes a selected monitor.
+
+Monitors persist the computer/thread reference, last observed state, and notification receipts in
+SQLite. They use the existing paired runtime transport and private pairing registry for background
+read-only snapshots, including after Studio closes. No pairing tokens enter thread metadata or
+notifications. Other Studio control actions still require their normal live connection and policy.
+Removing or revoking the pairing prevents further reads. An unavailable or older runtime retains its
+last known state marked offline; reconnecting resumes monitoring. Both runtimes need this version
+for snapshots. Disabling Studio Threads or narrowing the parent's permissions pauses monitoring;
+settling/archiving the parent stops its monitors.
+
+Completion and input requests enqueue one parent update per observed event, atomically with their
+receipts. Paused parent queues stay paused. A parent can inspect the remote conversation and steer
+it through Studio Tools; question/approval answers remain on the owning computer. Monitoring does
+not automatically approve requests or stop remote work when the parent stops watching.
+
+Spawned local children can own PR and pipeline watches. Those watchers still deliver to their own
+child, while active-watch counts and failures roll up through local parents and monitored remote
+references. Child summaries and counts appear in the desktop overview; the Waiting panel also lists
+remote thread dependencies and supports stopping an individual monitor. These summaries do not
+transfer ownership of a PR/pipeline watch or create a second forge poller on the parent.
+
+Snapshots aggregate questions, approvals and watch counts on their owning runtime. Flat per-thread
+provenance keeps shared descendants and cyclic links from multiplying counts; snapshots are bounded
+to 1,000 contributing threads and mark partial results. Older peers without provenance retain their
+single-summary fallback. A failed delivery (including a full parent queue) cannot prevent other
+monitors from checking; unadmitted updates retry on the next tick without consuming their receipt.
+
+Each parent may have 40 active monitors plus at most 40 stopped history records. Reactivating a
+stopped record consumes an active slot. Archiving also prunes history. Child entries open on their
+paired owning computer, resolving its stable identity when client address/profile IDs differ, with
+an explicit return-to-parent action on desktop and mobile. Missing pairings still require the normal
+connection/pairing flow.

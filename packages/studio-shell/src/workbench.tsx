@@ -335,6 +335,42 @@ function WorkbenchContent({
     },
     [runtimeRegistry.activeId, switchRuntime, navigate, setSwitchError],
   )
+  const openThread = useCallback<NonNullable<StudioHostApi['openThread']>>(
+    (destination) => {
+      if (!canLeave()) return
+      const previous = {
+        target: settingsNavigation.current.target,
+        runtimeId: currentRuntime.current,
+      }
+      const runtimeId = destination.runtimeIdentity
+        ? (runtimeRegistry.profiles.find(
+            (profile) => profile.connection.runtimeId === destination.runtimeIdentity,
+          )?.id ??
+          runtimes.find((entry) => entry.snapshot?.runtimeId === destination.runtimeIdentity)
+            ?.profile.id ??
+          destination.runtimeId)
+        : destination.runtimeId
+      const attempt = ++navigationAttempt.current
+      setSwitchError('')
+      void (async () => {
+        if (runtimeId !== currentRuntime.current) {
+          if (!runtimeId) throw new Error('The parent computer is no longer available')
+          await switchRuntime(runtimeId)
+        }
+        if (!mounted.current || attempt !== navigationAttempt.current) return
+        history.current.push(previous)
+        if (history.current.length > 50) history.current.shift()
+        navigate(
+          { viewId: 'tasks', entityId: destination.threadId, threadParent: destination.parent },
+          { replace: true },
+        )
+      })().catch((error: unknown) => {
+        if (attempt === navigationAttempt.current)
+          setSwitchError(error instanceof Error ? error.message : String(error))
+      })
+    },
+    [canLeave, runtimeRegistry.profiles, runtimes, switchRuntime, navigate, setSwitchError],
+  )
   const openLinkTarget = (destination: LinkTarget) => {
     if (destination.kind === 'pull') {
       navigate({
@@ -458,6 +494,7 @@ function WorkbenchContent({
       navigate,
       goBack,
       taskNavigationGuard,
+      openThread,
       popOutThread,
       threadWindow: !!threadWindow,
       registerCommand,
@@ -478,6 +515,7 @@ function WorkbenchContent({
       navigate,
       goBack,
       taskNavigationGuard,
+      openThread,
       popOutThread,
       threadWindow,
       registerCommand,
@@ -709,11 +747,24 @@ function WorkbenchContent({
                       }
                     >
                       {ready && View ? (
-                        <View
-                          entityId={target.entityId}
-                          pullTarget={target.pullTarget}
-                          navigationKey={navigationKey}
-                        />
+                        <>
+                          {target.viewId === 'tasks' && target.threadParent && (
+                            <Button
+                              variant="ghost"
+                              className="justify-start shrink-0"
+                              onClick={() => {
+                                if (target.threadParent) openThread(target.threadParent)
+                              }}
+                            >
+                              Back to parent · {target.threadParent.title}
+                            </Button>
+                          )}
+                          <View
+                            entityId={target.entityId}
+                            pullTarget={target.pullTarget}
+                            navigationKey={navigationKey}
+                          />
+                        </>
                       ) : !ready ? (
                         <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
                       ) : (

@@ -146,3 +146,31 @@ it('surfaces nested child input on ancestors without crossing independent famili
     new Set(['nested', 'child', 'root', 'other']),
   )
 })
+
+it('rolls remote attention up through local ancestors without treating offline or paused snapshots as live input', () => {
+  const parent = task('parent')
+  const child = task('child', 'parent')
+  child.threadWatches = [
+    {
+      runtimeId: 'mac',
+      threadId: 'remote',
+      computerName: 'Mac Studio',
+      relation: 'spawned',
+      status: 'watching',
+      offline: false,
+      snapshot: {
+        title: 'Remote',
+        phase: 'needs-input',
+        revision: 'one',
+        attention: ['question'],
+        watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+      },
+    },
+  ]
+  expect(taskFamilyInputIds([parent, child], [])).toEqual(new Set(['child', 'parent']))
+  child.threadWatches[0].offline = true
+  expect(taskFamilyInputIds([parent, child], [])).toEqual(new Set())
+  child.threadWatches[0].offline = false
+  child.threadWatches[0].paused = true
+  expect(taskFamilyInputIds([parent, child], [])).toEqual(new Set())
+})

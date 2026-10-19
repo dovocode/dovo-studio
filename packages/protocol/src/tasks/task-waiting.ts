@@ -6,8 +6,9 @@ export const taskWaitingRequestSchema = mutableStruct({
   taskId: identifier,
   unlink: Schema.optional(
     mutableStruct({
-      kind: Schema.Literals(['pull', 'pipeline']),
+      kind: Schema.Literals(['pull', 'pipeline', 'thread']),
       repositoryId: identifier,
+      runtimeId: Schema.optional(identifier),
       target: maxValue(minValue(Schema.String, 1), 2048),
     }),
   ),
@@ -24,8 +25,10 @@ export const taskWaitingSchema = mutableStruct({
   ),
   dependencies: mutableArray(
     mutableStruct({
-      kind: Schema.Literals(['pull', 'pipeline']),
+      kind: Schema.Literals(['pull', 'pipeline', 'thread']),
       repositoryId: Schema.String,
+      runtimeId: Schema.optional(identifier),
+      runtimeIdentity: Schema.optional(identifier),
       target: Schema.String,
       label: Schema.String,
       project: Schema.String,

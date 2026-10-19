@@ -1,3 +1,4 @@
+import { taskHref } from '../../shell/task-route'
 import { useLinkOrigin } from '../../ui/content/link-origin'
 import { useCallback, useState } from 'react'
 import { Alert, Pressable, View } from 'react-native'
@@ -22,13 +23,13 @@ export function TaskWaitingPanel({
   onPull?: (url: string) => void
 }) {
   const origin = useLinkOrigin(taskId)
-  const { call, connected, connection, activeId, snapshot } = useRuntime()
+  const { call, connected, connection, activeId, snapshot, profiles, overviews } = useRuntime()
   const { styles, colors } = useTheme()
   const [linkError, setLinkError] = useState('')
   const navigateAfterSheet = useSheetNavigation()
   const open = (
     url: string,
-    dependency?: { kind: 'pull' | 'pipeline'; repositoryId: string; target: string },
+    dependency?: { kind: 'pull' | 'pipeline' | 'thread'; repositoryId: string; target: string },
   ) => {
     setLinkError('')
     const pull = forgePullTarget(
@@ -139,7 +140,7 @@ export function TaskWaitingPanel({
       )}
       {data?.dependencies.map((item) => (
         <View
-          key={JSON.stringify([item.kind, item.repositoryId, item.target])}
+          key={JSON.stringify([item.kind, item.runtimeId, item.repositoryId, item.target])}
           style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -150,9 +151,38 @@ export function TaskWaitingPanel({
           }}
         >
           <Pressable
-            accessibilityRole="link"
+            accessibilityRole={item.kind === 'thread' ? 'button' : 'link'}
             accessibilityLabel={`Open ${item.label}${item.pausedReason ? `, ${item.pausedReason}` : ''}`}
-            onPress={() => open(item.url, item)}
+            onPress={() => {
+              if (item.kind !== 'thread') {
+                open(item.url, item)
+                return
+              }
+              const savedRuntime = item.runtimeIdentity
+                ? (profiles.find((profile) => profile.connection.runtimeId === item.runtimeIdentity)
+                    ?.id ??
+                  overviews.find((entry) => entry.snapshot?.runtimeId === item.runtimeIdentity)
+                    ?.profile.id)
+                : undefined
+              const owner =
+                savedRuntime ??
+                (!item.runtimeId || item.runtimeId === 'local' ? activeId : item.runtimeId)
+              if (!owner || !activeId) {
+                setLinkError('Connect the owning computer to open this thread')
+                return
+              }
+              navigateAfterSheet(() =>
+                router.push(
+                  taskHref(owner, item.target, undefined, {
+                    runtimeId: activeId,
+                    taskId,
+                    title:
+                      snapshot?.workspace.tasks.find((task) => task.id === taskId)?.title ??
+                      'Parent thread',
+                  }),
+                ),
+              )
+            }}
             style={{
               flexShrink: 1,
               paddingLeft: 10,
@@ -167,6 +197,7 @@ export function TaskWaitingPanel({
               <Text numberOfLines={1} style={styles.text}>
                 {item.project} · {item.label}
               </Text>
+              {item.kind === 'thread' && <Text style={styles.muted}>{item.status}</Text>}
               {item.kind === 'pipeline' && (
                 <Text numberOfLines={1} style={[styles.muted, { fontSize: 10 }]}>
                   {item.lastSuccessAt
@@ -193,6 +224,7 @@ export function TaskWaitingPanel({
                     onPress: () =>
                       void refresh({
                         kind: item.kind,
+                        ...(item.runtimeId ? { runtimeId: item.runtimeId } : {}),
                         repositoryId: item.repositoryId,
                         target: item.target,
                       }),

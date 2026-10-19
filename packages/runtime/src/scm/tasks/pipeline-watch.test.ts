@@ -83,7 +83,8 @@ it('skips watch scans during streaming and restores ownership after a rolled-bac
     }),
   ).toThrow('Rollback archive')
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, activity: 'resumed' }))
-  expect(scans()).toBe(2)
+  // Each lifecycle boundary refreshes ownership and the cached overview counts.
+  expect(scans()).toBe(4)
   expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
   expect((await f.status()).watches[0]?.status).toBe('watching')
   await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'stop' })
@@ -648,6 +649,12 @@ it.each(['job', 'step'])(
     expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
     expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
     expect(f.s.store.task(f.taskId).queue?.[0]?.text).toContain('Compilation failed')
+    expect(f.s.pipelineWatch.counts(f.taskId)).toEqual({ active: 0, failures: 1 })
+    expect(new PipelineWatch(f.s.db, f.s).counts(f.taskId)).toEqual({ active: 0, failures: 1 })
+    expect(f.s.store.taskSummary(f.taskId).watchCounts?.failures).toBe(1)
+    f.read.mockResolvedValue(detail('7', 'in_progress'))
+    await f.watch()
+    expect(f.s.pipelineWatch.counts(f.taskId)).toEqual({ active: 1, failures: 0 })
   },
 )
 
@@ -799,4 +806,33 @@ it('polls with background quota and retains last success when a later poll fails
   f.read.mockResolvedValue(detail())
   await f.s.pipelineWatch.tick()
   expect((await f.status()).watches[0]!.error).toBeUndefined()
+})
+
+it('lets spawned children own pipeline watches and rolls counts up without delivering to the parent', async () => {
+  const f = await setup()
+  const parent = f.s.tasks.create({
+    title: 'Parent',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: '',
+  })
+  f.s.store.updateTask(parent.id, (task) => ({ ...task, status: 'review', queuePaused: true }))
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    status: 'review',
+    delegation: {
+      parentTaskId: parent.id,
+      parentRunId: 'previous-run',
+      completion: 'read',
+      key: 'ci',
+    },
+  }))
+  await f.watch()
+  expect(f.s.store.taskSummary(parent.id).watchCounts?.pipelines).toBe(1)
+  expect(f.s.store.taskSummary(parent.id).waitingForFeedback).toBe(true)
+  f.read.mockResolvedValue(detail('7', 'failure'))
+  await f.s.pipelineWatch.tick()
+  expect(f.s.store.taskSummary(f.taskId).queue).toHaveLength(1)
+  expect(f.s.store.taskSummary(parent.id).queue ?? []).toHaveLength(0)
+  expect(f.s.store.taskSummary(parent.id).watchCounts).toMatchObject({ pipelines: 0, failures: 1 })
 })

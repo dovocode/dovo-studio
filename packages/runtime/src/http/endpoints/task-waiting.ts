@@ -1,3 +1,4 @@
+import { HttpError } from '../../errors.js'
 import { permissionPolicyReadOnly } from '@dovo/protocol'
 import { resolveTaskAgent, type taskWaitingRequestSchema, type TaskWaiting } from '@dovo/protocol'
 import type { Services } from '../../services.js'
@@ -9,7 +10,10 @@ export async function taskWaiting(
   const task = s.store.taskSummary(input.taskId)
   const { unlink } = input
   if (unlink) {
-    if (unlink.kind === 'pull')
+    if (unlink.kind === 'thread') {
+      if (!unlink.runtimeId) throw new HttpError(400, 'A computer ID is required')
+      s.threadWatch.stop(input.taskId, unlink.runtimeId, unlink.target)
+    } else if (unlink.kind === 'pull')
       await s.pullRequestWatch.manage({
         taskId: input.taskId,
         action: 'stop',
@@ -80,6 +84,25 @@ export async function taskWaiting(
       ).values(),
     ],
     dependencies: [
+      ...s.threadWatch
+        .list(task.id)
+        .filter((watch) => watch.status === 'watching')
+        .map((watch) => ({
+          kind: 'thread' as const,
+          repositoryId: task.repositoryId,
+          runtimeId: watch.runtimeId,
+          runtimeIdentity: watch.snapshot?.runtimeId,
+          target: watch.threadId,
+          label: watch.snapshot?.title ?? 'Connected thread',
+          project: watch.computerName,
+          url: '',
+          status: watch.offline
+            ? 'Offline · last known state retained'
+            : (watch.snapshot?.phase ?? 'Connecting'),
+          checkedAt: watch.checkedAt ?? task.createdAt,
+          lastSuccessAt: watch.lastSuccessAt,
+          pausedReason: pausedReason(settings.enableStudioThreads),
+        })),
       ...pulls.watches
         .filter((watch) => watch.status === 'watching')
         .map((watch) => ({

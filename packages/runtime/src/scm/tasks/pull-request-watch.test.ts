@@ -95,7 +95,8 @@ it('skips watch scans during streaming and restores ownership after a rolled-bac
     }),
   ).toThrow('Rollback archive')
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, activity: 'resumed' }))
-  expect(scans()).toBe(2)
+  // Each lifecycle boundary refreshes ownership and the cached overview counts.
+  expect(scans()).toBe(4)
   expect(f.s.store.task(f.taskId).waitingForFeedback).toBe(true)
   expect((await f.status()).watches[0]?.status).toBe('watching')
   await f.s.pullRequestWatch.command({ taskId: f.taskId, action: 'stop' })
@@ -930,4 +931,32 @@ it('keeps Waiting for another enabled watcher when pipeline monitoring is disabl
   f.s.preferences.save({ enablePullRequestWatching: false })
   expect(f.s.store.task(f.taskId).waitingForFeedback).toBeUndefined()
   expect((await taskWaiting(f.s, { taskId: f.taskId })).dependencies).toHaveLength(2)
+})
+
+it('lets spawned children own PR feedback and rolls counts up without duplicate parent delivery', async () => {
+  const f = await setup()
+  const parent = f.s.tasks.create({
+    title: 'Parent',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: '',
+  })
+  f.s.store.updateTask(parent.id, (task) => ({ ...task, status: 'review', queuePaused: true }))
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    status: 'review',
+    delegation: {
+      parentTaskId: parent.id,
+      parentRunId: 'previous-run',
+      completion: 'read',
+      key: 'review',
+    },
+  }))
+  await f.watch()
+  expect(f.s.store.taskSummary(parent.id).watchCounts?.pullRequests).toBe(1)
+  expect(f.s.store.taskSummary(parent.id).waitingForFeedback).toBe(true)
+  f.read.mockResolvedValue(detail({ comments: [comment('old'), comment('new')] }))
+  await f.s.pullRequestWatch.tick()
+  expect(f.s.store.taskSummary(f.taskId).queue).toHaveLength(1)
+  expect(f.s.store.taskSummary(parent.id).queue ?? []).toHaveLength(0)
 })

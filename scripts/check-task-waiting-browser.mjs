@@ -9,7 +9,7 @@ const browser = await chromium.launch({ headless: true })
 try {
   for (const mobile of [false, true]) {
     const mocks = {
-      '@dovo/studio-core': `export {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting.ts';export const encodeWorkTarget=JSON.stringify;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{window.opened=JSON.parse(target.entityId).url;window.internal=true},openPullLink:url=>{if(url.includes('/pull/')){window.opened=url;window.internal=true;return true}return false},openExternalLink:url=>{window.opened=url;window.internal=false}});`,
+      '@dovo/studio-core': `export {useTaskWaiting} from '${root}packages/studio-core/src/use-task-waiting.ts';export const encodeWorkTarget=JSON.stringify;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openThread:target=>{window.threadDestination=target},navigate:target=>{window.opened=JSON.parse(target.entityId).url;window.internal=true},openPullLink:url=>{if(url.includes('/pull/')){window.opened=url;window.internal=true;return true}return false},openExternalLink:url=>{window.opened=url;window.internal=false}});`,
       '@dovo/studio-ui':
         'export const Button=({size,variant,children,...props})=><button {...props}>{children}</button>;export const Dialog=({open,children})=>open?<div role="dialog">{children}</div>:null;export const DialogContent=({children})=><div>{children}</div>;export const DialogHeader=DialogContent;export const DialogTitle=({children})=><h2>{children}</h2>;export const DialogDescription=({children})=><p>{children}</p>;',
       '../../ui/layout/sheet': 'export const useSheetNavigation=()=>action=>action();',
@@ -100,7 +100,15 @@ try {
           window.items = window.items.filter((item) => item.target !== input.unlink.target)
         return { dependencies: window.items, related: window.related }
       }
-      window.store = { connected: true, request, call: request }
+      window.store = {
+        connected: true,
+        request,
+        call: request,
+        activeId: 'laptop',
+        activeRuntimeId: 'laptop',
+        workspace: { tasks: [{ id: 'second', title: 'Release parent' }] },
+        snapshot: { workspace: { tasks: [{ id: 'second', title: 'Release parent' }] } },
+      }
     })
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.getByRole('button', { name: 'Stop watching PR #7', exact: true }).waitFor()
@@ -240,6 +248,62 @@ try {
       await page.getByRole('button', { name: 'Stop watching Pipeline run 9', exact: true }).count(),
       0,
     )
+    await page.evaluate(() => {
+      window.items = [
+        {
+          kind: 'thread',
+          repositoryId: 'repo',
+          runtimeId: 'mac-studio',
+          target: 'child',
+          label: 'Configure Play',
+          project: 'Mac Studio',
+          url: '',
+          status: 'Offline · last known state retained',
+          checkedAt: '2026-10-19T12:00:00Z',
+        },
+      ]
+      window.related = []
+    })
+    await page.getByRole('button', { name: /Refresh/ }).click()
+    await page.getByRole('button', { name: 'Stop watching Configure Play', exact: true }).waitFor()
+    assert.equal(await page.getByRole('link', { name: /Configure Play/ }).count(), 0)
+    await page.getByRole('button', { name: 'Open Configure Play', exact: true }).click()
+    if (mobile)
+      assert.deepEqual(await page.evaluate(() => window.opened.params), {
+        runtimeId: 'mac-studio',
+        taskId: 'child',
+        parentRuntimeId: 'laptop',
+        parentTaskId: 'second',
+        parentTitle: 'Release parent',
+      })
+    else
+      assert.deepEqual(await page.evaluate(() => window.threadDestination), {
+        runtimeId: 'mac-studio',
+        threadId: 'child',
+        title: 'Configure Play',
+        parent: { runtimeId: 'laptop', threadId: 'second', title: 'Release parent' },
+      })
+    if (mobile) {
+      await page.evaluate(() => {
+        window.items[0].runtimeIdentity = 'canonical-server'
+        window.store.profiles = [
+          { id: 'saved-vpn-address', connection: { runtimeId: 'canonical-server' } },
+        ]
+        window.store.overviews = []
+      })
+      await page.getByRole('button', { name: /Refresh/ }).click()
+      await page.getByRole('button', { name: 'Open Configure Play', exact: true }).click()
+      assert.equal(await page.evaluate(() => window.opened.params.runtimeId), 'saved-vpn-address')
+    }
+    await page.getByRole('button', { name: 'Stop watching Configure Play', exact: true }).click()
+    if (!mobile) await page.getByRole('button', { name: 'Stop watching', exact: true }).click()
+    await page.waitForFunction(() => !document.body.textContent.includes('Configure Play'))
+    assert.deepEqual(await page.evaluate(() => window.calls.at(-1).unlink), {
+      kind: 'thread',
+      runtimeId: 'mac-studio',
+      repositoryId: 'repo',
+      target: 'child',
+    })
     assert.deepEqual(errors, [])
     await page.close()
     console.log(

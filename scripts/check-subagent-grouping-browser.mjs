@@ -37,6 +37,7 @@ const fixture = `
 const base={repositoryId:'repo',agentId:'',status:'running',createdAt:'2026-10-03T12:00:00Z',draft:'',files:[],messages:[],example:false};
 const record=(id,name,status='working',source='dovo')=>({id,taskId:source==='dovo'?id:undefined,source:source==='dovo'?'dovo':undefined,name,provider:'codex',status,activity:status==='working'?'Inspecting tests':'Saved result',startedAt:'2026-10-03T12:00:00Z',updatedAt:'2026-10-03T12:01:00Z'});
 const parent={...base,id:'parent',title:'Main thread',subagents:[record('child','Live child'),record('done','Ended child','completed'),record('native','Native worker','working','native')]};
+parent.threadWatches=[{runtimeId:'studio',threadId:'remote-child',computerName:'Mac Studio',relation:'spawned',status:'watching',offline:false,snapshot:{title:'Configure Play testing',phase:'running',revision:'one',attention:[],watches:{pipelines:1,pullRequests:1,failures:0}}}];parent.watchCounts={pipelines:1,pullRequests:1,failures:0};
 const child={...base,id:'child',title:'Independent child title',delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'},subagents:[record('nested','Nested child'),record('nested-native','Nested native','working','native')]};
 const nested={...base,activeRunId:'nested-run',id:'nested',title:'Independent nested title',delegation:{parentTaskId:'child',parentRunId:'child-run',key:'nested'}};
 const done={...base,id:'done',title:'Independent ended title',status:'done',delegation:{parentTaskId:'parent',parentRunId:'run',key:'done'}};
@@ -48,7 +49,7 @@ window.source={runtimeId:'linux',address:profile.connection.address,name:'Linux'
 window.overview={profile,snapshot,connected:true,lastSeen:null,error:null,pulls:null,pullError:null};
 window.opened=[];window.routes=[];window.switches=[];window.orders=[];window.requests=[];
 window.request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/native-thread'){if(window.nativeReadError){window.nativeReadError=false;throw new Error('Native thread unavailable')}return input.before?{entries:[{id:'older',role:'user',text:'Earlier native prompt'}]}:{before:'prompt',entries:[{id:'prompt',role:'user',text:'Native prompt'},{id:'tool',role:'tool',label:'Read',text:'Native tool output'},{id:'reply',role:'assistant',text:'Native final answer'}]}};return {ok:true}};
-window.host={navigate:target=>window.routes.push(target)};
+window.host={openThread:target=>window.routes.push(target),navigate:target=>window.routes.push(target)};
 window.store={request:window.request,call:window.request,callEffect:(path,input)=>Effect.promise(()=>window.request(path,input)),workspace:window.workspace,snapshot,connected:true,activeRuntimeId:'mac',activeId:'mac',runtimeRegistry:{profiles:[profile]},profiles:[profile],overviews:[window.overview],runtimes:[window.overview],profile,ready:true,refreshAll:async()=>{},refreshRuntimes:async()=>{},selectRuntimeEffect:id=>Effect.sync(()=>window.switches.push(id))};
 window.publishTasks=tasks=>{window.workspace={...window.workspace,tasks};const next={...window.store.snapshot,workspace:window.workspace};window.source={...window.source,workspace:window.workspace,snapshot:next};window.overview={...window.overview,snapshot:next};window.store={...window.store,workspace:window.workspace,snapshot:next,overviews:[window.overview],runtimes:[window.overview]};};
 window.preferences={threadDensity:'comfortable',taskSort:'newest',taskGrouping:'none',hideFinishedSubagents:true,collapsedThreadSections:[]};
@@ -174,6 +175,19 @@ try {
       ),
     })
     await page.getByText('Main thread', { exact: true }).waitFor()
+    if (!mobile) {
+      await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
+      assert.deepEqual(await page.evaluate(() => window.routes.at(-1)), {
+        runtimeId: 'studio',
+        threadId: 'remote-child',
+        title: 'Configure Play testing',
+        parent: { runtimeId: 'linux', threadId: 'parent', title: 'Main thread' },
+      })
+      assert.deepEqual(await page.evaluate(() => window.opened), [])
+      await page.getByText('Mac Studio · running', { exact: true }).waitFor()
+      await page.getByText('1 pipeline watch', { exact: true }).waitFor()
+      await page.getByText('1 PR watch', { exact: true }).waitFor()
+    }
     assert.equal(await page.getByText('Independent child title', { exact: true }).count(), 0)
     assert.equal(await page.getByText('Independent nested title', { exact: true }).count(), 0)
     assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)

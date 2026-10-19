@@ -1,3 +1,4 @@
+import { threadWatchSummarySchema, threadWatchCountsSchema } from './tasks/thread-watches.js'
 import { githubTriggerSchema } from './automation/triggers.js'
 import { pullStackSummarySchema } from './scm/pulls/pull-stack.js'
 import { filePreviewMetadataSchema } from './scm/repositories/file-previews.js'
@@ -664,6 +665,8 @@ export const taskSchema = mutableStruct({
   checkoutLocked: Schema.optional(Schema.Boolean),
   // Captured on the first submitted input; queued input keeps the lock after removal.
   providerLock: Schema.optional(providerSchema),
+  threadWatches: Schema.optional(mutableArray(threadWatchSummarySchema)),
+  watchCounts: Schema.optional(threadWatchCountsSchema),
   delegation: Schema.optional(
     mutableStruct({
       fingerprint: Schema.optional(maxValue(Schema.String, 64)),
