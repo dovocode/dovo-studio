@@ -793,7 +793,11 @@ export class Tasks {
             review,
             resumePaused && !this.running.has(id),
             undefined,
-            { reopenSettled: resumePaused, unsnooze: true },
+            {
+              reopenSettled: resumePaused,
+              unsnooze: true,
+              clearCompletedTodos: resumePaused && !review,
+            },
           )
           return (
             this.store.taskSummary(id).queue?.some((message) => message.id === messageId) &&
@@ -902,7 +906,7 @@ export class Tasks {
           false,
           false,
           undefined,
-          { steering: true, unsnooze: true },
+          { steering: true, unsnooze: true, clearCompletedTodos: true },
         )
       )
         return null

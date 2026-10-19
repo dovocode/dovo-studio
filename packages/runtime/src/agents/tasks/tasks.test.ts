@@ -1040,8 +1040,13 @@ it.each([false, true])(
     await waitForTask(() => expect(runs).toHaveLength(1))
     await s.tasks.send(task.id, 'later', 'Do this later')
     if (paused) s.tasks.queue.change(task.id, 'pause')
+    const todos: Task['nativeTodos'] = [{ text: 'Previous work', status: 'completed' }]
+    s.store.updateTask(task.id, (task) => ({ ...task, nativeTodos: todos }))
     await s.tasks.steer(task.id, 'live', 'New direction')
+    expect(s.store.task(task.id).nativeTodos).toBeUndefined()
+    s.store.updateTask(task.id, (task) => ({ ...task, nativeTodos: todos }))
     await s.tasks.steer(task.id, 'live', 'New direction')
+    expect(s.store.task(task.id).nativeTodos).toEqual(todos)
     expect(steer).toHaveBeenCalledTimes(1)
     expect(steer).toHaveBeenCalledWith({
       id: 'live',

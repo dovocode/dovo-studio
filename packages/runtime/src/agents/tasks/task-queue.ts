@@ -42,7 +42,12 @@ export class TaskQueue {
     review = false,
     resumePaused = false,
     subagentResultId?: string,
-    options: { steering?: boolean; reopenSettled?: boolean; unsnooze?: boolean } = {},
+    options: {
+      steering?: boolean
+      reopenSettled?: boolean
+      unsnooze?: boolean
+      clearCompletedTodos?: boolean
+    } = {},
   ) {
     if (this.accepted(id, messageId, text, attachments)) return false
     const task = this.store.taskSummary(id)
@@ -55,6 +60,11 @@ export class TaskQueue {
       id,
       (t) => ({
         ...t,
+        ...(options.clearCompletedTodos &&
+        t.nativeTodos?.length &&
+        t.nativeTodos.every((todo) => todo.status === 'completed')
+          ? { nativeTodos: undefined }
+          : {}),
         checkoutLocked: true,
         ...(options.unsnooze ? { snoozedUntil: null } : {}),
         ...(t.archived && options.reopenSettled

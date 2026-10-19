@@ -4,6 +4,7 @@ import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
 import type { AgentAdapter } from '../../agents/execution/types'
+import type { Task } from '@dovo/protocol'
 
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
@@ -32,6 +33,43 @@ async function setup() {
     })
   return { ...runtime.services, task, send }
 }
+it.each([
+  { status: 'completed', hidden: true },
+  { status: 'in-progress', hidden: false },
+  { status: 'pending', hidden: false },
+] as const)(
+  'a new user message hides only a finished checklist (%s)',
+  async ({ status, hidden }) => {
+    const s = await setup()
+    const run = vi.fn<AgentAdapter['run']>(async (input) => {
+      input.onSession('checklist-session')
+      input.onText('Done')
+    })
+    vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+    await (
+      await s.tasks.start(s.task.id)
+    ).done
+    const todos: Task['nativeTodos'] = [
+      { text: 'Previous step', status: 'completed' },
+      { text: 'Last step', status },
+    ]
+    const seed = () => s.store.updateTask(s.task.id, (task) => ({ ...task, nativeTodos: todos }))
+    seed()
+    expect((await s.send('empty', '')).status).toBe(400)
+    expect(s.store.task(s.task.id).nativeTodos).toEqual(todos)
+    expect((await s.send('next', 'New request')).status).toBe(200)
+    await waitForRuntime(() => expect(s.store.task(s.task.id).status).toBe('review'))
+    expect(s.store.task(s.task.id).nativeTodos).toEqual(hidden ? undefined : todos)
+    // Retrying a lost response must not clear a checklist published by the new turn.
+    seed()
+    expect((await s.send('next', 'New request')).status).toBe(200)
+    expect(s.store.task(s.task.id).nativeTodos).toEqual(todos)
+    await s.tasks.send(s.task.id, 'notification', 'System watch update')
+    await waitForRuntime(() => expect(s.store.task(s.task.id).status).toBe('review'))
+    expect(s.store.task(s.task.id).nativeTodos).toEqual(todos)
+  },
+)
+
 it.each(['cancelled', 'failed', 'review'] as const)(
   'sending a follow-up resumes an idle %s thread and preserves queue order',
   async (status) => {
@@ -129,15 +167,18 @@ it('reopens a settled thread only on accepted send and does not reopen on replay
 it('requires explicit restoration for an archived thread', async () => {
   const s = await setup()
   const archivedAt = new Date().toISOString()
+  const todos: Task['nativeTodos'] = [{ text: 'Previous work', status: 'completed' }]
   s.store.updateTask(s.task.id, (task) => ({
     ...task,
     status: 'review',
     archived: true,
     archivedAt,
+    nativeTodos: todos,
   }))
   expect((await s.send('follow-up', 'Continue')).status).toBe(409)
   expect(s.store.task(s.task.id)).toMatchObject({ archived: true, archivedAt })
   expect(s.store.taskSubmission(s.task.id, 'follow-up')).toBeUndefined()
+  expect(s.store.task(s.task.id).nativeTodos).toEqual(todos)
 })
 
 it('reopens a settled thread on an attachment-only message after validating its files', async () => {
