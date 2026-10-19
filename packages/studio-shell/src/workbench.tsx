@@ -1,3 +1,4 @@
+import { RemoteDesktopSharing } from './remote-desktop-sharing'
 import { taskParentReference, resolveThreadRuntime } from '@dovo/protocol'
 import { StudioToolsBridge } from './studio-tools-bridge'
 import { StudioPairedComputersBridge } from './studio-paired-computers-bridge'
@@ -662,6 +663,7 @@ function WorkbenchContent({
     }))
   return (
     <StudioHostProvider api={api}>
+      <RemoteDesktopSharing />
       <StudioToolsBridge />
       <StudioPairedComputersBridge />
       <SidebarHeaderLayout

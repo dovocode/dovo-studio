@@ -1,3 +1,4 @@
+import { remoteDesktopSessionSchema } from '../remote-desktop.js'
 import { studioToolsSchema } from '../studio-tools.js'
 import { runtimeIconSchema } from './runtime-icon.js'
 import { memorySettingsSchema } from '../memory.js'
@@ -101,6 +102,8 @@ export const providerStatusSchema = mutableStruct({
   detail: Schema.String,
 })
 export const snapshotSchema = mutableStruct({
+  remoteDesktopEnabled: Schema.optional(Schema.Boolean),
+  remoteDesktopSession: Schema.optional(Schema.NullOr(remoteDesktopSessionSchema)),
   /** Computer-wide web approval rule, derived from its persisted preferences. */
   allowWebRequests: Schema.optional(Schema.Boolean),
   studioTools: Schema.optional(studioToolsSchema),
@@ -397,6 +400,9 @@ export const runtimePreferencesSchema = mutableStruct({
   ),
   archivedArtifactRetention: artifactRetentionSchema.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => 'forever' as const)),
+  ),
+  enableRemoteDesktop: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
   enableArtifacts: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
   autoProjectModelSelection: taskModelSelectionSchema.pipe(

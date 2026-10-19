@@ -5,6 +5,9 @@ provider setup, and feature manual. The guides below focus on particular workflo
 
 ## Setup and operating guides
 
+- [Remote desktop](remote-desktop.md): experimental paired screen viewing and human mouse/keyboard
+  control.
+
 - [Run a server and pair devices](server-setup.md): source or release setup, workspace migration,
   lifecycle, LAN/VPN access, pairing, updates, and recovery.
 - [Releases and updates](releases-and-updates.md): desktop releases, local iPhone installs, and Live

@@ -1,6 +1,7 @@
 export const REPOSITORY_CLONE_TIMEOUT_MS = 300_000
 
 export function runtimeRequestTimeout(path: string, input?: unknown) {
+  if (path === '/api/remote-desktop') return 45000
   if (path === '/api/studio/session') return 30000
   if (path === '/api/studio/tools') {
     if (input && typeof input === 'object' && 'part' in input) {

@@ -19,6 +19,7 @@
     "fallow": "fallow dead-code",
     "fallow:ci": "fallow dead-code --format compact",
     "postinstall": "node scripts/build-mobile-icons.mjs && node scripts/prepare-pty.mjs && node scripts/build-mobile-terminal.mjs && node scripts/build-mobile-mermaid.mjs && node scripts/prepare-mobile-markdown.mjs && node scripts/build-browser-viewer.mjs && node scripts/build-mcp-apps.mjs && playwright install chromium",
+    "test:remote-desktop:browser": "node scripts/check-remote-desktop-browser.mjs",
     "test:dictation:browser": "node scripts/check-dictation-browser.mjs",
     "test:dictation:native": "node scripts/check-dictation-native.mjs",
     "prepare:dictation": "node scripts/packaging/dictation-engine.mjs",

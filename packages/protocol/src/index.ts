@@ -264,3 +264,5 @@ export * from './tasks/thread-parent.js'
 export * from './tasks/thread-navigation.js'
 
 export * from './desktop-dictation.js'
+
+export * from './runtime/remote-desktop.js'

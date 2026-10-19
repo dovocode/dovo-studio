@@ -55,6 +55,17 @@ export const runtimeExtension = defineStudioExtension(
       load: () => import('./computer-use-view'),
     },
     {
+      id: 'remote-desktop',
+      navigationGroup: 'settings',
+      settingsScope: 'computer',
+      title: 'Remote desktop',
+      icon: 'runtime',
+      order: 4.12,
+      settingsSection: 'computers',
+      keywords: 'experimental remote desktop screen sharing control view computer cua',
+      load: () => import('./remote-desktop-view'),
+    },
+    {
       id: 'device-previews',
       navigationGroup: 'settings',
       settingsScope: 'computer',

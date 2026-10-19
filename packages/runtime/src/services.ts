@@ -1,3 +1,4 @@
+import { RemoteDesktop } from './computer-use/remote-desktop.js'
 import { familyWatchCounts } from './studio/thread-snapshot.js'
 import type { ThreadWatchEntry } from '@dovo/protocol'
 import { ThreadWatch } from './studio/thread-watch.js'
@@ -382,6 +383,12 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
 
   const services: Services = {
     threadWatch,
+    remoteDesktop: new RemoteDesktop(
+      () => preferences.get().enableRemoteDesktop,
+      () => commands.get().cua,
+      () => activity.add('integration', 'remote-desktop', 'Remote desktop session changed', {}),
+      (error) => console.error('Remote desktop cleanup failed:', error),
+    ),
     runCredentials: runCredentials(store),
     fileReviews,
     taskReviews,
@@ -442,6 +449,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   return services
 }
 export interface Services {
+  remoteDesktop: RemoteDesktop
   threadWatch: ThreadWatch
   runCredentials: RunCredentials
   memory: Memory

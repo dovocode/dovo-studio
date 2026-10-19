@@ -210,6 +210,8 @@ export function runtimeSnapshot(
       threadBehaviorSupported: true,
       worktreeDeletionOverrideSupported: true,
       studioTools: enabledStudioTools(preferences),
+      remoteDesktopEnabled: preferences.enableRemoteDesktop,
+      remoteDesktopSession: s.remoteDesktop.status(),
       artifactsEnabled: preferences.enableArtifacts,
       codeReviewsEnabled: preferences.enableCodeReviews,
       autoProjectModelSelection: preferences.autoProjectModelSelection,

@@ -1,3 +1,4 @@
+import { remoteDesktopRequestSchema } from '@dovo/protocol'
 import { serveRetrieval } from '../retrieval/host.js'
 import { retrievalRequestSchema } from '../retrieval/request.js'
 import { requireLocalStudioUI } from '../studio/local-ui.js'
@@ -203,6 +204,24 @@ export function route(
         )
       }
       const device = run ? { id: `run:${run.runId}`, owner: false } : s.devices.authenticate(token)
+      if (method === 'POST' && path === '/api/remote-desktop') {
+        if (run || request.headers['x-dovo-agent-access'] === '1')
+          throw new HttpError(403, 'Remote desktop is available only to paired human clients.')
+        const input = decode(
+          remoteDesktopRequestSchema,
+          yield* serviceResult(body(request, 16 * 1024)),
+        )
+        return yield* serviceResult(
+          s.remoteDesktop.request(
+            input,
+            device.id,
+            s.devices.list().find((entry) => entry.id === device.id)?.name ?? 'Host',
+            () => {
+              s.devices.authenticate(token)
+            },
+          ),
+        )
+      }
       const agentDeviceAccess = !!run || request.headers['x-dovo-agent-access'] === '1'
       if (
         path === '/api/device-hosts' ||
@@ -990,6 +1009,7 @@ export function route(
         const settings = s.preferences.save(input)
         s.approvals.applyWebRules()
         s.artifacts.prune()
+        if (!settings.enableRemoteDesktop) yield* serviceResult(s.remoteDesktop.stop())
         return yield* serviceResult(settings)
       }
       if (method === 'POST' && path === '/api/commands/cua/action') {

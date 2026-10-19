@@ -418,6 +418,22 @@ export function RuntimePreferences() {
               }
             />
           </Section>
+          {snapshot?.remoteDesktopEnabled !== undefined && (
+            <Section title="Remote desktop (experimental)">
+              <SettingsSwitchRow
+                first
+                label="Enable remote desktop"
+                value={value?.enableRemoteDesktop ?? false}
+                disabled={disabled}
+                onValueChange={(enableRemoteDesktop) => save({ enableRemoteDesktop })}
+              />
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                Allow paired devices to view this computer’s primary display. Requires Cua Driver
+                and host OS permissions. Open Remote desktop in desktop/web settings to connect.
+                Turning this off ends sharing.
+              </Text>
+            </Section>
+          )}
           <Section title="Studio Tools (experimental)">
             {studioToolSettings.map(({ key, label, description }) => (
               <View key={key} style={{ gap: 6 }}>

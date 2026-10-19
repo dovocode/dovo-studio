@@ -747,3 +747,31 @@ export function StudioToolsPreferences() {
     </>
   )
 }
+
+export function RemoteDesktopPreferences() {
+  const { snapshot } = useWorkspace()
+  const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
+  return (
+    <>
+      <SettingsGroup
+        title="Remote desktop (experimental)"
+        description="Allow paired devices to view this computer’s primary display. Control is enabled separately for each session. Turning this off ends sharing. Requires Cua Driver running in the host desktop session; agent computer use can remain disabled."
+      >
+        <SettingRow label="Enable remote desktop">
+          <Toggle
+            label="Enable remote desktop"
+            checked={value?.enableRemoteDesktop ?? false}
+            disabled={disabled || snapshot?.remoteDesktopEnabled === undefined}
+            onChange={(enableRemoteDesktop) => save({ enableRemoteDesktop })}
+          />
+        </SettingRow>
+      </SettingsGroup>
+      {snapshot?.remoteDesktopEnabled === undefined && (
+        <p className="text-xs text-muted-foreground">
+          Update this computer’s runtime to use remote desktop.
+        </p>
+      )}
+      <PreferencesStatus error={error} loaded={value !== null} busy={busy} connected={connected} />
+    </>
+  )
+}

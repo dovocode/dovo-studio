@@ -86,6 +86,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.agents.dispose(),
         () => services.runCredentials.dispose(),
         () => services.mcpApps.dispose(),
+        () => services.remoteDesktop.dispose(),
         () => services.backups.settle(),
         () => services.attachments.dispose(),
         () => services.liveActivities.flush(),
