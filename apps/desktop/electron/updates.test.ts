@@ -12,7 +12,7 @@ const f = vi.hoisted(() => ({
         | { percent: number; transferred: number; total: number; bytesPerSecond: number },
     ) => void
   >(),
-  install: vi.fn<() => void>(),
+  install: vi.fn<(silent: boolean, forceRunAfter: boolean) => void>(),
   feed: vi.fn<(options: unknown) => void>(),
   message: vi.fn<(options: unknown) => Promise<{ response: number }>>(async () => ({
     response: 0,
@@ -214,6 +214,32 @@ it('keeps the downloaded update ready when restart is deferred', async () => {
   expect(updates.state().status).toBe('downloaded')
   expect(prepare).not.toHaveBeenCalled()
   expect(f.install).not.toHaveBeenCalled()
+})
+it('installs Windows updates silently and relaunches only after restart is confirmed', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+  vi.spyOn(process, 'arch', 'get').mockReturnValue('x64')
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => Response.json(snapshot)),
+  )
+  f.message.mockResolvedValueOnce({ response: 0 }).mockResolvedValueOnce({ response: 1 })
+  const { registerUpdates } = await import('./updates')
+  const updater = (await import('electron-updater')).default.autoUpdater
+  const prepare = vi.fn<() => Promise<() => Promise<void>>>(async () => async () => {})
+  const updates = registerUpdates('/unused', prepare)
+  await updates.check()
+  expect(updates.state().status).toBe('downloaded')
+  expect(f.message).toHaveBeenLastCalledWith(
+    expect.objectContaining({ buttons: ['Restart and install', 'Later'] }),
+  )
+  expect(prepare).not.toHaveBeenCalled()
+  expect(f.install).not.toHaveBeenCalled()
+  expect(updater.autoInstallOnAppQuit).toBe(false)
+  // Clicking the downloaded update's restart action is explicit confirmation.
+  await updates.install()
+  expect(prepare).toHaveBeenCalledOnce()
+  expect(f.install).toHaveBeenCalledExactlyOnceWith(true, true)
+  expect(updates.state().status).toBe('restarting')
 })
 it('uses the same check action from the application menu and sidebar bridge', async () => {
   const { registerUpdates } = await import('./updates')

@@ -311,7 +311,7 @@ export function registerUpdates(
       }
       publish({ ...state, status: 'restarting' })
       restoreRuntime = await prepareQuit()
-      autoUpdater.quitAndInstall(false, true)
+      autoUpdater.quitAndInstall(process.platform === 'win32', true)
     } catch (error) {
       let message = error instanceof Error ? error.message : String(error)
       try {
