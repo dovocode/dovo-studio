@@ -1,5 +1,9 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { relatedFileGroups } from './order'
+import { runtimeIntegration } from '../../testing/integration.js'
+
+// Analysis now runs in an owned subprocess with a 15-second deadline.
+vi.setConfig(runtimeIntegration)
 const paths = async (files: Parameters<typeof relatedFileGroups>[0]) =>
   (
     await relatedFileGroups(files, [
