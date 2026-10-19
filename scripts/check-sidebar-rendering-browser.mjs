@@ -494,6 +494,25 @@ try {
     .first()
     .waitFor({ state: 'detached' })
   await general.waitFor()
+  // Linked General chats use the project's identity without implying a checkout switch.
+  await page.evaluate(() =>
+    window.publish(
+      window.tasks.map((task) =>
+        task.id === 'general'
+          ? {
+              ...task,
+              linkedCheckouts: [
+                { id: 'link', repositoryId: 'repo', execution: 'main', access: 'read-only' },
+              ],
+            }
+          : task,
+      ),
+    ),
+  )
+  assert.ok((await general.textContent()).includes('Project'))
+  assert.equal(await general.locator('svg.lucide-message-circle').count(), 0)
+  assert.equal(await general.locator('svg.lucide-git-branch, svg.lucide-git-fork').count(), 0)
+  assert.ok(!/stale-branch|Local checkout/.test(await general.textContent()))
   assert.deepEqual(errors, [])
   console.log(
     `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero tree/pill renders for 30 large child-payload updates and one tree render for visible activity; selector isolation, latest-entry commands, nested thread navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,

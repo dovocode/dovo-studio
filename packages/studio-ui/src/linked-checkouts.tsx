@@ -30,7 +30,7 @@ export function LinkedCheckoutEditor({
   const { workspace } = useWorkspace()
   const projects = workspace.repositories.filter((repo) => repo.kind !== 'scratch')
   return (
-    <section className="space-y-3" aria-label="Linked projects">
+    <section className="min-w-0 space-y-3" aria-label="Linked projects">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-medium">Linked projects</h3>
         <Button
@@ -137,7 +137,7 @@ function LinkedCheckoutFields({
     }
   }
   return (
-    <div className="space-y-2 rounded-md border p-3">
+    <div className="min-w-0 space-y-2 rounded-md border p-3">
       <label className="block text-xs">
         Project
         <ChoicePicker
@@ -204,7 +204,7 @@ function LinkedCheckoutFields({
         </ChoicePicker>
       )}
       {mode === 'worktree' && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid min-w-0 grid-cols-2 gap-2 [&>label]:min-w-0">
           <label className="text-xs">
             Base branch
             <Input
@@ -232,6 +232,7 @@ function LinkedCheckoutFields({
       <div className="flex items-center justify-between gap-2">
         <ChoicePicker
           aria-label="Linked project access"
+          className="w-auto flex-1"
           value={link.access}
           disabled={disabled}
           onValueChange={(access) => {
@@ -241,7 +242,13 @@ function LinkedCheckoutFields({
           <option value="read-only">Reference only</option>
           <option value="edit">Allow edits</option>
         </ChoicePicker>
-        <Button size="sm" variant="ghost" disabled={disabled || busy} onClick={onRemove}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="shrink-0"
+          disabled={disabled || busy}
+          onClick={onRemove}
+        >
           Remove link
         </Button>
       </div>

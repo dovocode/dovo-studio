@@ -670,6 +670,19 @@ try {
       Object.fromEntries(Array.from({ length: 12 }, (_, i) => ['task-' + i, { archived: true }])),
     ),
   )
+  await page.evaluate(() =>
+    window.publish({
+      'task-5': {
+        archived: false,
+        linkedCheckouts: [
+          { id: 'link', repositoryId: 'repo', execution: 'main', access: 'read-only' },
+        ],
+      },
+    }),
+  )
+  assert.ok((await general.textContent()).includes('Project'))
+  assert.ok(!/Local checkout|Worktree|stale-branch/.test(await general.getAttribute('aria-label')))
+  await page.evaluate(() => window.publish({ 'task-5': { archived: true } }))
   const allHistory = page.getByRole('button', { name: 'Show all 12 settled threads', exact: true })
   await allHistory.waitFor()
   assert.equal(

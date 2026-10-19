@@ -3,7 +3,7 @@ import { NestedThreads } from './nested-threads'
 import type { NestedThread } from './thread-tree'
 import { WorkingSubagents } from './working-subagents'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import { pullStackLabel, taskPullStatusFor } from '@dovo/protocol'
+import { pullStackLabel, taskPullStatusFor, taskDisplayProject } from '@dovo/protocol'
 import { taskPullLinks } from '../detail/task-pull-links'
 import {
   pullRequestIconTone,
@@ -100,13 +100,16 @@ function TaskRowView({
   const agent = resolveTaskAgent(task, owner.agents)
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const repository = owner.repositories.find((r) => r.id === task.repositoryId)
+  const displayProject = taskDisplayProject(task, owner.repositories)
   const general = repository?.kind === 'scratch'
-  const projectName = general ? 'General' : (repository?.name ?? 'No project')
-  const projectIcon = general ? (
-    <MessageCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-  ) : (
-    <ProjectIcon repository={repository} className="size-4 shrink-0" />
-  )
+  const projectName =
+    displayProject?.kind === 'scratch' ? 'General' : (displayProject?.name ?? 'No project')
+  const projectIcon =
+    displayProject?.kind === 'scratch' ? (
+      <MessageCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+    ) : (
+      <ProjectIcon repository={displayProject} className="size-4 shrink-0" />
+    )
   const latest = task.turns?.at(-1)
   const provider =
     task.status === 'running'

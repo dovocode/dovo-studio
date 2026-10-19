@@ -885,6 +885,17 @@ export function projectDisplayName(
 ) {
   return repository?.kind === 'scratch' ? 'General' : (repository?.name ?? fallback)
 }
+/** Display context only: a General thread keeps its original execution project. */
+export function taskDisplayProject(
+  task: Pick<Task, 'repositoryId' | 'linkedCheckouts' | 'pendingLinkedCheckouts'>,
+  repositories: readonly Repository[],
+) {
+  const primary = repositories.find((repository) => repository.id === task.repositoryId)
+  if (primary?.kind !== 'scratch') return primary
+  const first = (task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.[0]
+  const linked = first && repositories.find((repository) => repository.id === first.repositoryId)
+  return linked && linked.kind !== 'scratch' ? linked : primary
+}
 export function projectIcon(repository: Repository | undefined) {
   return repository?.iconOverride ?? repository?.discoveredIcon
 }

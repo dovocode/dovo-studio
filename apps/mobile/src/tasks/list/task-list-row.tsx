@@ -142,8 +142,10 @@ function TaskListRowView({
   const status = taskRowStatus(task, needsInput, row.online, now)
   const done = showTaskDone(task, needsInput, now)
   const failed = !needsInput && !done && status.startsWith('Failed')
+  const displayProject = owner.displayProject ?? repository
   const general = repository?.kind === 'scratch'
-  const projectName = general ? 'General' : row.projectName || 'No project'
+  const projectName =
+    displayProject?.kind === 'scratch' ? 'General' : row.projectName || 'No project'
   const worktree = !general && task.execution === 'worktree'
   // "Review · 23m" → state "Review" and a right-aligned age "23m".
   const [state, age] = /^(.*) · (now|\d+[mhd])$/.exec(status)?.slice(1) ?? [status, '']
@@ -161,7 +163,7 @@ function TaskListRowView({
     task.checkoutBranch ??
     (task.execution === 'worktree' ? 'Worktree' : repository?.branch) ??
     'Project checkout'
-  const icon = projectIcon(repository)
+  const icon = projectIcon(displayProject)
   const StatusIcon = statusIcons[state]
   const settled = task.archived || !!task.archivedAt
   const unread = hasUnreadTaskActivity(task)
@@ -174,38 +176,39 @@ function TaskListRowView({
   const badgeSize = dense ? Math.max(16, Math.ceil(12 * fontScale)) : 20
   const contextSize = dense ? 11 : 12
   const contextText = { fontSize: contextSize, ...(dense ? { lineHeight: 14 } : {}) }
-  const projectBadge = general ? (
-    <View
-      style={{
-        width: badgeSize,
-        height: badgeSize,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <MessageCircle size={dense ? 14 : 16} color={colors.muted} />
-    </View>
-  ) : (
-    <View
-      style={{
-        width: badgeSize,
-        height: badgeSize,
-        borderRadius: 5,
-        overflow: 'hidden',
-        backgroundColor: icon ? 'transparent' : projectIconColor(repository),
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      {icon ? (
-        <Image source={{ uri: icon }} style={{ width: badgeSize, height: badgeSize }} />
-      ) : (
-        <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
-          {projectIconInitials(repository, row.projectName || 'P')}
-        </Text>
-      )}
-    </View>
-  )
+  const projectBadge =
+    displayProject?.kind === 'scratch' ? (
+      <View
+        style={{
+          width: badgeSize,
+          height: badgeSize,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <MessageCircle size={dense ? 14 : 16} color={colors.muted} />
+      </View>
+    ) : (
+      <View
+        style={{
+          width: badgeSize,
+          height: badgeSize,
+          borderRadius: 5,
+          overflow: 'hidden',
+          backgroundColor: icon ? 'transparent' : projectIconColor(displayProject),
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {icon ? (
+          <Image source={{ uri: icon }} style={{ width: badgeSize, height: badgeSize }} />
+        ) : (
+          <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
+            {projectIconInitials(displayProject, row.projectName || 'P')}
+          </Text>
+        )}
+      </View>
+    )
   const title = (
     <Text
       numberOfLines={1}

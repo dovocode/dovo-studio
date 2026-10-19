@@ -1,6 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, taskDisplayProject, projectDisplayName } from '@dovo/protocol'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
   useWorkspace,
@@ -82,6 +82,8 @@ export function TaskHeader({
   const { workspace, snapshot, connected, connection, runtimes, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
   const repo = workspace.repositories.find((r) => r.id === task.repositoryId)
+  const displayProject = taskDisplayProject(task, workspace.repositories)
+  const projectName = projectDisplayName(displayProject, 'Project')
   const [menuError, setMenuError] = useApplicationState('')
   const [now, setNow] = useApplicationState(Date.now)
   useEffect(() => {
@@ -153,12 +155,12 @@ export function TaskHeader({
             data-window-edge
             data-window-right-edge={windowRightEdge || undefined}
           >
-            <ProjectIcon repository={repo} className="size-4" />
+            <ProjectIcon repository={displayProject} className="size-4" />
             <h1
               className="studio-titlebar-heading min-w-0 flex-1"
-              title={`${repo?.name ?? 'Project'} / ${task.title}`}
+              title={`${projectName} / ${task.title}`}
             >
-              <span className="studio-titlebar-project">{repo?.name ?? 'Project'}</span>
+              <span className="studio-titlebar-project">{projectName}</span>
               <span className="studio-titlebar-divider">/</span>
               <span className="studio-titlebar-task min-w-0">{titleMenu}</span>
             </h1>

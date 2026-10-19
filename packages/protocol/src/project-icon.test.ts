@@ -1,6 +1,12 @@
 import { expect, it } from 'vite-plus/test'
 import { decode } from './shared/schema'
-import { projectIcon, projectIconColor, projectIconInitials, repositorySchema } from './workspace'
+import {
+  projectIcon,
+  projectIconColor,
+  projectIconInitials,
+  repositorySchema,
+  taskDisplayProject,
+} from './workspace'
 
 it('uses the project override for every task and falls back to its discovered icon', () => {
   const repository = decode(repositorySchema, {
@@ -42,4 +48,45 @@ it('uses Git identity for consistent colours and initials across machines', () =
   expect(projectIconColor(other)).toBe(projectIconColor(repository))
   expect(projectIconInitials(other)).toBe('PR')
   expect(projectIconInitials(repository)).toBe('PR')
+})
+
+it('uses only the first linked project as General thread display context', () => {
+  const general = decode(repositorySchema, {
+    id: 'general',
+    kind: 'scratch',
+    name: 'General',
+    path: '/general',
+    branch: '',
+  })
+  const first = decode(repositorySchema, {
+    id: 'first',
+    name: 'First project',
+    path: '/first',
+    branch: 'main',
+    iconOverride: 'data:image/png;base64,YQ==',
+  })
+  const second = { ...first, id: 'second', name: 'Second project' }
+  const repositories = [general, first, second]
+  const link = (repositoryId: string) => ({
+    id: repositoryId,
+    repositoryId,
+    execution: 'main' as const,
+    access: 'read-only' as const,
+  })
+  const task = { repositoryId: 'general', linkedCheckouts: [link('first'), link('second')] }
+  expect(taskDisplayProject(task, repositories)).toBe(first)
+  expect(projectIcon(taskDisplayProject(task, repositories))).toBe(first.iconOverride)
+  expect(taskDisplayProject({ ...task, repositoryId: 'second' }, repositories)).toBe(second)
+  expect(taskDisplayProject({ ...task, linkedCheckouts: [] }, repositories)).toBe(general)
+  expect(
+    taskDisplayProject(
+      { ...task, linkedCheckouts: [link('missing'), link('second')] },
+      repositories,
+    ),
+  ).toBe(general)
+  expect(
+    taskDisplayProject({ ...task, pendingLinkedCheckouts: [link('second')] }, repositories),
+  ).toBe(second)
+  expect(taskDisplayProject({ ...task, pendingLinkedCheckouts: [] }, repositories)).toBe(general)
+  expect(task.repositoryId).toBe('general')
 })

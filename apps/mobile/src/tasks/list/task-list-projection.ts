@@ -1,5 +1,7 @@
 import {
   aggregateRuntimeTasks,
+  taskDisplayProject,
+  projectDisplayName,
   buildThreadTree,
   type NestedThread,
   indexTaskSubagents,
@@ -18,6 +20,7 @@ export type TaskListOwner = {
   profile: RuntimeProfile
   runtimeIcon: RuntimeSnapshot['runtimeIcon']
   repository: Repository | undefined
+  displayProject?: Repository
   agents: readonly Agent[]
   acpInstallations: RuntimeSnapshot['acpInstallations']
 }
@@ -63,7 +66,11 @@ export function taskListProjection(
     const repository = source.snapshot?.workspace.repositories.find(
       (repository) => repository.id === next.task.repositoryId,
     )
-    if (repository?.kind === 'scratch') next.projectName = 'General'
+    const displayProject = taskDisplayProject(
+      next.task,
+      source.snapshot?.workspace.repositories ?? [],
+    )
+    next.projectName = projectDisplayName(displayProject)
     const prior = previous.get(next.key)
     const row =
       prior &&
@@ -80,6 +87,7 @@ export function taskListProjection(
       profile: source.profile,
       runtimeIcon: source.snapshot?.runtimeIcon,
       repository,
+      displayProject,
       agents: source.snapshot?.workspace.agents ?? noAgents,
       acpInstallations: installations.get(source.profile.id) ?? noInstallations,
     }
@@ -88,6 +96,7 @@ export function taskListProjection(
       prior.owner.profile === nextOwner.profile &&
       prior.owner.runtimeIcon === nextOwner.runtimeIcon &&
       prior.owner.repository === nextOwner.repository &&
+      prior.owner.displayProject === nextOwner.displayProject &&
       prior.owner.agents === nextOwner.agents &&
       prior.owner.acpInstallations === nextOwner.acpInstallations
         ? prior.owner
