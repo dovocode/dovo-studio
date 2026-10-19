@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { releaseVariant } from './release-variant.mjs'
-import { windowsReleaseConfig, windowsSigningOptions } from './windows-signing.mjs'
+import {
+  windowsReleaseConfig,
+  windowsSigningOptions,
+  windowsArtifactSigningOptions,
+} from './windows-signing.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const [architecture, directory] = process.argv.slice(2)
@@ -62,7 +66,7 @@ try {
       electronVersion: electron.version,
       directories: { output: join(root, 'release') },
       forceCodeSigning: true,
-      win: { ...config.win, azureSignOptions: signing },
+      win: { ...config.win, signtoolOptions: windowsArtifactSigningOptions(signing) },
       nsis: {
         ...config.nsis,
         include: join(root, 'scripts/packaging/windows-uninstaller.nsh'),
