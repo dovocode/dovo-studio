@@ -9,6 +9,9 @@ const mocks = {
     import {createContext,useContext,useState} from 'react';
     import {decode,runtimeDefaultsSchema,defaultTaskHarness} from '@dovo/protocol';
     import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/context.ts';
+    // This navigation fixture has no active remote desktop sessions.
+    export const useRuntimeSources=()=>[];
+    export const WorkspaceScope=({children})=>children;
     export const useRepositorySources=()=>[];
     export {useWorkspace} from '${root}packages/studio-core/src/workspace/context.ts';
     export {updateTask} from '${root}packages/studio-core/src/workspace/actions.ts';

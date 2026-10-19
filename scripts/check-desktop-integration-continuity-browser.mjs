@@ -7,6 +7,9 @@ import {createContext,useContext,useState,useCallback} from 'react';
 export * from '@dovo/protocol';export * from '@dovo/client-runtime';
 const Store=createContext(null),Host=createContext(null);
 export const useWorkspace=()=>useContext(Store);export const useStudioHost=()=>useContext(Host);
+// This integration-navigation fixture has no active remote desktop sessions.
+export const useRuntimeSources=()=>[];
+export const WorkspaceScope=({children})=>children;
 export const StudioHostProvider=({api,children})=>{window.host=api;return <Host.Provider value={api}>{children}</Host.Provider>};
 export const SettingsTargetProvider=({children})=>children;
 export const useAppPreferences=()=>({showIssues:true,showJira:true});export const updateAppPreferences=()=>{};
