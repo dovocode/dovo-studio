@@ -13,6 +13,7 @@ import {
 import { TaskContextMenu } from '../detail/task-context-menu'
 import { TaskRow } from './task-row'
 import type { TaskOwner } from './task-collection'
+import type { NestedThread } from './thread-tree'
 
 /** List commands addressed by row key, so a row never holds an older entry or list scope. */
 export type TaskListRowActions = {
@@ -85,6 +86,9 @@ function TaskListRowView({
   canTemplate,
   actions,
   rowWindow,
+  nestedThreads,
+  selectedThreadKey,
+  searching,
 }: {
   entryKey: string
   task: Task
@@ -104,6 +108,9 @@ function TaskListRowView({
   canTemplate: boolean
   actions: TaskListRowActions
   rowWindow: TaskListWindow | null
+  nestedThreads: readonly NestedThread[]
+  selectedThreadKey?: string
+  searching: boolean
 }) {
   const element = useRef<HTMLDivElement>(null)
   const estimate = task.archived || task.archivedAt ? 38 : 72 + (subagents.length ? 32 : 0)
@@ -147,6 +154,13 @@ function TaskListRowView({
     if (rowWindow && mounted && element.current)
       rowWindow.measure(entryKey, element.current.offsetHeight)
   })
+  useLayoutEffect(() => {
+    if (!rowWindow || !mounted || !element.current || typeof ResizeObserver === 'undefined') return
+    const row = element.current
+    const observer = new ResizeObserver(() => rowWindow.measure(entryKey, row.offsetHeight))
+    observer.observe(row)
+    return () => observer.disconnect()
+  }, [rowWindow, mounted, entryKey])
   const open = useCallback(() => actions.open(entryKey), [actions, entryKey])
   const split = useCallback(() => actions.split(entryKey), [actions, entryKey])
   const template = useCallback(
@@ -216,6 +230,9 @@ function TaskListRowView({
             disabled={disabled}
             onSelect={open}
             onOpenSubagent={subagent}
+            nestedThreads={nestedThreads}
+            selectedThreadKey={selectedThreadKey}
+            searching={searching}
           />
         </TaskContextMenu>
       )}

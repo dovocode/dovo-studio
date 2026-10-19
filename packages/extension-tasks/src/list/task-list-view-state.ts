@@ -5,6 +5,7 @@ type TaskListViewState = {
   projectId: string
   query: string
   expanded: Record<string, boolean>
+  threadExpansion: Record<string, boolean>
   scrollTop: number
   /** Measured row heights keep windowed placeholders, and so scroll restoration, exact. */
   rowHeights: [string, number][]

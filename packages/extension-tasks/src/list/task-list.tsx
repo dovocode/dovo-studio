@@ -33,13 +33,13 @@ import { responses } from '@dovo/studio-core'
 import { TaskListRow, type TaskListRowActions, type TaskListWindow } from './task-list-row'
 import {
   collectTasks,
-  mainTaskEntries,
   retainTaskOwner,
   type TaskEntry,
   type TaskOwner,
   type TaskSource,
 } from './task-collection'
 import { taskActionClient, useTaskActionStore } from './task-row-actions'
+import { buildThreadTree, threadDescendants } from './thread-tree'
 import { useCommittedCallback } from '../detail/use-committed-callback'
 import { indexTaskSubagents, projectSubagentList, type SubagentListItem } from '@dovo/protocol'
 const noSubagents: readonly SubagentListItem[] = []
@@ -106,7 +106,15 @@ export function TaskList({
       ? [temporaryEntry, ...entries]
       : entries
   }, [sources, temporaryEntry])
-  const entries = useMemo(() => mainTaskEntries(allEntries), [allEntries])
+  const retainThreadTree = useMemo(() => {
+    let previous: ReturnType<typeof buildThreadTree> | undefined
+    return (entries: readonly TaskEntry[]) => {
+      previous = buildThreadTree(entries, previous?.nodes)
+      return previous
+    }
+  }, [])
+  const threadTree = useMemo(() => retainThreadTree(allEntries), [allEntries, retainThreadTree])
+  const entries = threadTree.roots
   const subagentsByRuntime = useMemo(
     () =>
       new Map(
@@ -132,7 +140,9 @@ export function TaskList({
         new Map(
           entries.map((entry) => [
             entry.key,
-            subagentsByRuntime.get(entry.source.runtimeId)?.(entry.task, true) ?? noSubagents,
+            (
+              subagentsByRuntime.get(entry.source.runtimeId)?.(entry.task, true) ?? noSubagents
+            ).filter((agent) => agent.source !== 'dovo'),
           ]),
         ),
       ),
@@ -177,23 +187,8 @@ export function TaskList({
   const selectedEntry = allEntries.find((entry) => entry.key === selectedId)
   const selectedMainKey = useMemo(() => {
     if (!selectedEntry || selectedEntry.key === temporaryEntry?.key) return ''
-    if (!selectedEntry.task.delegation) return selectedEntry.key
-    const tasks = new Map(selectedEntry.source.workspace.tasks.map((task) => [task.id, task]))
-    const seen = new Set<string>()
-    let task = selectedEntry.task
-    while (task.delegation && !seen.has(task.id)) {
-      seen.add(task.id)
-      const parent = tasks.get(task.delegation.parentTaskId)
-      if (!parent) return ''
-      task = parent
-    }
-    return (
-      entries.find(
-        (entry) =>
-          entry.source.runtimeId === selectedEntry.source.runtimeId && entry.task.id === task.id,
-      )?.key ?? ''
-    )
-  }, [entries, selectedEntry, temporaryEntry])
+    return threadTree.rootKeys.get(selectedEntry.key) ?? selectedEntry.key
+  }, [threadTree, selectedEntry, temporaryEntry])
   // Rows keep their own labels current; the list only regroups when a snooze ends.
   const [now, setNow] = useApplicationState(Date.now())
   useEffect(() => {
@@ -245,7 +240,7 @@ export function TaskList({
     [entries],
   )
   const deferredQuery = useDeferredValue(query)
-  const search = useTaskSearch(entries, deferredQuery)
+  const search = useTaskSearch(allEntries, deferredQuery)
   const searchIdentity = JSON.stringify([...search.keys].sort())
   const tasks = useMemo(() => {
     const needle = deferredQuery.toLowerCase()
@@ -276,6 +271,11 @@ export function TaskList({
                   projectName,
                 ].some((text) => text.toLowerCase().includes(needle)) ||
                 search.keys.has(key) ||
+                threadDescendants(threadTree.nodes.get(key)?.children ?? []).some(
+                  (child) =>
+                    `${child.title} ${child.computerName}`.toLowerCase().includes(needle) ||
+                    search.keys.has(child.key),
+                ) ||
                 t.messages.some((message) => message.text.toLowerCase().includes(needle)))),
         )
         // Build each sort key once, rather than twice per comparison.
@@ -297,6 +297,7 @@ export function TaskList({
     needsInput,
     projects,
     searchIdentity,
+    threadTree,
   ])
   const searchError = search.error
   const selectedEntries = entries.filter((entry) => selected.has(entry.key))
@@ -874,6 +875,9 @@ export function TaskList({
                   canTemplate={!!onTemplate}
                   actions={rowActions}
                   rowWindow={rowCount > windowedRowCount ? rowWindow : null}
+                  nestedThreads={threadTree.nodes.get(entry.key)?.children ?? []}
+                  selectedThreadKey={entry.key === selectedMainKey ? selectedId : undefined}
+                  searching={!!deferredQuery.trim()}
                 />
               )
             })

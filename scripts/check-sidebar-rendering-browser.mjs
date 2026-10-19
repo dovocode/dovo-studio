@@ -26,7 +26,7 @@ import {TaskList} from './src/list/task-list.tsx';
 import {ApplicationStateProvider} from '@dovo/studio-core/state';
 import {TooltipProvider} from '@dovo/studio-ui';
 import {WorkspaceValueProvider,useWorkspace,useWorkspaceSelector} from '@dovo/studio-core';
-window.counts={list:0,rows:0,broad:0,selected:0,pills:0};
+window.counts={list:0,rows:0,broad:0,selected:0,pills:0,trees:0};
 const now=Date.now();
 const iso=offset=>new Date(now-offset).toISOString();
 const base={repositoryId:'repo',agentId:'',draft:'',files:[],example:false};
@@ -94,6 +94,13 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Too
           ),
           loader: 'tsx',
         }))
+        builder.onLoad({ filter: /\/nested-threads\.tsx$/ }, ({ path }) => ({
+          contents: readFileSync(path, 'utf8').replace(
+            'if (!threads.length) return null',
+            'if (!threads.length) return null; window.counts.trees++;',
+          ),
+          loader: 'tsx',
+        }))
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
           Object.hasOwn(mocks, path) ? { path, namespace: 'fixture' } : undefined,
         )
@@ -131,7 +138,11 @@ try {
       'dovo.app-preferences.v1',
       JSON.stringify({ taskGrouping: 'status', taskSort: 'newest', workingSection: false }),
     )
-    window.host = {}
+    window.host = {
+      openThread: (target) => {
+        window.openedThread = target
+      },
+    }
     const Observer = window.IntersectionObserver
     window.IntersectionObserver = class extends Observer {
       constructor(callback, options) {
@@ -182,6 +193,7 @@ try {
   // Large child payloads do not repaint the parent's pills. Visible activity still updates.
   await page.evaluate(() => {
     window.counts.pills = 0
+    window.counts.trees = 0
     for (let frame = 0; frame < 30; frame++) {
       window.publish(
         window.tasks.map((task) =>
@@ -210,6 +222,11 @@ try {
     0,
     'transcript-only child updates repainted sidebar pills',
   )
+  assert.equal(
+    await page.evaluate(() => window.counts.trees),
+    0,
+    'transcript-only updates repainted a thread tree',
+  )
   await page.evaluate(() =>
     window.publish(
       window.tasks.map((task) =>
@@ -226,11 +243,11 @@ try {
       ),
     ),
   )
-  await page.getByRole('button', { name: /Open subagent.*Running targeted tests/ }).waitFor()
+  await page.getByText('Running targeted tests', { exact: true }).waitFor()
   assert.equal(
-    await page.evaluate(() => window.counts.pills),
+    await page.evaluate(() => window.counts.trees),
     1,
-    'visible child activity should repaint only its parent pills',
+    'visible child activity should repaint only its parent tree',
   )
 
   // The running row owns its one-second clock; the list itself does not re-render.
@@ -251,8 +268,13 @@ try {
   )
   await page.getByRole('button', { name: /Renamed/ }).click()
   assert.equal(await page.evaluate(() => window.selected.task.title), 'Renamed')
-  await page.getByRole('button', { name: /Open subagent Child agent/ }).click()
-  assert.equal(await page.evaluate(() => window.selected.task.id), 'child')
+  await page.getByRole('button', { name: 'Open child thread Child thread', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.openedThread), {
+    runtimeId: 'local',
+    threadId: 'child',
+    title: 'Child thread',
+    parent: { runtimeId: 'local', threadId: 'parent', title: 'Parent thread' },
+  })
 
   // Modifier selection and the shared selection menu still work on real rows.
   await page.getByRole('button', { name: /Thread 1\b/ }).click()
@@ -474,7 +496,7 @@ try {
   await general.waitFor()
   assert.deepEqual(errors, [])
   console.log(
-    `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero pill renders for 30 large child-payload updates and one render for visible activity; selector isolation, latest-entry commands, subagent navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
+    `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero tree/pill renders for 30 large child-payload updates and one tree render for visible activity; selector isolation, latest-entry commands, nested thread navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
   )
 } finally {
   await browser.close()

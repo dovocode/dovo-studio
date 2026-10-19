@@ -37,7 +37,7 @@ const fixture = `
 const base={repositoryId:'repo',agentId:'',status:'running',createdAt:'2026-10-03T12:00:00Z',draft:'',files:[],messages:[],example:false};
 const record=(id,name,status='working',source='dovo')=>({id,taskId:source==='dovo'?id:undefined,source:source==='dovo'?'dovo':undefined,name,provider:'codex',status,activity:status==='working'?'Inspecting tests':'Saved result',startedAt:'2026-10-03T12:00:00Z',updatedAt:'2026-10-03T12:01:00Z'});
 const parent={...base,id:'parent',title:'Main thread',subagents:[record('child','Live child'),record('done','Ended child','completed'),record('native','Native worker','working','native')]};
-parent.threadWatches=[{runtimeId:'studio',threadId:'remote-child',computerName:'Mac Studio',relation:'spawned',status:'watching',offline:false,snapshot:{title:'Configure Play testing',phase:'running',revision:'one',attention:[],watches:{pipelines:1,pullRequests:1,failures:0}}}];parent.watchCounts={pipelines:1,pullRequests:1,failures:0};
+parent.threadWatches=[{runtimeId:'studio',threadId:'remote-child',computerName:'Mac Studio',relation:'spawned',status:'watching',offline:false,snapshot:{title:'Configure Play testing',phase:'running',revision:'one',attention:[],watches:{pipelines:1,pullRequests:1,failures:0}}}];parent.watchCounts={pipelines:1,pullRequests:1,failures:2};
 const child={...base,id:'child',title:'Independent child title',delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'},subagents:[record('nested','Nested child'),record('nested-native','Nested native','working','native')]};
 const nested={...base,activeRunId:'nested-run',id:'nested',title:'Independent nested title',delegation:{parentTaskId:'child',parentRunId:'child-run',key:'nested'}};
 const done={...base,id:'done',title:'Independent ended title',status:'done',delegation:{parentTaskId:'parent',parentRunId:'run',key:'done'}};
@@ -184,17 +184,102 @@ try {
         parent: { runtimeId: 'linux', threadId: 'parent', title: 'Main thread' },
       })
       assert.deepEqual(await page.evaluate(() => window.opened), [])
-      await page.getByText('Mac Studio · running', { exact: true }).waitFor()
-      await page.getByText('1 pipeline watch', { exact: true }).waitFor()
-      await page.getByText('1 PR watch', { exact: true }).waitFor()
+      await page.getByText('Mac Studio · Running', { exact: true }).waitFor()
+      assert.equal(
+        await page.getByText(/\d+ (pipeline watch|PR watch|failed checks\/runs)/).count(),
+        0,
+      )
+      const disclosure = page.getByRole('button', {
+        name: 'Spawned threads for Main thread',
+        exact: true,
+      })
+      await disclosure.click()
+      assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
+      assert.equal(await page.getByText('Configure Play testing', { exact: true }).isHidden(), true)
+      await page.evaluate(() => {
+        window.publishTasks(
+          window.workspace.tasks.map((task) =>
+            task.id === 'parent'
+              ? {
+                  ...task,
+                  threadWatches: task.threadWatches.map((watch) => ({
+                    ...watch,
+                    snapshot: { ...watch.snapshot, phase: 'needs-input' },
+                  })),
+                }
+              : task,
+          ),
+        )
+        window.renderList(false)
+      })
+      assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
+      await page
+        .getByRole('button', { name: 'Open input request in Configure Play testing' })
+        .click()
+      assert.equal(await page.evaluate(() => window.routes.at(-1).threadId), 'remote-child')
+      await page.evaluate(() => {
+        window.publishTasks(
+          window.workspace.tasks.map((task) =>
+            task.id === 'parent'
+              ? {
+                  ...task,
+                  threadWatches: task.threadWatches.map((watch) => ({
+                    ...watch,
+                    offline: true,
+                    lastSuccessAt: '2026-10-19T08:00:00Z',
+                    snapshot: { ...watch.snapshot, phase: 'running' },
+                  })),
+                }
+              : task,
+          ),
+        )
+        window.renderList(false)
+      })
+      await page.getByRole('button', { name: /Open input request/ }).waitFor({ state: 'detached' })
+      const search = page.getByRole('textbox', { name: 'Search threads', exact: true })
+      await search.fill('Independent nested title')
+      await page.getByText('Independent nested title', { exact: true }).waitFor()
+      await page.getByText('Another main thread', { exact: true }).waitFor({ state: 'detached' })
+      assert.equal(await disclosure.getAttribute('aria-expanded'), 'true')
+      await search.fill('')
+      await page.getByText('Another main thread', { exact: true }).waitFor()
+      assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
+      await disclosure.click()
+      await page.getByText('· Offline', { exact: true }).waitFor()
+      await page.getByText('Mac Studio · Running', { exact: true }).waitFor()
+      await page.getByText(/^Updated /).waitFor()
+      await page.evaluate(() => {
+        window.publishTasks(
+          window.workspace.tasks.map((task) =>
+            task.id === 'parent'
+              ? {
+                  ...task,
+                  threadWatches: task.threadWatches.map((watch) => ({ ...watch, offline: false })),
+                }
+              : task,
+          ),
+        )
+        window.renderList(false)
+      })
     }
-    assert.equal(await page.getByText('Independent child title', { exact: true }).count(), 0)
-    assert.equal(await page.getByText('Independent nested title', { exact: true }).count(), 0)
-    assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
+    assert.equal(
+      await page.getByText('Independent child title', { exact: true }).count(),
+      mobile ? 0 : 1,
+    )
+    assert.equal(
+      await page.getByText('Independent nested title', { exact: true }).count(),
+      mobile ? 0 : 1,
+    )
+    assert.equal(
+      await page.getByText('Independent ended title', { exact: true }).count(),
+      mobile ? 0 : 1,
+    )
     assert.equal(await page.getByText('Ended child · codex', { exact: true }).count(), 0)
     await page.getByText('Native worker · codex', { exact: true }).waitFor()
     await page.getByText('Nested native · codex', { exact: true }).waitFor()
-    const nested = page.getByRole('button', { name: /^Open subagent Nested child/ })
+    const nested = page.getByRole('button', {
+      name: mobile ? /^Open subagent Nested child/ : 'Open child thread Independent nested title',
+    })
     if (!mobile) assert.equal(await nested.getAttribute('aria-current'), 'true')
     await nested.click()
     if (mobile) {
@@ -212,16 +297,18 @@ try {
       assert.equal(await page.evaluate(() => window.routes.length), 1)
       assert.equal(await page.locator('[data-swipe="true"]').count(), 2)
     } else {
-      assert.deepEqual(await page.evaluate(() => window.opened[0]), {
-        id: 'nested',
+      assert.deepEqual(await page.evaluate(() => window.routes.at(-1)), {
+        threadId: 'nested',
         runtimeId: 'linux',
+        title: 'Independent nested title',
+        parent: { runtimeId: 'linux', threadId: 'child', title: 'Independent child title' },
       })
       assert.deepEqual(await page.evaluate(() => window.orders.at(-1).sort()), ['parent', 'second'])
       await page
         .getByRole('button')
         .filter({ has: page.getByText('Main thread', { exact: true }) })
         .click({ modifiers: ['Meta'] })
-      assert.equal(await page.evaluate(() => window.opened.length), 1)
+      assert.equal(await page.evaluate(() => window.opened.length), 0)
       assert.equal(await page.getByText('2 threads selected', { exact: true }).count(), 0)
       await page
         .getByRole('button')
@@ -258,7 +345,11 @@ try {
       .waitFor({ state: 'detached' })
     await page.getByText('Native worker · codex', { exact: true }).waitFor({ state: 'detached' })
     await page.getByText('Nested native · codex', { exact: true }).waitFor({ state: 'detached' })
-    await page.getByRole('button', { name: /^Open subagent Nested child/ }).waitFor()
+    await page
+      .getByRole('button', {
+        name: mobile ? /^Open subagent Nested child/ : 'Open child thread Independent nested title',
+      })
+      .waitFor()
     await page.evaluate(() => window.renderAgents())
     await page.getByRole('button', { name: 'Stop agents', exact: true }).click()
     await page.waitForFunction(() => window.requests.length === 1)

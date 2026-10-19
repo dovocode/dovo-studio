@@ -1,4 +1,6 @@
 import { ThreadWatchSummary } from './thread-watch-summary'
+import { NestedThreads } from './nested-threads'
+import type { NestedThread } from './thread-tree'
 import { WorkingSubagents } from './working-subagents'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { pullStackLabel, taskPullStatusFor } from '@dovo/protocol'
@@ -35,7 +37,7 @@ import {
   Layers,
   Pin,
 } from 'lucide-react'
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
 import type { TaskOwner } from './task-collection'
@@ -68,6 +70,9 @@ function TaskRowView({
   disabled,
   selectedChildId,
   onOpenSubagent,
+  nestedThreads,
+  selectedThreadKey,
+  searching,
 }: {
   task: Task
   subagents: readonly SubagentListItem[]
@@ -83,8 +88,15 @@ function TaskRowView({
   disabled: boolean
   selectedChildId?: string
   onOpenSubagent: (id: string) => void
+  nestedThreads?: readonly NestedThread[]
+  selectedThreadKey?: string
+  searching?: boolean
 }) {
   const now = useTaskNow(task, needsInput)
+  const threadParent = useMemo(
+    () => ({ runtimeId: owner.runtimeId, threadId: task.id, title: task.title }),
+    [owner.runtimeId, task.id, task.title],
+  )
   const agent = resolveTaskAgent(task, owner.agents)
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const repository = owner.repositories.find((r) => r.id === task.repositoryId)
@@ -333,7 +345,20 @@ function TaskRowView({
         </TooltipContent>
       </Tooltip>
       {!compact && (
-        <ThreadWatchSummary task={task} online={owner.online} runtimeId={owner.runtimeId} />
+        <ThreadWatchSummary
+          task={task}
+          online={owner.online}
+          runtimeId={owner.runtimeId}
+          includeSpawned={!nestedThreads}
+        />
+      )}
+      {nestedThreads && (
+        <NestedThreads
+          threads={nestedThreads}
+          parent={threadParent}
+          selectedKey={selectedThreadKey}
+          searching={searching}
+        />
       )}
       {!compact && (
         <WorkingSubagents
@@ -346,6 +371,7 @@ function TaskRowView({
       )}
       {!compact &&
         selectedChildId &&
+        !nestedThreads &&
         !subagents.some((agent) => (agent.taskId ?? agent.id) === selectedChildId) && (
           <p className="mb-2 px-2.5 text-[0.625rem] text-muted-foreground">Viewing subagent</p>
         )}

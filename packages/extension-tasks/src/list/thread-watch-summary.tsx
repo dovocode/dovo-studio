@@ -1,27 +1,30 @@
 import { useStudioHost } from '@dovo/studio-core'
 import type { Task } from '@dovo/protocol'
 import { cn } from '@dovo/studio-ui'
-import { GitPullRequest, Monitor, Workflow } from 'lucide-react'
+import { Monitor } from 'lucide-react'
 
 /** The owning runtime supplies these facts; an offline peer never implies completion. */
 export function ThreadWatchSummary({
   task,
   online,
   runtimeId,
+  includeSpawned = true,
 }: {
   task: Task
   online: boolean
   runtimeId: string | null
+  includeSpawned?: boolean
 }) {
   const { openThread } = useStudioHost()
-  const watches = task.threadWatches?.filter((watch) => watch.status === 'watching') ?? []
-  const counts = task.watchCounts
-  if (!watches.length && !counts?.pipelines && !counts?.pullRequests && !counts?.failures)
-    return null
+  const watches =
+    task.threadWatches?.filter(
+      (watch) => watch.status === 'watching' && (includeSpawned || watch.relation === 'linked'),
+    ) ?? []
+  if (!watches.length) return null
   return (
     <div
       className="mb-2 space-y-1 px-2.5 text-xs text-muted-foreground"
-      aria-label="Child threads and watchers"
+      aria-label="Related threads"
     >
       {watches.map((watch) => {
         const stale = !online || watch.offline
@@ -70,23 +73,6 @@ export function ThreadWatchSummary({
           </div>
         )
       })}
-      {!!(counts?.pipelines || counts?.pullRequests || counts?.failures) && (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {!!counts?.pipelines && (
-            <span className="inline-flex items-center gap-1">
-              <Workflow className="size-3" aria-hidden="true" />
-              {counts.pipelines} pipeline {counts.pipelines === 1 ? 'watch' : 'watches'}
-            </span>
-          )}
-          {!!counts?.pullRequests && (
-            <span className="inline-flex items-center gap-1">
-              <GitPullRequest className="size-3" aria-hidden="true" />
-              {counts.pullRequests} PR {counts.pullRequests === 1 ? 'watch' : 'watches'}
-            </span>
-          )}
-          {!!counts?.failures && <span>{counts.failures} failed checks/runs</span>}
-        </p>
-      )}
     </div>
   )
 }
