@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
 import { once } from 'node:events'
-import { Dicer } from '@fastify/busboy'
+import { physicalDeviceFrames } from './physical-device-frames.js'
 import { Schema } from 'effect'
 import type { PreviewDevice } from '@dovo/protocol'
 import {
@@ -268,9 +268,6 @@ export async function physicalDevice(
   const lines = createInterface({
     input: child.stderr!,
   })
-  const parser = new Dicer({
-    boundary: 'dovo-frame',
-  })
   let nativeReady = false
   let completeStartup = () => {}
   let encoding = false,
@@ -301,24 +298,9 @@ export async function physicalDevice(
       encoding = false
     }
   }
-  parser.on('error', report)
-  parser.on('part', (part) => {
-    const chunks: Buffer[] = []
-    let length = 0
-    part.on('data', (chunk: Buffer) => {
-      length += chunk.length
-      if (length > 8 * 1024 * 1024) {
-        report(new Error('Physical device frame exceeds limit'))
-        parser.destroy()
-        return
-      }
-      chunks.push(chunk)
-    })
-    part.on('error', report)
-    part.on('end', () => {
-      if (!failure && length) void publish(Buffer.concat(chunks))
-    })
-  })
+  const parser = physicalDeviceFrames((data) => {
+    if (!failure) void publish(data)
+  }, report)
   decoder.stdout?.pipe(parser)
   let startupTimer: ReturnType<typeof setTimeout> | undefined
   try {

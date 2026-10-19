@@ -60,6 +60,19 @@ account self-signup was disabled in the inspected identity deployment. A public 
 does not imply public account creation or a bundled hosted runtime. Testers can pair their own
 runtime without an account; managed push requires a provisioned account until signup is addressed.
 
+## iOS encryption declaration
+
+`apps/mobile/app.json` sets `ios.config.usesNonExemptEncryption` to `false`. Expo writes the boolean
+`ITSAppUsesNonExemptEncryption=false` into the generated app's `Info.plist`, including nightly
+archives. The reviewed mobile client uses OS-provided networking and Keychain storage, random IDs,
+and hashing for authentication/cache integrity; it does not implement non-exempt encryption.
+Server-side cryptography is outside the shipped mobile app. Reassess this declaration if the mobile
+client adds its own encryption implementation.
+
+Already uploaded builds without this property still need the App Store Connect encryption answer:
+**None of the algorithms mentioned above** for this reviewed client. Updating source configuration
+does not change an existing uploaded binary.
+
 ## Account deletion
 
 The account panels offer confirmed deletion. `DELETE /v1/account` derives the target from the bearer

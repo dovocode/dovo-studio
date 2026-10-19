@@ -9,14 +9,21 @@ export type ApnsConfig = {
   bundleId: string
   production: boolean
 }
-export function apnsConfig(env = process.env): ApnsConfig | undefined {
-  if (!env.DOVO_APNS_KEY_PATH || !env.DOVO_APNS_KEY_ID || !env.DOVO_APNS_TEAM_ID) return undefined
+export function apnsConfig(
+  env = process.env,
+  environment?: 'sandbox' | 'production',
+): ApnsConfig | undefined {
+  const prefix = environment ? `DOVO_APNS_${environment.toUpperCase()}` : 'DOVO_APNS'
+  const scoped = !!environment && !!(env[`${prefix}_KEY_PATH`] || env[`${prefix}_KEY_ID`])
+  const keyPath = scoped ? env[`${prefix}_KEY_PATH`] : env.DOVO_APNS_KEY_PATH
+  const keyId = scoped ? env[`${prefix}_KEY_ID`] : env.DOVO_APNS_KEY_ID
+  if (!keyPath || !keyId || !env.DOVO_APNS_TEAM_ID) return undefined
   return {
-    keyPath: env.DOVO_APNS_KEY_PATH,
-    keyId: env.DOVO_APNS_KEY_ID,
+    keyPath,
+    keyId,
     teamId: env.DOVO_APNS_TEAM_ID,
     bundleId: env.DOVO_APNS_BUNDLE_ID || 'com.dovo.studio',
-    production: env.DOVO_APNS_ENVIRONMENT === 'production',
+    production: (environment ?? env.DOVO_APNS_ENVIRONMENT) === 'production',
   }
 }
 export class Apns {

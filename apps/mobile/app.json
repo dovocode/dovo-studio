@@ -12,6 +12,9 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dovo.studio",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Connect to your Dovo desktop runtime on your private network.",
         "NSAppTransportSecurity": {

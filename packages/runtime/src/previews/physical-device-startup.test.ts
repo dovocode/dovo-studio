@@ -60,7 +60,9 @@ it.skipIf(process.platform !== 'darwin')(
       .toBuffer()
     decoder.stdout.write(
       Buffer.concat([
-        Buffer.from('--dovo-frame\r\nContent-Type: image/jpeg\r\n\r\n'),
+        Buffer.from(
+          `--dovo-frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`,
+        ),
         jpeg,
         Buffer.from('\r\n--dovo-frame\r\n'),
       ]),

@@ -103,6 +103,10 @@ the host Mac. Physical Android live preview uses ADB screenshots and input, incl
 wireless ADB devices. Its frame rate is limited by screenshot capture. One task at a time controls a
 physical phone.
 
+Physical iOS video publishes each decoded JPEG as soon as its declared `Content-Length` is
+available. It does not wait for the next multipart boundary, so the final screen update after an
+action remains visible even when the video stream then goes idle.
+
 Connect and unlock the iPhone, trust the Mac, and enable Developer Mode. The native helper is cached
 under `~/.dovo/helpers`. For Android, enable USB debugging and authorize the host when the phone
 prompts. Disconnected and unauthorized devices remain visible with their connection state, but

@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { generateKeyPair, exportPKCS8, jwtVerify } from 'jose'
-import { Apns } from './apns'
+import { Apns, apnsConfig } from './apns'
 const target = vi.hoisted(() => ({ url: '' }))
 vi.mock('node:http2', async (original) => {
   const native = await original<typeof import('node:http2')>()
@@ -13,6 +13,36 @@ vi.mock('node:http2', async (original) => {
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close()
+})
+it('selects the matching environment key without mixing credentials and retains legacy key support', () => {
+  const legacy = {
+    DOVO_APNS_KEY_PATH: '/private/legacy.p8',
+    DOVO_APNS_KEY_ID: 'legacy',
+    DOVO_APNS_TEAM_ID: 'team',
+    DOVO_APNS_ENVIRONMENT: 'production',
+  }
+  const env = {
+    ...legacy,
+    DOVO_APNS_SANDBOX_KEY_PATH: '/private/sandbox.p8',
+    DOVO_APNS_SANDBOX_KEY_ID: 'sandbox',
+    DOVO_APNS_PRODUCTION_KEY_PATH: '/private/production.p8',
+    DOVO_APNS_PRODUCTION_KEY_ID: 'production',
+  }
+  expect(apnsConfig(env, 'sandbox')).toMatchObject({
+    keyPath: '/private/sandbox.p8',
+    keyId: 'sandbox',
+    teamId: 'team',
+    production: false,
+  })
+  expect(apnsConfig(env, 'production')).toMatchObject({
+    keyPath: '/private/production.p8',
+    keyId: 'production',
+    production: true,
+  })
+  expect(apnsConfig(legacy, 'sandbox')).toMatchObject({ keyId: 'legacy', production: false })
+  expect(apnsConfig(legacy)).toMatchObject({ keyId: 'legacy', production: true })
+  expect(apnsConfig({ ...legacy, DOVO_APNS_SANDBOX_KEY_ID: 'sandbox' }, 'sandbox')).toBeUndefined()
+  expect(apnsConfig({ DOVO_APNS_TEAM_ID: 'team' }, 'production')).toBeUndefined()
 })
 it('uses separate alert and Live Activity topics, shares one signed provider token, and returns APNs failure reasons', async () => {
   const key = await generateKeyPair('ES256', { extractable: true })

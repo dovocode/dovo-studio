@@ -22,13 +22,12 @@ export function appleNotificationPayload(value: RelayNotification) {
   }
 }
 export function createDelivery(env = process.env) {
-  const config = apnsConfig(env)
-  const apple = config
-    ? {
-        sandbox: new Apns({ ...config, production: false }),
-        production: new Apns({ ...config, production: true }),
-      }
-    : undefined
+  const sandbox = apnsConfig(env, 'sandbox')
+  const production = apnsConfig(env, 'production')
+  const apple = {
+    sandbox: sandbox ? new Apns(sandbox) : undefined,
+    production: production ? new Apns(production) : undefined,
+  }
   const firebase =
     env.GOOGLE_APPLICATION_CREDENTIALS || env.DOVO_FCM_PROJECT_ID
       ? getMessaging(
@@ -36,11 +35,13 @@ export function createDelivery(env = process.env) {
         )
       : undefined
   return {
-    platforms: { ios: !!apple, android: !!firebase },
+    platforms: { ios: !!(apple.sandbox || apple.production), android: !!firebase },
     async send(value: RelayNotification): Promise<DeliveryResult> {
       if (value.platform === 'ios') {
-        if (!apple) throw new Error('Apple push is not configured on this relay')
-        const result = await apple[value.environment].sendAlert(
+        const provider = apple[value.environment]
+        if (!provider)
+          throw new Error(`Apple ${value.environment} push is not configured on this relay`)
+        const result = await provider.sendAlert(
           value.token,
           appleNotificationPayload(value),
           value.id,

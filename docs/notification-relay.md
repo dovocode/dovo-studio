@@ -37,6 +37,15 @@ relay retains its bounded in-memory retry cache. Include Connect's private datab
 Managed registration reports unavailable if the relay connection is not configured; a successful
 end-to-end delivery is still required to validate Apple/Google credentials and native signing.
 
+When Connect also joins Dokploy's shared ingress network, give its private relay a unique network
+alias, such as `dovo-studio-connect-push-relay`, and set `DOVO_NOTIFICATION_RELAY_URL` to
+`http://dovo-studio-connect-push-relay:8080`. Configure that alias on the relay's private network in
+the persisted Compose definition, with both services attached to that network. Avoid the generic
+hostname `relay`: Docker can resolve it to an unrelated service on another attached network, even
+when the intended relay is healthy. Keep the relay detached from the shared ingress network. Verify
+`/health` from inside the Connect container using that exact hostname; checking the relay's
+localhost health alone does not verify Connect's delivery route.
+
 Without sign-in, the existing standalone relay flow below continues to work. Per-computer switches
 also control standalone registrations, but an offline standalone computer can unregister only after
 reconnecting.
@@ -59,6 +68,16 @@ Firebase service-account JSON as `secrets/firebase.json`, set
 account needs permission to send FCM messages in the application's Firebase project. Leave
 `DOVO_FIREBASE_CREDENTIALS` empty for an iOS-only relay; leave the Apple IDs empty for an
 Android-only relay.
+
+Apple environment-scoped keys need separate credentials for development installs (sandbox) and
+TestFlight/App Store apps (production). Set `DOVO_APNS_SANDBOX_KEY_PATH` and
+`DOVO_APNS_SANDBOX_KEY_ID`, plus `DOVO_APNS_PRODUCTION_KEY_PATH` and `DOVO_APNS_PRODUCTION_KEY_ID`,
+on the relay. Both use `DOVO_APNS_TEAM_ID`; paths refer to the mounted files inside the container,
+for example `/run/secrets/apns-sandbox.p8`. An existing key that supports both environments can
+continue using `DOVO_APNS_KEY_PATH` and `DOVO_APNS_KEY_ID` as the fallback. Each
+environment-specific key must have both its path and ID configured. A production-only key cannot
+send to development tokens: Apple returns `BadEnvironmentKeyInToken`, even when the token and push
+entitlement are valid.
 
 ```sh
 docker compose --env-file apps/notification-relay/.env \

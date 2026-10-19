@@ -3,6 +3,7 @@ import { ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import sharp from 'sharp'
 import type { PreviewDevice } from '@dovo/protocol'
+import type { BrowserFrame } from './browser'
 import { androidSimulator, iosSimulator } from './simulator-native'
 import { physicalDevice } from './physical-device'
 import { physicalAndroid } from './physical-android'
@@ -637,18 +638,45 @@ it.each(['aborted', 'revoked'] as const)(
   },
 )
 
-async function sendPhysicalFrame(decoder: ReturnType<typeof processDouble>) {
-  const jpeg = await sharp({ create: { width: 2, height: 2, channels: 3, background: '#fff' } })
+async function sendPhysicalFrame(decoder: ReturnType<typeof processDouble>, background = '#fff') {
+  const jpeg = await sharp({ create: { width: 2, height: 2, channels: 3, background } })
     .jpeg()
     .toBuffer()
   decoder.stdout.write(
     Buffer.concat([
-      Buffer.from('--dovo-frame\r\nContent-Type: image/jpeg\r\n\r\n'),
+      Buffer.from(
+        `--dovo-frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`,
+      ),
       jpeg,
-      Buffer.from('\r\n--dovo-frame\r\n'),
+      Buffer.from('\r\n'),
     ]),
   )
+  return jpeg
 }
+
+it('refreshes the physical iPhone after each complete image even when video then goes idle', async () => {
+  const native = processDouble(),
+    decoder = processDouble()
+  mocked.spawn.mockReturnValueOnce(native.child).mockReturnValueOnce(decoder.child)
+  const opening = physicalDevice(phone)
+  await vi.waitFor(() => expect(mocked.spawn).toHaveBeenCalledTimes(2))
+  native.stderr.write(JSON.stringify({ type: 'ready', device: 'qa' }) + '\n')
+  const first = await sendPhysicalFrame(decoder)
+  const driver = await opening
+  try {
+    const received = vi.fn<(frame: BrowserFrame) => void>(),
+      error = vi.fn<(error: Error) => void>()
+    driver.start(received, error)
+    expect(received).toHaveBeenCalledWith(expect.objectContaining({ data: first }))
+    const second = await sendPhysicalFrame(decoder, '#000')
+    await vi.waitFor(() => expect(received).toHaveBeenCalledTimes(2))
+    expect(received.mock.calls[1]?.[0]).toMatchObject({ data: second })
+    expect(error).not.toHaveBeenCalled()
+    expect(decoder.stdout.readableEnded).toBe(false)
+  } finally {
+    await driver.close()
+  }
+})
 
 it('removes physical iPhone startup listeners on success and preserves ordinary close', async () => {
   const native = processDouble(),
