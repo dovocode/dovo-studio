@@ -23,6 +23,7 @@ export interface StudioNavigation {
   entityId?: string
   pullTarget?: StudioPullTarget
   threadParent?: StudioThreadReference
+  threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }
 }
 /** The entity's origin survives transport handoff and shell history. */
 export interface StudioPullTarget {
@@ -35,6 +36,7 @@ export interface StudioPullTarget {
   connectionId?: string
 }
 export interface StudioViewProps {
+  threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }
   entityId?: string
   pullTarget?: StudioPullTarget
   /** Changes for explicit navigation, including reopening the same destination. */

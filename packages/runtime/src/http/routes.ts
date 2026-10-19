@@ -29,7 +29,8 @@ import { runtimeDiagnostics } from './diagnostics.js'
 import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
 import { pullRequestWatchRequestSchema } from '../scm/tasks/pull-request-watch.js'
 import { checkCua, cuaAction } from '../computer-use/cua.js'
-import { subagentSpawnSchema, subagentScopeSchema, subagentReadSchema } from '@dovo/protocol'
+import { subagentSpawnSchema, subagentListSchema, subagentReadSchema } from '@dovo/protocol'
+import { spawnChild, listChildren, readChild, waitChild, cancelChild } from '../studio/subagents.js'
 import { compactActivityEvents } from '@dovo/protocol'
 import { recoverableMutation } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -258,36 +259,15 @@ export function route(
           throw new HttpError(403, 'Child agents are controlled by the parent agent')
         const raw = yield* serviceResult(body(request))
         if (path === '/api/subagents/spawn')
-          return yield* serviceResult(s.tasks.subagentSpawn(decode(subagentSpawnSchema, raw)))
+          return yield* serviceResult(spawnChild(s, decode(subagentSpawnSchema, raw), run))
         if (path === '/api/subagents/list') {
-          const { taskId, parentRunId } = decode(subagentScopeSchema, raw)
-          const parent = s.store.taskSummary(taskId)
-          return yield* serviceResult({
-            agents: s.tasks.subagentList(taskId, parentRunId),
-            configurations: s.store
-              .agentsFor(parent.repositoryId)
-              .map(({ id, name, provider, model, permission }) => ({
-                id,
-                name,
-                provider,
-                model,
-                permission,
-              })),
-          })
+          return yield* serviceResult(listChildren(s, decode(subagentListSchema, raw), run))
         }
         const input = decode(subagentReadSchema, raw)
-        if (path === '/api/subagents/read')
-          return yield* serviceResult(
-            s.tasks.subagentResult(input.taskId, input.id, true, input.parentRunId),
-          )
-        if (path === '/api/subagents/wait')
-          return yield* serviceResult(
-            s.tasks.subagentWait(input.taskId, input.id, input.timeoutMs, input.parentRunId),
-          )
+        if (path === '/api/subagents/read') return yield* serviceResult(readChild(s, input, run))
+        if (path === '/api/subagents/wait') return yield* serviceResult(waitChild(s, input, run))
         if (path === '/api/subagents/cancel')
-          return yield* serviceResult(
-            s.tasks.subagentCancel(input.taskId, input.id, input.parentRunId),
-          )
+          return yield* serviceResult(cancelChild(s, input, run))
         throw new HttpError(404, 'Unknown child agent action')
       }
       if (method === 'POST' && path.startsWith('/api/artifacts/')) {
@@ -402,15 +382,16 @@ export function route(
       }
       if (method === 'POST' && path === '/api/studio/peers') {
         requireLocalStudioUI(request.socket.remoteAddress)
-        return studioPeers(s).register(
-          device.id,
-          yield* serviceResult(body(request, 256 * 1024)),
-          () => {
-            s.devices.authenticate(token)
-          },
-        )
+        const registration = yield* serviceResult(body(request, 256 * 1024))
+        studioPeers(s).register(device.id, registration, () => {
+          s.devices.authenticate(token)
+        })
+        return s.retrievalPeers.registerStudio(device.id, registration)
       }
-      if (method === 'POST' && (path === '/api/studio/tools' || path === '/api/studio/forward')) {
+      if (
+        method === 'POST' &&
+        ['/api/studio/tools', '/api/studio/forward', '/api/studio/forward-v2'].includes(path)
+      ) {
         const input = decode(
           mutableStruct({
             taskId: idSchema,
@@ -425,7 +406,8 @@ export function route(
           authenticateRuntimeOperation(s, token)
         }
         // Separate endpoint prevents older runtimes silently ignoring a forwarded permission ceiling.
-        if (path === '/api/studio/forward') {
+        // v2 also guarantees retry-safe thread creation and explicit permission increases.
+        if (path === '/api/studio/forward' || path === '/api/studio/forward-v2') {
           if (input.runtimeId || input.part === 'ui')
             throw new HttpError(403, 'Forwarded Studio calls cannot target UI or another computer')
           return yield* serviceResult(

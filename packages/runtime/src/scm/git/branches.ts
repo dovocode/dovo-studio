@@ -3,7 +3,8 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { canChangeTaskCheckout, decode } from '@dovo/protocol'
 import { branchesSchema, switchBranchSchema } from '@dovo/protocol'
 import type { Services } from '../../services.js'
-import { HttpError, runtimeOperation, runtimeProgram } from '../../errors.js'
+import { HttpError, RuntimeOperationError, runtimeOperation, runtimeProgram } from '../../errors.js'
+import { ProcessError } from '../../process.js'
 export function listBranchesEffect(s: Pick<Services, 'git'>, cwd: string) {
   return runtimeProgram(
     Effect.gen(function* () {
@@ -39,7 +40,15 @@ export function listBranchesEffect(s: Pick<Services, 'git'>, cwd: string) {
       const head = (yield* runtimeOperation(() =>
         s.git.command(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']),
       ).pipe(
-        Effect.catch((error) => (branches.length ? Effect.fail(error) : Effect.succeed('unborn'))),
+        Effect.catch((error) =>
+          error instanceof RuntimeOperationError &&
+          error.cause instanceof ProcessError &&
+          error.cause.code === 1 &&
+          current !== 'detached HEAD' &&
+          !branches.some((branch) => branch.ref === `refs/heads/${current}`)
+            ? Effect.succeed('unborn')
+            : Effect.fail(error),
+        ),
       )).trim()
       return decode(branchesSchema, {
         current,

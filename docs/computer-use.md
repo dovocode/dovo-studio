@@ -29,10 +29,19 @@ automatically retried. Refresh after an error or timeout before deciding whether
 
 **Install agent skills** fetches Cua’s official versioned skill pack and links detected agents on
 the runtime host; **Update agent skills** refreshes it. This may affect agents used outside Dovo
-too. New opted-in writable turns receive the installed `SKILL.md` path in their instructions,
-including harnesses with isolated configurations. If the pack is absent or discovery fails,
-instructions report that and direct the agent to MCP’s bundled skill resources. Skills do not grant
-OS permissions. No global MCP registration is necessary for Dovo.
+too. New opted-in writable turns automatically install the official pack if it is missing, then
+receive its `SKILL.md` content and source path in their instructions, including harnesses with
+isolated configurations. Supporting files resolve relative to that source. Concurrent turns share
+one installation. If loading or installation fails, instructions report the error and direct the
+agent to Cua’s bundled MCP skill resources. Skills do not grant OS permissions. No global MCP
+registration is necessary for Dovo.
+
+While Cua is supplied, Dovo instructs all harnesses to use it as the single desktop control path.
+For Dovo-launched Codex sessions it also disables the native `computer_use` feature and the bundled
+`computer-use@openai-bundled` plugin through process and thread configuration, including resumed
+threads. This does not change global Codex settings or other plugins. Turning Cua off restores the
+harness’s normal configuration on its next turn. Browser CDP and Device Hub remain available for
+browser and mobile surfaces. Other harnesses receive the instruction-level preference.
 
 ### Optional Computer History
 

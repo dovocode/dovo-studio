@@ -51,7 +51,7 @@ const nextApproval=()=>{const next=approvalCases[approvalIndex++];if(next)send({
 let mcpServers;
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);if(m.id===undefined)return;
- fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({...m,pid:process.pid})+'\\n');
+ fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({...m,pid:process.pid,argv:process.argv.slice(2)})+'\\n');
  if(m.method===undefined){if(${webRequests})nextApproval();return;}
  let result={};
  if(m.method==='initialize')result={userAgent:'codex/${version}'};
@@ -111,6 +111,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
             result: Schema.optional(Schema.Unknown),
             error: Schema.optional(Schema.Unknown),
             pid: Schema.Number,
+            argv: Schema.Array(Schema.String),
             params: Schema.optional(
               Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown)),
             ),
@@ -221,6 +222,68 @@ it('rebinds Dovo task tools before a follow-up turn while resuming the same conv
     pressure.mockRestore()
   }
 })
+it('disables bundled desktop control only while Dovo Cua is enabled, including resumed turns', async () => {
+  const { run, requests } = await fixture()
+  run.taskId = 'cua-task'
+  run.agent.args = ['-c', 'features.computer_use=true']
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  const adapter = createCodexAdapter()
+  const bind = (enabled: boolean) => {
+    run.agent.resources = decode(resourceSettingsSchema, {
+      mcpServers: [
+        { name: 'dovo_cua', enabled, transport: 'stdio', command: 'cua-driver', args: ['mcp'] },
+      ],
+    })
+  }
+  const config = {
+    'features.computer_use': false,
+    'plugins."computer-use@openai-bundled".enabled': false,
+  }
+  try {
+    bind(true)
+    await adapter.run(run)
+    run.sessionId = 'thread'
+    await adapter.run(run)
+    const enabledRows = (await requests()).filter((row) => row.method?.startsWith('thread/'))
+    expect(enabledRows.map((row) => row.method)).toEqual(['thread/start', 'thread/resume'])
+    expect(new Set(enabledRows.map((row) => row.pid)).size).toBe(1)
+    for (const row of enabledRows) {
+      expect(row.params?.config).toMatchObject(config)
+      expect(row.argv).toEqual([
+        'app-server',
+        '--listen',
+        'stdio://',
+        '-c',
+        'features.computer_use=true',
+        '-c',
+        'features.computer_use=false',
+        '-c',
+        'plugins."computer-use@openai-bundled".enabled=false',
+      ])
+    }
+    bind(false)
+    await adapter.run(run)
+    const resumed = (await requests()).filter((row) => row.method === 'thread/resume').at(-1)
+    expect(resumed?.pid).not.toBe(enabledRows[0].pid)
+    expect(resumed?.params?.threadId).toBe('thread')
+    expect(resumed?.params?.config).not.toHaveProperty(['features.computer_use'])
+    expect(resumed?.params?.config).not.toHaveProperty([
+      'plugins."computer-use@openai-bundled".enabled',
+    ])
+    expect(resumed?.argv).toEqual(['app-server', '--listen', 'stdio://', ...run.agent.args])
+
+    bind(true)
+    run.tools = 'none'
+    await adapter.run(run)
+    const toolFree = (await requests()).filter((row) => row.method === 'thread/resume').at(-1)
+    expect(toolFree?.params?.config).not.toHaveProperty(['features.computer_use'])
+    expect(toolFree?.argv).not.toContain('features.computer_use=false')
+  } finally {
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
+
 it('compacts an existing thread without starting a model turn', async () => {
   const { run, requests } = await fixture()
   run.sessionId = 'thread'

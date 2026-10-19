@@ -58,6 +58,11 @@ export function WorktreeBasePicker({
         onChange={onChange}
       />
       {!data && !error && <Text style={styles.muted}>Loading branches…</Text>}
+      {data && !data.branches.length && (
+        <Text style={styles.muted}>
+          No commits yet. An empty starting commit will be created only on the new task branch.
+        </Text>
+      )}
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

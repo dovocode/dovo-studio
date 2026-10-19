@@ -174,3 +174,61 @@ it('rolls remote attention up through local ancestors without treating offline o
   child.threadWatches[0].paused = true
   expect(taskFamilyInputIds([parent, child], [])).toEqual(new Set())
 })
+
+it('keeps a local family working while its targeted descendant is active or offline', () => {
+  const parent = { ...task('parent'), status: 'review' as const }
+  const child = {
+    ...task('child', 'parent'),
+    status: 'review' as const,
+    delegation: {
+      parentTaskId: 'parent',
+      parentRunId: 'run',
+      key: 'child',
+      completion: 'read' as const,
+    },
+  }
+  const watch = {
+    runtimeId: 'server',
+    threadId: 'remote',
+    computerName: 'Server',
+    delegated: true,
+    relation: 'spawned' as const,
+    status: 'watching' as const,
+    offline: true,
+  }
+  const remoteWorking = { ...child, threadWatches: [watch] }
+  expect(taskFamilyWorking([parent, remoteWorking], parent.id)).toBe(true)
+  expect(taskFamilyRunToken([parent, child], parent.id)).not.toBe(
+    taskFamilyRunToken([parent, remoteWorking], parent.id),
+  )
+  expect(
+    taskFamilyWorking(
+      [parent, { ...child, threadWatches: [{ ...watch, paused: true }] }],
+      parent.id,
+    ),
+  ).toBe(false)
+  expect(
+    taskFamilyWorking(
+      [
+        parent,
+        {
+          ...child,
+          threadWatches: [
+            {
+              ...watch,
+              offline: false,
+              snapshot: {
+                title: 'Remote',
+                phase: 'completed' as const,
+                revision: 'finished',
+                attention: [],
+                watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+              },
+            },
+          ],
+        },
+      ],
+      parent.id,
+    ),
+  ).toBe(false)
+})

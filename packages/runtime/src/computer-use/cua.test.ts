@@ -192,13 +192,66 @@ it.runIf(process.platform === 'darwin')(
 it('exposes an installed official skill source to isolated harnesses', async () => {
   const skill = join(directory, 'skill with spaces')
   await mkdir(skill)
-  await writeFile(join(skill, 'SKILL.md'), '# Official Cua skill')
+  await writeFile(join(skill, 'SKILL.md'), officialSkill)
   vi.mocked(exec).mockResolvedValue({ stdout: skill, stderr: '' })
-  expect(await cuaSkillInstructions('cua-driver')).toContain(
-    JSON.stringify(join(skill, 'SKILL.md')),
-  )
-  await rm(join(skill, 'SKILL.md'))
-  expect(await cuaSkillInstructions('cua-driver')).toContain('not installed')
+  const instructions = await cuaSkillInstructions('cua-driver')
+  expect(instructions).toContain(JSON.stringify(join(skill, 'SKILL.md')))
+  expect(instructions).toContain('Use accessibility targets; read ./references/desktop.md.')
+  expect(exec).toHaveBeenCalledExactlyOnceWith('cua-driver', ['skills', 'path'], expect.anything())
+})
+
+const officialSkill = `---
+name: cua-driver
+description: Official Cua desktop control
+---
+Use accessibility targets; read ./references/desktop.md.
+`
+
+it('installs a missing official pack once for concurrent opted-in turns', async () => {
+  const skill = join(directory, 'skill')
+  await mkdir(skill)
+  vi.mocked(exec).mockImplementation(async (_command, args) => {
+    if (args?.[1] === 'install') await writeFile(join(skill, 'SKILL.md'), officialSkill)
+    return { stdout: skill, stderr: '' }
+  })
+  const instructions = await Promise.all([
+    cuaSkillInstructions('custom-cua'),
+    cuaSkillInstructions('custom-cua'),
+  ])
+  expect(instructions.every((text) => text.includes('Use accessibility targets'))).toBe(true)
+  expect(vi.mocked(exec).mock.calls.filter(([, args]) => args?.[1] === 'install')).toEqual([
+    ['custom-cua', ['skills', 'install'], expect.objectContaining({ timeout: 60000 })],
+  ])
+})
+
+it.each(['invalid', 'oversized', 'relative-path'])(
+  'reports %s skills without attempting to reinstall or switch bridges',
+  async (kind) => {
+    const skill = join(directory, 'skill')
+    await mkdir(skill)
+    await writeFile(join(skill, 'SKILL.md'), kind === 'oversized' ? 'x'.repeat(64001) : 'invalid')
+    vi.mocked(exec).mockResolvedValue({
+      stdout: kind === 'relative-path' ? 'relative/path' : skill,
+      stderr: '',
+    })
+    const instructions = await cuaSkillInstructions('cua-driver')
+    expect(instructions).toContain('Cua skill loading failed')
+    expect(instructions).toContain('do not switch to another desktop control integration')
+    expect(exec).toHaveBeenCalledTimes(1)
+  },
+)
+
+it('keeps installation errors visible and allows a later explicit turn to recover', async () => {
+  const skill = join(directory, 'missing-pack')
+  vi.mocked(exec).mockImplementation(async (_command, args) => {
+    if (args?.[1] === 'install') throw new Error('download unavailable')
+    return { stdout: skill, stderr: '' }
+  })
+  expect(await cuaSkillInstructions('cua-driver')).toContain('download unavailable')
+  await mkdir(skill)
+  await writeFile(join(skill, 'SKILL.md'), officialSkill)
+  expect(await cuaSkillInstructions('cua-driver')).toContain('Use accessibility targets')
+  expect(vi.mocked(exec).mock.calls.filter(([, args]) => args?.[1] === 'install')).toHaveLength(1)
   vi.mocked(exec).mockRejectedValue(new Error('unsupported command'))
   expect(await cuaSkillInstructions('cua-driver')).toContain('unsupported command')
 })

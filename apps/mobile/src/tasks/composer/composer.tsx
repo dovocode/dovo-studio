@@ -388,6 +388,7 @@ export function Composer({
       'execution',
       'setupCommand',
       'worktreeFromOrigin',
+      'worktreeIncludeChanges',
       'existingWorktreePath',
       'worktreeBaseBranch',
     ] as const
@@ -1090,19 +1091,46 @@ export function Composer({
             </View>
           )}
           {task.execution === 'worktree' && !task.pullRequest && !task.existingWorktreePath && (
-            <WorktreeBasePicker
-              key={task.repositoryId}
-              repositoryId={task.repositoryId}
-              value={task.worktreeBaseBranch}
-              fromOrigin={task.worktreeFromOrigin}
-              onChange={(value) =>
-                act(() =>
-                  patch({
-                    worktreeBaseBranch: { before: task.worktreeBaseBranch ?? null, after: value },
-                  }),
-                )
-              }
-            />
+            <>
+              <Action
+                secondary
+                label={`${task.worktreeIncludeChanges ? '✓ ' : ''}Include uncommitted changes`}
+                disabled={busy || !connected}
+                onPress={() =>
+                  act(() =>
+                    patch({
+                      worktreeIncludeChanges: {
+                        before: task.worktreeIncludeChanges ?? null,
+                        after: !task.worktreeIncludeChanges,
+                      },
+                      worktreeBaseBranch: { before: task.worktreeBaseBranch ?? null, after: null },
+                    }),
+                  )
+                }
+              />
+              {task.worktreeIncludeChanges ? (
+                <Text style={styles.muted}>
+                  Starts from current files, including changes. Source stays unchanged.
+                </Text>
+              ) : (
+                <WorktreeBasePicker
+                  key={task.repositoryId}
+                  repositoryId={task.repositoryId}
+                  value={task.worktreeBaseBranch}
+                  fromOrigin={task.worktreeFromOrigin}
+                  onChange={(value) =>
+                    act(() =>
+                      patch({
+                        worktreeBaseBranch: {
+                          before: task.worktreeBaseBranch ?? null,
+                          after: value,
+                        },
+                      }),
+                    )
+                  }
+                />
+              )}
+            </>
           )}
           <Action label="Done" onPress={() => setCheckout(false)} />
         </Sheet>

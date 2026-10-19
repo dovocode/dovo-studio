@@ -355,6 +355,7 @@ function TaskRowView({
       {nestedThreads && (
         <NestedThreads
           threads={nestedThreads}
+          acknowledgedFailures={task.acknowledgedSubagentFailures}
           parent={threadParent}
           selectedKey={selectedThreadKey}
           searching={searching}

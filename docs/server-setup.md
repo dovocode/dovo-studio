@@ -493,6 +493,14 @@ that phone again. Avoid operating two processes over the same database.
 
 ## Troubleshooting
 
+Review dependency parsing runs in a separate, short-lived Node process. It uses baseline WebAssembly
+compilation to avoid excessive native compiler memory with the Swift grammar, a 128 MiB JavaScript
+heap limit, and a 15-second deadline including queue time. Only one parser runs at once; oversized
+or overloaded requests use folder grouping. A parser crash, timeout, or invalid response logs a
+warning and falls back to folder groups without stopping agent threads. The heap limit does not cap
+all native memory; process isolation and baseline compilation protect the runtime from the observed
+compiler failure.
+
 Project terminals do not inherit the runtime's `PORT` setting; development servers use their own
 defaults or an explicitly configured command port. A terminal connection drop preserves the shell
 and its running commands. Reconnecting attaches to that same session and replays recent output;
@@ -562,6 +570,13 @@ controls are available on mobile under the device and project settings.
   still wins, including a local branch. Turn **Start from origin** off to use the current local
   branch automatically. Repositories without origin also use their local branch. The project
   checkout itself is never switched.
+- Empty repositories can create worktrees too. Dovo creates an empty starting commit on the isolated
+  task branch; the source branch stays without commits and its index is untouched. Before sending,
+  enable **Include uncommitted changes** in the checkout/branch picker to copy staged, unstaged and
+  non-ignored untracked file contents. This starts from the current checkout's exact HEAD instead of
+  origin or a chosen base. Copied edits are unstaged in the new worktree; source files and staging
+  remain unchanged. Saved snapshots survive interrupted preparation and are applied once before
+  setup. Studio Tools accepts the same `worktreeIncludeChanges` option.
 - Projects inherit unset fields. An agent configuration override replaces the runtime's complete
   agent configuration. **Reset to runtime defaults**, followed by **Save defaults**, removes project
   overrides.
@@ -719,6 +734,16 @@ queued/paused input, waiting approvals/questions, running durations and uncertai
 A scheduler without a successful tick for 20 seconds needs attention; this does not cancel an agent
 or replay a provider action. The public `/health` endpoint remains a simple connectivity check. HTTP
 LAN/VPN addresses, pairing codes and device tokens continue to work.
+
+Successful runtime Git/GitHub read commands are not persisted in SQLite activity, including their
+start events. Failed reads, mutations and unrecognized commands retain diagnostics. Command logs
+(`command`) and raw provider events (`agent-event`) expire after seven days, independently of the
+activity-history retention setting, even when it is set to Forever. The existing setting still
+controls requests, useful tool results and other activity history; conversation records and artifact
+lifetime are unchanged. Cleanup runs in small, yielding batches, so a large backlog can take several
+upkeep passes. Deleted SQLite pages become reusable but the database file does not automatically
+shrink; returning that space to disk needs a separately scheduled SQLite compaction after a verified
+backup, with the runtime stopped.
 
 The runtime creates a verified SQLite backup on its first upkeep pass and at least daily while it
 runs. Backups live beside the database in `backups/`, with five copies and a 512 MB retention

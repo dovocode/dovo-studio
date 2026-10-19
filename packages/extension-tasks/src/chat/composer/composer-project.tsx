@@ -46,6 +46,7 @@ export function ComposerProject({
     autoProjectExecution?: Task['autoProjectExecution'],
     modelSelection?: Task['modelSelection'],
     modelSelectionDifficulty?: Task['modelSelectionDifficulty'],
+    sourceTask?: Task,
   ) => Promise<void>
 }) {
   const search = useRef<HTMLInputElement>(null)
@@ -103,6 +104,7 @@ export function ComposerProject({
           preserveAuto ? task.autoProjectExecution : undefined,
           task.harnessCustomized ? task.modelSelection : undefined,
           task.modelSelectionDifficulty,
+          task,
         )
       else
         await moveTaskDraft(

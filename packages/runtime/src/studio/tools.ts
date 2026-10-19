@@ -13,10 +13,17 @@ import {
   automationIssues,
   resolveTaskAgent,
   permissionPolicyWithinCeiling,
+  inheritedPermissionPolicy,
+  narrowerPermissionLimits,
+  changeAgentProvider,
+  permissionPolicyIssue,
+  supportsAccess,
   studioToolSettings,
   type Task,
   type Automation,
   type StudioToolPart,
+  taskFamilyRunToken,
+  SCRATCH_PROJECT_ID,
 } from '@dovo/protocol'
 import type { Services } from '../services.js'
 import { RuntimeServices } from '../services.js'
@@ -58,8 +65,9 @@ function withinPolicy(
   s: Services,
   task: Pick<Task, 'id' | 'agentId' | 'harness' | 'agentOverrides'>,
   policy?: StudioPolicy,
+  allowPermissionIncrease = false,
 ) {
-  if (!policy) return
+  if (!policy || allowPermissionIncrease) return
   const agent = resolveTaskAgent(task, s.store.get().agents)
   if (!agent || !permissionPolicyWithinCeiling(policy.permissions, agent))
     throw new HttpError(403, 'Target thread or automation exceeds this agent’s permissions')
@@ -136,6 +144,7 @@ export async function studioTool(
       return { agentId, catalog }
     }
     return {
+      capabilities: { targetedSubagents: 1 },
       enabled: Object.fromEntries(
         Object.entries(enabled).map(([key, value]) => [
           key,
@@ -187,33 +196,111 @@ export async function studioTool(
     if (command.action === 'snapshot') return threadSnapshot(s, command.id)
     if (command.action === 'search') return s.store.searchHistory(command.query, command.id)
     if (command.action === 'create') {
+      if (command.repositoryId === SCRATCH_PROJECT_ID) await s.scratch.ensure()
       if (
         command.repositoryId &&
-        !workspace.repositories.some((repo) => repo.id === command.repositoryId)
+        !s.store.get().repositories.some((repo) => repo.id === command.repositoryId)
       )
         throw new HttpError(404, 'Project not found')
       const defaults = s.store.taskDefaults(command.repositoryId)
+      const selected = {
+        ...defaults,
+        id: 'new',
+        agentId: command.agentId ?? '',
+        harness: command.harness ?? (command.agentId ? undefined : defaults.harness),
+        agentOverrides: command.agentOverrides,
+      }
+      const agent = resolveTaskAgent(selected, workspace.agents)
+      if (!agent) throw new HttpError(400, 'Choose an available agent or harness')
+      const parentPolicy =
+        policy && changeAgentProvider({ ...agent, ...policy.permissions }, agent.provider)
+      const inherited =
+        parentPolicy && !command.allowPermissionIncrease
+          ? inheritedPermissionPolicy(
+              parentPolicy,
+              agent,
+              narrowerPermissionLimits(parentPolicy, agent),
+            )
+          : agent
+      const issue = permissionPolicyIssue(inherited)
+      if (issue) throw new HttpError(400, issue)
+      if (!supportsAccess(inherited.provider, inherited.permission))
+        throw new HttpError(
+          400,
+          'The destination provider cannot preserve these permissions. Choose a compatible provider or explicitly request a supported mode.',
+        )
+      const overrides = {
+        ...command.agentOverrides,
+        permission: inherited.permission,
+        approvalPolicy: inherited.approvalPolicy ?? null,
+        sandboxMode: inherited.sandboxMode ?? null,
+      }
       withinPolicy(
         s,
-        {
-          ...defaults,
-          id: 'new',
-          agentId: command.agentId ?? '',
-          harness: command.harness ?? (command.agentId ? undefined : defaults.harness),
-          agentOverrides: command.agentOverrides,
-        },
+        { ...selected, agentOverrides: overrides },
         policy,
+        command.allowPermissionIncrease,
       )
-      const task = s.tasks.create({
-        ...command,
-        agentId: command.agentId ?? '',
-        objective: command.prompt ?? '',
-      })
-      return {
-        id: task.id,
-        status: task.status,
-        note: 'Created a draft. Use resume to execute its prompt, or send to add a prompt and start.',
+      if (command.start && !command.prompt?.trim())
+        throw new HttpError(400, 'Add a prompt to create and start a thread')
+      const create = async () => {
+        check()
+        const task = s.tasks.create({
+          title: command.title,
+          repositoryId: command.repositoryId,
+          harness: command.harness,
+          execution: command.execution,
+          worktreeIncludeChanges: command.worktreeIncludeChanges,
+          agentOverrides: overrides,
+          agentId: command.agentId ?? '',
+          objective: command.prompt ?? '',
+        })
+        if (command.coordinationDepth || command.spawnParent)
+          s.store.updateTask(task.id, (task) => ({
+            ...task,
+            coordinationDepth: command.coordinationDepth,
+            spawnParent: command.spawnParent,
+          }))
+        if (command.start) {
+          try {
+            await s.tasks.start(task.id)
+          } catch (error) {
+            // The durable draft exists; return its ID so callers can repair/resume it.
+            return {
+              id: task.id,
+              status: s.store.taskSummary(task.id).status,
+              startError: error instanceof Error ? error.message : 'Could not start thread',
+            }
+          }
+        }
+        return {
+          id: task.id,
+          status: s.store.taskSummary(task.id).status,
+          note: command.start
+            ? 'Thread start accepted.'
+            : 'Created a draft. Use resume to execute its prompt, or send to add a prompt and start.',
+        }
       }
+      if (command.requestId)
+        return s.mutations.execute(
+          `studio:${taskId}`,
+          command.requestId,
+          {
+            command: {
+              ...command,
+              spawnParent: command.spawnParent
+                ? { ...command.spawnParent, title: undefined }
+                : undefined,
+            },
+            policy: policy && {
+              permissions: policy.permissions,
+              readOnly: policy.readOnly,
+              studioTools: policy.studioTools,
+            },
+          },
+          create,
+        )
+      return create()
     }
     const target = s.store.taskSummary(command.id)
     if (command.action === 'read')
@@ -238,7 +325,12 @@ export async function studioTool(
         409,
         'Use this conversation’s normal reply and lifecycle controls for its own run',
       )
-    withinPolicy(s, target, policy)
+    withinPolicy(
+      s,
+      target,
+      policy,
+      'allowPermissionIncrease' in command && command.allowPermissionIncrease,
+    )
     if (command.action === 'send') {
       if (!command.text.trim()) throw new HttpError(400, 'Add a message')
       return runClientEffect(
@@ -246,7 +338,8 @@ export async function studioTool(
       )
     }
     if (command.action === 'stop') {
-      s.tasks.cancel(command.id)
+      if (target.activeRunId) s.tasks.cancel(command.id)
+      else await s.tasks.stopAgents(command.id, taskFamilyRunToken(s.store.get().tasks, command.id))
       return { ok: true }
     }
     if (command.action === 'resume') {

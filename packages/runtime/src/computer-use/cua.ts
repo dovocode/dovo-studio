@@ -15,9 +15,10 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path'
 import { stripVTControlCharacters } from 'node:util'
 import { exec, processEnvironment, ProcessError } from '../process.js'
 import { HttpError } from '../errors.js'
+import { importSkill } from '../agents/configuration/resources.js'
 
 export const CUA_SERVER_NAME = 'dovo_cua'
-export const cuaInstructions = `This computer has opted in to desktop computer use through the dovo_cua MCP server. Read its bundled skill resources when available. Inspect apps and windows before acting; prefer accessibility element targets and background delivery. Verify changes from a fresh snapshot. Unsupported background actions must not silently fall back to foreground input. Do not blindly replay an action after a timeout. The desktop and app state are shared with the user and other agents. Use existing task browser CDP and simulator tools for those surfaces. Do not target the Dovo application UI. End your Cua session when finished.`
+export const cuaInstructions = `This computer has opted in to desktop computer use through the dovo_cua MCP server. Use Cua Driver as the only desktop computer-use integration for this turn, following its official skill below or its bundled MCP skill resources. Do not load or use the OpenAI/ChatGPT bundled computer-use skill, @oai/sky, or another desktop control bridge. Inspect apps and windows before acting; prefer accessibility element targets and background delivery. Verify changes from a fresh snapshot. Unsupported background actions must not silently fall back to foreground input. Do not blindly replay an action after a timeout. The desktop and app state are shared with the user and other agents. Use existing task browser CDP and simulator tools for those surfaces. Do not target the Dovo application UI. End your Cua session when finished.`
 
 export async function cuaAgentServer(settings: CommandSettings, permission: Agent['permission']) {
   if (!settings.cuaEnabled || permission === 'read-only') return undefined
@@ -206,29 +207,56 @@ export async function cuaAction(command: string, action: CuaAction) {
   }
 }
 
-/** Pass the official installed skill source to every harness, including isolated configs. */
+const skillInstalls = new Map<string, Promise<void>>()
+
+/** Load the official skill for every harness, including isolated configurations. */
 export async function cuaSkillInstructions(command: string) {
   try {
-    const result = await exec(command, ['skills', 'path'], {
-      timeout: 5000,
-      maxBuffer: 8192,
-      env: processEnvironment(),
-      windowsHide: true,
-    })
-    const directory = stripVTControlCharacters(result.stdout).trim()
-    if (!isAbsolute(directory) || /[\r\n\0]/.test(directory))
-      return 'The installed Cua skill path could not be resolved. Use the MCP bundled skill resources.'
-    const source = join(directory, 'SKILL.md')
-    try {
-      if (!(await stat(source)).isFile())
-        return 'Cua agent skills are not installed. Use the MCP bundled skill resources.'
-    } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
-        return 'Cua agent skills are not installed. Use the MCP bundled skill resources.'
-      throw error
+    const load = async () => {
+      const result = await exec(command, ['skills', 'path'], {
+        timeout: 5000,
+        maxBuffer: 8192,
+        env: processEnvironment(),
+        windowsHide: true,
+      })
+      const directory = stripVTControlCharacters(result.stdout).trim()
+      if (!isAbsolute(directory) || /[\r\n\0]/.test(directory))
+        throw new Error('The installed Cua skill path could not be resolved')
+      return importSkill({ path: join(directory, 'SKILL.md') })
     }
-    return `Official Cua Driver skill: read ${JSON.stringify(source)} before computer use; resolve supporting files from its containing folder. This skill does not grant desktop permissions or approve actions.`
+    let skill: Awaited<ReturnType<typeof load>>
+    try {
+      skill = await load()
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+      let install = skillInstalls.get(command)
+      if (!install) {
+        install = (async () => {
+          // Another turn may have completed installation since our first read.
+          try {
+            await load()
+            return
+          } catch (error) {
+            if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+          }
+          await exec(command, ['skills', 'install'], {
+            timeout: 60000,
+            maxBuffer: 64 * 1024,
+            env: processEnvironment(),
+            windowsHide: true,
+          })
+        })().finally(() => skillInstalls.delete(command))
+        skillInstalls.set(command, install)
+      }
+      await install
+      skill = await load()
+    }
+    return `Official Cua Driver skill: ${JSON.stringify(skill.sourcePath)}. Resolve supporting files from its containing folder. This skill does not grant desktop permissions or approve actions.
+
+## ${skill.name}
+${skill.description}
+${skill.content}`
   } catch (error) {
-    return `Cua skill discovery failed: ${String(error).slice(0, 1000)}. Use the MCP bundled skill resources when available.`
+    return `Cua skill loading failed: ${String(error).slice(0, 1000)}. Use the dovo_cua MCP bundled skill resources when available; do not switch to another desktop control integration.`
   }
 }

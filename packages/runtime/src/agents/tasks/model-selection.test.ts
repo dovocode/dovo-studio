@@ -131,6 +131,60 @@ it.each(['project', 'missing'])(
   },
 )
 
+it.each(['inherit', 'auto', 'smart'] as const)(
+  'preserves a thread permission restriction through %s selection',
+  async (mode) => {
+    const s = setup(mode)
+    try {
+      s.store.updateTask('task', (task) => ({
+        ...task,
+        harness: { ...defaultTaskHarness('codex'), permission: 'ask' },
+        agentOverrides: { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
+      }))
+      s.setProvider('codex')
+      await runClientEffect(s.selection.resolveEffect('task'))
+      expect(s.store.task('task').harness).toMatchObject({
+        permission: 'ask',
+        sandboxMode: 'workspace-write',
+        approvalPolicy: 'on-request',
+      })
+      expect(s.store.task('task').agentOverrides).toBeUndefined()
+    } finally {
+      await s.close()
+    }
+  },
+)
+
+it('maps read-only permissions when Inherit selects a different provider', async () => {
+  const s = setup('inherit')
+  try {
+    s.store.update((workspace) => ({
+      ...workspace,
+      repositories: workspace.repositories.map((repository) => ({
+        ...repository,
+        taskDefaults: { harness: defaultTaskHarness('claude') },
+      })),
+    }))
+    s.store.updateTask('task', (task) => ({
+      ...task,
+      harness: {
+        ...defaultTaskHarness('codex'),
+        permission: 'read-only',
+        sandboxMode: 'read-only',
+        approvalPolicy: 'never',
+      },
+    }))
+    await runClientEffect(s.selection.resolveEffect('task'))
+    expect(s.store.task('task').harness).toMatchObject({
+      provider: 'claude',
+      permission: 'read-only',
+    })
+    expect(s.store.task('task').harness?.sandboxMode).toBeUndefined()
+  } finally {
+    await s.close()
+  }
+})
+
 it.each(['auto', 'smart'] as const)(
   '%s resolves only once and limits candidate harnesses appropriately',
   async (mode) => {

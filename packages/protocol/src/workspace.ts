@@ -1,4 +1,8 @@
-import { threadWatchSummarySchema, threadWatchCountsSchema } from './tasks/thread-watches.js'
+import {
+  threadParentSchema,
+  threadWatchSummarySchema,
+  threadWatchCountsSchema,
+} from './tasks/thread-watches.js'
 import { githubTriggerSchema } from './automation/triggers.js'
 import { pullStackSummarySchema } from './scm/pulls/pull-stack.js'
 import { filePreviewMetadataSchema } from './scm/repositories/file-previews.js'
@@ -662,10 +666,27 @@ export const taskSchema = mutableStruct({
   existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 4096)),
   worktreeBaseBranch: Schema.optional(Schema.String),
   worktreeFromOrigin: Schema.optional(Schema.Boolean),
+  /** Copy non-ignored working changes from the current checkout into a fresh worktree. */
+  worktreeIncludeChanges: Schema.optional(Schema.Boolean),
+  /** Runtime-owned pending snapshot; cleared only after the new checkout receives it. */
+  worktreeInitialSnapshot: Schema.optional(
+    mutableStruct({ tree: Schema.String, head: Schema.String }),
+  ),
   checkoutLocked: Schema.optional(Schema.Boolean),
   // Captured on the first submitted input; queued input keeps the lock after removal.
   providerLock: Schema.optional(providerSchema),
   threadWatches: Schema.optional(mutableArray(threadWatchSummarySchema)),
+  /** Navigation provenance, never an authorization or permission grant. */
+  spawnParent: Schema.optional(threadParentSchema),
+  /** Runtime-owned identity of a terminal failure; unchanged by metadata/finalization updates. */
+  failureVersion: Schema.optional(maxValue(Schema.String, 64)),
+  acknowledgedSubagentFailures: Schema.optional(
+    maxValue(mutableArray(maxValue(Schema.String, 64)), 200),
+  ),
+  /** Logical delegation depth for children whose parent lives on another checkout/computer. */
+  coordinationDepth: Schema.optional(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 })),
+  ),
   watchCounts: Schema.optional(threadWatchCountsSchema),
   delegation: Schema.optional(
     mutableStruct({

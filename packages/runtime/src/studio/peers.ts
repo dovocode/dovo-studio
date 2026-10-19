@@ -8,6 +8,7 @@ import {
   RuntimeRequestError,
   noStudioTools,
   studioThreadsCommandSchema,
+  type ThreadWatchSummary,
 } from '@dovo/protocol'
 import type { Services } from '../services.js'
 import { HttpError } from '../errors.js'
@@ -58,6 +59,19 @@ export class StudioPeers {
     return [...peers.values()]
   }
 }
+/** Only a local Studio registration grants durable control. Retrieval-only peers stay read-only. */
+function availablePeers(s: Services) {
+  const peers = new Map(s.retrievalPeers.list(true).map((peer) => [peer.id, peer]))
+  for (const peer of studioPeers(s).list()) peers.set(peer.id, peer)
+  return [...peers.values()]
+}
+export function studioComputerName(s: Services, runtimeId: string) {
+  return runtimeId === 'local'
+    ? 'This computer'
+    : (availablePeers(s).find(
+        (peer) => peer.id === runtimeId || peer.connection.runtimeId === runtimeId,
+      )?.name ?? runtimeId)
+}
 export async function routedStudioTool(
   s: Services,
   taskId: string,
@@ -76,15 +90,47 @@ export async function routedStudioTool(
     throw new HttpError(403, 'This agent has read-only Studio Tools access')
   if (runtimeId && part === 'ui')
     throw new HttpError(403, 'Studio UI interaction stays on this machine')
+  let restarted: ThreadWatchSummary | undefined
+  const restartMonitor = () => {
+    if (!restarted) return
+    const previous = restarted
+    const current = s.threadWatch
+      .list(taskId)
+      .find(
+        (watch) => watch.runtimeId === previous.runtimeId && watch.threadId === previous.threadId,
+      )
+    if (!current || current.status === 'stopped' || current.stopRequested) return
+    s.threadWatch.watch(
+      taskId,
+      previous.runtimeId,
+      previous.threadId,
+      previous.computerName,
+      policy,
+      previous.relation,
+      previous.delegated,
+    )
+  }
   if (part === 'threads') {
     const command = decode(studioThreadsCommandSchema, input)
     if (command.action === 'watches') return { watches: s.threadWatch.list(taskId) }
+    if (command.action === 'send' || command.action === 'resume') {
+      const previous = s.threadWatch
+        .list(taskId)
+        .find(
+          (watch) => watch.threadId === command.id && watch.runtimeId === (runtimeId ?? 'local'),
+        )
+      // Reserve monitoring capacity before restarting remote work. A failed send is safe to recheck.
+      if (previous?.status === 'completed') {
+        restarted = previous
+        restartMonitor()
+      }
+    }
     if (command.action === 'watch' || command.action === 'unwatch') {
       const computer =
         runtimeId && runtimeId !== 'local'
-          ? studioPeers(s)
-              .list()
-              .find((peer) => peer.id === runtimeId)
+          ? availablePeers(s).find(
+              (peer) => peer.id === runtimeId || peer.connection.runtimeId === runtimeId,
+            )
           : undefined
       if (command.action === 'unwatch')
         return { watches: s.threadWatch.stop(taskId, runtimeId ?? 'local', command.id) }
@@ -103,21 +149,20 @@ export async function routedStudioTool(
   }
   if (!runtimeId || runtimeId === 'local') {
     const result = await studioTool(s, taskId, part, command, authorize, policy)
+    restartMonitor()
     if (part !== 'discover') return result
     return {
       ...decode(Schema.Record(Schema.String, Schema.Unknown), result),
       computers: [
         { id: 'local', name: 'This computer', local: true },
-        ...studioPeers(s)
-          .list()
-          .map(({ id, name }) => ({ id, name, local: false })),
+        ...availablePeers(s).map(({ id, name }) => ({ id, name, local: false })),
       ],
     }
   }
   const peer =
-    studioPeers(s)
-      .list()
-      .find((peer) => peer.id === runtimeId) ??
+    availablePeers(s).find(
+      (peer) => peer.id === runtimeId || peer.connection.runtimeId === runtimeId,
+    ) ??
     (durableSnapshot && policy?.readOnly && part === 'threads' && input.action === 'snapshot'
       ? s.retrievalPeers
           .list()
@@ -141,7 +186,9 @@ export async function routedStudioTool(
       runtimeRequestEffect(
         peer.connection,
         peer.connection.address,
-        '/api/studio/forward',
+        part === 'threads' && (input.action === 'create' || input.allowPermissionIncrease === true)
+          ? '/api/studio/forward-v2'
+          : '/api/studio/forward',
         { taskId: `paired:${scope}`, part, command, policy: forwardedPolicy },
         Schema.Unknown,
         'POST',
@@ -151,6 +198,8 @@ export async function routedStudioTool(
     )
     authorize()
     requireStudioPart(s, part, policy)
+    // Invalidate reads that began before the mutation; their old completion must not retire the new run.
+    restartMonitor()
     if (
       part === 'threads' &&
       input.action === 'create' &&

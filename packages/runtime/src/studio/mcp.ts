@@ -32,7 +32,17 @@ export async function startStudioMcp() {
       body: JSON.stringify(input),
       signal: AbortSignal.timeout(120000),
     })
-    if (!response.ok) throw new Error(`Studio Tools: HTTP ${response.status}`)
+    if (!response.ok) {
+      const failure: unknown = await response.json().catch(() => undefined)
+      const detail =
+        failure &&
+        typeof failure === 'object' &&
+        'error' in failure &&
+        typeof failure.error === 'string'
+          ? failure.error
+          : response.statusText
+      throw new Error(`Studio Tools: HTTP ${response.status}${detail ? `: ${detail}` : ''}`)
+    }
     return response.json()
   }
   async function definitions() {

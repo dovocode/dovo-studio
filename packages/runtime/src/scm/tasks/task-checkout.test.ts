@@ -6,11 +6,173 @@ import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import type { AgentRun } from '../../agents/execution/types'
 import { responses } from '@dovo/protocol'
+import { TaskCheckout } from './task-checkout'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+})
+
+it('creates an isolated worktree for an empty repository without committing or staging source files', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  await rm(join(f.directory, '.git'), { recursive: true, force: true })
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'empty-checkout-test-owner-token-32-characters',
+    port: 0,
+  })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  await s.git.command(f.directory, ['-c', 'init.defaultBranch=main', 'init', '-q'])
+  s.store.update(() => f.workspace)
+  const before = await s.git.command(f.directory, ['status', '--porcelain=v1'])
+  for (const include of [false, true]) {
+    const task = s.tasks.create({
+      title: 'Empty repository',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      execution: 'worktree',
+      objective: 'Start here',
+      worktreeIncludeChanges: include,
+    })
+    const cwd = await s.checkouts.directory(task.id)
+    cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+    expect((await s.git.command(cwd, ['log', '--format=%s', '-1'])).trim()).toBe(
+      'Initialize isolated task worktree',
+    )
+    const copied = await readFile(join(cwd, 'hello.txt'), 'utf8').catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+      throw error
+    })
+    expect(copied).toBe(include ? 'original\n' : undefined)
+    expect(await s.git.command(f.directory, ['status', '--porcelain=v1'])).toBe(before)
+    await expect(
+      s.git.command(f.directory, ['rev-parse', '--verify', 'HEAD']),
+    ).rejects.toMatchObject({ code: 128 })
+  }
+})
+
+it('copies staged, unstaged, deleted and untracked files once, preserving the source index and ignored files', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'changed-checkout-test-owner-token-32-characters',
+    port: 0,
+  })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  await writeFile(join(f.directory, 'delete.txt'), 'delete me')
+  await writeFile(join(f.directory, '.gitignore'), 'ignored.txt\n')
+  await s.git.command(f.directory, ['add', '.'])
+  await s.git.command(f.directory, ['commit', '-qm', 'Files to change'])
+  const head = (await s.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()
+  await writeFile(join(f.directory, 'hello.txt'), 'staged\n')
+  await s.git.command(f.directory, ['add', 'hello.txt'])
+  await writeFile(join(f.directory, 'hello.txt'), 'unstaged\n')
+  await rm(join(f.directory, 'delete.txt'))
+  await writeFile(join(f.directory, 'untracked.bin'), Buffer.from([0, 1, 2, 255]))
+  await writeFile(join(f.directory, 'ignored.txt'), 'private ignored file')
+  const before = await s.git.command(f.directory, [
+    'status',
+    '--porcelain=v1',
+    '--untracked-files=all',
+  ])
+  const task = s.tasks.create({
+    title: 'Include changes',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Work',
+    worktreeIncludeChanges: true,
+  })
+  const cwd = await s.checkouts.directory(task.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect((await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()).toBe(head)
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('unstaged\n')
+  expect(await readFile(join(cwd, 'untracked.bin'))).toEqual(Buffer.from([0, 1, 2, 255]))
+  await expect(readFile(join(cwd, 'delete.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+  await expect(readFile(join(cwd, 'ignored.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(
+    await s.git.command(f.directory, ['status', '--porcelain=v1', '--untracked-files=all']),
+  ).toBe(before)
+  expect(await s.git.command(f.directory, ['show', ':hello.txt'])).toBe('staged\n')
+  expect(s.store.taskSummary(task.id).worktreeInitialSnapshot).toBeUndefined()
+  await writeFile(join(cwd, 'hello.txt'), 'agent progress\n')
+  const restored = new TaskCheckout(s.store, s.git)
+  expect(await restored.directory(task.id)).toBe(await realpath(cwd))
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('agent progress\n')
+})
+
+it('recovers the original pending snapshot after a copy failure without recapturing changed source files', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'retry-checkout-test-owner-token-32-characters',
+    port: 0,
+  })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  await writeFile(join(f.directory, 'hello.txt'), 'original pending changes\n')
+  const task = s.tasks.create({
+    title: 'Retry changes',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Work',
+    worktreeIncludeChanges: true,
+  })
+  const restore = vi
+    .spyOn(s.git, 'restoreSnapshot')
+    .mockRejectedValueOnce(new Error('Interrupted copy'))
+  await expect(s.checkouts.directory(task.id)).rejects.toThrow('Interrupted copy')
+  expect(s.store.taskSummary(task.id).worktreeInitialSnapshot).toBeTruthy()
+  restore.mockRestore()
+  await writeFile(join(f.directory, 'hello.txt'), 'later source changes\n')
+  const cwd = await new TaskCheckout(s.store, s.git).directory(task.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('original pending changes\n')
+  expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('later source changes\n')
+})
+
+it('keeps the captured base commit when worktree creation fails and the source advances before retry', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'base-retry-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const head = (await s.git.command(f.directory, ['rev-parse', 'HEAD'])).trim()
+  await writeFile(join(f.directory, 'hello.txt'), 'captured edits\n')
+  const task = s.tasks.create({
+    title: 'Retry captured base',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Work',
+    worktreeIncludeChanges: true,
+  })
+  const add = vi
+    .spyOn(s.git, 'addWorktree')
+    .mockRejectedValueOnce(new Error('Interrupted before creation'))
+  await expect(s.checkouts.directory(task.id)).rejects.toThrow('Interrupted before creation')
+  add.mockRestore()
+  await writeFile(join(f.directory, 'hello.txt'), 'newer committed version\n')
+  await s.git.command(f.directory, ['add', 'hello.txt'])
+  await s.git.command(f.directory, ['commit', '-qm', 'Source advanced'])
+  const cwd = await new TaskCheckout(s.store, s.git).directory(task.id)
+  cleanups.push(() => rm(cwd, { recursive: true, force: true }))
+  expect((await s.git.command(cwd, ['rev-parse', 'HEAD'])).trim()).toBe(head)
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('captured edits\n')
 })
 it('keeps agents, terminals, review edits, commits and gh inside the selected task checkout', async () => {
   const f = await fixture()

@@ -9,7 +9,7 @@ import {
 import { runtimeDefaultsSchema } from './runtime-setup'
 import { taskMachineDraft } from '../../tasks/task-machine-draft'
 import { decode } from '../../shared/schema'
-import { taskSchema } from '../../workspace'
+import { taskSchema, defaultTaskHarness } from '../../workspace'
 it('matches SSH and HTTPS without publishing credentials or merging different hosts', () => {
   expect(gitRemoteIdentity('git@github.com:Owner/Repo.git')).toBe('github.com/owner/repo')
   expect(gitRemoteIdentity('https://user:secret@github.com/Owner/Repo.git?token=secret')).toBe(
@@ -96,6 +96,35 @@ it('normalizes provider alternate clone addresses and escaped paths', () => {
   expect(gitRemoteIdentity('ssh://git@host.example:2222/team/repo')).toBe(
     'host.example:2222/team/repo',
   )
+})
+
+it('keeps explicit draft permissions when destination defaults are broader', () => {
+  const task = decode(taskSchema, {
+    id: 'draft',
+    title: 'Restricted',
+    repositoryId: 'source',
+    agentId: '',
+    status: 'draft',
+    createdAt: '',
+    messages: [],
+    files: [],
+    draft: 'Work',
+    example: false,
+    harness: { ...defaultTaskHarness('codex'), permission: 'read-only' },
+    agentOverrides: { approvalPolicy: 'never', sandboxMode: 'read-only' },
+  })
+  const moved = taskMachineDraft(task, {
+    id: 'target',
+    name: 'Target',
+    path: '/target',
+    branch: 'main',
+  })
+  expect(moved.harness).toMatchObject({
+    permission: 'read-only',
+    approvalPolicy: 'never',
+    sandboxMode: 'read-only',
+  })
+  expect(moved.agentOverrides).toBeUndefined()
 })
 it('uses stable group labels independent of runtime order', () => {
   const entries = ['Project checkout', 'Project'].map((name, index) => ({

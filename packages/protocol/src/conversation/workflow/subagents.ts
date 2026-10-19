@@ -41,7 +41,16 @@ export type Subagent = Schema.Schema.Type<typeof subagentSchema>
 /** Sidebar pills never retain or compare an agent's potentially large prompt/result. */
 export type SubagentListItem = Pick<
   Subagent,
-  'id' | 'taskId' | 'source' | 'name' | 'provider' | 'model' | 'reasoning' | 'tokens' | 'activity'
+  | 'id'
+  | 'taskId'
+  | 'source'
+  | 'name'
+  | 'provider'
+  | 'model'
+  | 'reasoning'
+  | 'tokens'
+  | 'activity'
+  | 'status'
 >
 const listFields = [
   'id',
@@ -53,6 +62,7 @@ const listFields = [
   'reasoning',
   'tokens',
   'activity',
+  'status',
 ] as const
 export function projectSubagentList(
   agents: readonly SubagentListItem[],
@@ -66,7 +76,7 @@ export function projectSubagentList(
   )
     return previous
   return agents.map(
-    ({ id, taskId, source, name, provider, model, reasoning, tokens, activity }) => ({
+    ({ id, taskId, source, name, provider, model, reasoning, tokens, activity, status }) => ({
       id,
       taskId,
       source,
@@ -76,6 +86,7 @@ export function projectSubagentList(
       reasoning,
       tokens,
       activity,
+      status,
     }),
   )
 }
@@ -118,4 +129,10 @@ export function subagentMetadata(agent: Pick<Subagent, 'model' | 'reasoning' | '
   ]
     .filter(Boolean)
     .join(' · ')
+}
+
+export function subagentListStatus(agent: SubagentListItem, online: boolean) {
+  if (agent.status === 'unknown') return 'Status unavailable'
+  if (agent.status === 'working') return online ? 'Working' : 'Last seen working'
+  return { completed: 'Done', failed: 'Failed', stopped: 'Stopped' }[agent.status]
 }

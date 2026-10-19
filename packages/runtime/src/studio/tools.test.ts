@@ -228,7 +228,7 @@ it('validates and manages automations and runs without admitting approval bypass
   expect((await post('automations', { action: 'cancel', id })).status).toBe(200)
   expect(s.jobs.detail(id).status).toBe('cancelled')
 }, 30000)
-it('rejects thread and automation permission escalation before persisting changes', async () => {
+it('inherits thread permissions and rejects automation permission escalation', async () => {
   const { s, post } = await setup()
   s.store.update((workspace) => ({
     ...workspace,
@@ -247,8 +247,9 @@ it('rejects thread and automation permission escalation before persisting change
         agentId: 'full',
       })
     ).status,
-  ).toBe(403)
-  expect(s.store.get().tasks).toHaveLength(count)
+  ).toBe(200)
+  expect(s.store.get().tasks).toHaveLength(count + 1)
+  expect(s.store.get().tasks.at(-1)?.agentOverrides?.permission).toBe('ask')
   const automation = flow()
   automation.nodes[1].data.agentId = 'full'
   expect((await post('automations', { action: 'create', automation })).status).toBe(403)
@@ -525,7 +526,8 @@ it('preserves run read-only access and permission ceilings across paired compute
         pairing.peer.id,
       )
     ).status,
-  ).toBe(403)
+  ).toBe(200)
+  expect(target.s.store.get().tasks.at(-1)?.agentOverrides?.permission).toBe('ask')
   source.s.preferences.save({ enableStudioThreads: false })
   expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(403)
 })
@@ -535,6 +537,12 @@ it('rejects older paired runtimes before attempting an unscoped tool action', as
   const paths: string[] = []
   const legacy = createServer((request, response) => {
     paths.push(request.url ?? '')
+    // This older runtime supports forwarding but would silently drop the new creation fields.
+    if (request.url === '/api/studio/forward') {
+      response.writeHead(200, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ id: 'unexpected-legacy-draft', status: 'draft' }))
+      return
+    }
     response.writeHead(404, { 'Content-Type': 'application/json' })
     response.end(JSON.stringify({ error: 'Endpoint not found' }))
   })
@@ -572,7 +580,7 @@ it('rejects older paired runtimes before attempting an unscoped tool action', as
   )
   expect(response.status).toBe(404)
   expect(await response.text()).toContain('Update this paired runtime')
-  expect(paths).toEqual(['/api/studio/forward'])
+  expect(paths).toEqual(['/api/studio/forward-v2'])
 })
 
 it('durably monitors remote children, preserves offline facts and delivers each attention/completion once', async () => {
@@ -640,6 +648,9 @@ it('durably monitors remote children, preserves offline facts and delivers each 
   await persisted.tick()
   expect(messages()).toBe(1)
   expect((await source.post('threads', { action: 'watches' })).status).toBe(200)
+  expect(persisted.list(source.parent.id)[0]?.status).toBe('completed')
+  // A completed spawn is retained without polling. Explicit watching resumes observation.
+  persisted.watch(source.parent.id, pairing.peer.id, child.id, 'Server')
   const last = persisted.list(source.parent.id)[0]?.lastSuccessAt
   expect((await pairing.register([])).status).toBe(200)
   await persisted.tick()
@@ -711,7 +722,7 @@ it('durably monitors remote children, preserves offline facts and delivers each 
   await persisted.tick()
   expect(messages()).toBe(3)
   source.s.store.updateTask(source.parent.id, (task) => ({ ...task, archived: true }))
-  expect(persisted.list(source.parent.id)[0]?.status).toBe('stopped')
+  expect(persisted.list(source.parent.id)[0]?.status).toBe('completed')
   await persisted.tick()
   expect(messages()).toBe(3)
 })
@@ -745,7 +756,7 @@ it('links existing remote threads without calling them spawned and respects read
   ).toBe(403)
 })
 
-it('uses the existing private pairing registry for background snapshots without enabling unattended control', async () => {
+it('retains durable thread control after the desktop lease expires and removes it when pairing is forgotten', async () => {
   const source = await setup()
   const target = await setup()
   const pairing = await pairComputers(source, target)
@@ -754,7 +765,8 @@ it('uses the existing private pairing registry for background snapshots without 
       .status,
   ).toBe(200)
   source.s.retrievalPeers.register('owner', { sessionId: 'durable', peers: [pairing.peer] })
-  expect((await pairing.register([])).status).toBe(200)
+  // Simulate a disconnected desktop, rather than explicitly forgetting its saved pairings.
+  studioPeers(source.s).register('owner', { sessionId: 'disconnected', peers: [] }, () => {})
   await source.s.threadWatch.tick()
   expect(source.s.threadWatch.list(source.parent.id)[0]).toMatchObject({
     offline: false,
@@ -764,11 +776,16 @@ it('uses the existing private pairing registry for background snapshots without 
     (
       await source.post(
         'threads',
-        { action: 'create', title: 'Must not create', repositoryId: 'repo' },
+        { action: 'create', title: 'Durable child', repositoryId: 'repo' },
         pairing.peer.id,
       )
     ).status,
-  ).toBe(404)
+  ).toBe(200)
+  expect((await pairing.register([])).status).toBe(200)
+  expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(404)
+  // Retrieval-only registration still supports read-only watch snapshots.
+  source.s.retrievalPeers.register('owner', { sessionId: 'retrieval', peers: [pairing.peer] })
+  expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(404)
   expect(JSON.stringify(source.s.store.taskSummary(source.parent.id).threadWatches)).not.toContain(
     pairing.token,
   )
@@ -778,6 +795,101 @@ it('uses the existing private pairing registry for background snapshots without 
     offline: true,
     snapshot: { phase: 'running' },
   })
+})
+
+it('deduplicates remote creation and supports an explicitly authorized permission increase', async () => {
+  const source = await setup()
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
+  const command = {
+    action: 'create',
+    title: 'Explicit full-access child',
+    repositoryId: 'repo',
+    harness: {
+      provider: 'codex',
+      model: '',
+      reasoning: '',
+      instructions: '',
+      endpoint: '',
+      permission: 'full-access',
+    },
+    allowPermissionIncrease: true,
+    requestId: 'durable-child-request',
+    prompt: 'Do the task',
+  }
+  const responses = await Promise.all([
+    source.post('threads', command, pairing.peer.id),
+    source.post('threads', command, pairing.peer.id),
+  ])
+  const values = await Promise.all(
+    responses.map(async (response) => {
+      expect(response.status).toBe(200)
+      return decode(mutableStruct({ id: Schema.String }), await response.json())
+    }),
+  )
+  expect(values[0]?.id).toBe(values[1]?.id)
+  const child = target.s.store.task(values[0]!.id)
+  expect(child.agentOverrides?.permission).toBe('full-access')
+  expect(target.s.store.get().tasks.filter((task) => task.title === command.title)).toHaveLength(1)
+  expect(
+    (await source.post('threads', { ...command, title: 'Changed request' }, pairing.peer.id))
+      .status,
+  ).toBe(409)
+  expect(
+    (await source.post('threads', { action: 'resume', id: child.id }, pairing.peer.id)).status,
+  ).toBe(403)
+  const run = vi.fn<AgentAdapter['run']>().mockResolvedValue(undefined)
+  vi.spyOn(target.s.agents, 'get').mockResolvedValue({
+    probe: async () => ({ provider: 'codex', available: true, detail: '' }),
+    run,
+  })
+  expect(
+    (
+      await source.post(
+        'threads',
+        { action: 'resume', id: child.id, allowPermissionIncrease: true },
+        pairing.peer.id,
+      )
+    ).status,
+  ).toBe(200)
+  await target.post('threads', { action: 'wait', id: child.id })
+  expect(run).toHaveBeenCalledOnce()
+})
+
+it('creates and starts once, and preserves a created ID when startup fails', async () => {
+  const { s, post } = await setup()
+  const run = vi.fn<AgentAdapter['run']>().mockResolvedValue(undefined)
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: async () => ({ provider: 'codex', available: true, detail: '' }),
+    run,
+  })
+  const command = {
+    action: 'create',
+    title: 'Start together',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    prompt: 'Work',
+    start: true,
+    requestId: 'create-start',
+  }
+  const response = await post('threads', command)
+  expect(response.status).toBe(200)
+  const first = decode(mutableStruct({ id: Schema.String }), await response.json())
+  await post('threads', { action: 'wait', id: first.id })
+  const retry = await post('threads', command)
+  expect(decode(mutableStruct({ id: Schema.String }), await retry.json()).id).toBe(first.id)
+  expect(run).toHaveBeenCalledOnce()
+  const start = vi
+    .spyOn(s.tasks, 'start')
+    .mockRejectedValueOnce(new Error('Signing session unavailable'))
+  const failed = await post('threads', { ...command, requestId: 'failing-start' })
+  const outcome = decode(
+    mutableStruct({ id: Schema.String, startError: Schema.String }),
+    await failed.json(),
+  )
+  expect(outcome.startError).toContain('Signing session unavailable')
+  expect(s.store.task(outcome.id).status).toBe('draft')
+  expect(start).toHaveBeenCalledOnce()
 })
 
 it('isolates a full parent queue and retries delivery after capacity returns', async () => {
@@ -804,19 +916,21 @@ it('isolates a full parent queue and retries delivery after capacity returns', a
     watches: { pipelines: 0, pullRequests: 0, failures: 0 },
   }))
   const watch = new ThreadWatch(f.s.db, f.s, read)
-  watch.watch(f.parent.id, 'remote', 'blocked', 'Server')
-  watch.watch(other.id, 'remote', 'healthy', 'Server')
+  watch.watch(f.parent.id, 'remote', 'blocked', 'Server', undefined, 'spawned')
+  watch.watch(other.id, 'remote', 'healthy', 'Server', undefined, 'spawned')
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
   await watch.tick()
   expect(read).toHaveBeenCalledTimes(2)
   expect(f.s.store.taskSummary(other.id).queue).toHaveLength(1)
   expect(watch.list(f.parent.id)[0]?.snapshot).toBeUndefined()
+  expect(watch.list(f.parent.id)[0]?.status).toBe('watching')
   f.s.store.updateTask(f.parent.id, (task) => ({ ...task, queue: [] }))
   await watch.tick()
   await watch.tick()
   expect(f.s.store.taskSummary(f.parent.id).queue).toHaveLength(1)
   expect(f.s.store.taskSummary(other.id).queue).toHaveLength(1)
   expect(error).toHaveBeenCalledTimes(1)
+  expect(read).toHaveBeenCalledTimes(3)
 })
 
 it('limits active watches, bounds stopped history and enforces the limit when reactivating', async () => {
@@ -933,4 +1047,146 @@ it('aggregates descendant attention and watch counts on the owning runtime over 
   controller.abort()
   await source.s.threadWatch.tick()
   expect(source.s.threadWatch.list(source.parent.id)[0]?.snapshot?.attention).toHaveLength(0)
+})
+
+it('retires completed spawned watches after durable delivery, preserves bounded results and frees active capacity', async () => {
+  const f = await setup()
+  f.s.store.updateTask(f.parent.id, (task) => ({
+    ...task,
+    status: 'review',
+    activeRunId: undefined,
+    queuePaused: true,
+  }))
+  const read = vi.fn<() => Promise<unknown>>(async () => ({
+    title: 'Done',
+    phase: 'completed',
+    revision: 'finished',
+    attention: [],
+    watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+    result: 'Saved answer',
+  }))
+  const watch = new ThreadWatch(f.s.db, f.s, read)
+  for (let i = 0; i < 40; i++)
+    watch.watch(f.parent.id, 'remote', String(i), 'Server', undefined, 'spawned', true)
+  await watch.tick()
+  expect(watch.list(f.parent.id).filter((w) => w.status === 'completed')).toHaveLength(40)
+  expect(read).toHaveBeenCalledTimes(40)
+  await watch.tick()
+  const reconstructed = new ThreadWatch(f.s.db, f.s, read)
+  await reconstructed.tick()
+  expect(read).toHaveBeenCalledTimes(40)
+  expect(f.s.store.taskSummary(f.parent.id).queue).toHaveLength(40)
+  reconstructed.watch(f.parent.id, 'remote', '40', 'Server', undefined, 'spawned', true)
+  await reconstructed.tick()
+  expect(reconstructed.list(f.parent.id)).toHaveLength(41)
+  for (const completed of reconstructed.list(f.parent.id))
+    reconstructed.acknowledgeChild(
+      f.parent.id,
+      completed.runtimeId,
+      completed.threadId,
+      completed.snapshot!,
+    )
+  const history = reconstructed.list(f.parent.id)
+  expect(history).toHaveLength(40)
+  expect(history.find((w) => w.threadId === '40')).toMatchObject({
+    status: 'completed',
+    snapshot: { result: 'Saved answer' },
+  })
+  // Legacy completed snapshots with durable receipts migrate without reading the remote child.
+  f.s.db.exec(
+    `UPDATE task_thread_watches SET value=json_remove(json_set(value, '$.status', 'watching'), '$.startedAt')`,
+  )
+  const migrated = new ThreadWatch(f.s.db, f.s, read)
+  expect(migrated.list(f.parent.id).every((w) => w.status === 'completed')).toBe(true)
+  await migrated.tick()
+  expect(read).toHaveBeenCalledTimes(41)
+  // Explicitly resuming monitoring consumes capacity again, without discarding the saved result.
+  reconstructed.watch(f.parent.id, 'remote', '40', 'Server')
+  expect(reconstructed.list(f.parent.id).find((w) => w.threadId === '40')).toMatchObject({
+    status: 'watching',
+    snapshot: { result: 'Saved answer' },
+  })
+})
+
+it('keeps unacknowledged failed completed children beyond disposable history', async () => {
+  const f = await setup()
+  f.s.store.updateTask(f.parent.id, (task) => ({
+    ...task,
+    status: 'review',
+    activeRunId: undefined,
+    queuePaused: true,
+  }))
+  const read = vi.fn<() => Promise<unknown>>(async () => ({
+    runtimeId: 'remote',
+    title: 'Failed child',
+    phase: 'completed',
+    status: 'failed',
+    failureVersion: 'attempt',
+    revision: 'done',
+    attention: [],
+    watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+  }))
+  const watch = new ThreadWatch(f.s.db, f.s, read)
+  for (let i = 0; i < 41; i++) {
+    watch.watch(f.parent.id, 'remote', String(i), 'Server', undefined, 'spawned')
+    await watch.tick()
+  }
+  expect(watch.list(f.parent.id)).toHaveLength(41)
+  expect(watch.list(f.parent.id).every((entry) => entry.status === 'completed')).toBe(true)
+  expect(read).toHaveBeenCalledTimes(41)
+  await watch.tick()
+  expect(read).toHaveBeenCalledTimes(41)
+})
+
+it('rearms a completed child for a new message and rejects pre-message snapshots in flight', async () => {
+  const source = await setup(),
+    target = await setup()
+  const pairing = await pairComputers(source, target)
+  const child = target.s.tasks.create({
+    title: 'Repeatable child',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  target.s.store.updateTask(child.id, (task) => ({ ...task, status: 'review', queuePaused: true }))
+  source.s.store.updateTask(source.parent.id, (task) => ({ ...task, queuePaused: true }))
+  source.s.threadWatch.watch(
+    source.parent.id,
+    pairing.peer.id,
+    child.id,
+    'Server',
+    undefined,
+    'spawned',
+    true,
+  )
+  await source.s.threadWatch.tick()
+  expect(source.s.threadWatch.list(source.parent.id)[0].status).toBe('completed')
+  let release: (value: unknown) => void = () => {
+    throw new Error('Read did not start')
+  }
+  const read = vi.fn<() => Promise<unknown>>(
+    () =>
+      new Promise((resolve) => {
+        release = resolve
+      }),
+  )
+  const observer = new ThreadWatch(source.s.db, source.s, read)
+  const oldSnapshot = source.s.threadWatch.list(source.parent.id)[0].snapshot!
+  const originalSend = target.s.tasks.sendEffect.bind(target.s.tasks)
+  let pending: Promise<void> | undefined
+  vi.spyOn(target.s.tasks, 'sendEffect').mockImplementation((...args) => {
+    // Begin reading the old completion after capacity is reserved, before send is accepted.
+    pending = observer.tick()
+    return originalSend(...args)
+  })
+  const response = await source.post(
+    'threads',
+    { action: 'send', id: child.id, text: 'New work', messageId: 'new-work' },
+    pairing.peer.id,
+  )
+  expect(response.status).toBe(200)
+  expect(read).toHaveBeenCalledOnce()
+  release(oldSnapshot)
+  await pending
+  expect(source.s.threadWatch.list(source.parent.id)[0].status).toBe('watching')
 })

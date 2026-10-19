@@ -163,6 +163,7 @@ export class TaskCheckout {
       cached.repositoryPath === repo.path &&
       cached.execution === task.execution &&
       cached.existingWorktreePath === task.existingWorktreePath &&
+      !task.worktreeInitialSnapshot &&
       (!task.setupCommand?.trim() || task.worktreeSetupComplete) &&
       (!task.submodules || task.submodules === 'none' || task.worktreeSubmodulesComplete) &&
       (repo.kind !== 'scratch' || (await realpath(cached.path).catch(() => '')) === cached.path) &&
@@ -308,7 +309,16 @@ export class TaskCheckout {
       }))
       return this.prepare(id, directory, steps, kept, signal)
     }
-    const fetching = !task.pullRequest && !task.worktreeBaseBranch && !!task.worktreeFromOrigin
+    if (task.worktreeIncludeChanges && task.worktreeBaseBranch)
+      throw new HttpError(
+        400,
+        'Copying uncommitted changes starts from the current checkout. Clear the selected base branch first.',
+      )
+    const fetching =
+      !task.pullRequest &&
+      !task.worktreeBaseBranch &&
+      !task.worktreeIncludeChanges &&
+      !!task.worktreeFromOrigin
     const steps = [
       ...(task.pullRequest ? ['pull'] : fetching ? ['fetch'] : []),
       'worktree',
@@ -319,7 +329,7 @@ export class TaskCheckout {
     this.progress(id, steps, steps[0], branch)
     let refs = task.pullRequest ? undefined : await listBranches({ git: this.git }, root)
     // "Start from origin": fetch first so the worktree starts from origin's latest commit.
-    if (refs && !task.worktreeBaseBranch && task.worktreeFromOrigin)
+    if (refs && fetching)
       refs = await this.fetchOrigin(root).then(() => listBranches({ git: this.git }, root))
     const selection =
       task.worktreeBaseBranch ??
@@ -333,15 +343,40 @@ export class TaskCheckout {
     const base = refs?.branches.find(
       (branch) => branch.ref === selection || branch.name === selection,
     )?.ref
+    const unborn = refs?.revision.startsWith('unborn:')
     if (
       !task.pullRequest &&
       !task.forkedFrom?.head &&
+      !(unborn && !task.worktreeBaseBranch) &&
       (!base || !refs?.branches.some((branch) => branch.ref === base))
     )
       throw new HttpError(400, 'Choose an existing base branch for the worktree')
-    const head = task.pullRequest
+    let head = task.pullRequest
       ? await fetchPullHead(this.git, root, task.pullRequest, key)
-      : (task.forkedFrom?.head ?? base ?? 'HEAD')
+      : (task.forkedFrom?.head ??
+        (unborn && !task.worktreeBaseBranch ? await this.git.initialWorktreeCommit(root) : base) ??
+        'HEAD')
+    if (task.worktreeInitialSnapshot) head = task.worktreeInitialSnapshot.head
+    else if (task.worktreeIncludeChanges && !task.pullRequest && !task.forkedFrom) {
+      const sourceHead = unborn
+        ? undefined
+        : (await this.git.command(root, ['rev-parse', '--verify', 'HEAD'])).trim()
+      if (sourceHead) head = sourceHead
+      const tree = await this.git.snapshot(root, `refs/dovo/worktrees/${id}/initial`)
+      const afterHead = await this.git
+        .command(root, ['rev-parse', '--verify', '--quiet', 'HEAD'])
+        .then(
+          (value) => value.trim(),
+          () => undefined,
+        )
+      if (sourceHead !== afterHead)
+        throw new HttpError(409, 'The source branch changed while copying files. Try again.')
+      await this.git.command(root, ['update-ref', `refs/dovo/worktrees/${id}/base`, head])
+      this.store.updateTask(id, (current) => ({
+        ...current,
+        worktreeInitialSnapshot: { tree, head },
+      }))
+    }
     this.progress(id, steps, 'worktree', branch)
     signal?.throwIfAborted()
     await this.git.addWorktree(root, directory, ['-b', branch, directory, head])
@@ -405,6 +440,15 @@ export class TaskCheckout {
     signal?.throwIfAborted()
     const cwd = (await this.git.inspect(directory)).path
     const task = this.store.taskSummary(id)
+    if (task.worktreeInitialSnapshot) {
+      await this.git.restoreSnapshot(
+        cwd,
+        task.worktreeInitialSnapshot.tree,
+        `refs/dovo/worktrees/${id}/before-copy`,
+      )
+      signal?.throwIfAborted()
+      this.store.updateTask(id, (current) => ({ ...current, worktreeInitialSnapshot: undefined }))
+    }
     if (task.submodules && task.submodules !== 'none' && !task.worktreeSubmodulesComplete) {
       this.progress(id, steps, 'submodules', branch)
       signal?.throwIfAborted()

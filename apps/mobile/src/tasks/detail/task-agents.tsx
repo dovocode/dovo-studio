@@ -1,3 +1,15 @@
+import {
+  buildThreadTree,
+  nativeFailureKey,
+  threadFailureKey,
+  taskFailureVersion,
+  subagentVisible,
+  taskFamilyIds,
+  threadDescendants,
+  unlistedThreadBranches,
+  visibleThreadChildren,
+} from '@dovo/protocol'
+import { NestedThreads } from '../list/nested-threads'
 import { useNavigation } from '../../shell/navigation'
 import { Action } from '../../ui/controls/action'
 import { useForegroundInterval } from '../../runtime/state/app-active'
@@ -41,16 +53,92 @@ export function TaskAgents({
     [snapshot?.workspace.tasks],
   )
   const cancellation = useAction()
-  const agents = indexed(task)
-  const visibleAgents = agents.filter(
-    (agent) =>
-      !hideFinishedSubagents ||
-      (!agent.finishedAt && (agent.status === 'working' || agent.status === 'unknown')),
+  const tree = useMemo(
+    () =>
+      buildThreadTree(
+        (snapshot?.workspace.tasks ?? []).map((item) => {
+          const repository = (snapshot?.workspace.repositories ?? []).find(
+            (repository) => repository.id === item.repositoryId,
+          )
+          return {
+            key: JSON.stringify([profile?.id ?? null, item.id]),
+            task: item,
+            needsInput: false,
+            projectName:
+              repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'No project'),
+            source: {
+              runtimeId: profile?.id ?? null,
+              name: profile?.name ?? 'This computer',
+              online: connected,
+              snapshot,
+            },
+          }
+        }),
+      ),
+    [snapshot, profile, connected],
   )
-  const hidden = agents.length - visibleAgents.length
+  const thread = tree.nodes.get(JSON.stringify([profile?.id ?? null, task.id]))
+  const agents = indexed(task)
+  const listed = new Set(
+    [
+      task.id,
+      ...agents.filter((agent) => agent.source === 'dovo').map((agent) => agent.taskId ?? agent.id),
+    ].map((id) => JSON.stringify([profile?.id ?? null, id])),
+  )
+  const branches = thread ? unlistedThreadBranches(thread, listed) : []
+  const remote = branches.flatMap((branch) => threadDescendants(branch.children))
+  const visibleBranches = branches.map((branch) => ({
+    ...branch,
+    children: visibleThreadChildren(
+      branch.children,
+      hideFinishedSubagents,
+      task.acknowledgedSubagentFailures,
+    ),
+  }))
+  const visibleRemote = visibleBranches.flatMap((branch) => threadDescendants(branch.children))
+  const ownerFor = (agent: Subagent) =>
+    (snapshot?.workspace.tasks ?? []).find((item) => item.subagents?.includes(agent))
+  const failureKey = (agent: Subagent) => {
+    const child =
+      agent.source === 'dovo'
+        ? (snapshot?.workspace.tasks ?? []).find((item) => item.id === (agent.taskId ?? agent.id))
+        : undefined
+    return child
+      ? threadFailureKey(
+          snapshot?.runtimeId ?? profile?.id ?? null,
+          child.id,
+          taskFailureVersion(child),
+        )
+      : nativeFailureKey(ownerFor(agent)?.id ?? task.id, agent)
+  }
+  const visibleAgents = agents.filter((agent) =>
+    subagentVisible(
+      agent,
+      hideFinishedSubagents,
+      task.acknowledgedSubagentFailures?.includes(failureKey(agent)),
+    ),
+  )
+  const hidden = agents.length - visibleAgents.length + remote.length - visibleRemote.length
   const activeAgents = new Set(connected ? indexed(task, true) : [])
+  const family = taskFamilyIds(snapshot?.workspace.tasks ?? [], task.id)
+  const canStopRemote =
+    connected &&
+    (snapshot?.workspace.tasks ?? []).some(
+      (item) =>
+        family.has(item.id) &&
+        item.threadWatches?.some(
+          (watch) =>
+            watch.delegated && !watch.stopRequested && watch.snapshot?.phase !== 'completed',
+        ),
+    )
+  const acknowledgeFailure = (key: string) =>
+    cancellation.act(() =>
+      callEffect('/api/tasks/acknowledge-subagent-failure', { id: task.id, key }, responses.ok),
+    )
   const live = connected
-  const working = activeAgents.size
+  const working =
+    activeAgents.size +
+    remote.filter((child) => child.online && !child.paused && child.phase === 'running').length
   useForegroundInterval(() => setNow(Date.now()), working ? 1000 : null)
   return (
     <View
@@ -64,13 +152,6 @@ export function TaskAgents({
           gap: 4,
         }}
       >
-        {task.delegation && (
-          <Action
-            secondary
-            label="Back to parent thread"
-            onPress={() => navigate('tasks', task.delegation?.parentTaskId, profile?.id)}
-          />
-        )}
         <View
           style={{
             flexDirection: 'row',
@@ -93,7 +174,7 @@ export function TaskAgents({
             />
           </View>
         </View>
-        {activeAgents.size > 0 && (
+        {(activeAgents.size > 0 || canStopRemote) && (
           <Action
             secondary
             label={cancellation.busy ? 'Stopping…' : 'Stop agents'}
@@ -113,16 +194,25 @@ export function TaskAgents({
           />
         )}
         {!!cancellation.error && <Text style={{ color: colors.error }}>{cancellation.error}</Text>}
-        {!agents.length && (
+        {!agents.length && !remote.length && (
           <Text style={styles.muted}>
             No subagents yet. Agents spawned by a supported harness appear here as they work.
           </Text>
         )}
-        {!!agents.length && !visibleAgents.length && (
+        {(!!agents.length || !!remote.length) && !visibleAgents.length && !visibleRemote.length && (
           <Text style={styles.muted}>
             All subagents have finished. Turn off Hide finished to view them.
           </Text>
         )}
+        {visibleBranches.map((branch) => (
+          <NestedThreads
+            key={branch.key}
+            thread={branch}
+            disabled={cancellation.busy}
+            acknowledgedFailures={task.acknowledgedSubagentFailures}
+            onAcknowledgeFailure={acknowledgeFailure}
+          />
+        ))}
         {visibleAgents.map((agent, index) => {
           const key = `${agent.provider}:${agent.id}:${index}`
           const active = live && activeAgents.has(agent)
@@ -224,6 +314,15 @@ export function TaskAgents({
                     paddingTop: 8,
                   }}
                 >
+                  {agent.status === 'failed' &&
+                    !task.acknowledgedSubagentFailures?.includes(failureKey(agent)) && (
+                      <Action
+                        secondary
+                        label="Acknowledge failure"
+                        disabled={cancellation.busy}
+                        onPress={() => acknowledgeFailure(failureKey(agent))}
+                      />
+                    )}
                   {!!agent.prompt && (
                     <Text selectable style={styles.muted}>
                       {agent.prompt}
@@ -322,7 +421,8 @@ export function TaskAgents({
           },
         ]}
       >
-        {working} working · {agents.length} total{hidden > 0 ? ` · ${hidden} hidden` : ''}
+        {working} working · {agents.length + remote.length} total
+        {hidden > 0 ? ` · ${hidden} hidden` : ''}
         {!connected ? ' · Offline · saved state' : ''}
       </Text>
     </View>

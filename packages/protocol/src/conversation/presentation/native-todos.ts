@@ -120,13 +120,16 @@ export function nativeTodos(
 
 /** Progress counts for the todo summary line; undefined when there is no list to show. */
 export function nativeTodoSummary(
-  task: Pick<Task, 'nativeTodos'>,
-): { total: number; completed: number; active?: string } | undefined {
+  task: Pick<Task, 'nativeTodos' | 'status'>,
+): { total: number; completed: number; unfinished: boolean; active?: string } | undefined {
   const todos = task.nativeTodos
   if (!todos?.length) return undefined
+  const completed = todos.filter((todo) => todo.status === 'completed').length
+  const running = task.status === 'running'
   return {
     total: todos.length,
-    completed: todos.filter((todo) => todo.status === 'completed').length,
-    active: todos.find((todo) => todo.status === 'in-progress')?.text,
+    completed,
+    unfinished: !running && completed < todos.length,
+    active: running ? todos.find((todo) => todo.status === 'in-progress')?.text : undefined,
   }
 }

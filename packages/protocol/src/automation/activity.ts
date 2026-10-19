@@ -5,6 +5,8 @@ import { toolPresentation } from '../conversation/presentation/tool-presentation
 import { mcpAppReferences } from '../conversation/mcp-apps.js'
 import { toolImages, toolImageReferences } from '../conversation/tool-images.js'
 import { artifactReferences } from '../conversation/artifacts.js'
+/** Low-level CLI and raw provider diagnostics expire independently of activity history. */
+export const DIAGNOSTIC_RETENTION_DAYS = 7
 export const activityEventSchema = mutableStruct({
   id: Schema.String,
   time: Schema.String,

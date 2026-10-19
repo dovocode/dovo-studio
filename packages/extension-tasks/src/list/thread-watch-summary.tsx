@@ -29,11 +29,14 @@ export function ThreadWatchSummary({
       {watches.map((watch) => {
         const stale = !online || watch.offline
         const needsInput = watch.snapshot?.phase === 'needs-input'
-        const status = stale
-          ? 'Offline · last known state'
-          : watch.paused
-            ? 'Paused · last known state'
-            : (watch.snapshot?.phase.replaceAll('-', ' ') ?? 'Connecting')
+        const status =
+          watch.stopRequested && watch.status !== 'stopped'
+            ? 'Stop requested · awaiting confirmation'
+            : stale
+              ? 'Offline · last known state'
+              : watch.paused
+                ? 'Paused · last known state'
+                : (watch.snapshot?.phase.replaceAll('-', ' ') ?? 'Connecting')
         return (
           <div
             key={JSON.stringify([watch.runtimeId, watch.threadId])}

@@ -914,6 +914,31 @@ export class GitService {
   }
 
   // An alternate index captures staged and unstaged contents without touching the user's index.
+  /** A private root commit for an isolated checkout; the source's unborn branch stays untouched. */
+  async initialWorktreeCommit(cwd: string) {
+    const directory = await mkdtemp(join(tmpdir(), 'dovo-empty-tree-'))
+    try {
+      const file = join(directory, 'empty')
+      await writeFile(file, '')
+      const tree = (await this.command(cwd, ['hash-object', '-t', 'tree', '-w', '--', file])).trim()
+      return (
+        await this.command(cwd, [
+          '-c',
+          'user.name=Dovo',
+          '-c',
+          'user.email=studio@dovo.local',
+          '-c',
+          'commit.gpgSign=false',
+          'commit-tree',
+          tree,
+          '-m',
+          'Initialize isolated task worktree',
+        ])
+      ).trim()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  }
   async snapshot(cwd: string, ref: string) {
     const directory = await mkdtemp(join(tmpdir(), 'dovo-checkpoint-'))
     const index = join(directory, 'index')

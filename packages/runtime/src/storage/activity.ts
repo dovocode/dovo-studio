@@ -249,6 +249,17 @@ export class Activity {
     if (changes) this.changed()
     return changes
   }
+  /** Diagnostics have a short lifetime even when useful activity history is kept forever.
+   * Reuse the time index so existing large databases need no blocking index migration. */
+  pruneDiagnosticsBefore(before: string, limit = 2000) {
+    const changes = this.db
+      .prepare(
+        "DELETE FROM activity WHERE id IN (SELECT id FROM activity WHERE time < ? AND kind IN ('command','agent-event') ORDER BY time LIMIT ?)",
+      )
+      .run(before, limit).changes
+    if (changes) this.changed()
+    return changes
+  }
   /** Artifact outputs follow the artifact's lifetime, rather than log retention. */
   removeArtifacts(scope: string, artifactId?: string) {
     const changes = this.db

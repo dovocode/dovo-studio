@@ -58,7 +58,7 @@ import {useState} from 'react';import {createRoot} from 'react-dom/client';impor
 import {QuestionForm} from '${root}/${mobile ? 'apps/mobile/src/tasks/composer' : 'packages/studio-ui/src'}/question-form';
 import {NativeTodos} from '${root}/${mobile ? 'apps/mobile/src/tasks/conversation/components' : 'packages/extension-tasks/src/chat/thread'}/native-todos';
 const prompt=decode(questionPromptSchema,{title:'Choose a direction',blocking:false,questions:[{id:'choice',header:'Approach',question:'Which approach?',options:[{value:'small',label:'Small change',description:'Keep it focused'},{value:'large',label:'Larger change'}],custom:true},{id:'checks',header:'Checks',question:'Which checks?',multiple:true,custom:false,options:[{value:'types',label:'Typecheck'},{value:'browser',label:'Browser'}]}]});
-function App(){const[connected,setConnected]=useState(true),[request,setRequest]=useState({id:'question',taskId:'general',prompt,createdAt:''}),[items,setItems]=useState(Array.from({length:100},(_,i)=>({id:'step-'+i,text:'Step '+(i+1),status:i===0?'completed':i===1?'in-progress':'pending'})));window.nativeChecklist=(provider,payload,name)=>setItems(nativeTodos(name,payload,provider,[],'root'));window.connect=setConnected;window.items=setItems;window.reset=()=>setRequest({id:'question-'+Date.now(),taskId:'general',prompt,createdAt:''});return <div style={{display:'flex',flexDirection:'column',height:'100vh',minHeight:0}}><div style={{flex:'1 1 auto',minHeight:0,overflow:'auto'}}>Conversation content</div><div style={{flexShrink:0}}><NativeTodos task={{id:'general',nativeTodos:items}}/>{request&&<QuestionForm key={request.id} request={request} connected={connected} onAnswer={async answers=>{window.submissions.push(answers);if(window.fail)throw Error('Connection failed');setRequest(null)}}/>}<textarea aria-label="Message thread" defaultValue="Retained draft" style={{height:40,width:'100%'}}/></div></div>};window.submissions=[];window.fail=false;createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[status,setStatus]=useState('running');window.taskStatus=setStatus;const[connected,setConnected]=useState(true),[request,setRequest]=useState({id:'question',taskId:'general',prompt,createdAt:''}),[items,setItems]=useState(Array.from({length:100},(_,i)=>({id:'step-'+i,text:'Step '+(i+1),status:i===0?'completed':i===1?'in-progress':'pending'})));window.nativeChecklist=(provider,payload,name)=>setItems(nativeTodos(name,payload,provider,[],'root'));window.connect=setConnected;window.items=setItems;window.reset=()=>setRequest({id:'question-'+Date.now(),taskId:'general',prompt,createdAt:''});return <div style={{display:'flex',flexDirection:'column',height:'100vh',minHeight:0}}><div style={{flex:'1 1 auto',minHeight:0,overflow:'auto'}}>Conversation content</div><div style={{flexShrink:0}}><NativeTodos task={{id:'general',status,nativeTodos:items}}/>{request&&<QuestionForm key={request.id} request={request} connected={connected} onAnswer={async answers=>{window.submissions.push(answers);if(window.fail)throw Error('Connection failed');setRequest(null)}}/>}<textarea aria-label="Message thread" defaultValue="Retained draft" style={{height:40,width:'100%'}}/></div></div>};window.submissions=[];window.fail=false;createRoot(document.getElementById('app')).render(<App/>);`,
       },
       bundle: true,
       write: false,
@@ -220,6 +220,17 @@ function App(){const[connected,setConnected]=useState(true),[request,setRequest]
         .waitFor()
       await page.getByText(/Checklist.*0 of 1 done/).waitFor()
     }
+    await page.evaluate(() => window.taskStatus('done'))
+    await page.getByText(/Checklist.*Unfinished/).waitFor()
+    await page.getByText(/Work stopped with 1 item left/).waitFor()
+    assert.equal(await page.locator('.animate-spin').count(), 0)
+    await page.evaluate(() => window.taskStatus('running'))
+    await page.getByText(/Work stopped/).waitFor({ state: 'hidden' })
+    await page.evaluate(() => window.taskStatus('failed'))
+    await page.getByText(/Checklist.*Unfinished/).waitFor()
+    await page.evaluate(() => window.items([{ text: 'Done', status: 'completed' }]))
+    await page.getByText(/Checklist.*1 of 1 done/).waitFor()
+    await page.getByText(/Checklist.*Unfinished/).waitFor({ state: 'hidden' })
     await page.evaluate(() => window.items([]))
     await summary.waitFor({ state: 'hidden' })
     assert.deepEqual(errors, [])

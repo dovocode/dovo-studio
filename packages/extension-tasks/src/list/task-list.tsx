@@ -106,14 +106,53 @@ export function TaskList({
       ? [temporaryEntry, ...entries]
       : entries
   }, [sources, temporaryEntry])
+  const [environment, setEnvironment, environmentRef] = useApplicationState(
+    () => readTaskListViewState(host).environment ?? '',
+  )
   const retainThreadTree = useMemo(() => {
-    let previous: ReturnType<typeof buildThreadTree> | undefined
-    return (entries: readonly TaskEntry[]) => {
-      previous = buildThreadTree(entries, previous?.nodes)
+    let previous: ReturnType<typeof buildThreadTree<TaskEntry>> | undefined
+    return (
+      entries: readonly TaskEntry[],
+      include: (entry: TaskEntry) => boolean,
+      options: Parameters<typeof buildThreadTree<TaskEntry>>[3],
+    ) => {
+      previous = buildThreadTree(entries, previous?.nodes, include, options)
       return previous
     }
   }, [])
-  const threadTree = useMemo(() => retainThreadTree(allEntries), [allEntries, retainThreadTree])
+  const scopeMatches = useMemo(
+    () => (entry: TaskEntry) =>
+      !entry.task.archivedAt &&
+      (!environment || JSON.stringify(entry.source.runtimeId) === environment) &&
+      (!projectId ||
+        entry.projectKey === projectId ||
+        entry.source.workspace.repositories.some(
+          (repo) =>
+            repo.id === entry.task.repositoryId &&
+            ((projectId === 'scratch' && repo.kind === 'scratch') ||
+              (!!repo.gitIdentity && `git:${repo.gitIdentity}` === projectId)),
+        )),
+    [environment, projectId],
+  )
+  const threadTree = useMemo(
+    () =>
+      retainThreadTree(allEntries, scopeMatches, {
+        runtimeIds: new Map(
+          sources.flatMap((source) =>
+            source.snapshot?.runtimeId
+              ? [[source.snapshot.runtimeId, source.runtimeId] as const]
+              : [],
+          ),
+        ),
+        includeSnapshot: (child) =>
+          (!environment || JSON.stringify(child.runtimeId) === environment) &&
+          (!projectId ||
+            JSON.stringify([child.runtimeId, child.repositoryId]) === projectId ||
+            (projectId === 'scratch' && child.projectKind === 'scratch') ||
+            (!!child.projectIdentity && `git:${child.projectIdentity}` === projectId)),
+      }),
+    [allEntries, retainThreadTree, scopeMatches, sources, environment, projectId],
+  )
   const entries = threadTree.roots
   const subagentsByRuntime = useMemo(
     () =>
@@ -203,9 +242,6 @@ export function TaskList({
       () => readTaskListViewState(host).query ?? '',
     ),
     [actionError, setActionError] = useApplicationState('')
-  const [environment, setEnvironment, environmentRef] = useApplicationState(
-    () => readTaskListViewState(host).environment ?? '',
-  )
   const preferences = useAppPreferences()
   const sort = preferences.taskSort
   const grouping = preferences.taskGrouping
@@ -250,15 +286,16 @@ export function TaskList({
           ({ task: t, source, key, projectKey, projectName }) =>
             key === temporaryEntry?.key ||
             (key === selectedId && t.status === 'draft' && !t.archivedAt) ||
-            ((!projectId ||
-              projectKey === projectId ||
-              source.workspace.repositories.some(
-                (repo) =>
-                  repo.id === t.repositoryId &&
-                  ((projectId === 'scratch' && repo.kind === 'scratch') ||
-                    (!!repo.gitIdentity && `git:${repo.gitIdentity}` === projectId)),
-              )) &&
-              (!environment || JSON.stringify(source.runtimeId) === environment) &&
+            ((threadTree.contextKeys.has(key) ||
+              ((!projectId ||
+                projectKey === projectId ||
+                source.workspace.repositories.some(
+                  (repo) =>
+                    repo.id === t.repositoryId &&
+                    ((projectId === 'scratch' && repo.kind === 'scratch') ||
+                      (!!repo.gitIdentity && `git:${repo.gitIdentity}` === projectId)),
+                )) &&
+                (!environment || JSON.stringify(source.runtimeId) === environment))) &&
               !t.archivedAt &&
               (!needle ||
                 [

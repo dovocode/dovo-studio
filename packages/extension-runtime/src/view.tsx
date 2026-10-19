@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AccountPanel } from './account-panel'
 import { RuntimeIconSettings } from './runtime-icon-settings'
 import { runtimeExtension } from './index'
@@ -6,7 +6,8 @@ import { RuntimeDiagnosticsPanel } from './runtime-diagnostics'
 import { PageHeader } from '@dovo/studio-ui'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
-import type { RuntimeProfile } from '@dovo/studio-core'
+import { resolveThreadRuntime } from '@dovo/protocol'
+import type { StudioViewProps, RuntimeProfile } from '@dovo/studio-core'
 import { useRuntimeSources, useStudioHost, useWorkspace, WorkspaceScope } from '@dovo/studio-core'
 import {
   Button,
@@ -19,9 +20,19 @@ import {
 import { PairingClient } from './pairing-client'
 import { DeviceManager } from './device-manager'
 import { WindowsRuntimeSettings } from './windows-runtime'
-export default function RuntimeView() {
+export default function RuntimeView({ threadConnection }: StudioViewProps) {
   const sources = useRuntimeSources()
   const studio = useStudioHost()
+  const { runtimeRegistry, runtimes } = useWorkspace()
+  const resumed = useRef<StudioViewProps['threadConnection']>(undefined)
+  const pairedTarget = threadConnection?.runtimeIdentity
+    ? resolveThreadRuntime(threadConnection, runtimeRegistry.profiles, runtimes)
+    : undefined
+  useEffect(() => {
+    if (!threadConnection || !pairedTarget || resumed.current === threadConnection) return
+    resumed.current = threadConnection
+    studio.openThread?.({ ...threadConnection, runtimeId: pairedTarget.id })
+  }, [threadConnection, pairedTarget, studio])
   const [discovered, setDiscovered] = useState<{ address: string } | undefined>(undefined)
   const [managing, setManaging] = useApplicationState<RuntimeProfile | null>(null)
   const [pairingPhone, setPairingPhone] = useApplicationState<RuntimeProfile | null>(null)
@@ -41,6 +52,46 @@ export default function RuntimeView() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-4xl space-y-4">
+          {threadConnection && (
+            <article className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-3">
+              <h2 className="text-sm font-medium">
+                Pair computer to open {threadConnection.title}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Pair the computer running this thread with its LAN/VPN address and pairing code. The
+                thread will open after its computer identity is verified.
+              </p>
+              <Button onClick={() => setDiscovered({ address: '' })}>Pair thread computer</Button>
+              {!threadConnection.runtimeIdentity && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    This older thread link has no computer identity. Choose its owning computer
+                    explicitly after pairing.
+                  </p>
+                  {runtimeRegistry.profiles.map((profile) => (
+                    <Button
+                      key={profile.id}
+                      onClick={() =>
+                        studio.openThread?.({ ...threadConnection, runtimeId: profile.id })
+                      }
+                    >
+                      Open on {profile.name}
+                    </Button>
+                  ))}
+                </>
+              )}
+              <Button
+                variant="outline"
+                onClick={() =>
+                  threadConnection.parent
+                    ? studio.openThread?.(threadConnection.parent)
+                    : studio.navigate({ viewId: 'tasks' })
+                }
+              >
+                Cancel
+              </Button>
+            </article>
+          )}
           <WindowsRuntimeSettings />
           {sources
             .filter((entry) => entry.snapshot?.lastCrash)

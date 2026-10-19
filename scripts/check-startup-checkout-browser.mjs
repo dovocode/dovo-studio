@@ -105,6 +105,17 @@ try {
       .then((text) => text.trim()),
     'From main',
   )
+  await base.click()
+  const includeChanges = page.getByRole('checkbox', { name: /Include uncommitted changes/ })
+  await includeChanges.check()
+  assert.equal((await base.innerText()).trim(), 'Current files + changes')
+  assert.equal(
+    await page.getByRole('button', { name: 'origin/main', exact: true }).isEnabled(),
+    false,
+  )
+  await includeChanges.uncheck()
+  assert.equal((await base.innerText()).trim(), 'From origin/main')
+  await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Working directory', exact: true }).click()
   await page.getByRole('menuitemradio', { name: /Local checkout/ }).click()
   assert.match(

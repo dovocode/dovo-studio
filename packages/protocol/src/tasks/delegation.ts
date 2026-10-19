@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { mutableStruct, maxValue, minValue } from '../shared/schema.js'
-import { agentSchema, providerSchema, type Task } from '../workspace.js'
+import { agentSchema, providerSchema, executionSchema, type Task } from '../workspace.js'
 import type { TaskMetadata } from './task-summary.js'
 import { nativeAgentWorking, type Subagent } from '../conversation/workflow/subagents.js'
 const id = maxValue(minValue(Schema.String, 1), 200)
@@ -8,6 +8,9 @@ export const subagentScopeSchema = mutableStruct({ taskId: id, parentRunId: Sche
 export const subagentSpawnSchema = mutableStruct({
   ...subagentScopeSchema.fields,
   checkoutId: Schema.optional(id),
+  runtimeId: Schema.optional(id),
+  repositoryId: Schema.optional(id),
+  execution: Schema.optional(executionSchema),
   key: maxValue(minValue(Schema.String, 1), 100),
   name: maxValue(minValue(Schema.String, 1), 100),
   prompt: maxValue(minValue(Schema.String, 1), 20000),
@@ -20,6 +23,11 @@ export const subagentSpawnSchema = mutableStruct({
   sandboxMode: agentSchema.fields.sandboxMode,
 })
 export type SubagentSpawn = Schema.Schema.Type<typeof subagentSpawnSchema>
+export const subagentListSchema = mutableStruct({
+  ...subagentScopeSchema.fields,
+  runtimeId: Schema.optional(id),
+  repositoryId: Schema.optional(id),
+})
 export const subagentReadSchema = mutableStruct({
   ...subagentScopeSchema.fields,
   id,
@@ -73,6 +81,13 @@ export function indexTaskFamilyWorking(tasks: readonly TaskMetadata[]) {
       task.subagents?.some(
         (agent) => nativeAgentWorking(agent) || agent.completion === 'pending',
       ) ||
+      task.threadWatches?.some(
+        (watch) =>
+          watch.delegated &&
+          watch.status === 'watching' &&
+          !watch.paused &&
+          (watch.offline || watch.snapshot?.phase !== 'completed'),
+      ) ||
       task.queue?.some((message) => message.subagentResultId)
     )
       mark(task)
@@ -102,6 +117,9 @@ export function taskFamilyRunToken(tasks: readonly TaskMetadata[], id: string) {
             agent.sessionLive,
             agent.completionId,
           ]),
+        task.threadWatches
+          ?.filter((watch) => watch.delegated)
+          .map((watch) => [watch.runtimeId, watch.threadId, watch.status, watch.stopRequested]),
       ])
       .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
   )

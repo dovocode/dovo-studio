@@ -80,6 +80,7 @@ export function TaskMachineSelector({
             { ...task, draft: text, autoProject: preserveAuto ? task.autoProject : undefined },
             target,
             destination.snapshot?.defaults,
+            runtime.snapshot?.workspace.agents,
           )
           await runtime.readRuntime(
             destination.profile,

@@ -131,6 +131,7 @@ export class MutationReceipts {
     request: unknown,
     run: () => Promise<unknown>,
     safelyRepeat = false,
+    retryRejected = false,
   ): Promise<unknown> {
     const fingerprint = createHash('sha256').update(JSON.stringify(request)).digest('hex')
     const key = JSON.stringify([deviceId, id])
@@ -149,11 +150,15 @@ export class MutationReceipts {
           throw new HttpError(409, 'This action was already acknowledged; it was not repeated.', {
             mutationRetired: true,
           })
-        if (!result.ok)
+        if (!result.ok && !retryRejected)
           throw new HttpError(result.status, result.error, {
             mutationRejected: result.mutationRejected,
           })
-        return result.value
+        if (result.ok) return result.value
+        // Only coordinators whose destination has its own stable receipt opt in.
+        this.db
+          .prepare('UPDATE mutation_receipts SET result=NULL WHERE device_id=? AND id=?')
+          .run(deviceId, id)
       }
       if (!safelyRepeat)
         throw new HttpError(
@@ -222,6 +227,15 @@ export class MutationReceipts {
       .finally(() => this.pending.delete(key))
     this.pending.set(key, pending)
     return pending
+  }
+  uncertainCount(deviceId: string) {
+    const rows = decode(
+      Schema.Array(mutableStruct({ id: Schema.String })),
+      this.db
+        .prepare('SELECT id FROM mutation_receipts WHERE device_id=? AND result IS NULL')
+        .all(deviceId),
+    )
+    return rows.filter(({ id }) => !this.pending.has(JSON.stringify([deviceId, id]))).length
   }
   revoke(deviceId: string) {
     this.db.prepare('DELETE FROM mutation_receipts WHERE device_id=?').run(deviceId)

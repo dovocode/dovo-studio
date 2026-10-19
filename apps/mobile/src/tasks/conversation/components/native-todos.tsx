@@ -17,13 +17,14 @@ export function NativeTodos({ task }: { task: Task }) {
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={`Checklist, ${summary.completed} of ${summary.total} done`}
+        accessibilityLabel={`Checklist, ${summary.completed} of ${summary.total} done${summary.unfinished ? ', unfinished' : ''}`}
         onPress={() => setOpen((value) => !value)}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 }}
       >
         <Icon name="checklist" size={15} color={colors.muted} />
-        <Text style={[styles.text, { fontWeight: '600' }]}>
+        <Text style={[styles.text, { fontWeight: '600', flexShrink: 1 }]}>
           Checklist · {summary.completed} of {summary.total} done
+          {summary.unfinished ? ' · Unfinished' : ''}
         </Text>
         {!!summary.active && !open && (
           <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
@@ -47,7 +48,7 @@ export function NativeTodos({ task }: { task: Task }) {
                 name={
                   todo.status === 'completed'
                     ? 'checkCircle'
-                    : todo.status === 'in-progress'
+                    : todo.status === 'in-progress' && !summary.unfinished
                       ? 'loader'
                       : 'circle'
                 }
@@ -76,6 +77,13 @@ export function NativeTodos({ task }: { task: Task }) {
             </View>
           ))}
         </ScrollView>
+      )}
+      {summary.unfinished && (
+        <Text style={styles.muted}>
+          Work stopped with {summary.total - summary.completed}{' '}
+          {summary.total - summary.completed === 1 ? 'item' : 'items'} left. Continue the thread to
+          pick them up.
+        </Text>
       )}
     </View>
   )

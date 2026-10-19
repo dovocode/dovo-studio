@@ -70,6 +70,12 @@ the fallback tool. Parent checklists exclude native child progress. Desktop and 
 current progress and active item; expanded lists scroll within a bounded area so the composer stays
 reachable.
 
+When the thread stops with work left, both clients label the list **Unfinished** and stop its
+running indicator without marking items complete. Unfinished lists survive provider-session
+replacement and are included as progress context on the next turn. The agent reconciles that list
+with the latest request; the list itself never authorizes more work. A new user message clears a
+fully completed list, while pending items remain until the agent explicitly updates the checklist.
+
 Codex native image generation and image viewing appear as tool activity with image previews on
 desktop and mobile. Previews stay visible when work is folded. Generated raster data stays on the
 runtime; clients receive task/event references and request thumbnails or larger previews from that

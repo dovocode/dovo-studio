@@ -30,16 +30,37 @@ it('clears on an empty list and ignores other events and malformed payloads', ()
 it('summarizes progress and the active step', () => {
   expect(
     nativeTodoSummary({
+      status: 'running',
       nativeTodos: [
         { text: 'One', status: 'completed' },
         { text: 'Two', status: 'in-progress' },
         { text: 'Three', status: 'pending' },
       ],
     }),
-  ).toEqual({ total: 3, completed: 1, active: 'Two' })
-  expect(nativeTodoSummary({ nativeTodos: [] })).toBeUndefined()
-  expect(nativeTodoSummary({})).toBeUndefined()
+  ).toEqual({ total: 3, completed: 1, unfinished: false, active: 'Two' })
+  expect(nativeTodoSummary({ status: 'done', nativeTodos: [] })).toBeUndefined()
+  expect(nativeTodoSummary({ status: 'draft' })).toBeUndefined()
 })
+
+it.each(['done', 'review', 'cancelled', 'failed', 'draft'] as const)(
+  'retains unfinished items without active progress when the thread is %s',
+  (status) => {
+    const nativeTodos = [
+      { text: 'One', status: 'completed' as const },
+      { text: 'Two', status: 'in-progress' as const },
+    ]
+    expect(nativeTodoSummary({ status, nativeTodos })).toEqual({
+      total: 2,
+      completed: 1,
+      unfinished: true,
+      active: undefined,
+    })
+    expect(nativeTodos[1]?.status).toBe('in-progress')
+    expect(
+      nativeTodoSummary({ status, nativeTodos: [{ text: 'Done', status: 'completed' }] }),
+    ).toEqual({ total: 1, completed: 1, unfinished: false, active: undefined })
+  },
+)
 
 it('maps Codex plan updates and ignores another thread or unrelated tool events', () => {
   const payload = {

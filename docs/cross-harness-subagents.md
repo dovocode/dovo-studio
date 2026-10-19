@@ -124,9 +124,10 @@ not automatically approve requests or stop remote work when the parent stops wat
 
 Spawned local children can own PR and pipeline watches. Those watchers still deliver to their own
 child, while active-watch counts and failures roll up through local parents and monitored remote
-references. Child summaries and counts appear in the desktop overview; the Waiting panel also lists
-remote thread dependencies and supports stopping an individual monitor. These summaries do not
-transfer ownership of a PR/pipeline watch or create a second forge poller on the parent.
+references. Child thread summaries appear in the desktop and mobile overview; the Waiting panel
+lists watch counts and remote thread dependencies and supports stopping an individual monitor. These
+summaries do not transfer ownership of a PR/pipeline watch or create a second forge poller on the
+parent.
 
 Snapshots aggregate questions, approvals and watch counts on their owning runtime. Flat per-thread
 provenance keeps shared descendants and cyclic links from multiplying counts; snapshots are bounded
@@ -139,3 +140,113 @@ stopped record consumes an active slot. Archiving also prunes history. Child ent
 paired owning computer, resolving its stable identity when client address/profile IDs differ, with
 an explicit return-to-parent action on desktop and mobile. Missing pairings still require the normal
 connection/pairing flow.
+
+## General threads as coordinators
+
+`subagent_spawn` also accepts `repositoryId`, `runtimeId` and `execution`. This allows a General
+conversation to delegate project work without granting the coordinator new filesystem roots:
+
+- Omit targets to share the current checkout. `checkoutId` still selects an already linked checkout.
+- Set `repositoryId` to select a project with its own checkout on this computer.
+- Add `runtimeId` from `studio_discover` to select an already paired computer. Omit `repositoryId`
+  for a separate General conversation there. Project/configuration IDs belong to the destination.
+- `execution` selects main/worktree for a project target; omission uses that project's defaults. A
+  target cannot be combined with `checkoutId`.
+
+Use `subagent_list` with optional `runtimeId`/`repositoryId` to discover projects and
+configurations. The list also includes inherited links and all targeted children. Named
+configurations and provider credentials resolve on the destination; no parent endpoint, environment
+or account token is copied. Targeted children require Studio Threads on both computers and the
+originating run. Existing in-checkout delegation continues to work without Studio Tools. Accounts
+and HTTPS are not required.
+
+Targeted launches inherit the parent's permission ceiling, including read-only investigation and
+native sandbox/approval limits. Their keys are durable across parent turns; retry exactly the same
+key and arguments after an uncertain response. Different work needs a new key. Both computers retain
+creation receipts, so an acknowledgement lost before monitor registration can be retried without
+creating a duplicate. A failed start returns its saved thread ID and `startError`; inspect/resume
+that thread rather than launching another. Update older destination runtimes before using this path.
+
+Progress uses the existing nested thread monitors. `subagent_read`/`wait` accepts the returned
+opaque child ID and returns a bounded final answer; reading a completed result consumes its
+automatic notification. Otherwise the final answer is delivered once to the coordinator. Long
+answers are marked truncated and remain readable on the owning thread. Offline states retain their
+last known facts and do not imply completion. Active local and targeted children share the
+configured child limit; logical nesting remains limited to three levels across project/computer
+boundaries.
+
+`subagent_cancel` and explicit parent Stop persist targeted cancellation requests. A disconnected
+computer receives the request when its authorized pairing returns. The overview shows **Stopping…**
+until a snapshot confirms execution ended. Normal replies and runtime shutdown do not cancel remote
+work. Stopping a monitor through the Waiting panel still only stops monitoring. Narrowing the
+coordinator’s permissions also requests cancellation of its targeted children; only that retirement
+operation can use their original recorded ceiling. It grants no new read/write authority. Disabled
+features and revoked pairings still block dispatch until restored.
+
+### Thread overview and Subagents panels
+
+Desktop and mobile build the same tree from explicit local delegation and saved spawned-thread
+monitors. General threads use these same rules. An orphan stays visible as a root; linked work stays
+independent. Each child shows its computer, project (General for scratch workspaces), outcome, and
+saved offline/monitor-stopped state. Older remote runtimes may omit project names.
+
+Collapsed summaries retain running, waiting, input-request, failed-thread and offline counts.
+PR/check-watch counts stay in the Waiting panel rather than the sidebar. Opening a child preserves
+its immediate parent as a return destination, including across paired computers.
+
+Subagents panels include monitored remote children alongside local/native agents without duplicate
+local child rows. Hide finished removes completed/stopped remote branches while retaining any live
+or failed descendants. Native status-unavailable states are not presented as working.
+
+Project and computer filters promote matching children whose parent falls outside the scope. Remote
+snapshots include at most 200 renderable thread facts, with explicit parent/computer identities and
+own attention/outcome fields. This presentation is separate from deduplicated watch counts. Stopped
+or offline branches keep their last known hierarchy; stopped monitors suppress active attention even
+when that computer also has a live UI connection. Truncated/legacy snapshots show that some child
+details are unavailable.
+
+Targeted children persist a navigation-only parent reference before starting. Direct links and
+notifications can therefore return to their parent without relying on the originating overview.
+Existing pairing and permission checks still apply.
+
+With **Hide finished**, failures remain visible until **Acknowledge failure** is selected in the
+Subagents panel. Acknowledgements persist on the viewing parent and apply to that specific failed
+execution, for both native agents and monitored threads. A new failed attempt becomes visible again.
+Acknowledging never stops work or hides live/input-request descendants. Turning Hide finished off
+reveals acknowledged failures too.
+
+Background-only children retain their real parent as context under computer/project filters; no
+partial remote thread is fabricated as a local task. Project matching uses repository IDs and Git
+identities rather than names. Successful Review children follow the same Hide finished behavior as
+completed background snapshots, while input requests and unacknowledged failures remain visible.
+
+Snapshots include up to 40 provider-native agent summaries per thread, prioritizing failures and
+live work. They carry a name, status and execution key, without prompts, results or provider
+credentials. Remote native failures appear under their owning thread and can be acknowledged from
+the parent. New failed executions become visible again; truncated snapshots are marked partial.
+
+Opening a descendant on an unsaved computer offers contextual pairing and preserves the selected
+thread and its parent. Both clients resume only when the saved pairing matches the target's stable
+computer identity. Pairing another computer does not open the thread. Older links without a stable
+identity require an explicit choice of the owning saved computer. Pairing codes/device tokens are
+still required, and reachable HTTP LAN/VPN addresses remain supported.
+
+Remote rows use stable computer identities, resolved to a saved local profile when available. A
+host's private profile ID is never used as the identity of an unpaired grandchild. Live workspace
+facts win; otherwise a direct observer wins over a propagated copy, then the newest successful
+observation wins. Presentation, attention and provider-watch counts use that same selection rule.
+
+Spawned monitors retire as **completed** only after their final update is durably admitted (or
+read). They stop polling and no longer count against the 40 active-monitor slots. Explicit watch,
+send or resume can reactivate them; ordinary linked watches continue observing later activity.
+Startup upgrades legacy delivered completions without another remote read. Completed rows retain
+their outcome rather than showing “Monitor stopped.” History keeps the latest 40 discardable
+completed records and 40 stopped records per parent; unread delegated results and unacknowledged
+failures are retained in addition to that history. Older discarded handles cannot launch duplicate
+work through receipt retries.
+
+Native summaries beyond the 40 detailed rows include bounded totals for working agents and failures.
+Both clients offer a link to open all agents on the owning thread. Additional failures stay visible
+under Hide finished and can be explicitly acknowledged as a group. The group key covers the omitted
+failed executions; a changed group is visible again. No prompts, results or credentials are
+included.

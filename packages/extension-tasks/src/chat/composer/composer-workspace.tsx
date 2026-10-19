@@ -41,6 +41,7 @@ export function ComposerWorkspace({
     autoProjectExecution?: Task['autoProjectExecution'],
     modelSelection?: Task['modelSelection'],
     modelSelectionDifficulty?: Task['modelSelectionDifficulty'],
+    sourceTask?: Task,
   ) => Promise<void>
 }) {
   const { workspace, setWorkspace, request, connected, snapshot } = useWorkspace()
@@ -337,7 +338,9 @@ export function ComposerWorkspace({
               {task.existingWorktreePath
                 ? task.existingWorktreePath.split('/').at(-1)
                 : choosingBase
-                  ? `From ${(task.worktreeBaseBranch ?? (branches && defaultWorktreeBase(branches.branches, branches.current, task.worktreeFromOrigin, branches.originDefault)) ?? (task.worktreeFromOrigin ? 'origin' : 'current branch')).replace(/^refs\/(heads|remotes)\//, '')}`
+                  ? task.worktreeIncludeChanges
+                    ? 'Current files + changes'
+                    : `From ${(task.worktreeBaseBranch ?? (branches && defaultWorktreeBase(branches.branches, branches.current, task.worktreeFromOrigin, branches.originDefault)) ?? (task.worktreeFromOrigin ? 'origin' : 'current branch')).replace(/^refs\/(heads|remotes)\//, '')}`
                   : (task.checkoutBranch ??
                     (task.pullRequest
                       ? `${task.pullRequest.checkoutMode === 'pr-branch' ? 'PR branch' : 'From'} ${task.pullRequest.headBranch || `PR #${task.pullRequest.number}`}`
@@ -358,13 +361,49 @@ export function ComposerWorkspace({
             <p className="px-2 py-1 text-xs text-muted-foreground">
               {choosingBase ? 'Create worktree from branch' : 'Switch branch'}
             </p>
+            {choosingBase && (
+              <label className="flex gap-2 px-2 py-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={task.worktreeIncludeChanges ?? false}
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked
+                    setWorkspace((w) =>
+                      updateTask(w, task.id, (current) =>
+                        canChangeTaskCheckout(current)
+                          ? {
+                              ...current,
+                              worktreeIncludeChanges: checked,
+                              worktreeBaseBranch: undefined,
+                            }
+                          : current,
+                      ),
+                    )
+                  }}
+                />
+                <span>
+                  Include uncommitted changes
+                  <span className="block text-muted-foreground">
+                    Starts from current files. Source stays unchanged.
+                  </span>
+                </span>
+              </label>
+            )}
+            {choosingBase && branches && !branches.branches.length && (
+              <p className="px-2 py-1 text-xs text-muted-foreground">
+                No commits yet. An empty starting commit will be created only on the new task
+                branch.
+              </p>
+            )}
             {branches?.branches.map((branch) => (
               <Button
                 key={branch.ref}
                 type="button"
                 variant="ghost"
                 disabled={
-                  busy || (!choosingBase && (branch.name === branches.current || branch.checkedOut))
+                  busy ||
+                  (choosingBase && !!task.worktreeIncludeChanges) ||
+                  (!choosingBase && (branch.name === branches.current || branch.checkedOut))
                 }
                 className="h-8 w-full justify-between text-xs font-normal"
                 onClick={() =>

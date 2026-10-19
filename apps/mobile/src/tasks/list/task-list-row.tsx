@@ -1,3 +1,5 @@
+import { NestedThreads } from './nested-threads'
+import type { NestedThread } from '@dovo/protocol'
 import { HarnessIcon } from '../../agents/harness-icon'
 import { useCachedModelCatalog } from '../../agents/use-model-catalog'
 import { harnessNames } from '../creation/harness-choices'
@@ -7,6 +9,7 @@ import {
   taskPullLinks,
   taskPullStatusFor,
   subagentMetadata,
+  subagentListStatus,
   type SubagentListItem,
 } from '@dovo/protocol'
 import {
@@ -77,6 +80,8 @@ export type TaskListRowActions = {
 function TaskListRowView({
   row,
   subagents,
+  thread,
+  searching,
   owner,
   now,
   testID,
@@ -91,6 +96,8 @@ function TaskListRowView({
   showDevice?: boolean
   density: MobilePreferences['threadDensity']
   row: RuntimeTask
+  thread?: NestedThread
+  searching?: boolean
   subagents: readonly SubagentListItem[]
   owner: TaskListOwner
   now: number
@@ -470,6 +477,14 @@ function TaskListRowView({
           </View>
         )}
       </View>
+      {thread && !task.archivedAt && (
+        <NestedThreads
+          thread={thread}
+          acknowledgedFailures={task.acknowledgedSubagentFailures}
+          disabled={disabled || selectionActive}
+          searching={searching}
+        />
+      )}
       {!settled && !dense && (
         <WorkingSubagents
           subagents={subagents}
@@ -569,10 +584,10 @@ const WorkingSubagents = memo(function WorkingSubagents({
     >
       {subagents.map((agent, index) => {
         const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
-        const label = `${agent.name} · ${agent.provider}`
+        const label = `${agent.name} · ${agent.provider}${!online || agent.status === 'unknown' ? ` · ${subagentListStatus(agent, online)}` : ''}`
         const detail = [
           label,
-          online ? 'Working' : 'Last seen working',
+          subagentListStatus(agent, online),
           subagentMetadata(agent),
           agent.activity,
         ]

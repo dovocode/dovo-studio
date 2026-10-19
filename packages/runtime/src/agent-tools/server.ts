@@ -234,7 +234,7 @@ const tools: Array<
   {
     name: 'subagent_spawn',
     description:
-      'Launch a Dovo child agent on Codex, Claude, Mistral Vibe, OpenCode, or a named configuration (including ACP). It works in this thread’s checkout with its own conversation. Supply all necessary context in prompt. Children inherit the parent’s access by default, including named configurations. Request permission only to narrow access; it cannot exceed the parent. Use a stable key to retry safely. Children survive normal replies and automatically deliver completion to this thread. Read or wait when you need results immediately; a wait timeout never cancels work. Explicit Stop cancels descendants. Use a fresh key and full context for each review round.',
+      'Launch a Dovo child agent with its own conversation. Omit targets to share this checkout; checkoutId selects an inherited linked checkout. repositoryId selects a project with its own checkout; runtimeId selects a paired computer (Studio Threads required). General threads can coordinate either kind. Discover IDs with studio_discover or subagent_list. Supply the goal, context and constraints in prompt. Access cannot exceed the parent. Targeted children use the target computer’s configurations, never copied credentials. Use the same key and arguments after a timeout; target keys remain stable across parent turns. Progress and final answers return to this thread. Explicit Stop requests cancellation; offline targets remain pending until confirmation. Use a fresh key for new work.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -260,6 +260,21 @@ const tools: Array<
           type: 'string' as const,
           description:
             'Optional linked checkout ID from the parent context; use it as the child working directory.',
+        },
+        runtimeId: {
+          type: 'string' as const,
+          description:
+            'Paired computer ID from studio_discover; omit for this computer. Requires Studio Threads.',
+        },
+        repositoryId: {
+          type: 'string' as const,
+          description:
+            'Project ID on the target computer. Creates a child with its own checkout; mutually exclusive with checkoutId. Omit to inherit this checkout (or use General on a remote computer).',
+        },
+        execution: {
+          type: 'string' as const,
+          enum: ['main', 'worktree'],
+          description: 'Checkout mode for an explicit project target. Omit for project defaults.',
         },
         agentId: { type: 'string' as const },
         model: { type: 'string' as const },
@@ -289,8 +304,14 @@ const tools: Array<
   {
     name: 'subagent_list',
     description:
-      'List this thread’s Dovo child agents and named configurations available in its project. Returns metadata only; use read or wait for child answers.',
-    inputSchema: { type: 'object' as const, properties: {} },
+      'List local and targeted child agents, available projects, inherited linked checkouts and named configurations. Optional runtimeId and repositoryId discover configurations on a paired computer/project. Returns metadata only; use read or wait for answers.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        runtimeId: { type: 'string' as const },
+        repositoryId: { type: 'string' as const },
+      },
+    },
   },
   ...(['read', 'wait', 'cancel'] as const).map((action) => ({
     name: `subagent_${action}`,
@@ -760,7 +781,14 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
       case 'subagent_spawn':
         return text(await post('/api/subagents/spawn', { ...input, taskId: task, parentRunId }))
       case 'subagent_list':
-        return text(await post('/api/subagents/list', { taskId: task, parentRunId }))
+        return text(
+          await post('/api/subagents/list', {
+            taskId: task,
+            parentRunId,
+            runtimeId: input.runtimeId,
+            repositoryId: input.repositoryId,
+          }),
+        )
       case 'subagent_read':
       case 'subagent_wait':
       case 'subagent_cancel':

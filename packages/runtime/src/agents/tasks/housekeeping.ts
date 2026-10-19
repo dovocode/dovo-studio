@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { startPolling } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { taskFamilyIds, type TaskSummary } from '@dovo/protocol'
+import { DIAGNOSTIC_RETENTION_DAYS, taskFamilyIds, type TaskSummary } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
 
@@ -382,13 +382,16 @@ export class Housekeeping {
    * requests keep flowing. Returns how many entries were removed. */
   async pruneActivity(now = Date.now()) {
     const { activityRetentionDays } = this.s.preferences.get()
-    if (!activityRetentionDays) return 0
-    const before = new Date(now - activityRetentionDays * day).toISOString()
+    const before = activityRetentionDays
+      ? new Date(now - activityRetentionDays * day).toISOString()
+      : undefined
+    const diagnosticBefore = new Date(now - DIAGNOSTIC_RETENTION_DAYS * day).toISOString()
     let removed = 0
     for (let batch = 0; batch < 500; batch++) {
-      const changes = this.s.activity.pruneBefore(before)
-      removed += changes
-      if (changes < 2000) break
+      const diagnostics = this.s.activity.pruneDiagnosticsBefore(diagnosticBefore)
+      const history = before ? this.s.activity.pruneBefore(before) : 0
+      removed += diagnostics + history
+      if (diagnostics < 2000 && history < 2000) break
       await new Promise((resolve) => setTimeout(resolve, 25))
     }
     return removed

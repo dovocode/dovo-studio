@@ -169,7 +169,48 @@ it('prunes activity older than the retention window and keeps newer entries', as
   retention = 90
   expect(await housekeeping.pruneActivity(now)).toBe(4500)
   expect(db.prepare('SELECT id FROM activity').all()).toEqual([{ id: 'recent' }])
+  db.close()
 })
+
+it.each([0, 90])(
+  'expires diagnostics after seven days with activity retention %s',
+  async (retention) => {
+    const db = openDatabase(':memory:')
+    try {
+      const { Activity } = await import('../../storage/activity')
+      const activity = new Activity(db)
+      const insert = db.prepare('INSERT INTO activity VALUES (?, ?, ?, ?, ?, ?)')
+      db.transaction(() => {
+        for (let index = 0; index < 4500; index++)
+          insert.run(`command-${index}`, daysAgo(8), 'command', 'scope', 'git · failed', '{}')
+        insert.run('old-event', daysAgo(8), 'agent-event', 'scope', 'Raw delta', '{}')
+        insert.run('boundary', daysAgo(7), 'command', 'scope', 'Boundary', '{}')
+        insert.run('new-event', daysAgo(6), 'agent-event', 'scope', 'Raw delta', '{}')
+        for (const kind of ['tool', 'message', 'task', 'approval', 'integration'])
+          insert.run(kind, daysAgo(8), kind, 'scope', kind, '{}')
+        insert.run('artifact:old:1', daysAgo(100), 'tool', 'scope', 'Artifact', '{}')
+      })()
+      const housekeeping = new Housekeeping({
+        activity,
+        preferences: { get: () => ({ activityRetentionDays: retention }) },
+      } as never)
+      expect(await housekeeping.pruneActivity(now)).toBe(4501)
+      expect(db.prepare('SELECT id FROM activity ORDER BY id').pluck().all()).toEqual([
+        'approval',
+        'artifact:old:1',
+        'boundary',
+        'integration',
+        'message',
+        'new-event',
+        'task',
+        'tool',
+      ])
+      expect(await housekeeping.pruneActivity(now)).toBe(0)
+    } finally {
+      db.close()
+    }
+  },
+)
 
 it('rechecks inactivity after releasing provider processes before auto-settling', async () => {
   const { s, housekeeping } = await archiveFixture()

@@ -1,3 +1,4 @@
+import { taskParentReference, resolveThreadRuntime } from '@dovo/protocol'
 import { StudioToolsBridge } from './studio-tools-bridge'
 import { StudioPairedComputersBridge } from './studio-paired-computers-bridge'
 import { resolveLinkTargets, type LinkTarget, type LinkOrigin } from '@dovo/studio-core/links'
@@ -337,8 +338,16 @@ function WorkbenchContent({
   )
   // Runtime snapshots change frequently. Keep the host API (and extension catalog) stable
   // while resolving navigation against the latest paired computers.
-  const threadRuntimes = useRef({ profiles: runtimeRegistry.profiles, runtimes })
-  threadRuntimes.current = { profiles: runtimeRegistry.profiles, runtimes }
+  const threadRuntimes = useRef({
+    profiles: runtimeRegistry.profiles,
+    runtimes,
+    activeIdentity: snapshot?.runtimeId,
+  })
+  threadRuntimes.current = {
+    profiles: runtimeRegistry.profiles,
+    runtimes,
+    activeIdentity: snapshot?.runtimeId,
+  }
   const openThread = useCallback<NonNullable<StudioHostApi['openThread']>>(
     (destination) => {
       if (!canLeave()) return
@@ -346,16 +355,20 @@ function WorkbenchContent({
         target: settingsNavigation.current.target,
         runtimeId: currentRuntime.current,
       }
-      const { profiles, runtimes } = threadRuntimes.current
-      const runtimeId = destination.runtimeIdentity
-        ? (profiles.find((profile) => profile.connection.runtimeId === destination.runtimeIdentity)
-            ?.id ??
-          runtimes.find((entry) => entry.snapshot?.runtimeId === destination.runtimeIdentity)
-            ?.profile.id ??
-          destination.runtimeId)
-        : destination.runtimeId
+      const { profiles, runtimes, activeIdentity } = threadRuntimes.current
       const attempt = ++navigationAttempt.current
       setSwitchError('')
+      const profile = resolveThreadRuntime(destination, profiles, runtimes)
+      // A direct local connection may have no saved profile, but still has a stable identity.
+      const local =
+        destination.runtimeId === null &&
+        currentRuntime.current === null &&
+        (!destination.runtimeIdentity || destination.runtimeIdentity === activeIdentity)
+      if (!profile && !local) {
+        navigate({ viewId: 'runtime', threadConnection: destination })
+        return
+      }
+      const runtimeId = profile?.id ?? null
       void (async () => {
         if (runtimeId !== currentRuntime.current) {
           if (!runtimeId) throw new Error('The parent computer is no longer available')
@@ -613,6 +626,25 @@ function WorkbenchContent({
     return () => window.removeEventListener('keydown', key)
   }, [palette, navigate, goBack, setPalette])
   const settingsViews = catalog.views.filter((view) => view.navigationGroup === 'settings')
+  const currentTask =
+    target.viewId === 'tasks'
+      ? workspace.tasks.find((task) => task.id === target.entityId)
+      : undefined
+  const parentThread =
+    target.threadParent ??
+    (currentTask
+      ? taskParentReference(
+          currentTask,
+          runtimeRegistry.activeId,
+          workspace.tasks,
+          snapshot?.runtimeId,
+          runtimes.map((source) => ({
+            runtimeId: source.profile.id,
+            runtimeIdentity: source.snapshot?.runtimeId,
+            tasks: source.snapshot?.workspace.tasks ?? [],
+          })),
+        )
+      : undefined)
   const inSettings = settingsViews.some((view) => view.id === target.viewId)
   const View = views.get(target.viewId)
   const navigationCommands = catalog.views
@@ -752,20 +784,21 @@ function WorkbenchContent({
                     >
                       {ready && View ? (
                         <>
-                          {target.viewId === 'tasks' && target.threadParent && (
+                          {target.viewId === 'tasks' && parentThread && (
                             <Button
                               variant="ghost"
                               className="justify-start shrink-0"
                               onClick={() => {
-                                if (target.threadParent) openThread(target.threadParent)
+                                if (parentThread) openThread(parentThread)
                               }}
                             >
-                              Back to parent · {target.threadParent.title}
+                              Back to parent · {parentThread.title}
                             </Button>
                           )}
                           <View
                             entityId={target.entityId}
                             pullTarget={target.pullTarget}
+                            threadConnection={target.threadConnection}
                             navigationKey={navigationKey}
                           />
                         </>

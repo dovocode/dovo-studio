@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { subagentMetadata, type SubagentListItem } from '@dovo/protocol'
+import { subagentMetadata, subagentListStatus, type SubagentListItem } from '@dovo/protocol'
 import { cn } from '@dovo/studio-ui'
 export const WorkingSubagents = memo(function WorkingSubagents({
   subagents,
@@ -19,10 +19,10 @@ export const WorkingSubagents = memo(function WorkingSubagents({
     <div className="mb-2 flex flex-wrap gap-1 px-2.5" aria-label="Working subagents">
       {subagents.map((agent, index) => {
         const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
-        const label = `${agent.name} · ${agent.provider}`
+        const label = `${agent.name} · ${agent.provider}${!online || agent.status === 'unknown' ? ` · ${subagentListStatus(agent, online)}` : ''}`
         const detail = [
           label,
-          online ? 'Working' : 'Last seen working',
+          subagentListStatus(agent, online),
           subagentMetadata(agent),
           agent.activity,
         ]
@@ -43,7 +43,13 @@ export const WorkingSubagents = memo(function WorkingSubagents({
             disabled={disabled}
             onClick={() => onOpenSubagent(childId)}
           >
-            <span className="size-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
+            <span
+              className={cn(
+                'size-1.5 shrink-0 rounded-full',
+                online && agent.status === 'working' ? 'bg-sky-400' : 'bg-muted-foreground/50',
+              )}
+              aria-hidden="true"
+            />
             <span className="truncate">{label}</span>
           </button>
         ) : (
@@ -53,7 +59,13 @@ export const WorkingSubagents = memo(function WorkingSubagents({
             title={detail}
             aria-label={detail}
           >
-            <span className="size-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
+            <span
+              className={cn(
+                'size-1.5 shrink-0 rounded-full',
+                online && agent.status === 'working' ? 'bg-sky-400' : 'bg-muted-foreground/50',
+              )}
+              aria-hidden="true"
+            />
             <span className="truncate">{label}</span>
           </span>
         )

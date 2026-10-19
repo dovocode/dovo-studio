@@ -1,4 +1,5 @@
 import { requireStudioPart, studioReadAction } from '../studio/tools.js'
+import { targetedChildId } from '../studio/subagent-target.js'
 import { decode, permissionPolicyWithinCeiling, resolveTaskAgent } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { Services } from '../services.js'
@@ -102,7 +103,10 @@ export function authorizeRunRoute(
     }
     if (['/api/subagents/read', '/api/subagents/wait', '/api/subagents/cancel'].includes(path)) {
       const child = s.store.get().tasks.find((task) => task.id === input.id)
-      if (child?.delegation?.parentTaskId !== grant.taskId) denied()
+      const targeted = s.threadWatch
+        .list(grant.taskId)
+        .some((watch) => watch.delegated && targetedChildId(watch) === input.id)
+      if (child?.delegation?.parentTaskId !== grant.taskId && !targeted) denied()
     }
     // Child access narrowing is enforced by Tasks.subagentSpawn, including read-only parents.
     return grant

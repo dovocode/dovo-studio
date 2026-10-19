@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { propagateDelegatedPermissions } from '../agents/tasks/delegation-permissions.js'
 import { projectDelegatedAgents } from '../agents/tasks/delegation-state.js'
 import { versionReviewedFiles } from './file-review-versions.js'
@@ -806,6 +807,11 @@ export class WorkspaceStore {
         .filter((task) => !task.example)
         .map((task) => {
           const previous = previousTasks.get(task.id)
+          if (task.status === 'failed') {
+            if (!task.failureVersion || (previous && previous.status !== 'failed'))
+              task = { ...task, failureVersion: randomUUID() }
+          } else if (task.failureVersion !== undefined)
+            task = { ...task, failureVersion: undefined }
           if (task.archived) {
             const settledAt = previous?.archived
               ? (previous.settledAt ?? new Date().toISOString())
@@ -1199,6 +1205,7 @@ export class WorkspaceStore {
         task.existingWorktreePath ||
         task.worktreeBaseBranch ||
         task.worktreeFromOrigin ||
+        task.worktreeIncludeChanges ||
         task.setupCommand)
     )
       throw new HttpError(
@@ -1306,11 +1313,15 @@ export class WorkspaceStore {
           record.checkoutLocked !== undefined ||
           record.providerLock !== undefined ||
           record.worktreeSetupComplete !== undefined ||
+          record.worktreeInitialSnapshot !== undefined ||
           record.worktreeSubmodulesComplete !== undefined ||
           record.quotaContinuation !== undefined ||
           record.autoSettled !== undefined ||
           record.waitingForFeedback !== undefined ||
           record.threadWatches !== undefined ||
+          record.spawnParent !== undefined ||
+          record.failureVersion !== undefined ||
+          record.acknowledgedSubagentFailures !== undefined ||
           record.watchCounts !== undefined ||
           record.lastViewedTurnId !== undefined ||
           record.viewedRevision !== undefined ||
@@ -1414,6 +1425,7 @@ export class WorkspaceStore {
         'existingWorktreePath',
         'worktreeBaseBranch',
         'worktreeFromOrigin',
+        'worktreeIncludeChanges',
         'submodules',
         'setupCommand',
       ].some((key) => patch.changes[key])
@@ -1445,6 +1457,7 @@ export class WorkspaceStore {
             'existingWorktreePath',
             'worktreeBaseBranch',
             'worktreeFromOrigin',
+            'worktreeIncludeChanges',
             'submodules',
             'setupCommand',
           ])
@@ -1482,6 +1495,7 @@ export class WorkspaceStore {
           (key === 'modelSelection' && merged.value != null) ||
           key === 'worktreeBaseBranch' ||
           key === 'worktreeFromOrigin' ||
+          key === 'worktreeIncludeChanges' ||
           key === 'submodules' ||
           key === 'setupCommand') &&
         summary &&
@@ -1550,6 +1564,7 @@ export class WorkspaceStore {
       // Reusing an existing checkout does not run new-worktree setup. Switching
       // away resets the runtime-owned setup marker for the next created checkout.
       current.worktreeSubmodulesComplete = undefined
+      current.worktreeInitialSnapshot = undefined
       current.worktreeSetupComplete =
         current.execution === 'worktree' && current.existingWorktreePath ? true : undefined
     }

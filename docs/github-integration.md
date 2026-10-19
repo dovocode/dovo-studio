@@ -87,11 +87,13 @@ it. Unchanged metadata remains usable during a rate-limit pause. Account verific
 checks still apply on every source-context read. Refreshing pipeline data reuses this metadata
 instead of rediscovering the same repository through GraphQL.
 
-Completed GitHub API command activity includes the endpoint, method, foreground/background flag and
-each response's quota resource, remaining balance, reset, cumulative usage and conditional-cache hit
-when GitHub reports them. Status-summary GraphQL queries also request their cost. These extra
-diagnostics contain no tokens, request bodies or query variables; they identify which operations
-consume quota without issuing additional API requests.
+Successful Git and GitHub reads do not create persistent command activity, including repository
+discovery, authentication checks, REST GETs and GraphQL queries. Failures, mutations and commands
+that cannot be confidently classified retain their audit records. API failures and mutations include
+the endpoint, method, foreground/background flag and each response's quota information when GitHub
+reports it. These diagnostics expire after seven days and contain no tokens, request bodies or query
+variables. Rate-limit coordination still observes successful responses in memory without issuing
+additional API requests.
 
 ## Loading and caching PR details
 

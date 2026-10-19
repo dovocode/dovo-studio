@@ -100,6 +100,7 @@
     "test:computer-use:browser": "pnpm --filter @dovo/web build && node scripts/check-computer-use-browser.mjs",
     "test:settings-target:browser": "node scripts/check-settings-target-browser.mjs",
     "test:scoped-agents:browser": "node scripts/check-scoped-agents-browser.mjs",
+    "test:thread-pairing:browser": "node scripts/check-thread-pairing-browser.mjs",
     "test:subagent-grouping:browser": "node scripts/check-subagent-grouping-browser.mjs",
     "test:shared-storage:browser": "node scripts/check-shared-storage-browser.mjs",
     "test:cold-scope:browser": "node scripts/check-cold-scope-browser.mjs",

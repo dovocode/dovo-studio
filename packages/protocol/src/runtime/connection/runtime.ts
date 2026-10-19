@@ -472,8 +472,8 @@ export const runtimePreferencesSchema = mutableStruct({
   removeWorktreesOnThreadDelete: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),
-  /** Delete activity history older than this many days; 0 keeps everything. Defaults to 90 so
-   * request and tool history cannot grow the database without bound. */
+  /** Delete activity history older than this many days; 0 keeps that history forever.
+   * CLI diagnostics and raw provider events always have a separate seven-day lifetime. */
   activityRetentionDays: Schema.Literals([0, 30, 90, 365]).pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => 90 as const)),
   ),

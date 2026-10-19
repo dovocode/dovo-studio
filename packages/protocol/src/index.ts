@@ -255,3 +255,10 @@ export * from './auth/account.js'
 export * from './auth/account-client.js'
 
 export * from './tasks/thread-watches.js'
+
+export * from './tasks/thread-tree.js'
+
+export * from './tasks/subagent-failures.js'
+
+export * from './tasks/thread-parent.js'
+export * from './tasks/thread-navigation.js'

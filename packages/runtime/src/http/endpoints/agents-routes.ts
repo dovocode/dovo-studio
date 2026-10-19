@@ -1,3 +1,4 @@
+import { acknowledgeSubagentFailure } from '../../studio/subagent-failures.js'
 import type { Services } from '../../services.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
 import { runtimeOperation } from '../../errors.js'
@@ -355,7 +356,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.task.draftAttachments?.length ||
           input.task.workItem ||
           input.task.archivedAt ||
-          input.task.worktreeSetupComplete !== undefined
+          input.task.worktreeSetupComplete !== undefined ||
+          input.task.worktreeInitialSnapshot !== undefined
         )
           throw new HttpError(400, 'Only unsent drafts can change machines')
         s.tasks.requireCheckoutReferencesAvailable(input.task)
@@ -1083,6 +1085,14 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         return yield* serviceResult({
           ok: true,
         })
+      }
+      if (method === 'POST' && path === '/api/tasks/acknowledge-subagent-failure') {
+        const input = decode(
+          mutableStruct({ id: idSchema, key: maxValue(minValue(Schema.String, 64), 64) }),
+          yield* serviceResult(body(request)),
+        )
+        acknowledgeSubagentFailure(s, input.id, input.key)
+        return yield* serviceResult({ ok: true })
       }
       if (method === 'POST' && path === '/api/tasks/stop-agents') {
         const input = decode(

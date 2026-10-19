@@ -20,7 +20,7 @@ export async function moveTaskDraft(
     profile,
     '/api/tasks/draft-receive',
     {
-      task: taskMachineDraft(task, target, source.snapshot?.defaults),
+      task: taskMachineDraft(task, target, source.snapshot?.defaults, store.workspace.agents),
       gitIdentity: target.gitIdentity ?? '',
       projectKind: target.kind,
     },

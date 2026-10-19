@@ -1,5 +1,7 @@
 import {
   orderThreadSections,
+  threadDescendants,
+  type NestedThread,
   settledThreadPreviewLimit,
   taskGroupOptions,
   taskSortOptions,
@@ -33,7 +35,11 @@ import { useRuntime } from '../runtime/connection/provider'
 import { FleetOverview } from '../runtime/connection/fleet-overview'
 import { ProjectThreadFilter } from '../tasks/list/project-thread-filter'
 import { TaskListRow, type TaskListRowActions } from '../tasks/list/task-list-row'
-import { taskListProjection, type TaskListRowData } from '../tasks/list/task-list-projection'
+import {
+  taskListProjection,
+  mobileThreadTree,
+  type TaskListRowData,
+} from '../tasks/list/task-list-projection'
 import { taskRowStatus } from '../tasks/list/task-row-status'
 import { useTaskListView } from '../tasks/list/task-list-view'
 import { useListScroll } from '../ui/layout/use-list-scroll'
@@ -136,25 +142,51 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   )
   const previousRows = useRef<ReadonlyMap<string, TaskListRowData>>(new Map())
   const rowData = useMemo(
-    () => taskListProjection(entries, now, previousRows.current),
-    [entries, now],
+    () => taskListProjection(overviews, now, previousRows.current),
+    [overviews, now],
   )
   useLayoutEffect(() => {
     previousRows.current = rowData
   }, [rowData])
   const allTasks = useMemo(() => [...rowData.values()].map((entry) => entry.row), [rowData])
+  const previousTree = useRef<ReadonlyMap<string, NestedThread>>(new Map())
+  const tree = useMemo(
+    () =>
+      mobileThreadTree(
+        rowData,
+        overviews,
+        previousTree.current,
+        (row) =>
+          (source === 'all' || row.runtimeId === source) &&
+          (!project ||
+            projectMembers.has(JSON.stringify([row.runtimeId, row.task.repositoryId]))) &&
+          (archived ? !!row.task.archivedAt : !row.task.archivedAt),
+        (child) =>
+          !archived &&
+          (source === 'all' || child.runtimeId === source) &&
+          (!project ||
+            projectMembers.has(JSON.stringify([child.runtimeId, child.repositoryId])) ||
+            (!!child.projectIdentity && project === child.projectIdentity) ||
+            (project === 'scratch' && child.projectKind === 'scratch')),
+      ),
+    [rowData, overviews, source, project, projectMembers, archived],
+  )
+  useLayoutEffect(() => {
+    previousTree.current = tree.nodes
+  }, [tree])
   const detail = allTasks.find((item) => item.key === details)
   const detailRuntime = overviews.find((entry) => entry.profile.id === detail?.runtimeId)
   const detailAgent =
     detail && resolveTaskAgent(detail.task, detailRuntime?.snapshot?.workspace.agents ?? [])
   const tasks = useMemo(() => {
-    const needsInput = new Set(allTasks.filter((row) => row.needsInput).map((row) => row.key))
+    const needsInput = new Set(tree.roots.filter((row) => row.needsInput).map((row) => row.key))
     const projects = new Map(allTasks.map((row) => [row.key, row.projectName]))
-    return allTasks
+    return tree.roots
       .filter(
-        ({ task, needsInput, projectName, runtimeName, runtimeId }) =>
-          !task.delegation &&
-          (!project || projectMembers.has(JSON.stringify([runtimeId, task.repositoryId]))) &&
+        ({ key, task, needsInput, projectName, runtimeName, runtimeId }) =>
+          (tree.contextKeys.has(key) ||
+            ((source === 'all' || runtimeId === source) &&
+              (!project || projectMembers.has(JSON.stringify([runtimeId, task.repositoryId]))))) &&
           (archived ? !!task.archivedAt : !task.archivedAt) &&
           (!car ||
             (!task.archived &&
@@ -166,6 +198,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               projectName,
               runtimeName,
               ...task.messages.map((message) => message.text),
+              ...threadDescendants(tree.nodes.get(key)?.children ?? []).flatMap((child) => [
+                child.title,
+                child.computerName,
+                child.projectName ?? '',
+              ]),
             ].some((text) => text.toLowerCase().includes(query))),
       )
       .sort((a, b) => {
@@ -187,7 +224,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           }
         return compareTasks(first, second, sort, needsInput, projects)
       })
-  }, [allTasks, car, now, query, sort, project, projectMembers, archived])
+  }, [allTasks, tree, source, car, now, query, sort, project, projectMembers, archived])
   const listItems = useMemo(() => {
     if (archived || car) return tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))
     const orderedItems = (sections: { key: string; items: TaskListItem[] }[]) =>
@@ -761,6 +798,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 density={preferences.threadDensity ?? 'compact'}
                 row={item.entry}
                 subagents={rowData.get(item.entry.key)!.subagents}
+                thread={tree.nodes.get(item.entry.key)}
+                searching={!!query}
                 owner={rowData.get(item.entry.key)!.owner}
                 commands={rowCommands}
                 now={now}

@@ -37,7 +37,7 @@ const fixture = `
 const base={repositoryId:'repo',agentId:'',status:'running',createdAt:'2026-10-03T12:00:00Z',draft:'',files:[],messages:[],example:false};
 const record=(id,name,status='working',source='dovo')=>({id,taskId:source==='dovo'?id:undefined,source:source==='dovo'?'dovo':undefined,name,provider:'codex',status,activity:status==='working'?'Inspecting tests':'Saved result',startedAt:'2026-10-03T12:00:00Z',updatedAt:'2026-10-03T12:01:00Z'});
 const parent={...base,id:'parent',title:'Main thread',subagents:[record('child','Live child'),record('done','Ended child','completed'),record('native','Native worker','working','native')]};
-parent.threadWatches=[{runtimeId:'studio',threadId:'remote-child',computerName:'Mac Studio',relation:'spawned',status:'watching',offline:false,snapshot:{title:'Configure Play testing',phase:'running',revision:'one',attention:[],watches:{pipelines:1,pullRequests:1,failures:0}}}];parent.watchCounts={pipelines:1,pullRequests:1,failures:2};
+parent.threadWatches=[{runtimeId:'studio',threadId:'remote-child',computerName:'Mac Studio',relation:'spawned',delegated:true,status:'watching',offline:false,snapshot:{title:'Configure Play testing',phase:'running',revision:'one',attention:[],watches:{pipelines:1,pullRequests:1,failures:0}}}];parent.watchCounts={pipelines:1,pullRequests:1,failures:2};
 const child={...base,id:'child',title:'Independent child title',delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'},subagents:[record('nested','Nested child'),record('nested-native','Nested native','working','native')]};
 const nested={...base,activeRunId:'nested-run',id:'nested',title:'Independent nested title',delegation:{parentTaskId:'child',parentRunId:'child-run',key:'nested'}};
 const done={...base,id:'done',title:'Independent ended title',status:'done',delegation:{parentTaskId:'parent',parentRunId:'run',key:'done'}};
@@ -48,7 +48,7 @@ const profile={id:'linux',name:'Linux',connection:{address:'http://linux.local:5
 window.source={runtimeId:'linux',address:profile.connection.address,name:'Linux',workspace:window.workspace,snapshot,online:true};
 window.overview={profile,snapshot,connected:true,lastSeen:null,error:null,pulls:null,pullError:null};
 window.opened=[];window.routes=[];window.switches=[];window.orders=[];window.requests=[];
-window.request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/native-thread'){if(window.nativeReadError){window.nativeReadError=false;throw new Error('Native thread unavailable')}return input.before?{entries:[{id:'older',role:'user',text:'Earlier native prompt'}]}:{before:'prompt',entries:[{id:'prompt',role:'user',text:'Native prompt'},{id:'tool',role:'tool',label:'Read',text:'Native tool output'},{id:'reply',role:'assistant',text:'Native final answer'}]}};return {ok:true}};
+window.request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/acknowledge-subagent-failure'){window.publishTasks(window.workspace.tasks.map(task=>task.id===input.id?{...task,acknowledgedSubagentFailures:[...(task.acknowledgedSubagentFailures??[]),input.key]}:task));window.renderAgents();return {ok:true}};if(path==='/api/tasks/native-thread'){if(window.nativeReadError){window.nativeReadError=false;throw new Error('Native thread unavailable')}return input.before?{entries:[{id:'older',role:'user',text:'Earlier native prompt'}]}:{before:'prompt',entries:[{id:'prompt',role:'user',text:'Native prompt'},{id:'tool',role:'tool',label:'Read',text:'Native tool output'},{id:'reply',role:'assistant',text:'Native final answer'}]}};return {ok:true}};
 window.host={openThread:target=>window.routes.push(target),navigate:target=>window.routes.push(target)};
 window.store={request:window.request,call:window.request,callEffect:(path,input)=>Effect.promise(()=>window.request(path,input)),workspace:window.workspace,snapshot,connected:true,activeRuntimeId:'mac',activeId:'mac',runtimeRegistry:{profiles:[profile]},profiles:[profile],overviews:[window.overview],runtimes:[window.overview],profile,ready:true,refreshAll:async()=>{},refreshRuntimes:async()=>{},selectRuntimeEffect:id=>Effect.sync(()=>window.switches.push(id))};
 window.publishTasks=tasks=>{window.workspace={...window.workspace,tasks};const next={...window.store.snapshot,workspace:window.workspace};window.source={...window.source,workspace:window.workspace,snapshot:next};window.overview={...window.overview,snapshot:next};window.store={...window.store,workspace:window.workspace,snapshot:next,overviews:[window.overview],runtimes:[window.overview]};};
@@ -67,7 +67,7 @@ async function bundle(contents) {
     'react-native': controls,
     'react-native-gesture-handler': controls,
     'lucide-react-native': 'export * from "lucide-react";',
-    'expo-router': 'export const router={push:()=>{}};',
+    'expo-router': 'export const router={push:target=>window.routes.push(target)};',
     './use-task-search': 'export const useTaskSearch=()=>({keys:new Set(),error:""});',
     '../detail/task-context-menu':
       'export const TaskContextMenu=({children,selectionMenu})=><div>{children}{selectionMenu}</div>;',
@@ -142,7 +142,7 @@ async function bundle(contents) {
                 lifecycle:
                   'export const useTaskLifecycle=()=>({unread:false,error:"",enabled:true,busy:false});export const chooseSnoozeDuration=()=>{};',
                 'list-state':
-                  'import {useState,useRef} from "react";export const useTaskListView=()=>{const [view,setView]=useState({search:"",source:"all",project:"",sort:"newest"});return {view,setView,scrollOffset:useRef(0)}};',
+                  'import {useState,useRef} from "react";export const useTaskListView=()=>{const [view,setView]=useState(window.listView??{search:"",source:"all",project:"",sort:"newest"});return {view,setView,scrollOffset:useRef(0)}};',
                 action:
                   'import {Effect} from "effect";export const useAction=()=>({busy:false,error:"",act:fn=>Effect.runPromise(fn())});',
                 scroll: 'export const useListScroll=()=>({retainPosition:()=>{}});',
@@ -167,8 +167,8 @@ try {
     page.setDefaultTimeout(8000)
     await page.setContent('<div id="app"></div>')
     const app = mobile
-      ? `import TasksScreen from '${root}/apps/mobile/src/screens/tasks.tsx';import {TaskAgents} from '${root}/apps/mobile/src/tasks/detail/task-agents.tsx';import {NativeAgentThread} from '${root}/apps/mobile/src/tasks/detail/native-agent-thread.tsx';window.renderList=archived=>render(<TasksScreen archived={archived}/>);`
-      : `import {TaskList} from '${root}/packages/extension-tasks/src/list/task-list.tsx';import {TaskAgents} from '${root}/packages/extension-tasks/src/detail/task-agents.tsx';import {NativeAgentThread} from '${root}/packages/extension-tasks/src/detail/native-agent-thread.tsx';import Archived from '${root}/packages/extension-tasks/src/list/archived-view.tsx';window.renderList=archived=>render(archived?<Archived/>:<TaskList projectId="" onProjectChange={()=>{}} selectedId={JSON.stringify(['linux','nested'])} onSelect={entry=>window.opened.push({id:entry.task.id,runtimeId:entry.source.runtimeId})} onCreate={()=>{}} onCreateNoProject={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.orders.push(entries.map(e=>e.task.id))} sources={[window.source]} activeRuntimeId="mac" busy={false} error=""/>);`
+      ? `import TasksScreen from '${root}/apps/mobile/src/screens/tasks.tsx';import {TaskAgents} from '${root}/apps/mobile/src/tasks/detail/task-agents.tsx';import {NativeAgentThread} from '${root}/apps/mobile/src/tasks/detail/native-agent-thread.tsx';window.renderList=archived=>render(<TasksScreen key={window.listEpoch??0} archived={archived}/>);`
+      : `import {TaskList} from '${root}/packages/extension-tasks/src/list/task-list.tsx';import {TaskAgents} from '${root}/packages/extension-tasks/src/detail/task-agents.tsx';import {NativeAgentThread} from '${root}/packages/extension-tasks/src/detail/native-agent-thread.tsx';import Archived from '${root}/packages/extension-tasks/src/list/archived-view.tsx';window.renderList=archived=>render(archived?<Archived/>:<TaskList projectId={window.projectId??""} onProjectChange={()=>{}} selectedId={JSON.stringify(['linux','nested'])} onSelect={entry=>window.opened.push({id:entry.task.id,runtimeId:entry.source.runtimeId})} onCreate={()=>{}} onCreateNoProject={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.orders.push(entries.map(e=>e.task.id))} sources={[window.source,...(window.extraSources??[])]} activeRuntimeId="mac" busy={false} error=""/>);`
     await page.addScriptTag({
       content: await bundle(
         `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';${app}${fixture}const root=createRoot(document.getElementById('app'));const render=node=>root.render(node);function Agents(){const [thread,setThread]=useState();return <><div data-agent-sidebar hidden={!!thread}><TaskAgents task={window.workspace.tasks[0]} onOpenThread={setThread}/></div>{thread&&<NativeAgentThread taskId={thread.taskId} agent={thread.agent} onClose={()=>setThread(undefined)}/>}</>}window.renderAgents=()=>render(<Agents/>);window.renderList(false);`,
@@ -262,39 +262,44 @@ try {
         window.renderList(false)
       })
     }
-    assert.equal(
-      await page.getByText('Independent child title', { exact: true }).count(),
-      mobile ? 0 : 1,
-    )
-    assert.equal(
-      await page.getByText('Independent nested title', { exact: true }).count(),
-      mobile ? 0 : 1,
-    )
-    assert.equal(
-      await page.getByText('Independent ended title', { exact: true }).count(),
-      mobile ? 0 : 1,
-    )
+    assert.equal(await page.getByText('Independent child title', { exact: true }).count(), 1)
+    assert.equal(await page.getByText('Independent nested title', { exact: true }).count(), 1)
+    assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 1)
     assert.equal(await page.getByText('Ended child · codex', { exact: true }).count(), 0)
     await page.getByText('Native worker · codex', { exact: true }).waitFor()
     await page.getByText('Nested native · codex', { exact: true }).waitFor()
     const nested = page.getByRole('button', {
-      name: mobile ? /^Open subagent Nested child/ : 'Open child thread Independent nested title',
+      name: 'Open child thread Independent nested title',
     })
     if (!mobile) assert.equal(await nested.getAttribute('aria-current'), 'true')
     await nested.click()
     if (mobile) {
       await page.waitForFunction(() => window.routes.length > 0)
       assert.deepEqual(await page.evaluate(() => window.routes[0]), {
-        view: 'tasks',
-        entityId: 'nested',
-        runtimeId: 'linux',
+        pathname: '/(tasks)/thread/[runtimeId]/[taskId]',
+        params: {
+          taskId: 'nested',
+          runtimeId: 'linux',
+          parentRuntimeId: 'linux',
+          parentTaskId: 'child',
+          parentTitle: 'Independent child title',
+        },
       })
-      assert.deepEqual(await page.evaluate(() => window.switches), ['linux'])
+      assert.deepEqual(await page.evaluate(() => window.switches), [])
+      await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
+      assert.equal(await page.evaluate(() => window.routes.at(-1).params.runtimeId), 'studio')
+      assert.equal(await page.evaluate(() => window.routes.at(-1).params.parentTaskId), 'parent')
       await page.getByRole('button', { name: /Project, Main thread/ }).click({ button: 'right' })
       await page.getByText('1 selected', { exact: true }).waitFor()
-      await page.getByRole('button', { name: /^Open subagent Live child/ }).click()
+      assert.equal(
+        await page
+          .getByRole('button', { name: 'Open child thread Independent child title' })
+          .isDisabled(),
+        true,
+      )
+      assert.equal(await page.evaluate(() => window.routes.length), 2)
+      await page.getByRole('button', { name: /Project, Main thread/ }).click({ button: 'right' })
       assert.equal(await page.getByText('1 selected', { exact: true }).count(), 0)
-      assert.equal(await page.evaluate(() => window.routes.length), 1)
       assert.equal(await page.locator('[data-swipe="true"]').count(), 2)
     } else {
       assert.deepEqual(await page.evaluate(() => window.routes.at(-1)), {
@@ -347,10 +352,17 @@ try {
     await page.getByText('Nested native · codex', { exact: true }).waitFor({ state: 'detached' })
     await page
       .getByRole('button', {
-        name: mobile ? /^Open subagent Nested child/ : 'Open child thread Independent nested title',
+        name: 'Open child thread Independent nested title',
       })
       .waitFor()
     await page.evaluate(() => window.renderAgents())
+    await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
+    assert.equal(
+      await page.evaluate(
+        () => window.routes.at(-1).params?.taskId ?? window.routes.at(-1).threadId,
+      ),
+      'remote-child',
+    )
     await page.getByRole('button', { name: 'Stop agents', exact: true }).click()
     await page.waitForFunction(() => window.requests.length === 1)
     const groupStop = await page.evaluate(() => window.requests[0])
@@ -492,15 +504,18 @@ try {
     await page.getByText('Failed worker', { exact: true }).waitFor()
     await page.getByText('Stopped worker', { exact: true }).waitFor()
     await hideFinished.click()
-    for (const name of [
-      'Ended child',
-      'Live child',
-      'Failed worker',
-      'Stopped worker',
-      'Finished timestamp',
-    ]) {
+    for (const name of ['Ended child', 'Live child', 'Stopped worker', 'Finished timestamp']) {
       await page.getByText(name, { exact: true }).waitFor({ state: 'detached' })
     }
+    await page.getByText('Failed worker', { exact: true }).waitFor()
+    await page.getByText(/4 hidden/).waitFor()
+    await page.getByText('Failed worker', { exact: true }).click()
+    await page.getByRole('button', { name: 'Acknowledge failure', exact: true }).click()
+    await page.getByText('Failed worker', { exact: true }).waitFor({ state: 'detached' })
+    assert.equal(
+      await page.evaluate(() => window.requests.at(-1).path),
+      '/api/tasks/acknowledge-subagent-failure',
+    )
     await page.getByText('Unknown worker', { exact: true }).waitFor()
     await page.getByText('Nested child', { exact: true }).waitFor()
     await page.getByText(/5 hidden/).waitFor()
@@ -508,13 +523,21 @@ try {
       window.store = { ...window.store, connected: false }
       window.renderAgents()
     })
-    await page.getByText(/Offline · saved state/).waitFor()
+    await page
+      .getByText(/Offline · saved state/)
+      .first()
+      .waitFor()
     await page.getByText('Unknown worker', { exact: true }).waitFor()
     await page.getByText('Nested child', { exact: true }).waitFor()
     await page.evaluate(() => {
       window.publishTasks(
         window.workspace.tasks.map((task) => ({
           ...task,
+          status: 'done',
+          threadWatches: task.threadWatches?.map((watch) => ({
+            ...watch,
+            snapshot: { ...watch.snapshot, phase: 'completed', status: 'done' },
+          })),
           subagents: task.subagents?.map((agent) => ({
             ...agent,
             status: 'completed',
@@ -525,7 +548,7 @@ try {
       window.renderAgents()
     })
     await page.getByText(/All subagents have finished/).waitFor()
-    await page.getByText(/9 hidden/).waitFor()
+    await page.getByText(/10 hidden/).waitFor()
     await page.evaluate(() => window.renderList(false))
     await page.getByText('Main thread', { exact: true }).waitFor()
     await page.evaluate(() => window.renderAgents())
@@ -546,10 +569,167 @@ try {
     await page.getByText('Main thread', { exact: true }).waitFor()
     assert.equal(await page.getByText('Independent child title', { exact: true }).count(), 0)
     assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
+    // A General coordinator with only targeted children must not show an empty Agents panel.
+    await page.evaluate(() => {
+      const parent = window.workspace.tasks.find((task) => task.id === 'parent')
+      window.workspace = {
+        ...window.workspace,
+        repositories: [
+          ...window.workspace.repositories,
+          {
+            id: 'general',
+            name: 'Scratch directory',
+            kind: 'scratch',
+            path: '/general',
+            branch: 'main',
+          },
+        ],
+      }
+      window.store = { ...window.store, connected: true }
+      window.publishTasks([
+        {
+          ...parent,
+          repositoryId: 'general',
+          archivedAt: undefined,
+          subagents: [],
+          threadWatches: parent.threadWatches.map((watch) => ({
+            ...watch,
+            offline: false,
+            snapshot: {
+              ...watch.snapshot,
+              projectName: 'Beta project',
+              phase: 'needs-input',
+              status: 'running',
+            },
+          })),
+        },
+      ])
+      window.renderList(false)
+    })
+    await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).waitFor()
+    await page.getByText('General', { exact: true }).first().waitFor()
+    assert.equal(
+      await page.getByText(/\d+ (pipeline watch|PR watch|failed checks\/runs)/).count(),
+      0,
+    )
+    await page.evaluate(() => window.renderAgents())
+    await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
+    assert.equal(await page.getByText(/No subagents yet/).count(), 0)
+    await page.getByText(/1 total/).waitFor()
+    await page.getByRole('button', { name: 'Stop agents', exact: true }).waitFor()
+    assert.equal(
+      await page.evaluate(
+        () => window.routes.at(-1).params?.parentTaskId ?? window.routes.at(-1).parent.threadId,
+      ),
+      'parent',
+    )
+    // Background-only grandchildren keep their own attention under a failed owner.
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) => ({
+          ...task,
+          threadWatches: task.threadWatches.map((watch) => ({
+            ...watch,
+            snapshot: {
+              ...watch.snapshot,
+              runtimeId: 'studio-identity',
+              status: 'failed',
+              failureVersion: 'failure-1',
+              phase: 'needs-input',
+              threads: [
+                {
+                  runtimeId: 'studio-identity',
+                  threadId: watch.threadId,
+                  title: watch.snapshot.title,
+                  status: 'failed',
+                  phase: 'completed',
+                  revision: 'one',
+                  attention: [],
+                  watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+                },
+                {
+                  runtimeId: 'studio-identity',
+                  threadId: 'grandchild',
+                  title: 'Remote approval',
+                  parent: { runtimeId: 'studio-identity', threadId: watch.threadId },
+                  phase: 'needs-input',
+                  revision: 'two',
+                  attention: ['approval'],
+                  watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+                },
+              ],
+            },
+          })),
+        })),
+      )
+      window.renderAgents()
+    })
+    await page.getByRole('button', { name: 'Open child thread Remote approval' }).click()
+    assert.equal(
+      await page.evaluate(
+        () => window.routes.at(-1).params?.parentTaskId ?? window.routes.at(-1).parent.threadId,
+      ),
+      'remote-child',
+    )
+    if (!mobile)
+      assert.equal(
+        await page.evaluate(() => window.routes.at(-1).parent.runtimeIdentity),
+        'studio-identity',
+      )
+    await hideFinished.click()
+    await page
+      .getByText(/1 failed/)
+      .first()
+      .waitFor()
+    await page
+      .getByText(/1 needs input/)
+      .first()
+      .waitFor()
+    await page.getByRole('button', { name: 'Acknowledge failure', exact: true }).click()
+    await page
+      .getByRole('button', { name: 'Acknowledge failure', exact: true })
+      .waitFor({ state: 'detached' })
+    await page.getByRole('button', { name: 'Open child thread Remote approval' }).waitFor()
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) => ({
+          ...task,
+          threadWatches: task.threadWatches.map((watch) => ({
+            ...watch,
+            snapshot: {
+              ...watch.snapshot,
+              phase: 'completed',
+              threads: watch.snapshot.threads.map((fact) => ({
+                ...fact,
+                phase: 'completed',
+                attention: [],
+              })),
+            },
+          })),
+        })),
+      )
+      window.renderAgents()
+    })
+    await page.getByText(/All subagents have finished/).waitFor()
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) => ({
+          ...task,
+          threadWatches: task.threadWatches.map((watch) => ({
+            ...watch,
+            snapshot: { ...watch.snapshot, failureVersion: 'failure-2' },
+          })),
+        })),
+      )
+      window.renderAgents()
+    })
+    await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).waitFor()
+    await page.getByRole('button', { name: 'Acknowledge failure', exact: true }).waitFor()
     await page.evaluate(() => {
       const base = {
         ...window.workspace.tasks[0],
         delegation: undefined,
+        threadWatches: [],
         archived: false,
         archivedAt: undefined,
         pinned: false,
@@ -656,6 +836,195 @@ try {
       await activeHeader.click()
       await page.getByText('Active order', { exact: true }).waitFor()
       if (mobile) assert.equal(await activeHeader.getAttribute('aria-expanded'), 'true')
+    }
+    // A successful remote owner must not hide its failed provider-native worker.
+    await page.evaluate(() => {
+      const base = {
+        ...window.workspace.tasks[0],
+        id: 'parent',
+        title: 'Native coordinator',
+        status: 'review',
+        subagents: [],
+        archived: false,
+        archivedAt: undefined,
+        waitingForFeedback: false,
+        acknowledgedSubagentFailures: [],
+      }
+      window.publishTasks([
+        {
+          ...base,
+          threadWatches: [
+            {
+              runtimeId: 'studio',
+              threadId: 'native-owner',
+              computerName: 'Mac Studio',
+              relation: 'spawned',
+              status: 'watching',
+              offline: false,
+              snapshot: {
+                runtimeId: 'studio-identity',
+                title: 'Successful remote owner',
+                status: 'review',
+                phase: 'completed',
+                revision: 'native-one',
+                attention: [],
+                watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+                nativeAgentOverflow: {
+                  total: 1,
+                  working: 0,
+                  failed: 1,
+                  failureKey: 'c'.repeat(64),
+                },
+                nativeAgents: [
+                  {
+                    key: 'a'.repeat(64),
+                    name: 'Remote native failure',
+                    status: 'failed',
+                    working: false,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+      window.updatePreferences({ hideFinishedSubagents: true })
+      window.renderAgents()
+    })
+    await page.getByRole('button', { name: 'Open child thread Successful remote owner' }).waitFor()
+    await page.getByText('Remote native failure · Failed', { exact: true }).waitFor()
+    await page
+      .getByRole('button', { name: 'Acknowledge failure in Remote native failure', exact: true })
+      .click()
+    // Acknowledging the detailed rows must leave overflow failures visible and navigable.
+    await page
+      .getByRole('button', {
+        name: 'Open 1 additional agents in Successful remote owner',
+        exact: true,
+      })
+      .waitFor()
+    await page.getByText(/^[· ]*1 additional failures$/).waitFor()
+    await page
+      .getByRole('button', {
+        name: 'Acknowledge 1 additional failures in Successful remote owner',
+        exact: true,
+      })
+      .click()
+    await page
+      .getByRole('button', { name: 'Open child thread Successful remote owner' })
+      .waitFor({ state: 'detached' })
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) => ({
+          ...task,
+          threadWatches: task.threadWatches.map((watch) => ({
+            ...watch,
+            snapshot: {
+              ...watch.snapshot,
+              nativeAgents: watch.snapshot.nativeAgents.map((agent) => ({
+                ...agent,
+                key: 'b'.repeat(64),
+              })),
+            },
+          })),
+        })),
+      )
+      window.renderAgents()
+    })
+    await page
+      .getByRole('button', { name: 'Acknowledge failure in Remote native failure', exact: true })
+      .waitFor()
+    assert.equal(await page.locator('button button').count(), 0)
+
+    // Scoped computer/project filters retain parent context even without peer task data.
+    await page.evaluate(() => {
+      const profile = {
+        id: 'studio-local',
+        name: 'Mac Studio',
+        connection: {
+          address: 'http://studio.lan:51464',
+          token: 'paired-token',
+          runtimeId: 'studio-identity',
+        },
+      }
+      const workspace = {
+        ...window.workspace,
+        tasks: [],
+        repositories: [{ id: 'peer-repo', name: 'Peer project', path: '/peer', branch: 'main' }],
+      }
+      const snapshot = { ...window.store.snapshot, runtimeId: 'studio-identity', workspace }
+      const overview = {
+        profile,
+        snapshot,
+        connected: true,
+        lastSeen: null,
+        error: null,
+        pulls: null,
+        pullError: null,
+      }
+      const base = {
+        ...window.workspace.tasks[0],
+        id: 'parent',
+        title: 'Out of scope coordinator',
+        status: 'running',
+        subagents: [],
+        archived: false,
+        archivedAt: undefined,
+        waitingForFeedback: false,
+      }
+      window.publishTasks([
+        {
+          ...base,
+          threadWatches: [
+            {
+              runtimeId: 'foreign-profile',
+              threadId: 'background-child',
+              computerName: 'Mac Studio',
+              relation: 'spawned',
+              status: 'watching',
+              offline: false,
+              snapshot: {
+                runtimeId: 'studio-identity',
+                title: 'Scoped background child',
+                repositoryId: 'peer-repo',
+                projectName: 'Peer project',
+                phase: 'running',
+                revision: 'scope',
+                attention: [],
+                watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+              },
+            },
+          ],
+        },
+      ])
+      window.extraSources = [
+        { runtimeId: profile.id, name: 'Mac Studio', online: true, snapshot, workspace },
+      ]
+      window.store = {
+        ...window.store,
+        profiles: [...window.store.profiles, profile],
+        overviews: [window.overview, overview],
+        runtimes: [window.overview, overview],
+      }
+      window.projectId = JSON.stringify([profile.id, 'peer-repo'])
+      window.listView = {
+        search: '',
+        source: profile.id,
+        project: window.projectId,
+        sort: 'newest',
+      }
+      window.listEpoch = 1
+      window.renderList(false)
+    })
+    await page.getByText('Out of scope coordinator', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Open child thread Scoped background child' }).waitFor()
+    if (!mobile) {
+      await page
+        .locator('select[aria-label="Filter threads by computer"]')
+        .selectOption(JSON.stringify('studio-local'))
+      await page
+        .getByRole('button', { name: 'Open child thread Scoped background child' })
+        .waitFor()
     }
     assert.deepEqual(errors, [])
     console.log(

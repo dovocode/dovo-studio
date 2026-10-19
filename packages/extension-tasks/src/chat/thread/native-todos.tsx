@@ -23,6 +23,7 @@ export function NativeTodos({ task }: { task: Task }) {
           <ListChecks className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           <span className="font-medium">
             Checklist · {summary.completed} of {summary.total} done
+            {summary.unfinished ? ' · Unfinished' : ''}
           </span>
           {summary.active && !open && (
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{summary.active}</span>
@@ -34,7 +35,7 @@ export function NativeTodos({ task }: { task: Task }) {
               <li key={todo.id ?? index} className="flex items-start gap-2 text-xs">
                 {todo.status === 'completed' ? (
                   <CheckCircle2 className="mt-px size-3.5 shrink-0 text-emerald-600" aria-hidden />
-                ) : todo.status === 'in-progress' ? (
+                ) : todo.status === 'in-progress' && !summary.unfinished ? (
                   <LoaderCircle
                     className="mt-px size-3.5 shrink-0 animate-spin text-primary"
                     aria-hidden
@@ -53,10 +54,23 @@ export function NativeTodos({ task }: { task: Task }) {
                 >
                   {todo.text}
                 </span>
-                <span className="sr-only">({todo.status.replace('-', ' ')})</span>
+                <span className="sr-only">
+                  (
+                  {todo.status !== 'completed' && summary.unfinished
+                    ? 'unfinished'
+                    : todo.status.replace('-', ' ')}
+                  )
+                </span>
               </li>
             ))}
           </ul>
+        )}
+        {summary.unfinished && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Work stopped with {summary.total - summary.completed}{' '}
+            {summary.total - summary.completed === 1 ? 'item' : 'items'} left. Continue the thread
+            to pick them up.
+          </p>
         )}
       </div>
     </section>

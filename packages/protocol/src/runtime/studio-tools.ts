@@ -1,3 +1,4 @@
+import { threadParentSchema } from '../tasks/thread-watches.js'
 import { Schema } from 'effect'
 import { mutableStruct, minValue, maxValue } from '../shared/schema.js'
 import {
@@ -94,9 +95,28 @@ export const studioThreadsCommandSchema = Schema.Union([
     execution: Schema.optional(executionSchema),
     prompt: Schema.optional(text),
     watch: Schema.optional(Schema.Boolean),
+    requestId: Schema.optional(id),
+    start: Schema.optional(Schema.Boolean),
+    allowPermissionIncrease: Schema.optional(Schema.Boolean),
+    worktreeIncludeChanges: Schema.optional(Schema.Boolean),
+    spawnParent: Schema.optional(threadParentSchema),
+    coordinationDepth: Schema.optional(
+      Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 })),
+    ),
   }),
-  mutableStruct({ action: Schema.Literal('send'), id, text, messageId: id }),
-  mutableStruct({ action: Schema.Literals(['stop', 'resume', 'archive', 'unarchive']), id }),
+  mutableStruct({
+    action: Schema.Literal('send'),
+    id,
+    text,
+    messageId: id,
+    allowPermissionIncrease: Schema.optional(Schema.Boolean),
+  }),
+  mutableStruct({
+    action: Schema.Literal('resume'),
+    id,
+    allowPermissionIncrease: Schema.optional(Schema.Boolean),
+  }),
+  mutableStruct({ action: Schema.Literals(['stop', 'archive', 'unarchive']), id }),
   mutableStruct({ action: Schema.Literal('wait'), id, timeoutMs: timeout }),
 ])
 export const studioAutomationsCommandSchema = Schema.Union([

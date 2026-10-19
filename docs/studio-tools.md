@@ -20,24 +20,30 @@ agents and agentId for its available model catalog. Project, thread, browser and
 pagination cursors belong to the selected computer. Existing browser and Device Hub tools remain
 independently available.
 
-Keep Studio open and connected to its local runtime to make its saved computer pairings available.
-This also works while viewing another computer in Studio, provided the local runtime remains
-connected. Studio renews a private, in-memory pairing registration every 15 seconds; registrations
-expire after 45 seconds without renewal. Tokens stay private and are never returned by discovery.
-Removing a saved connection updates the registration. Tools must be enabled on both the calling and
-destination runtime; scoped agents retain their read-only access, enabled parts and permission
-ceilings at the destination. Both runtimes must support paired Studio forwarding; older destination
-runtimes reject the dedicated forwarding endpoint before any tool action executes. HTTP LAN/VPN
-addresses remain supported. UI interaction has no computer selector and cannot be forwarded.
+Connect Studio to its local runtime once to authorize its saved computer pairings for durable Studio
+Tools forwarding. These grants survive desktop disconnects and runtime restarts. Credentials remain
+in the private pairing registry; grants store fingerprints only. Retrieval-only registrations cannot
+enable control. Forgetting a connection, changing its credentials or revoking the registering device
+removes its grant; reauthorizing requires a local Studio connection. Tokens stay private and are
+never returned by discovery. Tools must be enabled on both the calling and destination runtime;
+scoped agents retain read-only access and enabled parts at the destination. Both runtimes must
+support paired Studio forwarding; older destination runtimes reject the dedicated forwarding
+endpoint before any tool action executes. HTTP LAN/VPN addresses remain supported. UI interaction
+has no computer selector and cannot be forwarded.
 
 Most tools accept a command object containing an action and its arguments. Thread creation makes a
-draft. Use resume to execute its initial prompt, or send to add a prompt and start. Use a stable
-messageId when sending and a stable requestId when starting an automation, so repeating a request
-after a lost reply does not execute it twice. The wait action accepts up to 20 seconds and returns
-current state on timeout without cancelling work. Thread list/history cursors are returned as
-before. Automation run and runs take an automation ID; wait, cancel and retry take a run ID. Runs
-retain their original workflow when retried. Supported triggers are manual, schedule (cron and
-timezone), webhook and GitHub; workflows use the existing trigger/task/review graph schema.
+draft by default. Set `start:true` with a prompt to create and start together, or use resume to
+execute the draft later. Supply a stable `requestId` for creation: concurrent retries and lost
+replies return the original thread ID. Reusing an ID with different arguments is rejected. If
+startup fails, the response retains the created ID with `startError`; repair/resume that thread
+instead of creating another. An interrupted operation is reported as uncertain after restart, rather
+than repeated blindly. Use a stable messageId when sending and a stable requestId when starting an
+automation, so repeating a request after a lost reply does not execute it twice. The wait action
+accepts up to 20 seconds and returns current state on timeout without cancelling work. Thread
+list/history cursors are returned as before. Automation run and runs take an automation ID; wait,
+cancel and retry take a run ID. Runs retain their original workflow when retried. Supported triggers
+are manual, schedule (cron and timezone), webhook and GitHub; workflows use the existing
+trigger/task/review graph schema.
 
 New browser tabs use isolated profiles. Listing also exposes existing runtime browser tabs; choose
 the returned session ID explicitly before operating a live tab. Page actions return PNG screenshots
@@ -56,8 +62,11 @@ their normal runtime access; the local restriction applies only to UI debugging.
 Tool registration and run credentials include only enabled parts. Turning a part off rejects further
 calls immediately, including calls from existing agents. Newly enabled parts appear on the next
 agent turn. Read-only runs can inspect state but cannot create, send, execute or interact. Starting
-threads/workflows cannot exceed the calling agent's permissions. Automation review gates remain
-human-controlled. These tools do not expose runtime administration or backups.
+threads inherit the calling agent's permission limits, preserving narrower target restrictions. Set
+`allowPermissionIncrease:true` on create/send/resume only when the user explicitly requested broader
+target access. Automatic model selection preserves the resulting policy. Read-only runs still cannot
+mutate threads. Automations cannot exceed the calling agent's permissions. Automation review gates
+remain human-controlled. These tools do not expose runtime administration or backups.
 
 Existing paired/run authentication remains required. No account is needed; HTTP runtime addresses
 over LAN/VPN remain supported.

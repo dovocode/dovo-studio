@@ -100,6 +100,7 @@ export function StartupThread({
                     { ...draft, draft: text, autoProject, autoProjectExecution },
                     target,
                     destination.snapshot?.defaults,
+                    entry.snapshot?.workspace.agents,
                   )
                   await saveRuntimeDraft(targetId, next.id, text)
                   setSelection({ runtimeId: targetId, task: next })

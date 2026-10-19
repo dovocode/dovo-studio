@@ -9,6 +9,7 @@ import {
   artifactRetentionChoices,
   artifactRetentionSchema,
   decode,
+  DIAGNOSTIC_RETENTION_DAYS,
 } from '@dovo/protocol'
 import { clientTaskScope, useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -477,7 +478,7 @@ export function ActivityRetention() {
       <SettingsGroup title="Retention">
         <SettingRow
           label="Keep activity history"
-          description="Older requests, tool details and message history are deleted from this computer in the background. Task conversations themselves are kept."
+          description={`Older requests, tool details and message history are deleted from this computer in the background. Task conversations themselves are kept. CLI diagnostics and raw provider events expire after ${DIAGNOSTIC_RETENTION_DAYS} days, including when activity history is kept forever. Successful Git and GitHub reads are not recorded.`}
         >
           <Select
             disabled={disabled}

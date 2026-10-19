@@ -61,6 +61,7 @@ type Running = {
   steer?: (messageId: string) => Promise<void>
 }
 export class Tasks {
+  onStopChildren?: (parentId: string) => void
   private scheduleTimer?: ReturnType<typeof setInterval>
   private checkingSchedule = false
   private readonly executor = ManagedRuntime.make(Layer.empty)
@@ -134,6 +135,7 @@ export class Tasks {
         if (!oldAgent || !agent || samePermissionPolicy(oldAgent, agent)) continue
         approvals.cancelTask(task.id)
         if (!permissionPolicyTightened(oldAgent, agent)) continue
+        queueMicrotask(() => this.onStopChildren?.(task.id))
         runCredentials(this.store).revokeTask(task.id)
         this.running
           .get(task.id)
@@ -1739,6 +1741,7 @@ export class Tasks {
     return Promise.all(stops).then(() => undefined)
   }
   private stopChildren(parentTaskId: string, parentRunId?: string) {
+    if (!this.stopping && parentRunId === undefined) this.onStopChildren?.(parentTaskId)
     const fibers: Fiber.Fiber<void, RuntimeFailure>[] = []
     for (const child of this.store.get().tasks) {
       if (
@@ -2071,17 +2074,32 @@ export class Tasks {
       return this.store.task(reviewer.id)
     })
   }
-  subagentSpawn(input: SubagentSpawn) {
-    const parent = this.store.taskSummary(input.taskId)
-    const run = this.running.get(parent.id)
+  childLaunchScope(taskId: string, parentRunId?: string) {
+    const parent = this.store.taskSummary(taskId)
+    const run = this.running.get(taskId)
     if (!run || run.retiring || run.controller.signal.aborted || parent.activeRunId !== run.id)
       throw new HttpError(409, 'Children can only be launched during an active parent turn')
     if (
-      input.parentRunId &&
-      input.parentRunId !== run.id &&
-      !this.runner.ownsToolBinding(parent.id, input.parentRunId)
+      parentRunId &&
+      parentRunId !== run.id &&
+      !this.runner.ownsToolBinding(parent.id, parentRunId)
     )
       throw new HttpError(409, 'This parent turn has ended')
+    let ancestor = parent
+    let depth = 0
+    while (ancestor.delegation) {
+      if (++depth >= 3) throw new HttpError(409, 'Maximum child agent nesting reached')
+      ancestor = this.store.taskSummary(ancestor.delegation.parentTaskId)
+    }
+    depth += ancestor.coordinationDepth ?? 0
+    if (depth >= 3) throw new HttpError(409, 'Maximum child agent nesting reached')
+    return { id: run.id, signal: run.controller.signal, depth }
+  }
+  subagentSpawn(input: SubagentSpawn) {
+    const parent = this.store.taskSummary(input.taskId)
+    const scope = this.childLaunchScope(input.taskId, input.parentRunId)
+    const run = this.running.get(parent.id)
+    if (!run || run.id !== scope.id) throw new HttpError(409, 'This parent turn has ended')
     const fingerprint = createHash('sha256')
       .update(
         JSON.stringify([
@@ -2123,12 +2141,6 @@ export class Tasks {
         409,
         `Wait for a child to finish before launching another (maximum ${maxActiveChildren} active children)`,
       )
-    let ancestor = parent
-    let depth = 0
-    while (ancestor.delegation) {
-      if (++depth >= 3) throw new HttpError(409, 'Maximum child agent nesting reached')
-      ancestor = this.store.taskSummary(ancestor.delegation.parentTaskId)
-    }
     const agents = this.store.agentsFor(parent.repositoryId)
     const parentAgent = resolveTaskAgent(parent, this.store.get().agents)
     if (!parentAgent) throw new HttpError(400, 'Choose a parent agent before delegation')
@@ -2414,6 +2426,7 @@ export class Tasks {
       agentOverrides?: Task['agentOverrides']
       linkedCheckouts?: Task['linkedCheckouts']
       origin?: string
+      worktreeIncludeChanges?: Task['worktreeIncludeChanges']
     },
   ) {
     if (input.linkedCheckouts) this.checkouts.linked.validate(input.linkedCheckouts)

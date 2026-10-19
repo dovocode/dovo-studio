@@ -26,9 +26,15 @@ it.each(['muse', 'codex', 'claude', 'opencode', 'acp', 'grok', 'vibe'] as const)
     const s = runtime.services
     s.store.update(() => f.workspace)
     let turn = 0
+    const starts: Array<{ sessionId?: string; prompt: string; todos: Task['nativeTodos'] }> = []
     vi.spyOn(s.agents, 'get').mockResolvedValue({
       probe: vi.fn<AgentAdapter['probe']>(),
       run: async (run) => {
+        starts.push({
+          sessionId: run.sessionId,
+          prompt: run.prompt,
+          todos: s.store.task('todos').nativeTodos,
+        })
         run.onSession('root-session')
         const publish = (items: Array<{ text: string; status: string }>) => {
           if (provider === 'muse') run.onEvent?.('session/todoListChanged', { items })
@@ -132,9 +138,22 @@ it.each(['muse', 'codex', 'claude', 'opencode', 'acp', 'grok', 'vibe'] as const)
       { text: 'Step one', status: 'completed' },
       { text: 'Step two', status: 'in-progress' },
     ])
+    // Replacing a provider session must not silently erase the thread's unfinished work.
+    s.store.updateTask(task.id, (current) => ({
+      ...current,
+      sessionId: undefined,
+      sessionAgentId: undefined,
+    }))
     await (
       await s.tasks.start(task.id)
     ).done
+    expect(starts[1]?.sessionId).toBeUndefined()
+    expect(starts[1]?.prompt).toContain('Saved shared checklist')
+    expect(starts[1]?.prompt).toContain('Step two')
+    expect(starts[1]?.todos).toEqual([
+      { text: 'Step one', status: 'completed' },
+      { text: 'Step two', status: 'in-progress' },
+    ])
     expect(s.store.task(task.id).nativeTodos).toEqual([
       { text: 'Step one', status: 'completed' },
       { text: 'Step two', status: 'completed' },

@@ -50,3 +50,12 @@ it('refreshes visible facts, order, membership and navigation targets', () => {
     'child',
   ])
 })
+
+it('retains provider status without retaining transcript data', async () => {
+  const { subagentListStatus } = await import('./subagents.js')
+  const prior = projectSubagentList([agent])
+  const next = projectSubagentList([{ ...agent, status: 'unknown' }], prior)
+  expect(next).not.toBe(prior)
+  expect(subagentListStatus(next[0]!, true)).toBe('Status unavailable')
+  expect(subagentListStatus(prior[0]!, false)).toBe('Last seen working')
+})

@@ -14,6 +14,7 @@ import {
   artifactRetentionChoices,
   artifactRetentionSchema,
   decode,
+  DIAGNOSTIC_RETENTION_DAYS,
 } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { useRuntime } from './provider'
@@ -618,7 +619,9 @@ export function RuntimePreferences() {
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
                 Older requests and tool details are deleted from this computer. Task conversations
-                are kept.
+                are kept. CLI diagnostics and raw provider events expire after{' '}
+                {DIAGNOSTIC_RETENTION_DAYS} days, including when activity history is kept forever.
+                Successful Git and GitHub reads are not recorded.
               </Text>
             </View>
           </Section>

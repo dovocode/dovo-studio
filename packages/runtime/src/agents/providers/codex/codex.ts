@@ -23,6 +23,7 @@ import { JsonLineReader, JsonLineWriter } from './codex-transport.js'
 import { codexThreadEntries } from '../../execution/native-thread.js'
 import { readCodexThread } from './codex-thread.js'
 import { nativeWait } from '../shared/native.js'
+import { CUA_SERVER_NAME } from '../../../computer-use/cua.js'
 const turnInput = (input: Pick<AgentInput, 'prompt' | 'attachments'>) => [
   {
     type: 'text',
@@ -103,9 +104,27 @@ export function createCodexAdapter(): AgentAdapter {
         run.tools !== 'none' && run.agent.resources?.mcpServers.length
           ? codexMcpServers(run.agent.resources.mcpServers)
           : undefined
+      // Apply before plugin/skill discovery and again when resuming saved threads.
+      // These overrides belong only to this Dovo process, never the user's config.
+      const computerUseConfig = mcpServers?.[CUA_SERVER_NAME]?.enabled
+        ? {
+            'features.computer_use': false,
+            'plugins."computer-use@openai-bundled".enabled': false,
+          }
+        : {}
+      const computerUseArgs = Object.entries(computerUseConfig).flatMap(([key, value]) => [
+        '-c',
+        `${key}=${value}`,
+      ])
       // A loaded Codex thread retains its MCP connections. Dovo supplies a session
       // binding; an external configuration change still requires a fresh process.
-      const launchConfig = JSON.stringify([run.agent.args, run.agent.env, mcpServers, policy])
+      const launchConfig = JSON.stringify([
+        run.agent.args,
+        run.agent.env,
+        mcpServers,
+        policy,
+        computerUseConfig,
+      ])
       const previous = run.taskId ? idle.get(run.taskId) : undefined
       if (run.taskId) idle.delete(run.taskId)
       const reusable =
@@ -127,13 +146,17 @@ export function createCodexAdapter(): AgentAdapter {
       }
       const child =
         reusable?.child ??
-        spawn(endpoint, ['app-server', '--listen', 'stdio://', ...(run.agent.args ?? [])], {
-          windowsHide: true,
-          cwd: run.cwd,
-          detached: process.platform !== 'win32',
-          env: processEnvironment(run.agent.env),
-          stdio: ['pipe', 'pipe', 'pipe'],
-        })
+        spawn(
+          endpoint,
+          ['app-server', '--listen', 'stdio://', ...(run.agent.args ?? []), ...computerUseArgs],
+          {
+            windowsHide: true,
+            cwd: run.cwd,
+            detached: process.platform !== 'win32',
+            env: processEnvironment(run.agent.env),
+            stdio: ['pipe', 'pipe', 'pipe'],
+          },
+        )
       if (!child.stdout || !child.stdin || !child.stderr)
         throw new Error('Codex stdio pipes are unavailable')
       if (!reusable) child.on('error', (error) => console.error('Codex process failed:', error))
@@ -484,6 +507,7 @@ export function createCodexAdapter(): AgentAdapter {
           )
         const tier = serviceTierValue(run.agent.serviceTier)
         const config = {
+          ...computerUseConfig,
           ...(supportsCodexInstantInterrupt(initialized)
             ? { 'features.instant_interrupt': true }
             : {}),

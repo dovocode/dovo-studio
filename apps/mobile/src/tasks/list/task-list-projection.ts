@@ -1,5 +1,7 @@
 import {
   aggregateRuntimeTasks,
+  buildThreadTree,
+  type NestedThread,
   indexTaskSubagents,
   projectSubagentList,
   type RuntimeOverview,
@@ -90,7 +92,9 @@ export function taskListProjection(
       prior.owner.acpInstallations === nextOwner.acpInstallations
         ? prior.owner
         : nextOwner
-    const nextChildren = children.get(next.runtimeId)?.(next.task, true) ?? noSubagents
+    const nextChildren = (children.get(next.runtimeId)?.(next.task, true) ?? noSubagents).filter(
+      (agent) => agent.source !== 'dovo',
+    )
     const subagents = projectSubagentList(nextChildren, prior?.subagents ?? noSubagents)
     rows.set(
       row.key,
@@ -100,4 +104,37 @@ export function taskListProjection(
     )
   }
   return rows
+}
+
+/** Both clients use explicit delegation/watch ownership, including General and offline children. */
+export function mobileThreadTree(
+  rows: ReadonlyMap<string, TaskListRowData>,
+  overviews: readonly RuntimeOverview[],
+  previous?: ReadonlyMap<string, NestedThread>,
+  include?: (row: RuntimeTask) => boolean,
+  includeSnapshot?: (thread: NestedThread) => boolean,
+) {
+  const sources = new Map(overviews.map((source) => [source.profile.id, source]))
+  return buildThreadTree(
+    [...rows.values()].map(({ row }) => ({
+      ...row,
+      source: {
+        runtimeId: row.runtimeId,
+        name: row.runtimeName,
+        online: row.online,
+        snapshot: sources.get(row.runtimeId)?.snapshot ?? null,
+      },
+    })),
+    previous,
+    include,
+    {
+      includeSnapshot,
+      runtimeIds: new Map(
+        overviews.flatMap((source) => {
+          const identity = source.snapshot?.runtimeId ?? source.profile.connection.runtimeId
+          return identity ? [[identity, source.profile.id] as const] : []
+        }),
+      ),
+    },
+  )
 }

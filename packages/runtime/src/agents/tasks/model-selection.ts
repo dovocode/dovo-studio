@@ -8,6 +8,9 @@ import {
   modelPreferenceKey,
   mutableStruct,
   providerSchema,
+  resolveTaskAgent,
+  permissionPolicyWithinCeiling,
+  supportsAccess,
   taskHarnessSchema,
   type AcpInstallation,
   type Agent,
@@ -68,7 +71,26 @@ export class ModelSelection {
           throw new HttpError(409, 'Choose Inherit, Tune or Maestro before the first turn.')
         if (before.autoProject)
           throw new HttpError(409, 'Resolve Scope mode before choosing a model.')
-        const defaults = this.store.taskDefaults(before.repositoryId).harness
+        const projectDefaults = this.store.taskDefaults(before.repositoryId).harness
+        const current = resolveTaskAgent(before, this.store.get().agents) ?? projectDefaults
+        const policy = changeAgentProvider(
+          { ...current, id: 'policy', name: 'Thread permissions' },
+          projectDefaults.provider,
+        )
+        if (
+          !permissionPolicyWithinCeiling(current, policy) ||
+          !supportsAccess(policy.provider, policy.permission)
+        )
+          throw new HttpError(
+            409,
+            'The selected provider cannot preserve this thread’s permissions. Choose a compatible provider manually.',
+          )
+        const defaults = {
+          ...projectDefaults,
+          permission: policy.permission,
+          approvalPolicy: policy.approvalPolicy,
+          sandboxMode: policy.sandboxMode,
+        }
         let harness: TaskHarness = defaults
         if (before.modelSelection !== 'inherit') {
           const candidates = yield* runtimeOperation(() =>
@@ -171,7 +193,7 @@ export class ModelSelection {
         if (before.modelSelection !== 'inherit') this.requireEnabled()
         if (
           !isDeepStrictEqual(this.store.task(id), before) ||
-          !isDeepStrictEqual(this.store.taskDefaults(before.repositoryId).harness, defaults)
+          !isDeepStrictEqual(this.store.taskDefaults(before.repositoryId).harness, projectDefaults)
         )
           throw new HttpError(409, 'The thread changed during model selection. Try again.')
         this.store.updateTask(id, (task) => ({
@@ -222,6 +244,7 @@ export class ModelSelection {
             : { models: [{ id: '', name: 'Provider default' }], reasoning: [] }
           // Keep account/launch configuration from the candidate; access comes from the project's policy.
           const policy = changeAgentProvider(preferred, agent.provider)
+          if (!permissionPolicyWithinCeiling(preferred, policy)) return []
           const base = decode(taskHarnessSchema, {
             ...agent,
             permission: policy.permission,

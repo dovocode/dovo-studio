@@ -1,92 +1,113 @@
-import { analyzeReviewSource } from './languages.js'
-import { resolveReviewLinks, type AnalyzedSource } from './resolve.js'
-import { posix } from 'node:path'
-import type { ReviewGroup } from '@dovo/protocol'
+import { execFile } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { decode, reviewProgressSchema, type ReviewGroup } from '@dovo/protocol'
+import { processEnvironment } from '../../process.js'
+import {
+  folderFileGroups,
+  reviewAnalysisMaxBytes,
+  reviewAnalysisSize,
+  type ReviewSource,
+  type ReviewModule,
+} from './order-input.js'
 
-export type ReviewSource = { path: string; previousPath?: string; before?: string; after?: string }
-export type ReviewModule = { path: string; before?: string; after?: string }
-/** Import relationships come from syntax trees of both versions, including deleted imports. */
-export async function relatedFileGroups(
+export type { ReviewSource, ReviewModule } from './order-input.js'
+
+export function runReviewWorker(
   files: ReviewSource[],
-  modules: ReviewModule[] = [],
+  modules: ReviewModule[],
+  options: { entry?: URL; timeoutMs?: number } = {},
 ): Promise<ReviewGroup[]> {
-  const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path))
-  const afterPaths = new Map<string, string>()
-  const beforePaths = new Map<string, string>()
-  for (const file of sorted) {
-    afterPaths.set(file.path, file.path)
-    if (!file.previousPath) beforePaths.set(file.path, file.path)
-  }
-  for (const file of sorted) if (file.previousPath) beforePaths.set(file.previousPath, file.path)
-  const dependencies = new Map(sorted.map((file) => [file.path, new Set<string>()]))
-  const neighbours = new Map(sorted.map((file) => [file.path, new Set<string>()]))
-  const link = (dependent: string, dependency: string) => {
-    if (dependency === dependent) return
-    dependencies.get(dependent)?.add(dependency)
-    neighbours.get(dependent)?.add(dependency)
-    neighbours.get(dependency)?.add(dependent)
-  }
-  // Analyze each version separately: a reused renamed path must not change old imports.
-  for (const side of ['before', 'after'] as const) {
-    const manifests = new Map(
-      [...modules, ...files.filter((file) => posix.basename(file.path) === 'go.mod')].map(
-        (file) => [file.path, file],
-      ),
+  const entry =
+    options.entry ??
+    new URL(
+      import.meta.url.endsWith('.ts') ? './order-worker.ts' : './order-worker.js',
+      import.meta.url,
     )
-    const goModules = [...manifests.values()].flatMap((file) => {
-      const module = file[side]?.match(/^\s*module\s+(?:"([^"]+)"|(\S+))/m)
-      const name = module?.[1] ?? module?.[2]
-      return name ? [{ directory: posix.dirname(file.path), name }] : []
-    })
-    const byPath = side === 'before' ? beforePaths : afterPaths
-    const analyzed = new Map<string, AnalyzedSource>()
-    for (const file of sorted) {
-      const path = side === 'before' ? (file.previousPath ?? file.path) : file.path
-      const source = file[side]
-      if (byPath.get(path) !== file.path) continue
-      analyzed.set(path, {
-        path: file.path,
-        analysis: source === undefined ? null : await analyzeReviewSource(path, source),
-      })
-    }
-    for (const [path, file] of analyzed)
-      if (file.analysis)
-        for (const dependency of resolveReviewLinks(path, file.analysis, analyzed, goModules))
-          link(file.path, dependency)
-  }
-  const visited = new Set<string>()
-  const groups: ReviewGroup[] = []
-  for (const file of sorted) {
-    if (visited.has(file.path) || !neighbours.get(file.path)?.size) continue
-    const component = new Set<string>()
-    const collect = (path: string) => {
-      if (component.has(path)) return
-      component.add(path)
-      for (const other of neighbours.get(path) ?? []) collect(other)
-    }
-    collect(file.path)
-    const ordered: string[] = [],
-      active = new Set<string>()
-    const visit = (path: string) => {
-      if (visited.has(path) || active.has(path)) return // Cycles retain deterministic path order.
-      active.add(path)
-      for (const dependency of [...(dependencies.get(path) ?? [])].sort()) visit(dependency)
-      active.delete(path)
-      visited.add(path)
-      ordered.push(path)
-    }
-    for (const path of [...component].sort()) visit(path)
-    groups.push({ label: ordered[0] ?? file.path, paths: ordered, basis: 'ast' })
-  }
-  const folders = new Map<string, string[]>()
-  for (const file of sorted)
-    if (!visited.has(file.path)) {
-      const folder = posix.dirname(file.path)
-      const paths = folders.get(folder) ?? []
-      paths.push(file.path)
-      folders.set(folder, paths)
-    }
-  for (const [label, paths] of folders)
-    groups.push({ label: label === '.' ? 'Root files' : label, paths, basis: 'folder' })
-  return groups
+  const loader = entry.pathname.endsWith('.ts') ? ['--import', import.meta.resolve('tsx')] : []
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      process.execPath,
+      // Swift's generated lexer exhausts native memory in V8's optimizing Wasm compiler.
+      // Baseline compilation preserves syntax-based grouping without that compiler path.
+      ['--liftoff-only', '--max-old-space-size=128', ...loader, fileURLToPath(entry)],
+      {
+        env: { ...processEnvironment(), NODE_OPTIONS: '' },
+        windowsHide: true,
+        timeout: options.timeoutMs ?? 15_000,
+        killSignal: 'SIGKILL',
+        maxBuffer: 2 * 1024 * 1024,
+        encoding: 'utf8',
+      },
+      (error, stdout) => {
+        if (error) {
+          reject(
+            new Error(
+              'Review parser exited (' + (error.signal ?? error.code ?? 'spawn error') + ')',
+            ),
+          )
+          return
+        }
+        try {
+          const groups = decode(reviewProgressSchema.fields.groups, JSON.parse(stdout))
+          const remaining = new Set(files.map((file) => file.path))
+          for (const group of groups)
+            for (const path of group.paths)
+              if (!remaining.delete(path)) throw new Error('Invalid review parser file groups')
+          if (remaining.size) throw new Error('Incomplete review parser file groups')
+          resolve(groups)
+        } catch {
+          reject(new Error('Invalid review parser response'))
+        }
+      },
+    )
+    // Early exit or OOM can close stdin before its input is written. execFile reports
+    // the final process outcome; an unhandled EPIPE must not crash the runtime either.
+    child.stdin?.on('error', () => child.kill('SIGKILL'))
+    child.stdin?.end(JSON.stringify({ files, modules }))
+  })
 }
+
+/** One parser at a time across all paired clients; no long-lived grammar heap. */
+export class ReviewAnalyzer {
+  private tail = Promise.resolve()
+  private queued = 0
+  constructor(private readonly run = runReviewWorker) {}
+
+  async analyze(files: ReviewSource[], modules: ReviewModule[] = []): Promise<ReviewGroup[]> {
+    if (
+      !files.length ||
+      this.queued >= 8 ||
+      files.length + modules.length > 1000 ||
+      reviewAnalysisSize(files, modules) > reviewAnalysisMaxBytes
+    )
+      return folderFileGroups(files)
+
+    this.queued++
+    const deadline = Date.now() + 15_000
+    const result = this.tail.then(() => {
+      const timeoutMs = deadline - Date.now()
+      if (timeoutMs <= 0) throw new Error('Review parser queue deadline exceeded')
+      return this.run(files, modules, { timeoutMs })
+    })
+    // Keep the queue alive after a rejected request; its caller handles the failure below.
+    this.tail = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    try {
+      return await result
+    } catch (error) {
+      console.warn(
+        'Review dependency analysis unavailable; using folder groups:',
+        error instanceof Error ? error.message : 'parser failed',
+      )
+      return folderFileGroups(files)
+    } finally {
+      this.queued--
+    }
+  }
+}
+
+const analyzer = new ReviewAnalyzer()
+export const relatedFileGroups = (files: ReviewSource[], modules: ReviewModule[] = []) =>
+  analyzer.analyze(files, modules)

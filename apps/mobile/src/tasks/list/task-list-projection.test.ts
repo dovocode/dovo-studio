@@ -5,6 +5,7 @@ import {
   snapshotSchema,
   taskSchema,
   type RuntimeOverview,
+  type RuntimeTask,
   type Subagent,
 } from '@dovo/protocol'
 import { taskListProjection } from './task-list-projection'
@@ -177,4 +178,163 @@ it('updates owner metadata, input state and child pills without retaining remove
   const removed = taskListProjection([source], now, next)
   expect(removed.has(JSON.stringify([source.profile.id, 'child']))).toBe(false)
   expect(removed.get(key)?.subagents).toEqual([])
+})
+
+it('projects General parents, remote children and orphaned local children into the shared tree', async () => {
+  const { mobileThreadTree } = await import('./task-list-projection')
+  const source = overview()
+  const snapshot = source.snapshot!
+  const parent = {
+    ...task('general'),
+    repositoryId: 'general',
+    threadWatches: [
+      {
+        runtimeId: 'server',
+        threadId: 'remote',
+        computerName: 'Server',
+        relation: 'spawned' as const,
+        status: 'watching' as const,
+        offline: false,
+        snapshot: {
+          title: 'Remote project child',
+          projectName: 'Project',
+          phase: 'needs-input' as const,
+          revision: 'one',
+          attention: ['question'],
+          watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+        },
+      },
+    ],
+  }
+  const child = {
+    ...task('orphan'),
+    delegation: { parentTaskId: 'missing', parentRunId: 'run', key: 'orphan' },
+  }
+  const next = {
+    ...source,
+    snapshot: {
+      ...snapshot,
+      workspace: {
+        ...snapshot.workspace,
+        repositories: [
+          ...snapshot.workspace.repositories,
+          {
+            id: 'general',
+            name: 'Hidden scratch name',
+            kind: 'scratch' as const,
+            path: '/general',
+            branch: 'main',
+          },
+        ],
+        tasks: [parent, child],
+      },
+    },
+  }
+  const rows = taskListProjection([next], now)
+  const tree = mobileThreadTree(rows, [next])
+  expect(tree.roots.map((entry) => entry.task.id)).toEqual(['general', 'orphan'])
+  const root = tree.roots.find((entry) => entry.task.id === 'general')!
+  expect(root.needsInput).toBe(true)
+  expect(root.projectName).toBe('General')
+  expect(tree.nodes.get(root.key)?.children[0]).toMatchObject({
+    title: 'Remote project child',
+    projectName: 'Project',
+    phase: 'needs-input',
+  })
+  expect(rows.get(root.key)?.subagents).toEqual([])
+})
+
+it('keeps a child as a visible root when the selected project or computer excludes its coordinator', async () => {
+  const { mobileThreadTree } = await import('./task-list-projection')
+  const parent = overview(),
+    child = overview()
+  parent.profile = { ...parent.profile, id: 'parent-computer' }
+  child.profile = { ...child.profile, id: 'child-computer' }
+  const parentTask = {
+    ...task('parent'),
+    repositoryId: 'general',
+    threadWatches: [
+      {
+        runtimeId: 'child-computer',
+        threadId: 'child',
+        computerName: 'Child computer',
+        relation: 'spawned' as const,
+        status: 'watching' as const,
+        offline: false,
+      },
+    ],
+  }
+  const childTask = task('child')
+  parent.snapshot = {
+    ...parent.snapshot!,
+    workspace: { ...parent.snapshot!.workspace, tasks: [parentTask] },
+  }
+  child.snapshot = {
+    ...child.snapshot!,
+    workspace: { ...child.snapshot!.workspace, tasks: [childTask] },
+  }
+  const overviews = [parent, child],
+    rows = taskListProjection(overviews, now)
+  for (const include of [
+    (row: RuntimeTask) => row.runtimeId === 'child-computer',
+    (row: { task: { repositoryId: string } }) => row.task.repositoryId === 'repo',
+  ]) {
+    const tree = mobileThreadTree(rows, overviews, undefined, include)
+    expect(tree.roots.filter(include).map((row) => row.task.id)).toEqual(['child'])
+  }
+})
+
+it('resolves background-only children to empty saved profiles and retains scoped parent context', async () => {
+  const { mobileThreadTree } = await import('./task-list-projection')
+  const parent = overview()
+  const peer = {
+    ...overview(),
+    profile: runtimeProfile(
+      {
+        address: 'http://server.lan:8787',
+        token: 'peer-private-token-at-least-32-characters',
+        runtimeId: 'peer-identity',
+      },
+      'Server',
+    ),
+    snapshot: null,
+  }
+  const workspace = parent.snapshot!.workspace
+  workspace.tasks = [
+    {
+      ...task('parent'),
+      threadWatches: [
+        {
+          runtimeId: 'foreign-profile',
+          threadId: 'remote',
+          computerName: 'Server',
+          relation: 'spawned',
+          status: 'watching',
+          offline: false,
+          snapshot: {
+            runtimeId: 'peer-identity',
+            title: 'Remote',
+            repositoryId: 'remote-repo',
+            phase: 'running',
+            revision: '1',
+            attention: [],
+            watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+          },
+        },
+      ],
+    },
+  ]
+  const rows = taskListProjection([parent, peer], now)
+  const tree = mobileThreadTree(
+    rows,
+    [parent, peer],
+    undefined,
+    (row) => row.runtimeId === peer.profile.id,
+    (child) => child.runtimeId === peer.profile.id && child.repositoryId === 'remote-repo',
+  )
+  expect([...tree.contextKeys]).toEqual([JSON.stringify([parent.profile.id, 'parent'])])
+  expect(tree.nodes.get(JSON.stringify([peer.profile.id, 'remote']))).toMatchObject({
+    runtimeIdentity: 'peer-identity',
+    repositoryId: 'remote-repo',
+  })
 })

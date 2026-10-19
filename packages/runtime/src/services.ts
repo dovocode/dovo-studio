@@ -48,6 +48,7 @@ import { WorkspaceStore } from './storage/workspace.js'
 import { Devices } from './auth/devices.js'
 import { Pairing } from './auth/pairing.js'
 import { GitService } from './scm/git/git.js'
+import { cliRead } from './scm/git/command-read.js'
 import { Terminals } from './terminal/terminals.js'
 import { AgentRegistry } from './agents/configuration/registry.js'
 import { Approvals } from './agents/execution/approvals.js'
@@ -130,13 +131,17 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     pairing = new Pairing(devices),
     git: GitService = new GitService(
       () => commands.get(),
-      (cwd, args, result) =>
+      (cwd, args, result) => {
+        // Do not persist either edge of routine reads. A failed read still retains
+        // its command and error; writes and unknown commands retain their audit.
+        if (result?.error === undefined && cliRead(args, commands.get())) return
         activity.add(
           'command',
           cwd,
           `${args[0] ?? 'command'} · ${result ? (result.error ? 'failed' : 'completed') : 'started'}`,
           { args, ...result },
-        ),
+        )
+      },
       (connectionId, remote, cwd) => forges.gitAuthorization(connectionId, remote, cwd),
       (cwd) => pulls.githubEnvironment(cwd),
       (common, directory) => store.rememberWorktree(common, directory),
@@ -284,7 +289,18 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         undefined,
         true,
       ),
+    (parentId, runtimeId, threadId, policy) =>
+      routedStudioTool(
+        services,
+        parentId,
+        'threads',
+        { action: 'stop', id: threadId },
+        runtimeId,
+        () => {},
+        policy,
+      ),
   )
+  tasks.onStopChildren = (parentId) => threadWatch.requestChildStop(parentId)
   // Older runtimes retained watches on settled threads; do not resume those after an upgrade.
   pullRequestWatch.reconcile(store.get().tasks)
   pipelineWatch.reconcile(store.get().tasks)

@@ -41,6 +41,7 @@ export function changeTaskProject<T extends Task | TaskSummary>(
     agentOverrides: customized ? task.agentOverrides : undefined,
     existingWorktreePath: undefined,
     worktreeBaseBranch: undefined,
+    worktreeIncludeChanges: undefined,
   }
 }
 
