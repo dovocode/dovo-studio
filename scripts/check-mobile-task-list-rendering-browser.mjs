@@ -69,7 +69,7 @@ export const startRuntimeSync=(connection,options)=>{
     path: 'expo-secure-store',
     contents: `export const WHEN_UNLOCKED_THIS_DEVICE_ONLY='private';export const getItemAsync=async key=>key==='dovo.runtime.registry'?window.saved:null;export const setItemAsync=async(key,value)=>{if(key==='dovo.runtime.registry')window.saved=value};export const deleteItemAsync=async()=>{};`,
   },
-  { path: 'expo-router', contents: `export const router={push:()=>{}};` },
+  { path: 'expo-router', contents: `export const router={push:href=>window.routes.push(href)};` },
   {
     path: './read-cache',
     importer: mobile + 'runtime/connection/provider.tsx',
@@ -170,10 +170,10 @@ for (const [path, importer] of [
   ['../../ui/controls/icon', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/controls/action', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/layout/sheet', 'runtime/connection/fleet-overview.tsx'],
-  ['../../ui/content/text', 'tasks/list/task-list-row.tsx'],
+  ['../../ui/content/text', 'tasks/list/'],
   ['../../ui/layout/sheet', 'tasks/list/task-list-row.tsx'],
   ['../../ui/controls/icon', 'tasks/list/task-list-row.tsx'],
-  ['../../ui/theme', 'tasks/list/task-list-row.tsx'],
+  ['../../ui/theme', 'tasks/list/'],
   ['../theme', 'ui/content/pull-request-icon.tsx'],
 ])
   stubs.push({ path, importer: mobile + importer, contents: controls })
@@ -199,7 +199,7 @@ const running={...base,id:'running',title:'Running task',status:'running',create
 const child={...base,id:'child',title:'Child task',status:'running',delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'}};
 const parent={...base,id:'parent',title:'Parent task',subagents:[{id:'child',taskId:'child',source:'dovo',name:'Child agent',provider:'codex',status:'working',startedAt:iso(0),updatedAt:iso(0)}]};
 window.snapshot={revision:1,owner:false,runtimeInstanceId:'fixture',workspace:{version:1,runtimeAddress:'',repositories:[{id:'repo',name:'Project',path:'/project',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:'stale-branch'}],agents:[{id:'agent',name:'Agent',provider:'codex',model:'fixture',instructions:'',permission:'ask',endpoint:''}],automations:[],tasks:[running,parent,child,...Array.from({length:100},(_,index)=>({...base,id:'task-'+index,title:'Task '+index,createdAt:iso(index*1000+200000)}))]},questions:[],approvals:[],terminals:[],runs:[],devices:[],pendingDevices:[],acpInstallations:[]};
-window.rowRenders={};window.alerts=[];window.requests=[];window.navigations=[];
+window.rowRenders={};window.alerts=[];window.requests=[];window.navigations=[];window.routes=[];
 window.navigation={focused:true,navigate:(...args)=>window.navigations.push(args),setDetail:()=>{},openWork:()=>{}};
 window.fetch=async(url,options)=>{
   const target=new URL(url),path=target.pathname,body=options?.body?JSON.parse(options.body):null;window.requests.push({path,body,origin:target.origin,method:options?.method});
@@ -237,6 +237,7 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Run
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
+  page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', (error) => {
     errors.push(error.message)
@@ -473,21 +474,46 @@ try {
   await page.getByTestId('Task task-5').click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'task-5')
   const beforeSubagents = await page.evaluate(() => window.navigations.length)
-  await page.getByRole('button', { name: 'Show 1 working subagents', exact: true }).click()
+  await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).click()
   assert.equal(
     await page.evaluate(() => window.navigations.length),
     beforeSubagents,
-    'Opening the subagent picker must not open the parent conversation',
+    'Opening a nested child must not open the parent conversation',
   )
-  await page
-    .getByRole('dialog', { name: 'Working subagents', exact: true })
-    .getByRole('button', { name: /Open subagent Child agent/ })
-    .click()
-  assert.equal(
-    await page.getByRole('dialog', { name: 'Working subagents', exact: true }).count(),
-    0,
+  assert.deepEqual(await page.evaluate(() => window.routes.at(-1).params), {
+    runtimeId: 'http://mobile-owner.lan:8787',
+    taskId: 'child',
+    parentRuntimeId: 'http://mobile-owner.lan:8787',
+    parentTaskId: 'parent',
+    parentTitle: 'Parent task',
+  })
+  // Remote attention changes the parent status even when its local row is unchanged.
+  await page.evaluate(() =>
+    window.publish({
+      parent: {
+        threadWatches: [
+          {
+            runtimeId: 'remote',
+            threadId: 'remote-child',
+            computerName: 'Server',
+            relation: 'spawned',
+            status: 'watching',
+            offline: false,
+            snapshot: {
+              title: 'Remote child',
+              phase: 'needs-input',
+              revision: 'one',
+              attention: ['question'],
+              watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+            },
+          },
+        ],
+      },
+    }),
   )
-  assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'child')
+  await page.getByTestId('Task parent').getByText('Needs input', { exact: true }).waitFor()
+  await page.evaluate(() => window.publish({ parent: { threadWatches: [] } }))
+  await page.getByTestId('Task parent').getByText('Finished', { exact: true }).waitFor()
   await page.getByTestId('Task task-2').dispatchEvent('contextmenu')
   await page.getByTestId('Task task-3').click()
   await page.getByText('2 selected', { exact: true }).waitFor()

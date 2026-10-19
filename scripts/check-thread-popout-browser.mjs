@@ -32,8 +32,8 @@ window.fetch=async(url,init={})=>{
 function Thread({entityId}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskContextMenu dropdown task={task} owner={{runtimeId:value.activeRuntimeId,name:'Owner',online:value.connected,agents:[],repositories:[],worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Task actions</button></TaskContextMenu>}</>}
 window.taskViewLoads=0;
 window.featureLoads={};
-function Feature({view}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;return <output id="feature">{view+'|'+value.activeRuntimeId}</output>}
-const extensions=[defineStudioExtension({id:'dovo.tasks',name:'Tasks',version:'1'},[{id:'tasks',title:'Tasks',order:0,load:async()=>{window.taskViewLoads++;return {default:Thread}}}]),...['pulls','agents','runtime'].map(view=>defineStudioExtension({id:'fixture.'+view,name:view,version:'1'},[{id:view,title:view,order:1,load:async()=>{window.featureLoads[view]=(window.featureLoads[view]??0)+1;return {default:()=> <Feature view={view}/>}}}]))];
+function Feature({view,threadConnection}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;window.threadConnection=threadConnection;return <output id="feature">{view+'|'+value.activeRuntimeId}</output>}
+const extensions=[defineStudioExtension({id:'dovo.tasks',name:'Tasks',version:'1'},[{id:'tasks',title:'Tasks',order:0,load:async()=>{window.taskViewLoads++;return {default:Thread}}}]),...['pulls','agents','runtime'].map(view=>defineStudioExtension({id:'fixture.'+view,name:view,version:'1'},[{id:view,title:view,order:1,load:async()=>{window.featureLoads[view]=(window.featureLoads[view]??0)+1;return {default:props=> <Feature view={view} {...props}/>}}}]))];
 const target=location.hash?{runtimeId:profiles[location.hash==='#local'?0:1].id,taskId:'thread',title:'Popped thread'}:undefined;
 createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensions={extensions} threadWindow={target} popOutThread={async target=>{window.popped.push(target)}}/></StrictMode>);
 `,
@@ -248,7 +248,14 @@ try {
   await main.evaluate(() =>
     window.host.openThread({ runtimeId: 'missing', threadId: 'thread', title: 'Missing' }),
   )
-  await main.getByRole('alert').waitFor()
+  await main.waitForFunction(
+    () => document.getElementById('feature')?.textContent === 'runtime|http://host0.lan:8787',
+  )
+  assert.deepEqual(await main.evaluate(() => window.threadConnection), {
+    runtimeId: 'missing',
+    threadId: 'thread',
+    title: 'Missing',
+  })
   assert.equal(await main.evaluate(() => window.store.activeRuntimeId), 'http://host0.lan:8787')
   assert.equal(
     await main.evaluate(() => window.taskViewLoads),

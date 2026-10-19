@@ -8,6 +8,9 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 // Exercise the real route, startup controller, creation runtime and TaskDetail. Native
 // controls/conversation content are boundaries; their mount counts expose page replacement.
 const mocks = {
+  // Pairing is covered by check-thread-pairing-browser; keep its native scanner
+  // outside this route/composer continuity fixture.
+  '../../runtime/connection/pair-computer': `export const PairComputer=()=>null;`,
   'expo-router': `
     import {createContext,useContext,useEffect} from 'react';
     export const RouteContext=createContext({});

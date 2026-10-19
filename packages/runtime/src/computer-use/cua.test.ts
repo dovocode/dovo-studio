@@ -1,6 +1,6 @@
 import { decode, commandsSchema } from '@dovo/protocol'
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkCua, detectCua, cuaAgentServer, cuaAction, cuaSkillInstructions } from './cua.js'
@@ -195,7 +195,7 @@ it('exposes an installed official skill source to isolated harnesses', async () 
   await writeFile(join(skill, 'SKILL.md'), officialSkill)
   vi.mocked(exec).mockResolvedValue({ stdout: skill, stderr: '' })
   const instructions = await cuaSkillInstructions('cua-driver')
-  expect(instructions).toContain(JSON.stringify(join(skill, 'SKILL.md')))
+  expect(instructions).toContain(JSON.stringify(await realpath(join(skill, 'SKILL.md'))))
   expect(instructions).toContain('Use accessibility targets; read ./references/desktop.md.')
   expect(exec).toHaveBeenCalledExactlyOnceWith('cua-driver', ['skills', 'path'], expect.anything())
 })

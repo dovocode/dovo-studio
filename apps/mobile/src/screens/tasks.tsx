@@ -796,7 +796,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             >
               <TaskListRow
                 density={preferences.threadDensity ?? 'compact'}
-                row={item.entry}
+                row={rowData.get(item.entry.key)!.row}
+                needsInput={item.entry.needsInput}
                 subagents={rowData.get(item.entry.key)!.subagents}
                 thread={tree.nodes.get(item.entry.key)}
                 searching={!!query}

@@ -79,6 +79,7 @@ export type TaskListRowActions = {
 }
 function TaskListRowView({
   row,
+  needsInput = row.needsInput,
   subagents,
   thread,
   searching,
@@ -96,6 +97,8 @@ function TaskListRowView({
   showDevice?: boolean
   density: MobilePreferences['threadDensity']
   row: RuntimeTask
+  /** Includes attention from spawned work without replacing the stable row projection. */
+  needsInput?: boolean
   thread?: NestedThread
   searching?: boolean
   subagents: readonly SubagentListItem[]
@@ -136,16 +139,16 @@ function TaskListRowView({
   const actions = useTaskLifecycle(task, row.runtimeId)
   const car = useCarMode()
   const dense = !car && density === 'compact'
-  const status = taskRowStatus(task, row.needsInput, row.online, now)
-  const done = showTaskDone(task, row.needsInput, now)
-  const failed = !row.needsInput && !done && status.startsWith('Failed')
+  const status = taskRowStatus(task, needsInput, row.online, now)
+  const done = showTaskDone(task, needsInput, now)
+  const failed = !needsInput && !done && status.startsWith('Failed')
   const general = repository?.kind === 'scratch'
   const projectName = general ? 'General' : row.projectName || 'No project'
   const worktree = !general && task.execution === 'worktree'
   // "Review · 23m" → state "Review" and a right-aligned age "23m".
   const [state, age] = /^(.*) · (now|\d+[mhd])$/.exec(status)?.slice(1) ?? [status, '']
-  const working = task.status === 'running' && !row.needsInput
-  const stateColor = row.needsInput
+  const working = task.status === 'running' && !needsInput
+  const stateColor = needsInput
     ? colors.accent
     : failed
       ? colors.error
@@ -232,9 +235,7 @@ function TaskListRowView({
     >
       {StatusIcon && <StatusIcon size={12} color={stateColor} />}
       <Text numberOfLines={1} style={{ color: stateColor, ...contextText }}>
-        {working || row.needsInput || done || failed
-          ? `${state}${age ? ` ${age}` : ''}`
-          : age || state}
+        {working || needsInput || done || failed ? `${state}${age ? ` ${age}` : ''}` : age || state}
       </Text>
     </View>
   )
