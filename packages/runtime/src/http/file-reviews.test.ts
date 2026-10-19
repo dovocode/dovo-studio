@@ -9,6 +9,11 @@ import {
 } from '@dovo/protocol'
 import { startRuntime } from '../index'
 import { retainChangedFiles } from '../scm/git/retain-changes'
+import { runtimeIntegration } from '../testing/integration'
+
+// HTTP reviews run real parser subprocesses with their own 15-second deadline.
+vi.setConfig(runtimeIntegration)
+
 function taggedDetail(detail: PullDetail) {
   const destination = 'account/repo'
   return { ...detail, destination, pull: { ...detail.pull, destination } }
