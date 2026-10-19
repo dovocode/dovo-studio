@@ -61,7 +61,19 @@ export async function prepareDictationEngine(root) {
       '-DTRANSCRIBE_USE_SYSTEM_BLAS=OFF',
       '-DTRANSCRIBE_BUILD_TESTS=OFF',
       '-DTRANSCRIBE_X86_CONSERVATIVE=ON',
-      '-DGGML_NATIVE=OFF',
+      // MSVC ARM cannot configure GGML_NATIVE=OFF. Enable that code path while
+      // fixing its feature probes to baseline ARM64, so release binaries don't
+      // inherit optional instructions from the build machine's CPU.
+      ...(process.platform === 'win32' && process.arch === 'arm64'
+        ? [
+            '-DGGML_NATIVE=ON',
+            '-DGGML_MACHINE_SUPPORTS_dotprod=OFF',
+            '-DGGML_MACHINE_SUPPORTS_i8mm=OFF',
+            '-DGGML_MACHINE_SUPPORTS_sve=OFF',
+            '-DGGML_MACHINE_SUPPORTS_sme=OFF',
+            '-DGGML_MACHINE_SUPPORTS_fma=ON',
+          ]
+        : ['-DGGML_NATIVE=OFF']),
       '-DGGML_METAL_EMBED_LIBRARY=ON',
       '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded',
     ],
