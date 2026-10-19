@@ -479,3 +479,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.draft.outputs.tag }}
         run: gh workflow run distribution.yml -f tag="$TAG"
+      - name: Start mobile nightly from the same source tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: gh workflow run release-mobile.yml --ref "$TAG" -f release_tag="$TAG" -f platform=all -f upload=true

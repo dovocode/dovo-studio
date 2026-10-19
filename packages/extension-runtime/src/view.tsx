@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { AccountPanel } from './account-panel'
 import { RuntimeIconSettings } from './runtime-icon-settings'
 import { runtimeExtension } from './index'
 import { RuntimeDiagnosticsPanel } from './runtime-diagnostics'
@@ -20,6 +22,7 @@ import { WindowsRuntimeSettings } from './windows-runtime'
 export default function RuntimeView() {
   const sources = useRuntimeSources()
   const studio = useStudioHost()
+  const [discovered, setDiscovered] = useState<{ address: string } | undefined>(undefined)
   const [managing, setManaging] = useApplicationState<RuntimeProfile | null>(null)
   const [pairingPhone, setPairingPhone] = useApplicationState<RuntimeProfile | null>(null)
   // Phones pair with a computer this app owns: the local desktop runtime or an owned server.
@@ -56,7 +59,8 @@ export default function RuntimeView() {
               <Button onClick={() => setPairingPhone(host.profile)}>Connect your phone</Button>
             </article>
           )}
-          <PairingClient onManage={setManaging} />
+          <AccountPanel onPair={(address) => setDiscovered({ address })} />
+          <PairingClient onManage={setManaging} discovered={discovered} />
           <p className="text-xs leading-6 text-muted-foreground">
             Tasks and projects appear together; each runs on its own computer. Use a reachable LAN,
             Tailscale or NetBird address. HTTP and optional HTTPS are supported.

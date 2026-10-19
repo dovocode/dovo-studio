@@ -2,6 +2,9 @@ import type { ConfigContext, ExpoConfig } from 'expo/config'
 export default ({ config }: ConfigContext): ExpoConfig => {
   const push =
     process.env.DOVO_LIVE_ACTIVITY_PUSH !== '0' && process.env.DOVO_PUSH_NOTIFICATIONS !== '0'
+  const buildNumber = process.env.DOVO_MOBILE_BUILD_NUMBER
+  if (buildNumber && (!/^[1-9][0-9]*$/.test(buildNumber) || Number(buildNumber) > 2_100_000_000))
+    throw new Error('Invalid DOVO_MOBILE_BUILD_NUMBER')
   const notifications = process.env.DOVO_PUSH_NOTIFICATIONS !== '0'
   return {
     ...config,
@@ -12,6 +15,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     android: {
       ...config.android,
+      ...(buildNumber ? { versionCode: Number(buildNumber) } : {}),
       ...(process.env.DOVO_GOOGLE_SERVICES_FILE
         ? { googleServicesFile: process.env.DOVO_GOOGLE_SERVICES_FILE }
         : {}),
@@ -20,10 +24,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     slug: config.slug ?? 'dovo-studio',
     ios: {
       ...config.ios,
+      ...(buildNumber ? { buildNumber } : {}),
       ...(process.env.DOVO_APPLE_TEAM_ID ? { appleTeamId: process.env.DOVO_APPLE_TEAM_ID } : {}),
     },
     plugins: [
       './plugins/with-cocoapods-uuids.ts',
+      ...(process.env.DOVO_MOBILE_DISTRIBUTION === '1'
+        ? ['./plugins/with-distribution-signing.ts']
+        : []),
       './plugins/with-lucide-icons.ts',
       ['./plugins/with-live-activity-push.ts', { enabled: push || notifications }],
       ...(config.plugins ?? []).map((plugin): NonNullable<ExpoConfig['plugins']>[number] =>

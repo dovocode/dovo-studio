@@ -1,3 +1,5 @@
+import { useRuntime } from '../runtime/connection/provider'
+import { runtimeComputerName } from '@dovo/protocol'
 import { usePushNotifications } from '../notifications/provider'
 import { useOpenAppLink } from '../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
@@ -19,6 +21,7 @@ export default function AppUpdates() {
 
   const activity = useLiveActivities()
   const notifications = usePushNotifications()
+  const { overviews } = useRuntime()
   const [release, setRelease] = useApplicationState<RuntimeRelease | null>(null)
   const [busy, setBusy] = useApplicationState(false),
     [message, setMessage] = useApplicationState('')
@@ -62,8 +65,8 @@ export default function AppUpdates() {
           Dovo Studio {Constants.expoConfig?.version ?? 'development'}
         </Text>
         <Text style={styles.muted}>
-          Native app updates are installed from a local build. Updates keep your paired computers
-          and saved settings.
+          Native app updates come from TestFlight, Google Play testing, or a local build. Updates
+          keep your paired computers and saved settings.
         </Text>
         <Action
           wide
@@ -111,7 +114,7 @@ export default function AppUpdates() {
         </SettingsGroup>
         <SettingsGroup
           title="Push notifications"
-          footer="Get task completion, failed checks and input requests when Dovo is in the background. Each paired computer needs the separately deployed Dovo notification relay."
+          footer="Get task completion, failed checks and input requests when Dovo is in the background. Sign in on this phone for managed delivery, or use a standalone relay. Choose which paired computers can notify you."
         >
           <SettingsSwitchRow
             first
@@ -120,6 +123,15 @@ export default function AppUpdates() {
             value={notifications.enabled}
             onValueChange={notifications.setEnabled}
           />
+          {overviews.map((entry) => (
+            <SettingsSwitchRow
+              key={entry.profile.id}
+              label={runtimeComputerName(entry)}
+              disabled={!notifications.supported || notifications.busy || !notifications.enabled}
+              value={notifications.serverEnabled(entry.profile.id)}
+              onValueChange={(value) => notifications.setServerEnabled(entry.profile.id, value)}
+            />
+          ))}
         </SettingsGroup>
         {!notifications.supported && (
           <Text style={styles.muted}>Push notifications require a new native app build.</Text>

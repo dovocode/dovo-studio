@@ -57,6 +57,7 @@ export interface StudioCommand {
   run: () => void
 }
 export interface StudioHostApi {
+  accountStorage?: import('@dovo/protocol').AccountStorage
   appInfo?: { version: string; channel: 'stable' | 'nightly' | 'dev' }
   updates?: import('@dovo/protocol').DesktopUpdateBridge
   popOutThread?: import('@dovo/protocol').ThreadWindowBridge

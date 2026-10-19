@@ -1,0 +1,30 @@
+services:
+  connect:
+    build:
+      context: ../..
+      dockerfile: apps/connect-server/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      PORT: '8080'
+      DOVO_CONNECT_ORIGIN: ${DOVO_CONNECT_ORIGIN:-https://connect.dovo.studio}
+      DOVO_ACCOUNT_ISSUER: ${DOVO_ACCOUNT_ISSUER:-https://auth.dovo.studio}
+      DOVO_ACCOUNT_CLIENT_ID: ${DOVO_ACCOUNT_CLIENT_ID:-30793ba9efd8e96893a9}
+      DOVO_ACCOUNT_ORGANIZATION: ${DOVO_ACCOUNT_ORGANIZATION:-}
+      DOVO_ACCOUNT_DELETE_CLIENT_ID: ${DOVO_ACCOUNT_DELETE_CLIENT_ID:-}
+      DOVO_ACCOUNT_DELETE_CLIENT_SECRET: ${DOVO_ACCOUNT_DELETE_CLIENT_SECRET:-}
+      DOVO_CONNECT_DATA: /data/private
+      DOVO_NOTIFICATION_RELAY_URL: ${DOVO_NOTIFICATION_RELAY_URL:-}
+      DOVO_NOTIFICATION_RELAY_TOKEN: ${DOVO_NOTIFICATION_RELAY_TOKEN:-}
+    volumes:
+      - accounts:/data
+    ports:
+      - '127.0.0.1:8081:8080'
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  accounts:

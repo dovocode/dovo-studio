@@ -2,6 +2,7 @@
 
 interface Window {
   dovo: {
+    accountStorage: import('@dovo/protocol').AccountStorage
     runtimeSync: import('@dovo/protocol').DesktopRuntimeSyncBridge
     popOutThread: import('@dovo/protocol').ThreadWindowBridge
     taskLauncher: import('@dovo/protocol').TaskLauncherBridge

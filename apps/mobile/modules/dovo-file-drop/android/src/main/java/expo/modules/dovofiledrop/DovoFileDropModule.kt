@@ -27,7 +27,7 @@ class DovoFileDropModule : Module() {
     }
     View(DovoFileDropView::class) {
       Events("onFilesDropped", "onDropActive", "onDropError")
-      Prop("enabled") { view: DovoFileDropView, value: Boolean -> view.enabled = value }
+      Prop("enabled") { view: DovoFileDropView, value: Boolean -> view.dropEnabled = value }
     }
   }
 }
@@ -36,12 +36,12 @@ class DovoFileDropView(context: Context, private val dropContext: AppContext) : 
   private val onFilesDropped by EventDispatcher()
   private val onDropActive by EventDispatcher()
   private val onDropError by EventDispatcher()
-  var enabled = true
+  var dropEnabled = true
   private var receiving = false
   init {
     setOnDragListener { _, event ->
       when (event.action) {
-        DragEvent.ACTION_DRAG_STARTED -> enabled && !receiving && event.clipDescription != null &&
+        DragEvent.ACTION_DRAG_STARTED -> dropEnabled && !receiving && event.clipDescription != null &&
           (event.clipDescription.hasMimeType("text/uri-list") || !event.clipDescription.hasMimeType("text/plain"))
         DragEvent.ACTION_DRAG_ENTERED -> { onDropActive(mapOf("active" to true)); true }
         DragEvent.ACTION_DRAG_EXITED, DragEvent.ACTION_DRAG_ENDED -> { onDropActive(mapOf("active" to false)); true }
@@ -52,7 +52,7 @@ class DovoFileDropView(context: Context, private val dropContext: AppContext) : 
   }
   private fun receive(event: DragEvent) {
     onDropActive(mapOf("active" to false))
-    if (!enabled || receiving) return
+    if (!dropEnabled || receiving) return
     val clip = event.clipData ?: return
     if (clip.itemCount > 5) { onDropError(mapOf("message" to "Attach up to 5 files per message.")); return }
     val permission = dropContext.currentActivity?.requestDragAndDropPermissions(event)

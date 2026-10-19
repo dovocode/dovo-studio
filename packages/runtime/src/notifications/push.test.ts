@@ -9,19 +9,31 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
   vi.restoreAllMocks()
 })
-function setup() {
+function setup(managed = false) {
   const db = openDatabase(':memory:'),
     store = new WorkspaceStore(db),
     devices = new Devices(db, 'owner-token')
   const device = devices.add('Phone', 'phone-token')
   const send = vi
-    .fn<(value: RelayNotification) => Promise<{ delivered: boolean; invalidToken: boolean }>>()
+    .fn<
+      (
+        value: RelayNotification,
+        token?: string,
+      ) => Promise<{ delivered: boolean; invalidToken: boolean }>
+    >()
     .mockResolvedValue({ delivered: true, invalidToken: false })
   let input:
     | { id: string; preview: string; type?: 'question' | 'approval' }
     | Array<{ id: string; preview: string; type?: 'question' | 'approval' }>
     | undefined
-  const service = new PushNotifications(db, store, devices, () => input, { send })
+  const service = new PushNotifications(
+    db,
+    store,
+    devices,
+    () => input,
+    managed ? {} : { send },
+    send,
+  )
   cleanups.push(async () => {
     await service.dispose()
     db.close()
@@ -49,6 +61,7 @@ function setup() {
     platform: 'ios',
     token: 'a'.repeat(64),
     environment: 'sandbox',
+    ...(managed ? { managedToken: 'm'.repeat(43) } : {}),
   }
   service.register(device, registration)
   return {
@@ -299,4 +312,39 @@ it('discards an old-turn input even if its question has not been cleared yet', a
   expect(f.send).toHaveBeenCalledOnce()
   expect(f.db.prepare('SELECT id FROM push_outbox').all()).toEqual([])
   await reopened.dispose()
+})
+
+it('delivers managed pushes without runtime relay configuration and keeps scoped credentials out of messages', async () => {
+  const f = setup(true)
+  await f.service.flush()
+  expect(f.service.status(f.device)).toMatchObject({ configured: true, registered: true })
+  f.input({ id: 'question', preview: 'Choose a branch' })
+  await f.service.flush()
+  expect(f.send).toHaveBeenCalledOnce()
+  expect(f.send.mock.calls[0][1]).toBe('m'.repeat(43))
+  expect(f.send.mock.calls[0][0]).not.toHaveProperty('managedToken')
+  expect(JSON.stringify(f.store.get())).not.toContain('m'.repeat(43))
+})
+it('preserves pending messages across managed credential renewal and does not remove renewed grants on stale failures', async () => {
+  const f = setup(true)
+  await f.service.flush()
+  let finish: (value: { delivered: boolean; invalidToken: boolean }) => void = () => {
+    throw new Error('No pending delivery')
+  }
+  f.send.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  f.input({ id: 'question', preview: 'Needs attention' })
+  const pending = f.service.flush()
+  f.service.register(f.device, { ...f.registration, managedToken: 'n'.repeat(43) })
+  expect(f.db.prepare('SELECT id FROM push_outbox').all()).toHaveLength(1)
+  finish({ delivered: false, invalidToken: true })
+  await pending
+  expect(f.service.status(f.device).registered).toBe(true)
+  f.input({ id: 'second-question', preview: 'Still subscribed' })
+  await f.service.flush()
+  expect(f.send.mock.calls.at(-1)?.[1]).toBe('n'.repeat(43))
 })

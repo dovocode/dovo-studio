@@ -39,6 +39,7 @@ createRoot(root).render(
           browser={window.dovo?.browser}
           onOpenLink={window.dovo?.onOpenLink}
           openBrowserLink={window.dovo?.openBrowserLink}
+          accountStorage={window.dovo?.accountStorage}
           openExternalLink={window.dovo?.openExternalLink}
           inputPreview={threadWindow ? undefined : window.dovo?.inputPreview}
           taskLauncher={threadWindow ? undefined : window.dovo?.taskLauncher}

@@ -55,6 +55,7 @@ type WorkbenchProps = {
   browser?: StudioHostApi['browser']
   onOpenLink?: (listener: (url: string) => void) => () => void
   openBrowserLink?: StudioHostApi['openBrowserLink']
+  accountStorage?: StudioHostApi['accountStorage']
   openExternalLink?: StudioHostApi['openExternalLink']
   desktopPlatform?: DesktopPlatform
   inputPreview?: InputPreviewBridge
@@ -148,6 +149,7 @@ function WorkbenchContent({
   pickDirectory,
   browser,
   openBrowserLink,
+  accountStorage,
   openExternalLink,
   onOpenLink,
   appInfo,
@@ -464,6 +466,7 @@ function WorkbenchContent({
       openLink,
       getLinkActions,
       openBrowserLink,
+      accountStorage,
       openExternalLink,
       openPullLink,
       openPipelineLink,
@@ -483,6 +486,7 @@ function WorkbenchContent({
       openLink,
       getLinkActions,
       openBrowserLink,
+      accountStorage,
       openExternalLink,
       openPullLink,
       openPipelineLink,

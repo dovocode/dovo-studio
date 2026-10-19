@@ -1,3 +1,4 @@
+import { AccountPanel } from '../runtime/connection/account-panel'
 import { RuntimeIconSettings } from '../runtime/connection/runtime-icon-settings'
 import { runtimeIconName } from '../ui/content/runtime-icon'
 import {
@@ -9,7 +10,7 @@ import { DeviceHostSettings } from './device-host-settings'
 import { ComputerUpdates } from './computer-updates'
 import { TaskDefaultSettings } from '../runtime/preferences/task-default-settings'
 import { RuntimePreferences } from '../runtime/connection/runtime-preferences'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
 import { pairingInvitation, type PairingInvitation } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
@@ -35,6 +36,7 @@ export default function DevicesScreen() {
 
   const runtime = useRuntime()
   const { profiles, overviews, activeId, error: runtimeError } = runtime
+  const [discoveredAddress, setDiscoveredAddress] = useState<string | undefined>(undefined)
   const [adding, setAdding] = useApplicationState(false)
   // Saved before pairing completes: by then the new computer is already in the list.
   const firstPairing = useRef(false)
@@ -103,6 +105,7 @@ export default function DevicesScreen() {
                   icon: 'add',
                   onPress: () => {
                     setInvitation(undefined)
+                    setDiscoveredAddress(undefined)
                     setPairTarget(null)
                     setAdding(true)
                   },
@@ -123,6 +126,14 @@ export default function DevicesScreen() {
         keyboardDismissMode="interactive"
         automaticallyAdjustKeyboardInsets
       >
+        <AccountPanel
+          onPair={(address) => {
+            setDiscoveredAddress(address)
+            setInvitation(undefined)
+            setPairTarget(null)
+            setAdding(true)
+          }}
+        />
         {!!runtimeError && (
           <Text accessibilityRole="alert" style={styles.error}>
             {runtimeError}
@@ -167,7 +178,10 @@ export default function DevicesScreen() {
         ) : (
           <Action
             label={invitation ? 'Continue pairing' : 'Connect a computer'}
-            onPress={() => setAdding(true)}
+            onPress={() => {
+              setDiscoveredAddress(undefined)
+              setAdding(true)
+            }}
           />
         )}
         {!!profiles.length && <ComputerUpdates />}
@@ -218,7 +232,8 @@ export default function DevicesScreen() {
                 />
               )}
               <PairComputer
-                key={`${invitation?.code ?? 'manual'}:${pairTarget ?? 'new'}`}
+                key={`${invitation?.code ?? discoveredAddress ?? 'manual'}:${pairTarget ?? 'new'}`}
+                initialAddress={discoveredAddress}
                 invitation={invitation}
                 replaceId={pairTarget ?? undefined}
                 onBusyChange={setPairingBusy}
@@ -226,6 +241,7 @@ export default function DevicesScreen() {
                 onPaired={() => {
                   const first = firstPairing.current
                   setAdding(false)
+                  setDiscoveredAddress(undefined)
                   setInvitation(undefined)
                   setPairingBusy(false)
                   // A first computer means the user came to work; take them to their tasks.

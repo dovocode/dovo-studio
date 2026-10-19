@@ -64,6 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/download/">Downloads</Link>
             <Link href="/docs/">Getting started</Link>
             <a href={repository}>Source code ↗</a>
+            <Link href="/privacy/">Privacy</Link>
           </nav>
         </footer>
       </body>

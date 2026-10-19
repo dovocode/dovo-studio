@@ -123,10 +123,23 @@ back to ad hoc signing and macOS may ask for Keychain access again after an upda
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for a local ad hoc verification build without selecting a saved
 identity; published updates still require the Developer ID.
 
+## Mobile nightly pipeline
+
+A successfully published desktop/server nightly dispatches **Mobile nightly** from the same source
+tag. It builds signed iOS and Android artifacts, adds commit/checksum provenance, attaches them to
+the GitHub nightly, and uploads to TestFlight/Google Play testing when private credentials are
+configured. Stable desktop releases do not trigger it. Store processing, external beta review and
+public-link enrollment remain distinct from successful uploads. Android uploads default to draft
+until the testing setup is ready; production tracks are disabled. See
+[mobile beta automation](mobile-beta-testing.md#automated-mobile-nightlies) for environment secrets,
+manual artifact-only runs, increasing build numbers and initial store setup.
+
 ## Local iPhone updates
 
-No EAS Update or TestFlight service is used. Settings → App & updates shows the installed version,
-checks published GitHub release notes and explains the local install flow.
+Local device installs remain supported alongside
+[TestFlight and Play beta builds](mobile-beta-testing.md). Settings → App & updates shows the
+installed version, checks published GitHub release notes and explains the local install flow. No EAS
+Update service is required.
 
 ```sh
 git pull --ff-only

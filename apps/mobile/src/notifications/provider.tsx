@@ -1,3 +1,4 @@
+import { useMobileAccount } from '../runtime/connection/account-provider'
 import { runtimeComputerName } from '@dovo/protocol'
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { AppState, Platform } from 'react-native'
@@ -12,16 +13,26 @@ import { useRuntime } from '../runtime/connection/provider'
 import { useApplicationState } from '../runtime/state/application-state'
 
 const preferenceKey = 'dovo.push-notifications.enabled'
+const serverPreferenceKey = 'dovo.push-notifications.disabled-servers'
 const Context = createContext({
   enabled: false,
   supported: false,
   busy: false,
   error: '',
   setEnabled: (_enabled: boolean) => {},
+  serverEnabled: (_id: string): boolean => true,
+  setServerEnabled: (_id: string, _enabled: boolean) => {},
 })
 export const usePushNotifications = () => useContext(Context)
 export function PushNotificationProvider({ children }: { children: ReactNode }) {
   const runtime = useRuntime()
+  const account = useMobileAccount()
+  const accountRef = useRef(account)
+  accountRef.current = account
+  const [disabledServers, setDisabledServers, disabledServersRef] = useApplicationState<string[]>(
+    [],
+  )
+  const setServer = useRef<(id: string, value: boolean) => Promise<void>>(async () => {})
   const deferredTarget = useRef<NotificationTarget | null>(null)
   useEffect(() => {
     const target = deferredTarget.current
@@ -43,7 +54,10 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
   const hosts = JSON.stringify(
     runtime.overviews.map((entry) => [entry.profile.id, entry.profile.connection, entry.connected]),
   )
-  useEffect(() => refreshRegistration.current(), [hosts, runtime.ready])
+  useEffect(
+    () => refreshRegistration.current(),
+    [hosts, runtime.ready, account.directory?.user.id, disabledServers],
+  )
   const toggle = useRef<(value: boolean) => Promise<void>>(async () => {})
   useEffect(() => {
     if (!supported) return
@@ -128,32 +142,54 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
             nativeToken = result.data
           }
           const enabled = enabledRef.current && permitted
+          if (accountRef.current.directory) {
+            try {
+              await accountRef.current.client.retainPush(
+                enabled
+                  ? latest.current.overviews
+                      .filter((entry) => !disabledServersRef.current.includes(entry.profile.id))
+                      .map((entry) => entry.profile.id)
+                  : [],
+              )
+            } catch {
+              errors.push(
+                'Could not revoke disabled server notifications on Connect. Try again when connected.',
+              )
+            }
+          }
           const token = nativeToken
           for (const entry of latest.current.overviews) {
+            const serverEnabled = enabled && !disabledServersRef.current.includes(entry.profile.id)
             if (!entry.connected || disposed) continue
             const key = JSON.stringify([
               entry.profile.id,
               entry.profile.connection.address,
               entry.profile.connection.token,
-              enabled,
+              serverEnabled,
+              accountRef.current.directory?.user.id,
               token,
             ])
             const previous = registered.get(entry.profile.id)
             if (previous?.key === key && Date.now() - previous.at < 300_000) continue
             try {
-              if (enabled && token) {
+              if (serverEnabled && token) {
+                const registration = {
+                  runtimeId: entry.profile.id,
+                  platform: Platform.OS === 'ios' ? ('ios' as const) : ('android' as const),
+                  token,
+                  environment:
+                    Constants.expoConfig?.extra?.pushEnvironment === 'production'
+                      ? ('production' as const)
+                      : ('sandbox' as const),
+                }
+                const grant = accountRef.current.directory
+                  ? await accountRef.current.client.subscribePush(registration)
+                  : undefined
+                if (disposed || syncAgain) continue
                 const status = await latest.current.readRuntime(
                   entry.profile,
                   '/api/notifications/register',
-                  {
-                    runtimeId: entry.profile.id,
-                    platform: Platform.OS,
-                    token,
-                    environment:
-                      Constants.expoConfig?.extra?.pushEnvironment === 'production'
-                        ? 'production'
-                        : 'sandbox',
-                  },
+                  { ...registration, ...(grant ? { managedToken: grant.token } : {}) },
                   pushStatusSchema,
                 )
                 if (!status.configured || !status.registered || status.error) {
@@ -172,7 +208,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
               registered.set(entry.profile.id, { key, at: Date.now() })
             } catch {
               errors.push(
-                `${runtimeComputerName(entry)}: configure the push relay and update this runtime to enable notifications.`,
+                `${runtimeComputerName(entry)}: could not enable notifications. Check Connect delivery and update this runtime, or configure its standalone relay.`,
               )
             }
           }
@@ -230,6 +266,33 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
           }
         }),
       )
+      setServer.current = async (id, value) => {
+        if (disposed || toggling) return
+        toggling = true
+        setBusy(true)
+        setError('')
+        try {
+          const next = value
+            ? disabledServersRef.current.filter((server) => server !== id)
+            : [...new Set([...disabledServersRef.current, id])]
+          await AsyncStorage.setItem(serverPreferenceKey, JSON.stringify(next))
+          if (disposed) return
+          setDisabledServers(next)
+          registered.delete(id)
+          await sync()
+        } catch {
+          if (!disposed) setError('Could not update server notifications. Try again.')
+        } finally {
+          toggling = false
+          if (!disposed) setBusy(false)
+        }
+      }
+      const storedServers = await AsyncStorage.getItem(serverPreferenceKey)
+      const parsed: unknown = storedServers ? JSON.parse(storedServers) : []
+      if (!Array.isArray(parsed) || !parsed.every((id): id is string => typeof id === 'string'))
+        throw new Error('Invalid notification preferences')
+      if (disposed) return
+      setDisabledServers(parsed)
       const saved = await AsyncStorage.getItem(preferenceKey)
       if (disposed) return
       managed = saved !== null
@@ -266,6 +329,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       disposed = true
       subscriptions.forEach((subscription) => subscription.remove())
       toggle.current = async () => {}
+      setServer.current = async () => {}
       refreshRegistration.current = () => {}
     }
   }, [supported])
@@ -276,6 +340,10 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
         supported,
         busy,
         error,
+        serverEnabled: (id) => !disabledServers.includes(id),
+        setServerEnabled: (id, value) => {
+          void setServer.current(id, value)
+        },
         setEnabled: (value) => {
           void toggle.current(value)
         },

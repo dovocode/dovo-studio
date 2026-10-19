@@ -9,14 +9,15 @@ const mocks = {
   expo: `export const requireOptionalNativeModule=()=>({});`,
   'expo-constants': `export default {expoConfig:{extra:{pushEnvironment:'sandbox'}}};`,
   'expo-router': `export const router={push:target=>window.routes.push(target)};`,
-  '@react-native-async-storage/async-storage': `export default {getItem:async()=> 'true',setItem:async()=>{}};`,
+  '@react-native-async-storage/async-storage': `const saved=new Map([['dovo.push-notifications.enabled','true']]);export default {getItem:async key=>saved.get(key)??null,setItem:async(key,value)=>{saved.set(key,value)}};`,
+  '../runtime/connection/account-provider': `import {createContext,useContext} from 'react';export const AccountContext=createContext(null);export const useMobileAccount=()=>useContext(AccountContext);`,
   'expo-notifications': `export const setNotificationCategoryAsync=async()=>{};export const setNotificationHandler=()=>{};export const getLastNotificationResponseAsync=async()=>null;export const clearLastNotificationResponseAsync=async()=>{};export const addNotificationResponseReceivedListener=fn=>{window.notification=fn;return{remove(){}}};export const getPermissionsAsync=async()=>({granted:window.permitted});export const requestPermissionsAsync=getPermissionsAsync;export const getDevicePushTokenAsync=async()=>({data:'native-token'});export const addPushTokenListener=fn=>{window.rotate=token=>fn({data:token});return{remove(){}}};`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const Context=createContext(null);export const useRuntime=()=>useContext(Context);`,
   '../runtime/state/application-state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const[value,set]=useState(initial);const ref=useRef(value);return[value,next=>{ref.current=next;set(next)},ref]};`,
 }
 const result = await build({
   stdin: {
-    contents: `import {useState} from 'react';import{createRoot}from'react-dom/client';import{PushNotificationProvider,usePushNotifications}from'./src/notifications/provider.tsx';import{Context}from'../runtime/connection/provider';window.requests=[];window.finishes=[];window.routes=[];window.permitted=true;function Controls(){const state=usePushNotifications();window.toggle=state.setEnabled;window.state=state;return null};function App(){const[credential,setCredential]=useState('first');window.credential=setCredential;const profile={id:'host',name:'Host',connection:{address:'http://host',token:credential}};const runtime={ready:true,profiles:[profile],overviews:[{profile,connected:true}],readRuntime:async(profile,path,input)=>new Promise(resolve=>{window.requests.push({credential:profile.connection.token,path,input});window.finishes.push(resolve)})};return<Context.Provider value={runtime}><PushNotificationProvider><Controls/></PushNotificationProvider></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {useState} from 'react';import{createRoot}from'react-dom/client';import{PushNotificationProvider,usePushNotifications}from'./src/notifications/provider.tsx';import{Context}from'../runtime/connection/provider';import{AccountContext}from'../runtime/connection/account-provider';window.requests=[];window.finishes=[];window.routes=[];window.permitted=true;window.grants=[];window.allowed=[];function Controls(){const state=usePushNotifications();window.toggle=state.setEnabled;window.serverToggle=state.setServerEnabled;window.state=state;return null};function App(){const[credential,setCredential]=useState('first');window.credential=setCredential;const[signedIn,setSignedIn]=useState(false);window.signin=setSignedIn;const[other,setOther]=useState(false);window.other=setOther;const[connected,setConnected]=useState(true);window.connected=setConnected;const account={directory:signedIn?{user:{id:'person'}}:null,client:{subscribePush:async registration=>{window.grants.push(registration);return{token:'g'.repeat(43)}},retainPush:async ids=>{window.allowed.push(ids)}}};const profile={id:'host',name:'Host',connection:{address:'http://host',token:credential}};const runtime={ready:true,profiles:[profile],overviews:[{profile,connected},...(other?[{profile:{...profile,id:'other'},connected:true}]:[])],readRuntime:async(profile,path,input)=>new Promise(resolve=>{window.requests.push({credential:profile.connection.token,path,input});window.finishes.push(resolve)})};return<Context.Provider value={runtime}><AccountContext.Provider value={account}><PushNotificationProvider><Controls/></PushNotificationProvider></AccountContext.Provider></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: fileURLToPath(new URL('../apps/mobile/', import.meta.url)),
     loader: 'tsx',
   },
@@ -141,9 +142,36 @@ try {
   )
   if ((await page.evaluate(() => window.routes.at(-1).params.runtimeId)) !== 'removed')
     throw new Error('Removed computer notification was silently lost')
+  await page.evaluate(() => window.signin(true))
+  await requests(8)
+  const managed = await page.evaluate(() => window.requests[7].input)
+  if (
+    managed.managedToken !== 'g'.repeat(43) ||
+    JSON.stringify(managed).includes('account-session')
+  )
+    throw new Error('Managed registration did not use its scoped credential')
+  await finish(7)
+  await page.evaluate(() => window.other(true))
+  await requests(9)
+  await finish(8)
+  await page.evaluate(() => window.connected(false))
+  await page.waitForTimeout(50)
+  await page.evaluate(() => window.serverToggle('host', false))
+  await page.waitForFunction(() => !window.state.busy && !window.state.serverEnabled('host'))
+  const allowed = await page.evaluate(() => window.allowed.at(-1))
+  if (JSON.stringify(allowed) !== JSON.stringify(['other']))
+    throw new Error('Disabling an offline server did not revoke only its delivery permission')
+  if ((await page.evaluate(() => window.requests.length)) !== 9)
+    throw new Error('Per-server changes unexpectedly re-registered another server')
+  await page.evaluate(() => window.serverToggle('other', false))
+  await requests(10)
+  await finish(9)
+  await page.waitForFunction(() => !window.state.busy)
+  if ((await page.evaluate(() => window.allowed.at(-1).length)) !== 0)
+    throw new Error('Disabling all servers left delivery enabled')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Mobile push: disable during registration, reconnect, token rotation, permission revoke/restore, and exact question routing passed.',
+    'Mobile push: disable during registration, reconnect, token rotation, permission revoke/restore, exact question routing, managed delivery and independent server toggles passed.',
   )
 } finally {
   await browser.close()

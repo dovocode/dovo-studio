@@ -7,5 +7,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: 'https://dovo.studio/', priority: 1 },
     { url: 'https://dovo.studio/download/', priority: 0.8 },
     { url: 'https://dovo.studio/docs/', priority: 0.8 },
+    { url: 'https://dovo.studio/privacy/', priority: 0.5 },
   ]
 }

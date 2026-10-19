@@ -1,0 +1,172 @@
+name: Mobile nightly
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published desktop nightly tag from the same commit; empty builds this ref only
+        required: false
+      platform:
+        description: Platforms to build
+        type: choice
+        options: [all, ios, android]
+        default: all
+      upload:
+        description: Upload signed builds to TestFlight and the configured Play testing track
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: mobile-nightly
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.sequence.outputs.build }}
+      matrix: ${{ steps.platforms.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Validate nightly source and passing checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          node --input-type=module -e 'import {validateNightlyTag} from "./scripts/ci/mobile-release.mjs"; import {readFileSync} from "node:fs"; validateNightlyTag(process.env.RELEASE_TAG,JSON.parse(readFileSync("apps/mobile/app.json")).expo.version)'
+          if test -n "$RELEASE_TAG"; then
+            test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
+            test "$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease --jq '(.isDraft == false and .isPrerelease == true)')" = true
+          fi
+          result=$(gh run list --workflow Check --commit "$GITHUB_SHA" --limit 1 --json status,conclusion --jq '.[0] | (.status + ":" + .conclusion)')
+          test "$result" = completed:success || { echo "::error::A successful Check run is required for this exact commit ($result)"; exit 1; }
+      - name: Allocate increasing store build number
+        id: sequence
+        env:
+          MOBILE_BUILD_NUMBER_BASE: ${{ vars.MOBILE_BUILD_NUMBER_BASE || '2026101902' }}
+        run: node scripts/ci/mobile-release.mjs
+      - name: Select platforms
+        id: platforms
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          node --input-type=module -e 'import {appendFileSync} from "node:fs"; const p=process.env.PLATFORM; const all=[{platform:"ios",runner:"macos-26"},{platform:"android",runner:"ubuntu-24.04"}]; if(!["all","ios","android"].includes(p))throw Error("Invalid platform"); appendFileSync(process.env.GITHUB_OUTPUT,"matrix="+JSON.stringify({include:all.filter(x=>p==="all"||x.platform===p)})+"\n")'
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    environment: mobile-nightly
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      DOVO_MOBILE_BUILD_NUMBER: ${{ needs.prepare.outputs.build }}
+      DOVO_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      DOVO_ANDROID_STORE_PASSWORD: ${{ secrets.MOBILE_ANDROID_STORE_PASSWORD }}
+      DOVO_ANDROID_KEY_ALIAS: ${{ secrets.MOBILE_ANDROID_KEY_ALIAS }}
+      DOVO_ANDROID_KEY_PASSWORD: ${{ secrets.MOBILE_ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify required credentials before building
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          UPLOAD: ${{ inputs.upload }}
+          MOBILE_IOS_CERTIFICATE: ${{ secrets.MOBILE_IOS_CERTIFICATE }}
+          MOBILE_IOS_CERTIFICATE_PASSWORD: ${{ secrets.MOBILE_IOS_CERTIFICATE_PASSWORD }}
+          MOBILE_IOS_PROFILES_GZIP: ${{ secrets.MOBILE_IOS_PROFILES_GZIP }}
+          MOBILE_ANDROID_KEYSTORE: ${{ secrets.MOBILE_ANDROID_KEYSTORE }}
+          MOBILE_GOOGLE_SERVICES: ${{ secrets.MOBILE_GOOGLE_SERVICES }}
+          MOBILE_PLAY_SERVICE_ACCOUNT: ${{ secrets.MOBILE_PLAY_SERVICE_ACCOUNT }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        shell: bash
+        run: |
+          if test "$PLATFORM" = ios; then
+            required='MOBILE_IOS_CERTIFICATE MOBILE_IOS_CERTIFICATE_PASSWORD MOBILE_IOS_PROFILES_GZIP DOVO_APPLE_TEAM_ID'
+            if test "$UPLOAD" = true; then required="$required APPLE_ID APPLE_APP_SPECIFIC_PASSWORD"; fi
+          else
+            required='MOBILE_ANDROID_KEYSTORE MOBILE_GOOGLE_SERVICES DOVO_ANDROID_STORE_PASSWORD DOVO_ANDROID_KEY_ALIAS DOVO_ANDROID_KEY_PASSWORD'
+            if test "$UPLOAD" = true; then required="$required MOBILE_PLAY_SERVICE_ACCOUNT"; fi
+          fi
+          for key in $required; do test -n "${!key}" || { echo "::error::Missing mobile-nightly credential: $key"; exit 1; }; done
+      - uses: ./.github/actions/setup-build
+        id: setup
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/save-dependencies
+        with:
+          store: ${{ steps.setup.outputs.store }}
+          key: ${{ steps.setup.outputs.store-key }}
+      - uses: actions/setup-java@v5
+        if: matrix.platform == 'android'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install private signing configuration
+        env:
+          MOBILE_IOS_CERTIFICATE: ${{ secrets.MOBILE_IOS_CERTIFICATE }}
+          MOBILE_IOS_CERTIFICATE_PASSWORD: ${{ secrets.MOBILE_IOS_CERTIFICATE_PASSWORD }}
+          MOBILE_IOS_PROFILES_GZIP: ${{ secrets.MOBILE_IOS_PROFILES_GZIP }}
+          MOBILE_ANDROID_KEYSTORE: ${{ secrets.MOBILE_ANDROID_KEYSTORE }}
+          MOBILE_ANDROID_STORE_PASSWORD: ${{ secrets.MOBILE_ANDROID_STORE_PASSWORD }}
+          MOBILE_ANDROID_KEY_ALIAS: ${{ secrets.MOBILE_ANDROID_KEY_ALIAS }}
+          MOBILE_ANDROID_KEY_PASSWORD: ${{ secrets.MOBILE_ANDROID_KEY_PASSWORD }}
+          MOBILE_GOOGLE_SERVICES: ${{ secrets.MOBILE_GOOGLE_SERVICES }}
+        run: node scripts/ci/mobile-credentials.mjs ${{ matrix.platform }}
+      - name: Build signed nightly
+        run: pnpm mobile:package -- --platform ${{ matrix.platform }}
+      - name: Stage signed artifact and provenance
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,mkdirSync,copyFileSync,writeFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          const version=JSON.parse(readFileSync('apps/mobile/app.json')).expo.version;
+          const build=process.env.DOVO_MOBILE_BUILD_NUMBER, platform=process.env.PLATFORM;
+          const extension=platform==='ios'?'ipa':'aab';
+          const path=`work/mobile-store/${platform}-${version}-${build}/DovoStudio.${extension}`;
+          const name=`Dovo-Studio-Mobile-${version}-nightly.${build}-${platform}.${extension}`;
+          mkdirSync('work/mobile-release',{recursive:true}); copyFileSync(path,`work/mobile-release/${name}`);
+          writeFileSync(`work/mobile-release/${name}.json`,JSON.stringify({version,build,platform,commit:process.env.GITHUB_SHA,desktopRelease:process.env.RELEASE_TAG||null,sha256:createHash('sha256').update(readFileSync(path)).digest('hex')},null,2)+'\n');
+          NODE
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mobile-nightly-${{ matrix.platform }}-${{ needs.prepare.outputs.build }}
+          path: work/mobile-release/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Attach signed mobile builds to desktop nightly
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release upload "$RELEASE_TAG" work/mobile-release/*
+      - name: Upload to beta store
+        if: inputs.upload
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          MOBILE_PLAY_SERVICE_ACCOUNT: ${{ secrets.MOBILE_PLAY_SERVICE_ACCOUNT }}
+          MOBILE_PLAY_TRACK: ${{ vars.MOBILE_PLAY_TRACK || 'beta' }}
+          MOBILE_BETA_DISTRIBUTION_READY: ${{ vars.MOBILE_BETA_DISTRIBUTION_READY || 'false' }}
+        shell: bash
+        run: |
+          version=$(node -p 'require("./apps/mobile/app.json").expo.version')
+          extension=aab; if test "$PLATFORM" = ios; then extension=ipa; fi
+          node scripts/ci/upload-mobile-beta.mjs "$PLATFORM" "work/mobile-store/$PLATFORM-$version-$DOVO_MOBILE_BUILD_NUMBER/DovoStudio.$extension"
+      - name: Remove private signing material
+        if: always()
+        shell: bash
+        run: |
+          if test -n "${DOVO_MOBILE_KEYCHAIN:-}"; then security delete-keychain "$DOVO_MOBILE_KEYCHAIN"; fi
+          rm -rf "$RUNNER_TEMP/dovo-mobile-credentials"

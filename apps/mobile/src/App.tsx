@@ -1,3 +1,4 @@
+import { MobileAccountProvider } from './runtime/connection/account-provider'
 import { SettingsTargetProvider } from './runtime/preferences/settings-target'
 import { PushNotificationProvider } from './notifications/provider'
 import { TaskQuickActions } from './shell/task-quick-actions'
@@ -45,17 +46,19 @@ function ThemedApp() {
         <ThemeProvider value={theme}>
           <RegistryProvider>
             <RuntimeProvider>
-              <SettingsTargetProvider>
-                <PushNotificationProvider>
-                  <LiveActivityProvider>
-                    <TaskWidgetProvider>
-                      <Workbench />
-                      <TaskQuickActions />
-                      <LinkBrowser />
-                    </TaskWidgetProvider>
-                  </LiveActivityProvider>
-                </PushNotificationProvider>
-              </SettingsTargetProvider>
+              <MobileAccountProvider>
+                <SettingsTargetProvider>
+                  <PushNotificationProvider>
+                    <LiveActivityProvider>
+                      <TaskWidgetProvider>
+                        <Workbench />
+                        <TaskQuickActions />
+                        <LinkBrowser />
+                      </TaskWidgetProvider>
+                    </LiveActivityProvider>
+                  </PushNotificationProvider>
+                </SettingsTargetProvider>
+              </MobileAccountProvider>
             </RuntimeProvider>
           </RegistryProvider>
         </ThemeProvider>

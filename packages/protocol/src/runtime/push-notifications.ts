@@ -1,5 +1,8 @@
 import { Schema } from 'effect'
-import { mutableStruct, maxValue, minValue, refine } from '../shared/schema.js'
+import { mutableStruct, mutableArray, maxValue, minValue, refine } from '../shared/schema.js'
+export const pushDeliveryTokenSchema = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/)),
+)
 const text = (limit: number) => maxValue(minValue(Schema.String, 1), limit)
 export const pushRegistrationSchema = refine(
   mutableStruct({
@@ -7,6 +10,7 @@ export const pushRegistrationSchema = refine(
     platform: Schema.Literals(['ios', 'android']),
     token: text(4096),
     environment: Schema.Literals(['sandbox', 'production']),
+    managedToken: Schema.optional(pushDeliveryTokenSchema),
   }),
   (value) => value.platform !== 'ios' || /^[a-fA-F0-9]{32,512}$/.test(value.token),
   'Invalid Apple push token',
@@ -39,3 +43,16 @@ export const relayResultSchema = mutableStruct({
 })
 export type PushRegistration = Schema.Schema.Type<typeof pushRegistrationSchema>
 export type RelayNotification = Schema.Schema.Type<typeof relayNotificationSchema>
+
+export const managedPushSubscriptionSchema = mutableStruct({
+  runtimeId: text(200),
+  platform: Schema.Literals(['ios', 'android']),
+  token: text(4096),
+  environment: Schema.Literals(['sandbox', 'production']),
+})
+export const managedPushGrantSchema = mutableStruct({ token: pushDeliveryTokenSchema })
+export type ManagedPushSubscription = typeof managedPushSubscriptionSchema.Type
+
+export const managedPushServersSchema = mutableStruct({
+  runtimeIds: mutableArray(text(200)).pipe(Schema.check(Schema.isMaxLength(100))),
+})

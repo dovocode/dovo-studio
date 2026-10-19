@@ -5,6 +5,42 @@ notifications directly to Apple APNs for iOS and Firebase FCM for Android. It do
 expose runtime workspaces, require an account, or proxy the app's runtime connection. Pairing and
 LAN/VPN HTTP support remain unchanged.
 
+## Managed delivery through Connect
+
+Sign in on the phone under **Computers**, then enable **Settings → App & updates → Task
+notifications**. A switch for each paired computer lets you choose which servers notify this phone.
+Servers need the updated runtime, but no account login, account directory link, or per-server relay
+environment. Pairing is still required before the phone can register notifications on a computer.
+
+The phone creates a separate delivery grant for each enabled paired computer through Connect. The
+runtime keeps only that scoped grant and its existing native push registration in its private
+database. It sends to the fixed `https://connect.dovo.studio/v1/push/send` endpoint; no arbitrary
+relay URL is accepted from a paired device. A grant cannot read the account directory, pair devices,
+or send to a different phone, platform, environment, or computer profile. Grants rotate on
+registration refresh. Renewing a grant preserves queued messages and uses the current credential at
+delivery time. Only credential hashes are stored by Connect; no account session is shared with a
+runtime.
+
+Turning off one computer revokes its grant on Connect even if that computer is offline. Turning off
+the main switch or revoking OS permission revokes all this phone session's grants on its next active
+sync. Removing a computer also prunes its grant. An unavailable Connect service shows a revocation
+error and retries on foreground/reconnect or the periodic active sync. In-flight deliveries already
+accepted by Apple/Google cannot be recalled. Signing out or account-session expiry invalidates all
+that session's grants. Other phones and enabled computers remain independent.
+
+Connect forwards delivery to the separate private APNs/FCM relay using its backend-only
+`DOVO_NOTIFICATION_RELAY_URL` and `DOVO_NOTIFICATION_RELAY_TOKEN`. Deploy the relay as described
+below, reachable from Connect (a private container network is sufficient). Configure provider keys
+on the relay only. Connect stores native phone tokens in its private SQLite database and transiently
+processes notification titles/previews while forwarding; it never stores those message contents. The
+relay retains its bounded in-memory retry cache. Include Connect's private database in backups.
+Managed registration reports unavailable if the relay connection is not configured; a successful
+end-to-end delivery is still required to validate Apple/Google credentials and native signing.
+
+Without sign-in, the existing standalone relay flow below continues to work. Per-computer switches
+also control standalone registrations, but an offline standalone computer can unregister only after
+reconnecting.
+
 ## Deploy with Docker
 
 From the repository root:

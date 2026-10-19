@@ -1,0 +1,199 @@
+import { useState } from 'react'
+import { accountServerAddresses } from '@dovo/protocol'
+import { useAccount, useStudioHost, useRuntimeSources } from '@dovo/studio-core'
+import { Button, ChoicePicker } from '@dovo/studio-ui'
+export function AccountPanel({ onPair }: { onPair: (address: string) => void }) {
+  const host = useStudioHost()
+  if (!host.accountStorage || !host.openExternalLink) return null
+  return (
+    <AccountPanelContent
+      storage={host.accountStorage}
+      open={host.openExternalLink}
+      onPair={onPair}
+    />
+  )
+}
+function AccountPanelContent({
+  storage,
+  open,
+  onPair,
+}: {
+  storage: NonNullable<ReturnType<typeof useStudioHost>['accountStorage']>
+  open: (url: string) => Promise<void>
+  onPair: (address: string) => void
+}) {
+  const { client, directory, login, busy, error, loaded, deletionPending } = useAccount(
+    storage,
+    open,
+  )
+  const sources = useRuntimeSources()
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [selected, setSelected] = useState<Record<string, string>>({})
+  return (
+    <section className="space-y-3 rounded-md border p-4" aria-label="Dovo account">
+      <div>
+        <h2 className="text-sm font-medium">
+          {directory ? `Signed in as ${directory.user.name}` : 'Your computers, across devices'}
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Sign-in is optional. Discover linked computers, then pair to access them. Credentials stay
+          on your device.
+        </p>
+      </div>
+      {!!error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      {login ? (
+        <div className="space-y-2">
+          <p role="status" className="text-sm">
+            Confirm code <strong>{login.code}</strong> in your browser.
+          </p>
+          <Button variant="outline" onClick={client.cancel}>
+            Cancel sign-in
+          </Button>
+        </div>
+      ) : deletionPending ? (
+        <Button disabled={busy} onClick={() => void client.deleteAccount()}>
+          Retry account deletion
+        </Button>
+      ) : (
+        <div className="flex gap-2">
+          {directory ? (
+            <>
+              <Button variant="outline" disabled={busy} onClick={() => void client.refresh()}>
+                Refresh linked computers
+              </Button>
+              <Button variant="ghost" disabled={busy} onClick={() => void client.signOut()}>
+                Sign out
+              </Button>
+            </>
+          ) : (
+            <Button disabled={busy || !loaded} onClick={() => void client.signIn()}>
+              {busy ? 'Connecting…' : 'Sign in'}
+            </Button>
+          )}
+          {error && (
+            <Button variant="outline" disabled={busy} onClick={() => void client.load()}>
+              Retry account
+            </Button>
+          )}
+        </div>
+      )}
+      {directory && !deletionPending && (
+        <div className="space-y-2">
+          {confirmDelete ? (
+            <>
+              <p role="alert" className="text-sm">
+                Permanently delete your hosted identity, linked computers and notification
+                permissions on all devices? Files, threads and separate pairings on your computers
+                remain. Service backups expire within 14 days. This cannot be undone.
+              </p>
+              <Button disabled={busy} onClick={() => void client.deleteAccount()}>
+                Delete account permanently
+              </Button>
+              <Button variant="ghost" disabled={busy} onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button variant="ghost" disabled={busy} onClick={() => setConfirmDelete(true)}>
+              Delete account
+            </Button>
+          )}
+        </div>
+      )}
+      {directory && !deletionPending && (
+        <>
+          {directory.servers.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No computers linked yet. Link one of your paired computers below.
+            </p>
+          )}
+          {directory.servers.map((server) => {
+            const paired = sources.some(
+              (source) =>
+                source.profile.connection.runtimeId === server.id ||
+                source.snapshot?.runtimeId === server.id,
+            )
+            return (
+              <div key={server.id} className="flex flex-wrap items-center gap-2 border-t pt-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm">{server.name}</p>
+                  <p className="break-all text-xs text-muted-foreground">{server.address}</p>
+                </div>
+                {paired ? (
+                  <span className="text-xs text-muted-foreground">Already paired</span>
+                ) : (
+                  <Button variant="outline" disabled={busy} onClick={() => onPair(server.address)}>
+                    Pair computer
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => void client.unlink(server.id)}
+                >
+                  Unlink
+                </Button>
+              </div>
+            )
+          })}
+          {sources
+            .filter(
+              (source) =>
+                source.connected &&
+                source.snapshot?.runtimeId &&
+                !directory.servers.some((server) => server.id === source.snapshot?.runtimeId),
+            )
+            .map((source) => {
+              const id = source.snapshot?.runtimeId
+              const addresses = accountServerAddresses(source.profile.connection, source.snapshot)
+              const address = addresses.includes(selected[source.profile.id])
+                ? selected[source.profile.id]
+                : addresses[0]
+              return (
+                <div key={source.profile.id} className="space-y-2 border-t pt-3">
+                  {addresses.length > 1 && (
+                    <ChoicePicker
+                      aria-label={`Address for ${source.name}`}
+                      value={address}
+                      disabled={busy}
+                      onValueChange={(value) =>
+                        setSelected((current) => ({ ...current, [source.profile.id]: value }))
+                      }
+                    >
+                      {addresses.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </ChoicePicker>
+                  )}
+                  {address ? (
+                    <>
+                      <p className="break-all text-xs text-muted-foreground">{address}</p>
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => {
+                          if (id) void client.link({ id, name: source.name, address })
+                        }}
+                      >
+                        Link {source.name} to account
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Enable LAN/VPN access on {source.name} before linking it.
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+        </>
+      )}
+    </section>
+  )
+}

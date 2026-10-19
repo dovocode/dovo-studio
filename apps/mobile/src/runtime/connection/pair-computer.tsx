@@ -21,11 +21,13 @@ export function PairComputer({
   inSheet = false,
   replaceId,
   invitation,
+  initialAddress,
   onBusyChange,
 }: {
   onPaired?: () => void
   inSheet?: boolean
   replaceId?: string
+  initialAddress?: string
   invitation?: PairingInvitation
   onBusyChange?: (busy: boolean) => void
 }) {
@@ -33,7 +35,7 @@ export function PairComputer({
 
   const { connect, cancelPairing } = useRuntime(),
     { busy, error, act } = useAction(),
-    [address, setAddress] = useApplicationState(invitation?.address ?? ''),
+    [address, setAddress] = useApplicationState(invitation?.address ?? initialAddress ?? ''),
     [name, setName] = useApplicationState('My phone'),
     [computerName, setComputerName] = useApplicationState(''),
     [code, setCode] = useApplicationState(invitation?.code ?? ''),

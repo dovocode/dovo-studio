@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { Effect, Schema } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import {
+  ACCOUNT_DIRECTORY_URL,
   decode,
   mutableStruct,
   pushRegistrationSchema,
@@ -66,6 +67,19 @@ export function notificationRelay(env = process.env): Relay {
     },
   }
 }
+export async function managedNotification(message: RelayNotification, token: string) {
+  const response = await fetch(ACCOUNT_DIRECTORY_URL + '/v1/push/send', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(message),
+    redirect: 'error',
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (response.status === 401 || response.status === 410)
+    return { delivered: false, invalidToken: true }
+  if (!response.ok) throw new Error('Managed notification delivery failed')
+  return decode(relayResultSchema, await response.json())
+}
 const preview = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 350)
 export class PushNotifications {
   private scheduler?: ReturnType<typeof startPolling>
@@ -79,37 +93,46 @@ export class PushNotifications {
     private devices: Devices,
     private input: (taskId: string) => PendingInput | PendingInput[] | undefined,
     private relay: Relay = notificationRelay(),
+    private managedSend = managedNotification,
   ) {
     this.error = relay.error ?? null
     db.exec(`CREATE TABLE IF NOT EXISTS push_devices (device_id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS push_states (task_id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS push_outbox (id TEXT PRIMARY KEY, device_id TEXT NOT NULL, value TEXT NOT NULL, expires INTEGER NOT NULL, attempt INTEGER NOT NULL, next INTEGER NOT NULL);`)
   }
+  private registration(deviceId: string): PushRegistration | undefined {
+    const row = this.db.prepare('SELECT value FROM push_devices WHERE device_id=?').get(deviceId)
+    if (!row) return
+    return decode(
+      pushRegistrationSchema,
+      JSON.parse(decode(mutableStruct({ value: Schema.String }), row).value),
+    )
+  }
   status(deviceId: string) {
+    const registration = this.registration(deviceId)
     return {
-      configured: !!this.relay.send,
-      registered: !!this.db
-        .prepare('SELECT device_id FROM push_devices WHERE device_id=?')
-        .get(deviceId),
+      configured: !!this.relay.send || !!registration?.managedToken,
+      registered: !!registration,
       error: this.error,
     }
   }
   register(deviceId: string, value: unknown) {
     const registration = decode(pushRegistrationSchema, value)
-    if (!this.relay.send)
+    if (!this.relay.send && !registration.managedToken)
       throw new HttpError(409, 'Configure the notification relay on this runtime first')
-    const existing = this.db
-      .prepare('SELECT value FROM push_devices WHERE device_id=?')
-      .get(deviceId)
+    const existing = this.registration(deviceId)
     if (
       existing &&
-      decode(mutableStruct({ value: Schema.String }), existing).value !==
-        JSON.stringify(registration)
+      (existing.token !== registration.token ||
+        existing.platform !== registration.platform ||
+        existing.environment !== registration.environment ||
+        existing.runtimeId !== registration.runtimeId)
     )
       this.db.prepare('DELETE FROM push_outbox WHERE device_id=?').run(deviceId)
     this.db
       .prepare('INSERT OR REPLACE INTO push_devices VALUES (?,?)')
       .run(deviceId, JSON.stringify(registration))
+    if (registration.managedToken) this.start()
     return this.status(deviceId)
   }
   remove(deviceId: string) {
@@ -215,7 +238,9 @@ export class PushNotifications {
               'checks-failed': 'PR checks failed',
             }[kind]
             const message: RelayNotification = {
-              ...registration.value,
+              platform: registration.value.platform,
+              token: registration.value.token,
+              environment: registration.value.environment,
               id,
               title: `${task.title || 'Dovo task'} · ${label}`.slice(0, 160),
               body: preview(detail ?? '') || label,
@@ -260,8 +285,7 @@ export class PushNotifications {
   }
   private async deliver() {
     this.capture()
-    const send = this.relay.send
-    if (!send || Date.now() < this.nextAttempt) return
+    if (Date.now() < this.nextAttempt) return
     const rows = this.db
       .prepare(
         'SELECT id,device_id AS deviceId,value,attempt FROM push_outbox WHERE next<=? ORDER BY expires LIMIT 20',
@@ -291,16 +315,8 @@ export class PushNotifications {
         this.db.prepare('DELETE FROM push_outbox WHERE id=?').run(entry.id)
         continue
       }
-      const registration = this.db
-        .prepare('SELECT value FROM push_devices WHERE device_id=?')
-        .get(entry.deviceId)
-      if (
-        !registration ||
-        decode(
-          pushRegistrationSchema,
-          JSON.parse(decode(mutableStruct({ value: Schema.String }), registration).value),
-        ).token !== value.token
-      ) {
+      const registration = this.registration(entry.deviceId)
+      if (!registration || registration.token !== value.token) {
         this.db.prepare('DELETE FROM push_outbox WHERE id=?').run(entry.id)
         continue
       }
@@ -314,18 +330,13 @@ export class PushNotifications {
         continue
       }
       try {
-        const result = await send(value)
+        const result = registration.managedToken
+          ? await this.managedSend(value, registration.managedToken)
+          : await this.relay.send?.(value)
+        if (!result) throw new Error('Notification relay is not configured')
         if (result.invalidToken) {
-          const current = this.db
-            .prepare('SELECT value FROM push_devices WHERE device_id=?')
-            .get(entry.deviceId)
-          if (
-            current &&
-            decode(
-              pushRegistrationSchema,
-              JSON.parse(decode(mutableStruct({ value: Schema.String }), current).value),
-            ).token === value.token
-          )
+          const current = this.registration(entry.deviceId)
+          if (current?.token === value.token && current.managedToken === registration.managedToken)
             this.remove(entry.deviceId)
           else this.db.prepare('DELETE FROM push_outbox WHERE id=?').run(entry.id)
         } else if (result.delivered)
@@ -348,7 +359,12 @@ export class PushNotifications {
     }
   }
   start() {
-    if (this.relay.send && !this.scheduler)
+    const managed = this.db
+      .prepare(
+        "SELECT device_id FROM push_devices WHERE json_extract(value,'$.managedToken') IS NOT NULL LIMIT 1",
+      )
+      .get()
+    if ((this.relay.send || managed) && !this.scheduler && !this.stopped)
       this.scheduler = startPolling(
         Effect.tryPromise(() => this.flush()),
         {

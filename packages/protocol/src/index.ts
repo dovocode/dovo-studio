@@ -251,3 +251,5 @@ export * from './runtime/studio-peers.js'
 
 export * from './runtime/linked-project-tools.js'
 export { screenshotData } from './shared/screenshot.js'
+export * from './auth/account.js'
+export * from './auth/account-client.js'

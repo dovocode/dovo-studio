@@ -27,6 +27,7 @@ import {
   setLocalRuntimeNetwork,
   pauseLocalRuntime,
 } from './local-runtime.js'
+import { registerAccountStorage } from './account-storage.js'
 import { registerConnectionStorage } from './connection-storage.js'
 import {
   defaultWindowColors,
@@ -144,6 +145,7 @@ if (ownsInstance && !explicitDirectory) {
 }
 registerLinuxDesktop(nightly, appName, rendererPath)
 registerConnectionStorage(join(__dirname, '../dist/index.html'))
+registerAccountStorage(rendererPath)
 const inputPreview = registerInputPreview(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => inputPreview.dispose())
 const browserBridge = registerBrowser(join(__dirname, '../dist/index.html'), dataDirectory)

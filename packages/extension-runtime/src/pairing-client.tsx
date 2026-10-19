@@ -26,7 +26,13 @@ import {
   Input,
   cn,
 } from '@dovo/studio-ui'
-export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile) => void }) {
+export function PairingClient({
+  onManage,
+  discovered,
+}: {
+  onManage: (profile: RuntimeProfile) => void
+  discovered?: { address: string }
+}) {
   const {
     connect,
     cancelPairing,
@@ -58,6 +64,14 @@ export function PairingClient({ onManage }: { onManage: (profile: RuntimeProfile
     } | null>(null),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
+  useEffect(() => {
+    if (discovered) {
+      setAddress(discovered.address)
+      setCode('')
+      setReplaceId(undefined)
+      setOpen(true)
+    }
+  }, [discovered])
   const [discardTarget, setDiscardTarget] = useApplicationState<RuntimeProfile | null>(null)
   const generation = useRef(0)
   const pairingPhase = useRef<'waiting' | 'cancelled' | 'saving'>('waiting')

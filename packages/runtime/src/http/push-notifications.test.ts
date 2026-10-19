@@ -42,3 +42,33 @@ it('registers only the authenticated device, excludes tokens from snapshots and 
   expect((await call('remove', phoneToken, {})).status).toBe(200)
   expect(runtime.services.pushNotifications.status(phone).registered).toBe(false)
 })
+
+it('accepts a scoped managed credential only through paired-device authentication, without host relay settings', async () => {
+  vi.stubEnv('DOVO_NOTIFICATION_RELAY_URL', '')
+  vi.stubEnv('DOVO_NOTIFICATION_RELAY_TOKEN', '')
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: 'owner', port: 0 })
+  cleanups.push(runtime.close)
+  const deviceToken = randomBytes(32).toString('hex')
+  runtime.services.devices.add('Phone', deviceToken)
+  const registration = {
+    runtimeId: 'paired-host',
+    platform: 'ios',
+    token: 'a'.repeat(64),
+    environment: 'production',
+    managedToken: 'm'.repeat(43),
+  }
+  const register = (token: string) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/notifications/register`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(registration),
+    })
+  expect((await register('unpaired')).status).toBe(401)
+  const response = await register(deviceToken)
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ configured: true, registered: true })
+  expect(JSON.stringify(runtime.services.store.get())).not.toContain(registration.managedToken)
+  expect(JSON.stringify(runtime.services.activity.list('', '', 0))).not.toContain(
+    registration.managedToken,
+  )
+})
