@@ -1,7 +1,7 @@
 cask "dovo-studio-nightly" do
-  version "0.0.9-nightly.407"
-  sha256 "665e1109bb89f47639427800b2b57f7ef3664811739166ba8e61eb1583c52858"
-  url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.9-nightly.407/Dovo-Studio-Nightly-0.0.9-nightly.407-arm64.zip"
+  version "0.0.9-nightly.410"
+  sha256 "f7f8937b659aea33ef4b98489b2190e209034b4cb0d4073b11ef75e471344e86"
+  url "https://github.com/dovocode/dovo-studio/releases/download/v0.0.9-nightly.410/Dovo-Studio-Nightly-0.0.9-nightly.410-arm64.zip"
   name "Dovo Studio (Nightly)"
   desc "Native workspace for coding agents and connected devices"
   homepage "https://github.com/dovocode/dovo-studio"
