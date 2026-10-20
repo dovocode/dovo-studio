@@ -29,6 +29,10 @@ const mocks = {
   '@dovo/studio-core/state': "export {useState as useApplicationState} from 'react';",
   './file-tree': `export {FileTypeIcon as MobileFileTypeIcon} from '${ui}/file-tree.tsx';`,
   'expo-clipboard': 'export const setStringAsync=async value=>{window.copied=value};',
+  // ArtifactWebView's native download bridge is exercised by check-artifacts-browser.
+  'expo-file-system': `export class File {constructor(){throw new Error('Unexpected native file access in chat-file preview')}};export const Paths={cache:''};`,
+  'expo-sharing': `export const isAvailableAsync=async()=>{throw new Error('Unexpected native sharing in chat-file preview')};export const shareAsync=isAvailableAsync;`,
+  'expo-crypto': "let id=0;export const randomUUID=()=> 'chat-file-'+(++id);",
   'react-native-webview':
     'export default ({source})=>source.html?<iframe title="Native visualization" sandbox="allow-scripts" srcDoc={source.html}/>:<div data-video-preview={source.uri}><video src={window.fakeVideo} controls style={{width:"100%",borderRadius:10}}/></div>;',
 

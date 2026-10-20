@@ -211,6 +211,19 @@ try {
   )
   await childToggle.click()
 
+  // The authoritative child is finished, so its activity is visible only after disclosure.
+  const finishedToggle = page.getByRole('button', {
+    name: 'Finished threads for Parent thread',
+    exact: true,
+  })
+  assert.equal(await finishedToggle.getAttribute('aria-expanded'), 'false')
+  assert.equal(
+    await page.getByRole('button', { name: 'Open child thread Child thread' }).count(),
+    0,
+  )
+  await finishedToggle.click()
+  await page.getByRole('button', { name: 'Open child thread Child thread' }).waitFor()
+
   // Large child payloads do not repaint the parent's pills. Visible activity still updates.
   await page.evaluate(() => {
     window.counts.pills = 0
