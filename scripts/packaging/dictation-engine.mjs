@@ -11,12 +11,21 @@ const archiveHash = '4854e9d73e49f36b4cf79f9ddecc78cd07ea2bb574b879c29e2e565bf4a
 export async function prepareDictationEngine(root) {
   const directory = join(root, 'work/dictation', `${process.platform}-${process.arch}`)
   const bundle = join(directory, 'bundle')
-  const name = process.platform === 'win32' ? 'transcribe-cli.exe' : 'transcribe-cli'
+  const helper = join(root, 'apps/desktop/native/dictation.cpp')
+  const helperHash = createHash('sha256')
+    .update(await readFile(helper))
+    .digest('hex')
+  const name = process.platform === 'win32' ? 'dovo-dictation.exe' : 'dovo-dictation'
+  // Older cached builds shipped the offline CLI; keep it out of the new signed bundle.
+  await rm(join(bundle, process.platform === 'win32' ? 'transcribe-cli.exe' : 'transcribe-cli'), {
+    force: true,
+  })
   try {
     const manifest = JSON.parse(await readFile(join(bundle, 'build.json'), 'utf8'))
     const binary = await readFile(join(bundle, name))
     if (
       manifest.revision === revision &&
+      manifest.helperHash === helperHash &&
       manifest.sha256 === createHash('sha256').update(binary).digest('hex')
     ) {
       await cp(join(root, 'apps/desktop/build/dictation'), bundle, { recursive: true })
@@ -46,7 +55,19 @@ export async function prepareDictationEngine(root) {
   await writeFile(archive, bytes)
   execFileSync('tar', ['-xzf', archive, '-C', directory], { stdio: 'inherit' })
   const source = join(directory, `transcribe.cpp-${revision}`),
-    build = join(directory, 'build')
+    build = join(directory, 'native-build')
+  // Add Dovo's pipe consumer to the extracted, integrity-checked upstream project.
+  const cmakePath = (path) => path.replaceAll('\\', '/')
+  const cmake = join(source, 'CMakeLists.txt')
+  await writeFile(
+    cmake,
+    (await readFile(cmake, 'utf8')) +
+      `
+add_executable(dovo-dictation "${cmakePath(helper)}")
+target_link_libraries(dovo-dictation PRIVATE transcribe)
+set_target_properties(dovo-dictation PROPERTIES CXX_STANDARD 17)
+`,
+  )
   execFileSync(
     'cmake',
     [
@@ -81,7 +102,7 @@ export async function prepareDictationEngine(root) {
   )
   execFileSync(
     'cmake',
-    ['--build', build, '--config', 'Release', '--target', 'transcribe-cli', '--parallel', '4'],
+    ['--build', build, '--config', 'Release', '--target', 'dovo-dictation', '--parallel', '4'],
     { stdio: 'inherit' },
   )
   await mkdir(bundle, { recursive: true })
@@ -107,6 +128,7 @@ export async function prepareDictationEngine(root) {
     join(bundle, 'build.json'),
     JSON.stringify({
       revision,
+      helperHash,
       sha256: createHash('sha256')
         .update(await readFile(join(bundle, name)))
         .digest('hex'),

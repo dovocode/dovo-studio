@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import {
   desktopDictationBridge,
-  dictationModel,
   dictationStatusSchema,
+  dictationUpdateSchema,
   decode,
   randomUUID,
-  type DictationStatus,
 } from '@dovo/protocol'
+import { useAppPreferences } from '@dovo/studio-core'
 import { Button, IconButton } from '@dovo/studio-ui'
 import { Mic, Square, X, LoaderCircle } from 'lucide-react'
 import type { createComposerDraft } from './composer-draft'
@@ -16,6 +16,8 @@ type Session = {
   id: string
   abort: AbortController
   finishing?: boolean
+  unsubscribe?: () => void
+  pending: Promise<void>
   recorder?: Awaited<ReturnType<typeof recordDictation>>
   draft: string
   start: number
@@ -33,10 +35,9 @@ export function ComposerDictation({
   onActive: (active: boolean) => void
 }) {
   const bridge = desktopDictationBridge()
-  const [phase, setPhase] = useState<
-    'idle' | 'checking' | 'setup' | 'downloading' | 'starting' | 'recording' | 'transcribing'
-  >('idle')
-  const [status, setStatus] = useState<DictationStatus | null>(null)
+  const { dictationEnabled, dictationLanguage } = useAppPreferences()
+  const [phase, setPhase] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle')
+  const [preview, setPreview] = useState('')
   const [error, setError] = useState('')
   const [retained, setRetained] = useState('')
   const active = useRef<Session | null>(null)
@@ -49,6 +50,7 @@ export function ComposerDictation({
     active.current = null
     session?.abort.abort()
     session?.recorder?.cancel()
+    session?.unsubscribe?.()
     if (session && bridge)
       void bridge.cancel(session.id).catch((cause: unknown) => {
         if (mounted.current) setError(`Could not confirm dictation stopped: ${String(cause)}`)
@@ -64,27 +66,9 @@ export function ComposerDictation({
     }
   }, [controller, cancel])
   useEffect(() => {
-    if (!disabled) return
+    if (!disabled && dictationEnabled) return
     cancel()
-  }, [disabled, cancel])
-  useEffect(() => {
-    if (phase !== 'downloading' || !bridge) return
-    let live = true
-    const timer = setInterval(() => {
-      void bridge
-        .status()
-        .then((value) => {
-          if (live) setStatus(decode(dictationStatusSchema, value))
-        })
-        .catch((cause: unknown) => {
-          if (live) setError(String(cause))
-        })
-    }, 500)
-    return () => {
-      live = false
-      clearInterval(timer)
-    }
-  }, [phase, bridge])
+  }, [disabled, dictationEnabled, cancel])
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && active.current) {
@@ -99,6 +83,7 @@ export function ComposerDictation({
   const session = (): Session => ({
     id: randomUUID(),
     abort: new AbortController(),
+    pending: Promise.resolve(),
     draft: controller.text,
     start: input.current?.selectionStart ?? controller.text.length,
     end: input.current?.selectionEnd ?? controller.text.length,
@@ -109,9 +94,10 @@ export function ComposerDictation({
     current.finishing = true
     setPhase('transcribing')
     try {
-      const pcm = await current.recorder.stop()
+      await current.recorder.stop()
+      await current.pending
       if (active.current !== current) return
-      const text = await bridge.transcribe(current.id, pcm)
+      const text = await bridge.finish(current.id)
       if (active.current !== current || !mounted.current) return
       if (typeof text !== 'string' || !text.trim())
         throw new Error('No speech was detected. Please try again.')
@@ -123,9 +109,12 @@ export function ComposerDictation({
         setError('Your draft changed during dictation. Review the transcript before inserting it.')
       }
     } catch (cause) {
-      if (active.current === current && mounted.current)
+      if (active.current === current && mounted.current) {
+        cancel()
         setError(cause instanceof Error ? cause.message : String(cause))
+      }
     } finally {
+      current.unsubscribe?.()
       if (active.current === current) {
         active.current = null
         callbacks.current.onActive(false)
@@ -135,30 +124,47 @@ export function ComposerDictation({
   }
   stopRef.current = finish
   const start = async () => {
-    if (!bridge || disabled || active.current) return
+    if (!bridge || disabled || !dictationEnabled || active.current) return
     const current = session()
     active.current = current
     setError('')
-    setPhase('checking')
+    setPreview('')
+    setPhase('starting')
     callbacks.current.onActive(true)
     try {
       const value = decode(dictationStatusSchema, await bridge.status())
       if (active.current !== current) return
-      setStatus(value)
-      if (!value.engine || !value.model) {
-        active.current = null
-        callbacks.current.onActive(false)
-        setPhase('setup')
-        return
+      if (!value.engine || !value.model)
+        throw new Error('Download and enable dictation in Settings → General → Speech.')
+      const fail = (cause: Error) => {
+        if (active.current !== current) return
+        cancel()
+        setError(cause.message)
       }
-      setPhase('starting')
+      current.unsubscribe = bridge.subscribe(current.id, (value) => {
+        if (active.current !== current || !mounted.current) return
+        try {
+          const update = decode(dictationUpdateSchema, value)
+          if (update.type === 'error') fail(new Error(update.message))
+          else setPreview(update.text)
+        } catch (cause) {
+          fail(cause instanceof Error ? cause : new Error(String(cause)))
+        }
+      })
+      await bridge.start(current.id, dictationLanguage)
+      if (active.current !== current) return
       current.recorder = await recordDictation(
         current.abort.signal,
         () => void stopRef.current(),
-        (cause) => {
-          if (active.current !== current) return
-          cancel()
-          setError(cause.message)
+        fail,
+        (pcm) => {
+          current.pending = current.pending
+            .then(async () => {
+              if (active.current === current) await bridge.feed(current.id, pcm)
+            })
+            .catch((cause: unknown) =>
+              fail(cause instanceof Error ? cause : new Error(String(cause))),
+            )
         },
       )
       if (active.current !== current) {
@@ -168,9 +174,7 @@ export function ComposerDictation({
       setPhase('recording')
     } catch (cause) {
       if (active.current !== current) return
-      active.current = null
-      callbacks.current.onActive(false)
-      setPhase('idle')
+      cancel()
       setError(
         cause instanceof Error && cause.name === 'NotAllowedError'
           ? 'Allow microphone access for Dovo Studio in system settings, then try again.'
@@ -180,28 +184,8 @@ export function ComposerDictation({
       )
     }
   }
-  const install = async () => {
-    if (!bridge || active.current) return
-    const current = session()
-    active.current = current
-    setError('')
-    setPhase('downloading')
-    try {
-      await bridge.install(current.id)
-      if (active.current !== current) return
-      setStatus(decode(dictationStatusSchema, await bridge.status()))
-      setPhase('idle')
-    } catch (cause) {
-      if (active.current === current) {
-        setPhase('setup')
-        setError(cause instanceof Error ? cause.message : String(cause))
-      }
-    } finally {
-      if (active.current === current) active.current = null
-    }
-  }
-  if (!bridge) return null
-  const busy = !['idle', 'setup', 'recording'].includes(phase)
+  if (!bridge || !dictationEnabled) return null
+  const busy = !['idle', 'recording'].includes(phase)
   return (
     <div className="relative flex items-center gap-1">
       <IconButton
@@ -246,39 +230,7 @@ export function ComposerDictation({
             </IconButton>
           </div>
           <div role="status" aria-live="polite">
-            {phase === 'setup' && (
-              <>
-                <p>
-                  Offline Dutch, English and 23 other languages. Audio stays on this computer. No
-                  account or subscription.
-                </p>
-                <p className="mt-2 text-muted-foreground">
-                  Parakeet Redux · 159 MB download · CC BY 4.0
-                </p>
-                {status?.engine ? (
-                  <Button type="button" size="sm" className="mt-2" onClick={() => void install()}>
-                    Download model
-                  </Button>
-                ) : (
-                  <p className="mt-2">
-                    The dictation engine is missing. For development, run{' '}
-                    <code>pnpm prepare:dictation</code>.
-                  </p>
-                )}
-              </>
-            )}
-            {phase === 'downloading' && (
-              <p>
-                Downloading model…{' '}
-                {Math.min(
-                  100,
-                  Math.floor(((status?.downloaded ?? 0) / dictationModel.bytes) * 100),
-                )}
-                %
-              </p>
-            )}
-            {phase === 'checking' && <p>Checking local model…</p>}
-            {phase === 'starting' && <p>Opening microphone…</p>}
+            {phase === 'starting' && <p>Loading speech model and opening microphone…</p>}
             {phase === 'recording' && (
               <p>Recording… Click Stop when finished. Escape cancels. Maximum 5 minutes.</p>
             )}
@@ -289,10 +241,13 @@ export function ComposerDictation({
               {error}
             </p>
           )}
-          {phase === 'idle' && error.includes('model is damaged') && (
-            <Button type="button" size="sm" className="mt-2" onClick={() => void install()}>
-              Download model again
-            </Button>
+          {(phase === 'recording' || phase === 'transcribing') && preview && (
+            <textarea
+              aria-label="Live dictation preview"
+              readOnly
+              value={preview}
+              className="mt-2 max-h-40 w-full rounded border border-border bg-background p-2"
+            />
           )}
           {retained && (
             <>

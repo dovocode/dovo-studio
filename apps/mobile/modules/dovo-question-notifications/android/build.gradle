@@ -1,0 +1,20 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.dovoquestions'
+version = '1.0.0'
+android {
+  namespace 'expo.modules.dovoquestions'
+  defaultConfig { versionCode 1; versionName '1.0.0' }
+}
+dependencies {
+  if (findProject(':expo-notifications')) {
+    implementation project(':expo-notifications')
+  } else {
+    // Expo 58 uses its package-local prebuilt Maven artifact by default.
+    def notifications = new groovy.json.JsonSlurper().parse(file('../../../node_modules/expo-notifications/package.json'))
+    implementation "host.exp.exponent:expo.modules.notifications:${notifications.version}"
+  }
+  implementation 'com.google.firebase:firebase-messaging:25.0.1'
+  implementation 'androidx.core:core:1.17.0'
+}

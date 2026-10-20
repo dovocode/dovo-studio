@@ -18,8 +18,8 @@ export function SectionOrderSheet({ onClose }: { onClose: () => void }) {
     <Sheet title="Organize sections" onClose={onClose}>
       <View style={{ gap: 12 }}>
         <Text style={styles.muted}>
-          Change the order of thread categories. Empty sections stay hidden. Project and ungrouped
-          threads use Open’s position.
+          Needs input always stays first. Change the order of other thread categories. Empty
+          sections stay hidden. Project and ungrouped threads use Open’s position.
         </Text>
         {order.map((id, index) => (
           <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

@@ -426,15 +426,30 @@ export function TaskList({
         (group, index) => (index === 0 && group.id === 'active' ? { ...group, open: true } : group),
       )
 
+    const attention = tasks.filter(
+      ({ task, needsInput }) => needsInput && !task.archived && !task.archivedAt,
+    )
+    const attentionGroups = attention.length
+      ? [
+          {
+            id: 'needs-input',
+            name: 'Needs input',
+            tasks: attention,
+            open: expanded['needs-input'] ?? true,
+          },
+        ]
+      : []
     const active = tasks.filter(
       ({ task, needsInput }) =>
+        !needsInput &&
         !task.archived &&
         !task.archivedAt &&
         !isSnoozed(task, now) &&
-        (!task.waitingForFeedback || needsInput),
+        !task.waitingForFeedback,
     )
     const settledTasks = tasks.filter(({ task }) => task.archived || !!task.archivedAt)
     const statusGroups = [
+      ...attentionGroups,
       {
         id: 'pinned',
         name: 'Pinned',
@@ -480,7 +495,8 @@ export function TaskList({
         id: 'snoozed',
         name: 'Snoozed',
         tasks: tasks.filter(
-          ({ task }) => !task.archived && !task.archivedAt && isSnoozed(task, now),
+          ({ task, needsInput }) =>
+            !needsInput && !task.archived && !task.archivedAt && isSnoozed(task, now),
         ),
         open: false,
       },
@@ -513,6 +529,7 @@ export function TaskList({
     )
     if (grouping === 'none')
       return ordered([
+        ...attentionGroups,
         ...(visibleActive.length
           ? [
               {
@@ -555,6 +572,7 @@ export function TaskList({
       byProject.set(key, group)
     }
     return ordered([
+      ...attentionGroups,
       ...[...byProject.values()]
         .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
         .map((group) => ({

@@ -1,5 +1,5 @@
 import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
-import { sharedSettingsSchema } from '@dovo/protocol'
+import { dictationLanguageSchema, sharedSettingsSchema } from '@dovo/protocol'
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
 import { fontFamilySchema, terminalFontSizeSchema } from './fonts'
@@ -43,6 +43,8 @@ const schema = mutableStruct({
   addProjectStartsIn: Schema.String,
   providerUpdateChecks: Schema.Boolean,
   backgroundActivity: Schema.Literals(['balanced', 'reduced']),
+  dictationEnabled: Schema.Boolean,
+  dictationLanguage: dictationLanguageSchema,
   quitShortcut: Schema.Literals(['immediate', 'hold', 'disabled']),
   theme: Schema.Literals(['dark', 'light', 'system']),
   themePalette: Schema.Literals([...studioThemeIds]),
@@ -136,6 +138,8 @@ export const defaultAppPreferences: AppPreferences = {
   addProjectStartsIn: '',
   providerUpdateChecks: true,
   backgroundActivity: 'balanced',
+  dictationEnabled: false,
+  dictationLanguage: 'auto',
   quitShortcut: 'immediate',
   theme: 'dark',
   themePalette: 'dovo',

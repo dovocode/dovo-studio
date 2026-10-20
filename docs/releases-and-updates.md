@@ -174,43 +174,47 @@ local cards. Use Settings → App & updates to disable them. Thread titles and s
 summaries are visible on the Lock Screen. Full messages, tool output and approval details are not
 included.
 
-**Default: local updates only.** The app starts activities while it is foregrounded and receives
-task snapshots. Cards can remain visible after iOS suspends the app, but their content cannot keep
-updating without APNs; stale content is marked after two minutes. Opening the app reconciles the
-current state. Tasks started entirely while the app is suspended do not create a new activity
-remotely.
+Activities start while Dovo is open and receives task snapshots. With a push-capable iOS build, the
+runtime keeps them updated and ends them while the app is suspended using the existing
+[notification relay](notification-relay.md). Tasks started entirely while the app is closed do not
+create a new activity remotely; push-to-start is not enabled.
 
-### Optional background push (disabled by default)
+### Background delivery
 
-This setup is deferred until you choose to enable APNs. To enable it later:
+Sign in on the phone to use managed Connect delivery, or configure the standalone notification relay
+on each task host. Apple credentials stay on the relay. The phone gives each paired runtime a
+delivery grant scoped to the activity, native token, task turn and Apple environment. No account
+session or relay secret is shared with the runtime. The Live Activities switch is independent of
+ordinary notifications and their system permission.
 
-1. Create an APNs signing key in your Apple Developer account. Store the `.p8` outside this repo
-   with access restricted to the runtime user. Enable Push Notifications for the application ID.
-2. Rebuild the phone app with `DOVO_APPLE_TEAM_ID`. Live Activity push and frequent updates are
-   enabled by default; `DOVO_LIVE_ACTIVITY_PUSH=0` opts out.
-3. Set these variables in **each task-host runtime's environment** before starting/restarting it:
+Use a native build with `DOVO_APPLE_TEAM_ID` and push signing enabled. ActivityKit tokens and
+frequent updates are enabled by default; `DOVO_LIVE_ACTIVITY_PUSH=0` opts out. For a local-only
+build, `DOVO_PUSH_NOTIFICATIONS=0` disables push capabilities. Existing foreground updates continue
+to work without a delivery service. Unchanged background content refreshes every three minutes and
+is marked stale after five minutes without an update. Apple delivery remains best effort.
 
-   ```sh
-   export DOVO_APNS_KEY_PATH=/private/path/AuthKey.p8
-   export DOVO_APNS_KEY_ID=YOUR_KEY_ID
-   export DOVO_APNS_TEAM_ID=YOUR_TEAM_ID
-   export DOVO_APNS_BUNDLE_ID=com.dovo.studio
-   export DOVO_APNS_ENVIRONMENT=sandbox
-   ```
+Existing direct runtime APNs configuration remains available as a standalone fallback:
 
-   Use sandbox for development-signed local installs; distribution-signed apps use production. No
-   Apple key is sent to the phone or stored in workspace JSON. Background updates travel directly
-   from the runtime to Apple's HTTPS/HTTP2 APNs service; an Internet-facing Dovo relay is
-   unnecessary.
+```sh
+export DOVO_APNS_KEY_PATH=/private/path/AuthKey.p8
+export DOVO_APNS_KEY_ID=YOUR_KEY_ID
+export DOVO_APNS_TEAM_ID=YOUR_TEAM_ID
+export DOVO_APNS_BUNDLE_ID=com.dovo.studio
+export DOVO_APNS_ENVIRONMENT=sandbox
+```
 
-4. Start a task while the app is open, then lock the phone. Verify input-needed, completion and
-   failure updates. Authenticated `GET /api/live-activities/status` reports configuration/delivery
-   problems.
+Use sandbox for development-signed installs and production for distribution-signed apps. Start a
+task with Dovo open, lock the phone, and verify input-needed, completion and failure updates.
+Authenticated `GET /api/live-activities/status` reports configuration/delivery problems for that
+paired device. Routine progress updates do not generate notification banners; ordinary push
+notifications are reserved for input needed, failure and completion.
 
-Per-activity push tokens are scoped to the paired device, excluded from request logs and retained in
-the private runtime database for at most eight hours. Revoking a device stops delivery. The runtime
-coalesces unchanged states, uses a bounded retry cooldown on failures, and deletes expired tokens.
-It can update/end an existing activity while iOS suspends the app; push-to-start is not enabled.
+Per-activity push tokens and scoped grants are excluded from workspace snapshots and request logs.
+Registrations expire within eight hours. Revoking a paired device stops runtime delivery. Disabling
+Live Activities, removing a computer or dismissing a card prunes its managed grant on the next
+foreground sync, including for offline computers. Signing out or account-session expiry revokes
+session grants. The runtime coalesces unchanged states, retries failures with a bounded cooldown,
+and deletes invalid registrations. LAN/VPN runtime connections continue to support HTTP.
 
 ## Standalone runtimes and adapters
 

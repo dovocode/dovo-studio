@@ -1,0 +1,10 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["DovoQuestionNotificationsModule"],
+    "appDelegateSubscribers": ["DovoQuestionNotificationsSubscriber"]
+  },
+  "android": {
+    "modules": ["expo.modules.dovoquestions.DovoQuestionNotificationsModule"]
+  }
+}

@@ -1,18 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createHash, timingSafeEqual } from 'node:crypto'
-import {
-  decode,
-  relayNotificationSchema,
-  ValidationError,
-  type RelayNotification,
-} from '@dovo/protocol'
+import { decode, relayMessageSchema, ValidationError, type RelayMessage } from '@dovo/protocol'
 import type { DeliveryResult } from './delivery.js'
 
 const digest = (value: string) => createHash('sha256').update(value).digest()
 export function createRelay(options: {
   token: string
   platforms: { ios: boolean; android: boolean }
-  send: (value: RelayNotification) => Promise<DeliveryResult>
+  send: (value: RelayMessage) => Promise<DeliveryResult>
 }) {
   if (options.token.length < 32)
     throw new Error('DOVO_RELAY_TOKEN must contain at least 32 characters')
@@ -46,9 +41,9 @@ export function createRelay(options: {
         if (bytes > 16_384) return respond(response, 413, { error: 'Notification is too large' })
         chunks.push(buffer)
       }
-      let value: RelayNotification
+      let value: RelayMessage
       try {
-        value = decode(relayNotificationSchema, JSON.parse(Buffer.concat(chunks).toString('utf8')))
+        value = decode(relayMessageSchema, JSON.parse(Buffer.concat(chunks).toString('utf8')))
       } catch (error) {
         if (error instanceof SyntaxError || error instanceof ValidationError)
           return respond(response, 400, { error: 'Invalid notification' })

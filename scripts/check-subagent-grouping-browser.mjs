@@ -858,6 +858,91 @@ try {
       await page.getByText('Active order', { exact: true }).waitFor()
       if (mobile) assert.equal(await activeHeader.getAttribute('aria-expanded'), 'true')
     }
+    // Attention has a fixed top position, including inherited child input and snoozed/pinned owners.
+    await page.evaluate(() => {
+      const base = {
+        ...window.workspace.tasks[0],
+        status: 'review',
+        delegation: undefined,
+        subagents: [],
+        threadWatches: [],
+        archived: false,
+        archivedAt: undefined,
+        pinned: false,
+        snoozedUntil: undefined,
+        waitingForFeedback: false,
+      }
+      window.publishTasks([
+        {
+          ...base,
+          id: 'attention-parent',
+          title: 'Parent needs a reply',
+          pinned: true,
+          waitingForFeedback: true,
+          snoozedUntil: new Date(Date.now() + 3600000).toISOString(),
+        },
+        {
+          ...base,
+          id: 'attention-child',
+          title: 'Child needs a reply',
+          status: 'running',
+          delegation: { parentTaskId: 'attention-parent', parentRunId: 'run', key: 'child' },
+        },
+        { ...base, id: 'waiting-parent', title: 'Parent awaits worker', waitingForFeedback: true },
+        {
+          ...base,
+          id: 'working-child',
+          title: 'Background worker',
+          status: 'running',
+          delegation: { parentTaskId: 'waiting-parent', parentRunId: 'run', key: 'worker' },
+        },
+        { ...base, id: 'normal-pin', title: 'Ordinary pinned thread', pinned: true },
+        { ...base, id: 'normal-open', title: 'Ordinary open thread' },
+      ])
+      window.store.snapshot.questions = [{ id: 'input', taskId: 'attention-child' }]
+      window.updatePreferences({
+        collapsedThreadSections: [],
+        threadSectionOrder: ['settled', 'snoozed', 'waiting', 'working', 'active', 'pinned'],
+      })
+      window.renderList(false)
+    })
+    for (const taskGrouping of ['status', 'none', 'project']) {
+      await page.evaluate(
+        (taskGrouping) => window.updatePreferences({ taskGrouping }),
+        taskGrouping,
+      )
+      await page.getByText('Parent needs a reply', { exact: true }).waitFor()
+      assert.equal(await page.getByText('Parent needs a reply', { exact: true }).count(), 1)
+      const headers = mobile
+        ? await page
+            .getByRole('button', {
+              name: /^(Needs input|Waiting|Pinned|Open|Project|Working|Snoozed), \d+ tasks$/,
+            })
+            .allTextContents()
+        : await page.locator('summary').allTextContents()
+      assert.match(headers[0], /^Needs input/)
+      if (!mobile) {
+        const attention = page
+          .locator('details')
+          .filter({ has: page.locator('summary').filter({ hasText: 'Needs input' }) })
+        assert.equal(await attention.getByText('Parent needs a reply', { exact: true }).count(), 1)
+        const waiting = page
+          .locator('details')
+          .filter({ has: page.locator('summary').filter({ hasText: 'Waiting' }) })
+        assert.equal(await waiting.getByText('Parent awaits worker', { exact: true }).count(), 1)
+      }
+    }
+    const attentionHeader = mobile
+      ? page.getByRole('button', { name: 'Needs input, 1 tasks', exact: true })
+      : page.locator('summary').filter({ hasText: 'Needs input' })
+    await attentionHeader.click()
+    await page.getByText('Parent needs a reply', { exact: true }).waitFor({ state: 'hidden' })
+    await attentionHeader.click()
+    await page.getByText('Parent needs a reply', { exact: true }).waitFor()
+    await page.evaluate(() => {
+      window.store.snapshot.questions = []
+      window.renderList(false)
+    })
     // A successful remote owner must not hide its failed provider-native worker.
     await page.evaluate(() => {
       const base = {

@@ -1,6 +1,7 @@
 import { app, ipcMain, session, systemPreferences } from 'electron'
 import { join } from 'node:path'
-import { DictationEngine } from './dictation-engine.js'
+import { DictationEngine, type DictationSession } from './dictation-engine.js'
+import { decode, dictationLanguageSchema, type DictationUpdate } from '@dovo/protocol'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 
 export function registerDictation(
@@ -9,11 +10,17 @@ export function registerDictation(
   dataDirectory: string,
 ) {
   const engine = new DictationEngine(
-    join(bundleDirectory, process.platform === 'win32' ? 'transcribe-cli.exe' : 'transcribe-cli'),
+    join(bundleDirectory, process.platform === 'win32' ? 'dovo-dictation.exe' : 'dovo-dictation'),
     join(dataDirectory, 'dictation'),
   )
   let active:
-    | { sender: number; id: string; controller: AbortController; done: Promise<unknown> }
+    | {
+        sender: number
+        id: string
+        controller: AbortController
+        done: Promise<unknown>
+        session?: DictationSession
+      }
     | undefined
   const checkId = (id: unknown): string => {
     if (typeof id !== 'string' || !/^[\w-]{1,80}$/.test(id))
@@ -56,12 +63,44 @@ export function registerDictation(
   ipcMain.handle('dictation:install', (event, id: unknown) =>
     run(event, id, (signal) => engine.install(signal)),
   )
-  ipcMain.handle('dictation:transcribe', (event, id: unknown, pcm: unknown) =>
-    run(event, id, (signal) => {
-      if (!(pcm instanceof ArrayBuffer)) throw new Error('Invalid dictation audio.')
-      return engine.transcribe(pcm, signal)
-    }),
-  )
+  ipcMain.handle('dictation:start', (event, id: unknown, language: unknown) => {
+    let resolveReady: () => void, rejectReady: (error: unknown) => void
+    const ready = new Promise<void>((resolve, reject) => {
+      resolveReady = resolve
+      rejectReady = reject
+    })
+    const update = (value: DictationUpdate) => {
+      if (!event.sender.isDestroyed()) event.sender.send('dictation:update', id, value)
+    }
+    void run(event, id, async (signal) => {
+      const locale = decode(dictationLanguageSchema, language)
+      const session = await engine.start(locale, signal, (text) => update({ type: 'text', text }))
+      if (!active || signal.aborted) throw new Error('Dictation was cancelled.')
+      active.session = session
+      resolveReady()
+      try {
+        await session.done
+      } catch (cause) {
+        if (!signal.aborted)
+          update({ type: 'error', message: cause instanceof Error ? cause.message : String(cause) })
+        throw cause
+      }
+    }).catch((cause: unknown) => rejectReady(cause))
+    return ready
+  })
+  const ownedSession = (event: Electron.IpcMainInvokeEvent, id: unknown) => {
+    requireTrustedRenderer(event, rendererPath)
+    const key = checkId(id)
+    if (active?.sender !== event.sender.id || active.id !== key || !active.session)
+      throw new Error('This dictation session is no longer active.')
+    return active.session
+  }
+  ipcMain.handle('dictation:feed', (event, id: unknown, pcm: unknown) => {
+    const session = ownedSession(event, id)
+    if (!(pcm instanceof ArrayBuffer)) throw new Error('Invalid dictation audio.')
+    return session.feed(pcm)
+  })
+  ipcMain.handle('dictation:finish', (event, id: unknown) => ownedSession(event, id).finish())
   ipcMain.handle('dictation:cancel', async (event, id: unknown) => {
     requireTrustedRenderer(event, rendererPath)
     const key = checkId(id)

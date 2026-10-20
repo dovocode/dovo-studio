@@ -24,8 +24,8 @@ export function SectionOrderDialog() {
         <DialogContent className="max-w-sm">
           <DialogTitle>Organize sections</DialogTitle>
           <DialogDescription>
-            Change the order of thread categories. Empty sections stay hidden. With project or no
-            grouping, those threads use Open’s position.
+            Needs input always stays first. Change the order of other thread categories. Empty
+            sections stay hidden. With project or no grouping, those threads use Open’s position.
           </DialogDescription>
           <ol className="space-y-1" aria-label="Thread section order">
             {order.map((id, index) => (

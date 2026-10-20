@@ -141,6 +141,7 @@ export * from './tasks/adapter-diagnostics.js'
 export * from './scm/pulls/pull-links.js'
 
 export * from './runtime/push-notifications.js'
+export * from './runtime/notification-questions.js'
 export * from './task-launcher.js'
 export * from './tasks/task-launcher-choices.js'
 export * from './tasks/task-launcher-dispatch.js'
@@ -266,3 +267,5 @@ export * from './tasks/thread-navigation.js'
 export * from './desktop-dictation.js'
 
 export * from './runtime/remote-desktop.js'
+
+export * from './runtime/relay-message.js'

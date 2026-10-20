@@ -11,6 +11,7 @@ import {
 import { Button, Input } from '@dovo/studio-ui'
 import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
 import { SettingsSelect } from './settings-select'
+import { SpeechSettings } from './speech'
 
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const mod = mac ? '⌘' : 'Ctrl'
@@ -231,6 +232,7 @@ export default function GeneralSettings() {
           </SettingRow>
         ))}
       </SettingsGroup>
+      <SpeechSettings />
       <SettingsGroup title="Application">
         <SettingRow
           label="Background activity"
@@ -273,7 +275,7 @@ export default function GeneralSettings() {
         </SettingRow>
         <SettingRow
           label="Text generation model"
-          description="Choose the model for task titles and dictation on each computer."
+          description="Choose the model for task titles and text generation on each computer."
         >
           <Button variant="outline" onClick={() => host.navigate({ viewId: 'text-generation' })}>
             Configure text generation

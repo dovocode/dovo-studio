@@ -48,6 +48,8 @@ export function orderThreadSections<T>(
 ): T[] {
   const rank = (id: string) => order.findIndex((section) => section === id)
   const position = (group: T) => {
+    // Attention stays above the user-configurable section order and project groups.
+    if (key(group) === 'needs-input') return -1
     const index = rank(key(group))
     return index < 0 ? rank('active') : index
   }

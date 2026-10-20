@@ -1,17 +1,14 @@
 # Local dictation attribution
 
-Parakeet Redux model weights © Moondream, derived from NVIDIA Parakeet TDT 0.6B v3. Licensed under
-Creative Commons Attribution 4.0 International (CC BY 4.0).
-https://creativecommons.org/licenses/by/4.0/
+Nemotron 3.5 ASR Streaming 0.6B model by NVIDIA, licensed under the OpenMDW License Agreement,
+version 1.1 (OpenMDW-1.1). Full terms are included in LICENSE.model.txt.
+https://openmdw.ai/license/1-1/
 
-Original Redux model: https://huggingface.co/moondream/parakeet-redux NVIDIA base model:
-https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3 GGUF conversion by NairoDorian / Nairod785:
-https://huggingface.co/Nairod785/parakeet-redux-gguf
+Original model: https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b GGUF conversion:
+https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf
 
-Dovo uses the TQ1_Q8_0 conversion: encoder ternary codes are retained; dense parameters are
-quantized to Q8_0 and the tokenizer is embedded. Dovo does not further modify the model. Attribution
-does not imply endorsement.
+Dovo uses the Q8_0 quantization and does not further modify the weights. Attribution does not imply
+endorsement.
 
 Inference engine: transcribe.cpp, MIT license. https://github.com/NairoDorian/transcribe.cpp Engine
-and dependency licenses accompany the packaged native executable. Audio is processed locally. No
-Photon or other proprietary inference engine is included.
+and dependency licenses accompany the packaged native executable. Audio is processed locally.

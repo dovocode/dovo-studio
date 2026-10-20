@@ -2,7 +2,7 @@ import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Keyboard, ScrollView, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import {
@@ -15,14 +15,17 @@ import {
 import { QuestionField } from './question-field'
 import { Action } from '../../ui/controls/action'
 import { useTheme } from '../../ui/theme'
+import { notificationAnswerDraft, clearNotificationAnswerDraft } from '../../notifications/answers'
 export function QuestionForm({
   request,
   connected,
   onAnswer,
+  runtimeId,
 }: {
   request: PendingQuestion
   connected: boolean
   onAnswer: (answers: QuestionAnswers | null) => Promise<void>
+  runtimeId?: string
 }) {
   const { styles } = useTheme()
 
@@ -40,6 +43,23 @@ export function QuestionForm({
     [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const submitting = useRef(false)
+  const edited = useRef(false)
+  useEffect(() => {
+    if (!runtimeId) return
+    let disposed = false
+    void notificationAnswerDraft(runtimeId, request)
+      .then((draft) => {
+        if (disposed || edited.current || submitting.current || !draft) return
+        setDrafts((current) => ({ ...current, ...draft }))
+        setError('Your notification answer was not confirmed. Review it and send again.')
+      })
+      .catch(() => {
+        if (!disposed) setError('Could not restore your notification answer. Enter it again.')
+      })
+    return () => {
+      disposed = true
+    }
+  }, [runtimeId, request.id])
   const submit = (answers: QuestionAnswers | null) => {
     return runClientEffect(
       mobileWorkflow(function* () {
@@ -55,6 +75,12 @@ export function QuestionForm({
         setBusy(true)
         return yield* mobileWorkflow(function* () {
           yield* nativeEffect(() => onAnswer(answers))
+          if (runtimeId)
+            yield* nativeEffect(() =>
+              clearNotificationAnswerDraft(runtimeId, request.id).catch(() => {
+                setError('Answer sent, but the saved notification draft could not be cleared.')
+              }),
+            )
         }).pipe(
           Effect.catch((error) =>
             nativeEffect(() => {
@@ -107,6 +133,7 @@ export function QuestionForm({
             draft={drafts[q.id]}
             disabled={busy || !connected}
             onChange={(draft) => {
+              edited.current = true
               setDrafts((current) => ({
                 ...current,
                 [q.id]: draft,

@@ -443,6 +443,12 @@ it.each(['settle', 'archive'] as const)(
     expect(f.s.store.task(f.task.id).archived).not.toBe(true)
     f.s.store.updateTask(child.id, (task) => ({ ...task, draft: '' }))
     await f.watcher.refresh()
+    // Empty drafts are still unfinished children. Only completed children release the parent.
+    expect(f.s.store.task(f.task.id).waitingForFeedback).toBe(true)
+    expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+    f.s.store.updateTask(child.id, (task) => ({ ...task, status: 'review' }))
+    f.s.store.updateTask(nested.id, (task) => ({ ...task, status: 'review' }))
+    await f.watcher.refresh()
     for (const id of [f.task.id, child.id, nested.id]) {
       expect(f.s.store.task(id).archived).toBe(true)
       expect(Boolean(f.s.store.task(id).archivedAt)).toBe(policy === 'archive')
@@ -460,6 +466,7 @@ it('keeps the PR family unsettled when its activity audit cannot commit', async 
   })
   f.s.store.updateTask(child.id, (task) => ({
     ...task,
+    status: 'review',
     delegation: { parentTaskId: f.task.id, parentRunId: 'old', key: 'child' },
   }))
   f.s.preferences.save({ ...f.s.preferences.get(), settleOnPullClose: true })
@@ -484,6 +491,7 @@ it('does not archive a closed PR family when new child work arrives during resou
   })
   f.s.store.updateTask(child.id, (task) => ({
     ...task,
+    status: 'review',
     delegation: { parentTaskId: f.task.id, parentRunId: 'old', key: 'child' },
   }))
   f.s.preferences.save({ ...f.s.preferences.get(), archiveOnPullMerge: true })

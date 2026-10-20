@@ -6,6 +6,7 @@ export async function recordDictation(
   signal: AbortSignal,
   onLimit: () => void,
   onFailure: (error: Error) => void,
+  onAudio: (pcm: ArrayBuffer) => void,
 ) {
   signal.throwIfAborted()
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -18,7 +19,6 @@ export async function recordDictation(
   }
   let context: AudioContext | undefined
   let node: AudioWorkletNode | undefined
-  const chunks: Int16Array[] = []
   let length = 0
   let stopped = false
   let limitTimer: ReturnType<typeof setTimeout> | undefined
@@ -42,7 +42,6 @@ export async function recordDictation(
   const cancel = () => {
     stopped = true
     flushed?.()
-    chunks.length = 0
     release()
   }
   signal.addEventListener('abort', cancel, { once: true })
@@ -85,12 +84,13 @@ export async function recordDictation(
       if (stopped || !(event.data instanceof Float32Array)) return
       const count = Math.min(event.data.length, maxSamples - length)
       if (count <= 0) return
-      const chunk = new Int16Array(count)
+      const pcm = new ArrayBuffer(count * 2)
+      const view = new DataView(pcm)
       for (let i = 0; i < count; i++) {
         const value = Math.max(-1, Math.min(1, event.data[i]))
-        chunk[i] = Math.round(value * (value < 0 ? 32768 : 32767))
+        view.setInt16(i * 2, Math.round(value * (value < 0 ? 32768 : 32767)), true)
       }
-      chunks.push(chunk)
+      onAudio(pcm)
       length += count
       if (length === maxSamples) onLimit()
     }
@@ -115,16 +115,6 @@ export async function recordDictation(
           })
           signal.throwIfAborted()
           stopped = true
-          const pcm = new ArrayBuffer(length * 2),
-            view = new DataView(pcm)
-          let offset = 0
-          for (const chunk of chunks)
-            for (const sample of chunk) {
-              view.setInt16(offset, sample, true)
-              offset += 2
-            }
-          chunks.length = 0
-          return pcm
         } finally {
           clearTimeout(timer)
           release()

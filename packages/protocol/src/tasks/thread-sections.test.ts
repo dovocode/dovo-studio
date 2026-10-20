@@ -52,3 +52,15 @@ it('orders categories without changing task or project ordering', () => {
     defaultThreadSectionOrder,
   )
 })
+
+it('keeps Needs input first with every saved order, including project and ungrouped views', () => {
+  const groups = [
+    { id: 'pinned' },
+    { id: 'waiting' },
+    { id: 'project:A' },
+    { id: 'active' },
+    { id: 'needs-input' },
+  ]
+  for (const order of [defaultThreadSectionOrder, [...defaultThreadSectionOrder].reverse()])
+    expect(orderThreadSections(groups, (group) => group.id, order)[0]?.id).toBe('needs-input')
+})

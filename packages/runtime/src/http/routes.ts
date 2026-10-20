@@ -539,6 +539,7 @@ export function route(
           !path.startsWith('/api/memory/') &&
             ![
               '/api/tasks/answer',
+              '/api/notifications/answer',
               '/api/agents/mcp/test',
               '/api/agents/acp/authenticate',
               '/api/live-activities/register',
@@ -563,7 +564,7 @@ export function route(
         return yield* serviceResult({ ok: true })
       }
       if (method === 'GET' && path === '/api/live-activities/status')
-        return yield* serviceResult(s.liveActivities.status())
+        return yield* serviceResult(s.liveActivities.status(device.id))
       if (method === 'POST' && path === '/api/live-activities/register')
         return yield* serviceResult(
           s.liveActivities.register(device.id, yield* serviceResult(body(request))),
@@ -1143,6 +1144,7 @@ export function route(
         return yield* usageResets(request, path)
       if (
         path === '/api/approvals' ||
+        path === '/api/notifications/answer' ||
         path.startsWith('/api/agents/') ||
         path.startsWith('/api/tasks/')
       )

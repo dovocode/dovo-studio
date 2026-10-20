@@ -1,3 +1,6 @@
+import Constants from 'expo-constants'
+import { useMobileAccount } from '../runtime/connection/account-provider'
+import type { ActivityDelivery } from './controller'
 import { liveTaskProps, runtimeComputerName } from '@dovo/protocol'
 import { useAppActive } from '../runtime/state/app-active'
 import { nativeEffect } from '../runtime/state/native-effect'
@@ -18,6 +21,24 @@ const Context = createContext({
 })
 export const useLiveActivities = () => useContext(Context)
 export function LiveActivityProvider({ children }: { children: ReactNode }) {
+  const account = useMobileAccount()
+  const identity = account.directory?.user.id
+  const deliverySession = useRef({ identity, revision: 0 })
+  if (deliverySession.current.identity !== identity)
+    deliverySession.current = { identity, revision: deliverySession.current.revision + 1 }
+  const delivery: ActivityDelivery = {
+    environment:
+      Constants.expoConfig?.extra?.pushEnvironment === 'production' ? 'production' : 'sandbox',
+    ...(identity
+      ? {
+          managed: {
+            key: JSON.stringify([identity, deliverySession.current.revision]),
+            subscribe: account.client.subscribeLiveActivity,
+            retain: account.client.retainLiveActivities,
+          },
+        }
+      : {}),
+  }
   const active = useAppActive()
   const { overviews, readRuntimeEffect, ready } = useRuntime()
   const [enabled, updateEnabled, enabledRef] = useApplicationState(true),
@@ -57,11 +78,13 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
   const latest = useRef({
     overviews,
     readRuntimeEffect,
+    delivery,
     ready,
   })
   latest.current = {
     overviews,
     readRuntimeEffect,
+    delivery,
     ready,
   }
   useEffect(() => {
@@ -71,7 +94,7 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
       refreshTimer.current = undefined
       refresh.current()
     }, 250)
-  }, [active, activityRevision, ready, enabled])
+  }, [active, activityRevision, ready, enabled, identity])
   useEffect(() => {
     if (!supported) return
     const commands = clientTaskScope()
@@ -102,7 +125,12 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
           )
             return
           const value = latest.current
-          yield* controller.sync(value.overviews, value.readRuntimeEffect, enabledRef.current)
+          yield* controller.sync(
+            value.overviews,
+            value.readRuntimeEffect,
+            enabledRef.current,
+            value.delivery,
+          )
         }).pipe(Effect.uninterruptible)
         const retireActivities = () =>
           void commands.run(

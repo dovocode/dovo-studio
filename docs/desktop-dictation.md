@@ -1,65 +1,77 @@
 # Desktop dictation
 
-The desktop composer can transcribe speech locally using Parakeet Redux and the MIT-licensed
-`transcribe.cpp` engine. No STT account, API key, subscription, Photon, or cloud transcription
-service is needed. English, Dutch and 23 other languages are supported; mixed-language coding
-accuracy still needs evaluation on real speech.
+Desktop dictation uses Nemotron 3.5 ASR Streaming 0.6B (Q8) with the MIT-licensed `transcribe.cpp`
+engine. It runs locally on the CPU, including on Windows and Linux without a GPU. No STT account,
+API key, subscription or cloud transcription service is needed.
 
-Click the microphone in the message composer. On first use, explicitly download the 159 MB model,
-then click the microphone again and allow microphone access. Click Stop to transcribe, or press
-Escape to cancel. Recording is limited to five minutes. Transcription inserts into the original
-selection without sending the message. If you edit the draft while transcription is running, the
-transcript is kept separately for review and explicit insertion. Switching threads cancels the
-session and prevents a late result from changing another draft.
+Open **Settings → General → Speech**, then click **Download & enable dictation**. This explicitly
+downloads the 751 MB model and enables the composer's microphone. The page shows download progress,
+cancellation, errors and retry. Downloads continue when navigating away from Settings. Use **Enable
+dictation** to hide or show the microphone afterward without deleting the model. Choose
+**Automatic** or one of the 32 supported language-locales, including Dutch and English. A chosen
+language guides recognition; accuracy on mixed-language coding speech still needs evaluation.
+Existing Parakeet Redux weights are not reused or automatically replaced: the new download is
+opt-in.
 
-Audio is captured on the desktop even when the conversation uses a remote runtime. It is not
-uploaded. PCM is held in memory during recording; transcription writes a temporary WAV and
-transcript in the desktop data directory, then deletes them on success, failure or cancellation. An
-abrupt OS/process termination can leave those temporary files behind. The final inserted text
-becomes a normal saved draft and is sent to the selected agent only when you send it. Dictation does
-not run model cleanup or send text to a separate utility model.
+Click the microphone and allow microphone access. A native streaming process loads the model once
+for the recording. The preview updates while speaking, using the model's maximum-quality streaming
+setting (1.12-second chunks); actual delay depends on CPU speed. Click Stop to finalize and insert,
+or press Escape to cancel. Recording is limited to five minutes. Disabling dictation, changing
+threads or closing the window cancels active recording and prevents late updates from changing a
+different draft. Transcription never sends the message. If you edit the draft while recording or
+finalizing, the transcript is kept separately for review and explicit insertion.
+
+Audio is captured and processed on the desktop, even when connected to a remote runtime. It is not
+uploaded or written to temporary files. The renderer supplies 16 kHz mono PCM to the native helper
+through a private pipe; transcript updates return over a framed UTF-8 pipe. Model memory is released
+when the recording ends. There is no resident transcription server or separate model cleanup pass.
+The final inserted text becomes a normal saved draft and is sent only when you send the message.
 
 The engine is bundled with desktop installers; model weights are downloaded from a pinned Hugging
-Face revision and checked for their exact length and SHA-256. Internet access is required for that
-initial download. Subsequent transcription is offline. A short-lived native process loads the model
-per utterance and releases it afterward; there is no resident transcription server. Model file size
-is not the same as active RAM usage. CPU work is capped at four threads.
+Face revision and checked for exact length and SHA-256. Internet access is required for that initial
+download. Subsequent transcription is offline. Model file size is not active RAM usage. CPU work is
+capped at four threads.
 
 ## Development and packaging
 
 Run `pnpm prepare:dictation` before using dictation in a development desktop build. It requires
-CMake, a C/C++ compiler, and `tar` on the build host. Windows uses the Visual Studio C++ toolchain.
-The source archive is pinned and SHA-256 checked. Only the Parakeet model family is compiled, with a
-conservative x86 CPU baseline and Metal enabled by upstream on Apple Silicon. No Python or CUDA
-installation is required. Build products and the test model live under ignored `work/dictation`.
+CMake, a C/C++ compiler and `tar` on the build host. Windows uses the Visual Studio C++ toolchain.
+The source archive is pinned and SHA-256 checked. Only the Parakeet model family (which includes
+Nemotron) is compiled, with a conservative x86 CPU baseline. Dovo's small `dovo-dictation` pipe
+helper uses the public streaming C API. Neither Python nor CUDA is needed. Build products and the
+test model live under ignored `work/dictation`. The build cache checks both upstream revision and
+helper source hash.
 
 `package:desktop` builds and includes the native helper for the packaging host. macOS packaging
 includes the microphone usage string, audio-input entitlement and explicit helper signing. The
 Electron bridge accepts requests only from the trusted main application document; media permissions
-reject cameras and subframes. The helper and model paths cannot be supplied by the renderer.
-Cancellation is scoped to the owning window and operation, including pop-out windows.
+reject cameras and subframes. The helper and model paths cannot be supplied by the renderer. Audio
+feeding, finalization and cancellation are scoped to the owning window and operation, including
+pop-out windows. The host validates language selection, PCM bounds and transcript sizes.
 
 ## Licensing
 
-Model: [Parakeet Redux](https://huggingface.co/moondream/parakeet-redux), by Moondream, derived from
-[NVIDIA Parakeet v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3). The
-[GGUF conversion](https://huggingface.co/Nairod785/parakeet-redux-gguf) retains ternary encoder
-weights and quantizes dense weights to Q8_0. These weights are CC BY 4.0; the engine and its bundled
-ggml, miniz and tinyBLAS notices are included beside the packaged executable under
-`Resources/dictation` (macOS) or `resources/dictation` (Windows/Linux). Dovo does not further modify
-the weights. The packaged `NOTICE.md` and `LICENSE.model.txt` give attribution and full terms.
+Model:
+[NVIDIA Nemotron 3.5 ASR Streaming 0.6B](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b),
+licensed under [OpenMDW-1.1](https://openmdw.ai/license/1-1/). The
+[GGUF conversion](https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf)
+quantizes the model to Q8_0. Dovo does not further modify the weights. The packaged `NOTICE.md` and
+`LICENSE.model.txt` provide attribution and full terms. Engine and bundled ggml, miniz and tinyBLAS
+notices accompany the native executable under `Resources/dictation` (macOS) or `resources/dictation`
+(Windows/Linux).
 
 ## Verification
 
-- `pnpm test:dictation:browser`: production composer dictation controls with a real Chromium
-  microphone/worklet capture and a simulated desktop bridge. Covers opt-in download, recovery,
-  insertion, concurrent edits, cancellation and thread changes. Requires
-  `pnpm exec playwright install chromium` first.
-- `pnpm test:dictation:native`: builds the real helper, downloads and checks the real Redux model,
-  and transcribes the upstream JFK WAV sample. Checks the expected phrase. The model is cached for
-  subsequent runs.
-- Unit tests cover PCM encoding, download failures, integrity checks, IPC ownership and microphone
-  permission scope.
+- `pnpm test:dictation:browser`: production Speech settings and composer controls with a real
+  Chromium microphone/worklet capture and a simulated desktop bridge. Covers opt-in enablement,
+  model download/progress/cancel/retry, language selection, live preview, insertion, concurrent
+  edits, failures, cancellation and thread changes. Requires `pnpm exec playwright install chromium`
+  first.
+- `pnpm test:dictation:native`: builds the real helper, downloads and checks the real Nemotron
+  model, feeds the upstream JFK WAV in chunks, checks preview before finalization and the expected
+  final phrase, and verifies silent input. The model is cached for subsequent runs.
+- Unit tests cover PCM limits, download failures, integrity checks, saved preferences, IPC ownership
+  and microphone permission scope.
 
 The native model test verifies English speech on its host, not Dutch coding accuracy or every
 supported desktop platform. Browser checks do not establish macOS permission prompts, signed helper

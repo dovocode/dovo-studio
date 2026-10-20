@@ -1,5 +1,11 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { decode, taskSchema, type RelayNotification } from '@dovo/protocol'
+import {
+  decode,
+  taskSchema,
+  questionPromptSchema,
+  type QuestionPrompt,
+  type RelayNotification,
+} from '@dovo/protocol'
 import { PushNotifications, notificationRelay } from './push'
 import { openDatabase } from '../storage/database'
 import { WorkspaceStore } from '../storage/workspace'
@@ -23,8 +29,13 @@ function setup(managed = false) {
     >()
     .mockResolvedValue({ delivered: true, invalidToken: false })
   let input:
-    | { id: string; preview: string; type?: 'question' | 'approval' }
-    | Array<{ id: string; preview: string; type?: 'question' | 'approval' }>
+    | { id: string; preview: string; type?: 'question' | 'approval'; prompt?: QuestionPrompt }
+    | Array<{
+        id: string
+        preview: string
+        type?: 'question' | 'approval'
+        prompt?: QuestionPrompt
+      }>
     | undefined
   const service = new PushNotifications(
     db,
@@ -77,6 +88,45 @@ function setup(managed = false) {
     },
   }
 }
+it('only sends direct actions to capable phones and keeps secret questions out of action data', async () => {
+  const f = setup()
+  await f.service.flush()
+  const prompt = decode(questionPromptSchema, {
+    title: 'Branch',
+    questions: [
+      {
+        id: 'branch',
+        header: 'Branch',
+        question: 'Which branch?',
+        options: [{ label: 'Main', value: 'main' }],
+      },
+    ],
+  })
+  f.input({ id: 'old-phone', preview: 'Which branch?', type: 'question', prompt })
+  await f.service.flush()
+  expect(f.send.mock.calls.at(-1)?.[0].data.question).toBeUndefined()
+  f.service.register(f.device, { ...f.registration, questionActions: 1 })
+  f.input({ id: 'new-phone', preview: 'Which branch?', type: 'question', prompt })
+  await f.service.flush()
+  expect(f.send.mock.calls.at(-1)?.[0]).toMatchObject({
+    body: 'Branch\nWhich branch?\n1. Main',
+    data: {
+      question: JSON.stringify({
+        fieldId: 'branch',
+        mode: 'choice',
+        choices: [{ label: 'Main', value: 'main' }],
+      }),
+    },
+  })
+  f.input({
+    id: 'secret',
+    preview: 'Answer in Dovo',
+    type: 'question',
+    prompt: { ...prompt, questions: [{ ...prompt.questions[0], secret: true }] },
+  })
+  await f.service.flush()
+  expect(f.send.mock.calls.at(-1)?.[0].data.question).toBeUndefined()
+})
 it('sends task titles, previews and the phone’s runtime identity for input and completion, without replaying the baseline', async () => {
   const f = setup()
   await f.service.flush()
@@ -348,3 +398,63 @@ it('preserves pending messages across managed credential renewal and does not re
   await f.service.flush()
   expect(f.send.mock.calls.at(-1)?.[1]).toBe('n'.repeat(43))
 })
+
+it('keeps progress, cancellations and PR check results out of notification banners', async () => {
+  const f = setup()
+  f.service.register(f.device, f.registration)
+  await f.service.flush()
+  f.store.updateTask('task', (task) => ({
+    ...task,
+    activity: 'Editing files',
+    pullStatus: {
+      number: 1,
+      url: 'https://github.com/example/repo/pull/1',
+      state: 'open',
+      checks: 'pending',
+      checkedAt: '',
+    },
+  }))
+  await f.service.flush()
+  for (const checks of ['passed', 'pending', 'failed'] as const) {
+    f.store.updateTask('task', (task) => ({
+      ...task,
+      pullStatus: task.pullStatus ? { ...task.pullStatus, checks } : undefined,
+    }))
+    await f.service.flush()
+  }
+  f.store.updateTaskHistory('task', (task) => ({
+    ...task,
+    status: 'cancelled',
+    turns: [
+      {
+        id: 'turn',
+        assistantId: 'reply',
+        agentId: '',
+        provider: 'codex',
+        model: '',
+        status: 'cancelled',
+        startedAt: '',
+      },
+    ],
+  }))
+  await f.service.flush()
+  expect(f.send).not.toHaveBeenCalled()
+})
+
+it.each([
+  { status: 'failed', kinds: ['failed'] },
+  { status: 'review', kinds: ['done'] },
+  { status: 'done', kinds: ['done'] },
+  { status: 'cancelled', kinds: [] },
+  { status: 'draft', kinds: [] },
+] as const)(
+  'notifies only actual completion or failure when a running task becomes $status',
+  async ({ status, kinds }) => {
+    const f = setup()
+    await f.service.flush()
+    f.store.updateTask('task', (task) => ({ ...task, status }))
+    await f.service.flush()
+    await f.service.flush()
+    expect(f.send.mock.calls.map(([message]) => message.data.kind)).toEqual(kinds)
+  },
+)

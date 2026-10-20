@@ -2,7 +2,38 @@ import { it, expect, afterEach, vi } from 'vite-plus/test'
 import { mkdtemp, writeFile, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DictationEngine, dictationWav, maxDictationSamples } from './dictation-engine.js'
+import { DictationEngine, validateDictationPcm, maxDictationSamples } from './dictation-engine.js'
+
+const fixtureModel = vi.hoisted(
+  () => `
+  const locale = process.argv[2];
+  const frame = (text) => {
+    const value = Buffer.from(text); const header = Buffer.alloc(4); header.writeUInt32LE(value.length);
+    process.stdout.write(header); process.stdout.write(value);
+  };
+  // Split the ready header across writes to exercise the incremental pipe parser.
+  process.stdout.write(Buffer.alloc(1));
+  setTimeout(() => process.stdout.write(Buffer.alloc(3)), 10);
+  process.stdin.on('data', () => {
+    if (locale === 'en-GB') { process.stderr.write('Fixture decoder failed'); process.exit(1); }
+    if (locale === 'pl-PL') { const invalid = Buffer.alloc(4); invalid.writeUInt32LE(100001); process.stdout.write(invalid); return; }
+    frame('Hallo wereld 🌍');
+  });
+  process.stdin.on('end', () => frame('Hallo wereld 🌍.'));
+`,
+)
+vi.mock('@dovo/protocol', async (original) => {
+  const protocol = await original<typeof import('@dovo/protocol')>()
+  const { createHash } = await import('node:crypto')
+  return {
+    ...protocol,
+    dictationModel: {
+      ...protocol.dictationModel,
+      bytes: Buffer.byteLength(fixtureModel),
+      sha256: createHash('sha256').update(fixtureModel).digest('hex'),
+    },
+  }
+})
 
 const directories: string[] = []
 afterEach(async () => {
@@ -17,21 +48,14 @@ async function fixture() {
   return new DictationEngine(binary, directory)
 }
 
-it('encodes bounded little-endian mono PCM without changing the samples', () => {
-  const pcm = new ArrayBuffer(640),
-    view = new DataView(pcm)
-  view.setInt16(0, -32768, true)
-  view.setInt16(2, 32767, true)
-  const wav = dictationWav(pcm)
-  expect(wav.subarray(0, 4).toString()).toBe('RIFF')
-  expect(wav.readUInt32LE(4)).toBe(676)
-  expect(wav.readUInt16LE(22)).toBe(1)
-  expect(wav.readUInt32LE(24)).toBe(16000)
-  expect(wav.readUInt16LE(34)).toBe(16)
-  expect(wav.subarray(44)).toEqual(Buffer.from(pcm))
-  expect(() => dictationWav(new ArrayBuffer(0))).toThrow('between')
-  expect(() => dictationWav(new ArrayBuffer(321))).toThrow('between')
-  expect(() => dictationWav(new ArrayBuffer(maxDictationSamples * 2 + 2))).toThrow('between')
+it('rejects malformed and oversized PCM at the native boundary', () => {
+  expect(() => validateDictationPcm(new ArrayBuffer(0))).toThrow('Invalid')
+  expect(() => validateDictationPcm(new ArrayBuffer(321))).toThrow('Invalid')
+  expect(() => validateDictationPcm(new ArrayBuffer(maxDictationSamples * 2 + 2))).toThrow(
+    'Invalid',
+  )
+  expect(() => validateDictationPcm('not audio')).toThrow('Invalid')
+  expect(() => validateDictationPcm(new ArrayBuffer(640))).not.toThrow()
 })
 
 it('does not record or spawn until the engine and model are installed', async () => {
@@ -84,4 +108,46 @@ it('cancels a download and permits a fresh attempt', async () => {
   await expect(engine.install(controller.signal)).rejects.toThrow(/abort/i)
   expect(await readdir(engine.directory)).toEqual(['engine'])
   expect((await engine.status()).downloading).toBe(false)
+})
+
+async function pipeFixture() {
+  const original = await fixture()
+  const engine = new DictationEngine(process.execPath, original.directory)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(fixtureModel)),
+  )
+  await engine.install(new AbortController().signal)
+  return engine
+}
+
+it('parses framed UTF-8 previews before finalization and retains the final result', async () => {
+  const engine = await pipeFixture()
+  const preview = Promise.withResolvers<string>()
+  const session = await engine.start('nl-NL', new AbortController().signal, (text) =>
+    preview.resolve(text),
+  )
+  await session.feed(new ArrayBuffer(640))
+  expect(await preview.promise).toBe('Hallo wereld 🌍')
+  expect(await session.finish()).toBe('Hallo wereld 🌍.')
+  await expect(session.feed(new ArrayBuffer(640))).rejects.toThrow('already finishing')
+})
+
+it('terminates an active helper on cancellation and reports process failures', async () => {
+  const engine = await pipeFixture()
+  const controller = new AbortController()
+  const session = await engine.start('nl-NL', controller.signal, () => {})
+  controller.abort()
+  await expect(session.done).rejects.toThrow('cancelled')
+  await expect(session.finish()).rejects.toThrow('cancelled')
+  const failed = await engine.start('en-GB', new AbortController().signal, () => {})
+  await failed.feed(new ArrayBuffer(640))
+  await expect(failed.done).rejects.toThrow('Fixture decoder failed')
+})
+
+it('terminates a helper that emits an oversized transcript frame', async () => {
+  const engine = await pipeFixture()
+  const session = await engine.start('pl-PL', new AbortController().signal, () => {})
+  await session.feed(new ArrayBuffer(640))
+  await expect(session.done).rejects.toThrow('unexpectedly large')
 })

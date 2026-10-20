@@ -42,7 +42,7 @@ vi.mock('./task-activity', () => ({
     getInstances: () => native.instances,
   },
 }))
-import { createActivityController } from './controller'
+import { createActivityController, type ActivityDelivery } from './controller'
 it('retires a native activity created before its ownership record was persisted', async () => {
   native.instances = [native.instance]
   const controller = await runClientEffect(createActivityController(vi.fn()))
@@ -433,5 +433,134 @@ it('coalesces unchanged native activity updates while immediately showing change
   } finally {
     await controller.dispose()
     clock.mockRestore()
+  }
+})
+
+it('registers a scoped Connect grant with the paired runtime and revokes it when disabled offline', async () => {
+  native.instance.getPushToken.mockResolvedValue('a'.repeat(64))
+  const subscribe = vi.fn<Subscribe>().mockResolvedValue({ token: 'm'.repeat(43) })
+  const retain = vi.fn<Retain>().mockResolvedValue(undefined)
+  const delivery = {
+    environment: 'production' as const,
+    managed: { key: 'session', subscribe, retain },
+  }
+  const calls: Array<{ path: string; input: unknown }> = []
+  const reader: Read = (_profile, path, input, schema) =>
+    Effect.sync(() => {
+      calls.push({ path, input })
+      return decode(schema, { configured: true, environment: 'sandbox', error: null, ok: true })
+    })
+  const overview = source()
+  const controller = await runClientEffect(createActivityController(vi.fn()))
+  try {
+    await runClientEffect(controller.sync([overview], reader, true, delivery))
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    expect(subscribe).toHaveBeenCalledWith({
+      runtimeId: overview.profile.id,
+      activityId: 'activity',
+      taskId: 'task',
+      turnId: 'turn',
+      token: 'a'.repeat(64),
+      environment: 'production',
+    })
+    expect(calls[0]).toEqual({
+      path: '/api/live-activities/register',
+      input: {
+        runtimeId: overview.profile.id,
+        activityId: 'activity',
+        taskId: 'task',
+        turnId: 'turn',
+        pushToken: 'a'.repeat(64),
+        environment: 'production',
+        managedToken: 'm'.repeat(43),
+      },
+    })
+    await runClientEffect(
+      controller.sync([{ ...overview, connected: false }], reader, false, delivery),
+    )
+    await vi.waitFor(() => expect(retain).toHaveBeenLastCalledWith([]))
+    expect(native.instance.end).toHaveBeenCalledOnce()
+    expect(calls).toHaveLength(1)
+  } finally {
+    native.instance.getPushToken.mockResolvedValue(null)
+    await controller.dispose()
+  }
+})
+
+type Subscribe = NonNullable<ActivityDelivery['managed']>['subscribe']
+type Retain = NonNullable<ActivityDelivery['managed']>['retain']
+type Read = ReturnType<typeof useRuntime>['readRuntimeEffect']
+
+it('revokes a grant created while disabling activities before handing it to the runtime', async () => {
+  native.instance.getPushToken.mockResolvedValue('a'.repeat(64))
+  let release = (_value: { token: string }) => {}
+  const subscribe = vi.fn<Subscribe>().mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = resolve
+      }),
+  )
+  const retain = vi.fn<Retain>().mockResolvedValue(undefined)
+  const delivery = {
+    environment: 'sandbox' as const,
+    managed: { key: 'session', subscribe, retain },
+  }
+  const calls = vi.fn<() => void>()
+  const reader: Read = () =>
+    Effect.sync(() => {
+      calls()
+      return { configured: true }
+    }).pipe(Effect.andThen(Effect.never))
+  const overview = source(),
+    controller = await runClientEffect(createActivityController(vi.fn()))
+  try {
+    await runClientEffect(controller.sync([overview], reader, true, delivery))
+    await vi.waitFor(() => expect(subscribe).toHaveBeenCalledOnce())
+    await runClientEffect(
+      controller.sync([{ ...overview, connected: false }], reader, false, delivery),
+    )
+    release({ token: 'm'.repeat(43) })
+    await vi.waitFor(() => expect(retain).toHaveBeenLastCalledWith([]))
+    expect(calls).not.toHaveBeenCalled()
+  } finally {
+    native.instance.getPushToken.mockResolvedValue(null)
+    await controller.dispose()
+  }
+})
+
+it('refreshes registration when the account changes without recreating the activity', async () => {
+  native.instance.getPushToken.mockResolvedValue('a'.repeat(64))
+  const subscribe = vi.fn<Subscribe>().mockResolvedValue({ token: 'm'.repeat(43) }),
+    retain = vi.fn<Retain>().mockResolvedValue(undefined)
+  const calls = vi.fn<(input: unknown) => void>()
+  const reader: Read = (_profile, _path, input, schema) =>
+    Effect.sync(() => {
+      calls(input)
+      return decode(schema, { configured: true, environment: 'sandbox', error: null })
+    })
+  const delivery = {
+    environment: 'sandbox' as const,
+    managed: { key: 'first-session', subscribe, retain },
+  }
+  const overview = source(),
+    controller = await runClientEffect(createActivityController(vi.fn()))
+  try {
+    await runClientEffect(controller.sync([overview], reader, true, delivery))
+    await vi.waitFor(() => expect(calls).toHaveBeenCalledOnce())
+    await runClientEffect(
+      controller.sync([overview], reader, true, {
+        ...delivery,
+        managed: { ...delivery.managed, key: 'second-session' },
+      }),
+    )
+    await vi.waitFor(() => expect(calls).toHaveBeenCalledTimes(2))
+    expect(subscribe).toHaveBeenCalledTimes(2)
+    expect(native.start).toHaveBeenCalledOnce()
+    await runClientEffect(controller.sync([overview], reader, true, { environment: 'sandbox' }))
+    await vi.waitFor(() => expect(calls).toHaveBeenCalledTimes(3))
+    expect(calls.mock.calls[2]?.[0]).not.toHaveProperty('managedToken')
+  } finally {
+    native.instance.getPushToken.mockResolvedValue(null)
+    await controller.dispose()
   }
 })

@@ -197,7 +197,7 @@ try {
         hardenedRuntime: true,
         entitlements: join(root, 'apps/desktop/build/entitlements.mac.plist'),
         entitlementsInherit: join(root, 'apps/desktop/build/entitlements.mac.plist'),
-        binaries: ['Contents/Resources/dictation/transcribe-cli'],
+        binaries: ['Contents/Resources/dictation/dovo-dictation'],
         extendInfo: {
           NSMicrophoneUsageDescription:
             'Dictate messages locally. Your audio stays on this computer.',

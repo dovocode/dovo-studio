@@ -11,6 +11,7 @@ import { pushStatusSchema, responses } from '@dovo/protocol'
 import { notificationTarget, notificationHref, type NotificationTarget } from './target'
 import { useRuntime } from '../runtime/connection/provider'
 import { useApplicationState } from '../runtime/state/application-state'
+import { configureNotificationAnswers, isNativeAnswerAction } from './answers'
 
 const preferenceKey = 'dovo.push-notifications.enabled'
 const serverPreferenceKey = 'dovo.push-notifications.disabled-servers'
@@ -100,6 +101,8 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       }
       let lastOpened: string | undefined
       const handleResponse = (response: NotificationResponse) => {
+        // Native handlers submit these while React may be suspended or absent.
+        if (isNativeAnswerAction(response.actionIdentifier ?? '')) return
         if (disposed || lastOpened === response.notification.request.identifier) return
         lastOpened = response.notification.request.identifier
         open(response.notification.request.content.data)
@@ -142,6 +145,18 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
             nativeToken = result.data
           }
           const enabled = enabledRef.current && permitted
+          let questionActions = false
+          try {
+            questionActions = await configureNotificationAnswers(
+              enabled
+                ? latest.current.profiles.filter(
+                    (profile) => !disabledServersRef.current.includes(profile.id),
+                  )
+                : [],
+            )
+          } catch {
+            errors.push('Could not enable background answers. Open Dovo to answer questions.')
+          }
           if (accountRef.current.directory) {
             try {
               await accountRef.current.client.retainPush(
@@ -168,6 +183,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
               serverEnabled,
               accountRef.current.directory?.user.id,
               token,
+              questionActions,
             ])
             const previous = registered.get(entry.profile.id)
             if (previous?.key === key && Date.now() - previous.at < 300_000) continue
@@ -181,6 +197,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
                     Constants.expoConfig?.extra?.pushEnvironment === 'production'
                       ? ('production' as const)
                       : ('sandbox' as const),
+                  ...(questionActions ? { questionActions: 1 as const } : {}),
                 }
                 const grant = accountRef.current.directory
                   ? await accountRef.current.client.subscribePush(registration)

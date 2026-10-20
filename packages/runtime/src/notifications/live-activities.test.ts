@@ -11,7 +11,12 @@ const cleanups: Array<() => void> = []
 afterEach(() => {
   for (const close of cleanups.splice(0)) close()
 })
-function setup() {
+type ManagedSend = NonNullable<ConstructorParameters<typeof LiveActivities>[6]>
+type RelaySend = NonNullable<NonNullable<ConstructorParameters<typeof LiveActivities>[5]>['send']>
+function setup(delivery?: {
+  relay?: ConstructorParameters<typeof LiveActivities>[5]
+  managed?: ConstructorParameters<typeof LiveActivities>[6]
+}) {
   const db = openDatabase(':memory:')
   cleanups.push(() => db.close())
   const store = new WorkspaceStore(db)
@@ -55,7 +60,15 @@ function setup() {
   })
   const send = vi.spyOn(apns, 'send').mockResolvedValue(200)
   let input = false
-  const service = new LiveActivities(db, store, devices, () => input, apns)
+  const service = new LiveActivities(
+    db,
+    store,
+    devices,
+    () => input,
+    apns,
+    delivery?.relay,
+    delivery?.managed,
+  )
   const registration = {
     activityId: 'activity',
     taskId: 'task',
@@ -139,7 +152,7 @@ it('keeps a failed delivery for the next scheduled attempt and reports its statu
   await f.service.flush()
   await f.service.flush()
   expect(f.send).toHaveBeenCalledTimes(1)
-  expect(f.service.status().error).toContain('APNs')
+  expect(f.service.status().error).toContain('push delivery')
   expect(f.db.prepare('SELECT count(*) as count FROM live_activities').get()).toEqual({
     count: 1,
   })
@@ -250,4 +263,89 @@ it('refreshes unchanged background activities only after three minutes, with imm
   } finally {
     clock.mockRestore()
   }
+})
+
+it('updates and ends through a scoped managed grant without host Apple credentials', async () => {
+  const managed = vi.fn<ManagedSend>().mockResolvedValue({ delivered: true, invalidToken: false })
+  const f = setup({ managed })
+  const service = new LiveActivities(f.db, f.store, f.devices, () => false, undefined, {}, managed)
+  const registration = {
+    ...f.registration,
+    runtimeId: 'host',
+    environment: 'production',
+    managedToken: 'm'.repeat(43),
+  }
+  expect(service.register(f.device, registration).configured).toBe(true)
+  expect(service.status('other-device').configured).toBe(false)
+  await service.flush()
+  expect(managed).toHaveBeenCalledWith(
+    expect.objectContaining({
+      kind: 'liveactivity',
+      platform: 'ios',
+      runtimeId: 'host',
+      activityId: 'activity',
+      taskId: 'task',
+      turnId: 'turn',
+      environment: 'production',
+      token: registration.pushToken,
+      event: 'update',
+      props: expect.objectContaining({ status: 'Working' }),
+    }),
+    registration.managedToken,
+  )
+  expect(f.send).not.toHaveBeenCalled()
+  f.store.updateTask('task', (task) => ({ ...task, status: 'failed' }))
+  await service.flush()
+  expect(managed).toHaveBeenLastCalledWith(
+    expect.objectContaining({ event: 'end', props: expect.objectContaining({ status: 'Failed' }) }),
+    registration.managedToken,
+  )
+  await service.flush()
+  expect(managed).toHaveBeenCalledTimes(2)
+  await service.dispose()
+})
+
+it('uses the standalone relay and stops a rejected grant without falling back to direct APNs', async () => {
+  const send = vi.fn<RelaySend>().mockResolvedValue({ delivered: true, invalidToken: false })
+  const managed = vi.fn<ManagedSend>().mockResolvedValue({ delivered: false, invalidToken: true })
+  const f = setup({ relay: { send }, managed })
+  const registration = { ...f.registration, runtimeId: 'host', environment: 'sandbox' }
+  f.service.register(f.device, registration)
+  await f.service.flush()
+  expect(send).toHaveBeenCalledOnce()
+  f.service.register(f.device, { ...registration, managedToken: 'm'.repeat(43) })
+  await f.service.flush()
+  await f.service.flush()
+  expect(managed).toHaveBeenCalledOnce()
+  expect(send).toHaveBeenCalledOnce()
+  expect(f.send).not.toHaveBeenCalled()
+})
+
+it('preserves a rotated registration when an older in-flight delivery is rejected', async () => {
+  let rejectOld = (_value: { delivered: boolean; invalidToken: boolean }) => {}
+  const managed = vi
+    .fn<ManagedSend>()
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          rejectOld = resolve
+        }),
+    )
+    .mockResolvedValue({ delivered: true, invalidToken: false })
+  const f = setup({ managed })
+  const registration = {
+    ...f.registration,
+    runtimeId: 'host',
+    environment: 'sandbox',
+    managedToken: 'm'.repeat(43),
+  }
+  f.service.register(f.device, registration)
+  const pending = f.service.flush()
+  await vi.waitFor(() => expect(managed).toHaveBeenCalledOnce())
+  f.service.register(f.device, { ...registration, managedToken: 'n'.repeat(43) })
+  rejectOld({ delivered: false, invalidToken: true })
+  await pending
+  await f.service.flush()
+  expect(managed).toHaveBeenCalledTimes(2)
+  expect(managed.mock.calls[1]?.[1]).toBe('n'.repeat(43))
 })

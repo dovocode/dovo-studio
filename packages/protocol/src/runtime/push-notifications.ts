@@ -11,6 +11,7 @@ export const pushRegistrationSchema = refine(
     token: text(4096),
     environment: Schema.Literals(['sandbox', 'production']),
     managedToken: Schema.optional(pushDeliveryTokenSchema),
+    questionActions: Schema.optional(Schema.Literal(1)),
   }),
   (value) => value.platform !== 'ios' || /^[a-fA-F0-9]{32,512}$/.test(value.token),
   'Invalid Apple push token',
@@ -34,6 +35,8 @@ export const relayNotificationSchema = mutableStruct({
     turnId: Schema.optional(text(200)),
     inputId: Schema.optional(text(200)),
     inputType: Schema.optional(Schema.Literals(['question', 'approval'])),
+    /** Bounded JSON; FCM data values must be strings. Never includes credentials. */
+    question: Schema.optional(text(1600)),
     project: Schema.optional(maxValue(Schema.String, 200)),
   }),
 })

@@ -33,6 +33,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         ? ['./plugins/with-distribution-signing.ts']
         : []),
       './plugins/with-lucide-icons.ts',
+      './plugins/with-question-notifications.ts',
       ['./plugins/with-live-activity-push.ts', { enabled: push || notifications }],
       ...(config.plugins ?? []).map((plugin): NonNullable<ExpoConfig['plugins']>[number] =>
         Array.isArray(plugin) && plugin[0] === 'expo-widgets'

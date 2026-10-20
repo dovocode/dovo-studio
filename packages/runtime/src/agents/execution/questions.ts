@@ -8,6 +8,8 @@ import {
   type QuestionPrompt,
   type QuestionAnswers,
   type PendingQuestion,
+  notificationQuestion,
+  type NotificationAnswer,
 } from '@dovo/protocol'
 import type { Activity } from '../../storage/activity.js'
 import { HttpError } from '../../errors.js'
@@ -156,6 +158,18 @@ export class Questions {
       request.validate?.(answers)
     }
     request.finish(answers, answers ? 'answered' : 'declined')
+  }
+  respondNotification(input: NotificationAnswer) {
+    const request = this.requests.get(input.id)
+    if (request) {
+      const question = notificationQuestion(request.info.prompt)
+      if (request.info.taskId !== input.taskId || !question || question.fieldId !== input.fieldId)
+        throw new HttpError(409, 'Open this question in Dovo to answer')
+      if (question.mode === 'choice' && !question.choices.some((o) => o.value === input.value))
+        throw new HttpError(400, 'Choose an available option')
+    }
+    // The existing fingerprint receipt also makes a repeated native submission safe.
+    this.respond(input.id, { [input.fieldId]: [input.value] })
   }
   cancelTask(taskId: string) {
     for (const request of this.requests.values())

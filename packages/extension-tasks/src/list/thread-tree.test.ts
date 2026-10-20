@@ -794,3 +794,26 @@ it('retains overflow failures after all detailed agents are acknowledged and cle
   children[0].nativeAgentOverflow = threadNativeAgentOverflow(task)
   expect(visibleThreadChildren(children, true, acknowledged)).toHaveLength(1)
 })
+
+it('shows a finished parent waiting on its native workers as Waiting', () => {
+  const entries = collectTasks([
+    source('desktop', [
+      task('parent', {
+        status: 'review',
+        waitingForFeedback: true,
+        subagents: [
+          {
+            id: 'native',
+            name: 'Worker',
+            provider: 'codex',
+            status: 'working',
+            sessionLive: true,
+            startedAt: '',
+            updatedAt: '',
+          },
+        ],
+      }),
+    ]),
+  ])
+  expect(buildThreadTree(entries).nodes.get(key('desktop', 'parent'))?.phase).toBe('waiting')
+})

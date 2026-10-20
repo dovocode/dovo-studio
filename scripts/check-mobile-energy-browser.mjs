@@ -5,6 +5,8 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mocks = {
   'react-native': `import React from 'react';const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,listener)=>{listeners.add(listener);return {remove:()=>listeners.delete(listener)}}};window.setAppState=state=>{AppState.currentState=state;for(const listener of listeners)listener(state)};export const Platform={OS:'ios'};export const View=({children})=><div>{children}</div>;`,
+  '../runtime/connection/account-provider': `export const useMobileAccount=()=>({directory:null,client:{}});`,
+  'expo-constants': `export default {expoConfig:{extra:{pushEnvironment:'sandbox'}}};`,
   expo: `export const requireOptionalNativeModule=()=>({});`,
   '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
   '../runtime/state/application-state': `import {useState,useRef} from 'react';export const useApplicationState=initial=>{const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]};`,

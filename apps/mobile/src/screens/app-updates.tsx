@@ -114,7 +114,7 @@ export default function AppUpdates() {
         </SettingsGroup>
         <SettingsGroup
           title="Push notifications"
-          footer="Get task completion, failed checks and input requests when Dovo is in the background. Sign in on this phone for managed delivery, or use a standalone relay. Choose which paired computers can notify you."
+          footer="Get task completion, failures and input requests when Dovo is in the background. Sign in on this phone for managed delivery, or use a standalone relay. Choose which paired computers can notify you."
         >
           <SettingsSwitchRow
             first
@@ -143,7 +143,7 @@ export default function AppUpdates() {
         )}
         <SettingsGroup
           title="Live Activities"
-          footer="Shows task titles, projects and devices on your Lock Screen and Dynamic Island. Background updates require APNs setup on each host computer."
+          footer="Shows task progress on your Lock Screen and Dynamic Island. Activities start when you open Dovo and keep updating in the background through Connect or your computer’s notification relay."
         >
           <SettingsSwitchRow
             first

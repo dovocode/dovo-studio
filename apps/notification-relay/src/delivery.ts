@@ -1,10 +1,17 @@
 import { Apns, apnsConfig } from '@dovo/push'
-import type { RelayNotification } from '@dovo/protocol'
+import {
+  activityPayload,
+  parseNotificationQuestion,
+  notificationQuestionCategory,
+  type RelayMessage,
+  type RelayNotification,
+} from '@dovo/protocol'
 import { applicationDefault, initializeApp } from 'firebase-admin/app'
 import { getMessaging } from 'firebase-admin/messaging'
 
 export type DeliveryResult = { delivered: boolean; invalidToken: boolean }
 export function appleNotificationPayload(value: RelayNotification) {
+  const question = parseNotificationQuestion(value.data)
   return {
     aps: {
       alert: {
@@ -14,11 +21,32 @@ export function appleNotificationPayload(value: RelayNotification) {
       },
       sound: 'default',
       ...(value.data.kind === 'input' && value.data.inputType === 'question'
-        ? { category: 'dovo-question' }
+        ? { category: question ? notificationQuestionCategory(question) : 'dovo-question' }
         : {}),
       'thread-id': `${value.data.runtimeId}:${value.data.taskId}`,
     },
     ...value.data,
+  }
+}
+export function androidNotificationPayload(value: RelayNotification) {
+  const question = parseNotificationQuestion(value.data)
+  return {
+    token: value.token,
+    ...(question ? {} : { notification: { title: value.title, body: value.body } }),
+    data: Object.fromEntries(
+      Object.entries({
+        ...value.data,
+        notificationId: value.id,
+        ...(question ? { title: value.title, message: value.body } : {}),
+      }).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    ),
+    android: {
+      priority: 'high' as const,
+      ttl: 3_600_000,
+      ...(question
+        ? {}
+        : { notification: { channelId: 'dovo-tasks', tag: value.id, sound: 'default' } }),
+    },
   }
 }
 export function createDelivery(env = process.env) {
@@ -36,16 +64,19 @@ export function createDelivery(env = process.env) {
       : undefined
   return {
     platforms: { ios: !!(apple.sandbox || apple.production), android: !!firebase },
-    async send(value: RelayNotification): Promise<DeliveryResult> {
+    async send(value: RelayMessage): Promise<DeliveryResult> {
       if (value.platform === 'ios') {
         const provider = apple[value.environment]
         if (!provider)
           throw new Error(`Apple ${value.environment} push is not configured on this relay`)
-        const result = await provider.sendAlert(
-          value.token,
-          appleNotificationPayload(value),
-          value.id,
-        )
+        const result =
+          'kind' in value
+            ? await provider.sendLiveActivity(
+                value.token,
+                activityPayload(value.props, value.event === 'end', value.timestamp * 1000),
+                value.id,
+              )
+            : await provider.sendAlert(value.token, appleNotificationPayload(value), value.id)
         if (result.status === 200) return { delivered: true, invalidToken: false }
         if (
           result.status === 410 ||
@@ -57,20 +88,7 @@ export function createDelivery(env = process.env) {
       }
       if (!firebase) throw new Error('Firebase push is not configured on this relay')
       try {
-        await firebase.send({
-          token: value.token,
-          notification: { title: value.title, body: value.body },
-          data: Object.fromEntries(
-            Object.entries({ ...value.data, notificationId: value.id }).filter(
-              (entry): entry is [string, string] => typeof entry[1] === 'string',
-            ),
-          ),
-          android: {
-            priority: 'high',
-            ttl: 3_600_000,
-            notification: { channelId: 'dovo-tasks', tag: value.id, sound: 'default' },
-          },
-        })
+        await firebase.send(androidNotificationPayload(value))
         return { delivered: true, invalidToken: false }
       } catch (error) {
         if (

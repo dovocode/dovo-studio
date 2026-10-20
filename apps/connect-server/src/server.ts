@@ -50,7 +50,9 @@ export function createConnectServer(
     const token = bearerToken(req)
     const user = options.store.sessionUser(token, true)
     const grant =
-      req.method === 'POST' && url.pathname === '/v1/push/send' && pushStore.subscription(token)
+      req.method === 'POST' &&
+      ((url.pathname === '/v1/push/send' && pushStore.subscription(token)) ||
+        (url.pathname === '/v1/push/activities/send' && pushStore.activity(token)))
     limit(user ? `account:${hash(user)}` : grant ? `push:${hash(token)}` : `ip:${address(req)}`)
     if (await authenticate(req, res, url)) return
     if (await push(req, res, url)) return

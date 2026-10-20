@@ -1,3 +1,4 @@
+import { indexTaskFamilyWorking } from '@dovo/protocol'
 import { RemoteDesktop } from './computer-use/remote-desktop.js'
 import { familyWatchCounts } from './studio/thread-snapshot.js'
 import type { ThreadWatchEntry } from '@dovo/protocol'
@@ -234,6 +235,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         .map((question) => ({
           id: question.id,
           type: 'question' as const,
+          prompt: question.prompt,
           preview: [
             question.prompt.title,
             ...question.prompt.questions.filter((q) => !q.secret).map((q) => q.question),
@@ -342,6 +344,9 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       settings.enableStudioThreads ? remote : new Map(),
       runtimeId,
     )
+    const familyWorking = indexTaskFamilyWorking(
+      entries.map((task) => ({ ...task, threadWatches: remote.get(task.id) })),
+    )
     return entries.map((task) => {
       const threadWatches = remote.get(task.id)
       const rolledCounts = rolled.get(task.id)
@@ -366,11 +371,12 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         !task.draft.trim() &&
         !task.draftAttachments?.length &&
         !task.error &&
-        !permissionPolicyReadOnly(resolveTaskAgent(task, agents)) &&
-        ((settings.enablePullRequestWatching && pulls.has(task.id)) ||
-          (settings.enablePipelineWatching && pipelines.has(task.id)) ||
-          (settings.enableStudioThreads && remoteWaiting) ||
-          !!(watchCounts?.pipelines || watchCounts?.pullRequests))
+        (familyWorking(task.id) ||
+          (!permissionPolicyReadOnly(resolveTaskAgent(task, agents)) &&
+            ((settings.enablePullRequestWatching && pulls.has(task.id)) ||
+              (settings.enablePipelineWatching && pipelines.has(task.id)) ||
+              (settings.enableStudioThreads && remoteWaiting) ||
+              !!(watchCounts?.pipelines || watchCounts?.pullRequests))))
       if (
         !!task.waitingForFeedback === waiting &&
         JSON.stringify(task.threadWatches) === JSON.stringify(threadWatches) &&

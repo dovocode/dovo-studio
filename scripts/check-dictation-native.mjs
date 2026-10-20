@@ -8,6 +8,7 @@ import { prepareDictationEngine } from './packaging/dictation-engine.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const temporary = await mkdtemp(join(tmpdir(), 'dovo-stt-smoke-'))
+const controller = new AbortController()
 try {
   const bundle = await prepareDictationEngine(root)
   const output = join(temporary, 'engine.mjs')
@@ -20,12 +21,12 @@ try {
   })
   const { DictationEngine } = await import(pathToFileURL(output).href)
   const engine = new DictationEngine(
-    join(bundle, process.platform === 'win32' ? 'transcribe-cli.exe' : 'transcribe-cli'),
+    join(bundle, process.platform === 'win32' ? 'dovo-dictation.exe' : 'dovo-dictation'),
     join(root, 'work/dictation/model'),
   )
   if (!(await engine.status()).model) {
-    console.log('Downloading the pinned 159 MB Redux model for native verification…')
-    await engine.install(new AbortController().signal)
+    console.log('Downloading the pinned 751 MB Nemotron model for native verification…')
+    await engine.install(controller.signal)
   }
   const source = resolve(
     bundle,
@@ -44,12 +45,34 @@ try {
   }
   assert(pcm, 'sample has PCM data')
   const began = performance.now()
-  const text = await engine.transcribe(pcm, new AbortController().signal)
+  const previews = []
+  const session = await engine.start('en-US', controller.signal, (text) => previews.push(text))
+  // Feed multiple chunks before closing stdin, exercising live native output.
+  for (let offset = 0; offset < pcm.byteLength; offset += 35840) {
+    await session.feed(pcm.slice(offset, offset + 35840))
+  }
+  // Ensure a partial arrives before finalize rather than only testing final output.
+  await new Promise((resolve, reject) => {
+    const deadline = setTimeout(() => {
+      clearInterval(timer)
+      reject(new Error('No live preview received'))
+    }, 60000)
+    const timer = setInterval(() => {
+      if (previews.some((text) => text.trim())) {
+        clearInterval(timer)
+        clearTimeout(deadline)
+        resolve()
+      }
+    }, 20)
+  })
+  const text = await session.finish()
   assert.match(text, /ask not what your country can do for you/i)
-  assert.equal(await engine.transcribe(new ArrayBuffer(32000), new AbortController().signal), '')
+  assert.equal(await engine.transcribe(new ArrayBuffer(32000), controller.signal), '')
+  assert.equal(await engine.transcribe(new ArrayBuffer(32000), controller.signal, 'nl-NL'), '')
   console.log(
-    `Native Redux transcription passed in ${((performance.now() - began) / 1000).toFixed(2)}s: ${text}`,
+    `Native Nemotron streaming transcription passed in ${((performance.now() - began) / 1000).toFixed(2)}s: ${text}`,
   )
 } finally {
+  controller.abort()
   await rm(temporary, { recursive: true, force: true })
 }

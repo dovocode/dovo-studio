@@ -231,3 +231,15 @@ it('restores section collapse choices across restarts without depending on list 
   vi.resetModules()
   expect((await import('./preferences')).readAppPreferences().collapsedThreadSections).toEqual([])
 })
+
+it('keeps dictation opt-in and persists its language independently', async () => {
+  vi.stubGlobal('localStorage', storage())
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences()).toMatchObject({ dictationEnabled: false, dictationLanguage: 'auto' })
+  updateAppPreferences({ dictationEnabled: true, dictationLanguage: 'nl-NL' })
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences()).toMatchObject({
+    dictationEnabled: true,
+    dictationLanguage: 'nl-NL',
+  })
+})

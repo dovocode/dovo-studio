@@ -52,6 +52,7 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
       <QuestionForm
         key={pending.id}
         request={pending}
+        runtimeId={profile?.id}
         connected={connected}
         onAnswer={(answers) => {
           return runClientEffect(

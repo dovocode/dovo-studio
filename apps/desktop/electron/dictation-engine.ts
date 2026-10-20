@@ -1,24 +1,12 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  open,
-  readFile,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises'
+import { access, mkdir, open, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import { spawn } from 'node:child_process'
 import { availableParallelism } from 'node:os'
-import { dictationModel, type DictationStatus } from '@dovo/protocol'
+import { dictationModel, type DictationStatus, type DictationLanguage } from '@dovo/protocol'
 
 export const maxDictationSamples = 16000 * 300
-const execute = promisify(execFile)
 async function exists(path: string) {
   try {
     await access(path)
@@ -28,35 +16,22 @@ async function exists(path: string) {
     throw error
   }
 }
-
-export function dictationWav(input: ArrayBuffer) {
+export function validateDictationPcm(pcm: unknown): asserts pcm is ArrayBuffer {
   if (
-    !(input instanceof ArrayBuffer) ||
-    input.byteLength < 320 ||
-    input.byteLength % 2 ||
-    input.byteLength > maxDictationSamples * 2
+    !(pcm instanceof ArrayBuffer) ||
+    !pcm.byteLength ||
+    pcm.byteLength % 2 ||
+    pcm.byteLength > maxDictationSamples * 2
   )
-    throw new Error(
-      'Dictation must contain between 10 milliseconds and 5 minutes of 16 kHz mono PCM audio.',
-    )
-  const wav = Buffer.alloc(44 + input.byteLength)
-  wav.write('RIFF', 0)
-  wav.writeUInt32LE(36 + input.byteLength, 4)
-  wav.write('WAVEfmt ', 8)
-  wav.writeUInt32LE(16, 16)
-  wav.writeUInt16LE(1, 20)
-  wav.writeUInt16LE(1, 22)
-  wav.writeUInt32LE(16000, 24)
-  wav.writeUInt32LE(32000, 28)
-  wav.writeUInt16LE(2, 32)
-  wav.writeUInt16LE(16, 34)
-  wav.write('data', 36)
-  wav.writeUInt32LE(input.byteLength, 40)
-  Buffer.from(input).copy(wav, 44)
-  return wav
+    throw new Error('Invalid dictation audio. Expected up to 5 minutes of 16 kHz mono PCM.')
+}
+export type DictationSession = {
+  feed: (pcm: ArrayBuffer) => Promise<void>
+  finish: () => Promise<string>
+  done: Promise<void>
 }
 
-/** One process per utterance: no resident model, no server and no audio retained. */
+/** One streaming process per recording; audio stays in memory and the model is released afterward. */
 export class DictationEngine {
   private downloaded = 0
   private downloading = false
@@ -66,7 +41,7 @@ export class DictationEngine {
     readonly binary: string,
     readonly directory: string,
   ) {
-    this.modelPath = join(directory, 'parakeet-redux-q8.gguf')
+    this.modelPath = join(directory, dictationModel.filename)
   }
   async status(): Promise<DictationStatus> {
     const model = await exists(this.modelPath)
@@ -85,7 +60,7 @@ export class DictationEngine {
       )
     this.downloading = true
     this.downloaded = 0
-    const partial = join(this.directory, 'parakeet-redux-q8.gguf.part')
+    const partial = `${this.modelPath}.part`
     try {
       await mkdir(this.directory, { recursive: true, mode: 0o700 })
       const response = await fetch(dictationModel.url, {
@@ -117,54 +92,151 @@ export class DictationEngine {
       await rm(partial, { force: true })
     }
   }
-  async transcribe(pcm: ArrayBuffer, signal: AbortSignal) {
-    const wav = dictationWav(pcm)
+  async start(
+    language: DictationLanguage,
+    signal: AbortSignal,
+    onText: (text: string) => void,
+  ): Promise<DictationSession> {
     const status = await this.status()
     if (!status.engine || !status.model)
-      throw new Error('Download the dictation model before recording.')
-    // Muted microphones can supply all-zero PCM; never turn that into invented words.
-    if (!new Uint8Array(pcm).some((byte) => byte !== 0)) return ''
+      throw new Error(
+        'Download the dictation model in Settings → General → Speech before recording.',
+      )
     if (!this.verified) {
       const hash = createHash('sha256')
       for await (const chunk of createReadStream(this.modelPath, { signal })) hash.update(chunk)
       if (hash.digest('hex') !== dictationModel.sha256)
-        throw new Error('The dictation model is damaged. Download it again.')
+        throw new Error(
+          'The dictation model is damaged. Download it again in Settings → General → Speech.',
+        )
       this.verified = true
     }
     signal.throwIfAborted()
-    const temporary = await mkdtemp(join(this.directory, 'audio-'))
-    try {
-      const audio = join(temporary, 'recording.wav'),
-        output = join(temporary, 'transcript.txt')
-      await writeFile(audio, wav, { mode: 0o600 })
-      await execute(
-        this.binary,
-        [
-          '-m',
-          this.modelPath,
-          '--threads',
-          String(Math.min(4, availableParallelism())),
-          '--timestamps',
-          'none',
-          '-q',
-          '-o',
-          output,
-          audio,
-        ],
-        {
-          signal,
-          timeout: 120_000,
-          maxBuffer: 1024 * 1024,
-          windowsHide: true,
-          killSignal: 'SIGKILL',
-        },
-      )
-      signal.throwIfAborted()
-      if ((await stat(output)).size > 100_000)
-        throw new Error('The dictation transcript was unexpectedly large.')
-      return (await readFile(output, 'utf8')).trim()
-    } finally {
-      await rm(temporary, { recursive: true, force: true })
+    const child = spawn(
+      this.binary,
+      [this.modelPath, language, String(Math.min(4, availableParallelism()))],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      },
+    )
+    let text = '',
+      diagnostics = '',
+      pending = Buffer.alloc(0),
+      total = 0
+    let started = false,
+      finishing = false
+    let failure: Error | undefined
+    const fail = (error: Error) => {
+      failure ??= error
+      child.kill('SIGKILL')
     }
+    const abort = () => fail(new Error('Dictation was cancelled.'))
+    signal.addEventListener('abort', abort, { once: true })
+    let readyResolve: () => void, readyReject: (error: Error) => void
+    const ready = new Promise<void>((resolve, reject) => {
+      readyResolve = resolve
+      readyReject = reject
+    })
+    const startupTimer = setTimeout(
+      () => fail(new Error('The speech model took too long to load.')),
+      120_000,
+    )
+    let finishTimer: ReturnType<typeof setTimeout> | undefined
+    const limitTimer = setTimeout(
+      () => fail(new Error('Dictation exceeded its recording time limit.')),
+      420_000,
+    )
+    child.stderr.on('data', (chunk: Buffer) => {
+      diagnostics = (diagnostics + chunk.toString('utf8')).slice(-4000)
+    })
+    child.stdout.on('data', (chunk: Buffer) => {
+      pending = Buffer.concat([pending, chunk])
+      while (pending.length >= 4) {
+        const length = pending.readUInt32LE(0)
+        if (length > 100_000)
+          return fail(new Error('The dictation transcript was unexpectedly large.'))
+        if (pending.length < 4 + length) return
+        const value = pending.subarray(4, 4 + length).toString('utf8')
+        pending = pending.subarray(4 + length)
+        if (!started) {
+          if (length) return fail(new Error('Invalid dictation engine response.'))
+          started = true
+          clearTimeout(startupTimer)
+          readyResolve()
+        } else {
+          text = value
+          try {
+            onText(text)
+          } catch (cause) {
+            return fail(cause instanceof Error ? cause : new Error(String(cause)))
+          }
+        }
+      }
+    })
+    child.stdin.on('error', fail)
+    child.stdout.on('error', fail)
+    const done = new Promise<void>((resolve, reject) => {
+      child.on('error', (error) => {
+        failure ??= error
+      })
+      child.on('close', (code) => {
+        signal.removeEventListener('abort', abort)
+        clearTimeout(startupTimer)
+        clearTimeout(finishTimer)
+        clearTimeout(limitTimer)
+        if (!failure && (code !== 0 || !started || !finishing || pending.length))
+          failure = new Error(
+            `Local dictation failed${diagnostics ? ': ' + diagnostics.trim() : '.'}`,
+          )
+        if (failure) {
+          readyReject(failure)
+          reject(failure)
+        } else resolve()
+      })
+    })
+    // Feed/finish and the IPC owner observe failures; attach now while waiting for readiness.
+    void done.catch(() => undefined)
+    await ready
+    signal.throwIfAborted()
+    return {
+      done,
+      feed: async (pcm) => {
+        validateDictationPcm(pcm)
+        if (failure) throw failure
+        if (finishing) throw new Error('Dictation is already finishing.')
+        total += pcm.byteLength
+        if (total > maxDictationSamples * 2) {
+          const error = new Error('Dictation is limited to five minutes.')
+          fail(error)
+          throw error
+        }
+        await new Promise<void>((resolve, reject) => {
+          child.stdin.write(Buffer.from(pcm), (error) => (error ? reject(error) : resolve()))
+        })
+      },
+      finish: async () => {
+        if (failure) throw failure
+        if (finishing) throw new Error('Dictation is already finishing.')
+        if (total < 320) {
+          fail(new Error('No speech was recorded.'))
+          await done
+        }
+        finishing = true
+        finishTimer = setTimeout(
+          () => fail(new Error('Dictation took too long to finish.')),
+          120_000,
+        )
+        child.stdin.end()
+        await done
+        return text.trim()
+      },
+    }
+  }
+  async transcribe(pcm: ArrayBuffer, signal: AbortSignal, language: DictationLanguage = 'auto') {
+    validateDictationPcm(pcm)
+    const session = await this.start(language, signal, () => {})
+    await session.feed(pcm)
+    return session.finish()
   }
 }

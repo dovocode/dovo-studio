@@ -9,8 +9,12 @@ import {
   pushRegistrationSchema,
   relayResultSchema,
   relayNotificationSchema,
+  notificationQuestion,
+  notificationQuestionBody,
+  type QuestionPrompt,
   type PushRegistration,
   type RelayNotification,
+  type RelayMessage,
   type TaskSummary,
 } from '@dovo/protocol'
 import type { WorkspaceStore } from '../storage/workspace.js'
@@ -28,10 +32,15 @@ const stateSchema = mutableStruct({
   pull: Schema.Number,
 })
 type State = Schema.Schema.Type<typeof stateSchema>
-type PendingInput = { id: string; preview: string; type?: 'question' | 'approval' }
-type Relay = {
+type PendingInput = {
+  id: string
+  preview: string
+  type?: 'question' | 'approval'
+  prompt?: QuestionPrompt
+}
+type Relay<Message = RelayMessage> = {
   error?: string
-  send?: (message: RelayNotification) => Promise<{ delivered: boolean; invalidToken: boolean }>
+  send?: (message: Message) => Promise<{ delivered: boolean; invalidToken: boolean }>
 }
 export function notificationRelay(env = process.env): Relay {
   if (!env.DOVO_NOTIFICATION_RELAY_URL || !env.DOVO_NOTIFICATION_RELAY_TOKEN) return {}
@@ -67,14 +76,17 @@ export function notificationRelay(env = process.env): Relay {
     },
   }
 }
-export async function managedNotification(message: RelayNotification, token: string) {
-  const response = await fetch(ACCOUNT_DIRECTORY_URL + '/v1/push/send', {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify(message),
-    redirect: 'error',
-    signal: AbortSignal.timeout(10_000),
-  })
+export async function managedNotification(message: RelayMessage, token: string) {
+  const response = await fetch(
+    ACCOUNT_DIRECTORY_URL + ('kind' in message ? '/v1/push/activities/send' : '/v1/push/send'),
+    {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+      redirect: 'error',
+      signal: AbortSignal.timeout(10_000),
+    },
+  )
   if (response.status === 401 || response.status === 410)
     return { delivered: false, invalidToken: true }
   if (!response.ok) throw new Error('Managed notification delivery failed')
@@ -92,8 +104,11 @@ export class PushNotifications {
     private store: WorkspaceStore,
     private devices: Devices,
     private input: (taskId: string) => PendingInput | PendingInput[] | undefined,
-    private relay: Relay = notificationRelay(),
-    private managedSend = managedNotification,
+    private relay: Relay<RelayNotification> = notificationRelay(),
+    private managedSend: (
+      message: RelayNotification,
+      token: string,
+    ) => ReturnType<typeof managedNotification> = managedNotification,
   ) {
     this.error = relay.error ?? null
     db.exec(`CREATE TABLE IF NOT EXISTS push_devices (device_id TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -126,7 +141,8 @@ export class PushNotifications {
       (existing.token !== registration.token ||
         existing.platform !== registration.platform ||
         existing.environment !== registration.environment ||
-        existing.runtimeId !== registration.runtimeId)
+        existing.runtimeId !== registration.runtimeId ||
+        existing.questionActions !== registration.questionActions)
     )
       this.db.prepare('DELETE FROM push_outbox WHERE device_id=?').run(deviceId)
     this.db
@@ -150,7 +166,8 @@ export class PushNotifications {
     return {
       running: task.status === 'running',
       failed: task.status === 'failed',
-      cancelled: turn?.status === 'cancelled',
+      cancelled:
+        task.status === 'cancelled' || task.status === 'draft' || turn?.status === 'cancelled',
       input: JSON.stringify(
         this.inputs(task.id)
           .map((entry) => entry.id)
@@ -213,12 +230,6 @@ export class PushNotifications {
           if (!previousInputs.includes(input.id)) kinds.push({ kind: 'input', input })
         if (!inputs.length && before?.running && !current.running && !current.cancelled)
           kinds.push({ kind: current.failed ? 'failed' : 'done' })
-        if (
-          before?.checks === 'pending' &&
-          current.pull === before.pull &&
-          (current.checks === 'passed' || current.checks === 'failed')
-        )
-          kinds.push({ kind: current.checks === 'passed' ? 'checks-passed' : 'checks-failed' })
         for (const { kind, input } of kinds)
           for (const registration of registrations) {
             const id = createHash('sha256')
@@ -230,6 +241,13 @@ export class PushNotifications {
                 : [...this.store.task(task.id).messages]
                     .reverse()
                     .find((message) => message.role === 'assistant')?.text
+            const question =
+              kind === 'input' &&
+              input?.type === 'question' &&
+              input.prompt &&
+              registration.value.questionActions === 1
+                ? notificationQuestion(input.prompt)
+                : undefined
             const label = {
               input: 'Needs your input',
               done: 'Finished',
@@ -243,7 +261,10 @@ export class PushNotifications {
               environment: registration.value.environment,
               id,
               title: `${task.title || 'Dovo task'} · ${label}`.slice(0, 160),
-              body: preview(detail ?? '') || label,
+              body:
+                question && input?.prompt
+                  ? notificationQuestionBody(input.prompt)
+                  : preview(detail ?? '') || label,
               data: {
                 runtimeId: registration.value.runtimeId,
                 taskId: task.id,
@@ -253,6 +274,7 @@ export class PushNotifications {
                   ? {
                       inputId: input?.id,
                       inputType: input?.type,
+                      ...(question ? { question: JSON.stringify(question) } : {}),
                     }
                   : {}),
                 project: this.store
@@ -260,6 +282,22 @@ export class PushNotifications {
                   .repositories.find((repo) => repo.id === task.repositoryId)
                   ?.name.slice(0, 200),
               },
+            }
+            // APNs/FCM cap the full UTF-8 payload at 4 KB, including identity and options.
+            if (
+              message.data.question &&
+              Buffer.byteLength(
+                JSON.stringify({
+                  title: message.title,
+                  body: message.body,
+                  ...message.data,
+                  thread: `${message.data.runtimeId}:${message.data.taskId}`,
+                  subtitle: message.data.project,
+                }),
+              ) > 3500
+            ) {
+              delete message.data.question
+              message.body = preview(detail ?? '') || label
             }
             this.db
               .prepare('INSERT OR IGNORE INTO push_outbox VALUES (?,?,?,?,0,0)')
@@ -310,8 +348,18 @@ export class PushNotifications {
       const staleTurn = value.data.turnId && latest?.id !== value.data.turnId
       const staleCompletion =
         (value.data.kind === 'done' || value.data.kind === 'failed') &&
-        (task?.status === 'running' || latest?.status === 'cancelled')
-      if (!task || task.archived || task.example || staleTurn || staleCompletion) {
+        (task?.status === 'running' ||
+          task?.status === 'cancelled' ||
+          task?.status === 'draft' ||
+          latest?.status === 'cancelled')
+      if (
+        !['input', 'done', 'failed'].includes(value.data.kind) ||
+        !task ||
+        task.archived ||
+        task.example ||
+        staleTurn ||
+        staleCompletion
+      ) {
         this.db.prepare('DELETE FROM push_outbox WHERE id=?').run(entry.id)
         continue
       }

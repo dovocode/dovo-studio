@@ -1,3 +1,5 @@
+import { pushDeliveryTokenSchema } from '../push-notifications.js'
+import { mutableArray } from '../../shared/schema.js'
 import { mutableStruct } from '../../shared/schema.js'
 import { minValue, maxValue } from '../../shared/schema.js'
 import { Schema } from 'effect'
@@ -8,6 +10,9 @@ export const liveActivityRegistrationSchema = mutableStruct({
   activityId: maxValue(minValue(Schema.String, 1), 200),
   taskId: maxValue(minValue(Schema.String, 1), 200),
   turnId: maxValue(minValue(Schema.String, 1), 200),
+  runtimeId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  environment: Schema.optional(Schema.Literals(['sandbox', 'production'])),
+  managedToken: Schema.optional(pushDeliveryTokenSchema),
   pushToken: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-fA-F0-9]{32,512}$/))),
 })
 export const liveActivityStatusSchema = mutableStruct({
@@ -16,12 +21,12 @@ export const liveActivityStatusSchema = mutableStruct({
   error: Schema.NullOr(Schema.String),
 })
 export const liveTaskPropsSchema = mutableStruct({
-  title: Schema.String,
-  project: Schema.String,
-  device: Schema.String,
+  title: maxValue(Schema.String, 100),
+  project: maxValue(Schema.String, 60),
+  device: maxValue(Schema.String, 60),
   status: Schema.Literals(['Working', 'Needs input', 'Done', 'Failed', 'Stopped']),
   startedAt: Schema.Number.pipe(Schema.check(Schema.isFinite())),
-  activity: Schema.optional(Schema.String),
+  activity: Schema.optional(maxValue(Schema.String, 140)),
   queued: Schema.optional(
     Schema.Number.pipe(
       Schema.check(Schema.isInt()),
@@ -101,3 +106,45 @@ export function liveTaskProps(
 /** Refresh unchanged activities sparingly; keep enough stale-date headroom for delivery jitter. */
 export const liveActivityRefreshMs = 3 * 60_000
 export const liveActivityStaleMs = 5 * 60_000
+
+const identity = maxValue(minValue(Schema.String, 1), 200)
+export const managedLiveActivitySchema = mutableStruct({
+  runtimeId: identity,
+  activityId: identity,
+  taskId: identity,
+  turnId: identity,
+  token: liveActivityRegistrationSchema.fields.pushToken,
+  environment: Schema.Literals(['sandbox', 'production']),
+})
+export type ManagedLiveActivity = typeof managedLiveActivitySchema.Type
+export const retainedLiveActivitiesSchema = mutableStruct({
+  activities: mutableArray(mutableStruct({ runtimeId: identity, activityId: identity })).pipe(
+    Schema.check(Schema.isMaxLength(8)),
+  ),
+})
+export const relayLiveActivitySchema = mutableStruct({
+  ...managedLiveActivitySchema.fields,
+  kind: Schema.Literal('liveactivity'),
+  platform: Schema.Literal('ios'),
+  id: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
+  event: Schema.Literals(['update', 'end']),
+  timestamp: Schema.Number.pipe(
+    Schema.check(Schema.isInt()),
+    Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+  ),
+  props: liveTaskPropsSchema,
+})
+export type RelayLiveActivity = typeof relayLiveActivitySchema.Type
+export function activityPayload(props: LiveTaskProps, ended: boolean, now: number) {
+  const timestamp = Math.floor(now / 1000)
+  return {
+    aps: {
+      timestamp,
+      event: ended ? 'end' : 'update',
+      'content-state': { name: 'DovoTask', props: JSON.stringify(props) },
+      ...(ended
+        ? { 'dismissal-date': timestamp + 300 }
+        : { 'stale-date': timestamp + liveActivityStaleMs / 1000 }),
+    },
+  }
+}

@@ -25,6 +25,7 @@ android/build/
 release/
 apps/mobile/ios/
 apps/mobile/android/
+apps/mobile/modules/*/android/build/
 apps/mobile/assets/terminal.json
 apps/mobile/assets/mermaid.json
 

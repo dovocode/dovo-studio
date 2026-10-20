@@ -67,3 +67,34 @@ it('never caches provider failures or exposes tokens and provider errors in resp
   expect((await f.post(f.value)).status).toBe(200)
   expect(f.send).toHaveBeenCalledTimes(2)
 })
+
+it('validates and deduplicates typed activity messages while allowing changed states', async () => {
+  const f = await setup()
+  const value = {
+    kind: 'liveactivity',
+    platform: 'ios',
+    token: f.value.token,
+    environment: 'sandbox',
+    id: f.value.id,
+    runtimeId: 'runtime',
+    activityId: 'activity',
+    taskId: 'task',
+    turnId: 'turn',
+    event: 'update',
+    timestamp: 100,
+    props: { title: 'Build', project: 'Studio', device: 'PC', status: 'Working', startedAt: 0 },
+  }
+  for (const bad of [
+    { ...value, token: 'invalid' },
+    { ...value, event: 'start' },
+    { ...value, platform: 'android' },
+    { ...value, props: { ...value.props, title: 'x'.repeat(101) } },
+  ])
+    expect((await f.post(bad)).status).toBe(400)
+  expect(f.send).not.toHaveBeenCalled()
+  expect((await f.post(value)).status).toBe(200)
+  expect((await f.post(value)).status).toBe(200)
+  expect(f.send).toHaveBeenCalledOnce()
+  expect((await f.post({ ...value, event: 'end' })).status).toBe(200)
+  expect(f.send).toHaveBeenCalledTimes(2)
+})

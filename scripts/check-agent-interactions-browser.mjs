@@ -40,6 +40,7 @@ try {
       '@dovo/studio-core/state': "export {useState as useApplicationState} from 'react';",
       '../../runtime/state/application-state':
         "export {useState as useApplicationState} from 'react';",
+      expo: `export const requireOptionalNativeModule=()=>({configure:async()=>{},getDraft:async()=>window.notificationDraft??null,clearDraft:async()=>{window.clearedDraft=true;window.notificationDraft=null}});`,
       'react-native': native,
       '../../ui/content/text': native,
       '../../../ui/content/text': native,
@@ -58,7 +59,7 @@ import {useState} from 'react';import {createRoot} from 'react-dom/client';impor
 import {QuestionForm} from '${root}/${mobile ? 'apps/mobile/src/tasks/composer' : 'packages/studio-ui/src'}/question-form';
 import {NativeTodos} from '${root}/${mobile ? 'apps/mobile/src/tasks/conversation/components' : 'packages/extension-tasks/src/chat/thread'}/native-todos';
 const prompt=decode(questionPromptSchema,{title:'Choose a direction',blocking:false,questions:[{id:'choice',header:'Approach',question:'Which approach?',options:[{value:'small',label:'Small change',description:'Keep it focused'},{value:'large',label:'Larger change'}],custom:true},{id:'checks',header:'Checks',question:'Which checks?',multiple:true,custom:false,options:[{value:'types',label:'Typecheck'},{value:'browser',label:'Browser'}]}]});
-function App(){const[status,setStatus]=useState('running');window.taskStatus=setStatus;const[connected,setConnected]=useState(true),[request,setRequest]=useState({id:'question',taskId:'general',prompt,createdAt:''}),[items,setItems]=useState(Array.from({length:100},(_,i)=>({id:'step-'+i,text:'Step '+(i+1),status:i===0?'completed':i===1?'in-progress':'pending'})));window.nativeChecklist=(provider,payload,name)=>setItems(nativeTodos(name,payload,provider,[],'root'));window.connect=setConnected;window.items=setItems;window.reset=()=>setRequest({id:'question-'+Date.now(),taskId:'general',prompt,createdAt:''});return <div style={{display:'flex',flexDirection:'column',height:'100vh',minHeight:0}}><div style={{flex:'1 1 auto',minHeight:0,overflow:'auto'}}>Conversation content</div><div style={{flexShrink:0}}><NativeTodos task={{id:'general',status,nativeTodos:items}}/>{request&&<QuestionForm key={request.id} request={request} connected={connected} onAnswer={async answers=>{window.submissions.push(answers);if(window.fail)throw Error('Connection failed');setRequest(null)}}/>}<textarea aria-label="Message thread" defaultValue="Retained draft" style={{height:40,width:'100%'}}/></div></div>};window.submissions=[];window.fail=false;createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[status,setStatus]=useState('running');window.taskStatus=setStatus;const[connected,setConnected]=useState(true),[request,setRequest]=useState({id:'question',taskId:'general',prompt,createdAt:''}),[items,setItems]=useState(Array.from({length:100},(_,i)=>({id:'step-'+i,text:'Step '+(i+1),status:i===0?'completed':i===1?'in-progress':'pending'})));window.nativeChecklist=(provider,payload,name)=>setItems(nativeTodos(name,payload,provider,[],'root'));window.connect=setConnected;window.items=setItems;window.reset=()=>setRequest({id:'question-'+Date.now(),taskId:'general',prompt,createdAt:''});return <div style={{display:'flex',flexDirection:'column',height:'100vh',minHeight:0}}><div style={{flex:'1 1 auto',minHeight:0,overflow:'auto'}}>Conversation content</div><div style={{flexShrink:0}}><NativeTodos task={{id:'general',status,nativeTodos:items}}/>{request&&<QuestionForm ${mobile ? 'runtimeId="host"' : ''} key={request.id} request={request} connected={connected} onAnswer={async answers=>{window.submissions.push(answers);if(window.fail)throw Error('Connection failed');setRequest(null)}}/>}<textarea aria-label="Message thread" defaultValue="Retained draft" style={{height:40,width:'100%'}}/></div></div>};window.submissions=[];window.fail=false;createRoot(document.getElementById('app')).render(<App/>);`,
       },
       bundle: true,
       write: false,
@@ -159,7 +160,19 @@ function App(){const[status,setStatus]=useState('running');window.taskStatus=set
       await page.getByRole('textbox', { name: 'Message thread' }).inputValue(),
       'Retained draft',
     )
-    await page.evaluate(() => window.reset())
+    if (mobile) {
+      await page.evaluate(() => {
+        window.notificationDraft = { fieldId: 'choice', value: 'Retained notification answer' }
+        window.reset()
+      })
+      await page
+        .getByText('Your notification answer was not confirmed. Review it and send again.')
+        .waitFor()
+      assert.equal(
+        await page.getByRole('textbox', { name: 'Answer: Approach', exact: true }).inputValue(),
+        'Retained notification answer',
+      )
+    } else await page.evaluate(() => window.reset())
     await page.getByRole('button', { name: 'Decline', exact: true }).click()
     await page.getByText('Choose a direction', { exact: true }).waitFor({ state: 'hidden' })
     assert.equal(await page.evaluate(() => window.submissions.at(-1)), null)

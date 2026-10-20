@@ -43,6 +43,7 @@ it('authenticates Live Activity registrations and never logs push tokens', async
     tasks: [task],
   }))
   const pushToken = randomBytes(32).toString('hex')
+  const managedToken = randomBytes(32).toString('base64url')
   const register = (token: string) =>
     fetch(`http://127.0.0.1:${runtime.port}/api/live-activities/register`, {
       method: 'POST',
@@ -55,10 +56,15 @@ it('authenticates Live Activity registrations and never logs push tokens', async
         taskId: task.id,
         turnId: 'turn',
         pushToken,
+        managedToken,
+        runtimeId: 'host',
+        environment: 'production',
       }),
     })
   expect((await register('invalid')).status).toBe(401)
   expect((await register(ownerToken)).status).toBe(200)
   expect(JSON.stringify(runtime.services.activity.list('', '', 0))).not.toContain(pushToken)
   expect(JSON.stringify(runtime.services.store.get())).not.toContain(pushToken)
+  expect(JSON.stringify(runtime.services.activity.list('', '', 0))).not.toContain(managedToken)
+  expect(JSON.stringify(runtime.services.store.get())).not.toContain(managedToken)
 })

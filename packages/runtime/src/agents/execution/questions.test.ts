@@ -29,6 +29,66 @@ const prompt = decode(questionPromptSchema, {
     },
   ],
 })
+it('authenticates and validates background notification replies without bypassing the full form', async () => {
+  const token = 'owner-token-at-least-thirty-two-characters'
+  const r = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(r.close)
+  const pairedToken = 'paired-phone-token-at-least-twenty-characters'
+  r.services.devices.add('Phone', pairedToken)
+  const call = (
+    id: string,
+    value: string,
+    patch: Record<string, unknown> = {},
+    credential = token,
+  ) =>
+    fetch(`http://127.0.0.1:${r.port}/api/notifications/answer`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: 'task', id, fieldId: 'choice', value, ...patch }),
+    })
+  const simple = { ...prompt, questions: [prompt.questions[0]] }
+  const pending = r.services.questions.request('task', simple, new AbortController().signal)
+  const id = r.services.questions.list()[0].id
+  expect((await call(id, 'existing', {}, 'invalid')).status).toBe(401)
+  expect((await call(id, 'existing', { taskId: 'another-thread' })).status).toBe(409)
+  expect((await call(id, 'existing', { fieldId: 'unknown' })).status).toBe(409)
+  expect((await call(id, 'custom')).status).toBe(400)
+  expect((await call(id, 'existing', {}, pairedToken)).status).toBe(200)
+  expect(await pending).toEqual({ choice: ['existing'] })
+  expect((await call(id, 'existing')).status).toBe(200)
+  expect((await call(id, 'different')).status).toBe(409)
+  for (const questions of [
+    prompt.questions,
+    [{ ...simple.questions[0], secret: true }],
+    [{ ...simple.questions[0], multiple: true }],
+  ]) {
+    const controller = new AbortController()
+    const blocked = r.services.questions.request(
+      'task',
+      { ...prompt, questions },
+      controller.signal,
+    )
+    const question = r.services.questions.list()[0]
+    expect((await call(question.id, 'existing')).status).toBe(409)
+    controller.abort()
+    await blocked
+  }
+  const text = r.services.questions.request(
+    'task',
+    { title: 'Your label', questions: [{ ...simple.questions[0], options: [], custom: true }] },
+    new AbortController().signal,
+  )
+  const textId = r.services.questions.list()[0].id
+  expect((await call(textId, '   ')).status).toBe(400)
+  expect((await call(textId, 'a label')).status).toBe(200)
+  expect(await text).toEqual({ choice: ['a label'] })
+  const cancelled = new AbortController()
+  const stale = r.services.questions.request('task', simple, cancelled.signal)
+  const staleId = r.services.questions.list()[0].id
+  cancelled.abort()
+  await stale
+  expect((await call(staleId, 'existing')).status).toBe(409)
+})
 it('validates answers, accepts identical retries, rejects conflicting replies, and redacts secrets', async () => {
   const r = await startRuntime({
     databasePath: ':memory:',

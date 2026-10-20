@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { once } from 'node:events'
 import { AccountStore } from './store.js'
 import { createConnectServer } from './server.js'
-import type { RelayNotification } from '@dovo/protocol'
+import type { RelayMessage, RelayNotification, RelayLiveActivity } from '@dovo/protocol'
 const dispose: Array<() => void | Promise<void>> = []
 afterEach(async () => {
   for (const close of dispose.splice(0).reverse()) await close()
@@ -12,7 +12,7 @@ async function fixture(configured = true) {
   const store = new AccountStore(':memory:', () => now)
   dispose.push(() => store.db.close())
   const send = vi.fn<
-    (value: RelayNotification) => Promise<{ delivered: boolean; invalidToken: boolean }>
+    (value: RelayMessage) => Promise<{ delivered: boolean; invalidToken: boolean }>
   >(async () => ({
     delivered: true,
     invalidToken: false,
@@ -162,4 +162,134 @@ it('isolates push grant quotas from other servers and account requests behind on
   expect((await f.request('/v1/push/send', first, 'POST', f.message())).status).toBe(429)
   expect((await f.request('/v1/push/send', second, 'POST', f.message('server-b'))).status).toBe(200)
   expect((await f.request('/v1/servers', account)).status).toBe(200)
+})
+
+function activityMessage(): RelayLiveActivity {
+  return {
+    kind: 'liveactivity',
+    platform: 'ios',
+    environment: 'sandbox',
+    token: 'c'.repeat(64),
+    id: 'd'.repeat(64),
+    runtimeId: 'server-a',
+    activityId: 'activity',
+    taskId: 'task',
+    turnId: 'turn',
+    timestamp: 100,
+    event: 'update',
+    props: { title: 'Build', project: 'Studio', device: 'PC', status: 'Working', startedAt: 0 },
+  }
+}
+async function subscribeActivity(
+  f: Awaited<ReturnType<typeof fixture>>,
+  session: string,
+  value = activityMessage(),
+) {
+  const response = await f.request('/v1/push/activities', session, 'PUT', value)
+  expect(response.status).toBe(200)
+  return ((await response.json()) as { token: string }).token
+}
+
+it('scopes activity delivery to one token, task turn and environment, independently of alert grants', async () => {
+  const f = await fixture(),
+    session = f.session(),
+    alert = await f.subscribe(session),
+    activity = await subscribeActivity(f, session)
+  const message = activityMessage()
+  for (const change of [
+    { runtimeId: 'other' },
+    { activityId: 'other' },
+    { taskId: 'other' },
+    { turnId: 'other' },
+    { token: 'e'.repeat(64) },
+    { environment: 'production' },
+  ])
+    expect(
+      (await f.request('/v1/push/activities/send', activity, 'POST', { ...message, ...change }))
+        .status,
+    ).toBe(403)
+  expect((await f.request('/v1/push/send', activity, 'POST', f.message())).status).toBe(401)
+  expect((await f.request('/v1/push/activities/send', alert, 'POST', message)).status).toBe(401)
+  expect((await f.request('/v1/push/activities/send', session, 'POST', message)).status).toBe(401)
+  expect(
+    (await f.request('/v1/push/activities/send', activity, 'POST', { ...message, event: 'start' }))
+      .status,
+  ).toBe(400)
+  expect(f.send).not.toHaveBeenCalled()
+  expect((await f.request('/v1/push/activities/send', activity, 'POST', message)).status).toBe(200)
+  expect((await f.request('/v1/push/send', alert, 'POST', f.message())).status).toBe(200)
+  expect(
+    JSON.stringify(f.store.db.prepare('SELECT * FROM live_activity_grants').all()),
+  ).not.toContain(activity)
+})
+
+it('revokes background activities while computers are offline without affecting alerts or other phones', async () => {
+  const f = await fixture(),
+    session = f.session(),
+    otherSession = f.session()
+  const alert = await f.subscribe(session),
+    first = await subscribeActivity(f, session),
+    other = await subscribeActivity(f, otherSession)
+  const secondMessage = { ...activityMessage(), activityId: 'second' }
+  const second = await subscribeActivity(f, session, secondMessage)
+  expect(
+    (
+      await f.request('/v1/push/activities/retain', session, 'PUT', {
+        activities: [{ runtimeId: 'server-a', activityId: 'second' }],
+      })
+    ).status,
+  ).toBe(200)
+  expect(
+    (await f.request('/v1/push/activities/send', first, 'POST', activityMessage())).status,
+  ).toBe(401)
+  expect((await f.request('/v1/push/activities/send', second, 'POST', secondMessage)).status).toBe(
+    200,
+  )
+  expect(
+    (await f.request('/v1/push/activities/send', other, 'POST', activityMessage())).status,
+  ).toBe(200)
+  expect((await f.request('/v1/push/send', alert, 'POST', f.message())).status).toBe(200)
+  await f.request('/v1/session', session, 'DELETE')
+  expect((await f.request('/v1/push/activities/send', second, 'POST', secondMessage)).status).toBe(
+    401,
+  )
+  expect(
+    (await f.request('/v1/push/activities/send', other, 'POST', activityMessage())).status,
+  ).toBe(200)
+})
+
+it('rotates and expires activity grants and retires delivered end events or invalid tokens', async () => {
+  const f = await fixture(),
+    session = f.session(),
+    old = await subscribeActivity(f, session),
+    next = await subscribeActivity(f, session)
+  expect((await f.request('/v1/push/activities/send', old, 'POST', activityMessage())).status).toBe(
+    401,
+  )
+  f.send.mockResolvedValueOnce({ delivered: false, invalidToken: true })
+  expect(
+    (await f.request('/v1/push/activities/send', next, 'POST', activityMessage())).status,
+  ).toBe(200)
+  expect(
+    (await f.request('/v1/push/activities/send', next, 'POST', activityMessage())).status,
+  ).toBe(401)
+  const end = await subscribeActivity(f, session)
+  expect(
+    (
+      await f.request('/v1/push/activities/send', end, 'POST', {
+        ...activityMessage(),
+        event: 'end',
+      })
+    ).status,
+  ).toBe(200)
+  expect((await f.request('/v1/push/activities/send', end, 'POST', activityMessage())).status).toBe(
+    401,
+  )
+  await subscribeActivity(f, session)
+  f.advance(7 * 60 * 60_000)
+  const rotated = await subscribeActivity(f, session)
+  f.advance(60 * 60_000 + 1)
+  expect(
+    (await f.request('/v1/push/activities/send', rotated, 'POST', activityMessage())).status,
+  ).toBe(401)
 })

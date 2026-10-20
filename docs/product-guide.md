@@ -150,10 +150,11 @@ guide before creating a separate workspace.
    another web client, then approve the named device on the host. Revoke it from the device list
    when needed.
 
-Desktop also supports [local dictation](desktop-dictation.md). Click the composer's microphone to
-download the optional 159 MB Parakeet Redux model and allow microphone access. Record, stop and
-review the inserted text before sending. Recognition runs on your desktop without a cloud account,
-including when the conversation uses a remote runtime.
+Desktop also supports [local dictation](desktop-dictation.md). In **Settings → General → Speech**,
+download and enable the optional 751 MB Nemotron model and choose a dictation language. Click the
+composer's microphone and allow microphone access to see a live preview while speaking. Record, stop
+and review the inserted text before sending. Recognition runs on your desktop without a cloud
+account, including when the conversation uses a remote runtime.
 
 ### Private network access
 
@@ -829,8 +830,11 @@ conversation/file restoration remain planned improvements.
 Desktop/web thread rows show the task title, repository, checkout branch, agent/provider icon,
 runtime host and agent icons, and working/input status or relative finish time in three compact
 lines. Queue details remain in the status tooltip. Both approval requests and agent questions appear
-as **Needs input**, with a matching sidebar filter. Search includes branch, agent and host names.
-New turns record the runtime hostname for history; older data can lack that field.
+in a **Needs input** group that stays above the other sidebar sections, including pinned threads.
+Child questions and approvals surface their parent there. Finished parents with active child threads
+or live native subagents move to **Waiting** until their family finishes; input requests take
+priority. Search includes branch, agent and host names. New turns record the runtime hostname for
+history; older data can lack that field.
 
 Agent configuration and task overrides offer **Supervised**, **Auto-accept edits**, **Auto**, **Full
 access**, and **Read only**. Existing saved `ask` and `workspace-write` values retain their behavior

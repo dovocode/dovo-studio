@@ -122,6 +122,36 @@ timing. The relay's retry cache is in memory; runtime records are durable.
 
 ## Build and enable the mobile app
 
+### Answer questions from a notification
+
+With current mobile, runtime and relay builds, a single ordinary text question offers **Reply**
+inside the notification. A question with up to three short choices offers direct answer buttons.
+Expand the notification to see the complete question and options. On iOS the buttons say **Option
+1**, **Option 2**, and **Option 3**, matching the numbered notification text; Android uses the
+option labels. Tap the notification or **Open question** for the complete form, including custom
+answers. Multiple fields, multiple selections, sensitive fields and longer questions always open the
+form.
+
+Native handlers submit replies while the app is backgrounded or cold-started. They use the phone's
+saved pairing credential directly against the owning runtime. The phone must be able to reach that
+runtime over its configured LAN/VPN address; the notification relay does not proxy answers. HTTP
+remains supported. Pairing tokens never appear in notification payloads or go to the relay.
+
+A confirmed answer dismisses the notification. If delivery fails or cannot be confirmed, an **Answer
+needs attention** notification opens the exact question. Unconfirmed answers are encrypted on the
+phone for up to 24 hours (at most 20 drafts) and restored in the form for review. Answers are never
+automatically retried. Already answered or cancelled questions cannot receive a second, conflicting
+answer. Turning off notifications for a computer also removes its native background answer
+credential on the next active sync. Android force-stop, disabled notifications and OS delivery
+limits can prevent notifications from arriving; they do not bypass the in-app form.
+
+The feature requires a native rebuild. Older clients register without the action capability and
+continue opening the exact question in the app. Update the relay along with the runtime to enable
+iOS categories and Android's high-priority data delivery; Android background question notifications
+are constructed natively so their buttons work without a running React session.
+
+### Platform setup
+
 Use a new native app build; a JavaScript reload cannot add native notification support. Enable Push
 Notifications for `com.dovo.studio` in your Apple app identifier and signing profile. Local
 development builds use sandbox tokens; set `DOVO_APNS_ENVIRONMENT=production` when building for App
@@ -138,23 +168,36 @@ pnpm --filter @dovo/mobile android
 
 Both platforms use native device push tokens, not Expo's hosted push relay. In the mobile app, open
 **Settings → App & updates → Push notifications** and enable Task notifications. The app requests
-system permission and registers with its connected computers. It sends completion, failure,
-input-request, and PR-check notifications with a task title and short preview. Tapping a
-notification opens the originating thread and computer, including from cold launch. Question
-notifications include an **Answer question** action that opens the full form for that exact request,
-including all choices and fields, alongside its thread, computer, and project. An answered request
-is shown as no longer pending instead of silently opening another question. Permission is opt-in;
-input requests show foreground banners and sound, while other task events remain quiet in the
-foreground. Turning the setting off unregisters it from reachable runtimes; disconnected runtimes
-can only unregister when they reconnect. Changes during registration are applied after the in-flight
-request finishes. Revoking system notification permission unregisters reachable runtimes on the next
-foreground sync; restoring permission registers them again if Task notifications remain enabled.
-Revoking the device on the runtime also stops delivery.
+system permission and registers with its connected computers. It sends completion, failure, and
+input-request notifications with a task title and short preview. Tapping a notification opens the
+originating thread and computer, including from cold launch. Question notifications include an
+**Answer question** action that opens the full form for that exact request, including all choices
+and fields, alongside its thread, computer, and project. An answered request is shown as no longer
+pending instead of silently opening another question. Permission is opt-in; input requests show
+foreground banners and sound, while other task events remain quiet in the foreground. Turning the
+setting off unregisters it from reachable runtimes; disconnected runtimes can only unregister when
+they reconnect. Changes during registration are applied after the in-flight request finishes.
+Revoking system notification permission unregisters reachable runtimes on the next foreground sync;
+restoring permission registers them again if Task notifications remain enabled. Revoking the device
+on the runtime also stops delivery.
 
 Push-capable iOS builds enable Live Activity push tokens and frequent updates by default. Set
-`DOVO_LIVE_ACTIVITY_PUSH=0` to opt out, or `DOVO_PUSH_NOTIFICATIONS=0` for a local-only build.
-Foreground workspace changes update Live Activities promptly; background updates still need the
-runtime’s existing APNs configuration.
+`DOVO_LIVE_ACTIVITY_PUSH=0` to opt out, or `DOVO_PUSH_NOTIFICATIONS=0` for a local-only build. Live
+Activities use a separate **Show task Live Activities** switch. They start while Dovo is open, then
+the runtime updates and ends them through the same relay while the phone app is suspended. Progress
+changes update the Lock Screen and Dynamic Island without notification banners. Ordinary
+notifications are limited to input requests, task failures and completed turns; PR-check results and
+cancellations do not send banners.
 
-Live Activities retain their existing APNs configuration; this relay adds ordinary iOS and Android
-notifications.
+Signed-in phones create a separate Connect grant for each activity at `/v1/push/activities`. Only
+that activity's runtime profile, ActivityKit token, task turn and Apple environment can use the
+grant at `/v1/push/activities/send`. Grants cannot send alert notifications or start new activities.
+They expire within eight hours, survive host restarts and are revoked when an activity ends, is
+dismissed, or is disabled on the next foreground sync, even if its computer is offline. Signing out
+or account session expiry also revokes them. Ordinary notification switches and permission are
+independent.
+
+Standalone runtimes use `DOVO_NOTIFICATION_RELAY_URL` and `DOVO_NOTIFICATION_RELAY_TOKEN` for both
+alerts and activity updates. Existing direct host APNs configuration remains supported. Without
+Connect or a configured host delivery path, foreground updates still work. Push-to-start is not
+enabled: tasks started while the phone app stays closed appear after opening Dovo.

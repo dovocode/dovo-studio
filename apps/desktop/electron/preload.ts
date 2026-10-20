@@ -15,8 +15,25 @@ contextBridge.exposeInMainWorld('dovo', {
     status: (): Promise<import('@dovo/protocol').DictationStatus> =>
       ipcRenderer.invoke('dictation:status'),
     install: (id: string): Promise<void> => ipcRenderer.invoke('dictation:install', id),
-    transcribe: (id: string, pcm: ArrayBuffer): Promise<string> =>
-      ipcRenderer.invoke('dictation:transcribe', id, pcm),
+    start: (id: string, language: import('@dovo/protocol').DictationLanguage): Promise<void> =>
+      ipcRenderer.invoke('dictation:start', id, language),
+    feed: (id: string, pcm: ArrayBuffer): Promise<void> =>
+      ipcRenderer.invoke('dictation:feed', id, pcm),
+    finish: (id: string): Promise<string> => ipcRenderer.invoke('dictation:finish', id),
+    subscribe: (
+      id: string,
+      listener: (update: import('@dovo/protocol').DictationUpdate) => void,
+    ) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        sessionId: string,
+        update: import('@dovo/protocol').DictationUpdate,
+      ) => {
+        if (id === sessionId) listener(update)
+      }
+      ipcRenderer.on('dictation:update', handler)
+      return () => ipcRenderer.removeListener('dictation:update', handler)
+    },
     cancel: (id: string): Promise<void> => ipcRenderer.invoke('dictation:cancel', id),
   },
   runtimeSync: {

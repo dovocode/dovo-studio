@@ -1,11 +1,13 @@
-import { liveActivityRefreshMs, liveActivityStaleMs } from '@dovo/protocol'
+import { activityPayload, liveActivityRefreshMs, type RelayLiveActivity } from '@dovo/protocol'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
+import { createHash } from 'node:crypto'
+import { notificationRelay, managedNotification } from './push.js'
 import { hostname } from 'node:os'
 import { Effect, Fiber, Layer, ManagedRuntime, Schema } from 'effect'
 import { startPolling, runClientEffect } from '@dovo/client-runtime'
-import { liveActivityRegistrationSchema, liveTaskProps, type LiveTaskProps } from '@dovo/protocol'
+import { liveActivityRegistrationSchema, liveTaskProps } from '@dovo/protocol'
 import type { WorkspaceStore } from '../storage/workspace.js'
 import type { Devices } from '../auth/devices.js'
 import { HttpError, runtimeOperation } from '../errors.js'
@@ -19,26 +21,7 @@ const rowSchema = mutableStruct({
     sentAt: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   },
 })
-export function activityPayload(props: LiveTaskProps, ended: boolean, now: number) {
-  const timestamp = Math.floor(now / 1000)
-  return {
-    aps: {
-      timestamp,
-      event: ended ? 'end' : 'update',
-      'content-state': {
-        name: 'DovoTask',
-        props: JSON.stringify(props),
-      },
-      ...(ended
-        ? {
-            'dismissal-date': timestamp + 300,
-          }
-        : {
-            'stale-date': timestamp + liveActivityStaleMs / 1000,
-          }),
-    },
-  }
-}
+export { activityPayload } from '@dovo/protocol'
 export class LiveActivities {
   private scheduler?: ReturnType<typeof startPolling>
   private pending?: Fiber.Fiber<void, never>
@@ -55,20 +38,32 @@ export class LiveActivities {
       const config = apnsConfig()
       return config ? new Apns(config) : undefined
     })(),
+    private relay = notificationRelay(),
+    private managedSend = managedNotification,
   ) {
+    this.error = relay.error ?? null
     db.exec(
       'CREATE TABLE IF NOT EXISTS live_activities (device_id TEXT NOT NULL, activity_id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(device_id, activity_id))',
     )
   }
-  status() {
+  status(deviceId?: string) {
+    const managed =
+      deviceId &&
+      this.db
+        .prepare(
+          "SELECT activity_id FROM live_activities WHERE device_id=? AND json_extract(value,'$.managedToken') IS NOT NULL LIMIT 1",
+        )
+        .get(deviceId)
     return {
-      configured: !!this.apns,
+      configured: !!this.apns || !!this.relay.send || !!managed,
       environment: this.apns?.config.production ? ('production' as const) : ('sandbox' as const),
       error: this.error,
     }
   }
   register(deviceId: string, value: unknown) {
     const input = decode(liveActivityRegistrationSchema, value)
+    if (input.managedToken && (!input.runtimeId || !input.environment))
+      throw new HttpError(400, 'Managed Live Activities require a runtime and push environment')
     const task = this.store.task(input.taskId)
     if (task.status !== 'running' || task.turns?.at(-1)?.id !== input.turnId)
       throw new HttpError(409, 'This task turn is no longer running')
@@ -95,7 +90,7 @@ export class LiveActivities {
     this.db
       .prepare('INSERT OR REPLACE INTO live_activities VALUES (?,?,?)')
       .run(deviceId, input.activityId, JSON.stringify(row))
-    return this.status()
+    return this.status(deviceId)
   }
   remove(deviceId: string, activityId: string) {
     this.db
@@ -109,7 +104,7 @@ export class LiveActivities {
       immediate: false,
       onError: () => {
         this.error =
-          'Live Activity delivery failed. Check APNs credentials and connectivity on this runtime.'
+          'Live Activity delivery failed. Check push delivery configuration and connectivity.'
       },
     })
   }
@@ -123,7 +118,7 @@ export class LiveActivities {
           Effect.catchCause(() =>
             Effect.sync(() => {
               this.error =
-                'Live Activity delivery failed. Check APNs credentials and connectivity on this runtime.'
+                'Live Activity delivery failed. Check push delivery configuration and connectivity.'
               this.nextAttempt = Date.now() + 60_000
             }),
           ),
@@ -152,22 +147,14 @@ export class LiveActivities {
           .map((d) => d.id),
       ])
       for (const raw of this.db.prepare('SELECT value FROM live_activities').all()) {
-        const row = decode(
-          rowSchema,
-          JSON.parse(
-            decode(
-              mutableStruct({
-                value: Schema.String,
-              }),
-              raw,
-            ).value,
-          ),
-        )
+        const stored = decode(mutableStruct({ value: Schema.String }), raw).value
+        const row = decode(rowSchema, JSON.parse(stored))
         if (!trusted.has(row.deviceId) || row.expires <= now) {
           this.remove(row.deviceId, row.activityId)
           continue
         }
-        if (!this.apns || now < this.nextAttempt) continue
+        if ((!this.apns && !this.relay.send && !row.managedToken) || now < this.nextAttempt)
+          continue
         const workspace = this.store.get()
         const task = workspace.tasks.find((t) => t.id === row.taskId)
         const sameTurn = task?.history.latestTurn?.id === row.turnId
@@ -198,21 +185,47 @@ export class LiveActivities {
           ended,
         })
         if (row.fingerprint === fingerprint && now - row.sentAt < liveActivityRefreshMs) continue
-        const apns = this.apns
-        const status = yield* runtimeOperation(() =>
-          apns.send(row.pushToken, activityPayload(props, ended, now)),
-        )
-        if (status === 410 || status === 400) {
-          this.remove(row.deviceId, row.activityId)
-          this.error =
-            status === 400
-              ? 'APNs rejected a Live Activity token or payload. Check the push environment.'
-              : null
+        const message: RelayLiveActivity | undefined =
+          row.runtimeId && row.environment
+            ? {
+                kind: 'liveactivity',
+                platform: 'ios',
+                token: row.pushToken,
+                runtimeId: row.runtimeId,
+                activityId: row.activityId,
+                taskId: row.taskId,
+                turnId: row.turnId,
+                environment: row.environment,
+                id: createHash('sha256')
+                  .update(JSON.stringify([row.runtimeId, row.activityId]))
+                  .digest('hex'),
+                event: ended ? 'end' : 'update',
+                timestamp: Math.floor(now / 1000),
+                props,
+              }
+            : undefined
+        const result = yield* runtimeOperation(async () => {
+          if (row.managedToken && message) return this.managedSend(message, row.managedToken)
+          if (this.relay.send && message) return this.relay.send(message)
+          if (!this.apns) throw new Error('Live Activity push delivery is not configured')
+          const status = await this.apns.send(row.pushToken, activityPayload(props, ended, now))
+          if (status !== 200 && status !== 400 && status !== 410)
+            throw new Error(`APNs returned ${status}`)
+          return { delivered: status === 200, invalidToken: status === 410 || status === 400 }
+        })
+        if (result.invalidToken) {
+          this.db
+            .prepare('DELETE FROM live_activities WHERE device_id=? AND activity_id=? AND value=?')
+            .run(row.deviceId, row.activityId, stored)
+          this.error = null
           continue
         }
-        if (status !== 200) throw new Error(`APNs returned ${status}`)
+        if (!result.delivered) throw new Error('Live Activity was not delivered')
         this.error = null
-        if (ended) this.remove(row.deviceId, row.activityId)
+        if (ended)
+          this.db
+            .prepare('DELETE FROM live_activities WHERE device_id=? AND activity_id=? AND value=?')
+            .run(row.deviceId, row.activityId, stored)
         else
           this.db
             .prepare(
@@ -226,12 +239,7 @@ export class LiveActivities {
               }),
               row.deviceId,
               row.activityId,
-              decode(
-                mutableStruct({
-                  value: Schema.String,
-                }),
-                raw,
-              ).value,
+              stored,
             )
       }
     })

@@ -5,7 +5,12 @@ import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Schema, Effect, Semaphore } from 'effect'
-import { liveTaskProps, liveActivityStatusSchema, type RuntimeOverview } from '@dovo/protocol'
+import {
+  liveTaskProps,
+  liveActivityStatusSchema,
+  type ManagedLiveActivity,
+  type RuntimeOverview,
+} from '@dovo/protocol'
 import type { useRuntime } from '../runtime/connection/provider'
 import TaskActivity from './task-activity'
 const storageKey = 'dovo.live-activities.v1'
@@ -22,6 +27,14 @@ const savedSchema = mutableStruct({
 })
 type Record = Schema.Schema.Type<typeof recordSchema>
 type Read = ReturnType<typeof useRuntime>['readRuntimeEffect']
+export type ActivityDelivery = {
+  environment: 'sandbox' | 'production'
+  managed?: {
+    key: string
+    subscribe(value: ManagedLiveActivity): Promise<{ token: string }>
+    retain(activities: Array<{ runtimeId: string; activityId: string }>): Promise<void>
+  }
+}
 export function createActivityController(onError: (message: string) => void) {
   return mobileWorkflow(function* () {
     // A record from an older build must not disable Live Activities until reinstall.
@@ -35,12 +48,14 @@ export function createActivityController(onError: (message: string) => void) {
     const restored = decodeResult(savedSchema, parsed)
     if (!restored.success) yield* nativeEffect(() => AsyncStorage.removeItem(storageKey))
     const saved = restored.success ? restored.data : { records: [], seen: [] }
-    let current: { overviews: RuntimeOverview[]; read: Read; enabled: boolean } | undefined
+    let current:
+      | { overviews: RuntimeOverview[]; read: Read; enabled: boolean; delivery?: ActivityDelivery }
+      | undefined
     let lastSaved = raw
     const seen = new Set(saved.seen)
     const records = new Map(saved.records.map((record) => [record.key, record]))
     const fingerprints = new Map<string, { value: string; at: number }>()
-    const registered = new Map<string, string>()
+    const registered = new Map<string, { key: string; at: number }>()
     const registering = new Map<string, string>()
     const registrationLocks = new Map<string, Semaphore.Semaphore>()
     const tokens = new Map<string, string>()
@@ -54,16 +69,51 @@ export function createActivityController(onError: (message: string) => void) {
     let disposed = false
     const commands = clientTaskScope()
     const permit = yield* Semaphore.make(1)
+    const deliveryLock = yield* Semaphore.make(1)
+    let retained = ''
+    const retainManaged = deliveryLock
+      .withPermits(1)(
+        mobileWorkflow(function* () {
+          const managed = current?.delivery?.managed
+          if (!managed) {
+            retained = ''
+            return
+          }
+          const activities = [...records.values()].map((record) => ({
+            runtimeId: record.runtimeId,
+            activityId: record.id,
+          }))
+          const signature = JSON.stringify([managed.key, activities])
+          if (retained === signature) return
+          yield* nativeEffect(() => managed.retain(activities))
+          retained = signature
+        }),
+      )
+      .pipe(
+        Effect.catch(() =>
+          Effect.sync(() => {
+            if (!disposed)
+              onError(
+                'Could not revoke background Live Activity access on Connect. Try again when connected.',
+              )
+          }),
+        ),
+      )
     const persist = async () => {
       const value = JSON.stringify({ records: [...records.values()], seen: [...seen].slice(-200) })
       if (value === lastSaved) return
       await AsyncStorage.setItem(storageKey, value)
       lastSaved = value
     }
-    function sync(overviews: RuntimeOverview[], read: Read, enabled: boolean) {
+    function sync(
+      overviews: RuntimeOverview[],
+      read: Read,
+      enabled: boolean,
+      delivery?: ActivityDelivery,
+    ) {
       return mobileWorkflow(function* () {
         if (disposed) return
-        current = { overviews, read, enabled }
+        current = { overviews, read, enabled, delivery }
         const instances = new Map(
           TaskActivity.getInstances().map((instance) => [instance.getId(), instance]),
         )
@@ -219,18 +269,53 @@ export function createActivityController(onError: (message: string) => void) {
                     source.profile.connection.address,
                     source.profile.connection.token,
                     token,
+                    current.delivery?.environment,
+                    current.delivery?.managed?.key,
                   ])
                   const retry = retryAt.get(id)
                   if (
                     disposed ||
                     !records.has(key) ||
                     tokens.get(id) !== token ||
-                    registered.get(id) === registrationKey ||
+                    (registered.get(id)?.key === registrationKey &&
+                      Date.now() - (registered.get(id)?.at ?? 0) < 300_000) ||
                     (retry?.key === registrationKey && retry.at > Date.now())
                   )
                     return
                   registering.set(id, registrationKey)
                   retryAt.set(id, { key: registrationKey, at: Date.now() + 60_000 })
+                  const managed = current.delivery?.managed
+                  const environment = current.delivery?.environment ?? 'sandbox'
+                  const grant = managed
+                    ? yield* deliveryLock.withPermits(1)(
+                        mobileWorkflow(function* () {
+                          if (
+                            !current?.enabled ||
+                            !records.has(key) ||
+                            current.delivery?.managed?.key !== managed.key ||
+                            tokens.get(id) !== token
+                          )
+                            return
+                          return yield* nativeEffect(() =>
+                            managed.subscribe({
+                              runtimeId: source.profile.id,
+                              activityId: id,
+                              taskId: task.id,
+                              turnId,
+                              token,
+                              environment,
+                            }),
+                          )
+                        }),
+                      )
+                    : undefined
+                  if (
+                    !current?.enabled ||
+                    !records.has(key) ||
+                    tokens.get(id) !== token ||
+                    current.delivery?.managed?.key !== managed?.key
+                  )
+                    return
                   const status = yield* current.read(
                     source.profile,
                     '/api/live-activities/register',
@@ -239,15 +324,19 @@ export function createActivityController(onError: (message: string) => void) {
                       taskId: task.id,
                       turnId,
                       pushToken: token,
+                      runtimeId: source.profile.id,
+                      environment,
+                      ...(grant ? { managedToken: grant.token } : {}),
                     },
                     liveActivityStatusSchema,
                   )
                   if (disposed || !records.has(key) || registering.get(id) !== registrationKey)
                     return
-                  if (status.configured && !status.error) registered.set(id, registrationKey)
+                  if (status.configured && !status.error)
+                    registered.set(id, { key: registrationKey, at: Date.now() })
                   if (!status.configured)
                     onError(
-                      'Background Live Activities need APNs setup on the task’s computer. See docs/releases-and-updates.md.',
+                      'For background Live Activity updates, sign in to Connect or configure the notification relay on this computer.',
                     )
                   else if (status.error) onError(status.error)
                 })
@@ -283,11 +372,16 @@ export function createActivityController(onError: (message: string) => void) {
             }
           }
         yield* nativeEffect(() => persist())
+        void commands.run(retainManaged)
       })
     }
     return {
-      sync: (overviews: RuntimeOverview[], read: Read, enabled: boolean) =>
-        permit.withPermits(1)(sync(overviews, read, enabled)),
+      sync: (
+        overviews: RuntimeOverview[],
+        read: Read,
+        enabled: boolean,
+        delivery?: ActivityDelivery,
+      ) => permit.withPermits(1)(sync(overviews, read, enabled, delivery)),
       dispose() {
         disposed = true
         for (const listener of listeners.values()) listener.remove()

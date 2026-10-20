@@ -239,9 +239,18 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           ? section.items.filter((item) => item.kind === 'group')
           : section.items
       })
+    const attention = tasks.filter(({ task, needsInput }) => needsInput && !task.archived)
+    const attentionItems: TaskListItem[] = attention.length
+      ? [
+          { kind: 'group', key: 'needs-input', name: 'Needs input', count: attention.length },
+          ...(collapsed.has('needs-input')
+            ? []
+            : attention.map((entry): TaskListItem => ({ kind: 'task', entry }))),
+        ]
+      : []
     const active = tasks.filter(
       ({ task, needsInput }) =>
-        !task.archived && !isSnoozed(task, now) && (!task.waitingForFeedback || needsInput),
+        !needsInput && !task.archived && !isSnoozed(task, now) && !task.waitingForFeedback,
     )
     const working = preferences.workingSection
       ? active.filter(
@@ -270,7 +279,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             : waiting.map((entry): TaskListItem => ({ kind: 'task', entry }))),
         ]
       : []
-    const snoozed = tasks.filter(({ task }) => !task.archived && isSnoozed(task, now))
+    const snoozed = tasks.filter(
+      ({ task, needsInput }) => !needsInput && !task.archived && isSnoozed(task, now),
+    )
     const settled = tasks.filter(({ task }) => task.archived)
     const snoozedItems: TaskListItem[] = snoozed.length
       ? [
@@ -301,6 +312,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         ]
       : []
     const otherSections = [
+      { key: 'needs-input', items: attentionItems },
       { key: 'working', items: workingItems },
       { key: 'waiting', items: waitingItems },
       { key: 'snoozed', items: snoozedItems },
@@ -732,6 +744,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                     item.key === 'snoozed' ||
                     item.key === 'working' ||
                     item.key === 'waiting' ||
+                    item.key === 'needs-input' ||
                     item.key === 'active'
                     ? item.key
                     : `${grouping}:${item.key}`,
@@ -744,6 +757,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                   item.key === 'snoozed' ||
                   item.key === 'working' ||
                   item.key === 'waiting' ||
+                  item.key === 'needs-input' ||
                   item.key === 'active'
                     ? item.key
                     : `${grouping}:${item.key}`
@@ -760,6 +774,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                       item.key === 'snoozed' ||
                       item.key === 'working' ||
                       item.key === 'waiting' ||
+                      item.key === 'needs-input' ||
                       item.key === 'active'
                       ? item.key
                       : `${grouping}:${item.key}`,

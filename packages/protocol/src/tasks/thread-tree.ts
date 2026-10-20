@@ -94,7 +94,8 @@ function threadNode(entry: ThreadTreeEntry): NestedThread {
         ? 'failed'
         : needsInput
           ? 'needs-input'
-          : task.status === 'running' || task.subagents?.some(nativeAgentWorking)
+          : task.status === 'running' ||
+              (!task.waitingForFeedback && task.subagents?.some(nativeAgentWorking))
             ? 'running'
             : task.status === 'cancelled'
               ? 'stopped'

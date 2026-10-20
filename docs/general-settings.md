@@ -77,3 +77,11 @@ General links to the per-computer Titles & dictation editor. Version and release
 the existing desktop update bridge. Mobile-specific driving, speech, widgets and battery preferences
 retain their native settings. Mobile task defaults can edit scoped lifecycle policy, and quota
 continuations can be cancelled on either client.
+
+## Desktop speech
+
+General → Speech provides an explicit download for the 751 MB Nemotron model, progress, cancellation
+and retry. Downloading enables the composer microphone; the enable toggle can hide it without
+removing the model. The language picker supports automatic detection and 32 locales, including Dutch
+and English. Recording shows a live preview and runs locally on the desktop CPU. These settings are
+local app preferences; they do not change native mobile speech recognition or runtime models.

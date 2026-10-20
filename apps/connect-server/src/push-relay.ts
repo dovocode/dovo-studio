@@ -1,7 +1,7 @@
-import { decode, relayResultSchema, type RelayNotification } from '@dovo/protocol'
+import { decode, relayResultSchema, type RelayMessage } from '@dovo/protocol'
 
 export type PushDelivery = {
-  send(message: RelayNotification): Promise<{ delivered: boolean; invalidToken: boolean }>
+  send(message: RelayMessage): Promise<{ delivered: boolean; invalidToken: boolean }>
 }
 /** The private relay owns APNs/FCM credentials; mobile grants never reveal its shared key. */
 export function pushRelay(env = process.env): PushDelivery | undefined {

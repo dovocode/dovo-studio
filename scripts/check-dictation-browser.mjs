@@ -10,16 +10,21 @@ const built = await build({
       import {useState,useRef,useSyncExternalStore} from 'react';
       import {TooltipProvider} from '@dovo/studio-ui';
       import {ComposerDictation} from './src/chat/composer/composer-dictation';
+      import {SpeechSettings} from '../studio-shell/src/app-settings/speech';
       import {createComposerDraft} from './src/chat/composer/composer-draft';
-      window.statusCalls=0;window.cancelled=[];window.installCalls=0;window.audioBytes=0;window.installed=false;window.failInstall=false;window.failTranscribe=false;
+      window.statusCalls=0;window.cancelled=[];window.installCalls=0;window.audioBytes=0;window.installed=localStorage.getItem('dictation-test-installed')==='true';window.failInstall=false;window.failTranscribe=false;window.downloading=false;
+      const listeners=new Map();
       window.dovo={dictation:{
-        status:async()=>{window.statusCalls++;return {engine:true,model:window.installed,downloading:false,downloaded:0}},
-        install:async()=>{window.installCalls++;if(window.failInstall)throw Error('Download failed');window.installed=true},
-        transcribe:(id,pcm)=>{window.audioBytes=pcm.byteLength;return new Promise((resolve,reject)=>{window.complete=()=>window.failTranscribe?reject(Error('Transcription failed')):resolve('Fix de desktop app.');window.resolveLate=resolve})},
-        cancel:async(id)=>{window.cancelled.push(id)}
+        status:async()=>{window.statusCalls++;return {engine:true,model:window.installed,downloading:window.downloading,downloaded:window.downloading?375547120:0}},
+        install:async()=>{window.installCalls++;if(window.failInstall)throw Error('Download failed');window.downloading=true;try {await new Promise((resolve,reject)=>{window.completeInstall=resolve;window.rejectInstall=reject});window.installed=true;localStorage.setItem('dictation-test-installed','true')}finally{window.downloading=false}},
+        start:async(id,language)=>{window.language=language;window.audioBytes=0;window.sessionId=id},
+        feed:async(id,pcm)=>{window.audioBytes+=pcm.byteLength;listeners.get(id)?.({type:'text',text:'Fix de desktop'})},
+        finish:()=>new Promise((resolve,reject)=>{window.complete=()=>window.failTranscribe?reject(Error('Transcription failed')):resolve('Fix de desktop app.');window.resolveLate=resolve}),
+        subscribe:(id,listener)=>{listeners.set(id,listener);return()=>listeners.delete(id)},
+        cancel:async(id)=>{window.cancelled.push(id);if(window.downloading)window.rejectInstall(Error('Download cancelled'))}
       }};
       function Editor(){const[controller]=useState(()=>createComposerDraft('Existing text.',()=>{}));const input=useRef(null);const[active,setActive]=useState(false);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);window.edit=(value)=>controller.update(value);window.text=()=>controller.text;return <><textarea ref={input} aria-label="Message" value={text} onChange={event=>controller.update(event.target.value)}/><ComposerDictation controller={controller} input={input} disabled={false} onActive={setActive}/><button disabled={active}>Send</button></>}
-      function App(){const[key,setKey]=useState(0);window.switchThread=()=>setKey(value=>value+1);return <TooltipProvider><Editor key={key}/></TooltipProvider>};
+      function App(){const[key,setKey]=useState(0);window.switchThread=()=>setKey(value=>value+1);return <TooltipProvider><SpeechSettings/><Editor key={key}/></TooltipProvider>};
       createRoot(document.getElementById('app')).render(<App/>);
     `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
@@ -54,8 +59,12 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const mic = page.getByRole('button', { name: 'Dictate message', exact: true })
   const recording = page.getByRole('button', { name: 'Stop dictation', exact: true })
-  await mic.click()
-  await page.getByRole('button', { name: 'Download model', exact: true }).waitFor()
+  const download = page.getByRole('button', { name: 'Download & enable dictation', exact: true })
+  const enabled = page.getByRole('switch', { name: 'Enable dictation', exact: true })
+  await download.waitFor()
+  assert.equal(await mic.count(), 0, 'dictation is opt-in')
+  assert.equal(await enabled.isChecked(), false)
+  assert.equal(await enabled.isDisabled(), true)
   assert.equal(
     await page.evaluate(() => window.installCalls),
     0,
@@ -64,19 +73,39 @@ try {
   await page.evaluate(() => {
     window.failInstall = true
   })
-  await page.getByRole('button', { name: 'Download model', exact: true }).click()
+  await download.click()
   await page.getByRole('alert').filter({ hasText: 'Download failed' }).waitFor()
   await page.evaluate(() => {
     window.failInstall = false
   })
-  await page.getByRole('button', { name: 'Download model', exact: true }).click()
+  await download.click()
+  await page.getByRole('status').filter({ hasText: 'Downloading… 50%' }).waitFor()
+  await page.getByRole('button', { name: 'Cancel download', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Download cancelled' }).waitFor()
+  await download.click()
+  await page.waitForFunction(() => window.downloading)
+  await page.evaluate(() => window.completeInstall())
+  await mic.waitFor()
+  assert.equal(await enabled.isChecked(), true)
+  await page.getByRole('combobox', { name: 'Dictation language', exact: true }).click()
+  await page.getByRole('option', { name: 'Dutch', exact: true }).waitFor({ state: 'attached' })
+  await page.keyboard.type('Dutch')
+  await page.waitForFunction(() => document.activeElement?.textContent?.includes('Dutch'))
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(
+    () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).dictationLanguage === 'nl-NL',
+  )
+  await enabled.click()
+  await mic.waitFor({ state: 'hidden' })
+  await enabled.click()
   await mic.waitFor()
   const record = async () => {
     await mic.click()
     await recording.waitFor()
     assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true)
     // Wait for actual worklet PCM rather than calling a mocked recording implementation.
-    await page.waitForTimeout(400)
+    await page.getByRole('textbox', { name: 'Live dictation preview', exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.language), 'nl-NL')
     await recording.click()
     await page.waitForFunction(() => window.complete && window.audioBytes > 320)
   }
@@ -133,7 +162,7 @@ try {
   assert.equal(await page.evaluate(() => window.cancelled.length >= 3), true)
   assert.deepEqual(errors, [])
   console.log(
-    'Desktop dictation: opt-in download/retry, real microphone/worklet PCM, selection insertion, draft protection, transcription failure, cancellation and thread switching passed.',
+    'Nemotron dictation: Settings download/progress/cancel/retry, enable toggle, language selection, live preview with real microphone/worklet PCM, insertion, draft protection, failures and thread cancellation passed.',
   )
 } finally {
   await browser.close()

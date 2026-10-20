@@ -6,7 +6,7 @@ import { chromium } from './browser/harness.mjs'
 const require = createRequire(new URL('../packages/studio-ui/package.json', import.meta.url))
 const mocks = {
   'react-native': `export const Platform={OS:'ios'};export const AppState={currentState:'active',addEventListener:(_,fn)=>{window.foreground=()=>fn('active');return{remove(){}}}};`,
-  expo: `export const requireOptionalNativeModule=()=>({});`,
+  expo: `export const requireOptionalNativeModule=name=>name==='DovoQuestionNotifications'?{configure:async json=>{window.answerConfigs??=[];window.answerConfigs.push(JSON.parse(json));if(window.answerConfigFails)throw Error('Storage failed')},getDraft:async()=>null,clearDraft:async()=>{}}:{};`,
   'expo-constants': `export default {expoConfig:{extra:{pushEnvironment:'sandbox'}}};`,
   'expo-router': `export const router={push:target=>window.routes.push(target)};`,
   '@react-native-async-storage/async-storage': `const saved=new Map([['dovo.push-notifications.enabled','true']]);export default {getItem:async key=>saved.get(key)??null,setItem:async(key,value)=>{saved.set(key,value)}};`,
@@ -17,7 +17,7 @@ const mocks = {
 }
 const result = await build({
   stdin: {
-    contents: `import {useState} from 'react';import{createRoot}from'react-dom/client';import{PushNotificationProvider,usePushNotifications}from'./src/notifications/provider.tsx';import{Context}from'../runtime/connection/provider';import{AccountContext}from'../runtime/connection/account-provider';window.requests=[];window.finishes=[];window.routes=[];window.permitted=true;window.grants=[];window.allowed=[];function Controls(){const state=usePushNotifications();window.toggle=state.setEnabled;window.serverToggle=state.setServerEnabled;window.state=state;return null};function App(){const[credential,setCredential]=useState('first');window.credential=setCredential;const[signedIn,setSignedIn]=useState(false);window.signin=setSignedIn;const[other,setOther]=useState(false);window.other=setOther;const[connected,setConnected]=useState(true);window.connected=setConnected;const account={directory:signedIn?{user:{id:'person'}}:null,client:{subscribePush:async registration=>{window.grants.push(registration);return{token:'g'.repeat(43)}},retainPush:async ids=>{window.allowed.push(ids)}}};const profile={id:'host',name:'Host',connection:{address:'http://host',token:credential}};const runtime={ready:true,profiles:[profile],overviews:[{profile,connected},...(other?[{profile:{...profile,id:'other'},connected:true}]:[])],readRuntime:async(profile,path,input)=>new Promise(resolve=>{window.requests.push({credential:profile.connection.token,path,input});window.finishes.push(resolve)})};return<Context.Provider value={runtime}><AccountContext.Provider value={account}><PushNotificationProvider><Controls/></PushNotificationProvider></AccountContext.Provider></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {useState} from 'react';import{createRoot}from'react-dom/client';import{PushNotificationProvider,usePushNotifications}from'./src/notifications/provider.tsx';import{Context}from'../runtime/connection/provider';import{AccountContext}from'../runtime/connection/account-provider';window.requests=[];window.finishes=[];window.routes=[];window.permitted=true;window.grants=[];window.allowed=[];function Controls(){const state=usePushNotifications();window.toggle=state.setEnabled;window.serverToggle=state.setServerEnabled;window.state=state;return null};function App(){const[credential,setCredential]=useState('first');window.credential=setCredential;const[signedIn,setSignedIn]=useState(false);window.signin=setSignedIn;const[other,setOther]=useState(false);window.other=setOther;const[connected,setConnected]=useState(true);window.connected=setConnected;const account={directory:signedIn?{user:{id:'person'}}:null,client:{subscribePush:async registration=>{window.grants.push(registration);return{token:'g'.repeat(43)}},retainPush:async ids=>{window.allowed.push(ids)}}};const profile={id:'host',name:'Host',connection:{address:'http://host',token:credential}};const runtime={ready:true,profiles:[profile,...(other?[{...profile,id:'other'}]:[])],overviews:[{profile,connected},...(other?[{profile:{...profile,id:'other'},connected:true}]:[])],readRuntime:async(profile,path,input)=>new Promise(resolve=>{window.requests.push({credential:profile.connection.token,path,input});window.finishes.push(resolve)})};return<Context.Provider value={runtime}><AccountContext.Provider value={account}><PushNotificationProvider><Controls/></PushNotificationProvider></AccountContext.Provider></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: fileURLToPath(new URL('../apps/mobile/', import.meta.url)),
     loader: 'tsx',
   },
@@ -70,6 +70,10 @@ try {
       index,
     )
   await requests(1)
+  if ((await page.evaluate(() => window.requests[0].input.questionActions)) !== 1)
+    throw new Error('Native answer support was not advertised')
+  if ((await page.evaluate(() => window.answerConfigs.at(-1).host.address)) !== 'http://host')
+    throw new Error('Native answer cache lost HTTP pairing')
   await page.evaluate(() => window.toggle(false))
   await page.waitForFunction(() => window.state.enabled === false)
   await finish(0)
@@ -132,6 +136,26 @@ try {
     throw new Error('Question routing duplicated or lost its identity')
   await page.evaluate(() =>
     window.notification({
+      actionIdentifier: 'dovo-reply',
+      notification: {
+        request: {
+          identifier: 'native-reply',
+          content: {
+            data: {
+              runtimeId: 'host',
+              taskId: 'thread',
+              inputId: 'specific-question',
+              inputType: 'question',
+            },
+          },
+        },
+      },
+    }),
+  )
+  if ((await page.evaluate(() => window.routes.length)) !== 1)
+    throw new Error('Native answer opened the app instead of remaining in background')
+  await page.evaluate(() =>
+    window.notification({
       notification: {
         request: {
           identifier: 'removed-host',
@@ -159,6 +183,11 @@ try {
   await page.evaluate(() => window.serverToggle('host', false))
   await page.waitForFunction(() => !window.state.busy && !window.state.serverEnabled('host'))
   const allowed = await page.evaluate(() => window.allowed.at(-1))
+  if (
+    JSON.stringify(await page.evaluate(() => Object.keys(window.answerConfigs.at(-1)))) !==
+    JSON.stringify(['other'])
+  )
+    throw new Error('Offline disabled server retained native answer credentials')
   if (JSON.stringify(allowed) !== JSON.stringify(['other']))
     throw new Error('Disabling an offline server did not revoke only its delivery permission')
   if ((await page.evaluate(() => window.requests.length)) !== 9)
@@ -169,6 +198,8 @@ try {
   await page.waitForFunction(() => !window.state.busy)
   if ((await page.evaluate(() => window.allowed.at(-1).length)) !== 0)
     throw new Error('Disabling all servers left delivery enabled')
+  if ((await page.evaluate(() => Object.keys(window.answerConfigs.at(-1)).length)) !== 0)
+    throw new Error('Disabling all servers left native credentials')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Mobile push: disable during registration, reconnect, token rotation, permission revoke/restore, exact question routing, managed delivery and independent server toggles passed.',

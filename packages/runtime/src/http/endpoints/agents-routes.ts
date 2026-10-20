@@ -43,6 +43,7 @@ import {
   modelDiscoveryInput,
   modelCatalogSchema,
   questionReplySchema,
+  notificationAnswerSchema,
 } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
@@ -498,6 +499,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         return yield* serviceResult({
           ok: true,
         })
+      }
+      if (method === 'POST' && path === '/api/notifications/answer') {
+        const input = decode(notificationAnswerSchema, yield* serviceResult(body(request)))
+        s.questions.respondNotification(input)
+        return yield* serviceResult({ ok: true })
       }
       if (
         method === 'POST' &&

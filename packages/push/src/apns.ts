@@ -40,6 +40,9 @@ export class Apns {
   sendAlert(token: string, payload: object, id: string) {
     return this.deliver(token, payload, { type: 'alert', id })
   }
+  sendLiveActivity(token: string, payload: object, id: string) {
+    return this.deliver(token, payload, { type: 'liveactivity', id })
+  }
   private async deliver(
     token: string,
     payload: object,

@@ -1,3 +1,4 @@
+import { type ManagedLiveActivity } from '../runtime/previews/live-activities.js'
 import { Schema } from 'effect'
 import {
   managedPushGrantSchema,
@@ -213,6 +214,17 @@ export class AccountClient {
       managedPushGrantSchema,
       await this.request('/v1/push/subscriptions', 'PUT', registration),
     )
+  }
+  subscribeLiveActivity = async (registration: ManagedLiveActivity) => {
+    if (!this.token || !this.state.directory)
+      throw new Error('Sign in on this phone to enable managed Live Activity updates.')
+    return decode(
+      managedPushGrantSchema,
+      await this.request('/v1/push/activities', 'PUT', registration),
+    )
+  }
+  retainLiveActivities = async (activities: Array<{ runtimeId: string; activityId: string }>) => {
+    if (this.token) await this.request('/v1/push/activities/retain', 'PUT', { activities })
   }
   retainPush = async (runtimeIds: string[]) => {
     if (this.token) await this.request('/v1/push/servers', 'PUT', { runtimeIds })
