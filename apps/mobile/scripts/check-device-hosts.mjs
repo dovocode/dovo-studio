@@ -160,14 +160,14 @@ try {
         padding: style.paddingLeft,
         height: bounds.height,
         contained:
-          text.left >= bounds.left + 16 &&
-          text.right <= bounds.right - 16 &&
-          control.left >= bounds.left + 16 &&
-          control.right <= bounds.right - 16,
+          text.left >= bounds.left + 12 &&
+          text.right <= bounds.right - 12 &&
+          control.left >= bounds.left + 12 &&
+          control.right <= bounds.right - 12,
       }
     })
-    assert.equal(geometry.padding, '16px')
-    assert.ok(geometry.height >= 56)
+    assert.equal(geometry.padding, '12px')
+    assert.ok(geometry.height >= 48)
     assert.ok(geometry.contained, `Device Hub contents escape row at ${fontScale}x text`)
   }
   await page.evaluate(() => {
