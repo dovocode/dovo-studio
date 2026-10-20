@@ -16,6 +16,7 @@ const mocks = {
   '../../agents/harness-icon': `export const HarnessIcon=()=>null;`,
   '../../ui/layout/sheet': `export const Sheet=({children,onClose,title})=><section aria-label={title}>{children}<button onClick={onClose}>Close picker</button></section>;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
+  '../ui/controls/icon': `export const Icon=()=>null;`,
   'react-native': `export const ScrollView=({children})=><div>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState})=><button aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} onClick={onPress} disabled={disabled}>{children}</button>;export const View=({children})=><div>{children}</div>;export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const MobileContext=createContext(null);export const useRuntime=()=>useContext(MobileContext);export const useRuntimeSelector=select=>select(useContext(MobileContext));`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
@@ -177,6 +178,7 @@ try {
   if (await page.getByRole('textbox', { name: 'Search harnesses and models' }).count())
     throw new Error('New-thread settings were appended below the picker')
   await page.getByRole('button', { name: 'Back to models', exact: true }).click()
+  await page.getByRole('button', { name: 'Choose provider', exact: true }).click()
   const harness = (name) => page.getByRole('button', { name, exact: true })
   await harness('Claude').waitFor()
   await absent(harness('Cursor'))
@@ -186,12 +188,14 @@ try {
   await harness('Provider default').click()
   if (await page.evaluate(() => window.changes.at(-1)?.provider !== 'vibe'))
     throw new Error('Available mobile Vibe provider was not selectable')
+  await harness('Choose provider').click()
   await harness('Claude').click()
   await harness('Provider default').click()
   if (await page.evaluate(() => window.changes.at(-1)?.provider !== 'claude'))
     throw new Error('Available mobile provider was not selectable')
   await page.evaluate(() => window.host('four'))
   await waitRequests(8)
+  await harness('Choose provider').click()
   await absent(harness('Claude'))
   await page.evaluate(() => window.pending[7].reject(new Error('Offline')))
   await page.getByText('Could not check available providers: Error: Offline').waitFor()
