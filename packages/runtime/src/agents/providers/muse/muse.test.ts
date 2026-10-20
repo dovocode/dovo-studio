@@ -418,33 +418,38 @@ it.each(['approval-scoped', 'approval-always', 'subagent-approval'] as const)(
       async () => transcript.decision,
     )
     const nativeEvents: string[] = []
-    await f.adapter.run({
-      ...f.run,
-      prompt: transcript.prompt,
-      approve,
-      ...(transcript.expectSubagent
-        ? {
-            taskId: `replay-${name}`,
-            onSubagentEvent: (event: string) => nativeEvents.push(event),
-            nativeAgentInteractions: { approve: nativeApprove, ask: f.run.ask },
-          }
-        : {}),
-    })
-    if (transcript.expectSubagent) {
-      await vi.waitFor(() => expect(nativeApprove).toHaveBeenCalled())
-      expect(nativeEvents.length).toBeGreaterThan(0)
-    }
-    const decide = (await f.messages()).find((frame) => frame.method === 'approval/decide')
-    expect(decide?.params).toMatchObject({ choiceId: transcript.expectChoiceId })
-    if (transcript.expectSubagent) {
-      await f.adapter.dispose?.()
-    } else {
-      expect(approve).toHaveBeenCalledWith(
-        'Muse shell command: pwd',
-        'pwd',
-        undefined,
-        expect.objectContaining({ session: true, always: true }),
-      )
+    try {
+      await f.adapter.run({
+        ...f.run,
+        prompt: transcript.prompt,
+        approve,
+        ...(transcript.expectSubagent
+          ? {
+              taskId: `replay-${name}`,
+              onSubagentEvent: (event: string) => nativeEvents.push(event),
+              nativeAgentInteractions: { approve: nativeApprove, ask: f.run.ask },
+            }
+          : {}),
+      })
+      // A child may ask after the parent turn returns. Observe the host receiving the
+      // response, rather than the callback that starts the asynchronous SDK command.
+      await vi.waitFor(async () => {
+        const decide = (await f.messages()).find((frame) => frame.method === 'approval/decide')
+        expect(decide?.params).toMatchObject({ choiceId: transcript.expectChoiceId })
+      })
+      if (transcript.expectSubagent) {
+        expect(nativeApprove).toHaveBeenCalled()
+        expect(nativeEvents.length).toBeGreaterThan(0)
+      } else {
+        expect(approve).toHaveBeenCalledWith(
+          'Muse shell command: pwd',
+          'pwd',
+          undefined,
+          expect.objectContaining({ session: true, always: true }),
+        )
+      }
+    } finally {
+      if (transcript.expectSubagent) await f.adapter.dispose?.()
     }
   },
 )

@@ -98,3 +98,18 @@ it('does not wait for stale native sessions or completed and stopped child branc
   ])
   expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
 })
+
+it('keeps a finished turn out of Waiting until its own run releases ownership', () => {
+  const s = setup([{ ...task('parent'), activeRunId: 'finishing' }])
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
+  s.store.updateTask('parent', (task) => ({ ...task, activeRunId: undefined }))
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
+})
+
+it('waits for a finished child that is still releasing its run', () => {
+  const s = setup([task('parent'), { ...task('child', 'parent'), activeRunId: 'finishing' }])
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBe(true)
+  expect(s.store.taskSummary('child').waitingForFeedback).toBeUndefined()
+  s.store.updateTask('child', (task) => ({ ...task, activeRunId: undefined }))
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
+})

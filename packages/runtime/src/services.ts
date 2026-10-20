@@ -367,6 +367,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         !task.archivedAt &&
         (task.status === 'review' || task.status === 'done') &&
         !task.runPhase &&
+        !task.activeRunId &&
         !task.queue?.length &&
         !task.draft.trim() &&
         !task.draftAttachments?.length &&
