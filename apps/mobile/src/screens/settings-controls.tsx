@@ -31,9 +31,9 @@ export function SettingsChoice(props: ChoiceProps) {
         style={{
           flexDirection: horizontal ? 'row' : 'column',
           alignItems: horizontal ? 'center' : 'stretch',
-          minHeight: 54,
+          minHeight: 48,
           paddingHorizontal: 16,
-          paddingVertical: 5,
+          paddingVertical: 2,
           gap: 8,
         }}
       >
@@ -101,16 +101,16 @@ export function SettingsAction(props: ComponentProps<typeof Action>) {
         alignSelf: props.wide ? 'stretch' : 'flex-start',
         justifyContent: 'center',
         paddingHorizontal: props.secondary ? 0 : 16,
-        paddingVertical: 10,
-        borderRadius: 22,
+        paddingVertical: 8,
+        borderRadius: 16,
         backgroundColor: props.secondary ? 'transparent' : danger ? colors.error : colors.action,
         opacity: props.disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >
       <Text
         style={{
-          fontSize: 17,
-          lineHeight: 23,
+          fontSize: 16,
+          lineHeight: 22,
           fontWeight: '600',
           textAlign: props.wide ? 'center' : 'left',
           color: props.secondary

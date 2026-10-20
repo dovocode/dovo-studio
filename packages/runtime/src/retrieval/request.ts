@@ -26,6 +26,7 @@ export const retrievalHostSchema = mutableStruct({
   id: text,
   role: runtimeIconSchema,
   enabled: Schema.optional(Schema.Boolean),
+  pullCommunication: Schema.optional(Schema.Boolean),
 })
 export const retrievalResultSchema = mutableStruct({
   value: maxValue(Schema.String, 32 * 1024 * 1024),

@@ -1,7 +1,17 @@
-import { combinePullSections, matchingPullSection, pullRevision } from '@dovo/protocol'
+import {
+  combinePullSections,
+  matchingPullSection,
+  pullRevision,
+  retainNewerPullSnapshot,
+} from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
 import { Effect } from 'effect'
-import { startPolling, useWorkspace, useRepositorySources } from '@dovo/studio-core'
+import {
+  startPolling,
+  useWorkspace,
+  useRepositorySources,
+  type RepositorySource,
+} from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useDetailReader, verifySourceReader } from '../../connections/source-readers'
 import {
@@ -12,7 +22,14 @@ import {
   type PullDetail as Detail,
 } from '@dovo/protocol'
 
+type ReadTarget = {
+  origin?: RepositorySource
+  reader?: RepositorySource & { readerIdentity?: string }
+  destination?: string
+}
+
 function usePullSection(
+  { origin, reader, destination }: ReadTarget,
   repositoryId: string,
   number: number,
   connectionId: string | undefined,
@@ -20,22 +37,7 @@ function usePullSection(
   enabled: boolean,
   revision?: string,
 ) {
-  const {
-    requestEffect: request,
-    connected,
-    workspace,
-    readCache,
-    activeRuntimeId,
-  } = useWorkspace()
-  const sources = useRepositorySources()
-  const origin = sources.find(
-    (source) => source.runtimeId === activeRuntimeId && source.repository.id === repositoryId,
-  )
-  const { reader, destination } = useDetailReader(
-    origin,
-    sources,
-    JSON.stringify([repositoryId, number, connectionId]),
-  )
+  const { requestEffect: request, connected, workspace, readCache } = useWorkspace()
   const readConnected = reader?.connected ?? (!origin && connected)
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
   const cacheKey = JSON.stringify([
@@ -58,7 +60,7 @@ function usePullSection(
     repository?.forge,
     ...(connectionId ? ['connection', connectionId] : []),
   ])
-  const [state, setState] = useApplicationState({
+  const [state, setState, stateRef] = useApplicationState({
     scope: cacheKey,
     detail: null as Detail | null,
     error: '',
@@ -156,9 +158,15 @@ function usePullSection(
             ? { ...value, destination, pull: { ...value.pull, destination } }
             : value,
         ),
+        Effect.map((value) => retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value)),
         Effect.tap((value) =>
           Effect.sync(() => {
-            if (!stopped) setState((current) => ({ ...current, detail: value, error: '' }))
+            if (!stopped)
+              setState((current) => ({
+                ...current,
+                detail: value,
+                error: value.refreshError ?? '',
+              }))
           }),
         ),
         Effect.flatMap((value) =>
@@ -245,12 +253,32 @@ export function usePullDetail(
   connectionId?: string,
   options: { tab?: string; discussionInOverview?: boolean } = {},
 ) {
+  const { activeRuntimeId } = useWorkspace()
+  const sources = useRepositorySources()
+  const origin = sources.find(
+    (source) => source.runtimeId === activeRuntimeId && source.repository.id === repositoryId,
+  )
+  const selected = useDetailReader(
+    origin,
+    sources,
+    JSON.stringify([repositoryId, number, connectionId]),
+  )
+  const target = { origin, ...selected }
   const tab = options.tab ?? 'overview'
-  const overview = usePullSection(repositoryId, number, connectionId, 'overview', true)
+  const overview = usePullSection(target, repositoryId, number, connectionId, 'overview', true)
   const revision = overview.detail ? pullRevision(overview.detail) : undefined
   const available = !!overview.detail
-  const status = usePullSection(repositoryId, number, connectionId, 'status', available, revision)
+  const status = usePullSection(
+    target,
+    repositoryId,
+    number,
+    connectionId,
+    'status',
+    available,
+    revision,
+  )
   const discussion = usePullSection(
+    target,
     repositoryId,
     number,
     connectionId,
@@ -263,6 +291,7 @@ export function usePullDetail(
     revision,
   )
   const changes = usePullSection(
+    target,
     repositoryId,
     number,
     connectionId,
@@ -271,6 +300,7 @@ export function usePullDetail(
     revision,
   )
   const checks = usePullSection(
+    target,
     repositoryId,
     number,
     connectionId,
@@ -279,6 +309,7 @@ export function usePullDetail(
     revision,
   )
   const stack = usePullSection(
+    target,
     repositoryId,
     number,
     connectionId,

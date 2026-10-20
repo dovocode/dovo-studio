@@ -36,7 +36,7 @@ import IssuesView,{PipelinesView} from '${root}packages/extension-scm/src/work/w
 import {usePulls} from '${root}packages/extension-scm/src/pulls/list/use-pulls.ts';import {usePullDetail} from '${root}packages/extension-scm/src/pulls/detail/use-pull-detail.ts';
 window.reads=[];window.writes=[];window.discoveryFailures={};window.cacheReads=[];window.cacheWrites=[];window.accounts={a:'same-account',b:window.alternateAccount??'same-account'};window.destinations={a:'dest-a',b:'dest-b'};window.active='a';window.legacy=false;
 const saved=new Map();
-const source=id=>{const profile={id,name:id,connection:{address:'http://'+id,token:'paired-'+id}};const repository={id:'repo-'+id,name:'Project',path:'/repo',gitIdentity:'github.com/team/project',pullIdentity:'github.com/team/project',forge:{connectionId:'local-'+id,repository:'team/project'}};const cache={readEffect:(key,schema)=>Effect.sync(()=>{window.cacheReads.push({id,key});if(window.savedOriginIdentity&&id==='a'&&JSON.parse(key)[0]==='forge')return {value:decode(schema,{readerIdentity:'same-account',destination:'dest-a'}),cachedAt:'2026-10-14'};return saved.has(id+key)?{value:decode(schema,saved.get(id+key)),cachedAt:'2026-10-14'}:null}),writeEffect:(key,value)=>Effect.sync(()=>{window.cacheWrites.push({id,key,value});saved.set(id+key,value)}),removeEffect:key=>Effect.sync(()=>{saved.delete(id+key)})};return {key:JSON.stringify([id,repository.id]),scope:JSON.stringify([id,profile.connection,repository.forge]),runtimeId:id,runtimeName:id,profile,repository,connected:!(window.offlineOrigin&&id==='a'),readCache:cache,requestEffect:(path,input,schema)=>Effect.tryPromise({try:async()=>{if(path==='/api/scm/source/identity'){if(window.discoveryFailures[id])throw new RuntimeRequestError({kind:'response',status:503,message:'Discovery unavailable'});if(window.legacy)throw new RuntimeRequestError({kind:'response',status:404,message:'Old runtime'});return decode(schema,{readerIdentity:window.accounts[id],destination:window.destinations[id]})}window.reads.push({id,path,input});if(window.dispatchRace?.id===id){const field=window.dispatchRace.field;const expected=field==='destination'?input.expectedDestination:input.expectedReaderIdentity;const actual=(field==='destination'?window.destinations[id]:window.accounts[id])+'-changed';if(expected!==undefined&&expected!==actual)throw new RuntimeRequestError({kind:'response',status:409,message:'Source changed during dispatch'});}if(input.expectedDestination!==window.destinations[id])throw Error('Missing or wrong destination guard');if(input.expectedReaderIdentity&&input.expectedReaderIdentity!==window.accounts[id])throw new RuntimeRequestError({kind:'response',status:409,message:'Account changed'});if(input.jiraSourceId && (path==='/api/scm/work/options'||path==='/api/scm/work/issues/detail')){
+const source=id=>{const profile={id,name:id,connection:{address:'http://'+id,token:'paired-'+id}};const repository={id:'repo-'+id,name:'Project',path:'/repo',gitIdentity:'github.com/team/project',pullIdentity:'github.com/team/project',forge:{connectionId:'local-'+id,repository:'team/project'}};const cache={readEffect:(key,schema)=>Effect.sync(()=>{window.cacheReads.push({id,key});if(window.savedOriginIdentity&&id==='a'&&JSON.parse(key)[0]==='forge')return {value:decode(schema,{readerIdentity:'same-account',destination:'dest-a'}),cachedAt:'2026-10-14'};return saved.has(id+key)?{value:decode(schema,saved.get(id+key)),cachedAt:'2026-10-14'}:null}),writeEffect:(key,value)=>Effect.sync(()=>{window.cacheWrites.push({id,key,value});saved.set(id+key,value)}),removeEffect:key=>Effect.sync(()=>{saved.delete(id+key)})};return {serverId:window.persistentServers?'persistent-'+id:undefined,key:JSON.stringify([id,repository.id]),scope:JSON.stringify([id,profile.connection,repository.forge]),runtimeId:id,runtimeName:id,profile,repository,connected:!(window.offlineOrigin&&id==='a'),readCache:cache,requestEffect:(path,input,schema)=>Effect.tryPromise({try:async()=>{if(path==='/api/scm/source/identity'){window.identityCalls=(window.identityCalls??0)+1;if(window.discoveryFailures[id])throw new RuntimeRequestError({kind:'response',status:503,message:'Discovery unavailable'});if(window.legacy)throw new RuntimeRequestError({kind:'response',status:404,message:'Old runtime'});return decode(schema,{readerIdentity:window.accounts[id],destination:window.destinations[id]})}window.reads.push({id,path,input});if(window.dispatchRace?.id===id){const field=window.dispatchRace.field;const expected=field==='destination'?input.expectedDestination:input.expectedReaderIdentity;const actual=(field==='destination'?window.destinations[id]:window.accounts[id])+'-changed';if(expected!==undefined&&expected!==actual)throw new RuntimeRequestError({kind:'response',status:409,message:'Source changed during dispatch'});}if(input.expectedDestination!==window.destinations[id])throw Error('Missing or wrong destination guard');if(input.expectedReaderIdentity&&input.expectedReaderIdentity!==window.accounts[id])throw new RuntimeRequestError({kind:'response',status:409,message:'Account changed'});if(input.jiraSourceId && (path==='/api/scm/work/options'||path==='/api/scm/work/issues/detail')){
 const section=input.section??'issue-options';
 if(window.blockedJira?.includes(section))await new Promise(resolve=>(window.jiraReleases[section]??=[]).push(resolve));
 if(window.failedJira?.includes(section))throw Error(section+' unavailable');
@@ -48,7 +48,7 @@ if(path==='/api/scm/work/issues/list')return decode(schema,{items:[{id:input.cur
 if(path==='/api/scm/work/pipelines/list')return decode(schema,{items:[{id:input.cursor?'10':window.freshWorkRows?'9':'7',title:input.cursor?'Next run':window.freshWorkRows?'New run after handoff':'Listed run',url:'https://github.com/team/project/actions/runs/'+(input.cursor?'10':window.freshWorkRows?'9':'7'),ref:'main',sha:'same-sha',actor:'Dominic',status:'success',createdAt:'2026-10-14',updatedAt:'2026-10-14',destination:window.destinations[id]}],next:input.cursor?undefined:'page-2'});
 if(path==='/api/scm/work/issues/detail')return decode(schema,{destination:window.destinations[id],issue:{id:input.id,title:input.id==='9'?'New issue after handoff':'Kept issue',body:'Description',state:'open',url:'https://github.com/team/project/issues/'+input.id,author:'Dominic',assignees:[],labels:[],updatedAt:'2026-10-14',revision:'same-revision',destination:window.destinations[id]},comments:[{id:input.cursor?'second':'first',body:'Page',author:'Dominic',createdAt:'2026-10-14'}],next:input.cursor?undefined:'page-2'});
 if(path==='/api/scm/work/pipelines/detail')return decode(schema,{destination:window.destinations[id],run:{id:input.id,title:input.id==='9'?'New run after handoff':'Kept run',url:'https://github.com/team/project/actions/runs/'+input.id,ref:'main',sha:'same-sha',actor:'Dominic',status:'success',createdAt:'2026-10-14',updatedAt:'2026-10-14',destination:window.destinations[id]},jobs:[{id:input.cursor?'second':'first',name:'Job',status:'success',url:'https://github.com/team/project/actions/runs/7'}],next:input.cursor?undefined:'page-2'});
-if(path==='/api/scm/pulls/detail')return decode(schema,{destination:window.destinations[id],pull:{number:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],body:'Description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',additions:0,deletions:0,changedFiles:0,mergeable:true,reviewers:[],assignees:[],destination:window.destinations[id]},capabilities:{actions:['comment','merge'],mergeMethods:['squash'],reviewDecisions:[]},files:[],comments:[],checks:[],warnings:[]});return decode(schema,{pulls:[{number:input.page===2?8:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],viewerIsAuthor:true,destination:window.destinations[id]}],page:input.page,hasMore:input.page===1})},catch:e=>e})}};
+if(path==='/api/scm/pulls/overview'&&window.cacheResponses?.[id])return decode(schema,window.cacheResponses[id]);if(path==='/api/scm/pulls/detail')return decode(schema,{destination:window.destinations[id],pull:{number:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],body:'Description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',additions:0,deletions:0,changedFiles:0,mergeable:true,reviewers:[],assignees:[],destination:window.destinations[id]},capabilities:{actions:['comment','merge'],mergeMethods:['squash'],reviewDecisions:[]},files:[],comments:[],checks:[],warnings:[]});return decode(schema,{pulls:[{number:input.page===2?8:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],viewerIsAuthor:true,destination:window.destinations[id]}],page:input.page,hasMore:input.page===1})},catch:e=>e})}};
 window.sources=['a','b'].map(source).map(s=>({...s,name:s.repository.name,jira:window.jiraMode?{id:'tracker',site:'https://team.atlassian.net',project:'TEAM',name:'Team'}:undefined,input:window.jiraMode?{jiraSourceId:'tracker'}:{repositoryId:s.repository.id},request:(path,input,schema)=>Effect.runPromise(s.requestEffect(path,input,schema)),readCache:{...s.readCache,read:(key,schema)=>Effect.runPromise(s.readCache.readEffect(key,schema)),write:(key,value)=>Effect.runPromise(s.readCache.writeEffect(key,value)),remove:key=>Effect.runPromise(s.readCache.removeEffect(key))}}));window.store={activeRuntimeId:'a',runtimes:[],workspace:{repositories:[window.sources[0].repository],jiraSources:window.sources[0].jira?[window.sources[0].jira]:[],tasks:[]},runtimeRegistry:{activeId:'a'},connected:true,requestEffect:window.sources[0].requestEffect,readCache:window.sources[0].readCache};
 function View(){const [filter,setFilter]=useState(window.filter??'');window.setFilter=value=>{window.filter=value;setFilter(value)};const result=usePulls('open',filter);window.result=result;return <pre>{JSON.stringify(result.pages.map(p=>({owner:p.source.runtimeId,error:p.error,cached:p.stale,pulls:p.pulls})))}</pre>}
 function Detail(){const result=usePullDetail('repo-a',7);window.detailResult=result;return <pre>{JSON.stringify(result.detail)}</pre>}
@@ -85,6 +85,78 @@ const app=createRoot(document.getElementById('app'));window.render=remount=>app.
 })
 const browser = await chromium.launch()
 try {
+  // A returning gateway's old cache cannot replace newer results from the same PR owner.
+  const continuity = await browser.newPage()
+  await continuity.setContent('<div id="app"></div>')
+  await continuity.evaluate(() => {
+    window.persistentServers = true
+  })
+  await continuity.addScriptTag({ content: built.outputFiles[0].text })
+  await continuity.waitForFunction(
+    () => window.result?.pages[0]?.pulls.length && !window.result.busy,
+  )
+  const preferred = await continuity.evaluate(() => window.result.pages[0].reader.runtimeId)
+  await continuity.evaluate((preferred) => {
+    const pull = window.result.pages[0].pulls[0]
+    window.cacheResponses = Object.fromEntries(
+      ['a', 'b'].map((id) => [
+        id,
+        {
+          pulls: [{ ...pull, number: id === preferred ? 608 : 614 }],
+          page: 1,
+          hasMore: false,
+          stale: id === preferred,
+          cachedAt: id === preferred ? '2026-10-19T08:39:00Z' : '2026-10-20T11:45:00Z',
+        },
+      ]),
+    )
+    window.sources = window.sources.map((source) => ({
+      ...source,
+      connected: source.runtimeId !== preferred,
+    }))
+    window.render(false)
+  }, preferred)
+  await continuity.waitForFunction(
+    () => window.result?.pages[0]?.pulls[0]?.number === 614 && !window.result.busy,
+  )
+  await continuity.evaluate(() => {
+    window.sources = window.sources.map((source) => ({ ...source, connected: true }))
+    window.render(false)
+  })
+  await continuity.waitForFunction(
+    (preferred) => window.result?.pages[0]?.reader.runtimeId === preferred && !window.result.busy,
+    preferred,
+  )
+  assert.equal(await continuity.evaluate(() => window.result.pages[0].pulls[0].number), 614)
+  assert.equal(
+    await continuity.evaluate(() => window.result.pages[0].cachedAt),
+    '2026-10-20T11:45:00Z',
+  )
+  assert.match(await continuity.evaluate(() => window.result.pages[0].error), /newer saved PR data/)
+  await continuity.close()
+
+  // All six detail sections share discovery; hidden tabs must not start their own polls.
+  const polling = await browser.newPage()
+  await polling.clock.install()
+  await polling.setContent('<div id="app"></div>')
+  await polling.evaluate(() => {
+    window.mode = 'detail'
+  })
+  await polling.addScriptTag({ content: built.outputFiles[0].text })
+  await polling.waitForFunction(() => window.detailResult?.detail && !window.detailResult.busy)
+  const initialDiscovery = await polling.evaluate(() => window.identityCalls)
+  assert.ok(initialDiscovery <= 7, `Expected shared detail discovery, received ${initialDiscovery}`)
+  await polling.clock.runFor(30001)
+  const calls = await polling.evaluate(() => ({
+    identity: window.identityCalls,
+    detail: window.reads.filter((read) => read.path === '/api/scm/pulls/detail').length,
+  }))
+  assert.ok(
+    calls.identity - calls.detail <= 6,
+    'Only one two-computer discovery loop may run per detail',
+  )
+  await polling.close()
+
   const check = async (scenario) => {
     const page = await browser.newPage()
     page.setDefaultTimeout(8000)

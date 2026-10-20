@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import {
   useSettingsTarget,
   type SettingsSection,
@@ -6,7 +7,18 @@ import {
 } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { projectDisplayName, settingsScopeLabels } from '@dovo/protocol'
-import { useLeftSidebar, SidebarHeader, ChoicePicker, Input } from '@dovo/studio-ui'
+import {
+  useLeftSidebar,
+  SidebarHeader,
+  Input,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@dovo/studio-ui'
 import {
   Archive,
   Brain,
@@ -15,6 +27,7 @@ import {
   Bot,
   ChartNoAxesCombined,
   ChevronRight,
+  ChevronDown,
   Command,
   GitBranch,
   GitPullRequest,
@@ -24,6 +37,8 @@ import {
   Layers,
   MessagesSquare,
   Download,
+  Globe,
+  Mic,
   Monitor,
   MonitorSmartphone,
   Palette,
@@ -37,9 +52,11 @@ import {
 
 const icons: Record<string, typeof Search> = {
   general: Settings2,
+  'task-list-settings': ListTodo,
+  'browser-settings': Globe,
   'conversation-settings': MessagesSquare,
   'updates-settings': Download,
-  'text-generation': MessagesSquare,
+  'text-generation': Mic,
   notifications: Bell,
   appearance: Palette,
   diffs: GitBranch,
@@ -56,6 +73,9 @@ const icons: Record<string, typeof Search> = {
   memory: Brain,
   'artifact-settings': Shapes,
   'computer-use': Monitor,
+  'remote-desktop': Monitor,
+  'device-previews': Smartphone,
+  'studio-tools-settings': Wrench,
   runtime: MonitorSmartphone,
   'running-tasks': ListTodo,
   activity: Command,
@@ -64,21 +84,23 @@ const icons: Record<string, typeof Search> = {
 
 const headings: readonly [SettingsSection | 'more', string][] = [
   ['app', 'This app'],
-  ['agents', 'Agents'],
+  ['agents', 'Agents & tools'],
   ['coding', 'Tasks & projects'],
   ['computers', 'Computers'],
   ['archived', 'History'],
   ['more', 'More'],
 ]
 
-/** Where a page saves, shown beside its name and explained in the legend below the list. */
+/** Where a page saves. Mixed pages explain each group in their content. */
 const storage: Record<SettingsStorage, { icon: typeof Search; label: string }> = {
-  device: { icon: Smartphone, label: 'Saved on this device' },
-  computer: { icon: Monitor, label: 'Saved per computer' },
-  inherited: { icon: Layers, label: 'Inherits across settings levels' },
+  device: { icon: Smartphone, label: 'This device' },
+  computer: { icon: Monitor, label: 'Per computer' },
+  inherited: { icon: Layers, label: 'Computer & project' },
 }
 
-/** Grouped settings navigation with search, organized like Codex and T3 Code. */
+const mixedPages = new Set(['browser-settings', 'pull-request-monitoring-settings'])
+
+/** Grouped desktop settings navigation, with searchable categories and storage labels. */
 export function SettingsNav({
   views,
   activeId,
@@ -89,14 +111,26 @@ export function SettingsNav({
   onSelect: (viewId: string) => void
 }) {
   const [query, setQuery] = useApplicationState('')
+  const activeSection = views.find((view) => view.id === activeId)?.settingsSection ?? 'more'
+  const [expanded, setExpanded] = useApplicationState<string[]>([activeSection])
+  useEffect(() => {
+    setExpanded((current) =>
+      current.includes(activeSection) ? current : [...current, activeSection],
+    )
+  }, [activeId, activeSection, setExpanded])
   const { target, scope, source, repository } = useSettingsTarget()
   const select = (id: string) => {
     if (id !== activeId) onSelect(id)
   }
   const needle = query.trim().toLowerCase()
-  const matches = views.filter((view) => {
+  const sectionFor = (view: StudioView) => view.settingsSection ?? 'more'
+  const ordered = headings.flatMap(([section]) =>
+    views.filter((view) => sectionFor(view) === section).sort((a, b) => a.order - b.order),
+  )
+  const matches = ordered.filter((view) => {
     if (!needle) return true
-    const words = `${view.title} ${view.keywords ?? ''}`.toLowerCase().split(/\s+/)
+    const category = headings.find(([section]) => section === sectionFor(view))?.[1] ?? ''
+    const words = `${view.title} ${view.keywords ?? ''} ${category}`.toLowerCase().split(/\s+/)
     return (
       needle.split(/\s+/).every((term) => words.some((word) => word.startsWith(term))) ||
       view.title.toLowerCase().includes(needle)
@@ -107,30 +141,51 @@ export function SettingsNav({
     target.projectId ? 'Unavailable project' : 'All projects',
   )
   const computer = target.environmentId ? (source?.name ?? 'Unavailable computer') : 'All computers'
+  const activeView = views.find((view) => view.id === activeId)
+  const inherited = activeView?.settingsScope === 'inherited'
+  const mixed = mixedPages.has(activeId)
+  const scopeLabel =
+    activeId === 'usage'
+      ? 'Across computers'
+      : mixed
+        ? 'This device + computer'
+        : activeView?.settingsScope
+          ? storage[activeView.settingsScope].label
+          : 'History on paired computers'
   const [sidebarVisible] = useLeftSidebar()
   return (
     <nav
       style={sidebarVisible ? undefined : { display: 'none' }}
       aria-label="Settings sections"
-      className="studio-side-panel flex min-h-0 shrink-0 flex-col border-b bg-sidebar/60 px-4 py-3 md:w-52 md:gap-5 md:overflow-hidden md:border-b-0 md:border-r md:px-3 md:py-5 lg:w-64"
+      className="studio-side-panel flex min-h-0 shrink-0 flex-col border-b bg-sidebar/60 px-4 py-3 md:w-52 md:gap-3 md:overflow-hidden md:border-b-0 md:border-r md:px-3 md:py-4 lg:w-64"
     >
       <SidebarHeader />
       <div className="md:hidden">
-        <ChoicePicker aria-label="Settings section" value={activeId} onValueChange={select}>
-          {headings.flatMap(([section]) =>
-            views
-              .filter((view) => (view.settingsSection ?? 'more') === section)
-              .sort((a, b) => a.order - b.order)
-              .map((view) => (
-                <option key={view.id} value={view.id}>
-                  {view.title}
-                </option>
-              )),
-          )}
-        </ChoicePicker>
+        <Select value={activeId} onValueChange={select}>
+          <SelectTrigger aria-label="Settings section" className="h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {headings.map(([section, label]) => {
+              const items = ordered.filter((view) => sectionFor(view) === section)
+              if (!items.length) return null
+              return (
+                <SelectGroup key={section}>
+                  <SelectLabel className="text-xs text-muted-foreground">{label}</SelectLabel>
+                  {items.map((view) => (
+                    <SelectItem key={view.id} value={view.id}>
+                      {view.title}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )
+            })}
+          </SelectContent>
+        </Select>
+        <p className="mt-2 text-xs text-muted-foreground">{scopeLabel}</p>
       </div>
       <div className="hidden shrink-0 px-1 md:block">
-        <h1 className="mb-3 px-1 text-base font-semibold tracking-tight">Settings</h1>
+        <h1 className="mb-2 px-1 text-base font-semibold tracking-tight">Settings</h1>
         {/* Buttons and inputs inherit their font size (see studio-ui styles). */}
         <div className="relative text-[0.8125rem]">
           <Search
@@ -164,59 +219,104 @@ export function SettingsNav({
         role="region"
         aria-label="Settings navigation"
         tabIndex={0}
-        className="hidden min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring md:flex"
+        className="hidden min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring md:flex"
       >
         {headings.map(([section, label]) => {
-          const items = matches
-            .filter((view) => (view.settingsSection ?? 'more') === section)
-            .sort((a, b) => a.order - b.order)
+          const items = matches.filter((view) => sectionFor(view) === section)
           if (!items.length) return null
+          const open = !!needle || expanded.includes(section)
           return (
-            <div key={section} className="hidden space-y-1 text-sm md:block">
-              <h2 className="px-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
-                {label}
+            <div key={section} className="hidden text-sm md:block">
+              <h2>
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-controls={`settings-category-${section}`}
+                  onClick={() => {
+                    if (needle) {
+                      setQuery('')
+                      setExpanded((current) =>
+                        current.includes(section) ? current : [...current, section],
+                      )
+                    } else {
+                      setExpanded((current) =>
+                        current.includes(section)
+                          ? current.filter((id) => id !== section)
+                          : [...current, section],
+                      )
+                    }
+                  }}
+                  className="flex min-h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] font-semibold text-foreground/90 hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {open ? (
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="min-w-0 flex-1 break-words">{label}</span>
+                </button>
               </h2>
-              {items.map((view) => {
-                const Icon = icons[view.id] ?? Settings2
-                const active = activeId === view.id
-                const kind = view.settingsScope && view.settingsScope !== 'device'
-                const Storage = kind ? storage[view.settingsScope ?? 'device'].icon : null
-                return (
-                  <button
-                    key={view.id}
-                    type="button"
-                    aria-current={active ? 'page' : undefined}
-                    onClick={() => select(view.id)}
-                    className={`group flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[0.8125rem] transition-colors ${
-                      active
-                        ? 'bg-accent/70 font-medium text-foreground'
-                        : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-                    }`}
-                  >
-                    <Icon
-                      size={16}
-                      strokeWidth={1.7}
-                      aria-hidden="true"
-                      className={active ? 'text-primary' : 'text-muted-foreground/70'}
-                    />
-                    <span className="min-w-0 flex-1 py-1.5 leading-snug">{view.title}</span>
-                    {Storage && view.settingsScope && (
-                      <Storage
-                        size={12}
-                        aria-label={storage[view.settingsScope].label}
-                        className={`shrink-0 ${view.settingsScope === 'inherited' ? 'text-primary/70' : 'text-muted-foreground/60'}`}
-                      />
-                    )}
-                    {active && (
-                      <ChevronRight
-                        size={13}
+              <div
+                id={`settings-category-${section}`}
+                hidden={!open}
+                className="ml-3 space-y-0.5 border-l border-border/70 pl-1"
+              >
+                {items.map((view) => {
+                  const Icon = icons[view.id] ?? Settings2
+                  const active = activeId === view.id
+                  const Storage = mixedPages.has(view.id)
+                    ? MonitorSmartphone
+                    : view.settingsScope
+                      ? storage[view.settingsScope].icon
+                      : null
+                  const label =
+                    view.id === 'usage'
+                      ? 'Across computers'
+                      : mixedPages.has(view.id)
+                        ? 'This device + computer'
+                        : view.settingsScope
+                          ? storage[view.settingsScope].label
+                          : null
+                  return (
+                    <button
+                      key={view.id}
+                      type="button"
+                      aria-current={active ? 'page' : undefined}
+                      aria-label={view.title}
+                      title={label ? `${view.title} · ${label}` : view.title}
+                      onClick={() => select(view.id)}
+                      className={`group flex min-h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] transition-colors ${
+                        active
+                          ? 'bg-accent/70 font-medium text-foreground'
+                          : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                      }`}
+                    >
+                      <Icon
+                        size={16}
+                        strokeWidth={1.7}
                         aria-hidden="true"
-                        className="text-muted-foreground"
+                        className={`shrink-0 ${active ? 'text-primary' : 'text-muted-foreground/70'}`}
                       />
-                    )}
-                  </button>
-                )
-              })}
+                      <span className="min-w-0 flex-1 py-1 leading-snug">
+                        <span className="block break-words">{view.title}</span>
+                        {active && Storage && label && (
+                          <span className="mt-0.5 flex min-w-0 items-center gap-1 break-words text-[11px] font-normal text-muted-foreground">
+                            <Storage size={10} aria-hidden="true" className="shrink-0" />
+                            {label}
+                          </span>
+                        )}
+                      </span>
+                      {active && (
+                        <ChevronRight
+                          size={13}
+                          aria-hidden="true"
+                          className="text-muted-foreground"
+                        />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           )
         })}
@@ -225,23 +325,33 @@ export function SettingsNav({
             No settings match “{query}”.
           </p>
         )}
-        <div
-          aria-label="Inherited settings target"
-          className="mt-auto hidden space-y-2 border-t px-2 pt-4 text-[11px] leading-relaxed text-muted-foreground md:block"
-        >
-          <p className="flex items-center gap-1.5">
-            <Layers className="size-3 text-primary/70" aria-hidden="true" />
-            Settings scope · {settingsScopeLabels[scope]}
-          </p>
+      </div>
+      <aside
+        aria-label={inherited ? 'Inherited settings target' : 'Settings storage'}
+        className="hidden shrink-0 space-y-2 border-t px-2 pt-3 text-[11px] leading-relaxed text-muted-foreground md:block"
+      >
+        <p className="font-medium">
+          {inherited ? `Current scope: ${settingsScopeLabels[scope]}` : scopeLabel}
+        </p>
+        {inherited && (
           <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
             {project} · {computer}
           </p>
-          <p>
-            Change the scope on pages with layered settings. Each page shows where changes are
-            saved.
-          </p>
-        </div>
-      </div>
+        )}
+        <p>
+          {activeId === 'usage'
+            ? 'Usage and account limits come from paired computers. Choose a computer on this page to filter them.'
+            : !activeView?.settingsScope
+              ? 'Browse archived tasks from paired computers and restore them when needed.'
+              : inherited
+                ? 'Choose where defaults apply at the top of the page.'
+                : mixed
+                  ? 'App preferences stay on this device. Computer settings use the computer selected on this page.'
+                  : activeView?.settingsScope === 'device'
+                    ? 'Saved automatically on this device.'
+                    : 'Each page shows the computer it uses. Changes are shared with its paired devices.'}
+        </p>
+      </aside>
     </nav>
   )
 }

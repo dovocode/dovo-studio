@@ -65,7 +65,7 @@ const built = await build({
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true}];
           if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:'refs/heads/main'}]};
           if(path==='/api/tasks/title')return {title:'Unify the composers'};
-          if(path==='/api/tasks/message'){
+          if(path==='/api/tasks/message'||path==='/api/tasks/steer'){
             setWorkspace(w=>({...w,tasks:w.tasks.map(t=>t.id===input.id?{...t,status:'running',messages:[{id:input.messageId,role:'user',text:input.text,createdAt:new Date().toISOString()}]}:t)}));
             return {ok:true};
           }
@@ -277,6 +277,75 @@ try {
   await page.getByRole('menuitem', { name: 'Queue follow-up' }).waitFor()
   assert.equal(await page.getByRole('menuitem', { name: 'Steer agent' }).count(), 0)
   await page.keyboard.press('Escape')
+  // Alt previews and submits the alternative for either saved default, without
+  // changing the preference or inverting Alt+Enter a second time.
+  const followUpInput = page.getByRole('textbox', { name: 'Message task', exact: true })
+  for (const defaultMode of ['queue', 'steer']) {
+    await page.evaluate((mode) => {
+      window.setFollowUp(mode)
+      window.setTask({ status: 'running', activeRunId: 'alt-follow-up-run' })
+    }, defaultMode)
+    await followUpInput.fill('Keep this draft while choosing an action')
+    const defaultLabel = defaultMode === 'steer' ? 'Steer agent' : 'Queue follow-up'
+    const alternateLabel = defaultMode === 'steer' ? 'Queue follow-up' : 'Steer agent'
+    await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
+    await page.keyboard.down('Alt')
+    const alternateButton = page.getByRole('button', { name: alternateLabel, exact: true })
+    await alternateButton.waitFor()
+    assert.match(await alternateButton.getAttribute('title'), /Alt\+Enter/)
+    assert.equal(await followUpInput.inputValue(), 'Keep this draft while choosing an action')
+    await page.keyboard.up('Alt')
+    await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
+    // Losing focus without receiving keyup must not leave the alternate action stuck.
+    await page.keyboard.down('Alt')
+    await alternateButton.waitFor()
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+    await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
+    await page.keyboard.up('Alt')
+    // Ctrl+Alt (including AltGr) retains the default action.
+    await page.keyboard.down('Control')
+    await page.keyboard.down('Alt')
+    await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
+    await page.keyboard.up('Alt')
+    await page.keyboard.up('Control')
+    for (const activation of ['click', 'enter']) {
+      await followUpInput.fill(`Alternate ${defaultMode} via ${activation}`)
+      const before = await page.evaluate(() => window.requests.length)
+      await page.keyboard.down('Alt')
+      await alternateButton.waitFor()
+      if (activation === 'click') await alternateButton.click()
+      else await followUpInput.press('Enter')
+      await page.keyboard.up('Alt')
+      await page.waitForFunction(
+        (before) =>
+          window.requests
+            .slice(before)
+            .some((request) => /\/tasks\/(message|steer)$/.test(request.path)),
+        before,
+      )
+      const sent = await page.evaluate(
+        (before) =>
+          window.requests
+            .slice(before)
+            .filter((request) => /\/tasks\/(message|steer)$/.test(request.path)),
+        before,
+      )
+      assert.equal(sent.length, 1, 'One submission per action')
+      assert.equal(
+        sent[0].path,
+        defaultMode === 'steer' ? '/api/tasks/message' : '/api/tasks/steer',
+      )
+      assert.equal(sent[0].input.runId, defaultMode === 'queue' ? 'alt-follow-up-run' : undefined)
+      await page.waitForFunction(() => document.querySelector('textarea')?.value === '')
+    }
+    await followUpInput.fill('Default restored')
+    await page.getByRole('button', { name: defaultLabel, exact: true }).waitFor()
+    await page.keyboard.down('Alt')
+    await alternateButton.waitFor()
+    await page.evaluate(() => window.setTask({ status: 'review', activeRunId: undefined }))
+    await page.getByRole('button', { name: 'Send to agent', exact: true }).waitFor()
+    await page.keyboard.up('Alt')
+  }
   await page.evaluate(() => {
     window.setFollowUp('queue')
     window.setTask({ queue: [], contextUsage: undefined })

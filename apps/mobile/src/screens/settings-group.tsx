@@ -16,32 +16,35 @@ const GroupContext = createContext(false)
 
 export function SettingsGroup({
   title,
+  description,
   footer,
   children,
 }: {
   title?: string
+  description?: string
   footer?: string
   children: ReactNode
 }) {
   const { colors, styles } = useTheme()
 
   return (
-    <View style={{ gap: 10 }}>
+    <View style={{ gap: 6 }}>
       {title && (
         <Text
           accessibilityRole="header"
           style={[
             styles.muted,
-            { paddingHorizontal: 16, fontSize: 15, lineHeight: 21, fontWeight: '600' },
+            { paddingHorizontal: 12, fontSize: 13, lineHeight: 18, fontWeight: '600' },
           ]}
         >
           {title}
         </Text>
       )}
+      {description && <Text style={[styles.muted, { paddingHorizontal: 12 }]}>{description}</Text>}
       <View
         style={{
           backgroundColor: colors.surface,
-          borderRadius: 24,
+          borderRadius: 16,
           overflow: 'hidden',
         }}
       >
@@ -51,8 +54,8 @@ export function SettingsGroup({
               {index > 0 && (
                 <View
                   style={{
-                    marginLeft: isValidElement(child) && child.type === SettingsRow ? 54 : 16,
-                    marginRight: 16,
+                    marginLeft: isValidElement(child) && child.type === SettingsRow ? 46 : 12,
+                    marginRight: 12,
                     height: StyleSheet.hairlineWidth,
                     backgroundColor: colors.border,
                   }}
@@ -63,7 +66,7 @@ export function SettingsGroup({
           ))}
         </GroupContext.Provider>
       </View>
-      {footer && <Text style={[styles.muted, { paddingHorizontal: 16 }]}>{footer}</Text>}
+      {footer && <Text style={[styles.muted, { paddingHorizontal: 12 }]}>{footer}</Text>}
     </View>
   )
 }
@@ -112,9 +115,9 @@ export function SettingsRow({
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
-        paddingLeft: 16,
-        gap: 14,
-        minHeight: subtitle ? 70 : 56,
+        paddingLeft: 12,
+        gap: 10,
+        minHeight: subtitle ? 60 : 48,
         opacity: disabled ? 0.45 : 1,
         backgroundColor: pressed ? colors.selection : 'transparent',
       })}
@@ -127,7 +130,7 @@ export function SettingsRow({
           justifyContent: 'center',
         }}
       >
-        <Icon name={icon} size={22} color={tint ?? colors.text} />
+        <Icon name={icon} size={20} color={tint ?? colors.text} />
       </View>
       <View
         style={{
@@ -136,9 +139,9 @@ export function SettingsRow({
           flexDirection: 'row',
           alignItems: 'center',
           gap: 8,
-          minHeight: subtitle ? 70 : 56,
-          paddingVertical: 12,
-          marginRight: 16,
+          minHeight: subtitle ? 60 : 48,
+          paddingVertical: 8,
+          marginRight: 12,
           borderBottomWidth: last || grouped ? 0 : StyleSheet.hairlineWidth,
           borderColor: colors.border,
         }}
@@ -154,7 +157,9 @@ export function SettingsRow({
         >
           <View style={{ flex: stacked ? undefined : 1, minWidth: 0, gap: 2 }}>
             <Text style={styles.text}>{title}</Text>
-            {subtitle && <Text style={styles.muted}>{subtitle}</Text>}
+            {subtitle && (
+              <Text style={[styles.muted, { fontSize: 13, lineHeight: 18 }]}>{subtitle}</Text>
+            )}
           </View>
           {value && (
             <Text
@@ -205,9 +210,9 @@ export function SettingsSwitchRow({
         flexDirection: fontScale >= 1.5 ? 'column' : 'row',
         alignItems: fontScale >= 1.5 ? 'stretch' : 'center',
         gap: 12,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        minHeight: 56,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        minHeight: 48,
       }}
     >
       {!first && !grouped && (

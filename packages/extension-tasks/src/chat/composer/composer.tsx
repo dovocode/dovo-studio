@@ -260,8 +260,34 @@ export function Composer({
     ? permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true)
     : undefined
   // Settings → General → Follow-ups while a task runs: what Enter does mid-turn.
-  const steerFirst = useAppPreferences().followUp === 'steer' && task.status === 'running'
-  const other = steerFirst ? 'queue' : 'steer'
+  const defaultSteerFirst = useAppPreferences().followUp === 'steer' && task.status === 'running'
+  const other = defaultSteerFirst ? 'queue' : 'steer'
+  const [altPressed, setAltPressed] = useState(false)
+  useEffect(() => {
+    if (task.status !== 'running') {
+      setAltPressed(false)
+      return
+    }
+    const update = (event: KeyboardEvent) =>
+      setAltPressed(event.altKey && !event.ctrlKey && !event.metaKey)
+    const reset = () => setAltPressed(false)
+    const visibility = () => {
+      if (document.hidden) reset()
+    }
+    window.addEventListener('keydown', update, true)
+    window.addEventListener('keyup', update, true)
+    window.addEventListener('blur', reset)
+    document.addEventListener('visibilitychange', visibility)
+    return () => {
+      window.removeEventListener('keydown', update, true)
+      window.removeEventListener('keyup', update, true)
+      window.removeEventListener('blur', reset)
+      document.removeEventListener('visibilitychange', visibility)
+    }
+  }, [task.status])
+  const alternative = altPressed && task.status === 'running'
+  const steerFirst = alternative ? !defaultSteerFirst : defaultSteerFirst
+  const submitShortcut = alternative ? 'Alt+Enter' : 'Enter'
   const stop = async () => {
     const runId = task.activeRunId
     // Settings → General → Confirm before stopping a running task.
@@ -534,9 +560,9 @@ export function Composer({
                   }
                   title={
                     steerFirst
-                      ? 'Steer agent (Enter)'
+                      ? `Steer agent (${submitShortcut})`
                       : task.status === 'running'
-                        ? 'Queue follow-up (Enter)'
+                        ? `Queue follow-up (${submitShortcut})`
                         : 'Send message (Enter)'
                   }
                   aria-label={
@@ -787,7 +813,7 @@ export function Composer({
         )}
         <p className="mx-auto mt-1 hidden max-w-[var(--chat-max)] text-right text-[0.625rem] text-muted-foreground/70">
           {task.status === 'running'
-            ? steerFirst
+            ? defaultSteerFirst
               ? 'Enter to steer · Alt+Enter to queue'
               : 'Enter to queue · Alt+Enter to steer'
             : 'Enter to send'}{' '}

@@ -100,34 +100,31 @@ export function TaskLauncherControls({
   const availability = useHarnessAvailability(repository.id, agents)
   return (
     <View style={{ gap: 12 }}>
-      {(advanced ||
-        selection.modelSelection === 'auto' ||
-        selection.modelSelection === 'smart') && (
-        <Choice
-          label="Model selection"
-          value={selection.modelSelection ?? 'fixed'}
-          disabled={disabled}
-          items={[
-            { id: 'fixed', name: 'Specific harness/model' },
-            { id: 'inherit', name: 'Inherit' },
-            ...(snapshot.smartModelSelectionEnabled === true
-              ? [
-                  { id: 'auto', name: 'Tune', icon: 'tune' as const },
-                  { id: 'smart', name: 'Maestro', icon: 'maestro' as const },
-                ]
-              : []),
-          ]}
-          onChange={(mode) => {
-            if (!disabled && mode === 'fixed') {
-              onChange({ ...selection, modelSelection: undefined })
-              return
-            }
-            if (!disabled && (mode === 'inherit' || mode === 'auto' || mode === 'smart'))
-              onChange({ ...selection, modelSelection: mode, agentId: undefined })
-          }}
-        />
-      )}
-      {!advanced && (
+      {/* The selection mode decides whether the picker below applies, so it leads. */}
+      <Choice
+        label="Model selection"
+        value={selection.modelSelection ?? 'fixed'}
+        disabled={disabled}
+        items={[
+          { id: 'fixed', name: 'Specific harness/model' },
+          { id: 'inherit', name: 'Inherit' },
+          ...(snapshot.smartModelSelectionEnabled === true
+            ? [
+                { id: 'auto', name: 'Tune', icon: 'tune' as const },
+                { id: 'smart', name: 'Maestro', icon: 'maestro' as const },
+              ]
+            : []),
+        ]}
+        onChange={(mode) => {
+          if (!disabled && mode === 'fixed') {
+            onChange({ ...selection, modelSelection: undefined })
+            return
+          }
+          if (!disabled && (mode === 'inherit' || mode === 'auto' || mode === 'smart'))
+            onChange({ ...selection, modelSelection: mode, agentId: undefined })
+        }}
+      />
+      {!advanced && selection.modelSelection !== 'auto' && selection.modelSelection !== 'smart' && (
         <>
           <HarnessModelPicker
             task={task}

@@ -130,97 +130,96 @@ export function HarnessSettings({
   }
   const content = (
     <>
-      {(advanced || task.modelSelection === 'auto' || task.modelSelection === 'smart') &&
-        canChangeTaskCheckout(task) &&
-        !task.delegation && (
-          <Choice
-            row
-            label="Model selection"
-            value={task.modelSelection ?? 'fixed'}
-            disabled={controlsDisabled}
-            items={[
-              { id: 'fixed', name: 'Specific harness/model' },
-              { id: 'inherit', name: 'Inherit' },
-              ...(snapshot?.smartModelSelectionEnabled === true
-                ? [
-                    { id: 'auto', name: 'Tune', icon: 'tune' as const },
-                    { id: 'smart', name: 'Maestro', icon: 'maestro' as const },
-                  ]
-                : []),
-            ]}
-            onChange={(value) => {
-              if (value === 'fixed') {
-                act(() =>
-                  mobileWorkflow(function* () {
-                    if (!profile) throw new Error('This computer is no longer saved.')
-                    yield* previewTaskEffect(
-                      profile,
-                      task.id,
-                      { modelSelection: undefined },
-                      callEffect(
-                        '/api/workspace',
-                        {
-                          collection: 'tasks',
-                          id: task.id,
-                          changes: {
-                            modelSelection: { before: task.modelSelection ?? null, after: null },
-                          },
-                        },
-                        workspacePatchResultSchema,
-                        'PATCH',
-                      ),
-                    )
-                    onClose()
-                  }),
-                )
-                return
-              }
-              if (value !== 'inherit' && value !== 'auto' && value !== 'smart') return
+      {/* The selection mode decides whether the picker below applies, so it leads. */}
+      {canChangeTaskCheckout(task) && !task.delegation && (
+        <Choice
+          row
+          label="Model selection"
+          value={task.modelSelection ?? 'fixed'}
+          disabled={controlsDisabled}
+          items={[
+            { id: 'fixed', name: 'Specific harness/model' },
+            { id: 'inherit', name: 'Inherit' },
+            ...(snapshot?.smartModelSelectionEnabled === true
+              ? [
+                  { id: 'auto', name: 'Tune', icon: 'tune' as const },
+                  { id: 'smart', name: 'Maestro', icon: 'maestro' as const },
+                ]
+              : []),
+          ]}
+          onChange={(value) => {
+            if (value === 'fixed') {
               act(() =>
                 mobileWorkflow(function* () {
                   if (!profile) throw new Error('This computer is no longer saved.')
-                  const next = changeTaskModelSelection(
-                    task,
-                    value,
-                    snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
-                    snapshot?.defaults,
-                  )
                   yield* previewTaskEffect(
                     profile,
                     task.id,
-                    {
-                      modelSelection: value,
-                      harness: next.harness,
-                      agentId: '',
-                      agentOverrides: undefined,
-                      harnessCustomized: next.harnessCustomized,
-                    },
+                    { modelSelection: undefined },
                     callEffect(
                       '/api/workspace',
                       {
                         collection: 'tasks',
                         id: task.id,
                         changes: {
-                          modelSelection: { before: task.modelSelection ?? null, after: value },
-                          harness: { before: task.harness ?? null, after: next.harness },
-                          agentId: { before: task.agentId, after: '' },
-                          agentOverrides: { before: task.agentOverrides ?? null, after: null },
-                          harnessCustomized: {
-                            before: task.harnessCustomized ?? null,
-                            after: next.harnessCustomized ?? null,
-                          },
+                          modelSelection: { before: task.modelSelection ?? null, after: null },
                         },
                       },
                       workspacePatchResultSchema,
                       'PATCH',
                     ),
                   )
-                  if (value === 'inherit') onClose()
+                  onClose()
                 }),
               )
-            }}
-          />
-        )}
+              return
+            }
+            if (value !== 'inherit' && value !== 'auto' && value !== 'smart') return
+            act(() =>
+              mobileWorkflow(function* () {
+                if (!profile) throw new Error('This computer is no longer saved.')
+                const next = changeTaskModelSelection(
+                  task,
+                  value,
+                  snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+                  snapshot?.defaults,
+                )
+                yield* previewTaskEffect(
+                  profile,
+                  task.id,
+                  {
+                    modelSelection: value,
+                    harness: next.harness,
+                    agentId: '',
+                    agentOverrides: undefined,
+                    harnessCustomized: next.harnessCustomized,
+                  },
+                  callEffect(
+                    '/api/workspace',
+                    {
+                      collection: 'tasks',
+                      id: task.id,
+                      changes: {
+                        modelSelection: { before: task.modelSelection ?? null, after: value },
+                        harness: { before: task.harness ?? null, after: next.harness },
+                        agentId: { before: task.agentId, after: '' },
+                        agentOverrides: { before: task.agentOverrides ?? null, after: null },
+                        harnessCustomized: {
+                          before: task.harnessCustomized ?? null,
+                          after: next.harnessCustomized ?? null,
+                        },
+                      },
+                    },
+                    workspacePatchResultSchema,
+                    'PATCH',
+                  ),
+                )
+                if (value === 'inherit') onClose()
+              }),
+            )
+          }}
+        />
+      )}
       {(task.modelSelection === 'auto' || task.modelSelection === 'smart') && (
         <Choice
           row

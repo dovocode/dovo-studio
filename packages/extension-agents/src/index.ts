@@ -8,7 +8,7 @@ export const agentsExtension = defineStudioExtension(
       settingsScope: 'inherited',
       title: 'MCP, skills & hooks',
       icon: 'agents',
-      order: 3,
+      order: 2.3,
       settingsSection: 'agents',
       keywords: 'mcp servers skills tools registry integrations hooks formatting checks',
       load: () => import('./resources/view'),

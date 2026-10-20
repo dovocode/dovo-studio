@@ -27,13 +27,190 @@ import type { ForgeAdapter } from './forge-types.js'
 import type { GitService } from '../../git/git.js'
 import type { WorkspaceStore } from '../../../storage/workspace.js'
 import { HttpError } from '../../../errors.js'
+import { retrievalFresh, retrievalLocal } from '../../../retrieval/context.js'
+import {
+  pullPeerRequestSchema,
+  pullOperationWrites,
+  type PullCommunication,
+  type PullOperation,
+} from '../../../retrieval/pulls.js'
+import {
+  pullActionResultSchema,
+  pullDetailSchema,
+  pullPageSchema,
+  pullStackSchema,
+} from '@dovo/protocol'
 export class ForgePullRequests {
+  communication?: PullCommunication
   private githubTargets = new Map<string, PullRequests>()
   constructor(
     private git: GitService,
     private connections: ForgeConnections,
     private store: WorkspaceStore,
   ) {}
+  private communicate<T, I>(
+    scope: SourceContext,
+    operation: PullOperation,
+    schema: Schema.Codec<T, I>,
+    load: () => Promise<T>,
+  ): Promise<T> {
+    scope.validate()
+    const execute = this.communication
+      ? this.communication.pull(
+          {
+            provider: scope.provider,
+            instance: scope.connection?.baseUrl.replace(/\/$/, '') ?? `https://${scope.host}`,
+            repository: scope.repository,
+            readerIdentity: scope.readerIdentity,
+          },
+          operation,
+          schema,
+          load,
+        )
+      : load()
+    return execute.then((value) => {
+      scope.validate()
+      return value
+    })
+  }
+  private operation<T, I>(
+    cwd: string,
+    scope: SourceContext,
+    operation: PullOperation,
+    schema: Schema.Codec<T, I>,
+  ) {
+    return this.communicate(scope, operation, schema, async () =>
+      decode(schema, await this.executePeer(scope, operation, cwd)),
+    )
+  }
+  /** The paired executor selects its own credentials and checks the account before any operation.
+   * No paths, credentials, commands or local task IDs are accepted from the caller. */
+  async servePeer(input: unknown, runtimeId: string) {
+    const request = decode(pullPeerRequestSchema, input)
+    if (request.owner !== runtimeId)
+      throw new HttpError(409, 'This is not the selected PR computer. Check its pairing.')
+    const { provider, instance, repository, readerIdentity } = request.scope
+    const connections = this.connections
+      .list()
+      .filter(
+        (connection) =>
+          connection.provider === provider && connection.baseUrl.replace(/\/$/, '') === instance,
+      )
+    const prepare = async (connection?: (typeof connections)[number]) => {
+      const validate = () => {
+        if (connection && this.connections.get(connection.id).revision !== connection.revision)
+          throw new HttpError(409, 'The PR account changed. Refresh before continuing.')
+      }
+      return verifySourceContext(
+        this.git,
+        this.connections,
+        homedir(),
+        repository,
+        new URL(instance).hostname,
+        connection,
+        ['peer', provider, instance, repository],
+        validate,
+      )
+    }
+    let scope: SourceContext | undefined
+    let verificationError: unknown
+    for (const connection of connections) {
+      try {
+        const candidate = await prepare(connection)
+        if (candidate.readerIdentity === readerIdentity) {
+          scope = candidate
+          break
+        }
+      } catch (error) {
+        // An unavailable credential cannot authorize an operation or a cached response.
+        verificationError = error
+      }
+    }
+    if (!scope && provider === 'github') {
+      try {
+        const candidate = await prepare()
+        if (candidate.readerIdentity === readerIdentity) scope = candidate
+      } catch (error) {
+        verificationError = error
+      }
+    }
+    if (!scope) {
+      if (verificationError !== undefined) throw verificationError
+      throw new HttpError(
+        409,
+        'No matching PR account on the preferred computer. Connect the same account there.',
+      )
+    }
+    const verified = scope
+    const load = () =>
+      retrievalLocal(() =>
+        retrievalFresh(request.fresh === true, () => this.executePeer(verified, request.operation)),
+      )
+    const value = this.communication
+      ? await this.communication.servePull(
+          request.scope,
+          request.operation,
+          Schema.Unknown,
+          load,
+          request.fresh === true,
+        )
+      : await load()
+    if (!pullOperationWrites(request.operation)) verified.validate()
+    return { host: runtimeId, value }
+  }
+  private async executePeer(scope: SourceContext, operation: PullOperation, cwd = homedir()) {
+    const github = () => this.scopedGithub(scope)
+    const adapter = () => this.scopedAdapter(scope, cwd)
+    switch (operation.kind) {
+      case 'list':
+        return (
+          adapter()?.list(operation.state, operation.page, operation.background) ??
+          github().list(cwd, operation.state, operation.page, operation.background)
+        )
+      case 'detail':
+        return adapter()?.detail(operation.number) ?? github().detail(cwd, operation.number)
+      case 'section':
+        return scope.provider === 'github'
+          ? github().section(cwd, operation.number, operation.section)
+          : adapter()!.detail(operation.number)
+      case 'status':
+        return scope.provider === 'github'
+          ? github().status(cwd, operation.number, operation.background)
+          : adapter()!.detail(operation.number)
+      case 'feedback':
+        return scope.provider === 'github'
+          ? github().feedback(cwd, operation.number)
+          : adapter()!.detail(operation.number)
+      case 'nativeStack':
+        return scope.provider === 'github'
+          ? ((await github().nativeStack(cwd, operation.number, operation.stackNumber)) ?? null)
+          : null
+      case 'act': {
+        const input = {
+          ...operation.input,
+          expectedDestination: scope.destination,
+          expectedReaderIdentity: scope.readerIdentity,
+        }
+        return adapter()?.act(input) ?? github().act(cwd, input)
+      }
+      case 'create': {
+        const input = {
+          ...operation.input,
+          expectedDestination: scope.destination,
+          expectedReaderIdentity: scope.readerIdentity,
+        }
+        return adapter()?.create(input) ?? github().create(cwd, input)
+      }
+      case 'comment': {
+        const input = {
+          ...operation.input,
+          expectedDestination: scope.destination,
+          expectedReaderIdentity: scope.readerIdentity,
+        }
+        return adapter()?.comment(input) ?? github().comment(cwd, input)
+      }
+    }
+  }
   /** Prefer a project binding, or require the caller to choose between unrelated accounts. */
   urlTarget(url: string, connectionId?: string) {
     const target = forgePullTarget(url)
@@ -145,8 +322,7 @@ export class ForgePullRequests {
         const scope = await prepare()
         guardSource(scope, { expectedDestination })
         return this.tagDetail(
-          await (this.scopedAdapter(scope, cwd)?.detail(number) ??
-            this.scopedGithub(scope).detail(cwd, number)),
+          await this.operation(cwd, scope, { kind: 'detail', number }, pullDetailSchema),
           scope,
         )
       },
@@ -154,9 +330,12 @@ export class ForgePullRequests {
         const scope = await prepare()
         guardSource(scope, { expectedDestination })
         return this.tagDetail(
-          await (scope.provider === 'github'
-            ? this.scopedGithub(scope).status(cwd, number, background)
-            : this.scopedAdapter(scope, cwd)!.detail(number)),
+          await this.operation(
+            cwd,
+            scope,
+            { kind: 'status', number, background },
+            pullDetailSchema,
+          ),
           scope,
         )
       },
@@ -164,25 +343,23 @@ export class ForgePullRequests {
         const scope = await prepare()
         guardSource(scope, { expectedDestination })
         return this.tagDetail(
-          await (scope.provider === 'github'
-            ? this.scopedGithub(scope).section(cwd, number, section)
-            : this.scopedAdapter(scope, cwd)!.detail(number)),
+          await this.operation(cwd, scope, { kind: 'section', number, section }, pullDetailSchema),
           scope,
         )
       },
       act: async (input: PullAction) => {
         const scope = await prepare()
         guardSource(scope, input)
-        return (
-          this.scopedAdapter(scope, cwd)?.act(input) ?? this.scopedGithub(scope).act(cwd, input)
-        )
+        return this.operation(cwd, scope, { kind: 'act', input }, pullActionResultSchema)
       },
       comment: async (input: typeof pullLineCommentSchema.Type) => {
         const scope = await prepare()
         guardSource(scope, input)
-        return (
-          this.scopedAdapter(scope, cwd)?.comment(input) ??
-          this.scopedGithub(scope).comment(cwd, input)
+        return this.operation(
+          cwd,
+          scope,
+          { kind: 'comment', input },
+          mutableStruct({ url: Schema.String }),
         )
       },
     }
@@ -481,8 +658,12 @@ export class ForgePullRequests {
     scope: SourceContext,
   ) {
     scope.validate()
-    const result = await (this.scopedAdapter(scope, cwd)?.list(state, page, background) ??
-      this.scopedGithub(scope).list(cwd, state, page, background))
+    const result = await this.operation(
+      cwd,
+      scope,
+      { kind: 'list', state, page, background },
+      pullPageSchema,
+    )
     scope.validate()
     return {
       ...result,
@@ -499,7 +680,13 @@ export class ForgePullRequests {
     const scope = await this.sourceContext(cwd)
     guardSource(scope, { expectedDestination })
     if (scope.provider !== 'github') return undefined
-    const stack = await this.scopedGithub(scope).nativeStack(cwd, number, stackNumber)
+    const stack =
+      (await this.operation(
+        cwd,
+        scope,
+        { kind: 'nativeStack', number, stackNumber },
+        Schema.NullOr(pullStackSchema),
+      )) ?? undefined
     scope.validate()
     return stack
   }
@@ -509,9 +696,7 @@ export class ForgePullRequests {
     const scope = await this.sourceContext(cwd)
     guardSource(scope, { expectedDestination })
     return this.tagDetail(
-      await (scope.provider === 'github'
-        ? this.scopedGithub(scope).status(cwd, number, background)
-        : this.scopedAdapter(scope, cwd)!.detail(number)),
+      await this.operation(cwd, scope, { kind: 'status', number, background }, pullDetailSchema),
       scope,
     )
   }
@@ -519,8 +704,7 @@ export class ForgePullRequests {
     if (forgePullTarget(cwd)) return this.urlTarget(cwd).detail(number, expectedDestination)
     const scope = await this.sourceContext(cwd)
     guardSource(scope, { expectedDestination })
-    const detail = await (this.scopedAdapter(scope, cwd)?.detail(number) ??
-      this.scopedGithub(scope).detail(cwd, number))
+    const detail = await this.operation(cwd, scope, { kind: 'detail', number }, pullDetailSchema)
     return this.tagDetail(await pullAttributes(this.git, cwd, detail), scope)
   }
   async section(
@@ -543,9 +727,12 @@ export class ForgePullRequests {
     scope: SourceContext,
   ) {
     scope.validate()
-    const detail = await (scope.provider === 'github'
-      ? this.scopedGithub(scope).section(cwd, number, section)
-      : this.scopedAdapter(scope, cwd)!.detail(number))
+    const detail = await this.operation(
+      cwd,
+      scope,
+      { kind: 'section', number, section },
+      pullDetailSchema,
+    )
     return this.tagDetail(
       section === 'changes' ? await pullAttributes(this.git, cwd, detail) : detail,
       scope,
@@ -555,24 +742,23 @@ export class ForgePullRequests {
     const scope = await this.sourceContext(cwd)
     guardSource(scope, { expectedDestination })
     return this.tagDetail(
-      await (scope.provider === 'github'
-        ? this.scopedGithub(scope).feedback(cwd, number)
-        : this.scopedAdapter(scope, cwd)!.detail(number)),
+      await this.operation(cwd, scope, { kind: 'feedback', number }, pullDetailSchema),
       scope,
     )
   }
   async comment(cwd: string, value: unknown) {
     const input = decode(pullLineCommentSchema, value)
     const scope = await this.guard(cwd, input)
-    return (
-      this.scopedAdapter(scope, cwd)?.comment(input) ?? this.scopedGithub(scope).comment(cwd, input)
+    return this.operation(
+      cwd,
+      scope,
+      { kind: 'comment', input },
+      mutableStruct({ url: Schema.String }),
     )
   }
   async create(cwd: string, input: PullCreate) {
     const scope = await this.guard(cwd, input)
-    return (
-      this.scopedAdapter(scope, cwd)?.create(input) ?? this.scopedGithub(scope).create(cwd, input)
-    )
+    return this.operation(cwd, scope, { kind: 'create', input }, pullActionResultSchema)
   }
   async createOptions(cwd: string) {
     const scope = await this.sourceContext(cwd)
@@ -584,6 +770,6 @@ export class ForgePullRequests {
   }
   async act(cwd: string, input: PullAction) {
     const scope = await this.guard(cwd, input)
-    return this.scopedAdapter(scope, cwd)?.act(input) ?? this.scopedGithub(scope).act(cwd, input)
+    return this.operation(cwd, scope, { kind: 'act', input }, pullActionResultSchema)
   }
 }

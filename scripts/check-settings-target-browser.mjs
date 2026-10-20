@@ -71,11 +71,11 @@ try {
     await page.addScriptTag({ content: built.outputFiles[0].text })
     page.on('dialog', (dialog) => dialog.accept())
     await page.getByText('Editing Global defaults', { exact: true }).waitFor()
-    await page.getByText('Shared across paired computers', { exact: true }).waitFor()
     if (mobile) {
       assert.equal(await page.getByLabel('Project', { exact: true }).count(), 0)
       await page.getByRole('button', { name: 'Change scope', exact: true }).click()
     }
+    await page.getByText('Shared across paired computers', { exact: true }).waitFor()
     const projects = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
     const environments = page.getByLabel(mobile ? 'Computer' : 'Settings computer', {
       exact: true,

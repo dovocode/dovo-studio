@@ -77,6 +77,24 @@ export function publicPullSummaries(pulls: readonly PullSummary[]): PullSummary[
   }))
 }
 
+/** A disconnected gateway must not replace newer results with its older offline copy. */
+export function retainNewerPullSnapshot<
+  T extends { cachedAt?: string; stale?: boolean; refreshError?: string },
+>(previous: T | undefined, incoming: T): T {
+  if (
+    previous?.cachedAt &&
+    incoming.cachedAt &&
+    Date.parse(previous.cachedAt) > Date.parse(incoming.cachedAt)
+  )
+    return {
+      ...previous,
+      stale: true,
+      refreshError:
+        incoming.refreshError ?? 'Showing newer saved PR data while the PR computer reconnects.',
+    }
+  return incoming
+}
+
 /** Deterministic owner assignment for remotes that several computers can read. The computer this
  * client is using serves what it has; other remotes spread across connected computers by load.
  * A previous owner is kept while it stays connected, so refreshes do not move between computers. */

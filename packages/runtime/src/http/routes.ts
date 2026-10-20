@@ -383,6 +383,16 @@ export function route(
         return s.retrievalPeers.register(device.id, yield* serviceResult(body(request, 256 * 1024)))
       }
       if (method === 'POST' && path === '/api/retrieval/host') return s.retrieval.status()
+      if (method === 'POST' && path === '/api/scm/pulls/peer') {
+        if (s.retrieval.status().enabled === false)
+          throw new HttpError(
+            409,
+            'PR communication with paired computers is disabled on this computer',
+          )
+        return yield* serviceResult(
+          s.pulls.servePeer(yield* serviceResult(body(request, 512 * 1024)), s.runtimeId),
+        )
+      }
       if (method === 'POST' && path === '/api/retrieval/read')
         return yield* serviceResult(
           serveRetrieval(s, yield* serviceResult(body(request, 512 * 1024))),

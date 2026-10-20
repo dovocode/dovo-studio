@@ -1,16 +1,47 @@
 # General settings
 
-General contains device preferences for organization, navigation, confirmations and background
-activity. Changes save automatically on this device. Agent and task configuration have dedicated
-pages, with links from General.
+General contains device preferences for navigation, date and time, shortcuts and background
+activity. Task list & projects contains project grouping/order, task sorting, the starting folder
+and task confirmations. Changes save automatically on this device. General links to task
+organization, Conversation, Agents and Task defaults.
 
-The settings navigation groups **This app**, **Agents**, **Tasks & projects**, **Computers** and
-**History**. Each page is marked by where it saves: inherited pages carry a layers mark and follow
-the shared project/computer target shown at the bottom of the navigation, per-computer pages carry a
-monitor mark, and device preferences carry no mark. Search matches page names and their controls.
-Conversation contains composer, follow-up and response preferences; Notifications contains alerts;
-Review & diffs contains review behavior; Updates & about contains application and provider update
-preferences and notices. Titles & dictation has its own computer-specific page.
+The desktop settings navigation groups **This app**, **Agents & tools**, **Tasks & projects**,
+**Computers** and **History**. Categories expand and collapse to keep the sidebar compact; the
+active page’s category opens automatically after navigation. Search reveals matching pages in every
+category without changing which categories were open. The selected page has a readable storage
+label: this device, per computer, or computer & project. Other pages keep storage details in their
+tooltips to reduce visual clutter. Usage & limits spans paired computers. Browser and Pull requests
+& pipelines combine device and computer preferences. Inherited pages follow the shared
+project/computer target; the navigation explains the active page's storage and only shows this
+target for inherited pages. Search matches categories, page names and control keywords. The narrow
+section chooser retains the same categories. The scope summary is informational; scope controls stay
+at the top of inherited settings pages. CLI commands, Studio Tools and Memory are under Agents &
+tools; Running tasks is under Tasks & projects; Activity & message history is under History.
+Existing route IDs are retained. Conversation contains composer, follow-up, response and desktop
+speech preferences; Notifications contains alerts; Review & diffs contains review behavior; Updates
+& about contains application and provider update preferences and notices. Titles & dictation has its
+own computer-specific page.
+
+## Mobile settings
+
+Mobile uses a compact grouped index with the same five categories. Each category opens a dedicated
+page with smaller groups such as Look & feel, Chat & voice, Task workflow and Files & outputs. Back
+navigation returns from a setting to its category, then to the index. The Settings tab root has no
+redundant back button. Memory lives with agent tools. Global search jumps directly to any setting;
+category search stays within that category. Clearing search restores the index or category. Storage
+details appear on the destination page instead of repeating computer names in the index.
+Conversation, Speech & driving, Notifications, and Battery & background have direct entries and save
+on the phone. Task & PR preferences controls the phone's task list, confirmations and merge
+defaults; Task defaults uses the shared computer/project scope.
+
+Task behavior, Pull requests & pipelines, Artifacts, Memory, Worktrees, Runtime tools, and Activity
+retention open focused pages with a computer selector. Changes save on the named computer and are
+shared with its other paired devices. Manage computers still provides the existing connection and
+runtime controls. Settings search includes the controls on the focused pages.
+
+The mobile model picker has a full-width provider chooser. Opening or filtering providers does not
+change the selected model; choosing a model commits the change. The chooser and model list share the
+surrounding sheet’s scroll area, and saved favorites stay with their computer.
 
 ## Task defaults
 
@@ -73,15 +104,16 @@ inspect the selected computer; SDK updates remain part of Dovo updates. The nati
 available when the shortcut is disabled. Hold mode waits 600 ms or accepts two presses within 500
 ms.
 
-General links to the per-computer Titles & dictation editor. Version and release-track controls use
-the existing desktop update bridge. Mobile-specific driving, speech, widgets and battery preferences
-retain their native settings. Mobile task defaults can edit scoped lifecycle policy, and quota
-continuations can be cancelled on either client.
+Agents & tools includes the per-computer Titles & dictation editor. Version and release-track
+controls use the existing desktop update bridge. Mobile-specific driving, speech, widgets and
+battery preferences retain their native settings. Mobile task defaults can edit scoped lifecycle
+policy, and quota continuations can be cancelled on either client.
 
 ## Desktop speech
 
-General → Speech provides an explicit download for the 751 MB Nemotron model, progress, cancellation
-and retry. Downloading enables the composer microphone; the enable toggle can hide it without
-removing the model. The language picker supports automatic detection and 32 locales, including Dutch
-and English. Recording shows a live preview and runs locally on the desktop CPU. These settings are
-local app preferences; they do not change native mobile speech recognition or runtime models.
+Conversation → Speech provides an explicit download for the 751 MB Nemotron model, progress,
+cancellation and retry. Downloading enables the composer microphone; the enable toggle can hide it
+without removing the model. The language picker supports automatic detection and 32 locales,
+including Dutch and English. Recording shows a live preview and runs locally on the desktop CPU.
+These settings are local app preferences; they do not change native mobile speech recognition or
+runtime models.

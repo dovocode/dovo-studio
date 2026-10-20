@@ -85,7 +85,7 @@ if(path.endsWith('/detail')){
  if(input.section==='changes') { value.pull.headSha=(window.pushed?'c':'a').repeat(40); value.files=[{path:'changed.ts',status:'added',additions:1,deletions:0,patch:'@@ -0,0 +1 @@\\n+new code'}]; }
  return value;
 }
-if(path.endsWith('/overview'))return decode(schema,{destination:'destination-'+id,pulls:[input.page===2?{...detail(id).pull,number:8,url:'https://github.com/team/project/pull/8'}:detail(id).pull],page:input.page,hasMore:input.page===1});
+if(path.endsWith('/overview')&&window.simulatedPages?.[id])return decode(schema,{destination:'destination-'+id,pulls:[{...detail(id).pull,number:window.simulatedPages[id].number}],page:1,hasMore:false,cachedAt:window.simulatedPages[id].cachedAt,stale:window.simulatedPages[id].stale});if(path.endsWith('/overview'))return decode(schema,{destination:'destination-'+id,pulls:[input.page===2?{...detail(id).pull,number:8,url:'https://github.com/team/project/pull/8'}:detail(id).pull],page:input.page,hasMore:input.page===1});
 throw Error('Unexpected request '+path);
 },catch:error=>error});
 function Observe(){const [tab,setTab]=useState('overview');window.setObservedTab=setTab;const value=usePullDetail('repo-origin',7,window.explicitConnection??'local-origin',{tab});window.reader=value;return <output aria-label="observed">{value.detail?.pull.title}</output>}
@@ -474,6 +474,45 @@ try {
   )
   assert.equal(await sectionsPage.evaluate(() => window.reader.detail.files[0]?.path), 'changed.ts')
   await sectionsPage.close()
+  const cachePage = await browser.newPage()
+  cachePage.setDefaultTimeout(7000)
+  cachePage.on('pageerror', (error) => errors.push(error.message))
+  await cachePage.setContent('<div id="app"></div>')
+  await cachePage.evaluate(() => {
+    window.initialListOnly = true
+    window.simulatedPages = {
+      origin: { number: 608, cachedAt: '2026-10-19T08:39:00Z', stale: true },
+      matching: { number: 614, cachedAt: '2026-10-20T11:45:00Z', stale: false },
+    }
+  })
+  await cachePage.addScriptTag({ content: built.outputFiles[0].text })
+  await cachePage.waitForFunction(
+    () => window.list?.pages[0]?.pulls[0]?.number === 608 && !window.list.busy,
+  )
+  await cachePage.evaluate(() => window.setOffline(true))
+  await cachePage.waitForFunction(
+    () => window.list?.pages[0]?.pulls[0]?.number === 614 && !window.list.busy,
+  )
+  await cachePage.evaluate(() => {
+    window.setOffline(false)
+    window.setMatching(false)
+  })
+  await cachePage.waitForFunction(
+    () =>
+      window.list?.pages[0]?.connected &&
+      !window.list.busy &&
+      window.list.pages[0].error?.includes('newer saved PR data'),
+  )
+  assert.equal(await cachePage.evaluate(() => window.list.pages[0].pulls[0].number), 614)
+  assert.equal(
+    await cachePage.evaluate(() => window.list.pages[0].cachedAt),
+    '2026-10-20T11:45:00Z',
+  )
+  const lastSaved = await cachePage.evaluate(
+    () => window.cacheWrites.filter((write) => JSON.parse(write.key)[0] === 'pulls').at(-1).value,
+  )
+  assert.equal(lastSaved.pulls[0].number, 614)
+  await cachePage.close()
   assert.deepEqual(errors, [])
   console.log(
     'Mobile PR handoff passed: filtered list and actual detail UI use same-repository verified reader; refresh enabled with writes disabled; original cache/destinations/connection retained; remote rebind invalidates origin association; rejected pagination cannot publish caches; remount and reconnect; mismatched, unverified, other-repository/host and changed-account readers rejected. Native presentation and runtime transport mocked; no provider writes.',

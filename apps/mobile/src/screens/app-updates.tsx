@@ -1,6 +1,4 @@
-import { useRuntime } from '../runtime/connection/provider'
-import { runtimeComputerName } from '@dovo/protocol'
-import { usePushNotifications } from '../notifications/provider'
+import { router } from 'expo-router'
 import { useOpenAppLink } from '../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -13,15 +11,11 @@ import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
 import { SettingsAction as Action } from './settings-controls'
 import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
-import { SettingsGroup, SettingsSwitchRow } from './settings-group'
-import { useLiveActivities } from '../live-activities/provider'
+import { SettingsGroup, SettingsRow } from './settings-group'
 export default function AppUpdates() {
   const openLink = useOpenAppLink(undefined)
   const { styles } = useTheme()
 
-  const activity = useLiveActivities()
-  const notifications = usePushNotifications()
-  const { overviews } = useRuntime()
   const [release, setRelease] = useApplicationState<RuntimeRelease | null>(null)
   const [busy, setBusy] = useApplicationState(false),
     [message, setMessage] = useApplicationState('')
@@ -60,7 +54,7 @@ export default function AppUpdates() {
     <SettingsPage>
       <ScreenHeader title="App & updates" />
       <ScrollView contentContainerStyle={[styles.content, { gap: 24 }]}>
-        <Text style={styles.muted}>This device · notification preferences save automatically</Text>
+        <Text style={styles.muted}>This app · version and updates</Text>
         <Text style={styles.title}>
           Dovo Studio {Constants.expoConfig?.version ?? 'development'}
         </Text>
@@ -112,57 +106,14 @@ export default function AppUpdates() {
             --device YOUR_DEVICE_UDID
           </Text>
         </SettingsGroup>
-        <SettingsGroup
-          title="Push notifications"
-          footer="Get task completion, failures and input requests when Dovo is in the background. Sign in on this phone for managed delivery, or use a standalone relay. Choose which paired computers can notify you."
-        >
-          <SettingsSwitchRow
-            first
-            label="Task notifications"
-            disabled={!notifications.supported || notifications.busy}
-            value={notifications.enabled}
-            onValueChange={notifications.setEnabled}
-          />
-          {overviews.map((entry) => (
-            <SettingsSwitchRow
-              key={entry.profile.id}
-              label={runtimeComputerName(entry)}
-              disabled={!notifications.supported || notifications.busy || !notifications.enabled}
-              value={notifications.serverEnabled(entry.profile.id)}
-              onValueChange={(value) => notifications.setServerEnabled(entry.profile.id, value)}
-            />
-          ))}
-        </SettingsGroup>
-        {!notifications.supported && (
-          <Text style={styles.muted}>Push notifications require a new native app build.</Text>
-        )}
-        {!!notifications.error && (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {notifications.error}
-          </Text>
-        )}
-        <SettingsGroup
-          title="Live Activities"
-          footer="Shows task progress on your Lock Screen and Dynamic Island. Activities start when you open Dovo and keep updating in the background through Connect or your computer’s notification relay."
-        >
-          <SettingsSwitchRow
-            first
-            label="Show task Live Activities"
-            disabled={!activity.supported}
-            value={activity.enabled && activity.supported}
-            onValueChange={activity.setEnabled}
+        <SettingsGroup title="Related settings">
+          <SettingsRow
+            title="Notifications"
+            subtitle="Task alerts and Live Activities on this device"
+            icon="settings"
+            onPress={() => router.push('/settings/notifications')}
           />
         </SettingsGroup>
-        {!activity.supported && (
-          <Text style={styles.muted}>
-            Live Activities require the new native iOS build, not Expo Go or a JavaScript reload.
-          </Text>
-        )}
-        {!!activity.error && (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {activity.error}
-          </Text>
-        )}
       </ScrollView>
     </SettingsPage>
   )

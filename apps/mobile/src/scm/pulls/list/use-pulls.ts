@@ -6,6 +6,7 @@ import {
   assignRemoteSources,
   pullRepositoryKey,
   publicPullSummaries,
+  retainNewerPullSnapshot,
   mutableArray,
   mutableStruct,
   pullPageSchema,
@@ -300,26 +301,36 @@ export function usePulls(repositoryId: string, state: string) {
               page: 1,
               refresh,
             })
-            const page: Page = {
-              ...response,
-              ...metadata(entry),
-              error: response.refreshError,
-              stale: !!response.stale || !!response.refreshError,
-              firstPageIds: response.pulls.map((pull) => String(pull.number)),
-              ...(previous?.page > 1 && previous.firstPageIds && !refresh && response.hasMore
+            const retained = retainNewerPullSnapshot<PullPage>(previous, response)
+            const page: Page =
+              retained !== response && previous
                 ? {
-                    page: previous.page,
-                    hasMore: previous.hasMore,
+                    ...previous,
+                    ...metadata(entry),
                     stale: true,
-                    pulls: refreshFirstPage(
-                      previous.pulls,
-                      previous.firstPageIds,
-                      response.pulls,
-                      (pull) => String(pull.number),
-                    ),
+                    refreshError: retained.refreshError,
+                    error: retained.refreshError,
                   }
-                : {}),
-            }
+                : {
+                    ...response,
+                    ...metadata(entry),
+                    error: response.refreshError,
+                    stale: !!response.stale || !!response.refreshError,
+                    firstPageIds: response.pulls.map((pull) => String(pull.number)),
+                    ...(previous?.page > 1 && previous.firstPageIds && !refresh && response.hasMore
+                      ? {
+                          page: previous.page,
+                          hasMore: previous.hasMore,
+                          stale: true,
+                          pulls: refreshFirstPage(
+                            previous.pulls,
+                            previous.firstPageIds,
+                            response.pulls,
+                            (pull) => String(pull.number),
+                          ),
+                        }
+                      : {}),
+                  }
             update(entry.key, page)
             if (!page.stale && !page.error)
               acknowledgePullList(cache, entry.repository.id, invalidated)

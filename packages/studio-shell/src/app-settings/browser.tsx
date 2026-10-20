@@ -206,7 +206,7 @@ export default function BrowserSettings() {
   return (
     <SettingsPage
       title="Browser"
-      description="Keep website logins separate with browser profiles. Choose a profile for each tab."
+      description="Preview defaults and local profiles stay on this device. Remote profiles and logins stay on the selected computer."
     >
       <SettingsGroup title="Browser previews">
         <SettingRow

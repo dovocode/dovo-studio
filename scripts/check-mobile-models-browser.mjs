@@ -10,17 +10,18 @@ const mocks = {
   '../ui/content/format-date': `export const formatDateTime=value=>value;`,
   '../ui/controls/pill': `export const Pill=({label,onPress})=><button onClick={onPress}>{label}</button>;`,
   '../screens/settings-controls': `export {Choice as SettingsChoice} from '../ui/controls/choice';export {Field as SettingsField} from '../ui/controls/field';export {Action as SettingsAction} from '../ui/controls/action';`,
-  'react-native': `const css=value=>{const s=Object.assign({},...[value??{}].flat());if(s.paddingHorizontal!==undefined){s.paddingLeft=s.paddingRight=s.paddingHorizontal;delete s.paddingHorizontal}if(s.paddingVertical!==undefined){s.paddingTop=s.paddingBottom=s.paddingVertical;delete s.paddingVertical}return s};export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel})=><div aria-label={accessibilityLabel} style={{minHeight:0,overflow:'auto',...css(style)}}><div style={css(contentContainerStyle)}>{children}</div></div>;export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',boxSizing:'border-box',...css(style)}}>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState,style})=><button onClick={onPress} disabled={disabled} aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} style={{display:'flex',textAlign:'left',fontFamily:'inherit',border:0,...css(style)}}>{children}</button>;export const Alert={alert:()=>{}};export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
+  'react-native': `const css=value=>{const s=Object.assign({},...[value??{}].flat());if(s.paddingHorizontal!==undefined){s.paddingLeft=s.paddingRight=s.paddingHorizontal;delete s.paddingHorizontal}if(s.paddingVertical!==undefined){s.paddingTop=s.paddingBottom=s.paddingVertical;delete s.paddingVertical}return s};export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,horizontal})=><div aria-label={accessibilityLabel} style={{minHeight:0,minWidth:0,overflow:'auto',...css(style)}}><div style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...css(contentContainerStyle)}}>{children}</div></div>;export const View=({children,style,accessibilityLabel,accessibilityRole})=><div role={accessibilityRole} aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',...css(style)}}>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityRole,accessibilityState,style})=><button onClick={onPress} disabled={disabled} aria-label={accessibilityLabel} role={accessibilityRole} aria-expanded={accessibilityState?.expanded} aria-selected={accessibilityRole==='tab'?!!accessibilityState?.selected:undefined} aria-pressed={accessibilityRole==='button'&&accessibilityState?.selected!==undefined?!!accessibilityState.selected:undefined} style={{display:'flex',textAlign:'left',fontFamily:'inherit',border:0,boxSizing:'border-box',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;export const Alert={alert:()=>{}};export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,
   'expo-crypto': `export const CryptoDigestAlgorithm={SHA256:'SHA-256'};export const digestStringAsync=async(_,text)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('');`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const Context=createContext(null);export const useRuntime=()=>useContext(Context);export const useRuntimeSelector=select=>select(useContext(Context));`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../runtime/preferences/app-preferences': `export const useMobilePreferences=()=>({globalModelPreferences:{},globalModelPreferencesUpdatedAt:0});export const updateMobilePreferences=()=>{};`,
-  '../ui/content/text': `export const Text=({children,style})=><span style={Object.assign({},...[style??{}].flat())}>{children}</span>;`,
+  '../ui/content/text': `export const Text=({children,style})=>{const s=Object.assign({},...[style??{}].flat());if(typeof s.lineHeight==='number')s.lineHeight=s.lineHeight+'px';return <span style={s}>{children}</span>};`,
   '../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
   '../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
-  '../ui/controls/field': `export const SearchField=({label,value,onChangeText,placeholder})=><input placeholder={placeholder} aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;export const Field=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;`,
+  '../ui/controls/field': `export const SearchField=({label,value,onChangeText,placeholder,onSubmitEditing,autoFocus})=><input autoFocus={autoFocus} placeholder={placeholder} aria-label={label} value={value} onKeyDown={event=>event.key==='Enter'&&onSubmitEditing?.()} onChange={event=>onChangeText(event.target.value)}/>;export const Field=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;`,
+  '../ui/controls/icon': `export const Icon=()=>null;`,
   '../ui/theme': `export const useTheme=()=>({styles:{muted:{color:'#a1a1aa'},error:{color:'#f66'}},colors:{text:'#fafafa',muted:'#a1a1aa',border:'#333',selection:'#303036',accent:'#8bd5ff'}});`,
 }
 const built = await build({
@@ -44,7 +45,7 @@ function App(){
  const entry={profile,snapshot};const visible=previewTasks(entry,pending).snapshot.workspace.tasks[0];window.visibleTask=visible;window.rawTask=task;
  window.publishTask=(nextRevision,nextTask)=>{setRevision(nextRevision);if(nextTask)setTask(nextTask)};
  useEffect(()=>setPending(items=>{const next=items.filter(item=>!optimisticTaskConfirmed(item,entry,items));return next.length===items.length?items:next}),[task,revision]);
- const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/agents/models/preference')return Promise.resolve({modelPreferences:{[input.key]:{favorite:input.favorite,disabled:false}}});if(path==='/api/workspace'){if(method!=='PATCH')throw Error('Workspace changes require PATCH');const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after??undefined]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
+ const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/agents/models/preference'){const result={modelPreferences:{[input.key]:{favorite:input.favorite,disabled:false}}};return window.deferPreference?new Promise(resolve=>{window.finishPreference=()=>resolve(result)}):Promise.resolve(result)}if(path==='/api/workspace'){if(method!=='PATCH')throw Error('Workspace changes require PATCH');const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after??undefined]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
  return <Context.Provider value={value}>{task?<><span data-selected-model>{resolveTaskAgent(visible,[])?.model||'Default'}</span>{editing&&<HarnessSettings task={visible} onClose={()=>setEditing(false)}/>}</>:<ModelSettings agent={agent} onChange={setAgent}/>}<ConnectionPill/></Context.Provider>
 };createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -231,23 +232,65 @@ try {
     window.requests.findLastIndex((request) => request.path === '/api/agents/models'),
   )
   await finish(modelIndex, {
-    models: [{ id: 'task-model', name: 'Task Model', reasoning: [{ id: 'high', name: 'High' }] }],
+    models: [
+      { id: 'task-model', name: 'Task Model', reasoning: [{ id: 'high', name: 'High' }] },
+      {
+        id: 'openrouter/anthropic/claude-sonnet-4.6-extended',
+        name: 'Claude Sonnet 4.6 Extended Thinking via OpenRouter',
+      },
+      { id: 'openai/shared-model', name: 'Shared Model', description: 'Fast general model' },
+      { id: 'azure/shared-model', name: 'Shared Model', description: 'Fast general model' },
+    ],
     reasoning: [],
   })
   if (await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).count())
     throw new Error('Secondary settings clutter the initial picker')
+  // The selection mode leads the picker instead of hiding under More settings.
+  if (
+    !(await page
+      .getByRole('combobox', { name: 'Model selection', exact: true })
+      .evaluate(
+        (mode) =>
+          !!(
+            mode.compareDocumentPosition(
+              document.querySelector('[aria-label="Search harnesses and models"]'),
+            ) & Node.DOCUMENT_POSITION_FOLLOWING
+          ),
+      ))
+  )
+    throw new Error('Model selection mode was not offered before the model picker')
+  await page.getByText('Codex models on one.', { exact: true }).waitFor()
+  // IDs that only restate the name are omitted; distinct ones remain.
+  if (
+    await page
+      .getByRole('button', { name: 'Task Model', exact: true })
+      .getByText('task-model', { exact: true })
+      .count()
+  )
+    throw new Error('A model ID that repeats its name was shown')
   await page.addStyleTag({
     content:
-      'body{margin:12px;background:#1c1c1e;color:#fafafa;font-family:system-ui}input{width:100%;min-width:0;box-sizing:border-box;background:transparent;border:0;border-bottom:1px solid #444;color:inherit;padding:10px;font-size:14px}button{font-size:14px}h2{font-size:18px}',
+      'body{margin:12px;background:#1c1c1e;color:#fafafa;font-family:system-ui}button{background:transparent;color:inherit}input{width:100%;min-width:0;box-sizing:border-box;background:transparent;border:0;border-bottom:1px solid #444;color:inherit;padding:10px;font-size:14px}button{font-size:14px}h2{font-size:18px}',
   })
+  const longModel = 'Claude Sonnet 4.6 Extended Thinking via OpenRouter'
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 700 })
-    for (const label of ['Models', 'Favorites', 'Agents', 'Codex']) {
+    for (const [role, label] of [
+      ['tab', 'Models'],
+      ['tab', 'Favorites'],
+      ['tab', 'Agents'],
+      ['button', 'Choose provider'],
+      ['button', longModel],
+    ]) {
       const visible = await page
-        .getByRole('button', { name: label, exact: true })
+        .getByRole(role, { name: label, exact: true })
         .evaluate((button) => {
           const text = Array.from(button.querySelectorAll('span')).find(
-            (node) => node.textContent === button.getAttribute('aria-label'),
+            (node) =>
+              node.textContent ===
+              (button.getAttribute('aria-label') === 'Choose provider'
+                ? 'Codex'
+                : button.getAttribute('aria-label')),
           )
           return (
             !!text &&
@@ -259,29 +302,95 @@ try {
     }
     if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth))
       throw new Error(`Picker overflowed at ${width}px`)
+    // Model rows use the full sheet width instead of sharing it with a harness rail.
+    const row = await page
+      .getByRole('button', { name: longModel, exact: true })
+      .evaluate((button) => button.getBoundingClientRect().width)
+    if (row < width - 24 - 44 - 8)
+      throw new Error(`Model rows were cramped to ${row}px at ${width}px`)
+    const star = await page
+      .getByRole('button', { name: 'Favorite Task Model', exact: true })
+      .boundingBox()
+    if (!star || star.width < 44 || star.height < 44)
+      throw new Error(`Favorite target was smaller than 44px at ${width}px`)
   }
+  const providerControl = page.getByRole('button', { name: 'Choose provider', exact: true })
+  await providerControl.click()
+  await page.screenshot({ path: '/tmp/dovo-mobile-provider-picker.png', fullPage: true })
+  await page.getByRole('textbox', { name: 'Search providers', exact: true }).fill('not-a-provider')
+  await page.getByText('No matching providers.', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Back to models', exact: true }).click()
+  await page.getByRole('button', { name: 'Task Model', exact: true }).waitFor()
+  if (await page.evaluate(() => !!window.saved))
+    throw new Error('Browsing providers changed the selected model')
+  // Identical catalogue names and descriptions stay distinguishable by model ID.
+  for (const id of ['openai/shared-model', 'azure/shared-model'])
+    if (
+      !(await page
+        .getByRole('button', { name: `Shared Model · ${id.split('/')[0]}` })
+        .getByText(id, { exact: true })
+        .count())
+    )
+      throw new Error(`Duplicate model ${id} did not show its identifier`)
+  // Rows flow in the caller's sheet instead of a nested fixed-height scroll area.
+  if (
+    await page.getByLabel('Available models', { exact: true }).evaluate((list) => {
+      const style = getComputedStyle(list)
+      return style.overflowY !== 'visible' || style.maxHeight !== 'none'
+    })
+  )
+    throw new Error('Model list nested its own scroll area inside the sheet')
+  if (
+    (await page.getByRole('tab', { name: 'Models', exact: true }).getAttribute('aria-selected')) !==
+    'true'
+  )
+    throw new Error('Current picker tab was not exposed as selected')
   await page.screenshot({ path: '/tmp/dovo-mobile-picker.png', fullPage: true })
-  await page.getByRole('button', { name: 'Favorites', exact: true }).click()
+  await page.getByRole('tab', { name: 'Favorites', exact: true }).click()
   await page.getByText('No favorite models for this harness.', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Agents', exact: true }).click()
-  await page.getByText('No matching saved agents.', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Models', exact: true }).click()
+  await page
+    .getByText('Codex favorites saved on one, shared by all its tasks.', { exact: true })
+    .waitFor()
+  await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+  await page.getByText('No saved agents. Create one in Settings.', { exact: true }).waitFor()
+  await page.getByRole('tab', { name: 'Models', exact: true }).click()
   await page.getByRole('button', { name: 'Favorite Task Model', exact: true }).click()
   await page.getByRole('button', { name: 'Unfavorite Task Model', exact: true }).waitFor()
   if (await page.evaluate(() => !!window.saved))
     throw new Error('Favoriting changed the selected model')
-  await page.getByRole('button', { name: 'Favorites', exact: true }).click()
+  await page.getByRole('tab', { name: 'Favorites', exact: true }).click()
   await page.getByRole('button', { name: 'Task Model', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Unfavorite Task Model', exact: true }).click()
   await page.getByText('No favorite models for this harness.', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Models', exact: true }).click()
+  await page.getByRole('tab', { name: 'Models', exact: true }).click()
+  // An unknown ID can be used straight from search.
+  await page.getByRole('textbox', { name: 'Search harnesses and models' }).fill('my-custom-id')
+  await page.getByRole('button', { name: 'Use custom model my-custom-id', exact: true }).waitFor()
+  if (await page.getByText('No matching models.', { exact: true }).count())
+    throw new Error('Search offered no way to use an unknown model ID')
   await page.getByRole('textbox', { name: 'Search harnesses and models' }).fill('missing model')
   await page.getByText('No matching models.', { exact: true }).waitFor()
   await page.getByRole('textbox', { name: 'Search harnesses and models' }).fill('Task Model')
-  await page.getByRole('button', { name: 'Task Model', exact: true }).click()
+  await page.getByRole('button', { name: 'Task Model', exact: true }).waitFor()
+  if (await page.getByRole('button', { name: longModel, exact: true }).count())
+    throw new Error('Model search did not filter the list')
+  // A search that identifies one model can be chosen from the keyboard.
+  await page.getByRole('textbox', { name: 'Search harnesses and models' }).press('Enter')
   await page.waitForFunction(
     () => window.saved?.input.changes.harness?.after.model === 'task-model',
   )
+  // While the save is pending the picker is disabled, but browsing and favorites stay usable.
+  if (!(await page.getByRole('button', { name: 'Task Model', exact: true }).isDisabled()))
+    throw new Error('A disabled picker still allowed changing the model')
+  await page.getByRole('button', { name: 'Favorite Task Model', exact: true }).click()
+  await page.getByRole('tab', { name: 'Favorites', exact: true }).click()
+  await page.getByRole('button', { name: 'Unfavorite Task Model', exact: true }).click()
+  await page.getByText('No favorite models for this harness.', { exact: true }).waitFor()
+  await page.getByRole('tab', { name: 'Models', exact: true }).click()
+  await page.getByRole('button', { name: 'Choose provider', exact: true }).click()
+  await page.getByRole('button', { name: 'Codex', exact: true }).click()
+  if (await page.evaluate(() => window.saved.input.changes.harness.after.model !== 'task-model'))
+    throw new Error('Browsing a disabled picker changed the pending selection')
   if (await page.getByRole('button', { name: 'Save agent & model', exact: true }).count())
     throw new Error('Picker still requires manual save')
   await page.evaluate(() => window.finishSave(false))
@@ -324,11 +433,29 @@ try {
   )
   await page.evaluate(() => window.openTask())
   await page.getByRole('button', { name: 'Back to models', exact: true }).click()
-  await page.getByRole('button', { name: 'More model options', exact: true }).click()
-  await page.getByRole('button', { name: 'Custom model…', exact: true }).click()
-  await page.getByRole('textbox', { name: 'Custom model ID', exact: true }).fill('rejected-model')
-  await page.getByRole('button', { name: 'Use model', exact: true }).click()
+  await page.getByLabel('Selected on one: Codex, Task Model', { exact: true }).waitFor()
+  if (
+    (await page
+      .getByRole('button', { name: 'Task Model', exact: true })
+      .getAttribute('aria-pressed')) !== 'true'
+  )
+    throw new Error('The selected model row was not marked as selected')
+  // Custom models are reachable from the keyboard: open, type into the focused field, submit.
+  await page.getByRole('button', { name: 'Custom model…', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await page.getByRole('textbox', { name: 'Custom model ID', exact: true }).waitFor()
+  if (
+    !(await page
+      .getByRole('textbox', { name: 'Custom model ID', exact: true })
+      .evaluate((field) => field === document.activeElement))
+  )
+    throw new Error('Opening a custom model did not focus its field')
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.type('rejected-model')
+  await page.keyboard.press('Enter')
   await page.waitForFunction(() => window.visibleTask?.harness?.model === 'rejected-model')
+  // A custom ID outside the catalogue is named by its ID rather than a stale catalogue name.
+  await page.getByLabel('Selected on one: Codex, rejected-model', { exact: true }).waitFor()
   await page.evaluate(() => window.finishSave(true))
   await page.getByText('Model save rejected', { exact: true }).waitFor()
   await page.waitForFunction(() => window.visibleTask?.harness?.model === 'task-model')
@@ -400,6 +527,48 @@ try {
   await page.getByRole('button', { name: 'More settings', exact: true }).click()
   await mode.waitFor()
   if ((await mode.inputValue()) !== 'fixed') throw new Error('Fixed mode reverted after reopening')
+  // Favorites belong to one computer: a late save from the previous computer must not leak into
+  // another computer whose defaults happen to be identical (here both are empty).
+  await page.evaluate(() =>
+    window.publishTask(4, {
+      ...window.rawTask,
+      modelSelection: undefined,
+      modelSelectionDifficulty: undefined,
+    }),
+  )
+  await page.getByRole('button', { name: 'Back to models', exact: true }).click()
+  await page.evaluate(() => {
+    window.deferPreference = true
+  })
+  await page.getByRole('button', { name: 'Favorite Task Model', exact: true }).click()
+  await page.waitForFunction(() => !!window.finishPreference)
+  const beforeHost = await page.evaluate(() => window.requests.length)
+  await page.evaluate(() => window.host('two'))
+  await page.waitForFunction(
+    (count) =>
+      window.requests
+        .slice(count)
+        .some((request) => request.host === 'two' && request.path === '/api/agents/models'),
+    beforeHost,
+  )
+  for (const [index, request] of (
+    await page.evaluate((count) => window.requests.slice(count), beforeHost)
+  ).entries())
+    await finish(
+      beforeHost + index,
+      request.path === '/api/agents/models'
+        ? { models: [{ id: 'task-model', name: 'Task Model' }], reasoning: [] }
+        : [],
+    )
+  await page.getByText('Codex models on two.', { exact: true }).waitFor()
+  await page.evaluate(() => window.finishPreference())
+  await page.waitForTimeout(100)
+  await page.getByRole('button', { name: 'Task Model', exact: true }).waitFor()
+  const star = page.getByRole('button', { name: 'Favorite Task Model', exact: true })
+  if (await page.getByRole('button', { name: 'Unfavorite Task Model', exact: true }).count())
+    throw new Error('A late favorite save from the previous computer leaked into this computer')
+  if (await star.isDisabled())
+    throw new Error("The previous computer's pending favorite save blocked this computer")
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse/Cursor model selection, reasoning, OpenCode v1/v2 labels, and task model/reasoning saves with unavailable provider discovery passed.',

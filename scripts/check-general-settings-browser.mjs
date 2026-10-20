@@ -14,7 +14,9 @@ export * from '${root}/packages/studio-core/src/themes.ts';
 export * from '${root}/packages/studio-core/src/fonts.ts';
 export {useRemoteBrowserProfiles} from '${root}/packages/studio-core/src/browser-profiles.ts';
 export {providers} from '${root}/packages/studio-core/src/providers.ts';
+export const defineStudioExtension=(manifest,views)=>({manifest,views});
 export const formatDateTime=value=>new Date(value).toLocaleString();
+export const useRuntimeSources=()=>window.sources;
 export const taskSortOptions=[{id:'priority',name:'Priority'},{id:'activity',name:'Last activity'}];
 export const useStudioHost=()=>({appInfo:{version:'0.0.7',channel:window.headerScreenshots?'nightly':'stable'},browser:()=>{},updates:window.updates,taskLauncher:{configure:async shortcut=>({})},navigate:target=>window.changeView(target.viewId)});
 const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;
@@ -33,6 +35,7 @@ export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';
 export {SettingSource} from '${root}/packages/studio-ui/src/setting-source.tsx';
 export {ModelSettings} from '${root}/packages/studio-ui/src/model-settings.tsx';
 export {PermissionPolicyFields,permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields.tsx';
+export {HostSettingsPage} from '${root}/packages/studio-ui/src/host-settings-page.tsx';
 export {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';
 export {TaskDefaultSettings} from '${root}/packages/studio-ui/src/task-default-settings.tsx';
 export {TaskBehaviorSettings} from '${root}/packages/studio-ui/src/task-behavior-settings.tsx';
@@ -48,6 +51,7 @@ const mocks = {
   './harness-updates': `export const HarnessUpdates=()=>null;`,
   './acp-registry': `export const AcpRegistry=()=>null;export const AcpRegistrySettings=()=>null;`,
   './provider-check': `export const ProviderCheck=()=>null;`,
+  'pull-request-preferences': `export const PullRequestPreferences=()=>null;`,
 }
 const built = await build({
   stdin: {
@@ -59,15 +63,19 @@ import {SidebarHeaderLayout,HeaderFallback} from '${root}/packages/studio-ui/src
 import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';
 import {TooltipProvider} from '@dovo/studio-ui';
 import General from '${root}/packages/studio-shell/src/app-settings/general.tsx';
+import TaskList from '${root}/packages/studio-shell/src/app-settings/task-list.tsx';
+import {appSettingsExtension} from '${root}/packages/studio-shell/src/app-extension.ts';
+import {agentsExtension} from '${root}/packages/extension-agents/src/index.ts';
+import {runtimeExtension} from '${root}/packages/extension-runtime/src/index.ts';
+import {scmExtension} from '${root}/packages/extension-scm/src/index.ts';
+import {tasksExtension} from '${root}/packages/extension-tasks/src/index.ts';
 import Conversation from '${root}/packages/studio-shell/src/app-settings/conversation.tsx';
 import About from '${root}/packages/studio-shell/src/app-settings/about.tsx';
 import Appearance from '${root}/packages/studio-shell/src/app-settings/appearance.tsx';
 import Notifications from '${root}/packages/studio-shell/src/app-settings/notifications.tsx';
 import Shortcuts from '${root}/packages/studio-shell/src/app-settings/shortcuts.tsx';
 import Browser from '${root}/packages/studio-shell/src/app-settings/browser.tsx';
-import {PullRequestCreationDefaults} from '${root}/packages/extension-runtime/src/pull-request-creation-defaults.tsx';
-import {SettingsPage} from '@dovo/studio-ui';
-function PullRequests(){return <SettingsPage title="Pull requests & pipelines" description="Device creation defaults"><PullRequestCreationDefaults/></SettingsPage>}
+import PullRequests from '${root}/packages/extension-runtime/src/pull-request-settings-view.tsx';
 import Diffs from '${root}/packages/studio-shell/src/app-settings/diffs.tsx';
 import Usage from '${root}/packages/studio-shell/src/app-settings/usage.tsx';
 import Agents from '${root}/packages/extension-agents/src/view.tsx';
@@ -92,16 +100,8 @@ window.request=async(path,input)=>{
 window.runtime={...window.sources[0],runtimes:window.sources,request:window.request,activeRuntimeId:'computer',refreshRuntimes:async()=>{},refreshRuntime:async()=>{},readRuntime:(profile,path,input)=>window.request(path,input),runtimeReadCache:()=>({read:async()=>null,write:async()=>{}})};
 window.updateState={status:'idle',channel:'stable'};window.updateCalls=[];window.updateListeners=new Set();window.publishUpdate=value=>{window.updateState=value;for(const fn of window.updateListeners)fn(value)};
 window.updates={state:async()=>window.updateState,subscribe:fn=>{window.updateListeners.add(fn);return()=>window.updateListeners.delete(fn)},check:async()=>window.updateCalls.push('check'),install:async()=>window.updateCalls.push('install'),setChannel:async channel=>{window.updateCalls.push(channel);window.publishUpdate({...window.updateState,channel})}};
-const localPages={'appearance-settings':Appearance,'notification-settings':Notifications,'shortcuts-settings':Shortcuts,'browser-settings':Browser,'pull-request-monitoring-settings':PullRequests,'diff-settings':Diffs,'usage-settings':Usage};
-const localTitles=['Appearance','Notifications','Keyboard shortcuts','Browser','Pull requests & pipelines','Review & diffs','Usage & limits'];
-const views=[
- ...Object.keys(localPages).map((id,index)=>({id,title:localTitles[index],order:.2+index*.01,settingsSection:'app'})),
- {id:'general',title:'General',order:.1,settingsSection:'app',keywords:'organization navigation'},
- {id:'conversation-settings',title:'Conversation',order:.3,settingsSection:'app',keywords:'composer streaming markdown'},
- {id:'updates-settings',title:'Updates & about',order:.7,settingsSection:'app',keywords:'version licenses'},
- {id:'agents',title:'Agents',order:2,settingsSection:'agents',keywords:'codex claude models providers profiles'},
- {id:'task-defaults',title:'Task defaults',order:3,settingsSection:'coding',keywords:'inherit permissions setup lifecycle'},
-];
+const localPages={appearance:Appearance,notifications:Notifications,shortcuts:Shortcuts,'browser-settings':Browser,'pull-request-monitoring-settings':PullRequests,diffs:Diffs,usage:Usage,'task-list-settings':TaskList};
+const views=[appSettingsExtension,agentsExtension,runtimeExtension,scmExtension,tasksExtension].flatMap(extension=>extension.views).filter(view=>view.navigationGroup==='settings');
 function Content(){const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=id=>{if(id!==view&&confirm())setView(id)};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/>{Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</div>}
 createRoot(document.getElementById('app')).render(<SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider>);`,
     loader: 'tsx',
@@ -121,6 +121,16 @@ createRoot(document.getElementById('app')).render(<SettingsTargetProvider><Toolt
     {
       name: 'mocks',
       setup(b) {
+        // Read shipped navigation metadata without bundling every extension page into this fixture.
+        b.onResolve({ filter: /.*/ }, ({ path, kind, importer }) => {
+          if (
+            kind === 'dynamic-import' &&
+            /\/(studio-shell\/src\/app-extension|extension-(agents|runtime|scm|tasks)\/src\/index)\.ts$/.test(
+              importer,
+            )
+          )
+            return { path, external: true }
+        })
         b.onResolve({ filter: /\?raw$/ }, ({ path, resolveDir }) => ({
           path: new URL(path.replace(/\?raw$/, ''), 'file://' + resolveDir + '/').pathname,
           namespace: 'raw',
@@ -129,6 +139,11 @@ createRoot(document.getElementById('app')).render(<SettingsTargetProvider><Toolt
           contents: await readFile(path, 'utf8'),
           loader: 'text',
         }))
+        b.onResolve({ filter: /^\.\/runtime-preferences$/ }, ({ importer }) =>
+          importer.endsWith('/pull-request-settings-view.tsx')
+            ? { path: 'pull-request-preferences', namespace: 'mock' }
+            : undefined,
+        )
         b.onResolve({ filter: /.*/ }, ({ path }) =>
           mocks[path] ? { path, namespace: 'mock' } : undefined,
         )
@@ -177,6 +192,17 @@ try {
       })
     }
   }
+  const screenshotThemes = async (name) => {
+    if (!process.env.DOVO_SETTINGS_SCREENSHOTS) return
+    for (const mode of ['light', 'dark']) {
+      await page.evaluate(async (mode) => {
+        document.documentElement.dataset.theme = mode
+        void document.body.offsetHeight
+        await Promise.allSettled(document.getAnimations().map((animation) => animation.finished))
+      }, mode)
+      await screenshot(`${name}-${mode}`)
+    }
+  }
   if (process.env.DOVO_HEADER_SCREENSHOTS) {
     const brand = await page.locator('.studio-titlebar').boundingBox()
     const heading = await page.locator('.studio-page-header').first().boundingBox()
@@ -193,6 +219,11 @@ try {
   const navigation = page.getByRole('region', { name: 'Settings navigation', exact: true })
   const settingsSidebar = page.getByRole('navigation', { name: 'Settings sections', exact: true })
   const brandBefore = await page.locator('.studio-titlebar').boundingBox()
+  const storageBefore = await settingsSidebar.getByLabel('Settings storage').boundingBox()
+  assert.ok(
+    storageBefore.y + storageBefore.height <= 420,
+    'Storage explanation fits a short window',
+  )
   const searchBefore = await page
     .getByRole('textbox', { name: 'Search settings', exact: true })
     .boundingBox()
@@ -221,7 +252,11 @@ try {
     titleBefore,
     'Settings title stays fixed',
   )
-  await navigation.getByLabel('Inherited settings target').waitFor({ state: 'visible' })
+  assert.deepEqual(
+    await settingsSidebar.getByLabel('Settings storage').boundingBox(),
+    storageBefore,
+    'Storage explanation stays visible while settings links scroll',
+  )
   await page.getByRole('textbox', { name: 'Search settings', exact: true }).fill('General')
   await settingsSidebar.getByRole('button', { name: 'General', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
@@ -252,16 +287,107 @@ try {
     }
   }
   const search = page.getByRole('textbox', { name: 'Search settings', exact: true })
+  const agentsCategory = settingsSidebar.getByRole('button', {
+    name: 'Agents & tools',
+    exact: true,
+  })
+  assert.equal(await agentsCategory.getAttribute('aria-expanded'), 'false')
+  assert.equal(
+    await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).count(),
+    0,
+  )
+  await agentsCategory.focus()
+  await page.keyboard.press('Enter')
+  assert.equal(await agentsCategory.getAttribute('aria-expanded'), 'true')
+  await page.keyboard.press('Enter')
+  await search.fill('memory')
+  await settingsSidebar.getByRole('button', { name: 'Memory', exact: true }).waitFor()
+  await search.press('Escape')
+  assert.equal(
+    await agentsCategory.getAttribute('aria-expanded'),
+    'false',
+    'Search keeps the prior category state',
+  )
+  await page.evaluate(() => window.changeView('agents'))
+  await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).waitFor()
+  assert.equal(
+    await agentsCategory.getAttribute('aria-expanded'),
+    'true',
+    'External navigation opens the active category',
+  )
+  await page.evaluate(() => window.changeView('general'))
+  for (const [category, titles] of [
+    ['This app', ['General', 'Conversation', 'Browser']],
+    ['Agents & tools', ['Agents', 'CLI commands & shell', 'Studio Tools', 'Memory']],
+    ['Tasks & projects', ['Task list & projects', 'Task defaults', 'Running tasks']],
+    ['Computers', ['Devices & runtime', 'Device previews']],
+    ['History', ['Activity & message history', 'Archived tasks']],
+  ]) {
+    const toggle = settingsSidebar.getByRole('button', { name: category, exact: true })
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    const group = settingsSidebar
+      .getByRole('heading', { name: category, exact: true })
+      .locator('..')
+    for (const title of titles) {
+      assert.equal(await group.getByRole('button', { name: title, exact: true }).count(), 1)
+    }
+  }
+  await search.fill('Agents & tools')
+  await settingsSidebar.getByRole('button', { name: 'Studio Tools', exact: true }).waitFor()
+  assert.equal(
+    await settingsSidebar.getByRole('button', { name: 'General', exact: true }).count(),
+    0,
+  )
+  await search.fill('no-such-setting')
+  await settingsSidebar.getByRole('status').filter({ hasText: 'No settings match' }).waitFor()
+  await search.press('Escape')
+  assert.equal(await search.inputValue(), '')
+  await search.fill('confirmation')
+  await search.press('Enter')
+  await page.getByRole('heading', { name: 'Task list & projects', exact: true, level: 1 }).waitFor()
+  await search.press('Escape')
   await search.fill('composer')
   assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 0)
   await search.press('Enter')
   await page.getByRole('heading', { name: 'Conversation', exact: true, level: 1 }).waitFor()
   await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
   await page.getByRole('button', { name: 'General', exact: true }).click()
+  assert.equal(await page.getByLabel('Inherited settings target').count(), 0)
+  await page.getByRole('button', { name: 'Organize tasks & projects', exact: false }).click()
+  await page.getByRole('heading', { name: 'Task list & projects', exact: true, level: 1 }).waitFor()
   await choose('Project order', 'Last user message')
   await page.getByRole('textbox', { name: 'Add project starts in', exact: true }).fill('~/Code')
+  await page.getByRole('switch', { name: 'Confirm before deleting a task', exact: true }).click()
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).projectOrder,
+    ),
+    'user-message',
+  )
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).addProjectStartsIn,
+    ),
+    '~/Code',
+  )
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).confirmDelete,
+    ),
+    false,
+  )
+  await page.getByRole('button', { name: 'General', exact: true }).click()
   await page.getByRole('button', { name: 'Set up your agents', exact: false }).click()
   await page.getByRole('heading', { name: 'Agents', exact: true, level: 1 }).waitFor()
+  await settingsSidebar.getByLabel('Inherited settings target').waitFor()
+  assert.equal(
+    await settingsSidebar
+      .getByLabel('Inherited settings target')
+      .locator('button, a, input, select, [tabindex]')
+      .count(),
+    0,
+    'Scope summary contains no controls',
+  )
   const profiles = page.getByRole('navigation', { name: 'Provider configurations' })
   await profiles.getByRole('button', { name: /Claude Code/ }).waitFor()
   assert.equal(await profiles.getByRole('button').count(), 9, 'Providers are present before setup')
@@ -293,6 +419,16 @@ try {
   assert.deepEqual(writes.at(-1).after.resources, { skills: [], mcpServers: [] })
   await choose('Settings project', 'Dovo')
   await choose('Settings computer', 'MacBook Pro')
+  await settingsSidebar
+    .getByLabel('Inherited settings target')
+    .getByText('Dovo · MacBook Pro', { exact: true })
+    .waitFor()
+  await page.getByText('Editing Dovo on MacBook Pro', { exact: true }).waitFor()
+  if (process.env.DOVO_SETTINGS_SCREENSHOTS)
+    await page.getByRole('heading', { name: 'New tasks', exact: true }).evaluate((element) => {
+      element.scrollIntoView({ block: 'start' })
+    })
+  await screenshotThemes('task-defaults-project-computer-desktop')
   await choose('Auto-resume limited tasks', 'On')
   await page.getByRole('button', { name: 'Save lifecycle settings', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'Lifecycle settings saved.' }).waitFor()
@@ -319,6 +455,16 @@ try {
     await page.getByRole('combobox', { name: 'Working directory', exact: true }).innerText(),
     'New worktree',
   )
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await page.getByRole('button', { name: 'Task list & projects', exact: true }).click()
+  await page.getByRole('heading', { name: 'Task defaults', exact: true, level: 1 }).waitFor()
+  assert.equal(
+    await settingsSidebar
+      .getByRole('button', { name: 'Task defaults', exact: true })
+      .getAttribute('aria-current'),
+    'page',
+  )
+  await page.getByText('Editing Dovo on MacBook Pro', { exact: true }).waitFor()
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Conversation', exact: true }).click()
   await page.getByRole('switch', { name: 'Formatted composer preview', exact: true }).click()
@@ -383,6 +529,21 @@ try {
     1,
   )
   await openLocal('Browser')
+  await page
+    .getByText(
+      'Preview defaults and local profiles stay on this device. Remote profiles and logins stay on the selected computer.',
+      { exact: true },
+    )
+    .waitFor()
+  assert.equal(
+    await page.getByText('This device · saved automatically', { exact: true }).count(),
+    0,
+  )
+  await settingsSidebar
+    .getByLabel('Settings storage')
+    .getByText('This device + computer', { exact: true })
+    .waitFor()
+  assert.equal(await settingsSidebar.getByLabel('Inherited settings target').count(), 0)
   await choose('Default viewport', 'Phone')
   assert.equal(await preference('browserViewport'), 'phone')
   const localProfiles = page
@@ -401,6 +562,17 @@ try {
   assert.equal(await page.evaluate(() => window.browserWrites.at(-1).name), 'Remote work')
   assert.equal((await preference('browserProfiles')).at(-1).name, 'Local work')
   await openLocal('Pull requests & pipelines')
+  await page
+    .getByText(
+      'Creation defaults are saved on this device. Lifecycle and monitoring settings are saved on the selected computer.',
+      { exact: true },
+    )
+    .waitFor()
+  await page.getByText('Computer settings on MacBook Pro', { exact: true }).waitFor()
+  assert.equal(
+    await page.getByText('This device · saved automatically', { exact: true }).count(),
+    0,
+  )
   await choose('Merge method', 'Squash and merge')
   assert.equal(await preference('mergeMethod'), 'squash')
   await openLocal('Review & diffs')
@@ -409,6 +581,10 @@ try {
   assert.equal(await preference('diffLayout'), 'split')
   assert.equal(await preference('diffHighlight'), 'char')
   await openLocal('Usage & limits')
+  await settingsSidebar
+    .getByLabel('Settings storage')
+    .getByText('Across computers', { exact: true })
+    .waitFor()
   await choose('Period', 'Last 30 days')
   await page.getByRole('radio', { name: 'Limits', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'No account limits reported' }).waitFor()
@@ -436,6 +612,7 @@ try {
   if (process.env.DOVO_SETTINGS_SCREENSHOTS) {
     for (const title of [
       'General',
+      'Task list & projects',
       'Appearance',
       'Conversation',
       'Notifications',
@@ -448,7 +625,39 @@ try {
     ]) {
       await openLocal(title)
       await screenshot(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-desktop')
+      if (title === 'Task list & projects') await screenshotThemes('task-list-projects-desktop')
     }
+  }
+  // Keep the medium-width sidebar compact while allowing longer page and storage labels to wrap.
+  await page.setViewportSize({ width: 900, height: 900 })
+  assert.equal((await settingsSidebar.boundingBox()).width, 208)
+  for (const title of [
+    'Task list & projects',
+    'Pull requests & pipelines',
+    'Agents',
+    'Task defaults',
+  ]) {
+    await openLocal(title)
+    assert.deepEqual(
+      await navigation
+        .getByRole('button')
+        .evaluateAll((buttons) =>
+          buttons
+            .filter((button) => button.scrollWidth > button.clientWidth)
+            .map((button) => button.getAttribute('aria-label')),
+        ),
+      [],
+      `${title}: navigation labels fit the 208px sidebar`,
+    )
+    assert.ok(
+      (await navigation.getByRole('button', { name: title, exact: true }).boundingBox()).height <=
+        90,
+      `${title}: selected label stays compact`,
+    )
+    if (['Pull requests & pipelines', 'Task defaults'].includes(title))
+      await screenshotThemes(
+        title === 'Task defaults' ? 'scope-sidebar-208px' : 'mixed-storage-sidebar-208px',
+      )
   }
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(
@@ -456,8 +665,36 @@ try {
     true,
     'Settings should fit a narrow viewport',
   )
+  await page.getByRole('combobox', { name: 'Settings section', exact: true }).click()
+  const sectionChoices = page.getByRole('listbox')
+  for (const [category, title] of [
+    ['This app', 'General'],
+    ['Agents & tools', 'Agents'],
+    ['Tasks & projects', 'Task defaults'],
+    ['Computers', 'Devices & runtime'],
+    ['History', 'Archived tasks'],
+  ]) {
+    assert.equal(
+      await sectionChoices
+        .getByRole('group', { name: category, exact: true })
+        .getByRole('option', { name: title, exact: true })
+        .count(),
+      1,
+      `${title} keeps its category in the narrow chooser`,
+    )
+  }
+  await page.keyboard.press('Home')
+  await page.waitForFunction(
+    () =>
+      document.activeElement?.getAttribute('role') === 'option' &&
+      document.activeElement.textContent === 'General',
+  )
+  await screenshotThemes('settings-section-groups-narrow')
+  await page.keyboard.press('Enter')
+  await page.getByRole('heading', { name: 'General', exact: true, level: 1 }).waitFor()
   for (const title of [
     'General',
+    'Task list & projects',
     'Appearance',
     'Conversation',
     'Notifications',
@@ -476,6 +713,8 @@ try {
       `${title} fits a narrow viewport`,
     )
     await screenshot(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-narrow')
+    if (['General', 'Task list & projects'].includes(title))
+      await screenshotThemes(title.toLowerCase().replaceAll(/[^a-z]+/g, '-') + '-narrow')
   }
   await choose('Settings section', 'Agents')
   await page.getByRole('button', { name: 'Agent profile', exact: true }).waitFor()
@@ -492,7 +731,7 @@ try {
   await page.waitForFunction(
     () => !document.querySelector('[role="combobox"][aria-label="Working directory"]').disabled,
   )
-  await screenshot('task-defaults-narrow')
+  await screenshotThemes('task-defaults-project-computer-narrow')
   assert.equal(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
     true,
@@ -503,7 +742,7 @@ try {
     await page.screenshot({ path: process.env.DOVO_GENERAL_SCREENSHOT, fullPage: true })
   assert.deepEqual(errors, [])
   console.log(
-    'Settings: all ten app pages, persisted preferences, notification permissions, local/remote profiles, update states, scoped agents/lifecycle, navigation and narrow layouts passed.',
+    'Settings: grouped navigation, category/control search, storage labels, all app pages, persisted preferences, notification permissions, local/remote profiles, update states, scoped agents/lifecycle, navigation and narrow layouts passed.',
   )
 } finally {
   await browser.close()

@@ -1,4 +1,5 @@
 import type { PullPage } from '@dovo/studio-core'
+import { retainNewerPullSnapshot } from '@dovo/protocol'
 
 export type CachedPullPage = PullPage & { firstPageIds?: string[] }
 
@@ -8,6 +9,8 @@ export function refreshPullPage(
   incoming: PullPage,
   force: boolean,
 ): CachedPullPage {
+  const retained = retainNewerPullSnapshot(previous, incoming)
+  if (retained !== incoming) return retained
   const firstPageIds = incoming.pulls.map((pull) => String(pull.number))
   if (force || !incoming.hasMore || !previous || previous.page <= 1 || !previous.firstPageIds)
     return { ...incoming, firstPageIds }

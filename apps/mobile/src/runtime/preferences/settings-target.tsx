@@ -107,18 +107,20 @@ export function ScopedSettings({
     <View
       key="target"
       accessibilityLabel="Settings target"
-      style={[styles.card, { gap: 10, backgroundColor: colors.surface }]}
+      style={[
+        styles.card,
+        { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: colors.surface },
+      ]}
     >
       <View
         style={{
           flexDirection: narrow ? 'column' : 'row',
           alignItems: narrow ? 'stretch' : 'center',
-          gap: 8,
+          gap: narrow ? 0 : 8,
         }}
       >
-        <View style={{ flex: narrow ? undefined : 1, minWidth: 0, gap: 4 }}>
+        <View style={{ flex: narrow ? undefined : 1, minWidth: 0 }}>
           <Text style={[styles.text, { fontWeight: '600' }]}>Editing {summary.title}</Text>
-          <Text style={[styles.muted, { fontSize: 13 }]}>{summary.storage}</Text>
         </View>
         <Action
           secondary
@@ -126,10 +128,11 @@ export function ScopedSettings({
           onPress={() => setExpanded(!expanded)}
         />
       </View>
-      <Text style={[styles.muted, { fontSize: 13, lineHeight: 18 }]}>{summary.description}</Text>
     </View>,
     expanded && (
       <View key="choices" style={[styles.card, { gap: 12 }]}>
+        <Text style={[styles.text, { fontWeight: '600' }]}>{summary.storage}</Text>
+        <Text style={[styles.muted, { fontSize: 13, lineHeight: 18 }]}>{summary.description}</Text>
         <View
           accessibilityLabel="Settings inheritance"
           style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}

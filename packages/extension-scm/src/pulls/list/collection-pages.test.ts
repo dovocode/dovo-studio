@@ -44,3 +44,27 @@ it('drops later rows when page one is complete or refresh is forced', () => {
   expect(forced.page).toBe(1)
   expect(forced.pulls.map((pull) => pull.number)).toEqual([4])
 })
+
+it('preserves newer rows and loaded pagination when a returning gateway serves an older cache', () => {
+  const previous = {
+    ...page([614, 608, 600], 2),
+    firstPageIds: ['614', '608'],
+    cachedAt: '2026-10-20T11:45:00Z',
+  }
+  const old = {
+    ...page([608], 1, false),
+    cachedAt: '2026-10-19T08:39:00Z',
+    stale: true,
+    refreshError: 'PR computer offline',
+  }
+  for (const forced of [false, true]) {
+    const result = refreshPullPage(previous, old, forced)
+    expect(result.pulls.map((pull) => pull.number)).toEqual([614, 608, 600])
+    expect(result.page).toBe(2)
+    expect(result.cachedAt).toBe(previous.cachedAt)
+    expect(result.stale).toBe(true)
+    expect(result.refreshError).toBe('PR computer offline')
+  }
+  const next = { ...page([615], 1, false), cachedAt: '2026-10-20T12:00:00Z' }
+  expect(refreshPullPage(previous, next, false).pulls.map((pull) => pull.number)).toEqual([615])
+})

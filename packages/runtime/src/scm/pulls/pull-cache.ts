@@ -147,7 +147,7 @@ export class PullCache {
             const updated = Date.now()
             const value = {
               ...(reconcile ? reconcile(fetched, cached) : fetched),
-              cachedAt: new Date(updated).toISOString(),
+              cachedAt: fetched.cachedAt ?? new Date(updated).toISOString(),
               stale: this.invalidated.has(key),
             }
             this.db
@@ -194,7 +194,7 @@ export class PullCache {
           this.executor.runFork(refresh.pipe(Effect.ignore)) // Failure is retained for the next cached response.
         return {
           ...cached,
-          cachedAt: new Date(row.updated).toISOString(),
+          cachedAt: cached.cachedAt ?? new Date(row.updated).toISOString(),
           stale,
           refreshError: this.errors.get(key),
         }
@@ -209,7 +209,7 @@ export class PullCache {
           cached && row && !this.rejectCachedFallback(error)
             ? Effect.succeed({
                 ...cached,
-                cachedAt: new Date(row.updated).toISOString(),
+                cachedAt: cached.cachedAt ?? new Date(row.updated).toISOString(),
                 stale: true,
                 refreshError: errorMessage(error),
               })

@@ -1,6 +1,7 @@
 import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
 import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
 import { SettingsSelect } from './settings-select'
+import { SpeechSettings } from './speech'
 
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const mod = mac ? '⌘' : 'Ctrl'
@@ -115,6 +116,7 @@ export default function ConversationSettings() {
           />
         </SettingRow>
       </SettingsGroup>
+      <SpeechSettings />
     </SettingsPage>
   )
 }

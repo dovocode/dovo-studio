@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 
+const screenshotDirectory = '/tmp/dovo-mobile-settings'
+await mkdir(screenshotDirectory, { recursive: true })
+const navigationOnly = process.argv.includes('--navigation-only')
 const root = fileURLToPath(new URL('../', import.meta.url))
 // Model RN's column layout, zero default shrink and explicit font scaling. These checks
 // exercise real settings components; UIKit/SwiftUI measurement still needs a device.
@@ -27,11 +31,11 @@ const native = `
     const textStyle=css(style),scale=window.fontScale;
     return <span data-testid={testID} role={accessibilityRole} data-text style={{flexShrink:0,boxSizing:'border-box',overflowWrap:'anywhere',...textStyle,fontSize:(textStyle.fontSize||14)*scale,lineHeight:textStyle.lineHeight?textStyle.lineHeight*scale+'px':undefined,...(numberOfLines===1?{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}:{display:'block'})}}>{children}</span>;
   };
-  export const TextInput=({style,multiline,accessibilityLabel,value,onChangeText,editable,ref})=>{
+  export const TextInput=({style,multiline,accessibilityLabel,value,onChangeText,editable,ref,placeholder,placeholderTextColor})=>{
     const Component=multiline?'textarea':'input';const inputStyle=css(style);
-    return <Component ref={ref} aria-label={accessibilityLabel} value={value} disabled={editable===false} onChange={e=>onChangeText?.(e.target.value)} style={{boxSizing:'border-box',minWidth:0,flexShrink:0,...inputStyle,fontSize:(inputStyle.fontSize||14)*window.fontScale,resize:'none'}}/>;
+    return <Component ref={ref} aria-label={accessibilityLabel} placeholder={placeholder} value={value} disabled={editable===false} onChange={e=>onChangeText?.(e.target.value)} style={{boxSizing:'border-box',background:'transparent',border:0,outline:0,'--placeholder-color':placeholderTextColor,minWidth:0,flexShrink:0,...inputStyle,fontSize:(inputStyle.fontSize||14)*window.fontScale,resize:'none'}}/>;
   };
-  export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><button role="switch" aria-label={accessibilityLabel} aria-checked={value} disabled={disabled} onClick={()=>onValueChange(!value)} style={{width:51,height:31,flexShrink:0,alignSelf:'flex-start'}}>●</button>;
+  export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><button role="switch" aria-label={accessibilityLabel} aria-checked={value} disabled={disabled} onClick={()=>onValueChange(!value)} style={{width:51,height:31,border:0,borderRadius:16,padding:3,opacity:disabled?0.4:1,background:value?'#34c759':'#767680',flexShrink:0,alignSelf:'flex-start'}}><span style={{display:'block',width:25,height:25,borderRadius:13,background:'white',marginLeft:value?20:0}}/></button>;
   const listeners=new Set();window.setFontScale=scale=>{window.fontScale=scale;listeners.forEach(listener=>listener())};
   export const useWindowDimensions=()=>{useSyncExternalStore(listener=>{listeners.add(listener);window.addEventListener('resize',listener);return ()=>{listeners.delete(listener);window.removeEventListener('resize',listener)}},()=>innerWidth+':'+window.fontScale);return {width:innerWidth,height:innerHeight,fontScale:window.fontScale}};
   export const Alert={alert(){}};
@@ -74,10 +78,35 @@ const mocks = {
   '@expo/ui/swift-ui': swift,
   '@expo/ui/swift-ui/modifiers': modifiers,
   './native-icon': `export const NativeIcon=({name,size,color})=><span data-icon={name} aria-hidden style={{width:size,height:size,flexShrink:0,color}}>⌄</span>;export const NativeIconLabel=({title,icon})=><><span aria-hidden data-icon={icon}/>{title}</>;`,
-  './icon': `export const Icon=({name,size=20,color})=><span data-icon={name} aria-hidden style={{display:'block',width:size,height:size,flexShrink:0,color}}>◇</span>;`,
+  './icon': `import {iconAssets} from './src/ui/controls/icon-assets';export const Icon=({name,size=20,color})=>{const asset=iconAssets[name];const url=typeof asset==='string'?asset:asset?.default;return <span data-icon={name} aria-hidden style={{display:'block',width:size,height:size,flexShrink:0,color,backgroundColor:color||'currentColor',maskImage:'url('+url+')',maskSize:'contain',maskRepeat:'no-repeat'}}/>};`,
   '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;export const carZoom=1.4;`,
+  'expo-router': `export const router={push:path=>window.navigate(path),dismissTo:path=>window.navigate(path),canGoBack:()=>window.routeHistory.length>1,back:()=>window.goBack()};export const useLocalSearchParams=()=>({section:window.section,runtimeId:window.requestedRuntimeId});`,
+  expo: `export const requireOptionalNativeModule=()=>({getSupportedLocales:async()=>({locales:['en-US','de-DE']})});`,
+  'expo-speech': `export const getAvailableVoicesAsync=async()=>[{identifier:'siri',name:'Siri',language:'en-US',quality:'Enhanced'}];`,
+  'expo-constants': `export default {expoConfig:{version:'test'}};`,
+  '@react-native-async-storage/async-storage': `export default {getItem:async()=>null,setItem:async(key,value)=>{window.savedPreferences=JSON.parse(value)}};`,
+  '../tasks/list/task-list-view': `export const useTaskListView=()=>({setView:update=>{window.taskView=update(window.taskView||{})}});`,
+  '../notifications/provider': `import {useState} from 'react';export const usePushNotifications=()=>{const [enabled,setEnabled]=useState(true);const [servers,setServers]=useState({});return {supported:window.notificationsSupported!==false,busy:Boolean(window.notificationsBusy),enabled,setEnabled,error:window.notificationError||'',serverEnabled:id=>servers[id]!==false,setServerEnabled:(id,value)=>setServers({...servers,[id]:value})}};`,
+  '../live-activities/provider': `import {useState} from 'react';export const useLiveActivities=()=>{const [enabled,setEnabled]=useState(true);return {supported:window.activitiesSupported??(window.platform==='ios'),enabled,setEnabled,error:window.activityError||''}};`,
+  '../runtime/diagnostics/crash-log': `export const readLastCrash=async()=>null;export const clearLastCrash=async()=>{};`,
+  '../ui/content/open-link': `export const useOpenAppLink=()=>async()=>{};`,
+  '../../../shell/workbench': `export const WorkbenchDetailRoute=({children})=>children;`,
   './action': `export const Action=()=>null;`,
 }
+for (const screen of [
+  'task-defaults',
+  'usage',
+  'appearance',
+  'agents',
+  'devices',
+  'device-host-settings',
+  'resources',
+]) {
+  mocks['../../../screens/' + screen] =
+    `export default function Screen(){return <div>${screen}</div>}`
+}
+mocks['../../../scm/connections/connections'] =
+  `export default function Screen(){return <div>source-control</div>}`
 const built = await build({
   stdin: {
     resolveDir: root + 'apps/mobile',
@@ -92,9 +121,20 @@ const built = await build({
       import {SettingsTargetProvider,ScopedSettings} from './src/runtime/preferences/settings-target';
       import {SettingSource} from './src/runtime/preferences/setting-source';
       import {HarnessUpdates} from './src/agents/harness-updates';
+      import {Effect} from 'effect';import {decode,runtimePreferencesSchema} from '@dovo/protocol';
+      import SettingsScreen from './src/screens/settings';
+      import SettingsSection from './src/app/(more)/settings/[section]';
       const computer='Dominic’s development computer with a long name';
-      window.runtime={activeId:'computer',connected:true,overviews:[{profile:{id:'computer',name:computer,connection:{address:'http://computer',token:'test'}},connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'pnpm install && pnpm build'}},shared:[]}},workspace:{repositories:[]}}}]};
-      window.runtime.snapshot=window.runtime.overviews[0].snapshot;
+      window.runtime={activeId:'computer',connected:true,overviews:[{profile:{id:'computer',name:computer,connection:{address:'http://computer',token:'test'}},connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'pnpm install && pnpm build'}},shared:[]}},workspace:{repositories:[],tasks:[]}}}]};
+      window.runtime.overviews.push({...window.runtime.overviews[0],profile:{...window.runtime.overviews[0].profile,id:'other',name:'Build server'},snapshot:{...window.runtime.overviews[0].snapshot,defaults:{scopedSettings:{environment:{},shared:[]}}}});
+      window.computerPreferences={};window.computerReads=[];window.computerSaves=[];
+      for(const entry of window.runtime.overviews){
+        const id=entry.profile.id;window.computerPreferences[id]=decode(runtimePreferencesSchema,{});
+        entry.readEffect=(path)=>Effect.sync(()=>{window.computerReads.push({id,path});if(path==='/api/memory/projects/read')return {projects:[]};return structuredClone(window.computerPreferences[id])});
+        entry.callEffect=(path,changes)=>Effect.sync(()=>{window.computerSaves.push({id,path,changes});const preferences=window.computerPreferences[id];if(path==='/api/memory/settings/save'){if(changes.scope==='system')preferences.memory.systemEnabled=changes.enabled;return structuredClone(preferences.memory)}Object.assign(preferences,changes);return structuredClone(preferences)});
+      }
+      Object.assign(window.runtime,window.runtime.overviews[0]);
+      window.runtime.snapshot=window.runtime.overviews[0].snapshot;window.runtime.profiles=window.runtime.overviews.map(entry=>entry.profile);
       function Controls(){const [modelMode,setModelMode]=useState('auto');window.modelMode=modelMode;const [selected,setSelected]=useState('long');window.selected=selected;const [enabled,setEnabled]=useState(true);window.enabled=enabled;
         return <><SettingsChoice label="Other computer refresh" value={selected} items={[{id:'long',name:'When I refresh the other development computer'},{id:'short',name:'Every 30 seconds'}]} onChange={setSelected}/>
           <SettingsChoice label="Model mode" value={modelMode} items={[{id:'auto',name:'Tune',icon:'tune'},{id:'smart',name:'Maestro',icon:'maestro'}]} onChange={setModelMode}/>
@@ -104,8 +144,8 @@ const built = await build({
           <SettingsAction secondary label="Reset all later worktree setup overrides" onPress={()=>{}}/>
         </>;
       }
-      function App(){const [mode,setMode]=useState('dark');const [sheet,setSheet]=useState(false);const [scopeOnly,setScopeOnly]=useState(false);window.showScoped=setScopeOnly;window.setMode=setMode;window.showSheet=setSheet;
-        return <MobileThemeContext.Provider value={createMobileTheme('dovo',mode)}><SettingsPage>{scopeOnly?<SettingsTargetProvider><ScopedSettings scrollable>{()=> <View style={{height:1800}}><RNText>Settings content</RNText></View>}</ScopedSettings></SettingsTargetProvider>:<ScrollView contentContainerStyle={{padding:16,gap:24}}>
+      function App(){const [navigation,setNavigation]=useState(false);const [path,setPath]=useState('/settings');const [revision,setRevision]=useState(0);window.refreshSettings=()=>setRevision(revision+1);window.showNavigation=()=>setNavigation(true);window.routeHistory??=['/settings'];window.navigate=path=>{window.routeHistory.push(path);window.section=path.split('/')[2];setPath(path)};window.goBack=()=>{window.routeHistory.pop();const path=window.routeHistory.at(-1);window.section=path.split('/')[2];setPath(path)};const [mode,setMode]=useState('dark');const [sheet,setSheet]=useState(false);const [scopeOnly,setScopeOnly]=useState(false);window.showScoped=setScopeOnly;window.setMode=setMode;window.showSheet=setSheet;
+        return <MobileThemeContext.Provider value={createMobileTheme('dovo',mode)}><SettingsPage>{navigation?<SettingsTargetProvider>{path==='/settings'?<SettingsScreen/>:<SettingsSection key={path}/>}</SettingsTargetProvider>:scopeOnly?<SettingsTargetProvider><ScopedSettings scrollable>{()=> <View style={{height:1800}}><RNText>Settings content</RNText></View>}</ScopedSettings></SettingsTargetProvider>:<ScrollView contentContainerStyle={{padding:16,gap:24}}>
           <SettingsGroup title="Computers"><SettingsRow title="Settings scope" subtitle="All projects on this computer" value={computer} icon="device" tint="#087f5b" mark={{icon:'stack',label:'Computer settings'}} onPress={()=>{}}/></SettingsGroup>
           <SettingsGroup title="Preferences"><Controls/></SettingsGroup>
           <SettingsTargetProvider><ScopedSettings>{()=> <SettingSource source="global" overridden={false} label="Worktree setup" setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:undefined,inheritedValue:undefined}}/>}</ScopedSettings></SettingsTargetProvider>
@@ -119,24 +159,39 @@ const built = await build({
     {
       name: 'native-boundaries',
       setup(builder) {
-        builder.onResolve({ filter: /.*/ }, ({ path }) => {
+        builder.onResolve({ filter: /.*/ }, ({ path, importer }) => {
+          if (importer.endsWith('/ui/controls/icon-assets.ts') && path.endsWith('.png'))
+            return {
+              path:
+                root +
+                'apps/mobile/assets/icons/' +
+                path.split('/').at(-1).replace('.png', '@3x.png'),
+            }
           if (/ui\/layout\/sheet$|^\.\.\/layout\/sheet$/.test(path))
             return { path: 'sheet', namespace: 'mock' }
+          if (/layout\/screen-header$/.test(path)) return { path: 'header', namespace: 'mock' }
           if (/state\/application-state$/.test(path)) return { path: 'state', namespace: 'mock' }
-          if (/connection\/provider$/.test(path)) return { path: 'runtime', namespace: 'mock' }
+          if (
+            /connection\/provider$/.test(path) ||
+            (path === './provider' &&
+              importer.endsWith('/runtime/connection/runtime-preferences.tsx'))
+          )
+            return { path: 'runtime', namespace: 'mock' }
           if (/controls\/icon$/.test(path)) return { path: './icon', namespace: 'mock' }
           if (/controls\/action$/.test(path)) return { path: './action', namespace: 'mock' }
           if (Object.hasOwn(mocks, path)) return { path, namespace: 'mock' }
         })
         builder.onLoad({ filter: /.*/, namespace: 'mock' }, ({ path }) => ({
           contents:
-            path === 'state'
-              ? `export {useState as useApplicationState} from 'react';`
-              : path === 'runtime'
-                ? `export const useRuntime=()=>window.runtime;export const RuntimeScope=({children})=>children;`
-                : path === 'sheet'
-                  ? `import {createContext,useContext} from 'react';import {View} from 'react-native';const Context=createContext(false);export const useInsideSheet=()=>useContext(Context);export const Sheet=({children,title})=><Context.Provider value><View accessibilityLabel={title} style={{position:'fixed',inset:0,background:'#f2f2f7',zIndex:1}}>{children}</View></Context.Provider>;`
-                  : mocks[path],
+            path === 'header'
+              ? `import {createContext,useContext} from 'react';import {View,Text,Pressable} from 'react-native';import {useTheme} from './src/ui/theme';export const ScreenBackContext=createContext(null);export const ScreenHeader=({title})=>{const back=useContext(ScreenBackContext);const {styles}=useTheme();return <View style={{padding:16,flexDirection:'row',alignItems:'center',gap:16}}>{back&&<Pressable accessibilityLabel="Back" onPress={back}><Text style={styles.text}>Back</Text></Pressable>}<Text numberOfLines={1} style={[styles.text,{fontWeight:'600',flex:1,minWidth:0}]} accessibilityRole="heading">{title}</Text></View>};`
+              : path === 'state'
+                ? `export {useState as useApplicationState} from 'react';`
+                : path === 'runtime'
+                  ? `import {createContext,useContext} from 'react';const Context=createContext(null);export const useRuntime=()=>useContext(Context)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const runtime=useRuntime();const entry=runtime.overviews.find(item=>item.profile.id===runtimeId);return entry?<Context.Provider value={{...runtime,...entry}}>{children}</Context.Provider>:null};`
+                  : path === 'sheet'
+                    ? `import {createContext,useContext} from 'react';import {View} from 'react-native';const Context=createContext(false);export const useInsideSheet=()=>useContext(Context);export const Sheet=({children,title})=><Context.Provider value><View accessibilityLabel={title} style={{position:'fixed',inset:0,background:'#f2f2f7',zIndex:1}}>{children}</View></Context.Provider>;`
+                    : mocks[path],
           loader: 'tsx',
           resolveDir: root + 'apps/mobile',
         }))
@@ -144,11 +199,12 @@ const built = await build({
     },
   ],
   bundle: true,
+  loader: { '.png': 'dataurl' },
   write: false,
   format: 'iife',
   platform: 'browser',
   jsx: 'automatic',
-  define: { 'process.env.NODE_ENV': '"production"' },
+  define: { 'process.env.NODE_ENV': '"production"', __DEV__: 'false' },
 })
 
 const browser = await chromium.launch({ headless: true })
@@ -157,71 +213,550 @@ try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(10000)
     const errors = []
-    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('pageerror', (error) => {
+      errors.push(error.message)
+      console.error(error.message)
+    })
     await page.setContent(
-      '<style>body{margin:0;font-family:system-ui}#app{display:flex;height:100vh}#app>div{min-width:0}button,input,textarea{font:inherit}</style><div id="app"></div>',
+      '<style>body{margin:0;font-family:system-ui}#app{display:flex;height:100vh}#app>div{min-width:0}button,input,textarea{font:inherit}input::placeholder{color:var(--placeholder-color)}</style><div id="app"></div>',
     )
     await page.evaluate((platform) => {
       window.platform = platform
       window.fontScale = 1
     }, platform)
     await page.addScriptTag({ content: built.outputFiles[0].text })
-    await page.getByTestId('Settings scope').waitFor()
-    const argumentsField = page.getByLabel('Shell arguments (one per line)', { exact: true })
-    assert.equal(
-      await argumentsField.evaluate((element) => element.scrollHeight <= element.clientHeight),
-      true,
-      'Both lines of shell arguments must fit in the default multiline editor',
-    )
-    assert.equal(
-      await page
-        .locator('[data-icon="device"]')
-        .evaluate((element) => getComputedStyle(element).color),
-      'rgb(8, 127, 91)',
-      'Computer status tint must be visible',
-    )
-
-    await page.getByRole('button', { name: 'Change scope', exact: true }).click()
-    await page
-      .getByRole('button', { name: 'View inheritance for worktree setup', exact: true })
-      .click()
-    await page
-      .getByRole('button', {
-        name: '1 override keeps its own value for worktree setup',
-        exact: true,
-      })
-      .click()
-    const sourceName = page.getByText('Dominic’s development computer with a long name · editing', {
-      exact: true,
-    })
-    const sourceValue = page.getByText('pnpm install && pnpm build', { exact: true })
-    for (const mode of ['dark', 'light']) {
-      await page.evaluate((mode) => window.setMode(mode), mode)
-      await page.waitForFunction(
-        (mode) =>
-          document.querySelector('#app>div').style.backgroundColor ===
-          (mode === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(242, 242, 247)'),
-        mode,
+    if (!navigationOnly) {
+      await page.getByTestId('Settings scope').waitFor()
+      const argumentsField = page.getByLabel('Shell arguments (one per line)', { exact: true })
+      assert.equal(
+        await argumentsField.evaluate((element) => element.scrollHeight <= element.clientHeight),
+        true,
+        'Both lines of shell arguments must fit in the default multiline editor',
       )
-      for (const locator of [
-        sourceName,
-        sourceValue,
-        page.getByText('Harness updates', { exact: true }),
-      ]) {
-        const color = await locator.evaluate((element) => getComputedStyle(element).color)
+      assert.equal(
+        await page
+          .locator('[data-icon="device"]')
+          .evaluate((element) => getComputedStyle(element).color),
+        'rgb(8, 127, 91)',
+        'Computer status tint must be visible',
+      )
+
+      await page.getByRole('button', { name: 'Change scope', exact: true }).click()
+      await page
+        .getByRole('button', { name: 'View inheritance for worktree setup', exact: true })
+        .click()
+      await page
+        .getByRole('button', {
+          name: '1 override keeps its own value for worktree setup',
+          exact: true,
+        })
+        .click()
+      const sourceName = page.getByText(
+        'Dominic’s development computer with a long name · editing',
+        {
+          exact: true,
+        },
+      )
+      const sourceValue = page.getByText('pnpm install && pnpm build', { exact: true })
+      for (const mode of ['dark', 'light']) {
+        await page.evaluate((mode) => window.setMode(mode), mode)
+        await page.waitForFunction(
+          (mode) =>
+            document.querySelector('#app>div').style.backgroundColor ===
+            (mode === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(242, 242, 247)'),
+          mode,
+        )
+        for (const locator of [
+          sourceName,
+          sourceValue,
+          page.getByText('Harness updates', { exact: true }),
+        ]) {
+          const color = await locator.evaluate((element) => getComputedStyle(element).color)
+          assert.equal(
+            color,
+            await page
+              .getByTestId('Settings scope')
+              .locator('[data-text]')
+              .first()
+              .evaluate((element) => getComputedStyle(element).color),
+            'Settings details must use the theme text color',
+          )
+        }
+        for (const [width, scale] of [
+          [320, 1],
+          [390, 1],
+          [390, 1.5],
+          [320, 2],
+        ]) {
+          await page.setViewportSize({ width, height: 844 })
+          await page.evaluate((scale) => window.setFontScale(scale), scale)
+          await page.evaluate(
+            () =>
+              new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+          )
+          const overflow = await page.evaluate(() =>
+            [...document.querySelectorAll('[data-text],input,textarea,button,[data-icon]')]
+              .filter((element) => {
+                const rect = element.getBoundingClientRect()
+                return rect.width > 0 && (rect.left < -1 || rect.right > innerWidth + 1)
+              })
+              .map((element) => ({
+                text: element.textContent,
+                left: element.getBoundingClientRect().left,
+                right: element.getBoundingClientRect().right,
+              })),
+          )
+          assert.deepEqual(
+            overflow,
+            [],
+            platform + ' settings overflow at ' + width + ' / ' + scale,
+          )
+          const value = page.getByText('When I refresh the other development computer', {
+            exact: true,
+          })
+          assert.equal(
+            await value.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+            true,
+            'Expanded choice values must stay readable',
+          )
+          if (width / scale < 360) {
+            const computer = page
+              .getByTestId('Settings scope')
+              .getByText('Dominic’s development computer with a long name', { exact: true })
+            assert.equal(
+              await computer.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+              true,
+              'Narrow settings rows must show the computer value',
+            )
+          }
+        }
+      }
+      if (platform === 'ios') {
         assert.equal(
-          color,
-          await page
-            .getByTestId('Settings scope')
-            .locator('[data-text]')
-            .first()
-            .evaluate((element) => getComputedStyle(element).color),
-          'Settings details must use the theme text color',
+          await page.locator('[data-native-host][data-matches-height="false"]').count(),
+          0,
+          'Native choices must measure their own content height',
         )
       }
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.evaluate(() => window.setFontScale(1))
+      const modeChoice = page.getByTestId('Model mode')
+      assert.equal(await modeChoice.locator('[data-icon=tune]').count(), 1)
+      await modeChoice.click()
+      const tune = page.getByTestId('Choose Tune')
+      assert.equal(await tune.locator('[data-icon=tune]').count(), 1)
+      assert.equal(await tune.locator('[data-icon=check]').count(), 1)
+      const maestro = page.getByTestId('Choose Maestro')
+      assert.equal(await maestro.locator('[data-icon=maestro]').count(), 1)
+      await maestro.click()
+      await page.waitForFunction(() => window.modelMode === 'smart')
+      assert.equal(await modeChoice.locator('[data-icon=maestro]').count(), 1)
+      if (platform === 'ios') await modeChoice.click()
+      const choice = page.getByTestId('Other computer refresh')
+      await choice.click()
+      await page.getByTestId('Choose Every 30 seconds').click()
+      await page.waitForFunction(() => window.selected === 'short')
+      if (platform === 'ios') await choice.click()
+      await page
+        .getByRole('switch', {
+          name: 'Keep this computer awake while running development tasks',
+          exact: true,
+        })
+        .click()
+      await page.waitForFunction(() => window.enabled === false)
+      await page.evaluate(() => window.showSheet(true))
+      const editor = page.getByLabel('Edit computer', { exact: true })
+      await editor.getByLabel('Voice', { exact: true }).click()
+      await editor.getByLabel('Search voice', { exact: true }).fill('voice 13')
+      await editor.getByTestId('Choose Siri voice 13 · English · Enhanced quality').click()
+      await page.waitForFunction(() => window.voice === '13')
+      await page.evaluate(() => window.showSheet(false))
+      await page.evaluate(() => window.showScoped(true))
+      const sticky = page.getByLabel('Settings target', { exact: true })
+      await sticky.getByText('Editing Global defaults', { exact: true }).waitFor()
+      const storage = page.getByText('Shared across paired computers', { exact: true })
+      const description = page.getByText(
+        'Defaults for all projects on all computers. More-specific overrides keep their own values.',
+        { exact: true },
+      )
+      for (const mode of ['dark', 'light']) {
+        await page.evaluate((mode) => window.setMode(mode), mode)
+        await page.waitForFunction(
+          (mode) =>
+            document.querySelector('#app>div').style.backgroundColor ===
+            (mode === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(242, 242, 247)'),
+          mode,
+        )
+        assert.equal(await storage.count(), 0, 'Storage details stay in expanded choices')
+        assert.equal(await description.count(), 0, 'Description stays in expanded choices')
+        const collapsed = await sticky.boundingBox()
+        await page.screenshot({
+          path: `${screenshotDirectory}/${platform}-${mode}-scope-collapsed.png`,
+        })
+        await page.getByRole('button', { name: 'Change scope', exact: true }).click()
+        await storage.waitFor()
+        await description.waitFor()
+        assert.equal(
+          await sticky.getByText('Shared across paired computers', { exact: true }).count(),
+          0,
+          'Storage details must not enlarge the sticky header',
+        )
+        assert.equal((await sticky.boundingBox()).height, collapsed.height)
+        await page.screenshot({
+          path: `${screenshotDirectory}/${platform}-${mode}-scope-expanded.png`,
+        })
+        await page.getByRole('button', { name: 'Hide scope choices', exact: true }).click()
+        await storage.waitFor({ state: 'detached' })
+      }
+      await page.getByRole('button', { name: 'Change scope', exact: true }).click()
+      const before = await sticky.boundingBox()
+      const scroll = () =>
+        sticky.evaluate((element) => {
+          let parent = element.parentElement
+          while (parent && getComputedStyle(parent).overflowY !== 'auto')
+            parent = parent.parentElement
+          if (!parent) throw Error('No scoped settings scroller')
+          parent.scrollTop = 700
+          return parent.getBoundingClientRect().top
+        })
+      const scrollTop = await scroll()
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll('div')].some((e) => e.scrollTop === 700),
+      )
+      assert.ok(
+        Math.abs((await sticky.boundingBox()).y - scrollTop) <= 1,
+        'Only the compact scope summary must stick',
+      )
+      const choices = page.getByLabel('Settings inheritance', { exact: true })
+      assert.ok((await choices.boundingBox()).y < before.y, 'Expanded choices must scroll away')
+      await page.screenshot({ path: '/tmp/dovo-inheritance-mobile-' + platform + '.png' })
+      for (const mode of ['dark', 'light']) {
+        await page.evaluate((mode) => window.setMode(mode), mode)
+        await page.waitForFunction(
+          (mode) =>
+            document.querySelector('#app>div').style.backgroundColor ===
+            (mode === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(242, 242, 247)'),
+          mode,
+        )
+        await page.screenshot({
+          path: `${screenshotDirectory}/${platform}-${mode}-scope-sticky.png`,
+        })
+      }
+    }
+    // Exercise the actual settings index, section route and moved controls.
+    await page.evaluate(() => window.showNavigation())
+    for (const category of [
+      'This app',
+      'Agents & tools',
+      'Tasks & projects',
+      'Computers',
+      'History',
+    ])
+      await page.getByText(category, { exact: true }).waitFor()
+    // Category pages use the normal stack: index → category → setting, then back.
+    const search = page.getByLabel('Search settings', { exact: true })
+    const category = (name) => page.getByRole('button', { name, exact: true })
+    const categories = [
+      ['This app', 'app-preferences'],
+      ['Agents & tools', 'agent-settings'],
+      ['Tasks & projects', 'task-settings'],
+      ['Computers', 'computer-settings'],
+      ['History', 'history-settings'],
+    ]
+    for (const [name, route] of categories) {
+      const rect = await category(name).boundingBox()
+      assert.ok(rect.y + rect.height <= 844, `${name} fits in the initial overview`)
+      assert.equal(
+        await category(name).getAttribute('aria-expanded'),
+        null,
+        'Categories are destinations',
+      )
+      await category(name).click()
+      assert.equal(await page.evaluate(() => window.section), route)
+      await page.getByRole('heading', { name, exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Back', exact: true }).click()
+    }
+    await category('This app').click()
+    await category('Conversation').click()
+    await page.getByRole('heading', { name: 'Conversation', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.getByRole('heading', { name: 'This app', exact: true }).waitFor()
+    await category('Conversation').waitFor()
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await search.fill('general memory')
+    await category('Memory').waitFor()
+    await page.getByText('Agents & tools', { exact: true }).waitFor()
+    assert.equal(await category('Tasks & projects').count(), 0, 'Memory lives with agent tools')
+    await page.getByRole('button', { name: 'Clear search', exact: true }).click()
+    assert.equal(await category('Memory').count(), 0, 'Clearing search restores the compact index')
+    for (const [query, destination, section] of [
+      ['24-hour', 'General', 'general'],
+      ['siri voice', 'Speech & driving', 'speech'],
+      ['dictation language', 'Speech & driving', 'speech'],
+      ['speaking speed', 'Speech & driving', 'speech'],
+      ['tool details', 'Conversation', 'conversation'],
+      ['expanded inputs', 'Conversation', 'conversation'],
+      ['keep screen awake', 'Conversation', 'conversation'],
+      ['merge squash', 'Task & PR preferences', 'task-preferences'],
+      ['confirm archive', 'Task & PR preferences', 'task-preferences'],
+      ['push alerts', 'Notifications', 'notifications'],
+      ['standalone relay', 'Notifications', 'notifications'],
+      ['live activities', 'Notifications', 'notifications'],
+      ['widgets refresh', 'Battery & background', 'battery'],
+      ['maximum child agents', 'Task behavior', 'task-behavior'],
+      ['interrupted restart', 'Task behavior', 'task-behavior'],
+      ['tune maestro', 'Task behavior', 'task-behavior'],
+      ['scope model', 'Task behavior', 'task-behavior'],
+      ['supervised web requests', 'Task behavior', 'task-behavior'],
+      ['code reviews', 'Task behavior', 'task-behavior'],
+      ['smart pr linking', 'Pull requests & pipelines', 'pull-requests'],
+      ['feedback watcher', 'Pull requests & pipelines', 'pull-requests'],
+      ['last thread', 'Worktrees', 'worktrees'],
+      ['branch prefix', 'Worktrees', 'worktrees'],
+      ['artifact versions', 'Artifacts', 'artifacts'],
+      ['artifact forever', 'Artifacts', 'artifacts'],
+      ['general memory', 'Memory', 'memory'],
+      ['studio tools', 'Runtime tools', 'runtime-tools'],
+      ['linked projects tool', 'Runtime tools', 'runtime-tools'],
+      ['preferred retrieval computer', 'Runtime tools', 'runtime-tools'],
+      ['remote desktop', 'Runtime tools', 'runtime-tools'],
+      ['keep history forever', 'Activity retention', 'activity-retention'],
+    ]) {
+      await search.fill(query)
+      await page.getByRole('button', { name: destination, exact: true }).click()
+      assert.equal(await page.evaluate(() => window.section), section, query)
+      await page.getByRole('heading', { name: destination, exact: true }).first().waitFor()
+      await page.getByRole('button', { name: 'Back', exact: true }).click()
+    }
+    await search.fill('no-such-setting')
+    await page.getByText('No settings match “no-such-setting”.', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Clear search', exact: true }).click()
+    assert.equal(await search.inputValue(), '')
+
+    const choose = async (label, option) => {
+      const control = page.getByTestId(label)
+      await control.click()
+      await page.getByTestId('Choose ' + option).click()
+      if (platform === 'ios') await control.click()
+    }
+    await search.fill('24-hour')
+    await page.getByRole('button', { name: 'General', exact: true }).click()
+    await page.getByRole('heading', { name: 'General', exact: true }).waitFor()
+    // General must retain links to every moved group for existing deep links.
+    for (const title of [
+      'Conversation',
+      'Speech & driving',
+      'Task & PR preferences',
+      'Notifications',
+      'Battery & background',
+    ])
+      await page.getByRole('button', { name: title, exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Battery & background', exact: true }).click()
+    await choose('Other computer refresh', 'When I refresh')
+    await page.waitForFunction(() => window.savedPreferences?.computerRefresh === 'manual')
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.getByRole('button', { name: 'Conversation', exact: true }).click()
+    await page.getByRole('switch', { name: 'Show tool call details', exact: true }).click()
+    await page.waitForFunction(() => window.savedPreferences?.showToolDetails === true)
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.getByRole('heading', { name: 'General', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await search.fill('merge squash')
+    await page.getByRole('button', { name: 'Task & PR preferences', exact: true }).click()
+    await choose('Merge method', 'Squash')
+    await page.waitForFunction(() => window.savedPreferences?.mergeMethod === 'squash')
+    await page.getByRole('switch', { name: 'Confirm before archiving a task', exact: true }).click()
+    await page.waitForFunction(() => window.savedPreferences?.confirmArchive === true)
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await search.fill('siri voice')
+    await page.getByRole('button', { name: 'Speech & driving', exact: true }).click()
+    await choose('Voice', 'Siri · Siri · en-US · Enhanced')
+    await page.waitForFunction(() => window.savedPreferences?.speechVoice === 'siri')
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await search.fill('app updates')
+    await page.getByRole('button', { name: 'App & updates', exact: true }).click()
+    await page.getByRole('heading', { name: 'App & updates', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Notifications', exact: true }).click()
+    const computerSwitch = page.getByRole('switch', {
+      name: 'Dominic’s development computer with a long name',
+      exact: true,
+    })
+    await computerSwitch.click()
+    assert.equal(await computerSwitch.getAttribute('aria-checked'), 'false')
+    await page.getByRole('switch', { name: 'Task notifications', exact: true }).click()
+    assert.equal(await computerSwitch.isDisabled(), true)
+    const activities = page.getByRole('switch', { name: 'Show task Live Activities', exact: true })
+    assert.equal(await activities.isDisabled(), platform !== 'ios')
+    if (platform === 'ios') {
+      await activities.click()
+      assert.equal(await activities.getAttribute('aria-checked'), 'false')
+    }
+    await page.evaluate(() => {
+      window.notificationsSupported = false
+      window.notificationError = 'Notification permission denied'
+      window.refreshSettings()
+    })
+    await page
+      .getByText('Push notifications require a new native app build.', { exact: true })
+      .waitFor()
+    await page.getByText('Notification permission denied', { exact: true }).waitFor()
+    assert.equal(
+      await page.getByRole('switch', { name: 'Task notifications', exact: true }).isDisabled(),
+      true,
+    )
+    await page.evaluate(() => {
+      window.activitiesSupported = false
+      window.activityError = 'Live Activities could not be started'
+      window.refreshSettings()
+    })
+    await page
+      .getByText(
+        'Live Activities require the new native iOS build, not Expo Go or a JavaScript reload.',
+        { exact: true },
+      )
+      .waitFor()
+    await page.getByText('Live Activities could not be started', { exact: true }).waitFor()
+    await page.getByText('Notification permission denied', { exact: true }).waitFor()
+    assert.equal(await activities.isDisabled(), true)
+    assert.equal(await activities.getAttribute('aria-checked'), 'false')
+    await page.evaluate(() => {
+      window.notificationsSupported = true
+      window.notificationsBusy = true
+      window.notificationError = ''
+      window.refreshSettings()
+    })
+    assert.equal(
+      await page.getByRole('switch', { name: 'Task notifications', exact: true }).isDisabled(),
+      true,
+    )
+    assert.equal(await computerSwitch.isDisabled(), true)
+    await page.evaluate(() => {
+      window.notificationsBusy = false
+      window.refreshSettings()
+    })
+    assert.equal(
+      await page.getByRole('switch', { name: 'Task notifications', exact: true }).isDisabled(),
+      false,
+    )
+
+    await page.evaluate(() => {
+      window.computerReads = []
+      window.navigate('/settings')
+    })
+    await search.fill('task behavior')
+    await page.getByRole('button', { name: 'Task behavior', exact: true }).click()
+    await page.getByText('Running tasks', { exact: true }).waitFor()
+    assert.equal(await page.getByText('Memory', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('Pull requests & pipelines', { exact: true }).count(), 0)
+    assert.equal(
+      await page.evaluate(() =>
+        window.computerReads.some((item) => item.path === '/api/memory/projects/read'),
+      ),
+      false,
+    )
+    const resume = page.getByRole('switch', {
+      name: 'Continue interrupted turns after runtime restart',
+      exact: true,
+    })
+    await page.evaluate(() => {
+      window.runtime.activeId = 'other'
+      window.refreshSettings()
+    })
+    await resume.click()
+    await page.waitForFunction(
+      () => window.computerPreferences.computer.autoContinueAfterRestart === true,
+    )
+    await choose('Computer', 'Build server')
+    await page
+      .getByText('Saved on Build server. Changes are shared with its paired devices.', {
+        exact: true,
+      })
+      .waitFor()
+    assert.equal(await resume.getAttribute('aria-checked'), 'false')
+    await resume.click()
+    await page.waitForFunction(() =>
+      window.computerSaves.some(
+        (item) => item.id === 'other' && item.changes.autoContinueAfterRestart === true,
+      ),
+    )
+    await page.evaluate(() => {
+      window.runtime.activeId = 'computer'
+    })
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await search.fill('general memory')
+    await page.getByRole('button', { name: 'Memory', exact: true }).click()
+    await page.getByRole('switch', { name: 'System-wide memory', exact: true }).click()
+    await page.waitForFunction(
+      () => window.computerPreferences.computer.memory.systemEnabled === true,
+    )
+    assert.equal(
+      await page.evaluate(() => window.computerPreferences.other.memory.systemEnabled),
+      false,
+    )
+    await page.evaluate(() => {
+      window.runtime.overviews[0].connected = false
+      window.navigate('/settings/task-behavior')
+    })
+    await page
+      .getByText('This computer is offline. Reconnect to load and change its preferences.', {
+        exact: true,
+      })
+      .waitFor()
+    assert.equal(await resume.count(), 0)
+    await page.evaluate(() => {
+      window.runtime.overviews[0].connected = true
+      window.requestedRuntimeId = 'missing'
+      window.navigate('/settings/artifacts')
+    })
+    await page
+      .getByText('This computer is unavailable. Choose another computer above.', { exact: true })
+      .waitFor()
+    assert.equal(
+      await page.getByRole('switch', { name: 'Enable Dovo Artifacts', exact: true }).count(),
+      0,
+    )
+    await page.evaluate(() => {
+      window.requestedRuntimeId = undefined
+    })
+
+    // A direct section link has a Settings fallback even without navigation history.
+    await page.evaluate(() => {
+      window.navigate('/settings/conversation')
+      window.routeHistory = ['/settings/conversation']
+    })
+    await page.getByRole('heading', { name: 'Conversation', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await search.waitFor()
+    // Unknown sections must keep the fallback, including names on Object.prototype.
+    await page.evaluate(() => window.navigate('/settings/constructor'))
+    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
+    for (const section of [
+      '',
+      'app-preferences',
+      'agent-settings',
+      'task-settings',
+      'computer-settings',
+      'history-settings',
+      'general',
+      'conversation',
+      'speech',
+      'task-preferences',
+      'notifications',
+      'battery',
+      'task-behavior',
+      'pull-requests',
+      'runtime-tools',
+      'artifacts',
+      'memory',
+      'worktrees',
+      'activity-retention',
+    ]) {
+      await page.evaluate(
+        (section) => window.navigate('/settings' + (section ? '/' + section : '')),
+        section,
+      )
       for (const [width, scale] of [
         [320, 1],
-        [390, 1],
         [390, 1.5],
         [320, 2],
       ]) {
@@ -232,108 +767,136 @@ try {
             new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
         )
         const overflow = await page.evaluate(() =>
-          [...document.querySelectorAll('[data-text],input,textarea,button,[data-icon]')]
+          [...document.querySelectorAll('[data-text],input,button,[data-icon]')]
             .filter((element) => {
               const rect = element.getBoundingClientRect()
               return rect.width > 0 && (rect.left < -1 || rect.right > innerWidth + 1)
             })
-            .map((element) => ({
-              text: element.textContent,
-              left: element.getBoundingClientRect().left,
-              right: element.getBoundingClientRect().right,
-            })),
+            .map((element) => element.textContent),
         )
-        assert.deepEqual(overflow, [], platform + ' settings overflow at ' + width + ' / ' + scale)
-        const value = page.getByText('When I refresh the other development computer', {
-          exact: true,
-        })
-        assert.equal(
-          await value.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
-          true,
-          'Expanded choice values must stay readable',
+        assert.deepEqual(
+          overflow,
+          [],
+          platform + ' settings ' + section + ' overflow at ' + width + ' / ' + scale,
         )
-        if (width / scale < 360) {
-          const computer = page
-            .getByTestId('Settings scope')
-            .getByText('Dominic’s development computer with a long name', { exact: true })
-          assert.equal(
-            await computer.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
-            true,
-            'Narrow settings rows must show the computer value',
-          )
-        }
       }
     }
-    if (platform === 'ios') {
-      assert.equal(
-        await page.locator('[data-native-host][data-matches-height="false"]').count(),
-        0,
-        'Native choices must measure their own content height',
-      )
-    }
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.evaluate(() => window.setFontScale(1))
-    const modeChoice = page.getByTestId('Model mode')
-    assert.equal(await modeChoice.locator('[data-icon=tune]').count(), 1)
-    await modeChoice.click()
-    const tune = page.getByTestId('Choose Tune')
-    assert.equal(await tune.locator('[data-icon=tune]').count(), 1)
-    assert.equal(await tune.locator('[data-icon=check]').count(), 1)
-    const maestro = page.getByTestId('Choose Maestro')
-    assert.equal(await maestro.locator('[data-icon=maestro]').count(), 1)
-    await maestro.click()
-    await page.waitForFunction(() => window.modelMode === 'smart')
-    assert.equal(await modeChoice.locator('[data-icon=maestro]').count(), 1)
-    if (platform === 'ios') await modeChoice.click()
-    const choice = page.getByTestId('Other computer refresh')
-    await choice.click()
-    await page.getByTestId('Choose Every 30 seconds').click()
-    await page.waitForFunction(() => window.selected === 'short')
-    if (platform === 'ios') await choice.click()
-    await page
-      .getByRole('switch', {
-        name: 'Keep this computer awake while running development tasks',
-        exact: true,
+    await page.evaluate(() => {
+      window.navigate('/settings')
+      window.setFontScale(1)
+    })
+    // These are phone-sized browser captures of real settings components, with native boundaries mocked.
+    await page.evaluate(() => {
+      window.runtime.overviews[0].profile.name = 'Dominic’s MacBook'
+    })
+    for (const mode of ['light', 'dark']) {
+      await page.evaluate((mode) => {
+        window.setMode(mode)
+        window.notificationsSupported = true
+        window.notificationError = ''
+        window.activitiesSupported = undefined
+        window.activityError = ''
+        window.notificationsBusy = false
+      }, mode)
+      await page.evaluate(() => window.navigate('/settings'))
+      await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
+      await page.screenshot({
+        path: screenshotDirectory + '/' + platform + '-' + mode + '-settings.png',
       })
-      .click()
-    await page.waitForFunction(() => window.enabled === false)
-    await page.evaluate(() => window.showSheet(true))
-    const editor = page.getByLabel('Edit computer', { exact: true })
-    await editor.getByLabel('Voice', { exact: true }).click()
-    await editor.getByLabel('Search voice', { exact: true }).fill('voice 13')
-    await editor.getByTestId('Choose Siri voice 13 · English · Enhanced quality').click()
-    await page.waitForFunction(() => window.voice === '13')
-    await page.evaluate(() => window.showSheet(false))
-    await page.evaluate(() => window.showScoped(true))
-    const sticky = page.getByLabel('Settings target', { exact: true })
-    await sticky.getByText('Editing Global defaults', { exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Change scope', exact: true }).click()
-    const before = await sticky.boundingBox()
-    const scroll = () =>
-      sticky.evaluate((element) => {
-        let parent = element.parentElement
-        while (parent && getComputedStyle(parent).overflowY !== 'auto')
-          parent = parent.parentElement
-        if (!parent) throw Error('No scoped settings scroller')
-        parent.scrollTop = 700
-        return parent.getBoundingClientRect().top
-      })
-    const scrollTop = await scroll()
-    await page.waitForFunction(() =>
-      [...document.querySelectorAll('div')].some((e) => e.scrollTop === 700),
-    )
-    assert.ok(
-      Math.abs((await sticky.boundingBox()).y - scrollTop) <= 1,
-      'Only the compact scope summary must stick',
-    )
-    const choices = page.getByLabel('Settings inheritance', { exact: true })
-    assert.ok((await choices.boundingBox()).y < before.y, 'Expanded choices must scroll away')
-    await page.screenshot({ path: '/tmp/dovo-inheritance-mobile-' + platform + '.png' })
+      for (const category of [
+        'This app',
+        'Agents & tools',
+        'Tasks & projects',
+        'Computers',
+        'History',
+      ]) {
+        const heading = page.getByRole('button', { name: category, exact: true })
+        await heading.click()
+        await page.getByRole('heading', { name: category, exact: true }).waitFor()
+        await page.screenshot({
+          path: `${screenshotDirectory}/${platform}-${mode}-${category.toLowerCase().replaceAll(/[^a-z]+/g, '-')}.png`,
+        })
+        await page.getByRole('button', { name: 'Back', exact: true }).click()
+      }
+      for (const section of [
+        'general',
+        'conversation',
+        'speech',
+        'battery',
+        'notifications',
+        'task-behavior',
+        'pull-requests',
+        'artifacts',
+        'task-preferences',
+        'memory',
+        'worktrees',
+        'runtime-tools',
+        'activity-retention',
+      ]) {
+        await page.evaluate((section) => window.navigate('/settings/' + section), section)
+        await page.getByRole('heading').waitFor()
+        if (
+          [
+            'task-behavior',
+            'pull-requests',
+            'artifacts',
+            'memory',
+            'worktrees',
+            'runtime-tools',
+            'activity-retention',
+          ].includes(section)
+        )
+          await page
+            .getByText('Loading computer preferences…', { exact: true })
+            .waitFor({ state: 'hidden' })
+        await page.screenshot({
+          path: screenshotDirectory + '/' + platform + '-' + mode + '-' + section + '.png',
+        })
+      }
+    }
+    await page.evaluate(() => window.navigate('/settings'))
+    await page.evaluate(() => {
+      window.setFontScale(1)
+      window.runtime = { ...window.runtime, profiles: [], overviews: [] }
+      window.refreshSettings()
+    })
+    await category('Computers').click()
+    await page.getByText('Connect a computer', { exact: true }).waitFor()
+    assert.equal(await page.getByTestId('Devices & runtime').isDisabled(), false)
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await category('This app').click()
+    for (const name of [
+      'General',
+      'Appearance',
+      'Notifications',
+      'App & updates',
+      'Battery & background',
+      'Conversation',
+      'Speech & driving',
+    ])
+      assert.equal(
+        await page.getByRole('button', { name, exact: true }).isDisabled(),
+        false,
+        name + ' works without a computer',
+      )
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await category('Tasks & projects').click()
+    assert.equal(await category('Task & PR preferences').isDisabled(), false)
+    assert.equal(await category('Task defaults').isDisabled(), true)
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await category('Agents & tools').click()
+    assert.equal(await category('Agents').isDisabled(), true)
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.screenshot({ path: '/tmp/dovo-settings-organized-mobile-' + platform + '.png' })
     assert.deepEqual(errors, [])
     await page.close()
   }
   console.log(
-    'Mobile settings: narrow and large-text layouts, dark/light details, status tints, native choice sizing, switches and searchable sheet choices passed (native boundaries mocked).',
+    'Phone browser screenshots: ' + screenshotDirectory + '/{android,ios}-{light,dark}-*.png',
+  )
+  console.log(
+    'Mobile settings: narrow and large-text layouts, dark/light details, status tints, section navigation, local and computer preference saves, offline/missing computer handling, notification controls and unpaired access passed (native boundaries mocked).',
   )
 } finally {
   await browser.close()

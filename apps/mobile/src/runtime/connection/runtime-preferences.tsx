@@ -29,7 +29,17 @@ type Preferences = typeof runtimePreferencesSchema.Type
 
 /** Preferences stored on the computer itself, shared by every device that manages it. Grouped
  * like the desktop pages: Running tasks, Pull requests & pipelines, Artifacts, memory, worktrees and history. */
-export function RuntimePreferences() {
+export type RuntimePreferencesSection =
+  | 'tasks'
+  | 'pulls'
+  | 'tools'
+  | 'artifacts'
+  | 'memory'
+  | 'worktrees'
+  | 'activity'
+
+export function RuntimePreferences({ section }: { section?: RuntimePreferencesSection }) {
+  const show = (group: RuntimePreferencesSection) => !section || section === group
   const { styles } = useTheme()
 
   const { connected, snapshot, readEffect, callEffect, overviews } = useRuntime()
@@ -66,7 +76,10 @@ export function RuntimePreferences() {
     setMemoryProjects([])
     setMemoryError('')
     setMemoryLoading(connected)
-    if (!connected) return
+    if (!connected || (section && section !== 'memory')) {
+      setMemoryLoading(false)
+      return
+    }
     const scope = clientTaskScope()
     void scope.run(
       readEffect('/api/memory/projects/read', {}, memoryProjectsSchema).pipe(
@@ -84,7 +97,7 @@ export function RuntimePreferences() {
       active = false
       void scope.stop()
     }
-  }, [connected, readEffect, setMemoryProjects, setMemoryError, retry])
+  }, [connected, readEffect, setMemoryProjects, setMemoryError, retry, section])
   // Saves only the changed field; the runtime merges it into the rest.
   const save = (changes: Partial<Preferences>) => {
     setSaved(false)
@@ -129,10 +142,12 @@ export function RuntimePreferences() {
   }
   return (
     <View style={{ gap: 28 }}>
-      <Text style={styles.muted}>
-        Saved on this computer and shared with its paired devices. Switches and choices save
-        automatically.
-      </Text>
+      {!section && (
+        <Text style={styles.muted}>
+          Saved on this computer and shared with its paired devices. Switches and choices save
+          automatically.
+        </Text>
+      )}
       {!connected ? (
         <Text accessibilityRole="alert" style={styles.muted}>
           This computer is offline. Reconnect to load and change its preferences.
@@ -173,252 +188,269 @@ export function RuntimePreferences() {
       )}
       {value && (
         <>
-          <Section title="Model modes (experimental)">
-            <SettingsSwitchRow
-              first
-              label="Tune & Maestro modes (experimental)"
-              value={value.enableSmartModelSelection}
-              disabled={disabled || snapshot?.smartModelSelectionEnabled === undefined}
-              onValueChange={(enableSmartModelSelection) => save({ enableSmartModelSelection })}
-            />
-            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-              Tune chooses a model within the default agent. Maestro chooses the agent and model
-              together. Both choose reasoning once before the first turn. Inherit keeps project
-              defaults.
-            </Text>
-          </Section>
-          <Section title="Project mode (experimental)">
-            <SettingsSwitchRow
-              first
-              label="Scope mode (experimental)"
-              value={value.enableAutoProjectSelection}
-              disabled={disabled || snapshot?.autoProjectSelectionEnabled === undefined}
-              onValueChange={(enableAutoProjectSelection) => save({ enableAutoProjectSelection })}
-            />
-            {value.enableAutoProjectSelection && (
-              <Choice
-                label="Scope model mode"
-                value={value.autoProjectModelSelection}
+          {show('tasks') && (
+            <Section title="Running tasks">
+              <ChildAgentLimit
+                value={value?.maxActiveChildAgents}
                 disabled={disabled}
-                items={[
-                  { id: 'inherit', name: 'Inherit' },
-                  ...(value.enableSmartModelSelection
-                    ? [
-                        { id: 'auto', name: 'Tune', icon: 'tune' as const },
-                        { id: 'smart', name: 'Maestro', icon: 'maestro' as const },
-                      ]
-                    : []),
-                ]}
-                onChange={(mode) =>
-                  save({ autoProjectModelSelection: decode(taskModelSelectionSchema, mode) })
-                }
+                onSave={(maxActiveChildAgents) => save({ maxActiveChildAgents })}
               />
-            )}
-
-            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-              Find primary and linked projects from the first message on this computer. If no
-              project matches, continue in General.
-            </Text>
-          </Section>
-          <Section title="Supervised mode">
-            <SettingsSwitchRow
-              first
-              label="Always allow web requests on this computer"
-              value={value.allowWebRequests}
-              disabled={disabled || !webRulesSupported}
-              onValueChange={(allowWebRequests) => save({ allowWebRequests })}
-            />
-            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-              {webRulesSupported
-                ? 'Allows browsing and search in every project and thread on this computer. Shell commands and file changes keep their existing approvals.'
-                : 'Update Dovo on this computer to use web approval rules.'}
-            </Text>
-          </Section>
-          <Section title="Running tasks">
-            <ChildAgentLimit
-              value={value?.maxActiveChildAgents}
-              disabled={disabled}
-              onSave={(maxActiveChildAgents) => save({ maxActiveChildAgents })}
-            />
-            <View style={{ gap: 6 }}>
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
+                  label="Continue interrupted turns after runtime restart"
+                  value={value?.autoContinueAfterRestart ?? false}
+                  disabled={disabled}
+                  onValueChange={(autoContinueAfterRestart) => save({ autoContinueAfterRestart })}
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Interrupted turns can resume automatically. Queued messages stay paused until you
+                  resume them. Stopped tasks and automations still require Retry.
+                </Text>
+              </View>
+              <View style={{ gap: 6 }}>
+                <Choice
+                  label="Auto-archive inactive tasks"
+                  value={String(value?.autoArchiveDays ?? 0)}
+                  disabled={disabled}
+                  items={[
+                    { id: '0', name: 'Never' },
+                    { id: '7', name: 'After 7 days' },
+                    { id: '14', name: 'After 14 days' },
+                    { id: '30', name: 'After 30 days' },
+                  ]}
+                  onChange={(days) =>
+                    save({
+                      autoArchiveDays: decode(
+                        runtimePreferencesSchema.fields.autoArchiveDays,
+                        Number(days),
+                      ),
+                    })
+                  }
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Running, waiting, pinned tasks and tasks with an open terminal are never archived.
+                </Text>
+              </View>
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
+                  label="Keep this computer awake while tasks run"
+                  value={value?.preventSleepWhileRunning ?? false}
+                  disabled={disabled}
+                  onValueChange={(preventSleepWhileRunning) => save({ preventSleepWhileRunning })}
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  macOS only. Prevents idle sleep while a task is working, so it keeps going while
+                  you follow it here.
+                </Text>
+              </View>
+            </Section>
+          )}
+          {show('tasks') && (
+            <Section title="Model modes (experimental)">
               <SettingsSwitchRow
                 first
-                label="Continue interrupted turns after runtime restart"
-                value={value?.autoContinueAfterRestart ?? false}
-                disabled={disabled}
-                onValueChange={(autoContinueAfterRestart) => save({ autoContinueAfterRestart })}
+                label="Tune & Maestro modes (experimental)"
+                value={value.enableSmartModelSelection}
+                disabled={disabled || snapshot?.smartModelSelectionEnabled === undefined}
+                onValueChange={(enableSmartModelSelection) => save({ enableSmartModelSelection })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Interrupted turns can resume automatically. Queued messages stay paused until you
-                resume them. Stopped tasks and automations still require Retry.
+                Tune chooses a model within the default agent. Maestro chooses the agent and model
+                together. Both choose reasoning once before the first turn. Inherit keeps project
+                defaults.
               </Text>
-            </View>
-            <View style={{ gap: 6 }}>
-              <Choice
-                label="Auto-archive inactive tasks"
-                value={String(value?.autoArchiveDays ?? 0)}
+            </Section>
+          )}
+          {show('tasks') && (
+            <Section title="Project mode (experimental)">
+              <SettingsSwitchRow
+                first
+                label="Scope mode (experimental)"
+                value={value.enableAutoProjectSelection}
+                disabled={disabled || snapshot?.autoProjectSelectionEnabled === undefined}
+                onValueChange={(enableAutoProjectSelection) => save({ enableAutoProjectSelection })}
+              />
+              {value.enableAutoProjectSelection && (
+                <Choice
+                  label="Scope model mode"
+                  value={value.autoProjectModelSelection}
+                  disabled={disabled}
+                  items={[
+                    { id: 'inherit', name: 'Inherit' },
+                    ...(value.enableSmartModelSelection
+                      ? [
+                          { id: 'auto', name: 'Tune', icon: 'tune' as const },
+                          { id: 'smart', name: 'Maestro', icon: 'maestro' as const },
+                        ]
+                      : []),
+                  ]}
+                  onChange={(mode) =>
+                    save({ autoProjectModelSelection: decode(taskModelSelectionSchema, mode) })
+                  }
+                />
+              )}
+
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                Find primary and linked projects from the first message on this computer. If no
+                project matches, continue in General.
+              </Text>
+            </Section>
+          )}
+          {show('tasks') && (
+            <Section title="Supervised mode">
+              <SettingsSwitchRow
+                first
+                label="Always allow web requests on this computer"
+                value={value.allowWebRequests}
+                disabled={disabled || !webRulesSupported}
+                onValueChange={(allowWebRequests) => save({ allowWebRequests })}
+              />
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                {webRulesSupported
+                  ? 'Allows browsing and search in every project and thread on this computer. Shell commands and file changes keep their existing approvals.'
+                  : 'Update Dovo on this computer to use web approval rules.'}
+              </Text>
+            </Section>
+          )}
+          {show('tools') && (
+            <Section title="Agent tools">
+              <SettingsSwitchRow
+                first
+                label="Linked projects tool"
+                value={value?.enableLinkedProjectsTool ?? true}
                 disabled={disabled}
+                onValueChange={(enableLinkedProjectsTool) => save({ enableLinkedProjectsTool })}
+              />
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                Let agents discover projects and stage links for their own thread’s next turn.
+                Existing links and manual linking are unaffected. Disabling blocks calls
+                immediately; tool visibility updates next turn.
+              </Text>
+            </Section>
+          )}
+          {show('tasks') && (
+            <Section title="Code reviews (experimental)">
+              <SettingsSwitchRow
+                first
+                label="Enable experimental code reviews"
+                value={value?.enableCodeReviews ?? false}
+                disabled={disabled}
+                onValueChange={(enableCodeReviews) => save({ enableCodeReviews })}
+              />
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                Opt in to agent reviews, findings, verification and optional review approval on this
+                computer. Review is never required to commit or push.
+              </Text>
+            </Section>
+          )}
+          {show('pulls') && (
+            <Section title="Pull requests & pipelines">
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
+                  label="Smart PR linking"
+                  value={value?.autoLinkPullRequests ?? true}
+                  disabled={disabled}
+                  onValueChange={(autoLinkPullRequests) => save({ autoLinkPullRequests })}
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Links branch matches and verified PR URLs mentioned in messages.
+                </Text>
+              </View>
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
+                  label="Settle when the PR closes"
+                  value={value?.settleOnPullClose ?? false}
+                  disabled={disabled}
+                  onValueChange={(settleOnPullClose) => save({ settleOnPullClose })}
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Moves the thread to Settled when its main PR is merged or closed. Pinned threads
+                  and active or queued work stay put.
+                </Text>
+              </View>
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
+                  label="Archive tasks when their PR closes"
+                  value={value?.archiveOnPullMerge ?? false}
+                  disabled={disabled}
+                  onValueChange={(archiveOnPullMerge) => save({ archiveOnPullMerge })}
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Archives a task once its pull request is merged or closed. Pinned and busy tasks
+                  stay.
+                </Text>
+              </View>
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
+                  label="Enable experimental PR feedback watcher"
+                  value={value?.enablePullRequestWatching ?? false}
+                  disabled={disabled}
+                  onValueChange={(enablePullRequestWatching) => save({ enablePullRequestWatching })}
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Let agents hand PR monitoring to this computer. New comments, reviews and failing
+                  checks wake the thread. Finished watched threads move to Waiting. Paused queues
+                  stay paused; settling or archiving cancels watches.
+                </Text>
+              </View>
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
+                  label="Enable experimental pipeline watcher"
+                  value={value?.enablePipelineWatching ?? false}
+                  disabled={disabled}
+                  onValueChange={(enablePipelineWatching) => save({ enablePipelineWatching })}
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Let agents hand pipeline monitoring to this computer. Failed runs wake the thread;
+                  successful runs finish silently. Finished watched threads move to Waiting. Paused
+                  queues stay paused; settling or archiving cancels watches.
+                </Text>
+              </View>
+            </Section>
+          )}
+          {show('tools') && (
+            <Section title="Shared GitHub and Jira retrieval">
+              <SettingsSwitchRow
+                first
+                label="Share retrieval with paired computers"
+                value={value?.enableSharedRetrieval ?? true}
+                disabled={disabled}
+                onValueChange={(enableSharedRetrieval) => save({ enableSharedRetrieval })}
+              />
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                PR reads and actions stay on one computer per account. If it is offline, saved PRs
+                remain visible and actions wait for reconnection. Credentials stay on their
+                computer.
+              </Text>
+              <Choice
+                label="Preferred retrieval computer"
+                value={value?.preferredRetrievalHost || 'auto'}
+                disabled={disabled || value?.enableSharedRetrieval === false}
                 items={[
-                  { id: '0', name: 'Never' },
-                  { id: '7', name: 'After 7 days' },
-                  { id: '14', name: 'After 14 days' },
-                  { id: '30', name: 'After 30 days' },
+                  { id: 'auto', name: 'Automatic' },
+                  ...overviews.flatMap((entry) =>
+                    entry.profile.connection.runtimeId
+                      ? [{ id: entry.profile.connection.runtimeId, name: entry.profile.name }]
+                      : [],
+                  ),
                 ]}
-                onChange={(days) =>
+                onChange={(preferredRetrievalHost) =>
                   save({
-                    autoArchiveDays: decode(
-                      runtimePreferencesSchema.fields.autoArchiveDays,
-                      Number(days),
-                    ),
+                    preferredRetrievalHost:
+                      preferredRetrievalHost === 'auto' ? '' : preferredRetrievalHost,
                   })
                 }
               />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Running, waiting, pinned tasks and tasks with an open terminal are never archived.
-              </Text>
-            </View>
-            <View style={{ gap: 6 }}>
-              <SettingsSwitchRow
-                first
-                label="Keep this computer awake while tasks run"
-                value={value?.preventSleepWhileRunning ?? false}
-                disabled={disabled}
-                onValueChange={(preventSleepWhileRunning) => save({ preventSleepWhileRunning })}
-              />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                macOS only. Prevents idle sleep while a task is working, so it keeps going while you
-                follow it here.
-              </Text>
-            </View>
-          </Section>
-          <Section title="Agent tools">
-            <SettingsSwitchRow
-              first
-              label="Linked projects tool"
-              value={value?.enableLinkedProjectsTool ?? true}
-              disabled={disabled}
-              onValueChange={(enableLinkedProjectsTool) => save({ enableLinkedProjectsTool })}
-            />
-            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-              Let agents discover projects and stage links for their own thread’s next turn.
-              Existing links and manual linking are unaffected. Disabling blocks calls immediately;
-              tool visibility updates next turn.
-            </Text>
-          </Section>
-          <Section title="Code reviews (experimental)">
-            <SettingsSwitchRow
-              first
-              label="Enable experimental code reviews"
-              value={value?.enableCodeReviews ?? false}
-              disabled={disabled}
-              onValueChange={(enableCodeReviews) => save({ enableCodeReviews })}
-            />
-            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-              Opt in to agent reviews, findings, verification and optional review approval on this
-              computer. Review is never required to commit or push.
-            </Text>
-          </Section>
-          <Section title="Pull requests & pipelines">
-            <View style={{ gap: 6 }}>
-              <SettingsSwitchRow
-                first
-                label="Smart PR linking"
-                value={value?.autoLinkPullRequests ?? true}
-                disabled={disabled}
-                onValueChange={(autoLinkPullRequests) => save({ autoLinkPullRequests })}
-              />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Links branch matches and verified PR URLs mentioned in messages.
-              </Text>
-            </View>
-            <View style={{ gap: 6 }}>
-              <SettingsSwitchRow
-                first
-                label="Settle when the PR closes"
-                value={value?.settleOnPullClose ?? false}
-                disabled={disabled}
-                onValueChange={(settleOnPullClose) => save({ settleOnPullClose })}
-              />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Moves the thread to Settled when its main PR is merged or closed. Pinned threads and
-                active or queued work stay put.
-              </Text>
-            </View>
-            <View style={{ gap: 6 }}>
-              <SettingsSwitchRow
-                first
-                label="Archive tasks when their PR closes"
-                value={value?.archiveOnPullMerge ?? false}
-                disabled={disabled}
-                onValueChange={(archiveOnPullMerge) => save({ archiveOnPullMerge })}
-              />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Archives a task once its pull request is merged or closed. Pinned and busy tasks
-                stay.
-              </Text>
-            </View>
-            <View style={{ gap: 6 }}>
-              <SettingsSwitchRow
-                first
-                label="Enable experimental PR feedback watcher"
-                value={value?.enablePullRequestWatching ?? false}
-                disabled={disabled}
-                onValueChange={(enablePullRequestWatching) => save({ enablePullRequestWatching })}
-              />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Let agents hand PR monitoring to this computer. New comments, reviews and failing
-                checks wake the thread. Finished watched threads move to Waiting. Paused queues stay
-                paused; settling or archiving cancels watches.
-              </Text>
-            </View>
-            <View style={{ gap: 6 }}>
-              <SettingsSwitchRow
-                first
-                label="Enable experimental pipeline watcher"
-                value={value?.enablePipelineWatching ?? false}
-                disabled={disabled}
-                onValueChange={(enablePipelineWatching) => save({ enablePipelineWatching })}
-              />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Let agents hand pipeline monitoring to this computer. Failed runs wake the thread;
-                successful runs finish silently. Finished watched threads move to Waiting. Paused
-                queues stay paused; settling or archiving cancels watches.
-              </Text>
-            </View>
-          </Section>
-          <Section title="Shared GitHub and Jira retrieval">
-            <SettingsSwitchRow
-              first
-              label="Share retrieval with paired computers"
-              value={value?.enableSharedRetrieval ?? true}
-              disabled={disabled}
-              onValueChange={(enableSharedRetrieval) => save({ enableSharedRetrieval })}
-            />
-            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-              Servers are preferred, then desktops, then laptops. Provider credentials stay on their
-              computer.
-            </Text>
-            <Choice
-              label="Preferred retrieval computer"
-              value={value?.preferredRetrievalHost || 'auto'}
-              disabled={disabled || value?.enableSharedRetrieval === false}
-              items={[
-                { id: 'auto', name: 'Automatic' },
-                ...overviews.flatMap((entry) =>
-                  entry.profile.connection.runtimeId
-                    ? [{ id: entry.profile.connection.runtimeId, name: entry.profile.name }]
-                    : [],
-                ),
-              ]}
-              onChange={(preferredRetrievalHost) =>
-                save({
-                  preferredRetrievalHost:
-                    preferredRetrievalHost === 'auto' ? '' : preferredRetrievalHost,
-                })
-              }
-            />
-          </Section>
-          {snapshot?.remoteDesktopEnabled !== undefined && (
+            </Section>
+          )}
+          {show('tools') && snapshot?.remoteDesktopEnabled !== undefined && (
             <Section title="Remote desktop (experimental)">
               <SettingsSwitchRow
                 first
@@ -434,213 +466,227 @@ export function RuntimePreferences() {
               </Text>
             </Section>
           )}
-          <Section title="Studio Tools (experimental)">
-            {studioToolSettings.map(({ key, label, description }) => (
-              <View key={key} style={{ gap: 6 }}>
+          {show('tools') && (
+            <Section title="Studio Tools (experimental)">
+              {studioToolSettings.map(({ key, label, description }) => (
+                <View key={key} style={{ gap: 6 }}>
+                  <SettingsSwitchRow
+                    first
+                    label={label}
+                    value={value?.[key] ?? false}
+                    disabled={disabled}
+                    onValueChange={(enabled) => save({ [key]: enabled })}
+                  />
+                  <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                    {description}
+                  </Text>
+                </View>
+              ))}
+            </Section>
+          )}
+          {show('artifacts') && (
+            <Section title="Artifacts">
+              <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label={label}
-                  value={value?.[key] ?? false}
+                  label="Enable Dovo Artifacts"
+                  value={value?.enableArtifacts ?? false}
                   disabled={disabled}
-                  onValueChange={(enabled) => save({ [key]: enabled })}
+                  onValueChange={(enableArtifacts) => save({ enableArtifacts })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  {description}
+                  Let agents create documents, diagrams, code and interactive previews inside
+                  threads. Shared by desktop and mobile for this computer.
                 </Text>
               </View>
-            ))}
-          </Section>
-          <Section title="Artifacts">
-            <View style={{ gap: 6 }}>
-              <SettingsSwitchRow
-                first
-                label="Enable Dovo Artifacts"
-                value={value?.enableArtifacts ?? false}
-                disabled={disabled}
-                onValueChange={(enableArtifacts) => save({ enableArtifacts })}
-              />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Let agents create documents, diagrams, code and interactive previews inside threads.
-                Shared by desktop and mobile for this computer.
-              </Text>
-            </View>
-            {(['settledArtifactRetention', 'archivedArtifactRetention'] as const).map((key) => (
-              <Choice
-                key={key}
-                label={
-                  key === 'settledArtifactRetention'
-                    ? 'Artifacts when settled'
-                    : 'Artifacts when archived'
-                }
-                disabled={disabled}
-                value={value?.[key] ?? 'forever'}
-                items={artifactRetentionChoices.map((choice) => ({
-                  id: choice.value,
-                  name: choice.label,
-                }))}
-                onChange={(policy) => save({ [key]: decode(artifactRetentionSchema, policy) })}
-              />
-            ))}
-            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-              Applies to existing artifacts and all versions, even when disabled. Deletion is
-              permanent. The archived rule takes priority; reopening or restoring resets the state’s
-              timer.
-            </Text>
-          </Section>
-          <Section title="Memory">
-            <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-              Optional notes stored locally on this computer and shared across its threads. Each
-              scope starts off. Disabling a scope keeps its notes and stops agent access. Manage
-              saved notes in desktop Settings → Tasks & projects → Memory.
-            </Text>
-            {(
-              [
-                {
-                  scope: 'system',
-                  label: 'System-wide memory',
-                  enabled: value?.memory.systemEnabled ?? false,
-                },
-                {
-                  scope: 'projectless',
-                  label: 'Memory for General threads',
-                  enabled: value?.memory.projectlessEnabled ?? false,
-                },
-              ] as const
-            ).map((item) => (
-              <SettingsSwitchRow
-                key={item.scope}
-                first
-                label={item.label}
-                value={item.enabled}
-                disabled={disabled}
-                onValueChange={(enabled) => configureMemory(item.scope, enabled)}
-              />
-            ))}
-            {!!memoryError && (
-              <View style={{ gap: 8 }}>
-                <Text accessibilityRole="alert" style={styles.error}>
-                  Project memory settings could not be loaded: {memoryError}
-                </Text>
-                <Action
-                  wide
-                  secondary
-                  label="Retry project memory settings"
+              {(['settledArtifactRetention', 'archivedArtifactRetention'] as const).map((key) => (
+                <Choice
+                  key={key}
+                  label={
+                    key === 'settledArtifactRetention'
+                      ? 'Artifacts when settled'
+                      : 'Artifacts when archived'
+                  }
                   disabled={disabled}
-                  onPress={() => setRetry(retry + 1)}
+                  value={value?.[key] ?? 'forever'}
+                  items={artifactRetentionChoices.map((choice) => ({
+                    id: choice.value,
+                    name: choice.label,
+                  }))}
+                  onChange={(policy) => save({ [key]: decode(artifactRetentionSchema, policy) })}
                 />
+              ))}
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                Applies to existing artifacts and all versions, even when disabled. Deletion is
+                permanent. The archived rule takes priority; reopening or restoring resets the
+                state’s timer.
+              </Text>
+            </Section>
+          )}
+          {show('memory') && (
+            <Section title="Memory">
+              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                Optional notes stored locally on this computer and shared across its threads. Each
+                scope starts off. Disabling a scope keeps its notes and stops agent access. Manage
+                saved notes in desktop Settings → Tasks & projects → Memory.
+              </Text>
+              {(
+                [
+                  {
+                    scope: 'system',
+                    label: 'System-wide memory',
+                    enabled: value?.memory.systemEnabled ?? false,
+                  },
+                  {
+                    scope: 'projectless',
+                    label: 'Memory for General threads',
+                    enabled: value?.memory.projectlessEnabled ?? false,
+                  },
+                ] as const
+              ).map((item) => (
+                <SettingsSwitchRow
+                  key={item.scope}
+                  first
+                  label={item.label}
+                  value={item.enabled}
+                  disabled={disabled}
+                  onValueChange={(enabled) => configureMemory(item.scope, enabled)}
+                />
+              ))}
+              {!!memoryError && (
+                <View style={{ gap: 8 }}>
+                  <Text accessibilityRole="alert" style={styles.error}>
+                    Project memory settings could not be loaded: {memoryError}
+                  </Text>
+                  <Action
+                    wide
+                    secondary
+                    label="Retry project memory settings"
+                    disabled={disabled}
+                    onPress={() => setRetry(retry + 1)}
+                  />
+                </View>
+              )}
+              {memoryLoading && (
+                <Text accessibilityLiveRegion="polite" style={[styles.muted, { padding: 16 }]}>
+                  Loading project memory settings…
+                </Text>
+              )}
+              {!memoryLoading && !memoryError && !memoryProjects.length && (
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  No project memory scopes available. Add a project on this computer to configure
+                  its memory.
+                </Text>
+              )}
+              {memoryProjects.map((project) => (
+                <SettingsSwitchRow
+                  key={project.id}
+                  first
+                  label={`Memory for ${project.name}${!project.registered ? ' · Project removed' : ''}`}
+                  value={value?.memory.projectRepositoryIds.includes(project.id) ?? false}
+                  disabled={
+                    disabled ||
+                    (!project.registered &&
+                      !value?.memory.projectRepositoryIds.includes(project.id))
+                  }
+                  onValueChange={(enabled) => configureMemory('project', enabled, project.id)}
+                />
+              ))}
+            </Section>
+          )}
+          {show('worktrees') && (
+            <Section title="Worktrees">
+              <View style={{ padding: 16, gap: 8 }}>
+                <Field
+                  label="Branch prefix"
+                  placeholder="none"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  editable={!disabled}
+                  value={prefixDraft ?? value?.branchPrefix ?? ''}
+                  onChangeText={(prefix) => {
+                    setPrefixDraft(prefix)
+                    setSaved(false)
+                  }}
+                  returnKeyType="done"
+                  hint={`New task branches look like ${branchPrefix.prefix}fix-login-1a2b3c4d. Leave empty for none.`}
+                  error={
+                    branchPrefix.valid
+                      ? undefined
+                      : 'Use letters, numbers, dots, dashes or underscores.'
+                  }
+                />
+                {prefixDraft !== null && prefixDraft !== value.branchPrefix && (
+                  <Action
+                    wide
+                    label="Save branch prefix"
+                    disabled={disabled || !branchPrefix.valid}
+                    onPress={commitPrefix}
+                  />
+                )}
               </View>
-            )}
-            {memoryLoading && (
-              <Text accessibilityLiveRegion="polite" style={[styles.muted, { padding: 16 }]}>
-                Loading project memory settings…
-              </Text>
-            )}
-            {!memoryLoading && !memoryError && !memoryProjects.length && (
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                No project memory scopes available. Add a project on this computer to configure its
-                memory.
-              </Text>
-            )}
-            {memoryProjects.map((project) => (
-              <SettingsSwitchRow
-                key={project.id}
-                first
-                label={`Memory for ${project.name}${!project.registered ? ' · Project removed' : ''}`}
-                value={value?.memory.projectRepositoryIds.includes(project.id) ?? false}
-                disabled={
-                  disabled ||
-                  (!project.registered && !value?.memory.projectRepositoryIds.includes(project.id))
-                }
-                onValueChange={(enabled) => configureMemory('project', enabled, project.id)}
-              />
-            ))}
-          </Section>
-          <Section title="Worktrees">
-            <Field
-              label="Branch prefix"
-              placeholder="none"
-              autoCorrect={false}
-              autoCapitalize="none"
-              editable={!disabled}
-              value={prefixDraft ?? value?.branchPrefix ?? ''}
-              onChangeText={(prefix) => {
-                setPrefixDraft(prefix)
-                setSaved(false)
-              }}
-              returnKeyType="done"
-              hint={`New task branches look like ${branchPrefix.prefix}fix-login-1a2b3c4d. Leave empty for none.`}
-              error={
-                branchPrefix.valid
-                  ? undefined
-                  : 'Use letters, numbers, dots, dashes or underscores.'
-              }
-            />
-            {prefixDraft !== null && prefixDraft !== value.branchPrefix && (
-              <Action
-                wide
-                label="Save branch prefix"
-                disabled={disabled || !branchPrefix.valid}
-                onPress={commitPrefix}
-              />
-            )}
-            <View style={{ gap: 6 }}>
-              <SettingsSwitchRow
-                first
-                label="Remove worktrees of archived tasks"
-                value={value?.removeArchivedWorktrees ?? false}
-                disabled={disabled}
-                onValueChange={(removeArchivedWorktrees) => save({ removeArchivedWorktrees })}
-              />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Worktrees with uncommitted changes are kept. The branch stays, so restoring a task
-                checks it out again. Ignored local files are deleted with the checkout.
-              </Text>
-            </View>
-            <View style={{ gap: 6 }}>
-              <SettingsSwitchRow
-                first
-                label="Remove worktrees when deleting their last thread"
-                value={value?.removeWorktreesOnThreadDelete ?? false}
-                disabled={disabled}
-                onValueChange={(removeWorktreesOnThreadDelete) =>
-                  save({ removeWorktreesOnThreadDelete })
-                }
-              />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Only clean Dovo-created checkouts with no remaining threads are removed. Branches
-                and uncommitted changes are kept. Ignored local files are deleted with the checkout.
-              </Text>
-            </View>
-          </Section>
-          <Section title="Activity">
-            <View style={{ gap: 6 }}>
-              <Choice
-                label="Keep activity history"
-                value={String(value?.activityRetentionDays ?? 90)}
-                disabled={disabled}
-                items={[
-                  { id: '0', name: 'Forever' },
-                  { id: '365', name: 'For 1 year' },
-                  { id: '90', name: 'For 90 days' },
-                  { id: '30', name: 'For 30 days' },
-                ]}
-                onChange={(days) =>
-                  save({
-                    activityRetentionDays: decode(
-                      runtimePreferencesSchema.fields.activityRetentionDays,
-                      Number(days),
-                    ),
-                  })
-                }
-              />
-              <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Older requests and tool details are deleted from this computer. Task conversations
-                are kept. CLI diagnostics and raw provider events expire after{' '}
-                {DIAGNOSTIC_RETENTION_DAYS} days, including when activity history is kept forever.
-                Successful Git and GitHub reads are not recorded.
-              </Text>
-            </View>
-          </Section>
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
+                  label="Remove worktrees of archived tasks"
+                  value={value?.removeArchivedWorktrees ?? false}
+                  disabled={disabled}
+                  onValueChange={(removeArchivedWorktrees) => save({ removeArchivedWorktrees })}
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Worktrees with uncommitted changes are kept. The branch stays, so restoring a task
+                  checks it out again. Ignored local files are deleted with the checkout.
+                </Text>
+              </View>
+              <View style={{ gap: 6 }}>
+                <SettingsSwitchRow
+                  first
+                  label="Remove worktrees when deleting their last thread"
+                  value={value?.removeWorktreesOnThreadDelete ?? false}
+                  disabled={disabled}
+                  onValueChange={(removeWorktreesOnThreadDelete) =>
+                    save({ removeWorktreesOnThreadDelete })
+                  }
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Only clean Dovo-created checkouts with no remaining threads are removed. Branches
+                  and uncommitted changes are kept. Ignored local files are deleted with the
+                  checkout.
+                </Text>
+              </View>
+            </Section>
+          )}
+          {show('activity') && (
+            <Section title="Activity">
+              <View style={{ gap: 6 }}>
+                <Choice
+                  label="Keep activity history"
+                  value={String(value?.activityRetentionDays ?? 90)}
+                  disabled={disabled}
+                  items={[
+                    { id: '0', name: 'Forever' },
+                    { id: '365', name: 'For 1 year' },
+                    { id: '90', name: 'For 90 days' },
+                    { id: '30', name: 'For 30 days' },
+                  ]}
+                  onChange={(days) =>
+                    save({
+                      activityRetentionDays: decode(
+                        runtimePreferencesSchema.fields.activityRetentionDays,
+                        Number(days),
+                      ),
+                    })
+                  }
+                />
+                <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
+                  Older requests and tool details are deleted from this computer. Task conversations
+                  are kept. CLI diagnostics and raw provider events expire after{' '}
+                  {DIAGNOSTIC_RETENTION_DAYS} days, including when activity history is kept forever.
+                  Successful Git and GitHub reads are not recorded.
+                </Text>
+              </View>
+            </Section>
+          )}
         </>
       )}
     </View>
@@ -668,7 +714,7 @@ function ChildAgentLimit({
     if (draft !== null && valid && limit !== value) onSave(limit)
   }
   return (
-    <View style={{ gap: 8 }}>
+    <View style={{ gap: 8, padding: 16 }}>
       <Field
         label="Maximum concurrent child agents"
         keyboardType="number-pad"

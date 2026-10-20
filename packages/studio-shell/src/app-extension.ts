@@ -12,9 +12,20 @@ export const appSettingsExtension = defineStudioExtension(
       icon: 'runtime',
       order: 0.1,
       settingsSection: 'app',
-      keywords:
-        'organization startup launch open time clock sort order grouping projects confirmation archive stop cancel battery background',
+      keywords: 'navigation shortcuts issues jira time clock quit battery background activity',
       load: () => import('./app-settings/general'),
+    },
+    {
+      id: 'task-list-settings',
+      navigationGroup: 'settings',
+      settingsScope: 'device',
+      title: 'Task list & projects',
+      icon: 'tasks',
+      order: 2.9,
+      settingsSection: 'coding',
+      keywords:
+        'organization grouping sort order project picker folder add project starts directory confirmation archive stop unpin delete',
+      load: () => import('./app-settings/task-list'),
     },
     {
       id: 'conversation-settings',
@@ -25,7 +36,7 @@ export const appSettingsExtension = defineStudioExtension(
       order: 0.3,
       settingsSection: 'app',
       keywords:
-        'send enter composer conversation chat follow up queue steer streaming paragraphs markdown preview collapse tools skills slash menu',
+        'send enter composer conversation chat follow up queue steer streaming paragraphs markdown preview collapse tools skills slash menu speech microphone dictation language download',
       load: () => import('./app-settings/conversation'),
     },
     {

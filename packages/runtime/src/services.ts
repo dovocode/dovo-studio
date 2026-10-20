@@ -263,6 +263,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     () => retrievalPeers.list(),
   )
   git.retrieval = retrieval
+  pulls.communication = retrieval
   const forgeWork = new ForgeWork(db, store, git, forges, pulls, () => commands.get())
   const pullRequestWatch = new PullRequestWatch(db, {
     store,

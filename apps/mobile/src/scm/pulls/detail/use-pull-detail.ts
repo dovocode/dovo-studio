@@ -1,4 +1,9 @@
-import { combinePullSections, matchingPullSection, pullRevision } from '@dovo/protocol'
+import {
+  combinePullSections,
+  matchingPullSection,
+  pullRevision,
+  retainNewerPullSnapshot,
+} from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
 import { Effect } from 'effect'
 import { startPolling, runClientEffect } from '@dovo/client-runtime'
@@ -10,6 +15,7 @@ import { AppState } from 'react-native'
 import { useNavigation } from '../../../shell/navigation'
 
 function usePullSection(
+  reader: ReturnType<typeof usePullReader>,
   repositoryId: string,
   number: number,
   connectionId: string | undefined,
@@ -19,12 +25,7 @@ function usePullSection(
 ) {
   const { focused } = useNavigation()
   const { connected, snapshot, readCache } = useRuntime()
-  const {
-    readDetail: request,
-    readConnected,
-    routed,
-    acceptCurrentAccount: acceptReader,
-  } = usePullReader(repositoryId, number, connectionId, focused && enabled)
+  const { readDetail: request, readConnected, routed, acceptCurrentAccount: acceptReader } = reader
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)
   const cacheKey = JSON.stringify([
     'pulls',
@@ -108,9 +109,15 @@ function usePullSection(
               }
             : value,
         ),
+        Effect.map((value) => retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value)),
         Effect.tap((value) =>
           Effect.sync(() => {
-            if (!stopped) setState((current) => ({ ...current, detail: value, error: '' }))
+            if (!stopped)
+              setState((current) => ({
+                ...current,
+                detail: value,
+                error: value.refreshError ?? '',
+              }))
           }),
         ),
         Effect.flatMap((value) =>
@@ -223,12 +230,23 @@ export function usePullDetail(
   connectionId?: string,
   options: { tab?: string; discussionInOverview?: boolean } = {},
 ) {
+  const { focused } = useNavigation()
+  const reader = usePullReader(repositoryId, number, connectionId, focused)
   const tab = options.tab ?? 'overview'
-  const overview = usePullSection(repositoryId, number, connectionId, 'overview', true)
+  const overview = usePullSection(reader, repositoryId, number, connectionId, 'overview', true)
   const revision = overview.detail ? pullRevision(overview.detail) : undefined
   const available = !!overview.detail
-  const status = usePullSection(repositoryId, number, connectionId, 'status', available, revision)
+  const status = usePullSection(
+    reader,
+    repositoryId,
+    number,
+    connectionId,
+    'status',
+    available,
+    revision,
+  )
   const discussion = usePullSection(
+    reader,
     repositoryId,
     number,
     connectionId,
@@ -241,6 +259,7 @@ export function usePullDetail(
     revision,
   )
   const changes = usePullSection(
+    reader,
     repositoryId,
     number,
     connectionId,
@@ -249,6 +268,7 @@ export function usePullDetail(
     revision,
   )
   const checks = usePullSection(
+    reader,
     repositoryId,
     number,
     connectionId,
@@ -257,6 +277,7 @@ export function usePullDetail(
     revision,
   )
   const stack = usePullSection(
+    reader,
     repositoryId,
     number,
     connectionId,

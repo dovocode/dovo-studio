@@ -23,8 +23,8 @@ export function SettingsPage({
           </span>
         )}
       </PageHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
-        <div className="mx-auto max-w-3xl space-y-6">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+        <div className="mx-auto max-w-3xl space-y-4">{children}</div>
       </div>
     </section>
   )
@@ -40,7 +40,7 @@ export function SettingsGroup({
 }) {
   const id = useId()
   return (
-    <section aria-labelledby={id} className="space-y-3">
+    <section aria-labelledby={id} className="space-y-2">
       <div>
         <h2 id={id} className="text-sm font-semibold tracking-tight">
           {title}
@@ -68,7 +68,7 @@ export function SettingRow({
 }) {
   const id = useId()
   return (
-    <div className="flex flex-col items-stretch justify-between gap-3 px-4 py-4 sm:flex-row sm:items-center sm:gap-6">
+    <div className="flex flex-col items-stretch justify-between gap-2 px-3 py-3 sm:flex-row sm:items-center sm:gap-4">
       <div className="min-w-0 flex-1">
         <p id={`${id}-label`} className="text-[0.8125rem] font-medium">
           {label}

@@ -15,7 +15,7 @@ const moduleMocks = new Map([
   [`${mobile}agents/harness-icon.tsx`, `export const HarnessIcon=()=>null;`],
   [
     `${mobile}agents/use-model-catalog.ts`,
-    `export const useModelCatalog=()=>({catalog:{models:[],reasoning:[]},loading:false,refresh:()=>{}});`,
+    `export const useModelCatalog=()=>({catalog:{models:[],reasoning:[]},loading:false,refresh:()=>{}});export const useCachedModelCatalog=agent=>({catalog:null,modelName:agent?.model??''});`,
   ],
   [
     `${ui}src/harness-catalog.ts`,

@@ -631,3 +631,20 @@ it('loads native stack details without scanning PR pages, reuses the cache and i
   await Effect.runPromise(cache.stackEffect('/repo', 7, true, undefined, 12))
   expect(native).toHaveBeenCalledTimes(2)
 })
+
+it('preserves the PR owner timestamp through gateway persistence, restart and offline fallback', async () => {
+  const { cache, pulls, db, store } = setup()
+  const cachedAt = '2026-10-20T08:00:00Z'
+  const load = vi
+    .spyOn(pulls, 'list')
+    .mockResolvedValue({ pulls: [], page: 1, hasMore: false, cachedAt })
+  expect((await cache.list('/repo', 'open', 1)).cachedAt).toBe(cachedAt)
+  const restored = new PullCache(db, pulls, store)
+  cleanup.push(() => restored.dispose())
+  expect((await restored.list('/repo', 'open', 1)).cachedAt).toBe(cachedAt)
+  load.mockRejectedValue(new Error('PR computer offline'))
+  const offline = await restored.list('/repo', 'open', 1, true)
+  expect(offline.cachedAt).toBe(cachedAt)
+  expect(offline.stale).toBe(true)
+  expect(offline.refreshError).toBe('PR computer offline')
+})

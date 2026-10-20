@@ -18,13 +18,44 @@ connected machines converge on the same executor. When no computer type is saved
 deployments default to Server, Linux portable chassis default to Laptop, and other hosts default to
 Desktop. A saved type always overrides detection. A preferred computer overrides that order. An
 unavailable, disabled, older or differently authenticated host falls back to the next eligible host
-and eventually local execution.
+and eventually local execution for non-PR retrieval. PR communication follows the persistent owner
+policy below.
 
 The requester must have a verified provider identity. Sharing does not grant a different provider
 account access. GitHub and Jira credentials never leave their host. Runtime pairing credentials are
 retained privately by the runtime, like the existing saved runtime connections; keep the Dovo data
 directory private. Tokens, provider credentials and peer connections are absent from retrieval
 diagnostics.
+
+## PR communication over P2P
+
+PR lists, details, status, discussion, changes, stacks, creation, comments and actions use one
+persistent executor per provider instance and verified account. This applies to every supported
+forge provider. **Preferred retrieval computer** explicitly selects that executor. Automatic mode
+chooses a capable connected server, desktop or laptop on first use, then retains its runtime ID in
+the runtime database across restarts. A returning computer does not reclaim an existing assignment.
+Clearing an explicit preference retains the current PR owner; select another computer to move it.
+Use the same preferred computer on participating runtimes to pin all their PR traffic to that
+server.
+
+Requests use existing authenticated peer connections, including HTTP LAN/VPN addresses. The executor
+re-resolves its own provider credentials and verifies the account before serving even cached
+results. Callers send typed PR operations and repository identity, never credentials, checkout paths
+or commands. The executor runs operations locally, so asymmetric peer lists cannot cause relay
+loops. Local Git operations, worktree annotations, thread creation and notification delivery stay
+local.
+
+The owner shares a bounded 15-second PR response cache across gateways and coalesces concurrent
+reads. Explicit refresh bypasses it. Writes execute once, without fallback or automatic retries, and
+invalidate the account's PR cache before and after execution, including an ambiguous failure. Late
+in-flight reads cannot repopulate invalidated cache entries. Cached responses retain the owner's
+fetch timestamp through gateway caches. Desktop and mobile preserve a newer snapshot when another
+gateway returns an older one.
+
+If the owner disconnects, PR reads retain their saved data with a stale/error indication; refreshes
+and actions do not silently execute on another server. Reconnect the owner or explicitly choose
+another preferred retrieval computer. Older executors must be updated before accepting this PR
+protocol. Disabling shared retrieval intentionally restores local execution on that computer.
 
 ## Retrieval and freshness
 
@@ -49,15 +80,16 @@ as successful results.
 
 ## Watches and recovery
 
-Existing PR and pipeline watchers mark their provider reads as subscriptions. Only the selected
-executor refreshes those snapshots, every 30 seconds, with a 45-second shared freshness window. An
-interested requester renews a three-minute lease. When interest stops, background work expires. The
-runtime caps active shared subscriptions at 64; additional reads still work normally.
+Non-PR provider reads and pipeline watchers can use shared subscriptions. Only the selected executor
+refreshes those snapshots, every 30 seconds, with a 45-second shared freshness window. An interested
+requester renews a three-minute lease. When interest stops, background work expires. The runtime
+caps active shared subscriptions at 64; additional reads still work normally.
 
 A fallback desktop hands a subscription to a returning preferred server. Remote read endpoints
 always execute locally, so asymmetric peer lists cannot create forwarding loops. Provider identities
 are checked again for background refreshes. Existing per-thread watchers continue to own
-notifications and their delivery cursors; only retrieval is shared.
+notifications and their delivery cursors; PR retrieval and actions use their owner; watch delivery
+stays local.
 
 This uses authenticated peer requests and polling. It does not configure GitHub/Jira webhooks,
 expose an internet listener, or elect a cluster-wide notification owner. Network partitions can
@@ -65,10 +97,11 @@ temporarily cause independent reads, while request handling and caches stay avai
 
 ## Mutations and diagnostics
 
-Writes execute once on the initiating computer; they are never forwarded or retried on peers. Shared
-entries and the existing PR/issue caches are invalidated before and after provider writes, including
-ambiguous failures. Connected peers receive invalidations; disconnected peers' mutable entries
-expire within their bounded window. Late in-flight results cannot repopulate invalidated caches.
+Non-PR writes execute once on the initiating computer; PR writes execute once on their selected
+owner. Shared entries and the existing PR/issue caches are invalidated before and after provider
+writes, including ambiguous failures. Connected peers receive invalidations; disconnected peers'
+mutable entries expire within their bounded window. Late in-flight results cannot repopulate
+invalidated caches.
 
 Authenticated POST /api/retrieval/host returns runtime ID/type, sharing state, watch and pending
 counts, local/remote/cache/fallback counters and refresh/invalidation failure counts. It contains no

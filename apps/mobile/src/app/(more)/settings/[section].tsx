@@ -1,7 +1,24 @@
+import type { ComponentType } from 'react'
+import SettingsScreen from '../../../screens/settings'
 import TaskDefaultsScreen from '../../../screens/task-defaults'
 import AppUpdates from '../../../screens/app-updates'
 import UsageScreen from '../../../screens/usage'
-import GeneralScreen from '../../../screens/general'
+import GeneralScreen, {
+  BatterySettingsScreen,
+  ConversationSettingsScreen,
+  SpeechSettingsScreen,
+  TaskPreferencesScreen,
+} from '../../../screens/general'
+import NotificationsSettingsScreen from '../../../screens/settings-notifications'
+import {
+  TaskBehaviorSettingsScreen,
+  PullSettingsScreen,
+  RuntimeToolsSettingsScreen,
+  ArtifactSettingsScreen,
+  MemorySettingsScreen,
+  WorktreeSettingsScreen,
+  ActivitySettingsScreen,
+} from '../../../screens/settings-computer'
 import AppearanceScreen from '../../../screens/appearance'
 import { router, useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
@@ -15,36 +32,50 @@ import { Action } from '../../../ui/controls/action'
 import { ScreenBackContext, ScreenHeader } from '../../../ui/layout/screen-header'
 import { useTheme } from '../../../ui/theme'
 
+const screens: Readonly<Partial<Record<string, ComponentType>>> = {
+  'app-preferences': () => <SettingsScreen categorySlug="app-preferences" />,
+  'agent-settings': () => <SettingsScreen categorySlug="agent-settings" />,
+  'task-settings': () => <SettingsScreen categorySlug="task-settings" />,
+  'computer-settings': () => <SettingsScreen categorySlug="computer-settings" />,
+  'history-settings': () => <SettingsScreen categorySlug="history-settings" />,
+  'device-hosts': DeviceHostsScreen,
+  appearance: AppearanceScreen,
+  'task-defaults': TaskDefaultsScreen,
+  updates: AppUpdates,
+  general: GeneralScreen,
+  devices: DevicesScreen,
+  agents: AgentsScreen,
+  resources: ResourcesScreen,
+  'source-control': SourceControlSettings,
+  usage: UsageScreen,
+  notifications: NotificationsSettingsScreen,
+  battery: BatterySettingsScreen,
+  'task-behavior': TaskBehaviorSettingsScreen,
+  'pull-requests': PullSettingsScreen,
+  'runtime-tools': RuntimeToolsSettingsScreen,
+  artifacts: ArtifactSettingsScreen,
+  memory: MemorySettingsScreen,
+  worktrees: WorktreeSettingsScreen,
+  'activity-retention': ActivitySettingsScreen,
+  conversation: ConversationSettingsScreen,
+  speech: SpeechSettingsScreen,
+  'task-preferences': TaskPreferencesScreen,
+}
+
 export default function SettingsSection() {
   const { styles } = useTheme()
 
   const { section } = useLocalSearchParams<{ section: string }>()
-  const Screen =
-    section === 'device-hosts'
-      ? DeviceHostsScreen
-      : section === 'appearance'
-        ? AppearanceScreen
-        : section === 'task-defaults'
-          ? TaskDefaultsScreen
-          : section === 'updates'
-            ? AppUpdates
-            : section === 'general'
-              ? GeneralScreen
-              : section === 'devices'
-                ? DevicesScreen
-                : section === 'agents'
-                  ? AgentsScreen
-                  : section === 'resources'
-                    ? ResourcesScreen
-                    : section === 'source-control'
-                      ? SourceControlSettings
-                      : section === 'usage'
-                        ? UsageScreen
-                        : undefined
+  const Screen = Object.hasOwn(screens, section) ? screens[section] : undefined
   return (
     <WorkbenchDetailRoute tab="settings" bottomInset>
       {Screen ? (
-        <ScreenBackContext.Provider value={() => router.dismissTo('/settings')}>
+        <ScreenBackContext.Provider
+          value={() => {
+            if (router.canGoBack()) router.back()
+            else router.dismissTo('/settings')
+          }}
+        >
           <Screen />
         </ScreenBackContext.Provider>
       ) : (
