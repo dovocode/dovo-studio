@@ -1,4 +1,5 @@
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
+import { isPeerAddress, peerTransportAddress, resolvePeerTransport } from './peer.js'
 
 type Selection = { selected?: string; checkedAt: number; retryAt?: number }
 type RoutePurpose = 'http' | 'stream'
@@ -31,6 +32,11 @@ export function learnRuntimeRoutes(
   snapshot: RuntimeSnapshot,
 ): RuntimeConnection {
   if (!snapshot.runtimeId) return connection
+  if (isPeerAddress(connection.address)) {
+    if (connection.runtimeId && connection.runtimeId !== snapshot.runtimeId)
+      throw new Error('This connection belongs to a different runtime. Pair it again.')
+    return { ...connection, runtimeId: snapshot.runtimeId, alternateAddresses: [] }
+  }
   if (connection.runtimeId && connection.runtimeId !== snapshot.runtimeId)
     throw new Error('This address belongs to a different runtime. Pair it again.')
   const addresses = [
@@ -58,6 +64,7 @@ export function runtimeTransportAddress(
   connection: RuntimeConnection,
   purpose: RoutePurpose = 'http',
 ) {
+  if (isPeerAddress(connection.address)) return peerTransportAddress(connection.address)
   const saved = routes.get(key(connection))
   return (purpose === 'stream' ? saved?.stream?.selected : saved?.selected) ?? connection.address
 }
@@ -90,6 +97,8 @@ export async function resolveRuntimeRoute(
   purpose: RoutePurpose = 'http',
 ) {
   if (signal.aborted) throw signal.reason
+  if (isPeerAddress(connection.address))
+    return resolvePeerTransport(connection.address, connection.peer, signal)
   let saved = routes.get(key(connection))
   if (!saved && connection.runtimeId) {
     saved = {

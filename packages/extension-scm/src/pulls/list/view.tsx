@@ -579,7 +579,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               </p>
             )}
             {!!unknownRelationships && (
-              <p role="status" className="mb-3 px-2 text-xs text-amber-700 dark:text-amber-400">
+              <p role="status" className="mb-3 px-2 text-xs text-status-warning">
                 Personal relationship data is unavailable for {unknownRelationships} loaded PRs.
                 Choose All PRs to see these results.
               </p>

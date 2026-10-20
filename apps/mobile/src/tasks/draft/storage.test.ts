@@ -164,6 +164,7 @@ const submission = {
   text: 'Send this message',
   attachmentIds: ['attachment'],
   mode: 'queue' as const,
+  turnSettings: { provider: 'codex' as const, model: 'large', reasoning: 'high' },
 }
 
 it('persists delivery identity with the draft before sending and restores it after a process restart', async () => {

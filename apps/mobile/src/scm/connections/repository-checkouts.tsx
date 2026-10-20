@@ -5,6 +5,7 @@ import type { Repository } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Choice } from '../../ui/controls/choice'
 import { RepositoryCard } from './repository-card'
+import { ProjectTransferSettings } from './project-transfer'
 export function RepositoryCheckouts({ repository }: { repository: Repository }) {
   const { snapshot } = useRuntime()
   const [taskId, setTaskId] = useApplicationState('')
@@ -34,6 +35,9 @@ export function RepositoryCheckouts({ repository }: { repository: Repository }) 
         />
       )}
       {repository.kind !== 'scratch' && <TaskDefaultSettings repository={repository} />}
+      {repository.kind !== 'scratch' && (
+        <ProjectTransferSettings key={repository.id} repository={repository} />
+      )}
       {!repository.kind && (
         <RepositoryCard key={taskId} repository={repository} taskId={taskId || undefined} />
       )}

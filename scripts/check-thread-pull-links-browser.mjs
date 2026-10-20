@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
-const environment = `
+const environment = `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
 export const updateTask=(w,id,change)=>({...w,tasks:w.tasks.map(task=>task.id===id?change(task):task)});export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);

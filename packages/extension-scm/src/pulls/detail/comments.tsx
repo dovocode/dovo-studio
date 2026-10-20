@@ -25,7 +25,7 @@ export function PullComments({
           }
           data-comment-kind={comment.kind}
           aria-label={`${comment.author} ${comment.kind}`}
-          className={`min-w-0 overflow-hidden rounded-xl border ${comment.kind === 'review' && comment.state === 'APPROVED' ? 'border-emerald-400/20' : comment.kind === 'review' && comment.state === 'CHANGES_REQUESTED' ? 'border-red-400/25' : ''}`}
+          className={`min-w-0 overflow-hidden rounded-xl border ${comment.kind === 'review' && comment.state === 'APPROVED' ? 'border-status-success/20' : comment.kind === 'review' && comment.state === 'CHANGES_REQUESTED' ? 'border-status-error/25' : ''}`}
         >
           <header
             className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 text-xs border-b bg-muted/20`}

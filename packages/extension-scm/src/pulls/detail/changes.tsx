@@ -195,12 +195,10 @@ export function PullChanges({
                     </span>
                     <span className="text-xs">
                       {file.additions !== null && (
-                        <span className="text-green-700 dark:text-green-400">
-                          +{file.additions}
-                        </span>
+                        <span className="text-status-success">+{file.additions}</span>
                       )}{' '}
                       {file.deletions !== null && (
-                        <span className="text-red-700 dark:text-red-400">−{file.deletions}</span>
+                        <span className="text-status-error">−{file.deletions}</span>
                       )}
                     </span>
                     <label className="flex items-center gap-1 text-xs">

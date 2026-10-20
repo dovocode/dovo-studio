@@ -77,7 +77,7 @@ export function GithubConnectionStatus({
     <div className="grid gap-2 text-xs" aria-label="GitHub connection status" aria-busy={busy}>
       <p
         role={error || result?.status === 'failed' ? 'alert' : 'status'}
-        className={`break-words ${error || result?.status === 'failed' ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}
+        className={`break-words ${error || result?.status === 'failed' ? 'text-status-warning' : 'text-muted-foreground'}`}
       >
         {!connected ? (
           'Computer offline · Reconnect to verify this connection.'

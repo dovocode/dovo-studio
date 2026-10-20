@@ -316,10 +316,10 @@ function PullDetailContent({
                   {detail.pull.headSha.slice(0, 8)}
                 </span>
                 <span className="ml-auto inline-flex shrink-0 gap-2 font-mono tabular-nums">
-                  <span className="text-emerald-700 dark:text-emerald-400">
+                  <span className="text-status-success">
                     +{detail.pull.additions?.toLocaleString() ?? '—'}
                   </span>
-                  <span className="text-red-700 dark:text-red-400">
+                  <span className="text-status-error">
                     −{detail.pull.deletions?.toLocaleString() ?? '—'}
                   </span>
                 </span>
@@ -452,7 +452,7 @@ function PullDetailContent({
             {(detail.stale || detail.refreshError || !connected) && (
               <p
                 role="status"
-                className="mb-4 text-xs text-amber-700 dark:text-amber-400 [overflow-wrap:anywhere]"
+                className="mb-4 text-xs text-status-warning [overflow-wrap:anywhere]"
               >
                 {!connected
                   ? readConnected
@@ -470,7 +470,7 @@ function PullDetailContent({
               <p
                 key={warning}
                 role="alert"
-                className="mb-4 rounded-md border border-amber-400/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 [overflow-wrap:anywhere]"
+                className="mb-4 rounded-md border border-status-warning/20 px-3 py-2 text-xs text-status-warning [overflow-wrap:anywhere]"
               >
                 {warning}
               </p>

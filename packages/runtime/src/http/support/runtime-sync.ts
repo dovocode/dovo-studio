@@ -400,6 +400,7 @@ class RuntimeSync {
       s.questions.list(),
       s.terminals.list(),
       s.jobs.revision,
+      s.projectTransfers.revision,
       s.devices.version(),
       s.pairing.pending(),
       s.defaults.version(),

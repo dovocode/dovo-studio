@@ -51,7 +51,7 @@ export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
 export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';
 export {browserModelCatalogCache} from '${root}packages/studio-core/src/workspace/model-catalog-cache.ts';
 export {useSettingsDraft,useConfirmSettingsNavigation,useOptionalSettingsTarget} from '${root}packages/studio-core/src/settings-target.tsx';
-export const providers=[];export const useResolvedTheme=()=> 'dark';
+export const providers=[];export const useResolvedTheme=()=> 'dark';export const reducedMotion=()=>false;
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return {ok:true,ticket:body.tabId,tabId:body.tabId,profileId:body.profileId}};
 const browser=async(command)=>{window.calls.push(command)};

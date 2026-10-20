@@ -1,4 +1,4 @@
-import type { Task } from '../../workspace.js'
+import { turnSettingsSchema, type Task } from '../../workspace.js'
 import type { MutationOutbox } from '../../runtime/connection/mutations.js'
 import { decodeResult, mutableStruct } from '../../shared/schema.js'
 import { Schema } from 'effect'
@@ -44,6 +44,7 @@ export function mergePendingMessages(
 const savedSendSchema = mutableStruct({
   id: Schema.String,
   messageId: Schema.String,
+  turnSettings: Schema.optional(turnSettingsSchema),
   text: Schema.String,
   attachmentIds: Schema.optional(Schema.Array(Schema.String)),
 })
@@ -66,6 +67,7 @@ export function savedPendingMessages(task: Task, journal: MutationOutbox): Pendi
         id: input.data.messageId,
         role: 'user',
         text: input.data.text,
+        turnSettings: input.data.turnSettings,
         attachments: task.draftAttachments?.filter((file) =>
           input.data.attachmentIds?.includes(file.id),
         ),

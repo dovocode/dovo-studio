@@ -3,9 +3,15 @@
 Casdoor at `https://auth.dovo.studio` provides optional sign-in. The separate connect service at
 `https://connect.dovo.studio` stores each account's linked computer IDs, names and HTTP/HTTPS
 addresses. It does not proxy runtime traffic or store runtime/device tokens, pairing codes,
-workspaces, project contents or provider credentials. Optional managed push also stores the phone’s
-native push token and grants scoped to its account session and individual paired computers; see
-[Mobile notifications](notification-relay.md).
+workspaces, project contents or LLM provider credentials. Optional managed push also stores the
+phone’s native push token and grants scoped to its account session and individual paired computers;
+see [Mobile notifications](notification-relay.md).
+
+Account-free [internet pairing](internet-connections.md) also uses Connect for transient WebRTC
+signaling and optional temporary TURN credentials. Relay fallback is opt in: direct, Cloudflare or
+Dovo relay. Connect never proxies runtime content or receives device tokens; the separate Dovo TURN
+service carries ciphertext only when explicitly selected. Notification relay behavior remains
+separate and unchanged.
 
 In desktop **Devices & runtime**, or mobile **Computers**, choose **Sign in**, compare the displayed
 code with the browser, and continue through Casdoor. Studio saves its account session in the system

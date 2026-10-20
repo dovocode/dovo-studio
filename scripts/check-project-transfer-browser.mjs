@@ -1,0 +1,177 @@
+import assert from 'node:assert/strict'
+import { fileURLToPath } from 'node:url'
+import { bundleBrowser, chromium } from './browser/harness.mjs'
+
+const root = fileURLToPath(new URL('../', import.meta.url))
+const native = `
+const flat=style=>Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));
+export const View=({children,style,accessibilityRole,accessibilityLabel})=><div role={accessibilityRole} aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;
+export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole} style={flat(style)}>{children}</span>;
+export const SettingsAction=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
+export const SettingsChoice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;
+export const SettingsField=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/>;
+export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input type="checkbox" aria-label={accessibilityLabel} checked={value} disabled={disabled} onChange={event=>onValueChange(event.target.checked)}/>;
+export const useTheme=()=>({colors:{text:'#eee',muted:'#aaa',error:'#ff6969',border:'#444',action:'#6699ff'},styles:{text:{color:'#eee'},muted:{color:'#aaa'}}});
+`
+const browser = await chromium.launch()
+try {
+  for (const mobile of [false, true]) {
+    const path = mobile
+      ? 'apps/mobile/src/scm/connections/project-transfer'
+      : 'packages/extension-scm/src/connections/project-transfer'
+    const importer = root + path
+    const stubs = mobile
+      ? [
+          { path: 'react-native', contents: native },
+          ...[
+            '../../ui/content/text',
+            '../../screens/settings-controls',
+            '../../ui/controls/switch',
+            '../../ui/theme',
+          ].map((path) => ({ path, importer, contents: native })),
+          {
+            path: '../../runtime/connection/provider',
+            importer,
+            contents: 'export const useRuntime=()=>window.store;',
+          },
+          {
+            path: 'expo-crypto',
+            contents: "export {randomUUID} from './packages/protocol/src/index';",
+          },
+        ]
+      : [
+          { path: '@dovo/studio-core', contents: 'export const useWorkspace=()=>window.store;' },
+          {
+            path: '@dovo/studio-ui',
+            contents: `export {Button} from './packages/studio-ui/src/components/ui/button';export {Input} from './packages/studio-ui/src/components/ui/input';export {FormField} from './packages/studio-ui/src/components/form-field';`,
+          },
+        ]
+    const built = await bundleBrowser(
+      {
+        stdin: {
+          resolveDir: root,
+          loader: 'tsx',
+          contents: `
+import {useState} from 'react';import {createRoot} from 'react-dom/client';
+import {ProjectTransferSettings} from './${path}';
+const profile={id:'destination',name:'Desktop',connection:{address:'http://desktop:5235',runtimeId:'machine-b',token:'paired-device-token-with-32-characters'}};
+const repo={id:'project',name:'My project',path:'/project',branch:'main'};
+window.calls=[];window.refreshes=0;let current=null;
+function App(){const [job,setJob]=useState(null),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true);window.setSupported=setSupported;window.setConnected=setConnected;
+window.setJob=changes=>setJob(old=>{current={...old,...changes,updatedAt:(old?.updatedAt??0)+100};return current});
+const request=async(path,input)=>{window.calls.push({path,input});
+if(path.endsWith('/targets'))return [{id:'machine-b',name:'Desktop'}];
+if(path.endsWith('/inspect'))return {files:3,bytes:1500,skippedLinks:1,ignoredFiles:[{path:'.env.local',bytes:12},{path:'private.key',bytes:7}]};
+if(path.endsWith('/start')){if(window.fail)throw new Error('Destination is offline');current={...input,targetName:'Desktop',state:'copying',transport:input.ssh?'ssh':'p2p',bytes:100,totalBytes:1000,updatedAt:Date.now()};setJob(current);return current}
+if(path.endsWith('/retry')){window.setJob({state:'preparing',error:undefined});return {...current,state:'preparing'}}
+if(path.endsWith('/cancel')){window.setJob({state:'cancelled'});return {ok:true}}
+return {ok:true};};
+window.store={connected,request,read:request,call:request,snapshot:{runtimeId:'machine-a',projectTransfersSupported:supported,projectTransfers:job?[job]:[]},runtimeRegistry:{profiles:[profile]},profiles:[profile],runtimes:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],overviews:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],refreshRuntime:async()=>{window.refreshes++}};
+return <ProjectTransferSettings repository={repo}/>;}
+createRoot(document.getElementById('app')).render(<App/>);`,
+        },
+        bundle: true,
+        write: false,
+        platform: 'browser',
+        format: 'iife',
+        jsx: 'automatic',
+        define: { 'process.env.NODE_ENV': '"production"' },
+        alias: {
+          react: root + 'packages/studio-ui/node_modules/react',
+          'react-dom': root + 'packages/studio-ui/node_modules/react-dom',
+        },
+      },
+      stubs,
+    )
+    const page = await browser.newPage({ viewport: { width: mobile ? 390 : 700, height: 850 } })
+    page.setDefaultTimeout(5000)
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.setContent('<body style="background:#202020;color:#eee"><div id="app"></div></body>')
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page
+      .getByRole('button', {
+        name: mobile ? 'Add to another computer' : 'Configure project copy',
+        exact: true,
+      })
+      .click()
+    const copy = page.getByRole('button', { name: 'Copy project', exact: true })
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('button')].some(
+        (button) => button.textContent === 'Copy project' && !button.disabled,
+      ),
+    )
+    assert.equal(await page.getByLabel('Destination computer').inputValue(), 'machine-b')
+    assert.equal(await page.getByLabel('Project copy connection').inputValue(), 'p2p')
+    if (mobile)
+      await page.getByRole('button', { name: 'Ignored or private files (0 selected)' }).click()
+    else await page.locator('summary').click()
+    const config = mobile
+      ? page.getByRole('checkbox', { name: 'Include .env.local', exact: true })
+      : page.locator('label').filter({ hasText: '.env.local' }).getByRole('checkbox')
+    await config.check()
+    await copy.click()
+    await page.getByText('Copying to Desktop · 10%', { exact: true }).waitFor()
+    assert.equal(await page.getByLabel('Destination computer').isDisabled(), true)
+    const first = await page.evaluate(
+      () => window.calls.find((call) => call.path.endsWith('/start')).input,
+    )
+    assert.deepEqual(first.ignoredFiles, ['.env.local'])
+    assert.equal(first.ssh, undefined)
+    await page.getByRole('button', { name: 'Cancel copy', exact: true }).click()
+    await page.getByText('Copy cancelled', { exact: true }).waitFor()
+    await page.getByLabel('Project copy connection').selectOption('ssh')
+    await copy.click()
+    await page.getByRole('alert').waitFor()
+    assert.equal(
+      await page.evaluate(() => window.calls.filter((call) => call.path.endsWith('/start')).length),
+      1,
+    )
+    await page.getByRole('textbox', { name: 'SSH user', exact: true }).fill('dominic')
+    await page.getByRole('textbox', { name: 'SSH host', exact: true }).fill('buildbox.local')
+    await copy.click()
+    await page.getByText('Copying to Desktop · 10%', { exact: true }).waitFor()
+    const second = await page.evaluate(
+      () => window.calls.filter((call) => call.path.endsWith('/start')).at(-1).input,
+    )
+    assert.deepEqual(second.ssh, {
+      sshHost: 'buildbox.local',
+      sshUser: 'dominic',
+      sshPort: 22,
+      runtimePort: 5235,
+      identityFile: undefined,
+    })
+    await page.evaluate(() => window.setJob({ state: 'failed', error: 'Connection interrupted' }))
+    await page.getByText('Connection interrupted', { exact: true }).waitFor()
+    // Retry uses the server's saved request, even after form edits.
+    await page.getByRole('textbox', { name: 'SSH user', exact: true }).fill('changed')
+    await page.getByRole('button', { name: 'Retry copy', exact: true }).click()
+    await page.waitForFunction(() => window.calls.some((call) => call.path.endsWith('/retry')))
+    assert.deepEqual(
+      await page.evaluate(() => window.calls.find((call) => call.path.endsWith('/retry')).input),
+      { id: second.id },
+    )
+    await page.evaluate(() =>
+      window.setJob({
+        state: 'completed',
+        path: '/home/dominic/.dovo/projects/copied',
+        targetRepositoryId: 'copied',
+      }),
+    )
+    await page.getByText('Added to Desktop', { exact: true }).waitFor()
+    await page.waitForFunction(() => window.refreshes === 1)
+    await page.evaluate(() => window.setConnected(false))
+    assert.equal(await copy.isDisabled(), true)
+    await page.evaluate(() => window.setSupported(false))
+    await page
+      .getByText('Update this computer to copy projects to another computer.', { exact: true })
+      .waitFor()
+    assert.deepEqual(errors, [])
+    await page.close()
+    console.log(
+      `${mobile ? 'Mobile' : 'Desktop'} project copy: P2P, SSH validation, private files, progress, cancellation, saved retry and offline/capability checks pass.`,
+    )
+  }
+} finally {
+  await browser.close()
+}

@@ -1,4 +1,5 @@
 import { indexTaskFamilyWorking } from '@dovo/protocol'
+import { PeerConnections } from './http/peer-connections.js'
 import { RemoteDesktop } from './computer-use/remote-desktop.js'
 import { familyWatchCounts } from './studio/thread-snapshot.js'
 import type { ThreadWatchEntry } from '@dovo/protocol'
@@ -6,6 +7,7 @@ import { ThreadWatch } from './studio/thread-watch.js'
 import { routedStudioTool } from './studio/peers.js'
 import { SharedRetrieval } from './retrieval/coordinator.js'
 import { RetrievalPeers } from './retrieval/peers.js'
+import { ProjectTransfers } from './scm/repositories/project-transfers.js'
 import { enabledStudioTools } from '@dovo/protocol'
 import { ModelSelection } from './agents/tasks/model-selection.js'
 import { runCredentials, type RunCredentials } from './auth/run-credentials.js'
@@ -123,7 +125,11 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     (fn) => store.transaction(fn),
   )
   const mutations = new MutationReceipts(db)
+  // Devices may expire during construction, before the peer service exists. Once started,
+  // revocation closes encrypted streams synchronously rather than waiting for the reaper.
+  let peerConnections: PeerConnections | undefined
   const devices = new Devices(db, ownerToken, (id) => {
+      peerConnections?.disable(id)
       mutations.revoke(id)
       deviceHostUploads.cancelDevice(id)
       void simulators
@@ -390,6 +396,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   })
 
   const services: Services = {
+    projectTransfers: new ProjectTransfers(() => services, db),
     threadWatch,
     remoteDesktop: new RemoteDesktop(
       () => preferences.get().enableRemoteDesktop,
@@ -408,6 +415,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     instanceId: randomUUID(),
     runtimeId,
     runtimeAddresses: () => [],
+    peers: (peerConnections = new PeerConnections(db, devices)),
     mcpApps,
     artifacts,
     memory,
@@ -457,6 +465,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   return services
 }
 export interface Services {
+  projectTransfers: ProjectTransfers
   remoteDesktop: RemoteDesktop
   threadWatch: ThreadWatch
   runCredentials: RunCredentials
@@ -470,6 +479,7 @@ export interface Services {
   instanceId: string
   runtimeId: string
   runtimeAddresses: () => string[]
+  peers: PeerConnections
   scratch: ScratchWorkspaces
   network?: ExternalListener
   acpInstallations: AcpInstallations

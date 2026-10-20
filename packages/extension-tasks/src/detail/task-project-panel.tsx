@@ -470,7 +470,7 @@ export function TaskProjectPanel({
               </h2>
               <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span
-                  className={`size-1.5 shrink-0 rounded-full ${connected ? 'bg-emerald-500' : 'bg-muted-foreground'}`}
+                  className={`size-1.5 shrink-0 rounded-full ${connected ? 'bg-status-success' : 'bg-muted-foreground'}`}
                   aria-hidden="true"
                 />
                 {executionHost ?? 'Selected computer'}

@@ -25,7 +25,7 @@ export function ToolHeader({ title, status }: { title: string; status: string })
         <Icon
           className={cn(
             'size-3',
-            completed && 'text-emerald-400',
+            completed && 'text-status-success',
             failed && 'text-destructive',
             running && 'animate-pulse',
           )}

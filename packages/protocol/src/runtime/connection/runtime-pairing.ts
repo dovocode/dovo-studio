@@ -37,7 +37,7 @@ const confirmed = (registry: RuntimeRegistry, entry: PendingRuntimePairing) =>
   )
 const confirm = (entry: PendingRuntimePairing) =>
   runtimeRequestEffect(
-    null,
+    entry.profile.connection,
     entry.profile.connection.address,
     '/api/pair/confirm',
     entry.proof,

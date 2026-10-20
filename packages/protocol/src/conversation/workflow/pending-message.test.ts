@@ -144,7 +144,12 @@ it('restores saved sends from the journal without borrowing another thread or ac
       id: 'one',
       path: '/api/tasks/message',
       method: 'POST' as const,
-      input: { id: 't', messageId: 'first', text: 'First' },
+      input: {
+        id: 't',
+        messageId: 'first',
+        text: 'First',
+        turnSettings: { provider: 'codex', model: 'large', reasoning: 'high' },
+      },
     },
     {
       id: 'two',
@@ -167,6 +172,12 @@ it('restores saved sends from the journal without borrowing another thread or ac
     },
   ]
   const saved = savedPendingMessages(task, journal)
+  expect(saved[0]?.message.turnSettings).toEqual({
+    provider: 'codex',
+    model: 'large',
+    reasoning: 'high',
+  })
+  expect(pendingMessageQueue(task, saved)[0]?.turnSettings).toEqual(saved[0]?.message.turnSettings)
   expect(saved.map((item) => [item.message.id, item.state, item.destination])).toEqual([
     ['first', 'saved', 'queue'],
     ['second', 'failed', 'thread'],

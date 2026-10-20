@@ -34,7 +34,10 @@ export function NativeTodos({ task }: { task: Task }) {
             {todos.map((todo, index) => (
               <li key={todo.id ?? index} className="flex items-start gap-2 text-xs">
                 {todo.status === 'completed' ? (
-                  <CheckCircle2 className="mt-px size-3.5 shrink-0 text-emerald-600" aria-hidden />
+                  <CheckCircle2
+                    className="mt-px size-3.5 shrink-0 text-status-success"
+                    aria-hidden
+                  />
                 ) : todo.status === 'in-progress' && !summary.unfinished ? (
                   <LoaderCircle
                     className="mt-px size-3.5 shrink-0 animate-spin text-primary"

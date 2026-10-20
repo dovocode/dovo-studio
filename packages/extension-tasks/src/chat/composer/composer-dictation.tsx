@@ -202,7 +202,7 @@ export function ComposerDictation({
         onClick={() => void (phase === 'recording' ? finish() : start())}
       >
         {phase === 'recording' ? (
-          <Square className="size-3.5 text-red-400" />
+          <Square className="size-3.5 text-status-error" />
         ) : busy ? (
           <LoaderCircle className="size-3.5 animate-spin" />
         ) : (

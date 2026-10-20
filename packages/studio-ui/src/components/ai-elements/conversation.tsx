@@ -1,3 +1,4 @@
+import { reducedMotion } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 // Adapted from Vercel AI Elements (MIT), packages/elements/src/conversation.tsx.
 import { ArrowDown } from 'lucide-react'
@@ -127,7 +128,7 @@ export function ConversationScrollButton() {
         className="absolute bottom-3 left-1/2 rounded-full"
         size="icon"
         variant="outline"
-        onClick={() => void scrollToBottom()}
+        onClick={() => void scrollToBottom({ animation: reducedMotion() ? 'instant' : undefined })}
       >
         <ArrowDown />
       </Button>
@@ -217,9 +218,7 @@ export function ConversationRail({
                       target.getBoundingClientRect().top -
                       root.getBoundingClientRect().top -
                       16,
-                    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-                      ? 'instant'
-                      : 'smooth',
+                    behavior: reducedMotion() ? 'instant' : 'smooth',
                   })
                 }}
               >

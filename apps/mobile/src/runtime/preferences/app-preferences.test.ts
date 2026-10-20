@@ -333,3 +333,40 @@ it.each([undefined, 'obsolete'])(
     }
   },
 )
+
+it('restores accessibility choices independently and keeps older saved settings', async () => {
+  storage.getItem = async () =>
+    JSON.stringify({
+      themePalette: 'iris',
+      motion: 'unknown',
+      highContrast: 'yes',
+      colorVision: 'unknown',
+    })
+  const saved: string[] = []
+  storage.setItem = async (value) => {
+    saved.push(value)
+  }
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences()).toMatchObject({
+    themePalette: 'iris',
+    motion: 'system',
+    highContrast: false,
+    colorVision: 'default',
+  })
+  preferences.updateMobilePreferences({
+    highContrast: true,
+    colorVision: 'blue-orange',
+    motion: 'reduce',
+  })
+  await vi.waitFor(() => expect(saved).toHaveLength(1))
+  storage.getItem = async () => saved[0]
+  const restored = await loadPreferences()
+  await restored.preferencesReady
+  expect(restored.readMobilePreferences()).toMatchObject({
+    themePalette: 'iris',
+    motion: 'reduce',
+    highContrast: true,
+    colorVision: 'blue-orange',
+  })
+})

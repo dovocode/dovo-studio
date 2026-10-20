@@ -81,7 +81,8 @@ export const appSettingsExtension = defineStudioExtension(
       icon: 'runtime',
       order: 0.2,
       settingsSection: 'app',
-      keywords: 'theme dark light system mode color text size font zoom motion animation reduce',
+      keywords:
+        'theme dark light system mode color text size font zoom motion animation reduce accessibility colorblind color blindness contrast blue orange',
       load: () => import('./app-settings/appearance'),
     },
     {

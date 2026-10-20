@@ -160,3 +160,19 @@ describe('conversation send attempts across navigation', () => {
     expect(attempts.begin(scope, input).id).not.toBe(first.id)
   })
 })
+
+it('keeps one-turn choices across retries and navigation and creates a new identity after changing them', () => {
+  const attempts = store()
+  const turnSettings = { provider: 'codex' as const, model: 'large', reasoning: 'high' }
+  const first = attempts.begin(scope, { ...input, turnSettings })
+  expect(attempts.begin(scope, { ...input, turnSettings: { ...turnSettings } })).toBe(first)
+  const reopened = store()
+  reopened.restore(scope, JSON.parse(JSON.stringify(first)))
+  expect(reopened.begin(scope, { ...input, turnSettings }).id).toBe(first.id)
+  const changed = attempts.begin(scope, {
+    ...input,
+    turnSettings: { ...turnSettings, reasoning: 'low' },
+  })
+  expect(changed.id).not.toBe(first.id)
+  expect(attempts.begin(scope, input).id).not.toBe(changed.id)
+})

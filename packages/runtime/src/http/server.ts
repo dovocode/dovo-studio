@@ -19,7 +19,15 @@ import { route } from './routes.js'
 import { json } from './support/body.js'
 import { HttpError, errorMessage } from '../errors.js'
 import { attachBrowserSocket } from './support/browser-socket.js'
-export function createRuntimeServer(services: Services, internal = false) {
+import type { PeerOrigin } from './peer-connections.js'
+/** `tunnel` marks the dedicated internet listener. Its connections arrive over loopback, so
+ * their provenance comes only from the tunnel itself, never from the socket address. */
+export function createRuntimeServer(
+  services: Services,
+  internal = false,
+  advertise = true,
+  tunnel?: (socket: Socket) => PeerOrigin | undefined,
+) {
   let stopping = false
   let closing: Promise<void> | undefined
   const connections = new Set<Socket>()
@@ -48,6 +56,13 @@ export function createRuntimeServer(services: Services, internal = false) {
     )
     response.setHeader('Access-Control-Expose-Headers', 'ETag')
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
+    const peer = tunnel?.(request.socket)
+    if (tunnel && !peer) {
+      response.writeHead(403, { Connection: 'close' })
+      response.end('Internet connection is not authorized')
+      request.socket.destroy()
+      return
+    }
     if (request.method === 'OPTIONS') {
       response.writeHead(204)
       response.end()
@@ -68,6 +83,7 @@ export function createRuntimeServer(services: Services, internal = false) {
         if (
           request.method === 'GET' &&
           url.pathname.startsWith('/api/tasks/files/shared/') &&
+          (!peer || peer.deviceId) &&
           !isRunToken(request.headers.authorization?.replace(/^Bearer /, '') ?? '')
         )
           return serveTaskFile(services, response, url, request.headers.range)
@@ -77,6 +93,8 @@ export function createRuntimeServer(services: Services, internal = false) {
             url,
             () => pairingAddresses(services.network?.pairingAddress() ?? server.address()),
             internal,
+            false,
+            peer,
           ).pipe(Effect.provideService(RuntimeServices, services)),
         )
       })
@@ -115,7 +133,7 @@ export function createRuntimeServer(services: Services, internal = false) {
     requests.set(request, done)
     void done.catch((error: unknown) => console.error('Runtime request failed', error))
   })
-  if (!internal)
+  if (!internal && advertise)
     services.runtimeAddresses = () =>
       pairingAddresses(services.network?.pairingAddress() ?? server.address()).map(
         (entry) => entry.address,
@@ -171,9 +189,11 @@ export function createRuntimeServer(services: Services, internal = false) {
     typed.set(terminalId, { characters, timer })
   }
   const authenticated = new Map<WebSocket, string>()
+  const tunneled = new WeakMap<WebSocket, PeerOrigin>()
   const responsive = new WeakSet<WebSocket>()
-  const track = (client: WebSocket, token: string) => {
+  const remember = (client: WebSocket, token: string, peer?: PeerOrigin) => {
     authenticated.set(client, token)
+    if (peer) tunneled.set(client, peer)
     responsive.add(client)
     client.on('pong', () => responsive.add(client))
     client.on('close', () => authenticated.delete(client))
@@ -184,7 +204,18 @@ export function createRuntimeServer(services: Services, internal = false) {
       socket.destroy()
       return
     }
+    const peer = tunnel?.(request.socket)
+    const track = (client: WebSocket, token: string) => remember(client, token, peer)
+    // A tunnel carries one device: tickets minted by another device's credential are refused.
+    const bind = (token: string) => {
+      if (!tunnel) return
+      const device = isRunToken(token) ? undefined : services.devices.authenticate(token)
+      if (!peer?.active || !peer.deviceId || device?.id !== peer.deviceId)
+        throw new HttpError(403, 'This internet connection belongs to another device')
+    }
     try {
+      if (tunnel && !peer?.deviceId)
+        throw new HttpError(403, 'Internet connection is not authorized')
       const url = new URL(request.url ?? '/', 'http://runtime.local')
       if (url.pathname === '/ws/sync') {
         const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
@@ -199,6 +230,7 @@ export function createRuntimeServer(services: Services, internal = false) {
         )
           throw new HttpError(401, 'Invalid sync ticket')
         services.devices.authenticate(ticket.token)
+        bind(ticket.token)
         syncSockets.handleUpgrade(request, socket, head, (client) => {
           track(client, ticket.token)
           attachRuntimeSync(
@@ -219,6 +251,7 @@ export function createRuntimeServer(services: Services, internal = false) {
         if (!ticket.resourceId.startsWith('mcp-app:') || !ticket.taskId)
           throw new HttpError(401, 'Invalid MCP App ticket')
         services.devices.authenticate(ticket.token)
+        bind(ticket.token)
         const taskId = ticket.taskId,
           id = ticket.resourceId.slice('mcp-app:'.length)
         sockets.handleUpgrade(request, socket, head, (client) => {
@@ -262,6 +295,7 @@ export function createRuntimeServer(services: Services, internal = false) {
         services.deviceHosts.assertEnabled()
         const ticket = services.deviceHostTickets.consume(url.searchParams.get('ticket') ?? '')
         const device = services.devices.authenticate(ticket.token)
+        bind(ticket.token)
         const scope = services.hostSimulators.taskId(ticket.resourceId, device.id)
         const authorize = () => {
           services.devices.authenticate(ticket.token)
@@ -290,6 +324,7 @@ export function createRuntimeServer(services: Services, internal = false) {
         services.deviceHosts.assertEnabled()
         const ticket = services.simulatorTickets.consume(url.searchParams.get('ticket') ?? '')
         services.devices.authenticate(ticket.token)
+        bind(ticket.token)
         const taskId = services.simulators.taskId(ticket.resourceId)
         services.store.taskSummary(taskId)
         sockets.handleUpgrade(request, socket, head, (client) => {
@@ -301,6 +336,7 @@ export function createRuntimeServer(services: Services, internal = false) {
       if (url.pathname === '/ws/browser') {
         const ticket = services.browserTickets.consume(url.searchParams.get('ticket') ?? '')
         services.devices.authenticate(ticket.token)
+        bind(ticket.token)
         services.store.taskSummary(ticket.taskId ?? ticket.resourceId)
         sockets.handleUpgrade(request, socket, head, (client) => {
           track(client, ticket.token)
@@ -320,6 +356,7 @@ export function createRuntimeServer(services: Services, internal = false) {
       }
       if (url.pathname !== '/ws/terminal') throw new HttpError(404, 'Not found')
       const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
+      bind(ticket.token)
       if (isRunToken(ticket.token)) authorizeRunTerminal(services, ticket.token, ticket.resourceId)
       else services.devices.authenticate(ticket.token)
       services.terminals.get(ticket.resourceId)
@@ -383,6 +420,7 @@ export function createRuntimeServer(services: Services, internal = false) {
     for (const [socket, token] of authenticated) {
       try {
         authenticateRuntimeOperation(services, token)
+        if (tunneled.get(socket)?.active === false) throw new Error('Internet connection closed')
       } catch {
         socket.close(1008, 'Device revoked')
       }

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./accessibility": "./src/accessibility.ts",
     "./fonts": "./src/fonts.ts",
     "./themes": "./src/themes.ts",
     "./code-themes": "./src/code-themes.ts",

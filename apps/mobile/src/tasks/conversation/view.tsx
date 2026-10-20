@@ -490,7 +490,7 @@ export function Conversation({
   setup?: ReactNode
   children?: ReactNode
 }) {
-  const { colors, styles } = useTheme()
+  const { colors, styles, reduceMotion } = useTheme()
 
   const history = useConversationSelector((value) => value.history)
   const task = useConversationSelector((value) => value.task)
@@ -578,7 +578,7 @@ export function Conversation({
                 setFollowing(false)
                 list.current?.scrollToIndex({
                   index: messageCount - 1 - index,
-                  animated: true,
+                  animated: !reduceMotion,
                   viewPosition: 0.3,
                 })
               }}
@@ -617,7 +617,8 @@ export function Conversation({
           }
           list.current?.scrollToOffset({ offset: index * averageItemLength, animated: false })
           setTimeout(
-            () => list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 }),
+            () =>
+              list.current?.scrollToIndex({ index, animated: !reduceMotion, viewPosition: 0.3 }),
             100,
           )
         }}

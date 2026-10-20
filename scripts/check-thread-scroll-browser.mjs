@@ -5,7 +5,7 @@ import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
-  '@dovo/studio-core': `export * from '@dovo/protocol';export const useAppPreferences=()=>({collapseComposerOnScroll:true});export const useWorkspace=()=>({snapshot:null,connected:true});export const formatDateTime=value=>value;`,
+  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export const useAppPreferences=()=>({collapseComposerOnScroll:true});export const useWorkspace=()=>({snapshot:null,connected:true});export const formatDateTime=value=>value;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/components/ai-elements/conversation.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;`,
   '../chat/thread/use-task-viewed': `export const useTaskViewed=()=>({});`,

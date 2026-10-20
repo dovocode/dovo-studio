@@ -1,0 +1,388 @@
+import { afterEach, expect, it, vi } from 'vite-plus/test'
+import { randomUUID, createHash } from 'node:crypto'
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  writeFile,
+  rm,
+  chmod,
+  stat,
+  symlink,
+  readdir,
+} from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { startRuntime } from '../../index.js'
+import { exec } from '../../process.js'
+import {
+  decode,
+  projectTransferInspectionSchema,
+  projectTransferSchema,
+  projectTransferManifestSchema,
+  type ProjectTransferStart,
+} from '@dovo/protocol'
+import { runtimeIntegration, waitForRuntime } from '../../testing/integration.js'
+import { addRepository } from './repositories.js'
+import { transferPath, projectTransferRemote } from './project-transfer-files.js'
+vi.setConfig(runtimeIntegration)
+const cleanup: Array<() => Promise<void> | void> = []
+afterEach(async () => {
+  vi.restoreAllMocks()
+  for (const close of cleanup.splice(0).reverse()) await close()
+  vi.unstubAllEnvs()
+})
+const owner = 'project-copy-test-owner-at-least-32-characters'
+async function host(databasePath = ':memory:') {
+  const runtime = await startRuntime({ databasePath, ownerToken: owner, port: 0 })
+  cleanup.push(runtime.close)
+  const post = (action: string, input: unknown = {}, token = owner) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/scm/project-transfer/${action}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  return { ...runtime, post }
+}
+async function setup(git = false, persistentTarget = false) {
+  const root = await mkdtemp(join(tmpdir(), 'dovo-copy-test-'))
+  cleanup.push(() => rm(root, { recursive: true, force: true }))
+  vi.stubEnv('DOVO_DATA_ROOT', join(root, 'dovo'))
+  const source = await host(),
+    target = await host(persistentTarget ? join(root, 'target.sqlite') : ':memory:')
+  const path = join(root, 'source')
+  await mkdir(path)
+  await writeFile(join(path, 'readme.txt'), 'Source project')
+  if (git) {
+    await exec('git', ['init', '-b', 'main', path])
+    await exec('git', ['config', 'user.email', 'copy@example.test'], { cwd: path })
+    await exec('git', ['config', 'user.name', 'Copy test'], { cwd: path })
+    await exec('git', ['add', '.'], { cwd: path })
+    await exec('git', ['commit', '-qm', 'Local initial commit'], { cwd: path })
+  }
+  const repository = await addRepository(source.services, {
+    source: 'local',
+    name: 'My project',
+    path,
+  })
+  source.services.retrievalPeers.register('owner', {
+    sessionId: 'copy',
+    peers: [
+      {
+        id: target.services.runtimeId,
+        name: 'Destination',
+        connection: {
+          address: `http://127.0.0.1:${target.port}`,
+          token: owner,
+          runtimeId: target.services.runtimeId,
+        },
+      },
+    ],
+  })
+  const input: ProjectTransferStart = {
+    id: randomUUID(),
+    repositoryId: repository.id,
+    targetId: target.services.runtimeId,
+    ignoredFiles: [],
+  }
+  const result = async () => {
+    await waitForRuntime(() =>
+      expect(
+        source.services.projectTransfers.list().find((job) => job.id === input.id)?.state,
+      ).toMatch(/completed|failed|cancelled/),
+    )
+    const job = source.services.projectTransfers.list().find((job) => job.id === input.id)
+    expect(job?.error).toBeUndefined()
+    expect(job?.state).toBe('completed')
+    const copied = target.services.store
+      .get()
+      .repositories.find((repo) => repo.id === job?.targetRepositoryId)
+    expect(copied).toBeDefined()
+    return copied!
+  }
+  return { root, source, target, repository, path, input, result }
+}
+it('copies a plain workspace directly, with binary chunks, empty files, ignored selection and no chats', async () => {
+  const { source, target, path, input, result } = await setup()
+  const binary = Buffer.alloc(700000)
+  for (let i = 0; i < binary.length; i++) binary[i] = i % 251
+  await writeFile(join(path, 'asset.bin'), binary)
+  await writeFile(join(path, 'empty'), '')
+  await writeFile(join(path, '.env'), 'SECRET_CONFIG=selected')
+  await writeFile(join(path, '.env.private'), 'KEEP_HERE=1')
+  await mkdir(join(path, 'node_modules'))
+  await writeFile(join(path, 'node_modules', 'generated'), 'Do not copy')
+  if (process.platform !== 'win32') await symlink('/etc/passwd', join(path, 'external-link'))
+  const inspect = decode(
+    projectTransferInspectionSchema,
+    await (await source.post('inspect', { repositoryId: input.repositoryId })).json(),
+  )
+  expect(inspect.ignoredFiles.map((file) => file.path).sort()).toEqual(['.env', '.env.private'])
+  await chmod(join(path, '.env'), 0o600)
+  input.ignoredFiles = ['.env']
+  expect((await source.post('start', input)).status).toBe(200)
+  const copied = await result()
+  expect(await readFile(join(copied.path, 'asset.bin'))).toEqual(binary)
+  expect(await readFile(join(copied.path, 'empty'), 'utf8')).toBe('')
+  expect(await readFile(join(copied.path, '.env'), 'utf8')).toBe('SECRET_CONFIG=selected')
+  const configMode = (await stat(join(copied.path, '.env'))).mode & 0o777
+  expect(process.platform === 'win32' || configMode === 0o600).toBe(true)
+  expect((await readdir(copied.path)).sort()).toEqual(['.env', 'asset.bin', 'empty', 'readme.txt'])
+  expect(target.services.store.get().tasks).toEqual([])
+  expect(source.services.store.get().repositories).toHaveLength(1)
+  expect(await readFile(join(path, '.env.private'), 'utf8')).toBe('KEEP_HERE=1')
+  const logs = JSON.stringify(target.services.activity.list('', '', 0))
+  expect(logs).not.toContain(Buffer.from('SECRET_CONFIG=selected').toString('base64'))
+})
+it('preserves unpushed commits, branches, tags, staged edits, dirty files and deletions without copying Git config', async () => {
+  const { source, path, input, result } = await setup(true)
+  const git = (args: string[]) => exec('git', args, { cwd: path }).then((result) => result.stdout)
+  await writeFile(join(path, '.gitignore'), '.env*\nnode_modules/\n')
+  await writeFile(join(path, 'delete-me'), 'old')
+  await writeFile(join(path, 'run.sh'), '#!/bin/sh\necho ready\n')
+  await chmod(join(path, 'run.sh'), 0o755)
+  await git(['add', '.'])
+  await git(['commit', '-qm', 'Unpushed changes'])
+  await git(['branch', 'local-feature'])
+  await git(['tag', 'local-tag'])
+  await git(['remote', 'add', 'origin', 'https://github.com/test/source.git'])
+  await git(['config', 'credential.helper', '!secret-do-not-copy'])
+  await writeFile(join(path, 'readme.txt'), 'Staged version')
+  await git(['add', 'readme.txt'])
+  await writeFile(join(path, 'readme.txt'), 'Working version')
+  await rm(join(path, 'delete-me'))
+  await writeFile(join(path, 'new.txt'), 'Untracked')
+  await writeFile(join(path, '.env.local'), 'selected=1')
+  input.ignoredFiles = ['.env.local']
+  const before = await git(['status', '--porcelain=v1'])
+  const head = (await git(['rev-parse', 'HEAD'])).trim()
+  expect((await source.post('start', input)).status).toBe(200)
+  const copied = await result()
+  const copiedGit = (args: string[]) =>
+    exec('git', args, { cwd: copied.path }).then((result) => result.stdout.trim())
+  expect(await copiedGit(['rev-parse', 'HEAD'])).toBe(head)
+  expect(await copiedGit(['branch', '--show-current'])).toBe('main')
+  expect(await copiedGit(['rev-parse', 'local-feature'])).toBe(head)
+  expect(await copiedGit(['rev-parse', 'local-tag'])).toBe(head)
+  expect(await copiedGit(['show', ':readme.txt'])).toBe('Staged version')
+  expect(await readFile(join(copied.path, 'readme.txt'), 'utf8')).toBe('Working version')
+  expect(await copiedGit(['status', '--porcelain=v1'])).toBe(before.trim())
+  expect(await copiedGit(['remote', 'get-url', 'origin'])).toBe(
+    'https://github.com/test/source.git',
+  )
+  expect(await readFile(join(copied.path, '.git/config'), 'utf8')).not.toContain(
+    'secret-do-not-copy',
+  )
+  expect(
+    process.platform === 'win32' ||
+      ((await stat(join(copied.path, 'run.sh'))).mode & 0o111) === 0o111,
+  ).toBe(true)
+  expect(await git(['status', '--porcelain=v1'])).toBe(before)
+})
+it('deduplicates starts and reconciles a lost commit response without registering twice', async () => {
+  const { source, target, input, result } = await setup()
+  const original = globalThis.fetch
+  let lost = false
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    const response = await original(url, init)
+    if (
+      !lost &&
+      (typeof url === 'string' ? url : url instanceof URL ? url.href : url.url) ===
+        `http://127.0.0.1:${target.port}/api/scm/project-transfer/commit`
+    ) {
+      lost = true
+      throw new Error('Response lost after commit')
+    }
+    return response
+  })
+  const first = await source.post('start', input),
+    second = await source.post('start', input)
+  expect(decode(projectTransferSchema, await first.json()).id).toBe(input.id)
+  expect(second.status).toBe(200)
+  await result()
+  expect(lost).toBe(true)
+  expect(target.services.store.get().repositories).toHaveLength(1)
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  expect(target.services.store.get().repositories).toHaveLength(1)
+})
+it('cancels during copying, removes partial files and retries the saved request', async () => {
+  const { source, target, path, input, result } = await setup()
+  await writeFile(join(path, 'large'), Buffer.alloc(800000))
+  const original = target.services.projectTransfers.chunk.bind(target.services.projectTransfers)
+  let release!: () => void
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const chunk = vi
+    .spyOn(target.services.projectTransfers, 'chunk')
+    .mockImplementationOnce(async (...args) => {
+      await barrier
+      return original(...args)
+    })
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() => expect(chunk).toHaveBeenCalled())
+  const pending = source.post('cancel', { id: input.id })
+  release()
+  expect((await pending).status).toBe(200)
+  expect(source.services.projectTransfers.list()[0]?.state).toBe('cancelled')
+  expect(target.services.store.get().repositories).toEqual([])
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  await result()
+  expect(target.services.store.get().repositories).toHaveLength(1)
+})
+it('requires real pairing, rejects agent credentials and isolates receiving-device grants', async () => {
+  const { source, target, input } = await setup()
+  expect((await source.post('start', input, 'invalid')).status).toBe(401)
+  expect((await source.post('start', { ...input, targetId: 'unpaired' })).status).toBe(409)
+  const controller = new AbortController()
+  source.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      {
+        id: 'test',
+        title: 'Agent',
+        repositoryId: '',
+        agentId: '',
+        status: 'running',
+        activeRunId: 'run',
+        createdAt: new Date().toISOString(),
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+      },
+    ],
+  }))
+  const token = source.services.runCredentials.issue(
+    {
+      taskId: 'test',
+      runId: 'run',
+      readOnly: false,
+      permissions: { provider: 'codex', permission: 'ask' },
+      artifacts: false,
+      pipelineWatching: false,
+      pullRequestWatching: false,
+      deviceHub: false,
+      memoryScopes: [],
+    },
+    controller.signal,
+  )
+  expect((await source.post('start', input, token)).status).toBe(403)
+  controller.abort()
+  const other = 'other-valid-device-token-at-least-32-characters'
+  target.services.devices.add('Other phone', other)
+  const manifest = {
+    id: randomUUID(),
+    runtimeId: target.services.runtimeId,
+    name: 'Copy',
+    entries: [],
+  }
+  expect((await target.post('begin', manifest)).status).toBe(200)
+  expect((await target.post('commit', { id: manifest.id }, other)).status).toBe(404)
+  expect((await target.post('discard', { id: manifest.id }, other)).status).toBe(404)
+  expect(
+    (await target.post('begin', { ...manifest, id: randomUUID(), runtimeId: 'wrong-computer' }))
+      .status,
+  ).toBe(409)
+  expect((await target.post('discard', { id: manifest.id })).status).toBe(200)
+})
+it('rejects traversal, Git metadata, symlink escapes, nonportable paths and corrupt bytes', async () => {
+  const { target } = await setup()
+  for (const path of [
+    '../outside',
+    '/tmp/escape',
+    'C:/escape',
+    'file:stream',
+    '.git/config',
+    'folder/.GIT/config',
+    'x\\y',
+    'con.txt',
+    'alias.',
+  ])
+    expect(() => transferPath(path)).toThrow('file name cannot be copied')
+  const manifest = decode(projectTransferManifestSchema, {
+    id: randomUUID(),
+    runtimeId: target.services.runtimeId,
+    name: 'Corrupt',
+    entries: [
+      {
+        path: 'file.txt',
+        kind: 'file',
+        bytes: 4,
+        mode: 0o600,
+        sha256: createHash('sha256').update('good').digest('hex'),
+      },
+    ],
+  })
+  expect((await target.post('begin', manifest)).status).toBe(200)
+  expect(
+    (await target.post('chunk', { id: manifest.id, index: 0, offset: 1, data: 'YmFkIQ==' })).status,
+  ).toBe(409)
+  expect(
+    (await target.post('chunk', { id: manifest.id, index: 0, offset: 0, data: 'YmFkIQ==' })).status,
+  ).toBe(200)
+  const failed = await target.post('commit', { id: manifest.id })
+  expect(failed.status).toBe(409)
+  expect(await failed.text()).toContain('verification')
+  expect(target.services.store.get().repositories).toEqual([])
+  expect(
+    (
+      await target.post('begin', {
+        ...manifest,
+        id: randomUUID(),
+        entries: [{ ...manifest.entries[0], path: '../escape' }],
+      })
+    ).status,
+  ).toBe(400)
+})
+it('reports an interrupted job after restarting the source and retains completed destination receipts', async () => {
+  const { source, target, input, result, root } = await setup(false, true)
+  expect((await source.post('start', input)).status).toBe(200)
+  const copied = await result()
+  const receipt = target.services.projectTransfers.status(input.id, 'owner')
+  expect(receipt.result?.path).toBe(copied.path)
+  await target.close()
+  const restartedTarget = await host(join(root, 'target.sqlite'))
+  expect(restartedTarget.services.projectTransfers.status(input.id, 'owner')).toEqual(receipt)
+  expect((await restartedTarget.post('commit', { id: input.id })).status).toBe(200)
+  expect(restartedTarget.services.store.get().repositories).toHaveLength(1)
+  const persisted = await host(join(root, 'persistent.sqlite'))
+  const pending = {
+    id: randomUUID(),
+    repositoryId: 'source',
+    targetId: 'target',
+    targetName: 'Target',
+    transport: 'p2p',
+    state: 'copying',
+    bytes: 1,
+    totalBytes: 2,
+    updatedAt: Date.now(),
+  }
+  persisted.services.db.prepare('INSERT INTO project_transfers VALUES (?,?)').run(
+    pending.id,
+    JSON.stringify({
+      job: pending,
+      input: { ...input, id: pending.id },
+      fingerprint: 'fingerprint',
+      device: 'owner',
+    }),
+  )
+  await persisted.close()
+  const restarted = await host(join(root, 'persistent.sqlite'))
+  expect(restarted.services.projectTransfers.list()[0]).toMatchObject({
+    state: 'failed',
+    error: expect.stringContaining('restarted'),
+  })
+})
+it('keeps credential-bearing and executable Git remotes out of the destination configuration', () => {
+  for (const remote of [
+    'https://token@github.com/org/repo.git',
+    'ssh://git:password@host/org/repo',
+    'ext::evil command',
+    '/local/path',
+    'file:///local/path',
+  ])
+    expect(projectTransferRemote(remote)).toBeUndefined()
+  expect(projectTransferRemote('git@github.com:org/repo.git')).toBe('git@github.com:org/repo.git')
+  expect(projectTransferRemote('ssh://git@host:2222/org/repo')).toBe('ssh://git@host:2222/org/repo')
+})

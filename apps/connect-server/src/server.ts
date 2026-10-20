@@ -11,6 +11,10 @@ import { ValidationError } from '@dovo/protocol'
 import { rateLimit } from './rate-limit.js'
 import { clientAddress } from './client-address.js'
 import { PushStore } from './push-store.js'
+import { attachPeerSignaling } from './peer-signaling.js'
+import type { PeerRelayIssuer } from './relay-credentials.js'
+import type { PeerRelayAdmission } from './relay-admission.js'
+import type { PeerRelayProvider } from '@dovo/protocol'
 
 export function createConnectServer(
   options: {
@@ -19,6 +23,8 @@ export function createConnectServer(
     push?: PushDelivery
     deleteIdentity?: DeleteIdentity
     trustedProxies?: readonly string[]
+    peerRelays?: Partial<Record<PeerRelayProvider, PeerRelayIssuer>>
+    peerRelayAdmission?: PeerRelayAdmission
   } & IdentityProvider,
 ) {
   const origin = new URL(options.origin).origin
@@ -90,5 +96,12 @@ export function createConnectServer(
   server.requestTimeout = 15_000
   server.headersTimeout = 10_000
   server.maxHeadersCount = 40
+  attachPeerSignaling(
+    server,
+    options.trustedProxies,
+    options.peerRelays,
+    options.peerRelayAdmission,
+    options.origin,
+  )
   return server
 }

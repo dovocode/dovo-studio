@@ -206,7 +206,7 @@ export function PairingClient({
         </p>
       )}
       {pendingSync && (
-        <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+        <div className="space-y-3 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3">
           <div>
             <h3 className="text-xs font-medium">Unsent changes</h3>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -246,7 +246,7 @@ export function PairingClient({
                   <span
                     className={cn(
                       'inline-flex items-center gap-1 text-[0.6875rem]',
-                      entry.connected ? 'text-emerald-400' : 'text-muted-foreground',
+                      entry.connected ? 'text-status-success' : 'text-muted-foreground',
                     )}
                   >
                     <Circle aria-hidden="true" size={6} fill="currentColor" />

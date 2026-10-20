@@ -8,8 +8,9 @@ import {
   useAppPreferences,
   type StudioThemeColors,
 } from '@dovo/studio-core'
+import { Check, CircleCheck, CircleX, TriangleAlert } from 'lucide-react'
 import { ChoicePicker, Input } from '@dovo/studio-ui'
-import { SettingRow, SettingsGroup, SettingsPage } from './layout'
+import { SettingRow, SettingsGroup, SettingsPage, Toggle } from './layout'
 import { SettingsSelect } from './settings-select'
 import { CodeThemeSettings } from './code-theme'
 
@@ -19,6 +20,8 @@ export default function AppearanceSettings() {
     themePalette,
     textSize,
     motion,
+    highContrast,
+    colorVision,
     chatWidth,
     appFontFamily,
     codeFontFamily,
@@ -27,6 +30,63 @@ export default function AppearanceSettings() {
   } = useAppPreferences()
   return (
     <SettingsPage local title="Appearance" description="How Dovo looks on this device.">
+      <SettingsGroup
+        title="Accessibility"
+        description="Saved on this device. Status icons and labels remain visible in every color mode."
+      >
+        <SettingRow
+          label="Status colors"
+          description="Blue and orange replace green and red in statuses and diffs."
+        >
+          <SettingsSelect
+            label="Status colors"
+            value={colorVision}
+            options={[
+              ['default', 'Default'],
+              ['blue-orange', 'Blue / orange'],
+            ]}
+            onChange={(colorVision) => updateAppPreferences({ colorVision })}
+          />
+        </SettingRow>
+        <div className="flex flex-wrap gap-4 px-4 py-3 text-xs" aria-label="Status color preview">
+          <span className="flex items-center gap-1 text-status-success">
+            <CircleCheck className="size-4" aria-hidden="true" />
+            Finished
+          </span>
+          <span className="flex items-center gap-1 text-status-error">
+            <CircleX className="size-4" aria-hidden="true" />
+            Failed
+          </span>
+          <span className="flex items-center gap-1 text-status-warning">
+            <TriangleAlert className="size-4" aria-hidden="true" />
+            Needs input
+          </span>
+        </div>
+        <SettingRow
+          label="Higher contrast"
+          description="Stronger text, borders and controls with neutral surfaces."
+        >
+          <Toggle
+            label="Higher contrast"
+            checked={highContrast}
+            onChange={(highContrast) => updateAppPreferences({ highContrast })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Animations"
+          description="System follows your computer’s Reduce motion setting, including conversation scrolling."
+        >
+          <SettingsSelect
+            label="Animations"
+            value={motion}
+            options={[
+              ['system', 'System'],
+              ['reduce', 'Reduce'],
+            ]}
+            onChange={(motion) => updateAppPreferences({ motion })}
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Theme">
         <SettingRow
           label="Color scheme"
@@ -72,6 +132,9 @@ export default function AppearanceSettings() {
                   </span>
                   <span className="flex items-center justify-between gap-1 text-xs font-medium">
                     {palette.name}
+                    {themePalette === id && (
+                      <Check className="size-3.5 shrink-0" aria-hidden="true" />
+                    )}
                     {id === 'dovo' && (
                       <span className="text-[10px] text-muted-foreground">Default</span>
                     )}
@@ -196,22 +259,6 @@ export default function AppearanceSettings() {
               ['full', 'Full width'],
             ]}
             onChange={(chatWidth) => updateAppPreferences({ chatWidth })}
-          />
-        </SettingRow>
-      </SettingsGroup>
-      <SettingsGroup title="Motion">
-        <SettingRow
-          label="Animations"
-          description="System follows your computer’s Reduce motion setting."
-        >
-          <SettingsSelect
-            label="Animations"
-            value={motion}
-            options={[
-              ['system', 'System'],
-              ['reduce', 'Reduce'],
-            ]}
-            onChange={(motion) => updateAppPreferences({ motion })}
           />
         </SettingRow>
       </SettingsGroup>

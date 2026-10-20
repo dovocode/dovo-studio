@@ -1,3 +1,5 @@
+import { TurnModelControls } from './turn-model-controls'
+import { sameTurnSettings, turnSettingsLabel, type TurnSettings } from '@dovo/protocol'
 import { pendingQueue } from './pending-send'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Pressable, View, TextInput } from 'react-native'
@@ -15,7 +17,7 @@ import { mobileWorkflow } from '../../runtime/state/native-effect'
 export function MessageQueue({ task }: { task: Task }) {
   const { colors, styles } = useTheme()
 
-  const { connected, callEffect } = useRuntime(),
+  const { connected, callEffect, snapshot } = useRuntime(),
     { act, busy, error } = useAction()
   const { actions } = useTaskConversation()
   const [open, setOpen] = useApplicationState(false)
@@ -23,6 +25,8 @@ export function MessageQueue({ task }: { task: Task }) {
     id: string
     text: string
     expectedText: string
+    turnSettings: TurnSettings | null
+    expectedTurnSettings: TurnSettings | null
   } | null>(null)
   const saveEdit = () => {
     if (!editing) return
@@ -36,6 +40,12 @@ export function MessageQueue({ task }: { task: Task }) {
             messageId: editing.id,
             text: editing.text,
             expectedText: editing.expectedText,
+            ...(snapshot?.queuedTurnSettingsSupported
+              ? {
+                  turnSettings: editing.turnSettings,
+                  expectedTurnSettings: editing.expectedTurnSettings,
+                }
+              : {}),
           },
           responses.ok,
         )
@@ -62,12 +72,20 @@ export function MessageQueue({ task }: { task: Task }) {
   const restore = (message: (typeof queue)[number]) =>
     act(() =>
       mobileWorkflow(function* () {
+        if (
+          (actions.draft.text.trim() || actions.draftAttachments?.length) &&
+          !sameTurnSettings(message.turnSettings, actions.turnSettings)
+        )
+          throw new Error(
+            'Clear the composer before restoring a message with different model settings',
+          )
         yield* callEffect(
           '/api/tasks/queue',
           { id: task.id, action: 'restore', messageId: message.id },
           responses.ok,
         )
         actions.draft.update([actions.draft.text, message.text].filter(Boolean).join('\n\n'))
+        actions.setTurnSettings(message.turnSettings ?? null)
         setOpen(false)
       }),
     )
@@ -157,6 +175,14 @@ export function MessageQueue({ task }: { task: Task }) {
                   onChangeText={(text) => setEditing({ ...editing, text })}
                   editable={!busy}
                 />
+                {actions.agent && snapshot?.queuedTurnSettingsSupported && (
+                  <TurnModelControls
+                    agent={actions.agent}
+                    value={editing.turnSettings}
+                    onChange={(turnSettings) => setEditing({ ...editing, turnSettings })}
+                    disabled={busy}
+                  />
+                )}
                 <Action
                   label="Save changes"
                   disabled={
@@ -207,6 +233,9 @@ export function MessageQueue({ task }: { task: Task }) {
                 <Text style={styles.text}>
                   {message.text || message.attachments?.map((file) => file.name).join(', ')}
                 </Text>
+                {message.turnSettings && (
+                  <Text style={styles.muted}>{turnSettingsLabel(message.turnSettings)}</Text>
+                )}
                 {!!message.text && !!message.attachments?.length && (
                   <Text style={styles.muted}>{message.attachments.length} attachments</Text>
                 )}
@@ -220,7 +249,13 @@ export function MessageQueue({ task }: { task: Task }) {
                   pendingMessages.some((item) => item.message.id === message.id)
                 }
                 onPress={() =>
-                  setEditing({ id: message.id, text: message.text, expectedText: message.text })
+                  setEditing({
+                    id: message.id,
+                    text: message.text,
+                    expectedText: message.text,
+                    turnSettings: message.turnSettings ?? null,
+                    expectedTurnSettings: message.turnSettings ?? null,
+                  })
                 }
               />
               <IconButton
@@ -230,7 +265,8 @@ export function MessageQueue({ task }: { task: Task }) {
                   !connected ||
                   busy ||
                   pendingMessages.some((item) => item.message.id === message.id) ||
-                  task.status !== 'running'
+                  task.status !== 'running' ||
+                  !!message.turnSettings
                 }
                 onPress={() => change('steer', message.id)}
               />

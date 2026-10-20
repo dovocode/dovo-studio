@@ -222,7 +222,7 @@ export function TaskConversation({
       {(budget.tokenExceeded || budget.timeExceeded) && (
         <p
           role="status"
-          className="mx-auto w-full max-w-[var(--chat-max)] px-5 py-2 text-xs text-amber-500"
+          className="mx-auto w-full max-w-[var(--chat-max)] px-5 py-2 text-xs text-status-warning"
         >
           Task budget reached ·{' '}
           {budget.tokens !== undefined

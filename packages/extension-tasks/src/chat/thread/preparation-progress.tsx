@@ -55,7 +55,7 @@ export function PreparationProgress({
             >
               <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
                 {step.state === 'done' ? (
-                  <span className="flex size-4 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
+                  <span className="flex size-4 items-center justify-center rounded-full bg-status-success/15 text-status-success">
                     <Check className="size-3" strokeWidth={3} />
                   </span>
                 ) : step.state === 'failed' ? (

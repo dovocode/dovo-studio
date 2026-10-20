@@ -785,3 +785,26 @@ it.each([false, true])(
     expect(restarted.services.preferences.get().autoContinueAfterRestart).toBe(!resumeInterrupted)
   },
 )
+
+it('recovers the interrupted turn with its saved model choices while leaving thread defaults intact', async () => {
+  const turnSettings = { provider: 'codex' as const, model: 'queued-model', reasoning: 'high' }
+  const { options, id } = await seed(true, {
+    runAttempt: { runId: 'interrupted', inputMessageIds: [], promptAccepted: false, turnSettings },
+  })
+  const runs: AgentRun[] = []
+  adapter(async (run) => {
+    runs.push(run)
+    run.onText('Recovered')
+  })
+  const runtime = await startRuntime(options)
+  cleanups.push(runtime.close)
+  await waitForRecovery(() => expect(runtime.services.store.task(id).status).toBe('review'))
+  expect(runs).toHaveLength(1)
+  expect(runs[0].agent).toMatchObject({ model: 'queued-model', reasoning: 'high' })
+  expect(runtime.services.store.get().agents[0].model).toBe('')
+  expect(runtime.services.store.task(id).agentOverrides?.model).toBeUndefined()
+  await (
+    await runtime.services.tasks.start(id)
+  ).done
+  expect(runs.at(-1)?.agent.model).toBe('')
+})

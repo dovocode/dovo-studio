@@ -1,5 +1,5 @@
 import { Effect, Schema, Semaphore } from 'effect'
-import { decode, mutableStruct, mutableArray } from '@dovo/protocol'
+import { turnSettingsSchema, decode, mutableStruct, mutableArray } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import type { SendAttempt } from '../composer/send-attempts'
@@ -20,6 +20,7 @@ const recordSchema = mutableStruct({
         mode: Schema.Literals(['queue', 'steer']),
         title: Schema.optional(Schema.String),
         runId: Schema.optional(Schema.String),
+        turnSettings: Schema.optional(turnSettingsSchema),
       }),
       accepted: Schema.Boolean,
     }),

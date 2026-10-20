@@ -243,3 +243,60 @@ it('keeps dictation opt-in and persists its language independently', async () =>
     dictationLanguage: 'nl-NL',
   })
 })
+
+it('restores accessibility settings without losing existing choices', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const preferences = await import('./preferences')
+  expect(preferences.readAppPreferences()).toMatchObject({
+    colorVision: 'default',
+    highContrast: false,
+    motion: 'system',
+  })
+  preferences.updateAppPreferences({
+    colorVision: 'blue-orange',
+    highContrast: true,
+    motion: 'reduce',
+    themePalette: 'iris',
+  })
+  vi.resetModules()
+  expect((await import('./preferences')).readAppPreferences()).toMatchObject({
+    colorVision: 'blue-orange',
+    highContrast: true,
+    motion: 'reduce',
+    themePalette: 'iris',
+  })
+})
+
+it('honors Reduce motion for scroll actions from either Dovo or the OS', async () => {
+  vi.stubGlobal('localStorage', storage())
+  let system = false
+  vi.stubGlobal('matchMedia', () => ({ matches: system }))
+  const { reducedMotion, updateAppPreferences } = await import('./preferences')
+  expect(reducedMotion()).toBe(false)
+  system = true
+  expect(reducedMotion()).toBe(true)
+  system = false
+  updateAppPreferences({ motion: 'reduce' })
+  expect(reducedMotion()).toBe(true)
+})
+
+it('falls back from invalid accessibility values independently', async () => {
+  vi.stubGlobal(
+    'localStorage',
+    storage({
+      'dovo.app-preferences.v1': JSON.stringify({
+        colorVision: 'unknown',
+        highContrast: 'yes',
+        motion: 'always',
+        theme: 'light',
+      }),
+    }),
+  )
+  expect((await import('./preferences')).readAppPreferences()).toMatchObject({
+    colorVision: 'default',
+    highContrast: false,
+    motion: 'system',
+    theme: 'light',
+  })
+})

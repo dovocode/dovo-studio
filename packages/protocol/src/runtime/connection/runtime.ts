@@ -1,4 +1,6 @@
 import { remoteDesktopSessionSchema } from '../remote-desktop.js'
+import { peerConfigSchema, peerRelayIdentitySchema } from './peer.js'
+import { projectTransferSchema } from '../../scm/repositories/project-transfer.js'
 import { studioToolsSchema } from '../studio-tools.js'
 import { runtimeIconSchema } from './runtime-icon.js'
 import { memorySettingsSchema } from '../memory.js'
@@ -118,6 +120,9 @@ export const snapshotSchema = mutableStruct({
   settingsScopesSupported: Schema.optional(Schema.Boolean),
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
   threadBehaviorSupported: Schema.optional(Schema.Boolean),
+  queuedTurnSettingsSupported: Schema.optional(Schema.Boolean),
+  projectTransfersSupported: Schema.optional(Schema.Boolean),
+  projectTransfers: Schema.optional(mutableArray(projectTransferSchema)),
   taskBehaviorSupported: Schema.optional(Schema.Boolean),
   /** Present on scoped replicas; only these threads contain authoritative history. */
   detailTaskIds: Schema.optional(mutableArray(Schema.String)),
@@ -164,6 +169,7 @@ export const snapshotSchema = mutableStruct({
   owner: Schema.Boolean,
 })
 export const connectionSchema = mutableStruct({
+  peer: Schema.optional(peerConfigSchema),
   address: refine(
     urlSchema({
       protocol: /^https?$/,
@@ -296,12 +302,14 @@ export type JobRun = Schema.Schema.Type<typeof jobRunSchema>
 export type JobRunStep = Schema.Schema.Type<typeof jobRunStepSchema>
 export type ProviderStatus = Schema.Schema.Type<typeof providerStatusSchema>
 export const responses = {
+  peerRelayIdentity: mutableStruct({ publicKey: peerRelayIdentitySchema }),
   repositoryOpenTargets: repositoryOpenTargetsSchema,
   ok: mutableStruct({
     ok: Schema.Boolean,
     pending: Schema.optional(Schema.Boolean),
   }),
   pairCode: mutableStruct({
+    peer: Schema.optional(peerConfigSchema),
     addresses: Schema.optional(
       mutableArray(mutableStruct({ name: Schema.String, address: Schema.String })),
     ),

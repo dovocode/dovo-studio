@@ -1,3 +1,4 @@
+import { reducedMotion } from '@dovo/studio-core'
 import { useConversationHistory } from './use-conversation-history'
 import { ChatMessage } from './chat-message'
 import { TaskEmptyState } from '../../task-creation/task-empty-state'
@@ -155,7 +156,7 @@ export function ChatThread({
     const frame = requestAnimationFrame(() =>
       document
         .getElementById(bookmarkJump)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+        ?.scrollIntoView({ behavior: reducedMotion() ? 'instant' : 'smooth', block: 'center' }),
     )
     return () => cancelAnimationFrame(frame)
   }, [bookmarkJump])
@@ -523,9 +524,10 @@ export function ChatThread({
                       onClick={() => {
                         const id = `message-${task.id}-${message.id}`
                         setBookmarkJump(id)
-                        document
-                          .getElementById(id)
-                          ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                        document.getElementById(id)?.scrollIntoView({
+                          behavior: reducedMotion() ? 'instant' : 'smooth',
+                          block: 'center',
+                        })
                       }}
                       title={message.text.slice(0, 180)}
                     >

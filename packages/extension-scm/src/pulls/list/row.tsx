@@ -88,10 +88,10 @@ export function PullRow({
     pull.state === 'merged'
       ? 'text-violet-700 dark:text-violet-400'
       : pull.state === 'closed'
-        ? 'text-red-700 dark:text-red-400'
+        ? 'text-status-error'
         : pull.draft
           ? 'text-muted-foreground'
-          : 'text-emerald-700 dark:text-emerald-400'
+          : 'text-status-success'
   return (
     <div className="relative">
       <div
@@ -202,7 +202,7 @@ export function PullRow({
                       <span className="inline-flex items-center gap-2 font-mono tabular-nums">
                         {pull.additions != null && (
                           <span
-                            className="text-emerald-700 dark:text-emerald-400"
+                            className="text-status-success"
                             aria-label={`${pull.additions} lines added`}
                           >
                             +{pull.additions.toLocaleString()}
@@ -210,7 +210,7 @@ export function PullRow({
                         )}
                         {pull.deletions != null && (
                           <span
-                            className="text-red-700 dark:text-red-400"
+                            className="text-status-error"
                             aria-label={`${pull.deletions} lines deleted`}
                           >
                             −{pull.deletions.toLocaleString()}
@@ -279,10 +279,7 @@ export function PullRow({
                 </div>
               </div>
               {!!pull.statusError && (
-                <p
-                  className="mt-2 text-[0.625rem] text-amber-700 dark:text-amber-400"
-                  title={pull.statusError}
-                >
+                <p className="mt-2 text-[0.625rem] text-status-warning" title={pull.statusError}>
                   Status unavailable · refresh to retry
                 </p>
               )}

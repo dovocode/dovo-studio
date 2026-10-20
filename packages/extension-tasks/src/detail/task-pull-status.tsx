@@ -36,7 +36,7 @@ export function TaskPullStatus({
       : status.state === 'closed' || failing
         ? 'text-destructive'
         : status.checks === 'passed'
-          ? 'text-emerald-700 dark:text-emerald-400'
+          ? 'text-status-success'
           : 'text-muted-foreground'
   const fix = () => {
     if (busy) return

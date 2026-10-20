@@ -191,7 +191,7 @@ export function SettingSource({
                 effective value for each computer, including later overrides.
               </p>
               {!sourceCurrent && (
-                <p className="mb-3 text-xs text-amber-700 dark:text-amber-400">
+                <p className="mb-3 text-xs text-status-warning">
                   The value above comes from the latest settings read. Source details below use
                   saved snapshots.
                 </p>
@@ -291,7 +291,7 @@ export function SettingSource({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-auto min-h-7 min-w-0 max-w-full whitespace-normal px-1.5 text-xs [overflow-wrap:anywhere] text-amber-700 dark:text-amber-400"
+              className="h-auto min-h-7 min-w-0 max-w-full whitespace-normal px-1.5 text-xs [overflow-wrap:anywhere] text-status-warning"
               aria-label={`${label}: overridden at ${overrides.length} later ${overrides.length === 1 ? 'level' : 'levels'}`}
             >
               <Layers className="size-3 shrink-0" /> {overrides.length}{' '}

@@ -19,11 +19,11 @@ export function Signal({ signal }: { signal: PullSignal }) {
           : CircleDashed
   const color =
     signal.tone === 'danger'
-      ? 'text-red-700 dark:text-red-400'
+      ? 'text-status-error'
       : signal.tone === 'positive'
-        ? 'text-emerald-700 dark:text-emerald-400'
+        ? 'text-status-success'
         : signal.tone === 'warning'
-          ? 'text-amber-700 dark:text-amber-400'
+          ? 'text-status-warning'
           : signal.tone === 'accent'
             ? 'text-violet-700 dark:text-violet-400'
             : 'text-muted-foreground'

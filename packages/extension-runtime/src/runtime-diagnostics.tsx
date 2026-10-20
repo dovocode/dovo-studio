@@ -71,7 +71,7 @@ export function RuntimeDiagnosticsPanel() {
             {new Date(status.checkedAt).toLocaleString()}
           </p>
           {status.warnings.map((warning) => (
-            <p key={warning} className="text-amber-600">
+            <p key={warning} className="text-status-warning">
               {warning}
             </p>
           ))}

@@ -251,11 +251,11 @@ export function TaskHeader({
               className={cn(
                 'truncate',
                 presentation.state === 'Needs input'
-                  ? 'text-amber-400'
+                  ? 'text-status-warning'
                   : presentation.state === 'Failed'
                     ? 'text-destructive'
                     : ['Done', 'Finished', 'Settled'].includes(presentation.state)
-                      ? 'text-emerald-400'
+                      ? 'text-status-success'
                       : presentation.state === 'Working'
                         ? 'text-sky-400'
                         : 'text-muted-foreground',

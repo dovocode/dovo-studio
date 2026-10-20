@@ -1,3 +1,5 @@
+import { TurnModelControls } from './turn-model-controls'
+import { turnSettingsLabel } from '@dovo/protocol'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FileDropTarget } from './file-drop-target'
 import { changeTaskProject, changeTaskAutoProject } from '@dovo/protocol'
@@ -86,6 +88,8 @@ export function Composer({
     hasInput,
     canSend,
     patch,
+    turnSettings,
+    setTurnSettings,
   } = actions
   const { modelName, catalog: modelCatalog } = useModelCatalog(agent)
   const { navigate } = useNavigation()
@@ -97,6 +101,7 @@ export function Composer({
     text: string
     attachmentIds: string[]
   } | null>(null)
+  const [turnModelOpen, setTurnModelOpen] = useApplicationState(false)
   const [advanced, setAdvanced] = useApplicationState(false)
   useEffect(() => setAdvanced(false), [task.id, task.repositoryId, setAdvanced])
   const [machineMoving, setMachineMoving] = useApplicationState(false)
@@ -775,6 +780,44 @@ export function Composer({
                 gap: 8,
               }}
             >
+              {showOptions &&
+                !dictation.active &&
+                snapshot?.queuedTurnSettingsSupported &&
+                (task.status === 'running' || !!task.queue?.length || !!turnSettings) &&
+                agent && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Next turn model and reasoning"
+                    disabled={busy || !!task.archived}
+                    onPress={() => {
+                      Keyboard.dismiss()
+                      setTurnModelOpen(true)
+                    }}
+                    style={{
+                      minHeight: 44,
+                      flexShrink: 1,
+                      justifyContent: 'center',
+                      paddingHorizontal: 4,
+                    }}
+                  >
+                    <Text numberOfLines={1} style={[styles.muted, { fontSize: 12 }]}>
+                      {turnSettings
+                        ? `Next: ${turnSettingsLabel(turnSettings)}`
+                        : 'Next turn: defaults'}{' '}
+                      ▾
+                    </Text>
+                  </Pressable>
+                )}
+              {turnModelOpen && agent && (
+                <Sheet title="Next turn model & reasoning" onClose={() => setTurnModelOpen(false)}>
+                  <TurnModelControls
+                    agent={agent}
+                    value={turnSettings}
+                    onChange={setTurnSettings}
+                    disabled={busy}
+                  />
+                </Sheet>
+              )}
               {showOptions && !dictation.active && !(task.status === 'running' && hasInput) && (
                 <Pressable
                   accessibilityRole="button"
@@ -891,7 +934,7 @@ export function Composer({
                   variant="plain"
                   icon="steer"
                   label="Steer agent"
-                  disabled={!canSend || busy}
+                  disabled={!canSend || busy || !!turnSettings}
                   onPress={() => send('steer')}
                 />
                 {showFork && (

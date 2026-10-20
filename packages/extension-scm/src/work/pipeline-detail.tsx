@@ -339,9 +339,9 @@ export function PipelineState({ status }: { status: string }) {
           ? Clock3
           : CircleDot
   const color = {
-    success: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+    success: 'bg-status-success/10 text-status-success',
     danger: 'bg-destructive/10 text-destructive',
-    warning: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    warning: 'bg-status-warning/10 text-status-warning',
     info: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
     neutral: 'bg-muted text-muted-foreground',
   }[signal.tone]

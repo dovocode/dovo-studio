@@ -1,4 +1,4 @@
-import { noStudioTools, type StudioTools } from '@dovo/protocol'
+import { type TurnSettings, noStudioTools, type StudioTools } from '@dovo/protocol'
 import { runCredentials } from '../../auth/run-credentials.js'
 import type { MemoryScope } from '@dovo/protocol'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
@@ -781,9 +781,10 @@ export class Tasks {
     attachmentIds: string[] = [],
     review = false,
     resumePaused = false,
+    turnSettings?: TurnSettings,
   ) {
     return runtimeOperation(() => this.attachments.metadata(id, attachmentIds)).pipe(
-      Effect.tap(() => this.resolveModel(id, text)),
+      Effect.tap(() => (turnSettings ? Effect.void : this.resolveModel(id, text))),
       Effect.flatMap((attachments) =>
         runtimeOperation(() => {
           this.queue.add(
@@ -796,6 +797,7 @@ export class Tasks {
             resumePaused && !this.running.has(id),
             undefined,
             {
+              turnSettings,
               reopenSettled: resumePaused,
               unsnooze: true,
               clearCompletedTodos: resumePaused && !review,
@@ -841,6 +843,8 @@ export class Tasks {
         if (task.messages.some((message) => message.id === messageId)) return undefined
         throw new HttpError(409, 'This message already started or was removed')
       }
+      if (queued.turnSettings)
+        throw new HttpError(409, 'Messages with their own model settings must run as a queued turn')
       return queued
     }).pipe(
       Effect.flatMap((queued) =>
@@ -1031,7 +1035,12 @@ export class Tasks {
     return Effect.suspend(() => {
       if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
-      return this.resolveModel(id).pipe(
+      const next = this.store.taskSummary(id)
+      return (
+        next.queue?.[0]?.turnSettings || (continuingRunId && next.runAttempt?.turnSettings)
+          ? Effect.void
+          : this.resolveModel(id)
+      ).pipe(
         Effect.flatMap(() => runtimeOperation(() => this.store.task(id))),
         Effect.flatMap((task) => {
           // The native boundary above yields. Admission must be rechecked in the

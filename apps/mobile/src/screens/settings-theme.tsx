@@ -13,10 +13,10 @@ export function useSettingsTheme() {
     const dark = theme.mode === 'dark'
     const colors = {
       ...theme.colors,
-      background: dark ? '#000000' : '#f2f2f7',
-      surface: dark ? '#1c1c1e' : '#ffffff',
-      elevated: dark ? '#2c2c2e' : '#ffffff',
-      border: dark ? '#38383a' : '#d1d1d6',
+      background: theme.highContrast ? theme.colors.background : dark ? '#000000' : '#f2f2f7',
+      surface: theme.highContrast ? theme.colors.surface : dark ? '#1c1c1e' : '#ffffff',
+      elevated: theme.highContrast ? theme.colors.elevated : dark ? '#2c2c2e' : '#ffffff',
+      border: theme.highContrast ? theme.colors.border : dark ? '#38383a' : '#d1d1d6',
     }
     return {
       ...theme,

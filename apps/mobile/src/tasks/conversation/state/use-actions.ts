@@ -9,6 +9,8 @@ import { randomUUID } from 'expo-crypto'
 import { useEffect, useRef } from 'react'
 import { Schema, Effect } from 'effect'
 import {
+  type TurnSettings,
+  sameTurnSettings,
   responses,
   generatedTitleSchema,
   taskSchema,
@@ -45,6 +47,12 @@ export function useConversationActions(task: Task) {
     ),
     action = useAction(),
     cancellation = useAction()
+  const [turnSettings, setTurnSettings] = useApplicationState<TurnSettings | null>(
+    task.draftTurnSettings ?? null,
+  )
+  useEffect(() => {
+    setTurnSettings(task.draftTurnSettings ?? null)
+  }, [task.draftTurnSettings, setTurnSettings])
   const pendingScope = JSON.stringify([
     profile?.connection.address,
     profile?.connection.token,
@@ -135,8 +143,11 @@ export function useConversationActions(task: Task) {
     const scopeKey = JSON.stringify(scope)
     if (restoredScope.current !== scopeKey) {
       restoredScope.current = scopeKey
-      if (storedDraft.submission)
+      if (storedDraft.submission) {
         sendAttempts.restore(scope, storedDraft.submission.attempt, storedDraft.submission.accepted)
+        if (!storedDraft.submission.accepted)
+          setTurnSettings(storedDraft.submission.attempt.turnSettings ?? null)
+      }
     }
     const attempt = sendAttempts.peek(scope)
     const ids = [...task.messages, ...(task.queue ?? [])].map((message) => message.id)
@@ -153,11 +164,15 @@ export function useConversationActions(task: Task) {
         ? pendingMessage
         : null
     if (pending) {
+      setTurnSettings((current) =>
+        sameTurnSettings(current, pending.message.turnSettings) ? null : current,
+      )
       const submitted = attempt ?? {
         id: pending.message.id,
         text: pending.message.text,
         attachmentIds: pending.message.attachments?.map((file) => file.id) ?? [],
         mode: 'queue' as const,
+        turnSettings: pending.message.turnSettings,
       }
       void runClientEffect(
         storedDraft
@@ -172,8 +187,12 @@ export function useConversationActions(task: Task) {
             ),
           ),
       )
-    } else if (acknowledged && attempt)
+    } else if (acknowledged && attempt) {
+      setTurnSettings((current) =>
+        sameTurnSettings(current, attempt.turnSettings) ? null : current,
+      )
       void runClientEffect(storedDraft.confirmEffect(attempt, true))
+    }
     // Once the host lists the message, the local copy is done; keeping it would show a ghost
     // "Sending…" bubble whenever that message later leaves the queue.
   }, [
@@ -243,6 +262,14 @@ export function useConversationActions(task: Task) {
     let submittedId: string | undefined
     return mobileWorkflow(function* () {
       if (policyIssue) return yield* Effect.fail(new Error(policyIssue))
+      if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true)
+        return yield* Effect.fail(
+          new Error('Update the task computer to choose a model for this turn.'),
+        )
+      if (turnSettings && mode === 'steer')
+        return yield* Effect.fail(
+          new Error('Queue this message to use its model and reasoning settings.'),
+        )
       Keyboard.dismiss()
       dictation.reset()
       const text = input.trim(),
@@ -252,6 +279,7 @@ export function useConversationActions(task: Task) {
         attachmentIds,
         mode,
         runId: mode === 'steer' ? task.activeRunId : undefined,
+        turnSettings: turnSettings ?? undefined,
       })
       submittedId = attempt.id
       setPendingMessage({
@@ -264,6 +292,7 @@ export function useConversationActions(task: Task) {
           text,
           createdAt: new Date().toISOString(),
           attachments: task.draftAttachments,
+          turnSettings: attempt.turnSettings,
         },
       })
       yield* storedDraft.stageEffect(attempt)
@@ -310,6 +339,7 @@ export function useConversationActions(task: Task) {
               id: task.id,
               messageId: attempt.id,
               runId: attempt.runId,
+              turnSettings: attempt.turnSettings,
               text,
               attachmentIds,
             },
@@ -326,6 +356,7 @@ export function useConversationActions(task: Task) {
           ),
         )
         yield* storedDraft.confirmEffect(attempt, clearDraft)
+        setTurnSettings(null)
       }).pipe(
         Effect.catch((error) =>
           mobileWorkflow(function* () {
@@ -348,6 +379,15 @@ export function useConversationActions(task: Task) {
     )
   }
   return {
+    turnSettings,
+    setTurnSettings: (value: TurnSettings | null) => {
+      setTurnSettings(value)
+      act(() =>
+        patchEffect({
+          draftTurnSettings: { before: task.draftTurnSettings ?? null, after: value },
+        }),
+      )
+    },
     threadScope: JSON.stringify([profile?.connection.address, profile?.connection.token, task.id]),
     pendingMessage,
     pendingMessages,

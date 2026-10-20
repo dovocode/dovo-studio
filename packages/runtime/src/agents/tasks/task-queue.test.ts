@@ -610,3 +610,98 @@ it('unsnoozes accepted input without waking on background input, retries or reje
     db.close()
   }
 })
+
+it('persists per-message choices through reorder, editing, admission and restore with conflict checks', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Queue',
+          repositoryId: '',
+          agentId: '',
+          harness: {
+            provider: 'codex',
+            model: 'default-model',
+            endpoint: '',
+            instructions: '',
+            permission: 'ask',
+          },
+          status: 'draft',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+        },
+      ],
+    }))
+    let queue = new TaskQueue(store)
+    const settings = { provider: 'codex' as const, model: 'large', reasoning: 'high' }
+    queue.add('task', 'one', 'One', [], undefined, false, false, undefined, {
+      turnSettings: settings,
+    })
+    queue.add('task', 'two', 'Two')
+    expect(
+      queue.add('task', 'one', 'One', [], undefined, false, false, undefined, {
+        turnSettings: { reasoning: 'high', model: 'large', provider: 'codex' },
+      }),
+    ).toBe(false)
+    expect(() =>
+      queue.add('task', 'one', 'One', [], undefined, false, false, undefined, {
+        turnSettings: { ...settings, reasoning: 'low' },
+      }),
+    ).toThrow('different')
+    expect(() =>
+      queue.add('task', 'wrong', 'Wrong', [], undefined, false, false, undefined, {
+        turnSettings: { ...settings, provider: 'claude' },
+      }),
+    ).toThrow('current harness')
+    queue.move('task', 'two', 'one')
+    queue.edit('task', 'one', 'Edited', 'One', { ...settings, reasoning: 'low' }, settings)
+    expect(() => queue.edit('task', 'one', 'Stale', 'Edited', settings, settings)).toThrow(
+      'changed',
+    )
+    // A legacy text-only client preserves the one-turn settings.
+    queue.edit('task', 'one', 'Final', 'Edited')
+    const restored = new WorkspaceStore(db)
+    queue = new TaskQueue(restored)
+    queue.take('task', 'first-run')
+    expect(restored.task('task').runAttempt?.turnSettings).toBeUndefined()
+    queue.take('task', 'second-run')
+    expect(restored.task('task').runAttempt?.turnSettings).toEqual({
+      ...settings,
+      reasoning: 'low',
+    })
+    expect(restored.task('task').messages.at(-1)?.turnSettings).toEqual({
+      ...settings,
+      reasoning: 'low',
+    })
+    queue.add('task', 'restore', 'Restore', [], undefined, false, false, undefined, {
+      turnSettings: settings,
+    })
+    restored.updateTask('task', (t) => ({ ...t, draft: 'Other draft' }))
+    expect(() => queue.change('task', 'restore', 'restore')).toThrow('Clear the composer')
+    restored.updateTask('task', (t) => ({ ...t, draft: '' }))
+    queue.change('task', 'restore', 'restore')
+    expect(restored.task('task')).toMatchObject({ draft: 'Restore', draftTurnSettings: settings })
+    // Native draft text is stored on the phone, while its model choice is shared metadata.
+    restored.updateTask('task', (t) => ({ ...t, draft: '' }))
+    queue.add('task', 'mobile-send', 'Phone-only draft', [], undefined, false, false, undefined, {
+      turnSettings: settings,
+    })
+    expect(restored.task('task').draftTurnSettings).toBeNull()
+    restored.patch({
+      collection: 'tasks',
+      id: 'task',
+      changes: { draftTurnSettings: { before: null, after: settings } },
+    })
+    queue.add('task', 'other-sender', 'Other device uses defaults')
+    expect(restored.task('task').draftTurnSettings).toEqual(settings)
+  } finally {
+    db.close()
+  }
+})

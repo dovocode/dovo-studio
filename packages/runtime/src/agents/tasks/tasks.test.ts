@@ -2260,3 +2260,67 @@ it('applies Claude steering received during finalization even when the remaining
     await initial.done
   }
 })
+
+it('runs queued turns with their own model and reasoning without changing the active run or defaults', async () => {
+  const { runClientEffect } = await import('@dovo/client-runtime')
+  const s = await setup()
+  const runs: AgentRun[] = []
+  let releaseFirst = () => {}
+  const first = new Promise<void>((resolve) => {
+    releaseFirst = resolve
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      if (runs.length === 1) await first
+      run.onText('Done')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Models per turn',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Initial',
+  })
+  const original = s.store.task(task.id)
+  const execution = await s.tasks.start(task.id)
+  try {
+    await waitForTask(() => expect(runs).toHaveLength(1))
+    const send = (id: string, model: string, reasoning: string) =>
+      runClientEffect(
+        s.tasks.sendEffect(task.id, id, id, [], false, false, {
+          provider: 'codex',
+          model,
+          reasoning,
+        }),
+      )
+    await send('large', 'large-model', 'high')
+    await send('small', 'small-model', 'low')
+    await s.tasks.send(task.id, 'defaults', 'Use thread defaults')
+    expect(runs).toHaveLength(1)
+    expect(runs[0].agent.model).toBe('')
+    expect(s.store.task(task.id).harness).toEqual(original.harness)
+    await expect(
+      runClientEffect(
+        s.tasks.steerQueuedEffect(task.id, 'large', s.store.task(task.id).activeRunId!),
+      ),
+    ).rejects.toThrow('queued turn')
+  } finally {
+    releaseFirst()
+    await execution.done
+  }
+  expect(runs.map((run) => [run.agent.model, run.agent.reasoning])).toEqual([
+    ['', undefined],
+    ['large-model', 'high'],
+    ['small-model', 'low'],
+    ['', undefined],
+  ])
+  const finished = s.store.task(task.id)
+  expect(finished.turns?.map((turn) => [turn.model, turn.reasoning])).toEqual(
+    runs.map((run) => [run.agent.model, run.agent.reasoning]),
+  )
+  expect(finished.harness).toEqual(original.harness)
+  expect(finished.agentOverrides).toEqual(original.agentOverrides)
+  expect(s.store.get().agents[0].model).toBe('')
+})

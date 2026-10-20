@@ -3,6 +3,7 @@
   "version": "0.0.9",
   "private": true,
   "scripts": {
+    "test:project-transfer:browser": "node scripts/check-project-transfer-browser.mjs",
     "dev": "pnpm --filter @dovo/client-runtime build && vp run --parallel dev",
     "dev:api": "pnpm --filter @dovo/runtime... -r build && vp -C apps/api dev",
     "dev:desktop": "pnpm --filter @dovo/api... -r build && vp -C apps/desktop dev",
@@ -104,6 +105,7 @@
     "test:computer-use:browser": "pnpm --filter @dovo/web build && node scripts/check-computer-use-browser.mjs",
     "test:settings-target:browser": "node scripts/check-settings-target-browser.mjs",
     "test:scoped-agents:browser": "node scripts/check-scoped-agents-browser.mjs",
+    "test:peer-connection:browser": "pnpm --filter @dovo/runtime... --filter @dovo/connect-server... -r build && node scripts/check-peer-connection-browser.mjs",
     "test:thread-pairing:browser": "node scripts/check-thread-pairing-browser.mjs",
     "test:subagent-grouping:browser": "node scripts/check-subagent-grouping-browser.mjs",
     "test:shared-storage:browser": "node scripts/check-shared-storage-browser.mjs",

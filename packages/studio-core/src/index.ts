@@ -192,6 +192,7 @@ export {
   defaultAppPreferences,
   formatDateTime,
   readAppPreferences,
+  reducedMotion,
   updateAppPreferences,
   useAppPreferences,
   useDiffOptions,
@@ -244,3 +245,5 @@ export {
   type ImageEditorResult,
 } from '@dovo/client-runtime'
 export { useAccount } from './use-account'
+
+export * from './accessibility'

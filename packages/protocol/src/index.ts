@@ -272,3 +272,6 @@ export * from './desktop-dictation.js'
 export * from './runtime/remote-desktop.js'
 
 export * from './runtime/relay-message.js'
+export * from './scm/repositories/project-transfer.js'
+export * from './runtime/connection/peer.js'
+export * from './runtime/connection/peer-pipe.js'

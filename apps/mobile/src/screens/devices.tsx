@@ -12,7 +12,13 @@ import { TaskDefaultSettings } from '../runtime/preferences/task-default-setting
 import { RuntimePreferences } from '../runtime/connection/runtime-preferences'
 import { useEffect, useRef, useState } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
-import { pairingInvitation, type PairingInvitation } from '@dovo/protocol'
+import {
+  pairingInvitation,
+  decode,
+  peerConfigSchema,
+  isPeerAddress,
+  type PairingInvitation,
+} from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { Alert, Platform, ScrollView, View } from 'react-native'
@@ -21,6 +27,7 @@ import { clientScopeKey } from '@dovo/client-runtime'
 import { ActivityLog } from '../runtime/state/activity'
 import { CommandSettings } from '../runtime/preferences/command-settings'
 import { PairComputer } from '../runtime/connection/pair-computer'
+import { PeerRelayChoice } from '../runtime/connection/peer-relay-choice'
 import { ConnectionHelp } from '../runtime/connection/connection-help'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { Text } from '../ui/content/text'
@@ -46,6 +53,7 @@ export default function DevicesScreen() {
   const params = useLocalSearchParams<{
     address?: string
     code?: string
+    peer?: string
     expiresAt?: string
     pairingError?: string
     pair?: string
@@ -71,6 +79,7 @@ export default function DevicesScreen() {
           address: params.address ?? '',
           code: params.code ?? '',
           expiresAt: params.expiresAt ?? '',
+          ...(params.peer ? { peer: decode(peerConfigSchema, JSON.parse(params.peer)) } : {}),
         }),
       )
       setInvitationError('')
@@ -84,9 +93,10 @@ export default function DevicesScreen() {
       address: undefined,
       code: undefined,
       expiresAt: undefined,
+      peer: undefined,
       pairingError: undefined,
     })
-  }, [params.address, params.code, params.expiresAt, params.pairingError])
+  }, [params.address, params.code, params.expiresAt, params.peer, params.pairingError])
   const [shortcuts, setShortcuts] = useApplicationState(false)
   const edited = overviews.find(
     (entry) =>
@@ -203,7 +213,7 @@ export default function DevicesScreen() {
                 Use this code to connect a new computer or update one you have already saved.
               </Text>
               <Text selectable style={styles.muted}>
-                {invitation.address}
+                {invitation.peer ? 'Internet pairing · end-to-end encrypted' : invitation.address}
               </Text>
               {profiles.map((profile) => (
                 <Action
@@ -308,6 +318,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
     error: connectionError,
     refresh,
     renameRuntimeEffect,
+    setPeerRelayEffect,
     forgetRuntimeEffect,
   } = useRuntime()
   const { busy, error, act } = useAction()
@@ -392,8 +403,17 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
             {connected ? 'Online' : recovering ? 'Reconnecting…' : 'Offline'}
           </Text>
           <Text selectable style={styles.muted}>
-            {profile.connection.address}
+            {isPeerAddress(profile.connection.address)
+              ? 'Internet · WebRTC · end-to-end encrypted'
+              : profile.connection.address}
           </Text>
+          {profile.connection.peer && (
+            <PeerRelayChoice
+              value={profile.connection.peer.relay}
+              disabled={busy}
+              onChange={(relay) => act(() => setPeerRelayEffect(profile.id, relay))}
+            />
+          )}
           <Action label="Reconnect" disabled={busy} onPress={() => act(refresh)} />
           <Action
             secondary

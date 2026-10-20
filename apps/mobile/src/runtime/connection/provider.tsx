@@ -1,4 +1,14 @@
 import type { WorkspacePatchResult, PendingMessage, Task } from '@dovo/protocol'
+import {
+  setPeerConnectionsActive,
+  forgetPeerConnection,
+  peerConnectionVersion,
+  subscribePeerConnections,
+  peerConnectionReady,
+  replacePeerConnection,
+  preparePeerConnection,
+} from './peer-transport'
+import { isPeerAddress, type PeerRelayProvider } from '@dovo/protocol'
 import type { Repository } from '@dovo/protocol'
 import {
   runtimeHasCustomName,
@@ -36,6 +46,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react'
 import { RegistryContext, useAtomValue } from '@effect/atom-react'
@@ -144,6 +155,10 @@ export type Runtime = {
   selectRuntimeEffect: (id: string) => Effect.Effect<void, Error>
   forgetRuntimeEffect: (id: string) => Effect.Effect<void, Error>
   renameRuntimeEffect: (id: string, name: string) => Effect.Effect<void, Error>
+  setPeerRelayEffect: (
+    id: string,
+    relay: PeerRelayProvider | undefined,
+  ) => Effect.Effect<void, Error>
   disconnectEffect: () => Effect.Effect<void, Error>
   refreshEffect: () => Effect.Effect<void, Error>
   connect: (
@@ -229,14 +244,24 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [legacyDraftRuntimeId, setLegacyDraftRuntimeId] = useApplicationState<string | null>(null)
   const [previews, setPreviews] = useApplicationState<OptimisticTask[]>([])
   const [appActive, setAppActive] = useApplicationState(AppState.currentState === 'active')
+  const peerVersion = useSyncExternalStore(
+    subscribePeerConnections,
+    peerConnectionVersion,
+    peerConnectionVersion,
+  )
   const [registryLoaded, setRegistryLoaded, registryWritable] = useApplicationState(false)
   const [restoreAttempt, setRestoreAttempt] = useApplicationState(0)
   const { computerRefresh } = useMobilePreferences()
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) =>
-      setAppActive(state === 'active'),
-    )
-    return () => subscription.remove()
+    setPeerConnectionsActive(AppState.currentState === 'active')
+    const subscription = AppState.addEventListener('change', (state) => {
+      setPeerConnectionsActive(state === 'active')
+      setAppActive(state === 'active')
+    })
+    return () => {
+      subscription.remove()
+      setPeerConnectionsActive(false)
+    }
   }, [])
   const previewTaskEffect = useCallback(
     <A extends WorkspacePatchResult, E>(
@@ -449,6 +474,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }).pipe(
         Effect.tap(() =>
           Effect.sync(() => {
+            for (const profile of [
+              ...next.profiles,
+              ...(next.pendingPairings ?? []).map((entry) => entry.profile),
+            ])
+              if (profile.connection.peer) preparePeerConnection(profile.connection.peer)
             setRegistry(next)
             setStorageError('')
           }),
@@ -494,7 +524,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           ...registry,
           profiles: registry.profiles.map((profile) => {
             const next = learned.get(profile.id)
-            return next && sameRuntimeConnection(profile.connection, next)
+            return next &&
+              sameRuntimeConnection(profile.connection, next) &&
+              next.peer?.relay === profile.connection.peer?.relay
               ? { ...profile, connection: next }
               : profile
           }),
@@ -817,6 +849,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             'POST',
             4000,
           ).pipe(Effect.ignore)
+        if (profile) forgetPeerConnection(profile.connection.address)
       })
     },
     [changeRegistryEffect, cacheFor, mutations],
@@ -851,6 +884,25 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }))
     })
   }, [changeRegistryEffect])
+  const setPeerRelayEffect = useCallback(
+    (id: string, relay: PeerRelayProvider | undefined) =>
+      mobileWorkflow(function* () {
+        const profile = current.current.profiles.find((item) => item.id === id)
+        if (!profile?.connection.peer || !isPeerAddress(profile.connection.address))
+          return yield* Effect.fail(new Error('Relay settings require an internet pairing'))
+        const peer = { ...profile.connection.peer, relay }
+        yield* changeRegistryEffect((saved) => ({
+          ...saved,
+          profiles: saved.profiles.map((item) =>
+            item.id === id && sameRuntimeConnection(item.connection, profile.connection)
+              ? { ...item, connection: { ...item.connection, peer } }
+              : item,
+          ),
+        }))
+        replacePeerConnection(peer)
+      }),
+    [changeRegistryEffect],
+  )
   // Bind every caller to the selected host. An async action can never continue on a new host.
   const readEffect = useCallback<CallEffect>(
     (path, input, schema, method) =>
@@ -952,6 +1004,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       const saved = restored
       if (!disposed) setLegacyDraftRuntimeId(draftRuntimeId)
       if (disposed) return
+      for (const profile of [
+        ...saved.profiles,
+        ...(saved.pendingPairings ?? []).map((entry) => entry.profile),
+      ])
+        if (profile.connection.peer) preparePeerConnection(profile.connection.peer)
       setRegistry(saved)
       setRegistryLoaded(true)
       setStorageError('')
@@ -1191,6 +1248,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               ? entries[item.id]
               : initialOverview(item)),
             profile: item,
+            ...(isPeerAddress(item.connection.address) &&
+            !peerConnectionReady(item.connection.address)
+              ? { connected: false }
+              : {}),
           },
           previews.filter(
             (pending) =>
@@ -1198,7 +1259,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           ),
         ),
       ),
-    [registry.profiles, entries, previews],
+    [registry.profiles, entries, previews, peerVersion],
   )
   const [presetSyncError, setPresetSyncError] = useApplicationState('')
   const {
@@ -1398,7 +1459,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     (registry.pendingPairings?.length
       ? 'A connection is waiting to finish pairing. Keep the computer online; recovery retries when you return to the app.'
       : '')
-  const connected = active?.connected ?? false
+  const connected =
+    (active?.connected ?? false) &&
+    (!connection || !isPeerAddress(connection.address) || peerConnectionReady(connection.address))
   // Mutation status is read through stable functions; its version still publishes a new value.
   const value = useMemo<Runtime>(
     () => ({
@@ -1443,6 +1506,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       selectRuntimeEffect,
       forgetRuntimeEffect,
       renameRuntimeEffect,
+      setPeerRelayEffect,
       disconnectEffect,
     }),
     [
@@ -1488,6 +1552,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       selectRuntimeEffect,
       forgetRuntimeEffect,
       renameRuntimeEffect,
+      setPeerRelayEffect,
       disconnectEffect,
     ],
   )

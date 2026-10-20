@@ -39,6 +39,9 @@ const native = `
   const listeners=new Set();window.setFontScale=scale=>{window.fontScale=scale;listeners.forEach(listener=>listener())};
   export const useWindowDimensions=()=>{useSyncExternalStore(listener=>{listeners.add(listener);window.addEventListener('resize',listener);return ()=>{listeners.delete(listener);window.removeEventListener('resize',listener)}},()=>innerWidth+':'+window.fontScale);return {width:innerWidth,height:innerHeight,fontScale:window.fontScale}};
   export const Alert={alert(){}};
+  export const Appearance={setColorScheme(){}};
+  export const useColorScheme=()=>window.systemMode||'dark';
+  export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,addEventListener:(_event,callback)=>{window.setSystemMotion=callback;return {remove(){}}}};
 `
 const swift = `
   import {useState} from 'react';import {View,Text as RNText} from 'react-native';
@@ -54,7 +57,7 @@ const swift = `
     const font=modifiers.find(item=>item.name==='font')?.value;
     return <RNText numberOfLines={modifiers.find(item=>item.name==='lineLimit')?.value} style={{flexShrink:1,minWidth:0,fontSize:font?.textStyle==='subheadline'?15:17,lineHeight:23,...style(modifiers)}}>{children}</RNText>;
   };
-  export const Menu=({label,children,modifiers,testID})=>{const [open,setOpen]=useState(false);return <View><button data-testid={testID} aria-label={modifiers.find(item=>item.name==='accessibilityLabel')?.value} disabled={modifiers.find(item=>item.name==='disabled')?.value} onClick={()=>setOpen(!open)} style={{padding:0,border:0,background:'transparent',color:'inherit',width:'100%',textAlign:'left'}}>{label}</button>{open&&<div role="menu">{children}</div>}</View>};
+  export const Menu=({label,children,modifiers,testID})=>{const [open,setOpen]=useState(false);return <View><button data-testid={testID} aria-label={modifiers.find(item=>item.name==='accessibilityLabel')?.value} disabled={modifiers.find(item=>item.name==='disabled')?.value} onClick={()=>setOpen(!open)} style={{padding:0,border:0,background:'transparent',color:'inherit',width:'100%',textAlign:'left'}}>{label}</button>{open&&<div role="menu" onClick={()=>setOpen(false)}>{children}</div>}</View>};
   export const Button=({label,children,onPress,modifiers,testID})=><button role="menuitem" data-testid={testID} disabled={modifiers?.find(item=>item.name==='disabled')?.value} onClick={onPress}>{label||children}</button>;
 `
 const modifiers =
@@ -114,7 +117,7 @@ const built = await build({
     contents: `
       import {useState} from 'react';import {createRoot} from 'react-dom/client';
       import {ScrollView,View,Text as RNText} from 'react-native';
-      import {createMobileTheme,MobileThemeContext} from './src/ui/theme';
+      import {createMobileTheme,MobileThemeContext,useTheme} from './src/ui/theme';
       import {SettingsPage,SettingsSheet} from './src/screens/settings-theme';
       import {SettingsGroup,SettingsRow,SettingsSwitchRow} from './src/screens/settings-group';
       import {SettingsChoice,SettingsField,SettingsAction} from './src/screens/settings-controls';
@@ -123,6 +126,9 @@ const built = await build({
       import {HarnessUpdates} from './src/agents/harness-updates';
       import {Effect} from 'effect';import {decode,runtimePreferencesSchema} from '@dovo/protocol';
       import SettingsScreen from './src/screens/settings';
+      import AppearanceScreen from './src/screens/appearance';
+      import {MobileAppearance} from './src/ui/appearance';
+      function MotionProbe(){return <output aria-label="Reduced motion">{String(useTheme().reduceMotion)}</output>;}
       import SettingsSection from './src/app/(more)/settings/[section]';
       const computer='Dominic’s development computer with a long name';
       window.runtime={activeId:'computer',connected:true,overviews:[{profile:{id:'computer',name:computer,connection:{address:'http://computer',token:'test'}},connected:true,snapshot:{defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'pnpm install && pnpm build'}},shared:[]}},workspace:{repositories:[],tasks:[]}}}]};
@@ -144,7 +150,8 @@ const built = await build({
           <SettingsAction secondary label="Reset all later worktree setup overrides" onPress={()=>{}}/>
         </>;
       }
-      function App(){const [navigation,setNavigation]=useState(false);const [path,setPath]=useState('/settings');const [revision,setRevision]=useState(0);window.refreshSettings=()=>setRevision(revision+1);window.showNavigation=()=>setNavigation(true);window.routeHistory??=['/settings'];window.navigate=path=>{window.routeHistory.push(path);window.section=path.split('/')[2];setPath(path)};window.goBack=()=>{window.routeHistory.pop();const path=window.routeHistory.at(-1);window.section=path.split('/')[2];setPath(path)};const [mode,setMode]=useState('dark');const [sheet,setSheet]=useState(false);const [scopeOnly,setScopeOnly]=useState(false);window.showScoped=setScopeOnly;window.setMode=setMode;window.showSheet=setSheet;
+      function App(){const [accessibility,setAccessibility]=useState(false);window.showAccessibility=()=>setAccessibility(true);const [navigation,setNavigation]=useState(false);const [path,setPath]=useState('/settings');const [revision,setRevision]=useState(0);window.refreshSettings=()=>setRevision(revision+1);window.showNavigation=()=>setNavigation(true);window.routeHistory??=['/settings'];window.navigate=path=>{window.routeHistory.push(path);window.section=path.split('/')[2];setPath(path)};window.goBack=()=>{window.routeHistory.pop();const path=window.routeHistory.at(-1);window.section=path.split('/')[2];setPath(path)};const [mode,setMode]=useState('dark');const [sheet,setSheet]=useState(false);const [scopeOnly,setScopeOnly]=useState(false);window.showScoped=setScopeOnly;window.setMode=setMode;window.showSheet=setSheet;
+        if(accessibility)return <MobileAppearance><AppearanceScreen/><MotionProbe/></MobileAppearance>;
         return <MobileThemeContext.Provider value={createMobileTheme('dovo',mode)}><SettingsPage>{navigation?<SettingsTargetProvider>{path==='/settings'?<SettingsScreen/>:<SettingsSection key={path}/>}</SettingsTargetProvider>:scopeOnly?<SettingsTargetProvider><ScopedSettings scrollable>{()=> <View style={{height:1800}}><RNText>Settings content</RNText></View>}</ScopedSettings></SettingsTargetProvider>:<ScrollView contentContainerStyle={{padding:16,gap:24}}>
           <SettingsGroup title="Computers"><SettingsRow title="Settings scope" subtitle="All projects on this computer" value={computer} icon="device" tint="#087f5b" mark={{icon:'stack',label:'Computer settings'}} onPress={()=>{}}/></SettingsGroup>
           <SettingsGroup title="Preferences"><Controls/></SettingsGroup>
@@ -179,19 +186,26 @@ const built = await build({
             return { path: 'runtime', namespace: 'mock' }
           if (/controls\/icon$/.test(path)) return { path: './icon', namespace: 'mock' }
           if (/controls\/action$/.test(path)) return { path: './action', namespace: 'mock' }
+          if (path === 'lucide-react-native') return { path: 'a11y-icons', namespace: 'mock' }
+          if (path === './code-theme' && importer.endsWith('/screens/appearance.tsx'))
+            return { path: 'code-theme', namespace: 'mock' }
           if (Object.hasOwn(mocks, path)) return { path, namespace: 'mock' }
         })
         builder.onLoad({ filter: /.*/, namespace: 'mock' }, ({ path }) => ({
           contents:
-            path === 'header'
-              ? `import {createContext,useContext} from 'react';import {View,Text,Pressable} from 'react-native';import {useTheme} from './src/ui/theme';export const ScreenBackContext=createContext(null);export const ScreenHeader=({title})=>{const back=useContext(ScreenBackContext);const {styles}=useTheme();return <View style={{padding:16,flexDirection:'row',alignItems:'center',gap:16}}>{back&&<Pressable accessibilityLabel="Back" onPress={back}><Text style={styles.text}>Back</Text></Pressable>}<Text numberOfLines={1} style={[styles.text,{fontWeight:'600',flex:1,minWidth:0}]} accessibilityRole="heading">{title}</Text></View>};`
-              : path === 'state'
-                ? `export {useState as useApplicationState} from 'react';`
-                : path === 'runtime'
-                  ? `import {createContext,useContext} from 'react';const Context=createContext(null);export const useRuntime=()=>useContext(Context)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const runtime=useRuntime();const entry=runtime.overviews.find(item=>item.profile.id===runtimeId);return entry?<Context.Provider value={{...runtime,...entry}}>{children}</Context.Provider>:null};`
-                  : path === 'sheet'
-                    ? `import {createContext,useContext} from 'react';import {View} from 'react-native';const Context=createContext(false);export const useInsideSheet=()=>useContext(Context);export const Sheet=({children,title})=><Context.Provider value><View accessibilityLabel={title} style={{position:'fixed',inset:0,background:'#f2f2f7',zIndex:1}}>{children}</View></Context.Provider>;`
-                    : mocks[path],
+            path === 'a11y-icons'
+              ? `const Icon=({size,color})=><span aria-hidden style={{width:size,height:size,color}}>●</span>;export const CircleCheck=Icon,CircleX=Icon,TriangleAlert=Icon;`
+              : path === 'code-theme'
+                ? `export const CodeThemeSettings=()=>null;`
+                : path === 'header'
+                  ? `import {createContext,useContext} from 'react';import {View,Text,Pressable} from 'react-native';import {useTheme} from './src/ui/theme';export const ScreenBackContext=createContext(null);export const ScreenHeader=({title})=>{const back=useContext(ScreenBackContext);const {styles}=useTheme();return <View style={{padding:16,flexDirection:'row',alignItems:'center',gap:16}}>{back&&<Pressable accessibilityLabel="Back" onPress={back}><Text style={styles.text}>Back</Text></Pressable>}<Text numberOfLines={1} style={[styles.text,{fontWeight:'600',flex:1,minWidth:0}]} accessibilityRole="heading">{title}</Text></View>};`
+                  : path === 'state'
+                    ? `export {useState as useApplicationState} from 'react';`
+                    : path === 'runtime'
+                      ? `import {createContext,useContext} from 'react';const Context=createContext(null);export const useRuntime=()=>useContext(Context)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const runtime=useRuntime();const entry=runtime.overviews.find(item=>item.profile.id===runtimeId);return entry?<Context.Provider value={{...runtime,...entry}}>{children}</Context.Provider>:null};`
+                      : path === 'sheet'
+                        ? `import {createContext,useContext} from 'react';import {View} from 'react-native';const Context=createContext(false);export const useInsideSheet=()=>useContext(Context);export const Sheet=({children,title})=><Context.Provider value><View accessibilityLabel={title} style={{position:'fixed',inset:0,background:'#f2f2f7',zIndex:1}}>{children}</View></Context.Provider>;`
+                        : mocks[path],
           loader: 'tsx',
           resolveDir: root + 'apps/mobile',
         }))
@@ -889,6 +903,50 @@ try {
     assert.equal(await category('Agents').isDisabled(), true)
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     await page.screenshot({ path: '/tmp/dovo-settings-organized-mobile-' + platform + '.png' })
+    await page.evaluate(() => {
+      window.setFontScale(1)
+      window.showAccessibility()
+    })
+    await page.getByRole('switch', { name: 'Higher contrast', exact: true }).waitFor()
+    const chooseAppearance = async (label, value) => {
+      await page.getByRole('button', { name: label, exact: true }).click()
+      await page
+        .getByRole(platform === 'ios' ? 'menuitem' : 'button', { name: value, exact: true })
+        .click()
+    }
+    await chooseAppearance('Status colors', 'Blue / orange')
+    await page.waitForFunction(() => window.savedPreferences?.colorVision === 'blue-orange')
+    assert.equal(
+      await page
+        .getByText('Finished', { exact: true })
+        .evaluate((el) => getComputedStyle(el).color),
+      'rgb(121, 191, 255)',
+    )
+    await page.getByRole('switch', { name: 'Higher contrast', exact: true }).click()
+    await page.waitForFunction(() => window.savedPreferences?.highContrast === true)
+    await chooseAppearance('Color scheme', 'Light')
+    assert.equal(
+      await page
+        .getByText('Finished', { exact: true })
+        .evaluate((el) => getComputedStyle(el).color),
+      'rgb(0, 90, 156)',
+    )
+    await page.getByLabel('Reduced motion', { exact: true }).filter({ hasText: 'false' }).waitFor()
+    await chooseAppearance('Animations', 'Reduce')
+    await page.getByLabel('Reduced motion', { exact: true }).filter({ hasText: 'true' }).waitFor()
+    await chooseAppearance('Animations', 'System')
+    await page.getByLabel('Reduced motion', { exact: true }).filter({ hasText: 'false' }).waitFor()
+    await page.evaluate(() => window.setSystemMotion(true))
+    await page.getByLabel('Reduced motion', { exact: true }).filter({ hasText: 'true' }).waitFor()
+    await page.evaluate(() => window.setFontScale(2))
+    await page.screenshot({
+      path: screenshotDirectory + '/' + platform + '-accessibility-large-text.png',
+    })
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+      'Accessibility settings must fit with large system text',
+    )
     assert.deepEqual(errors, [])
     await page.close()
   }

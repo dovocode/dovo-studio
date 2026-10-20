@@ -5,12 +5,13 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const core = `import {createContext,useContext} from 'react';
-export {useAppPreferences,updateAppPreferences,readAppPreferences} from '${root}/packages/studio-core/src/preferences.ts';
+export {useAppPreferences,updateAppPreferences,readAppPreferences,useStudioTheme,useResolvedTheme,useDiffOptions} from '${root}/packages/studio-core/src/preferences.ts';
 export {importCodeTheme,maxCodeThemeBytes} from '${root}/packages/studio-core/src/code-themes.ts';
 export {browserModelCatalogCache} from '${root}/packages/studio-core/src/workspace/model-catalog-cache.ts';
 export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft,useConfirmSettingsNavigation} from '${root}/packages/studio-core/src/settings-target.tsx';
 export * from '@dovo/protocol';
 export * from '${root}/packages/studio-core/src/themes.ts';
+export * from '${root}/packages/studio-core/src/accessibility.ts';
 export * from '${root}/packages/studio-core/src/fonts.ts';
 export {useRemoteBrowserProfiles} from '${root}/packages/studio-core/src/browser-profiles.ts';
 export {providers} from '${root}/packages/studio-core/src/providers.ts';
@@ -57,7 +58,7 @@ const built = await build({
   stdin: {
     contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {builtInAgentPresets,defaultTaskHarness} from '@dovo/protocol';
-import {SettingsTargetProvider,useConfirmSettingsNavigation} from '@dovo/studio-core';
+import {SettingsTargetProvider,useConfirmSettingsNavigation,useDiffOptions} from '@dovo/studio-core';
 import {SettingsNav} from '${root}/packages/studio-shell/src/settings-nav.tsx';
 import {SidebarHeaderLayout,HeaderFallback} from '${root}/packages/studio-ui/src/sidebar-header.tsx';
 import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';
@@ -72,6 +73,7 @@ import {tasksExtension} from '${root}/packages/extension-tasks/src/index.ts';
 import Conversation from '${root}/packages/studio-shell/src/app-settings/conversation.tsx';
 import About from '${root}/packages/studio-shell/src/app-settings/about.tsx';
 import Appearance from '${root}/packages/studio-shell/src/app-settings/appearance.tsx';
+import {useAppearance} from '${root}/packages/studio-shell/src/appearance.ts';
 import Notifications from '${root}/packages/studio-shell/src/app-settings/notifications.tsx';
 import Shortcuts from '${root}/packages/studio-shell/src/app-settings/shortcuts.tsx';
 import Browser from '${root}/packages/studio-shell/src/app-settings/browser.tsx';
@@ -102,7 +104,7 @@ window.updateState={status:'idle',channel:'stable'};window.updateCalls=[];window
 window.updates={state:async()=>window.updateState,subscribe:fn=>{window.updateListeners.add(fn);return()=>window.updateListeners.delete(fn)},check:async()=>window.updateCalls.push('check'),install:async()=>window.updateCalls.push('install'),setChannel:async channel=>{window.updateCalls.push(channel);window.publishUpdate({...window.updateState,channel})}};
 const localPages={appearance:Appearance,notifications:Notifications,shortcuts:Shortcuts,'browser-settings':Browser,'pull-request-monitoring-settings':PullRequests,diffs:Diffs,usage:Usage,'task-list-settings':TaskList};
 const views=[appSettingsExtension,agentsExtension,runtimeExtension,scmExtension,tasksExtension].flatMap(extension=>extension.views).filter(view=>view.navigationGroup==='settings');
-function Content(){const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=id=>{if(id!==view&&confirm())setView(id)};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/>{Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</div>}
+function Content(){useAppearance();window.diffOptions=useDiffOptions();const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=id=>{if(id!==view&&confirm())setView(id)};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/>{Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</div>}
 createRoot(document.getElementById('app')).render(<SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider>);`,
     loader: 'tsx',
     resolveDir: root,
@@ -487,12 +489,63 @@ try {
   await choose('Time format', '24-hour')
   assert.equal(await preference('timeFormat'), '24h')
   await openLocal('Appearance')
+  await choose('Status colors', 'Blue / orange')
+  assert.equal(await preference('colorVision'), 'blue-orange')
+  const success = page.getByLabel('Status color preview').getByText('Finished', { exact: true })
+  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(121, 191, 255)')
+  await page.getByRole('switch', { name: 'Higher contrast', exact: true }).click()
+  assert.equal(await preference('highContrast'), true)
+  assert.equal(
+    await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--border').trim(),
+    ),
+    '#888888',
+  )
+  assert.equal(await page.evaluate(() => window.diffOptions.options.diffIndicators), 'classic')
+  assert.ok((await page.evaluate(() => window.diffOptions.options.unsafeCSS)).includes('#79bfff'))
+  await page.getByLabel('VS Code theme file', { exact: true }).setInputFiles({
+    name: 'Accessibility light.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      JSON.stringify({
+        name: 'Accessibility light',
+        type: 'light',
+        colors: { 'editor.background': '#ffffff', 'editor.foreground': '#111111' },
+        tokenColors: [],
+      }),
+    ),
+  })
+  await page.waitForFunction(() => window.diffOptions.options.themeType === 'light')
+  assert.ok((await page.evaluate(() => window.diffOptions.options.unsafeCSS)).includes('#005a9c'))
+  assert.ok((await page.evaluate(() => window.diffOptions.options.unsafeCSS)).includes('#404040'))
+  await page.getByRole('button', { name: 'Remove theme', exact: true }).click()
+  await page.waitForFunction(() => window.diffOptions.options.themeType === 'dark')
+  await choose('Color scheme', 'Light')
+  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(0, 90, 156)')
+  assert.equal(
+    await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--border').trim(),
+    ),
+    '#777777',
+  )
+  await page.getByRole('switch', { name: 'Higher contrast', exact: true }).click()
+  await page.emulateMedia({ forcedColors: 'active' })
+  await page.getByRole('combobox', { name: 'App font', exact: true }).focus()
+  await page.keyboard.press('Tab')
+  const codeFont = page.getByRole('combobox', { name: 'Code font', exact: true })
+  assert.equal(await codeFont.evaluate((el) => document.activeElement === el), true)
+  assert.equal(await codeFont.evaluate((el) => getComputedStyle(el).outlineStyle), 'solid')
+  assert.equal(await codeFont.evaluate((el) => getComputedStyle(el).outlineWidth), '2px')
+  await page.emulateMedia({ forcedColors: 'none' })
+  await choose('Status colors', 'Default')
+  await choose('Color scheme', 'Dark')
   await choose('Text size', 'Large')
   await choose('Chat width', 'Full width')
   await choose('Animations', 'Reduce')
   assert.equal(await preference('textSize'), 'large')
   assert.equal(await preference('chatWidth'), 'full')
   assert.equal(await preference('motion'), 'reduce')
+  await choose('Text size', 'Default')
   await openLocal('Notifications')
   await page.evaluate(() => {
     const MockNotification = class {
@@ -630,6 +683,10 @@ try {
   }
   // Keep the medium-width sidebar compact while allowing longer page and storage labels to wrap.
   await page.setViewportSize({ width: 900, height: 900 })
+  await page.waitForFunction(() => {
+    const sidebar = document.querySelector('nav[aria-label="Settings sections"]')
+    return innerWidth === 900 && sidebar && getComputedStyle(sidebar).width === '208px'
+  })
   assert.equal((await settingsSidebar.boundingBox()).width, 208)
   for (const title of [
     'Task list & projects',

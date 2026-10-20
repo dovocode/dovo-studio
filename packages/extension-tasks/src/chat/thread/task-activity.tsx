@@ -159,9 +159,9 @@ function DiffText({ text }: { text: string }) {
           key={index}
           className={
             line.startsWith('+') && !line.startsWith('+++')
-              ? 'block text-emerald-400'
+              ? 'block text-status-success'
               : line.startsWith('-') && !line.startsWith('---')
-                ? 'block text-red-400'
+                ? 'block text-status-error'
                 : 'block'
           }
           {...(line.startsWith('+') && !line.startsWith('+++')

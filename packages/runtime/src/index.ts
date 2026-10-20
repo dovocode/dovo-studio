@@ -69,6 +69,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       const housekeeping = new Housekeeping(services)
       const taskPulls = new TaskPullWatcher(services)
       let network: ExternalListener | undefined
+      let peerHttp: ReturnType<typeof createRuntimeServer> | undefined
       services.retrieval.start(
         async (request) => (await serveRetrieval(services, request, true)).value,
       )
@@ -78,6 +79,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => taskPulls.dispose(),
         () => services.pullRequestWatch.dispose(),
         () => services.pipelineWatch.dispose(),
+        () => services.projectTransfers.dispose(),
         () => services.threadWatch.dispose(),
         () => services.acpInstallations.dispose(),
         () => services.acpController.abort(),
@@ -124,10 +126,18 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                 ),
                 Effect.exit(release(() => network?.close())),
                 Effect.exit(
+                  release(async () => {
+                    await services.peers.dispose()
+                    if (peerHttp?.server.listening) await peerHttp.close()
+                    else peerHttp?.closeSockets()
+                  }),
+                ),
+                Effect.exit(
                   Effect.gen(function* () {
                     const schedulers = yield* Effect.all(
                       [
                         () => services.retrieval.stop(),
+                        () => services.projectTransfers.dispose(),
                         () => housekeeping.dispose(),
                         () => taskPulls.dispose(),
                         () => services.pullRequestWatch.dispose(),
@@ -181,6 +191,25 @@ export const runtimeLayer = (options: RuntimeOptions) =>
           }),
         )
       const external = options.external
+      // Every tunnel connection is dialed from loopback; the listener resolves its device from
+      // PeerConnections and refuses anything else, including other local processes.
+      const peerListener = createRuntimeServer(services, false, false, (socket) =>
+        services.peers.origin(socket),
+      )
+      peerHttp = peerListener
+      yield* Effect.tryPromise({
+        try: () =>
+          new Promise<void>((resolve, reject) => {
+            peerListener.server.once('error', reject)
+            peerListener.server.listen(0, '127.0.0.1', () => {
+              peerListener.server.removeListener('error', reject)
+              resolve()
+            })
+          }),
+        catch: (cause) => new RuntimeStartupError({ operation: 'internet listener', cause }),
+      })
+      const peerAddress = peerListener.server.address()
+      if (peerAddress && typeof peerAddress !== 'string') services.peers.start(peerAddress.port)
       if (external) {
         const listener = new ExternalListener(services, external.host, external.port)
         network = listener

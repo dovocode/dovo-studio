@@ -23,12 +23,14 @@ export const NestedThreads = memo(function NestedThreads({
   searching = false,
   acknowledgedFailures = [],
   onAcknowledgeFailure,
+  hideSummary = false,
 }: {
   thread: NestedThread
   disabled?: boolean
   searching?: boolean
   acknowledgedFailures?: readonly string[]
   onAcknowledgeFailure?: (key: string) => void
+  hideSummary?: boolean
 }) {
   const { colors, styles } = useTheme()
   const { profiles, overviews } = useRuntime()
@@ -63,7 +65,7 @@ export const NestedThreads = memo(function NestedThreads({
   const activeThreads = thread.children.filter((child) => activeKeys.has(child.key))
   const finishedThreads = thread.children.filter((child) => !activeKeys.has(child.key))
   const finishedOpen = searching || finishedExpanded
-  const open = searching || expanded
+  const open = hideSummary || searching || expanded
   const parts = [
     `${summary.total} spawned ${summary.total === 1 ? 'thread' : 'threads'}`,
     summary.running ? `${summary.running} running` : '',
@@ -225,18 +227,20 @@ export const NestedThreads = memo(function NestedThreads({
   )
   return (
     <View style={{ paddingHorizontal: 12, paddingBottom: 6 }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Spawned threads for ${thread.title}`}
-        accessibilityState={{ expanded: open }}
-        disabled={searching}
-        onPress={() => setExpanded(!open)}
-        style={{ paddingVertical: 10 }}
-      >
-        <Text style={[styles.muted, { fontSize: 12 }]}>
-          {open ? '⌄' : '›'} {parts.join(' · ')}
-        </Text>
-      </Pressable>
+      {!hideSummary && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Spawned threads for ${thread.title}`}
+          accessibilityState={{ expanded: open }}
+          disabled={searching}
+          onPress={() => setExpanded(!open)}
+          style={{ paddingVertical: 10 }}
+        >
+          <Text style={[styles.muted, { fontSize: 12 }]}>
+            {open ? '⌄' : '›'} {parts.join(' · ')}
+          </Text>
+        </Pressable>
+      )}
       {open && (
         <View style={{ borderLeftWidth: 1, borderColor: colors.border, paddingLeft: 10 }}>
           {activeThreads.map(renderChild)}

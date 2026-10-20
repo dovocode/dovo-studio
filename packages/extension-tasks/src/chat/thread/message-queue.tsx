@@ -1,4 +1,6 @@
-import type { PendingMessage } from '@dovo/protocol'
+import { turnSettingsLabel, type TurnSettings, type PendingMessage } from '@dovo/protocol'
+import { resolveTaskAgent } from '@dovo/studio-core'
+import { TurnModelControls } from '../composer/turn-model-controls'
 import type { DragEvent } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowUp, ArrowDown, CornerUpRight, GripVertical, Pencil, X } from 'lucide-react'
@@ -19,15 +21,18 @@ export function MessageQueue({
   task: Task
   pending?: readonly PendingMessage[] | null
 }) {
-  const { request, connected } = useWorkspace(),
+  const { request, connected, workspace, snapshot } = useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const [editing, setEditing] = useApplicationState<{
     id: string
     text: string
     expectedText: string
+    turnSettings: TurnSettings | null
+    expectedTurnSettings: TurnSettings | null
   } | null>(null)
   const queue = task.queue ?? []
+  const agent = resolveTaskAgent(task, workspace.agents)
   const [dragging, setDragging] = useApplicationState<{ taskId: string; messageId: string } | null>(
     null,
   )
@@ -52,7 +57,13 @@ export function MessageQueue({
   const act = async (
     action: string,
     messageId?: string,
-    edit?: { text?: string; expectedText?: string; beforeMessageId?: string | null },
+    edit?: {
+      text?: string
+      expectedText?: string
+      beforeMessageId?: string | null
+      turnSettings?: TurnSettings | null
+      expectedTurnSettings?: TurnSettings | null
+    },
   ) => {
     setBusy(true)
     setError('')
@@ -68,6 +79,12 @@ export function MessageQueue({
             ? {
                 text: edit.text,
                 expectedText: edit.expectedText,
+                ...(snapshot?.queuedTurnSettingsSupported
+                  ? {
+                      turnSettings: edit.turnSettings,
+                      expectedTurnSettings: edit.expectedTurnSettings,
+                    }
+                  : {}),
                 beforeMessageId: edit.beforeMessageId,
               }
             : {}),
@@ -186,6 +203,14 @@ export function MessageQueue({
                 {message.text && message.attachments?.length
                   ? ` · ${message.attachments.length} files`
                   : ''}
+                {message.turnSettings && (
+                  <span
+                    className="ml-2 text-muted-foreground"
+                    title={turnSettingsLabel(message.turnSettings)}
+                  >
+                    {turnSettingsLabel(message.turnSettings)}
+                  </span>
+                )}
               </QueueItemContent>
               {pending?.some((item) => item.message.id === message.id) && (
                 <span role="status" className="shrink-0 text-muted-foreground">
@@ -201,7 +226,13 @@ export function MessageQueue({
                   !connected || busy || pending?.some((item) => item.message.id === message.id)
                 }
                 onClick={() =>
-                  setEditing({ id: message.id, text: message.text, expectedText: message.text })
+                  setEditing({
+                    id: message.id,
+                    text: message.text,
+                    expectedText: message.text,
+                    turnSettings: message.turnSettings ?? null,
+                    expectedTurnSettings: message.turnSettings ?? null,
+                  })
                 }
               >
                 <Pencil size={12} />
@@ -213,7 +244,8 @@ export function MessageQueue({
                   !connected ||
                   busy ||
                   pending?.some((item) => item.message.id === message.id) ||
-                  task.status !== 'running'
+                  task.status !== 'running' ||
+                  !!message.turnSettings
                 }
                 onClick={() => void act('steer', message.id)}
               >
@@ -275,6 +307,15 @@ export function MessageQueue({
                 onChange={(event) => setEditing({ ...editing, text: event.target.value })}
                 disabled={busy}
               />
+              {agent && snapshot?.queuedTurnSettingsSupported && (
+                <TurnModelControls
+                  inline
+                  agent={agent}
+                  value={editing.turnSettings}
+                  onChange={(turnSettings) => setEditing({ ...editing, turnSettings })}
+                  disabled={busy}
+                />
+              )}
               <div className="flex gap-2">
                 <Button
                   size="sm"

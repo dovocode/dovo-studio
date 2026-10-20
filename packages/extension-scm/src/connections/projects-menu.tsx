@@ -30,6 +30,7 @@ import { RepositoryDialog } from './repository-dialog'
 import { RepositoryCheckouts } from './repository-checkouts'
 import { ProjectForgeBinding } from './forge-repository'
 import { ProjectIconSettings } from './project-icon-settings'
+import { ProjectTransferSettings } from './project-transfer'
 export function ProjectsMenu({
   value,
   onChange,
@@ -421,6 +422,10 @@ export function ProjectSettings({
   return (
     <>
       <ProjectIconSettings repository={repository} />
+      <ProjectTransferSettings
+        key={`transfer-${activeRuntimeId}:${repository.id}`}
+        repository={repository}
+      />
       <TaskDefaultSettings
         key={`defaults-${activeRuntimeId}:${repository.id}`}
         repository={repository}

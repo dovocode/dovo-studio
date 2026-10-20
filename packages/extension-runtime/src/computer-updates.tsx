@@ -161,7 +161,7 @@ export function ComputerUpdates() {
                   </p>
                 )}
                 {status?.status === 'complete' && (
-                  <p role="status" className="text-xs text-emerald-500">
+                  <p role="status" className="text-xs text-status-success">
                     Update complete
                   </p>
                 )}

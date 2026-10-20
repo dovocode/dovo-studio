@@ -209,7 +209,7 @@ function LastCrashNotice({ source }: { source: ReturnType<typeof useRuntimeSourc
   return (
     <article
       role="alert"
-      className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-amber-400/30 bg-amber-400/5 p-4"
+      className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-status-warning/30 bg-status-warning/5 p-4"
     >
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-medium">{source.name} restarted after an unexpected error</h2>

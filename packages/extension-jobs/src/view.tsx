@@ -323,7 +323,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
                     className={cn(
                       'mt-1 block text-xs',
                       row.needsInput || row.latest?.status === 'waiting'
-                        ? 'text-amber-500'
+                        ? 'text-status-warning'
                         : row.latest?.status === 'failed'
                           ? 'text-destructive'
                           : 'text-muted-foreground',

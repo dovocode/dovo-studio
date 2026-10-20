@@ -1440,6 +1440,7 @@ export class WorkspaceStore {
             'autoProject',
             'autoProjectExecution',
             'draft',
+            'draftTurnSettings',
             'messages',
             'files',
             'pinned',

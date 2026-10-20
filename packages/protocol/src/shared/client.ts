@@ -1,4 +1,9 @@
 import { resolveRuntimeRoute, invalidateRuntimeRoute } from '../runtime/connection/routes.js'
+import {
+  isPeerAddress,
+  resolvePeerTransport,
+  PEER_CONNECTION_ERROR,
+} from '../runtime/connection/peer.js'
 import { Data, Effect, Result, Exit, Schedule, Schema } from 'effect'
 import { decodeResult, ValidationError } from './schema.js'
 import type { RuntimeConnection } from '../runtime/connection/runtime.js'
@@ -170,7 +175,17 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
                     cause,
                   }),
               })
-            : target.origin
+            : isPeerAddress(target.origin)
+              ? yield* Effect.tryPromise({
+                  try: () => resolvePeerTransport(target.origin, undefined, controller.signal),
+                  catch: (cause) =>
+                    new RuntimeRequestError({
+                      kind: 'connection',
+                      message: cause instanceof Error ? cause.message : PEER_CONNECTION_ERROR,
+                      cause,
+                    }),
+                })
+              : target.origin
         const transportTarget = new URL(resolved)
         transportTarget.pathname = target.pathname
         transportTarget.search = target.search
@@ -195,7 +210,9 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
               return new RuntimeRequestError({
                 kind: 'connection',
                 cause,
-                message: `Cannot reach ${target.host}. Check that its runtime is running and both devices are on the same Wi-Fi or VPN.`,
+                message: isPeerAddress(target.origin)
+                  ? PEER_CONNECTION_ERROR
+                  : `Cannot reach ${target.host}. Check that its runtime is running and both devices are on the same Wi-Fi or VPN.`,
               })
             },
           })
@@ -291,7 +308,9 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
           ? Effect.retry(request, readRetry)
           : request,
       Effect.timeoutOrElse({
-        duration: timeoutMs ?? runtimeRequestTimeout(path, input),
+        duration: isPeerAddress(address)
+          ? Math.max(timeoutMs ?? runtimeRequestTimeout(path, input), 35000)
+          : (timeoutMs ?? runtimeRequestTimeout(path, input)),
         orElse: () =>
           Effect.fail(
             (() =>

@@ -84,6 +84,12 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Pro
       ...(mobile
         ? [
             {
+              path: './peer-native',
+              importer: root + 'apps/mobile/src/runtime/connection/peer-transport.ts',
+              contents:
+                'export const openPeerTunnel=async()=>{throw Error("LAN sync tests must not open a native peer")};',
+            },
+            {
               path: 'react-native',
               contents: `export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};`,
             },

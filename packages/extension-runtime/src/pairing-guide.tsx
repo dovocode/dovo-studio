@@ -1,7 +1,13 @@
 import { useEffect } from 'react'
 import { Effect } from 'effect'
 import QRCode from 'qrcode'
-import { pairingInvitation, pairingInvitationUrl } from '@dovo/protocol'
+import {
+  pairingInvitation,
+  pairingInvitationUrl,
+  peerAddress,
+  type PeerConfig,
+  peerRelayDescription,
+} from '@dovo/protocol'
 import { clientTaskScope, startPolling } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Button, Input, FormField } from '@dovo/studio-ui'
@@ -10,7 +16,12 @@ export function PairingGuide({
   fallbackAddress,
   pending,
 }: {
-  code: { code: string; expiresAt: string; addresses?: { name: string; address: string }[] }
+  code: {
+    code: string
+    expiresAt: string
+    addresses?: { name: string; address: string }[]
+    peer?: PeerConfig
+  }
   fallbackAddress?: string
   pending: boolean
 }) {
@@ -25,7 +36,9 @@ export function PairingGuide({
         return false
       }
     }) ?? ''
-  const [address, setAddress] = useApplicationState(initialAddress)
+  const [address, setAddress] = useApplicationState(
+    code.peer ? peerAddress(code.peer) : initialAddress,
+  )
   const [now, setNow] = useApplicationState(Date.now())
   const [qr, setQr] = useApplicationState('')
   const [error, setError] = useApplicationState('')
@@ -50,7 +63,12 @@ export function PairingGuide({
       Effect.tryPromise({
         try: () =>
           QRCode.toDataURL(
-            pairingInvitationUrl({ address, code: code.code, expiresAt: code.expiresAt }),
+            pairingInvitationUrl({
+              address,
+              code: code.code,
+              expiresAt: code.expiresAt,
+              ...(code.peer ? { peer: code.peer } : {}),
+            }),
             { width: 240, margin: 4 },
           ),
         catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
@@ -66,7 +84,16 @@ export function PairingGuide({
   }, [address, code.code, code.expiresAt])
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(address)
+      await navigator.clipboard.writeText(
+        code.peer
+          ? pairingInvitationUrl({
+              address,
+              code: code.code,
+              expiresAt: code.expiresAt,
+              peer: code.peer,
+            })
+          : address,
+      )
       setCopied(true)
     } catch {
       setError('Could not copy. Select the address below and copy it manually.')
@@ -77,8 +104,12 @@ export function PairingGuide({
   return (
     <div className="space-y-3 rounded border bg-card p-3">
       <h3 className="text-sm font-medium">Connect your phone</h3>
-      <p className="text-xs text-muted-foreground">Use the same Wi-Fi or VPN on both devices.</p>
-      {!!addresses.length && (
+      <p className="text-xs text-muted-foreground">
+        {code.peer
+          ? 'Connect over the internet. No VPN, local IP or account required. Keep Dovo open on this computer.'
+          : 'Use the same Wi-Fi or VPN on both devices.'}
+      </p>
+      {!code.peer && !!addresses.length && (
         <FormField label="Network address">
           <select
             aria-label="Network address"
@@ -96,7 +127,7 @@ export function PairingGuide({
           </select>
         </FormField>
       )}
-      {(!selectedAddress || !addresses.length) && (
+      {!code.peer && (!selectedAddress || !addresses.length) && (
         <FormField label="Computer address">
           <Input
             value={address}
@@ -130,15 +161,17 @@ export function PairingGuide({
           )}
           <div className="min-w-[160px] flex-1 space-y-3">
             <p className="text-xs text-muted-foreground">
-              In Dovo on your phone, open Computers and scan this QR code, review the address, then
-              tap Connect.
+              In Dovo on your phone, open Computers and scan this QR code, review the connection,
+              then tap Connect.
             </p>
             <p className="text-xs text-muted-foreground">
-              Or enter the address and this code in Computers:
+              {code.peer
+                ? `WebRTC + STUN · end-to-end encrypted. ${peerRelayDescription(code.peer.relay)}`
+                : 'Or enter the address and this code in Computers:'}
             </p>
             <p className="select-all font-mono text-2xl tracking-widest">{code.code}</p>
             <Button size="sm" variant="outline" disabled={!qr} onClick={() => void copy()}>
-              {copied ? 'Address copied' : 'Copy address'}
+              {copied ? 'Copied' : code.peer ? 'Copy pairing link' : 'Copy address'}
             </Button>
             <p role="status" className="text-xs text-muted-foreground">
               Single use · {remaining}s remaining
@@ -150,7 +183,7 @@ export function PairingGuide({
         Approve the named phone here when prompted. Pairing grants access to files, agents and
         terminal commands.
       </p>
-      {code.addresses?.length === 0 && (
+      {!code.peer && code.addresses?.length === 0 && (
         <p className="text-xs text-muted-foreground">
           No network address is available from this listener. If it listens only on localhost, use
           Enable LAN / VPN access above, or change and restart your externally managed listener. A

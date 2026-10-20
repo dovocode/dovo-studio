@@ -254,9 +254,9 @@ try {
     )
     await page.getByRole('heading', { name: 'Watching', exact: true }).waitFor()
     for (const [state, draft, tone] of [
-      ['open', false, 'text-emerald-600'],
+      ['open', false, 'text-status-success'],
       ['merged', false, 'text-violet-600'],
-      ['closed', false, 'text-red-600'],
+      ['closed', false, 'text-status-error'],
       ['open', true, 'text-muted-foreground'],
     ]) {
       await page.evaluate(([state, draft]) => window.setPullState(state, draft), [state, draft])
@@ -512,7 +512,7 @@ try {
       await page.locator('.studio-thread-card-context').first().waitFor()
       assert.equal(await page.locator('.studio-thread-card-context').count(), 8)
       assert.equal(
-        await page.locator('.studio-thread-card-context > span.text-emerald-400').count(),
+        await page.locator('.studio-thread-card-context > span.flex.text-status-success').count(),
         4,
       )
       const toggle = page.getByRole('button', {

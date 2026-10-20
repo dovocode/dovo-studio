@@ -1,0 +1,295 @@
+import { RTCPeerConnection } from 'react-native-webrtc'
+import TcpSocket from 'react-native-tcp-socket'
+import * as Crypto from 'expo-crypto'
+import {
+  decode,
+  peerRoom,
+  peerCapability,
+  peerDigest,
+  peerSocketUrl,
+  peerSignalSchema,
+  peerReadySchema,
+  signPeerSignal,
+  verifyPeerSignal,
+  validPeerRelay,
+  PEER_STUN_URLS,
+  PEER_CONNECTION_ERROR,
+  createPeerPipe,
+  type PeerConfig,
+  type PeerRelay,
+} from '@dovo/protocol'
+
+/** Native loopback keeps the existing HTTP, WebSocket, file and WebView paths on
+ * the same encrypted data transport. It is bound only to the phone's loopback;
+ * the computer's address/ports are never opened to the internet. */
+export async function openPeerTunnel(
+  config: PeerConfig,
+  onClosed: () => void = () => {},
+  abort?: AbortSignal,
+) {
+  const session = Array.from(await Crypto.getRandomBytesAsync(32), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')
+  if (abort?.aborted) throw new Error('Internet connection was closed')
+  const pc = new RTCPeerConnection({ iceServers: PEER_STUN_URLS.map((urls) => ({ urls })) })
+  const ready = pc.createDataChannel('dovo-ready-v1', { ordered: true })
+  const signal = new WebSocket(peerSocketUrl(config))
+  const pipes = new Set<ReturnType<typeof createPeerPipe>>()
+  let stopped = false,
+    connected = false
+  let server: ReturnType<typeof TcpSocket.createServer> | undefined
+  let relay: PeerRelay | undefined
+  let relayUnavailable = false
+  let expiry: ReturnType<typeof setTimeout> | undefined
+  let fail: (error: Error) => void = () => {}
+  let rejectBinding: ((error: Error) => void) | undefined
+  const close = (cause?: unknown) => {
+    if (stopped) return
+    stopped = true
+    abort?.removeEventListener('abort', close)
+    clearTimeout(timeout)
+    if (expiry) clearTimeout(expiry)
+    for (const pipe of pipes) pipe.stop()
+    server?.close()
+    signal.close()
+    pc.close()
+    onClosed()
+    const error =
+      cause instanceof Error
+        ? cause
+        : new Error(
+            relayUnavailable
+              ? 'Dovo relay is unavailable and a direct connection could not be established. Ask your Dovo operator to check this computer’s relay approval and service availability.'
+              : PEER_CONNECTION_ERROR,
+          )
+    fail(error)
+    rejectBinding?.(error)
+    rejectBinding = undefined
+  }
+  const timeout = setTimeout(close, 30000)
+  const established = new Promise<void>((resolve, reject) => {
+    fail = reject
+    ready.onopen = () => {
+      connected = true
+      resolve()
+    }
+    pc.onconnectionstatechange = () => {
+      if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) close()
+    }
+  })
+  // Negotiation can fail before this promise is awaited.
+  void established.catch(() => {})
+  let offerHash = ''
+  let accepted = false
+  let brokerJoined = false
+  const brokerReady = new Promise<void>((resolve, reject) => {
+    signal.onopen = () =>
+      signal.send(
+        JSON.stringify({
+          type: 'client',
+          room: peerRoom(config),
+          key: peerCapability(config, 'client'),
+          session,
+          ...(config.relay ? { relay: config.relay } : {}),
+        }),
+      )
+    signal.onerror = () => {
+      reject(new Error('Could not reach Dovo Connect'))
+      close()
+    }
+    signal.onclose = () => {
+      if (!connected && !accepted) {
+        reject(new Error('Computer is offline or internet pairing expired'))
+        close()
+      }
+    }
+    signal.onmessage = (event) => {
+      try {
+        const raw: unknown = event.data
+        if (typeof raw !== 'string' || raw.length > 70 * 1024)
+          throw new Error('Invalid signaling metadata')
+        const value: unknown = JSON.parse(raw)
+        if (value && typeof value === 'object' && 'type' in value && value.type === 'ready') {
+          if (brokerJoined) throw new Error('Duplicate signaling readiness')
+          brokerJoined = true
+          const joined = decode(peerReadySchema, value)
+          relay = joined.relay
+          relayUnavailable = !!joined.relayUnavailable
+          if (relay && !validPeerRelay(relay, config.relay, Date.now(), config.relayHosts))
+            throw new Error('Relay was not enabled or its credentials have an invalid lifetime')
+          resolve()
+          return
+        }
+        const answer = decode(peerSignalSchema, value)
+        if (
+          accepted ||
+          answer.session !== session ||
+          answer.role !== 'answer' ||
+          answer.offer !== offerHash ||
+          answer.relay !== relay?.provider ||
+          !verifyPeerSignal(config, answer)
+        )
+          throw new Error('Computer identity could not be verified')
+        accepted = true
+        void pc.setRemoteDescription({ type: 'answer', sdp: answer.sdp }).catch(() => close())
+      } catch (error) {
+        reject(error)
+        close(error)
+      }
+    }
+  })
+  void brokerReady.catch(() => {})
+  abort?.addEventListener('abort', close, { once: true })
+  if (abort?.aborted) close()
+  try {
+    await brokerReady
+    if (stopped) throw new Error(PEER_CONNECTION_ERROR)
+    pc.setConfiguration({
+      iceServers: [...PEER_STUN_URLS.map((urls) => ({ urls })), ...(relay?.iceServers ?? [])],
+      iceTransportPolicy: 'all',
+    })
+    await pc.setLocalDescription()
+    await new Promise<void>((resolve) => {
+      if (pc.iceGatheringState === 'complete') {
+        resolve()
+        return
+      }
+      // Keep already gathered host/IPv6 candidates useful even when one STUN service
+      // is unreachable. The signed offer contains the candidates available now.
+      const deadline = setTimeout(
+        () => {
+          pc.onicegatheringstatechange = null
+          resolve()
+        },
+        relay ? 8000 : 4000,
+      )
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === 'complete') {
+          clearTimeout(deadline)
+          pc.onicegatheringstatechange = null
+          resolve()
+        }
+      }
+    })
+    if (stopped) throw new Error(PEER_CONNECTION_ERROR)
+    const sdp = pc.localDescription?.sdp
+    if (!sdp) throw new Error('No local ICE description')
+    offerHash = peerDigest(sdp)
+    signal.send(
+      JSON.stringify(
+        signPeerSignal(config, {
+          role: 'offer',
+          session,
+          offer: offerHash,
+          sdp,
+          ...(relay ? { relay: relay.provider } : {}),
+        }),
+      ),
+    )
+    await established
+    signal.close()
+    server = TcpSocket.createServer(
+      { allowHalfOpen: true, pauseOnConnect: true, noDelay: true },
+      (socket) => {
+        if (stopped || pipes.size >= 32) {
+          socket.destroy()
+          return
+        }
+        const channel = pc.createDataChannel('dovo-tcp-v1', { ordered: true })
+        channel.binaryType = 'arraybuffer'
+        const pipe = createPeerPipe({
+          stream: {
+            onData: (f) => {
+              socket.on('data', (bytes) => {
+                if (typeof bytes === 'string') {
+                  pipe.stop()
+                  return
+                }
+                f(bytes)
+              })
+            },
+            onEnd: (f) => {
+              socket.on('end', f)
+            },
+            onClose: (f) => {
+              socket.on('close', f)
+            },
+            onError: (f) => {
+              socket.on('error', f)
+            },
+            write: (bytes, callback) => {
+              socket.write(bytes, undefined, callback)
+            },
+            pause: () => {
+              socket.pause()
+            },
+            resume: () => {
+              socket.resume()
+            },
+            end: () => {
+              socket.end()
+            },
+            destroy: () => {
+              socket.destroy()
+            },
+          },
+          send: (value) => {
+            if (typeof value === 'string') channel.send(value)
+            else channel.send(value)
+          },
+          close: () => channel.close(),
+        })
+        pipes.add(pipe)
+        channel.onopen = () => pipe.ready()
+        channel.onerror = () => pipe.stop()
+        channel.onclose = () => {
+          pipes.delete(pipe)
+          pipe.stop()
+        }
+        channel.addEventListener('message', (event) => {
+          const data: unknown = event.data
+          if (typeof data === 'string') pipe.receive(data)
+          else if (data instanceof ArrayBuffer) pipe.receive(new Uint8Array(data))
+          else pipe.stop()
+        })
+        // Native creation is synchronous and can return an already-open channel.
+        // Its open event may precede the JavaScript handlers being attached.
+        if (channel.readyState === 'open') pipe.ready()
+      },
+    )
+    const listener = server
+    listener.on('error', close)
+    await new Promise<void>((resolve, reject) => {
+      if (stopped) {
+        reject(new Error('Internet connection was closed'))
+        return
+      }
+      rejectBinding = reject
+      listener.once('error', reject)
+      listener.listen({ port: 0, host: '127.0.0.1' }, () => {
+        rejectBinding = undefined
+        listener.removeListener('error', reject)
+        // Native close() is a no-op before binding completes. A late native callback must
+        // close the newly bound listener too, even though the peer is already stopped.
+        if (stopped) {
+          listener.close()
+          reject(new Error('Internet connection was closed'))
+          return
+        }
+        resolve()
+      })
+    })
+    const address = listener.address()
+    if (stopped || !address || !('port' in address)) throw new Error(PEER_CONNECTION_ERROR)
+    clearTimeout(timeout)
+    if (relay) expiry = setTimeout(close, Math.max(0, relay.expiresAt - Date.now() - 60000))
+    return {
+      address: `http://127.0.0.1:${address.port}`,
+      close,
+      alive: () => !stopped && pc.connectionState === 'connected',
+    }
+  } catch (error) {
+    close()
+    throw error
+  }
+}

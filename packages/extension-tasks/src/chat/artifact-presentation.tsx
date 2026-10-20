@@ -5,15 +5,15 @@ import { cn } from '@dovo/studio-ui'
 const presentation = {
   markdown: {
     icon: FileText,
-    tone: 'text-amber-600 dark:text-amber-300',
-    canvas: 'bg-amber-500/5',
+    tone: 'text-status-warning',
+    canvas: 'bg-status-warning/5',
   },
   html: { icon: AppWindow, tone: 'text-blue-600 dark:text-blue-300', canvas: 'bg-blue-500/5' },
   svg: { icon: Shapes, tone: 'text-violet-600 dark:text-violet-300', canvas: 'bg-violet-500/5' },
   code: {
     icon: CodeXml,
-    tone: 'text-emerald-600 dark:text-emerald-300',
-    canvas: 'bg-emerald-500/5',
+    tone: 'text-status-success',
+    canvas: 'bg-status-success/5',
   },
 }
 

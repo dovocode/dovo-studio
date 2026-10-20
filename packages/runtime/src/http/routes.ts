@@ -76,11 +76,14 @@ import { agentsRoute } from './endpoints/agents-routes.js'
 import { terminalsRoute } from './endpoints/terminals-routes.js'
 import { jobsRoute } from './endpoints/jobs-routes.js'
 import { scmRoute } from './endpoints/scm-routes.js'
+import { projectTransferRoute } from './endpoints/project-transfer-routes.js'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
+import { peerRelayProviderSchema } from '@dovo/protocol'
 import { workspaceSchema } from '@dovo/protocol'
-import { RuntimeServices } from '../services.js'
+import { RuntimeServices, type Services } from '../services.js'
 import { HttpError, type RuntimeFailure } from '../errors.js'
+import type { PeerOrigin } from './peer-connections.js'
 import { body } from './support/body.js'
 import { hashSecret, equalSecret } from '../auth/devices.js'
 import { clearLastCrash } from '../storage/last-crash.js'
@@ -89,12 +92,39 @@ const idSchema = maxValue(minValue(Schema.String, 1), 200)
 const PAIRING_BODY_LIMIT = 4 * 1024
 // A webhook payload is copied into the run record and the task's first message.
 const WEBHOOK_BODY_LIMIT = 256 * 1024
+const PAIRING_PATHS = [
+  '/api/pair/request',
+  '/api/pair/claim',
+  '/api/pair/cancel',
+  '/api/pair/confirm',
+]
+/** Internet tunnels reach the runtime over loopback, so they are authorized by their own
+ * provenance: one paired device per room, and pairing alone over a bootstrap invitation. */
+function authorizePeer(s: Services, peer: PeerOrigin, method?: string, path?: string, token = '') {
+  if (method === 'GET' && path === '/health') return
+  if (method === 'POST' && path && PAIRING_PATHS.includes(path)) return
+  if (isRunToken(token))
+    throw new HttpError(403, 'Agent credentials are not accepted over internet connections')
+  if (!peer.deviceId) {
+    // A bootstrap tunnel may only exchange the device it claimed for that device's own room.
+    if (
+      method === 'POST' &&
+      path === '/api/runtime/peer/enable' &&
+      peer.claimed(s.devices.authenticate(token).id)
+    )
+      return
+    throw new HttpError(403, 'This pairing connection can only complete pairing')
+  }
+  if (s.devices.authenticate(token).id !== peer.deviceId)
+    throw new HttpError(403, 'This internet connection belongs to another device')
+}
 export function route(
   request: IncomingMessage,
   url: URL,
   addresses: () => { name: string; address: string }[] = () => [],
   internal = false,
   receipted = false,
+  peer?: PeerOrigin,
 ): Effect.Effect<unknown, RuntimeFailure, RuntimeServices> {
   return routeProgram(
     Effect.gen(function* () {
@@ -102,6 +132,9 @@ export function route(
       const method = request.method,
         path = url.pathname
       const token = request.headers.authorization?.replace(/^Bearer /, '') ?? ''
+      if (peer) authorizePeer(s, peer, method, path, token)
+      // Tunneled sockets originate on loopback; they must never satisfy a local-only check.
+      const remoteAddress = peer ? undefined : request.socket.remoteAddress
       if (isRunToken(token)) authorizeRunEndpoint(s, token, method, path)
       const run = isRunToken(token)
         ? authorizeRunRoute(
@@ -137,9 +170,13 @@ export function route(
         )
         if (input.protocolVersion !== PAIRING_PROTOCOL_VERSION)
           throw new HttpError(426, 'Update this app before pairing with this runtime.')
-        return yield* serviceResult(
-          s.pairing.request(input.code, input.name, request.socket.remoteAddress ?? 'unknown'),
+        const pairing = s.pairing.request(
+          input.code,
+          input.name,
+          peer ? `internet:${peer.deviceId ?? 'pairing'}` : (remoteAddress ?? 'unknown'),
         )
+        peer?.extend(Date.parse(pairing.expiresAt))
+        return yield* serviceResult(pairing)
       }
       if (
         method === 'POST' &&
@@ -152,12 +189,15 @@ export function route(
           }),
           yield* serviceResult(body(request, PAIRING_BODY_LIMIT)),
         )
+        if (path === '/api/pair/claim') {
+          const claim = s.pairing.claim(input.id, input.secret)
+          if (peer && claim.token) peer.claim(s.devices.authenticate(claim.token).id)
+          return yield* serviceResult(claim)
+        }
         return yield* serviceResult(
           path === '/api/pair/cancel'
             ? s.pairing.cancel(input.id, input.secret)
-            : path === '/api/pair/confirm'
-              ? s.pairing.confirm(input.id, input.secret)
-              : s.pairing.claim(input.id, input.secret),
+            : s.pairing.confirm(input.id, input.secret),
         )
       }
       const segments = path.split('/').filter(Boolean)
@@ -480,7 +520,7 @@ export function route(
         return { ok: true }
       }
       if (method === 'POST' && path === '/api/studio/peers') {
-        requireLocalStudioUI(request.socket.remoteAddress)
+        requireLocalStudioUI(remoteAddress)
         const registration = yield* serviceResult(body(request, 256 * 1024))
         studioPeers(s).register(device.id, registration, () => {
           s.devices.authenticate(token)
@@ -516,7 +556,7 @@ export function route(
         if (input.policy)
           throw new HttpError(400, 'Forwarding policies require the paired forwarding endpoint')
         if (input.part === 'ui') {
-          requireLocalStudioUI(request.socket.remoteAddress)
+          requireLocalStudioUI(remoteAddress)
           if (input.runtimeId)
             throw new HttpError(403, 'Studio UI interaction stays on this machine')
         }
@@ -534,7 +574,7 @@ export function route(
         )
       }
       if (method === 'POST' && path === '/api/studio/session') {
-        requireLocalStudioUI(request.socket.remoteAddress)
+        requireLocalStudioUI(remoteAddress)
         const input = decode(studioUIPollSchema, yield* serviceResult(body(request, 256 * 1024)))
         return yield* serviceResult(
           studioSessions(s).poll(device.id, input, () => {
@@ -568,7 +608,7 @@ export function route(
             { method, path, input },
             () =>
               runClientEffect(
-                route(request, url, addresses, internal, true).pipe(
+                route(request, url, addresses, internal, true, peer).pipe(
                   Effect.provideService(RuntimeServices, s),
                 ),
               ),
@@ -617,6 +657,7 @@ export function route(
           device.id,
           `${method} ${path}`,
           !path.startsWith('/api/memory/') &&
+            !path.startsWith('/api/scm/project-transfer/') &&
             ![
               '/api/tasks/answer',
               '/api/notifications/answer',
@@ -1178,16 +1219,39 @@ export function route(
         owner()
         const input = decode(
           mutableStruct({
+            internet: Schema.optional(Schema.Boolean),
+            relay: Schema.optional(peerRelayProviderSchema),
             autoApprove: Schema.Boolean.pipe(
               Schema.withDecodingDefaultType(Effect.sync(() => false)),
             ),
           }),
           yield* serviceResult(body(request)),
         )
+        const code = s.pairing.createCode(input.autoApprove)
+        const peer = input.internet
+          ? yield* serviceResult(s.peers.invitation(code.expiresAt, input.relay))
+          : undefined
         return yield* serviceResult({
-          ...s.pairing.createCode(input.autoApprove),
+          ...code,
+          ...(peer ? { peer } : {}),
           addresses: addresses(),
         })
+      }
+      if (method === 'POST' && path === '/api/runtime/peer/enable') {
+        if (!peer?.claimed(device.id) && !s.peers.enabled(device.id))
+          throw new HttpError(
+            403,
+            'Enable internet access by pairing with a QR code from the computer',
+          )
+        return yield* serviceResult(s.peers.enable(device.id, peer?.relay))
+      }
+      if (method === 'POST' && path === '/api/runtime/peer/identity') {
+        owner()
+        return s.peers.relayIdentity()
+      }
+      if (method === 'POST' && path === '/api/runtime/peer/disable') {
+        s.peers.disable(device.id)
+        return yield* serviceResult({ ok: true })
       }
       if (method === 'POST' && path === '/api/pair/approve') {
         owner()
@@ -1233,6 +1297,8 @@ export function route(
         return yield* terminalsRoute(request, path, token)
       if (path.startsWith('/api/jobs/')) return yield* jobsRoute(request, path, owner)
       if (path.startsWith('/api/review/')) return yield* reviewRoute(request, path)
+      if (path.startsWith('/api/scm/project-transfer/'))
+        return yield* projectTransferRoute(request, path, device.id, token)
       if (path.startsWith('/api/scm/')) return yield* scmRoute(request, path)
       throw new HttpError(404, 'Endpoint not found')
     }),

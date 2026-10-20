@@ -6,7 +6,7 @@ import {
 import { githubTriggerSchema } from './automation/triggers.js'
 import { pullStackSummarySchema } from './scm/pulls/pull-stack.js'
 import { filePreviewMetadataSchema } from './scm/repositories/file-previews.js'
-import { mutableArray, mutableStruct } from './shared/schema.js'
+import { mutableArray, mutableStruct, strictStruct } from './shared/schema.js'
 import { minValue, maxValue, refine, urlSchema, isoDateTime } from './shared/schema.js'
 import { subagentSchema } from './conversation/workflow/subagents.js'
 import { agentTodosSchema } from './conversation/workflow/agent-interactions.js'
@@ -302,7 +302,52 @@ export const taskFeedbackSchema = refine(
   (v) => v.end >= v.start,
   'Invalid line range',
 )
+/** A one-turn model choice, bound to the current harness. Empty strings use provider defaults. */
+export const turnSettingsSchema = strictStruct({
+  provider: providerSchema,
+  acpInstallationId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  model: maxValue(Schema.String, 500),
+  reasoning: maxValue(Schema.String, 200),
+})
+export type TurnSettings = Schema.Schema.Type<typeof turnSettingsSchema>
+export function sameTurnSettings(a?: TurnSettings | null, b?: TurnSettings | null) {
+  return !a || !b
+    ? !a && !b
+    : a.provider === b.provider &&
+        a.acpInstallationId === b.acpInstallationId &&
+        a.model === b.model &&
+        a.reasoning === b.reasoning
+}
+export function agentTurnSettings(agent: TaskHarness): TurnSettings {
+  return {
+    provider: agent.provider,
+    ...(agent.acpInstallationId ? { acpInstallationId: agent.acpInstallationId } : {}),
+    model: agent.model,
+    reasoning: agent.reasoning ?? '',
+  }
+}
+export function turnSettingsMatchHarness(settings: TurnSettings, agent: TaskHarness) {
+  return (
+    settings.provider === agent.provider && settings.acpInstallationId === agent.acpInstallationId
+  )
+}
+export function applyTurnSettings<T extends TaskHarness>(agent: T, settings?: TurnSettings): T {
+  return settings
+    ? {
+        ...agent,
+        model: settings.model,
+        reasoning: settings.reasoning,
+        ...(settings.model !== agent.model
+          ? { serviceTier: undefined, cyberAccessProgram: undefined }
+          : {}),
+      }
+    : agent
+}
+export function turnSettingsLabel(settings: TurnSettings) {
+  return `${settings.model || 'Provider default'} · ${settings.reasoning || 'Default reasoning'}`
+}
 export const messageSchema = mutableStruct({
+  turnSettings: Schema.optional(turnSettingsSchema),
   id: Schema.String,
   role: Schema.Literals(['user', 'assistant']),
   text: Schema.String,
@@ -564,6 +609,7 @@ export const taskSchema = mutableStruct({
     mutableStruct({
       runId: Schema.optional(Schema.String),
       inputMessageIds: mutableArray(Schema.String),
+      turnSettings: Schema.optional(turnSettingsSchema),
       promptAccepted: Schema.Boolean,
     }),
   ),
@@ -724,6 +770,7 @@ export const taskSchema = mutableStruct({
   fileReviewVersion: Schema.optional(reviewVersionSchema),
   fileReviewVersions: Schema.optional(Schema.Record(Schema.String, reviewVersionSchema)),
   draft: Schema.String,
+  draftTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
   draftAttachments: Schema.optional(maxValue(mutableArray(attachmentSchema), MAX_ATTACHMENTS)),
   example: Schema.Boolean,
   origin: Schema.optional(Schema.String),

@@ -179,7 +179,7 @@ export function CodeReviewReport({
         </p>
       )}
       {selected && !review.report?.current && selected === latest && (
-        <p role="status" className="px-3 pb-2 text-xs text-amber-600 dark:text-amber-400">
+        <p role="status" className="px-3 pb-2 text-xs text-status-warning">
           Changes have moved since this review. Run a fresh pass before relying on its findings.
         </p>
       )}
@@ -225,12 +225,12 @@ export function CodeReviewReport({
                 {selected.reviewer} · {selected.model || 'Default model'} · {selected.status}
               </p>
               {approvalIsCurrent(selected) ? (
-                <p role="status" className="text-emerald-600 dark:text-emerald-400">
+                <p role="status" className="text-status-success">
                   Approved {new Date(selected.approval!.approvedAt).toLocaleString()} · Approval is
                   current for this reviewed revision.
                 </p>
               ) : selected.approval ? (
-                <p role="status" className="text-amber-600 dark:text-amber-400">
+                <p role="status" className="text-status-warning">
                   Approved revision moved or was superseded. Review approval is no longer current.
                 </p>
               ) : null}
@@ -435,7 +435,7 @@ export function CodeReviewReport({
                     <span
                       className={
                         command.status === 'passed'
-                          ? 'text-emerald-600 dark:text-emerald-400'
+                          ? 'text-status-success'
                           : command.status === 'failed'
                             ? 'text-destructive'
                             : 'text-muted-foreground'

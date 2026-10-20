@@ -10,10 +10,12 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';
 import {memo} from 'react';
-import {runtimeProfile,workspacePatchResultSchema} from '@dovo/protocol';
+import {Effect} from 'effect';
+import {runtimeProfile,peerAddress,workspacePatchResultSchema} from '@dovo/protocol';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {RuntimeProvider,useRuntime,useRuntimeSelector} from './apps/mobile/src/runtime/connection/provider.tsx';
-window.readFails=true;window.writes=[];window.requests=[];
+import {preparePeerConnection} from './apps/mobile/src/runtime/connection/peer-transport.ts';
+window.readFails=true;window.writes=[];window.requests=[];window.peerOpens=[];window.peerCloses=0;window.setPeerRelay=(id,relay)=>Effect.runPromise(window.runtime.setPeerRelayEffect(id,relay));window.connectPeer=()=>{const peer={origin:'https://connect.example',secret:'a'.repeat(64)};preparePeerConnection(peer);return window.runtime.connect({address:peerAddress(peer),token:'private-peer-device-token',peer},'Peer')};
 const profiles=['one','two'].map(name=>runtimeProfile({address:'http://'+name+'.lan:8787',token:'test-private-token-at-least-32-characters-'+name},name));
 window.saved=JSON.stringify({version:1,activeId:profiles[0].id,profiles});
 window.servers={};window.patchOffline=false;window.patchCalls=[];
@@ -69,6 +71,11 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
     ],
   },
   [
+    {
+      path: './peer-native',
+      importer: root + 'apps/mobile/src/runtime/connection/peer-transport.ts',
+      contents: `export const openPeerTunnel=async(config,onClosed,abort)=>{window.peerOpens.push(config);let live=true;const close=()=>{if(!live)return;live=false;window.peerCloses++;onClosed()};abort.addEventListener('abort',close,{once:true});return {address:'http://127.0.0.1:44555',alive:()=>live,close}};`,
+    },
     {
       path: '@dovo/protocol',
       contents: `export * from '${root}packages/protocol/src/index.ts';export const startRuntimeSync=(connection,callbacks)=>{window.streams??={};window.streams[connection.address]=callbacks;return {online:()=>false,refresh:()=>{window.liveRefreshes=(window.liveRefreshes??0)+1},stop:()=>{delete window.streams[connection.address]}}};`,
@@ -330,12 +337,55 @@ try {
     () => window.runtime.snapshot?.runtimeInstanceId === 'foreground-runtime',
   )
   assert.equal(await page.evaluate(() => window.runtime.connected), true)
+  assert.equal(
+    await page.evaluate(() => window.peerOpens.length),
+    0,
+    'LAN profiles do not open native peers',
+  )
+  await page.evaluate(() => window.connectPeer())
+  await page.waitForFunction(
+    () => window.runtime.profile?.name === 'Peer' && window.runtime.connected,
+  )
+  const peerId = await page.evaluate(() => window.runtime.profile.id)
+  await page.evaluate((id) => window.setPeerRelay(id, 'dovo'), peerId)
+  await page.waitForFunction(() => window.runtime.profile.connection.peer.relay === 'dovo')
+  await page.evaluate(() => window.runtime.refresh())
+  await page.waitForFunction(() => window.peerOpens.at(-1)?.relay === 'dovo')
+  await page.evaluate(() => {
+    window.oldPeerProfile = window.runtime.profile
+  })
+  await page.evaluate((id) => window.setPeerRelay(id, undefined), peerId)
+  await page.waitForFunction(() => window.runtime.profile.connection.peer.relay === undefined)
+  await page.evaluate(() => window.runtime.refreshRuntime(window.oldPeerProfile))
+  assert.equal(
+    await page.evaluate(() => window.peerOpens.at(-1).relay),
+    undefined,
+    'A stale read cannot restore relay consent',
+  )
+  assert.equal(
+    await page.evaluate(
+      () =>
+        JSON.parse(window.saved).profiles.find((profile) => profile.name === 'Peer').connection.peer
+          .relay,
+    ),
+    undefined,
+  )
+  await page.evaluate(() => window.appStateChanged('background'))
+  await page.waitForFunction(() => !window.runtime.connected)
+  const opened = await page.evaluate(() => window.peerOpens.length)
+  await page.evaluate(() => window.appStateChanged('active'))
+  await page.evaluate(() => window.runtime.refresh())
+  await page.waitForFunction(
+    (count) => window.peerOpens.length > count && window.runtime.connected,
+    opened,
+  )
+  assert.equal(await page.evaluate(() => window.peerOpens.at(-1).relay), undefined)
   const renders = await page.evaluate(() => window.renders)
   assert.ok(renders.broad > 3, `broad runtime reader rendered ${renders.broad} times`)
   assert.equal(renders.selected, 1, 'an action selector re-rendered for runtime state changes')
   assert.deepEqual(errors, [])
   console.log(
-    `Mobile registry recovery: credential-store recovery, stale/current HTTP failures, streamed restarts, network wakeups and foreground recovery passed; ${renders.broad} broad renders, ${renders.selected} selector render.`,
+    `Mobile registry recovery: credential-store recovery, stale/current HTTP failures, streamed restarts, network wakeups, peer background/foreground recovery and persistent relay opt-out passed; ${renders.broad} broad renders, ${renders.selected} selector render.`,
   )
 } finally {
   await browser.close()

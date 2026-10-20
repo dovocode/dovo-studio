@@ -36,6 +36,8 @@ import {
   permissionPolicyIssue,
   effectivePermissionPolicy,
   resolveTaskAgent,
+  applyTurnSettings,
+  turnSettingsMatchHarness,
   lockedTaskProvider,
   mergeResources,
   reportedPlanLimits,
@@ -210,7 +212,14 @@ export class TaskTurnRunner {
         const pullRequestWatchingEnabled = this.pullRequestWatchingEnabled()
         const pipelineWatchingEnabled = this.pipelineWatchingEnabled()
         const linkedProjectsEnabled = this.linkedProjectsEnabled()
-        const selectedAgent = resolveTaskAgent(task, this.store.get().agents)
+        const defaultAgent = resolveTaskAgent(task, this.store.get().agents)
+        const settings = task.runAttempt?.turnSettings
+        if (settings && defaultAgent && !turnSettingsMatchHarness(settings, defaultAgent))
+          throw new HttpError(
+            409,
+            'The queued model belongs to a different harness. Restore the original harness before continuing.',
+          )
+        const selectedAgent = defaultAgent && applyTurnSettings(defaultAgent, settings)
         if (!selectedAgent) throw new HttpError(400, 'Choose a harness or agent first')
         const policyIssue = permissionPolicyIssue(selectedAgent)
         if (policyIssue) throw new HttpError(400, policyIssue)

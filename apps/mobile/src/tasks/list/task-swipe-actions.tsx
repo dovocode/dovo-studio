@@ -3,6 +3,7 @@ import { View } from 'react-native'
 import { Gesture, GestureDetector, Pressable } from 'react-native-gesture-handler'
 import Animated, {
   cancelAnimation,
+  ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -30,7 +31,8 @@ export function TaskSwipeActions({
   primary: SwipeAction
   secondary?: SwipeAction
 }) {
-  const { colors } = useTheme()
+  const { colors, reduceMotion } = useTheme()
+  const motion = reduceMotion ? ReduceMotion.Always : ReduceMotion.System
 
   const translation = useSharedValue(0)
   const start = useSharedValue(0)
@@ -42,11 +44,11 @@ export function TaskSwipeActions({
   const latest = useRef({ enabled, primary })
   latest.current = { enabled, primary }
   const close = useCallback(() => {
-    translation.value = withSpring(0, spring)
+    translation.value = withSpring(0, { ...spring, reduceMotion: motion })
     armed.value = false
     setOpen(false)
     if (closeRevealedRow === close) closeRevealedRow = undefined
-  }, [translation, armed])
+  }, [translation, armed, motion])
   const begin = useCallback(() => {
     if (closeRevealedRow !== close) closeRevealedRow?.()
     closeRevealedRow = close
@@ -86,24 +88,29 @@ export function TaskSwipeActions({
             !primaryDisabled &&
             fullSwipe(position, event.velocityX, width.value, revealedWidth)
           ) {
-            translation.value = withSpring(0, spring)
+            translation.value = withSpring(0, { ...spring, reduceMotion: motion })
             scheduleOnRN(commit)
           } else {
             const target = swipeTarget(position, event.velocityX, revealedWidth)
-            translation.value = withSpring(target, { ...spring, velocity: event.velocityX })
+            translation.value = withSpring(target, {
+              ...spring,
+              velocity: event.velocityX,
+              reduceMotion: motion,
+            })
             scheduleOnRN(setOpen, target !== 0)
           }
           armed.value = false
         })
         .onFinalize((_event, success) => {
           if (!success) {
-            translation.value = withSpring(0, spring)
+            translation.value = withSpring(0, { ...spring, reduceMotion: motion })
             armed.value = false
             scheduleOnRN(close)
           }
         }),
     [
       enabled,
+      motion,
       primaryDisabled,
       revealedWidth,
       translation,

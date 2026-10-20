@@ -103,7 +103,7 @@ export function TaskBranchMenu({
           }
         >
           {notice === 'Copied' ? (
-            <Check size={10} className="shrink-0 text-emerald-400" />
+            <Check size={10} className="shrink-0 text-status-success" />
           ) : (
             <GitBranch size={panel ? 18 : 10} className="shrink-0" />
           )}

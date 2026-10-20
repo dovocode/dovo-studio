@@ -1,3 +1,4 @@
+import { accessibleThemeColors, statusColors } from './accessibility'
 import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
 import { dictationLanguageSchema, sharedSettingsSchema } from '@dovo/protocol'
 import { useMemo, useSyncExternalStore } from 'react'
@@ -48,6 +49,8 @@ const schema = mutableStruct({
   quitShortcut: Schema.Literals(['immediate', 'hold', 'disabled']),
   theme: Schema.Literals(['dark', 'light', 'system']),
   themePalette: Schema.Literals([...studioThemeIds]),
+  colorVision: Schema.Literals(['default', 'blue-orange']),
+  highContrast: Schema.Boolean,
   codeTheme: codeThemeSchema,
   importedCodeThemes: importedCodeThemesSchema,
   appFontFamily: fontFamilySchema,
@@ -143,6 +146,8 @@ export const defaultAppPreferences: AppPreferences = {
   quitShortcut: 'immediate',
   theme: 'dark',
   themePalette: 'dovo',
+  colorVision: 'default',
+  highContrast: false,
   codeTheme: 'app',
   importedCodeThemes: [],
   appFontFamily: '',
@@ -291,9 +296,12 @@ export function useResolvedTheme(): 'dark' | 'light' {
 }
 
 export function useStudioTheme() {
-  const { themePalette } = useAppPreferences()
+  const { themePalette, highContrast } = useAppPreferences()
   const mode = useResolvedTheme()
-  return studioThemes[themePalette][mode]
+  return useMemo(
+    () => accessibleThemeColors(studioThemes[themePalette][mode], mode, highContrast),
+    [themePalette, mode, highContrast],
+  )
 }
 
 /** Settings → Diffs, as options for the Pierre diff renderer. */
@@ -306,6 +314,8 @@ export function useDiffOptions() {
     themePalette,
     codeTheme,
     importedCodeThemes,
+    colorVision,
+    highContrast,
   } = useAppPreferences()
   const theme = useResolvedTheme()
   const code = resolveCodeTheme(codeTheme, importedCodeThemes, themePalette, theme)
@@ -320,9 +330,19 @@ export function useDiffOptions() {
           overflow: diffOverflow,
           lineDiffType: diffHighlight,
           disableLineNumbers: !diffLineNumbers,
+          diffIndicators: 'classic',
+          // Code themes can have a different light/dark mode from the app.
+          unsafeCSS: [
+            colorVision === 'blue-orange'
+              ? `:host { --diffs-addition-color-override: ${statusColors(code.type, colorVision).success}; --diffs-deletion-color-override: ${statusColors(code.type, colorVision).error}; }`
+              : '',
+            highContrast
+              ? `:host { --diffs-fg-number-override: ${code.type === 'dark' ? '#cccccc' : '#404040'}; }`
+              : '',
+          ].join('\n'),
         },
       }) as const,
-    [diffOverflow, diffHighlight, diffLineNumbers, diffLayout, code],
+    [diffOverflow, diffHighlight, diffLineNumbers, diffLayout, code, colorVision, highContrast],
   )
 }
 
@@ -337,4 +357,12 @@ export function formatDateTime(
     ...options,
     ...(timeFormat === 'auto' ? {} : { hour12: timeFormat === '12h' }),
   })
+}
+
+/** Read at the time of a scroll action so live preference changes take effect immediately. */
+export function reducedMotion() {
+  return (
+    readAppPreferences().motion === 'reduce' ||
+    (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+  )
 }

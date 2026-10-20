@@ -6,7 +6,7 @@ const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]}`,
-  '@dovo/studio-core': `
+  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     export * from '@dovo/protocol';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
@@ -90,6 +90,7 @@ for (const [path, names] of [
   ['../../dialogs/saved-prompts-dialog', ['SavedPromptsDialog']],
   ['../thread/context-meter', ['ContextMeter']],
   ['./composer-harness-controls', ['ComposerHarnessControls']],
+  ['./turn-model-controls', ['TurnModelControls']],
   ['./composer-workspace', ['ComposerWorkspace']],
   ['../chat/composer/composer-workspace', ['ComposerWorkspace']],
 ])

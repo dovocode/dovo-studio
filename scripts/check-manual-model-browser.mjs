@@ -36,6 +36,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
 
     export {FileTypeIcon} from '../studio-ui/src/file-tree';
     export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';
+    export {useHarnessCatalog} from '../studio-ui/src/harness-catalog';
     export const cn=(...values)=>values.filter(Boolean).join(' ');
     export const useCompactLayout=()=>false;
     const Box=({children})=><div>{children}</div>;

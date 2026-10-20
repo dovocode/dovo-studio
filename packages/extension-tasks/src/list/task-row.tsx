@@ -100,7 +100,8 @@ function TaskRowView({
   const [expanded, setExpanded] = useState(
     () => readTaskListViewState(studioHost).threadExpansion?.[parentKey] ?? false,
   )
-  const open = !!searching || expanded
+  const [hovered, setHovered] = useState(false)
+  const open = !!searching || expanded || hovered
   const summary = useMemo(
     () => threadTreeSummary(nestedThreads ?? [], task.acknowledgedSubagentFailures),
     [nestedThreads, task.acknowledgedSubagentFailures],
@@ -190,6 +191,7 @@ function TaskRowView({
   const highlighted = selected || multiSelected || !!selectedChildId
   return (
     <div
+      onMouseLeave={() => setHovered(false)}
       className={cn(
         'group/task relative w-full min-w-0',
         grouped && 'mb-0.5 rounded-xl border transition-colors',
@@ -247,7 +249,7 @@ function TaskRowView({
                       !offline && presentation.state === 'Working' && 'text-sky-400',
                       !offline &&
                         ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
-                        'text-emerald-400',
+                        'text-status-success',
                       !offline && presentation.state === 'Failed' && 'text-destructive',
                     )}
                   >
@@ -401,7 +403,7 @@ function TaskRowView({
             className={cn(
               'absolute bottom-1.5 right-2.5 flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground',
               open && 'bg-accent text-foreground',
-              summary.attention > 0 && 'text-amber-500',
+              summary.attention > 0 && 'text-status-warning',
               summary.failed > 0 && 'text-destructive',
             )}
             aria-label={`Subthreads for ${task.title}`}
@@ -409,9 +411,12 @@ function TaskRowView({
             aria-controls={open ? childrenId : undefined}
             title={childrenDetail}
             disabled={searching}
+            onMouseEnter={() => setHovered(true)}
             onClick={(event) => {
               event.stopPropagation()
-              const next = !open
+              // A hover preview becomes pinned on click; clicking again closes it.
+              const next = !expanded
+              setHovered(false)
               setExpanded(next)
               saveTaskListViewState(studioHost, {
                 threadExpansion: {

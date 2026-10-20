@@ -35,6 +35,9 @@
 @theme inline {
   --font-sans: var(--app-font-family);
   --font-mono: var(--code-font-family);
+  --color-status-success: var(--status-success);
+  --color-status-error: var(--status-error);
+  --color-status-warning: var(--status-warning);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -81,6 +84,9 @@
   --selection: #102432;
   --signal: #bcefff;
   --pink: #7cc9ff;
+  --status-success: #8ad5b0;
+  --status-error: #ff7e97;
+  --status-warning: #e7c681;
   --destructive: #ff7e97;
   --destructive-foreground: #341520;
   --app-font-family:
@@ -111,6 +117,9 @@
   --selection: #e7f3ff;
   --signal: #006a83;
   --pink: #0965b5;
+  --status-success: #08734f;
+  --status-error: #ba2549;
+  --status-warning: #855700;
   --destructive: #ba2549;
   --destructive-foreground: #ffffff;
 }
@@ -918,7 +927,11 @@ textarea {
 }
 button:focus-visible,
 summary:focus-visible,
-a:focus-visible {
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
 }
@@ -1129,4 +1142,22 @@ a.studio-project-row:hover {
 [data-unread] .studio-thread-card-context {
   color: var(--foreground);
   opacity: 1;
+}
+
+/* Keep keyboard focus visible when the OS supplies its own high-contrast palette. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 3px;
+  }
+  button,
+  input,
+  textarea,
+  select {
+    border: 1px solid ButtonText;
+  }
+  [role='switch'][data-state='checked'],
+  [role='radio'][aria-checked='true'] {
+    outline: 2px solid Highlight;
+  }
 }

@@ -362,7 +362,7 @@ function PrimaryReviewPane({
           {files.length} {files.length === 1 ? 'file' : 'files'}
         </span>
         <span className="hidden text-[0.6875rem] tabular-nums sm:inline">
-          <span className="text-emerald-400">+{additions}</span>{' '}
+          <span className="text-status-success">+{additions}</span>{' '}
           <span className="text-rose-400">−{deletions}</span>
         </span>
         <IconButton

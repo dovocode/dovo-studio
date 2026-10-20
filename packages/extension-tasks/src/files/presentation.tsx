@@ -39,7 +39,7 @@ export function DiffAmounts({
   if (!stats) return null
   return (
     <span className="flex shrink-0 gap-1.5 text-[0.625rem] tabular-nums">
-      <span className="text-emerald-500">+{stats.additions}</span>
+      <span className="text-status-success">+{stats.additions}</span>
       <span className="text-rose-500">-{stats.deletions}</span>
     </span>
   )

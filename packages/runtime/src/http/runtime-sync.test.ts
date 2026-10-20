@@ -307,6 +307,34 @@ it('keeps a snapshot revision paired with the workspace captured before asynchro
   expect(snapshot.workspace.tasks[0]!.title).toBe('Task')
 })
 
+it('delivers project-copy progress without writing a workspace revision', async () => {
+  const { runtime, open } = await setup()
+  const client = await open(token, 5)
+  client.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await client.wait('snapshot')
+  const list = vi.spyOn(runtime.services.projectTransfers, 'list').mockReturnValue([
+    {
+      id: 'copy',
+      repositoryId: 'project',
+      targetId: 'other',
+      targetName: 'Other computer',
+      transport: 'p2p',
+      state: 'copying',
+      bytes: 250,
+      totalBytes: 1000,
+      updatedAt: Date.now(),
+    },
+  ])
+  cleanup.push(() => {
+    list.mockRestore()
+  })
+  runtime.services.projectTransfers.revision++
+  const delta = await client.wait('delta')
+  const next = applySnapshotDelta(baseline.snapshot, delta.delta)
+  expect(next.revision).toBe(baseline.snapshot.revision)
+  expect(next.projectTransfers?.[0]).toMatchObject({ state: 'copying', bytes: 250 })
+})
+
 it('sends lightweight shells and only subscribed history, with safe replay per subscription', async () => {
   const { runtime, open } = await setup()
   runtime.services.store.update((workspace) => ({

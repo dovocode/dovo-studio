@@ -65,7 +65,7 @@ export function ThreadWatchSummary({
               >
                 {watch.snapshot?.title ?? 'Connected thread'}
               </button>
-              <p className={cn(needsInput && !stale && !watch.paused && 'text-amber-500')}>
+              <p className={cn(needsInput && !stale && !watch.paused && 'text-status-warning')}>
                 {watch.computerName} · {status}
                 {watch.relation === 'linked' ? ' · Linked' : ''}
               </p>

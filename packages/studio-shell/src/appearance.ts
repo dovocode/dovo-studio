@@ -6,6 +6,7 @@ import {
   fontStack,
   systemAppFont,
   systemMonoFont,
+  statusColors,
 } from '@dovo/studio-core'
 
 /** Colours for native window chrome the document cannot paint: the title bar strip and the
@@ -14,8 +15,16 @@ export type WindowColors = { background: string; symbol: string }
 /** Applies Settings → Appearance to the document; "System" follows the OS live. The desktop
  * app receives the title bar palette so its native window controls follow the theme. */
 export function useAppearance(onWindowColors?: (colors: WindowColors) => unknown) {
-  const { themePalette, textSize, motion, chatWidth, appFontFamily, codeFontFamily } =
-    useAppPreferences()
+  const {
+    themePalette,
+    textSize,
+    motion,
+    chatWidth,
+    appFontFamily,
+    codeFontFamily,
+    colorVision,
+    highContrast,
+  } = useAppPreferences()
   const mode = useResolvedTheme()
   const colors = useStudioTheme()
   useLayoutEffect(() => {
@@ -29,6 +38,8 @@ export function useAppearance(onWindowColors?: (colors: WindowColors) => unknown
     root.style.setProperty('--code-font-family', fontStack(codeFontFamily, systemMonoFont))
     root.dataset.textSize = textSize
     root.dataset.motion = motion
+    root.dataset.highContrast = String(highContrast)
+    root.dataset.colorVision = colorVision
     root.dataset.chatWidth = chatWidth
     root.dataset.theme = mode
     root.dataset.themePalette = themePalette
@@ -38,7 +49,21 @@ export function useAppearance(onWindowColors?: (colors: WindowColors) => unknown
     root.style.setProperty('--muted', colors.card)
     root.style.setProperty('--accent', colors.selection)
     root.style.setProperty('--ring', colors.primary)
-    root.style.setProperty('--destructive', mode === 'dark' ? '#ff7e97' : '#ba2549')
-    root.style.setProperty('--destructive-foreground', mode === 'dark' ? '#341520' : '#ffffff')
-  }, [mode, themePalette, colors, textSize, motion, chatWidth, appFontFamily, codeFontFamily])
+    const status = statusColors(mode, colorVision)
+    for (const name of ['success', 'error', 'warning'] as const)
+      root.style.setProperty(`--status-${name}`, status[name])
+    root.style.setProperty('--destructive', status.error)
+    root.style.setProperty('--destructive-foreground', status.onError)
+  }, [
+    mode,
+    themePalette,
+    colors,
+    textSize,
+    motion,
+    chatWidth,
+    appFontFamily,
+    codeFontFamily,
+    colorVision,
+    highContrast,
+  ])
 }

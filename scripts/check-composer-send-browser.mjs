@@ -5,7 +5,7 @@ import { chromium } from './browser/harness.mjs'
 const mocks = {
   '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
+  '@dovo/studio-ui': `export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
   './composer-editor': `import {useState,useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText,disabled})=>{const[mount]=useState(()=>++window.editorMounts);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea data-editor-mount={mount} aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} disabled={disabled} onChange={event=>controller.update(event.target.value)}/>};`,
 }
@@ -26,7 +26,7 @@ import {createRoot} from 'react-dom/client';import {useState,useCallback} from '
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
 const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[]}};return <WorkspaceHarness value={value}><><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<MessageQueue task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[],queuedTurnSettingsSupported:true}};return <WorkspaceHarness value={value}><><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<MessageQueue task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -272,6 +272,36 @@ try {
     '/api/tasks/message,/api/tasks/message,/api/tasks/steer,/api/tasks/message,/api/tasks/message'
   )
     throw new Error(JSON.stringify(requests))
+  // A one-turn choice is carried through a failed send and resets after acknowledgement.
+  await page.getByRole('button', { name: 'Next turn model and reasoning' }).click()
+  await page.getByRole('button', { name: 'Turn model', exact: true }).click()
+  await page.getByRole('option', { name: 'Large model', exact: true }).click()
+  await page.getByRole('button', { name: 'Turn reasoning level', exact: true }).click()
+  await page.getByRole('option', { name: 'High', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await submit('Use a larger model')
+  const selectedId = await page.evaluate(() => window.pending.message.id)
+  const selectedSettings = { provider: 'codex', model: 'large-model', reasoning: 'high' }
+  assert.deepEqual(
+    await page.evaluate(() => window.requests.at(-1).input.turnSettings),
+    selectedSettings,
+  )
+  assert.deepEqual(await page.evaluate(() => window.pending.message.turnSettings), selectedSettings)
+  await respond(true)
+  await page.locator('button[type=submit]').click()
+  await page.waitForFunction(() => window.response !== null)
+  assert.equal(await page.evaluate(() => window.pending.message.id), selectedId)
+  assert.deepEqual(
+    await page.evaluate(() => window.requests.at(-1).input.turnSettings),
+    selectedSettings,
+  )
+  await acknowledge('queue')
+  await respond()
+  await page.waitForFunction(() =>
+    document
+      .querySelector('[aria-label="Next turn model and reasoning"]')
+      ?.textContent.includes('thread defaults'),
+  )
   await page.evaluate(() =>
     window.setTask((task) => ({
       ...task,
@@ -283,6 +313,10 @@ try {
   await page
     .getByRole('textbox', { name: 'Edit queued message', exact: true })
     .fill('Edited queued input')
+  await page.getByRole('button', { name: 'Turn model', exact: true }).click()
+  await page.getByRole('option', { name: 'Fast model', exact: true }).click()
+  await page.getByRole('button', { name: 'Turn reasoning level', exact: true }).click()
+  await page.getByRole('option', { name: 'Low', exact: true }).click()
   await page.getByRole('button', { name: 'Save', exact: true }).click()
   await page
     .getByRole('textbox', { name: 'Edit queued message', exact: true })
@@ -296,6 +330,12 @@ try {
     edit.input.expectedText !== 'Original queued input'
   )
     throw new Error('Queue editing corrupted the task or message identity: ' + JSON.stringify(edit))
+  assert.deepEqual(edit.input.turnSettings, {
+    provider: 'codex',
+    model: 'fast-model',
+    reasoning: 'low',
+  })
+  assert.equal(edit.input.expectedTurnSettings, null)
   // Exercise native desktop drag events through the real queue/composer boundary.
   await page.evaluate(() =>
     window.setTask((task) => ({

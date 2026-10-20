@@ -1,3 +1,4 @@
+import { CircleCheck, CircleX, TriangleAlert } from 'lucide-react-native'
 import { Pressable, ScrollView, View } from 'react-native'
 import { studioThemeIds, studioThemes, type StudioThemeColors } from '@dovo/studio-core/themes'
 import {
@@ -10,18 +11,77 @@ import { Icon } from '../ui/controls/icon'
 import { Text } from '../ui/content/text'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
-import { SettingsGroup } from './settings-group'
+import { SettingsGroup, SettingsSwitchRow } from './settings-group'
 import { CodeThemeSettings } from './code-theme'
 
 export default function AppearanceScreen() {
   const { colors, styles } = useTheme()
-  const { theme, themePalette, threadDensity, terminalFontFamily, terminalFontSize } =
-    useMobilePreferences()
+  const {
+    theme,
+    themePalette,
+    threadDensity,
+    terminalFontFamily,
+    terminalFontSize,
+    highContrast,
+    colorVision,
+    motion,
+  } = useMobilePreferences()
   return (
     <SettingsPage>
       <ScreenHeader title="Appearance" />
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: 8, gap: 24 }]}>
         <Text style={[styles.muted, { fontSize: 13 }]}>This device · saved automatically</Text>
+        <SettingsGroup
+          title="Accessibility"
+          footer="Status icons and labels work without color. Text follows your phone’s text size setting."
+        >
+          <Choice
+            label="Status colors"
+            value={colorVision}
+            items={[
+              { id: 'default', name: 'Default' },
+              { id: 'blue-orange', name: 'Blue / orange' },
+            ]}
+            onChange={(value) => {
+              if (value === 'default' || value === 'blue-orange')
+                updateMobilePreferences({ colorVision: value })
+            }}
+          />
+          <View
+            accessibilityLabel="Status color preview"
+            style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, padding: 16 }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <CircleCheck size={16} color={colors.success} accessible={false} />
+              <Text style={[styles.muted, { color: colors.success }]}>Finished</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <CircleX size={16} color={colors.error} accessible={false} />
+              <Text style={[styles.muted, { color: colors.error }]}>Failed</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <TriangleAlert size={16} color={colors.warning} accessible={false} />
+              <Text style={[styles.muted, { color: colors.warning }]}>Needs input</Text>
+            </View>
+          </View>
+          <SettingsSwitchRow
+            label="Higher contrast"
+            value={highContrast}
+            onValueChange={(highContrast) => updateMobilePreferences({ highContrast })}
+          />
+          <Choice
+            label="Animations"
+            value={motion}
+            items={[
+              { id: 'system', name: 'System' },
+              { id: 'reduce', name: 'Reduce' },
+            ]}
+            onChange={(value) => {
+              if (value === 'system' || value === 'reduce')
+                updateMobilePreferences({ motion: value })
+            }}
+          />
+        </SettingsGroup>
         <SettingsGroup
           title="Layout"
           footer="Compact uses uniform rows with smaller text and single-line details. Comfortable keeps the original layout with more room for context."

@@ -16,7 +16,7 @@ export const Text=({children,accessibilityRole,numberOfLines,style})=>{const val
 export const Image=()=>null;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
 export const ScrollView=View;
-export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style})=><button style={window.rowLayout?{display:'flex',position:'relative',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
+export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style})=><button style={window.rowLayout?{display:'flex',position:'relative',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
 export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,testID},ref){
   useImperativeHandle(ref,()=>({scrollToOffset:()=>{}}),[]);
   return <div data-testid={testID}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}</div>
@@ -47,7 +47,7 @@ const stubs = [
   { path: 'react-native', contents: controls },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=({color,accessibilityLabel,size=12})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as Pin,Icon as Save};`,
+    contents: `const Icon=({color,accessibilityLabel,size=12})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as Pin,Icon as Save,Icon as Network};`,
   },
   {
     path: '@dovo/protocol',
@@ -150,7 +150,7 @@ export const startRuntimeSync=(connection,options)=>{
     path: './task-row-menu',
     importer: mobile + 'tasks/list/task-list-row.tsx',
     contents: `
-export const TaskRowMenu=({testID,task,actions,onDetails})=>{window.rowRenders[task.id]=(window.rowRenders[task.id]??0)+1;if(window.rowLayout)return <div style={{width:44,height:44}}/>;return <div data-testid={testID}><button onClick={onDetails}>Details {task.id}</button><button disabled={!actions.enabled||actions.busy} onClick={actions.togglePinned}>{task.pinned?'Unpin':'Pin'} {task.id}</button></div>};`,
+export const TaskRowMenu=({testID,task,actions,onDetails})=>{window.rowRenders[task.id]=(window.rowRenders[task.id]??0)+1;if(window.rowLayout)return <div data-testid={testID} style={{width:44,height:44}}/>;return <div data-testid={testID}><button onClick={onDetails}>Details {task.id}</button><button disabled={!actions.enabled||actions.busy} onClick={actions.togglePinned}>{task.pinned?'Unpin':'Pin'} {task.id}</button></div>};`,
   },
   {
     path: './task-swipe-actions',
@@ -171,12 +171,17 @@ for (const [path, importer] of [
   ['../../ui/controls/action', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/layout/sheet', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/content/text', 'tasks/list/'],
-  ['../../ui/layout/sheet', 'tasks/list/task-list-row.tsx'],
   ['../../ui/controls/icon', 'tasks/list/task-list-row.tsx'],
   ['../../ui/theme', 'tasks/list/'],
   ['../theme', 'ui/content/pull-request-icon.tsx'],
 ])
   stubs.push({ path, importer: mobile + importer, contents: controls })
+stubs.push({
+  path: './peer-native',
+  importer: mobile + 'runtime/connection/peer-transport.ts',
+  contents:
+    'export const openPeerTunnel=async()=>{throw Error("LAN task list tests must not open a native peer")};',
+})
 const built = await bundleBrowser(
   {
     stdin: {
@@ -316,6 +321,18 @@ try {
           JSON.stringify({ width, scale, sizes }),
         )
         assert.ok(sizes[0].height >= 44)
+        const toggle = await page
+          .getByRole('button', {
+            name: 'Subthreads for Has several subagents ' + scale,
+            exact: true,
+          })
+          .boundingBox()
+        const menu = await page.getByTestId('Task parent actions').boundingBox()
+        assert.ok(toggle && menu && toggle.width === 44 && toggle.height === 44)
+        assert.ok(toggle.x + toggle.width <= menu.x, 'Subthread and menu touch targets overlap')
+        assert.ok(
+          toggle.y >= sizes[1].y && toggle.y + toggle.height <= sizes[1].y + sizes[1].height,
+        )
         for (const id of ids) {
           const bounds = await page
             .getByTestId('Task ' + id)
@@ -474,6 +491,26 @@ try {
   await page.getByTestId('Task task-5').click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'task-5')
   const beforeSubagents = await page.evaluate(() => window.navigations.length)
+  const subthreads = page.getByRole('button', { name: 'Subthreads for Parent task', exact: true })
+  assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
+  assert.equal(
+    await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).count(),
+    0,
+  )
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  const search = page.getByRole('textbox', { name: 'Search tasks', exact: true })
+  await search.fill('Child task')
+  await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).waitFor()
+  assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
+  assert.equal(await subthreads.isDisabled(), true)
+  await search.fill('')
+  await page.getByRole('button', { name: 'Close details', exact: true }).click()
+  assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
+  assert.equal(
+    await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).count(),
+    0,
+  )
+  await subthreads.click()
   await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).click()
   assert.equal(
     await page.evaluate(() => window.navigations.length),

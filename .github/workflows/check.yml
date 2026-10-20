@@ -37,6 +37,13 @@ jobs:
       # The agent browser integration test uses sandboxed managed Chromium.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm exec vp test --maxWorkers=4
+      - name: Verify persistent daily TURN quota
+        run: python3 -m unittest discover -s apps/connect-server/turn/budget -p 'test_*.py'
+      - name: Verify TURN cutoff in an isolated network namespace
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2
+          python3 apps/connect-server/turn/budget/check_kernel.py
       - run: node --test scripts/packaging/*.test.mjs scripts/ci/*.test.mjs
   # Bounded browser gate for shared hooks that render in both desktop and mobile bundles.
   browser:

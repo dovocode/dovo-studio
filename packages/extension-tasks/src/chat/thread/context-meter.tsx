@@ -12,7 +12,7 @@ export function ContextMeter({ task }: { task: Task }) {
     meter.level === 'full'
       ? 'text-destructive'
       : meter.level === 'warn'
-        ? 'text-amber-400'
+        ? 'text-status-warning'
         : 'text-muted-foreground'
   return (
     <span

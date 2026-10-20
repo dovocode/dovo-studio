@@ -46,13 +46,13 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       items: [
         {
           title: 'Appearance',
-          subtitle: 'Colors, text density, code themes and terminal fonts',
+          subtitle: 'Colors, accessibility, density and fonts',
           icon: 'preview',
           path: '/settings/appearance',
           group: 'Look & feel',
           local: true,
           keywords:
-            'theme system light dark colors palette display terminal font density code syntax',
+            'theme system light dark colors palette display terminal font density code syntax accessibility colorblind color blindness contrast motion animation reduce blue orange',
         },
         {
           title: 'General',

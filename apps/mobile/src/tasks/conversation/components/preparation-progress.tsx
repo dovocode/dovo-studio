@@ -1,14 +1,6 @@
 import { useAppActive, useForegroundInterval } from '../../../runtime/state/app-active'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  AccessibilityInfo,
-  ActivityIndicator,
-  Animated,
-  Easing,
-  Platform,
-  StyleSheet,
-  View,
-} from 'react-native'
+import { ActivityIndicator, Animated, Easing, Platform, StyleSheet, View } from 'react-native'
 import { preparationElapsed, type TaskPreparation } from '@dovo/protocol'
 import { Text } from '../../../ui/content/text'
 import { Icon } from '../../../ui/controls/icon'
@@ -16,22 +8,6 @@ import { useTheme, type MobileColors } from '../../../ui/theme'
 import { Action } from '../../../ui/controls/action'
 
 const monospace = Platform.OS === 'ios' ? 'Menlo' : 'monospace'
-
-function useReduceMotion() {
-  const [reduce, setReduce] = useState(false)
-  useEffect(() => {
-    let active = true
-    void AccessibilityInfo.isReduceMotionEnabled().then((value) => {
-      if (active) setReduce(value)
-    })
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduce)
-    return () => {
-      active = false
-      subscription.remove()
-    }
-  }, [])
-  return reduce
-}
 
 /** Step-by-step progress while the runtime creates a task's worktree and runs its setup. */
 export function PreparationProgress({
@@ -46,11 +22,11 @@ export function PreparationProgress({
   retrying?: boolean
   retryError?: string
 }) {
-  const { colors } = useTheme()
+  const { colors, reduceMotion: prefersReducedMotion } = useTheme()
   const local = useMemo(() => preparationStyles(colors), [colors])
   const { failed } = preparation
   const appActive = useAppActive()
-  const reduceMotion = useReduceMotion() || failed || !appActive
+  const reduceMotion = prefersReducedMotion || failed || !appActive
   const [now, setNow] = useState(() => Date.now())
   const [trackWidth, setTrackWidth] = useState(0)
   const progress = useRef(new Animated.Value(preparation.progress)).current
@@ -116,7 +92,11 @@ export function PreparationProgress({
                   <Icon name="close" size={11} color={colors.error} />
                 </View>
               ) : step.state === 'active' ? (
-                <ActivityIndicator size="small" color={colors.accent} />
+                reduceMotion ? (
+                  <Icon name="changes" size={14} color={colors.accent} />
+                ) : (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                )
               ) : (
                 <View style={local.pending} />
               )}

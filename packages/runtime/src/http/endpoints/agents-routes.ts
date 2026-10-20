@@ -1,3 +1,4 @@
+import { turnSettingsSchema } from '@dovo/protocol'
 import { acknowledgeSubagentFailure } from '../../studio/subagent-failures.js'
 import type { Services } from '../../services.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
@@ -591,6 +592,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             attachmentIds: attachmentIdsSchema.pipe(
               Schema.withDecodingDefaultType(Effect.sync(() => [])),
             ),
+            turnSettings: Schema.optional(turnSettingsSchema),
             review: Schema.optional(Schema.Boolean),
             runId: Schema.optional(idSchema),
           }),
@@ -599,6 +601,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         if (!input.text && !input.attachmentIds.length)
           throw new HttpError(400, 'Add a message or attachment')
         if (path === '/api/tasks/steer') {
+          if (input.turnSettings)
+            throw new HttpError(
+              409,
+              'Queue this message to use a different model or reasoning level',
+            )
           if (!input.runId)
             throw new HttpError(
               409,
@@ -619,6 +626,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.attachmentIds,
           input.review,
           true,
+          input.turnSettings,
         )
       }
       if (method === 'POST' && path === '/api/tasks/queue') {
@@ -640,6 +648,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             beforeMessageId: Schema.optional(Schema.NullOr(idSchema)),
             text: Schema.optional(maxValue(Schema.String, 120000)),
             expectedText: Schema.optional(maxValue(Schema.String, 120000)),
+            turnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
+            expectedTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
             runId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
@@ -650,7 +660,14 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               400,
               'Choose a queued message and provide its new and original text',
             )
-          s.tasks.queue.edit(input.id, input.messageId, input.text, input.expectedText)
+          s.tasks.queue.edit(
+            input.id,
+            input.messageId,
+            input.text,
+            input.expectedText,
+            input.turnSettings,
+            input.expectedTurnSettings,
+          )
         } else if (input.action === 'move') {
           if (!input.messageId || input.beforeMessageId === undefined)
             throw new HttpError(400, 'Choose a queued message and its destination')

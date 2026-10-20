@@ -1,7 +1,19 @@
 import { decodeResult } from '../shared/schema.js'
 import { normalizeRuntimeAddress } from '../runtime/connection/runtime-fleet.js'
 import { connectionSchema } from '../runtime/connection/runtime.js'
-export type PairingInvitation = { address: string; code: string; expiresAt: string }
+import {
+  peerConfigSchema,
+  peerAddress,
+  isPeerAddress,
+  type PeerConfig,
+} from '../runtime/connection/peer.js'
+import { decode } from '../shared/schema.js'
+export type PairingInvitation = {
+  address: string
+  code: string
+  expiresAt: string
+  peer?: PeerConfig
+}
 export function pairingAddress(address: string) {
   const parsed = decodeResult(connectionSchema, {
     address: normalizeRuntimeAddress(address),
@@ -24,16 +36,21 @@ export function pairingAddress(address: string) {
 }
 export function pairingInvitation(value: PairingInvitation, now = Date.now()): PairingInvitation {
   const address = pairingAddress(value.address)
+  const peer = value.peer ? decode(peerConfigSchema, value.peer) : undefined
+  if (isPeerAddress(address) && (!peer || peerAddress(peer) !== address))
+    throw new Error('Invalid internet pairing invitation')
+  if (peer && peerAddress(peer) !== address)
+    throw new Error('Internet pairing address does not match its key')
   if (!/^\d{8}$/.test(value.code))
     throw new Error('Enter the eight-digit pairing code from your computer.')
   const expires = Date.parse(value.expiresAt)
   if (!Number.isFinite(expires) || expires <= now)
     throw new Error('This pairing code expired. Generate a new code on your computer.')
-  return { ...value, address }
+  return { ...value, address, ...(peer ? { peer } : {}) }
 }
 export function pairingInvitationUrl(value: PairingInvitation) {
   const checked = pairingInvitation(value)
-  return `dovo://pair?${new URLSearchParams(checked)}`
+  return `dovo://pair?${new URLSearchParams({ address: checked.address, code: checked.code, expiresAt: checked.expiresAt, ...(checked.peer ? { peer: JSON.stringify(checked.peer) } : {}) })}`
 }
 export function parsePairingInvitation(url: string, now = Date.now()) {
   const link = new URL(url)
@@ -44,6 +61,9 @@ export function parsePairingInvitation(url: string, now = Date.now()) {
       address: link.searchParams.get('address') ?? '',
       code: link.searchParams.get('code') ?? '',
       expiresAt: link.searchParams.get('expiresAt') ?? '',
+      ...(link.searchParams.has('peer')
+        ? { peer: decode(peerConfigSchema, JSON.parse(link.searchParams.get('peer')!)) }
+        : {}),
     },
     now,
   )

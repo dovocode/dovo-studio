@@ -1,9 +1,14 @@
+import { sameTurnSettings, type TurnSettings } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { nativeEffect } from '../../runtime/state/native-effect'
 export type SendScope = { runtimeId: string; taskId: string }
 type DraftContent = { text: string; attachmentIds: readonly string[] }
-type SendInput = DraftContent & { mode: 'queue' | 'steer'; runId?: string }
+type SendInput = DraftContent & {
+  mode: 'queue' | 'steer'
+  runId?: string
+  turnSettings?: TurnSettings
+}
 export type SendAttempt = SendInput & { id: string; title?: string }
 
 const sameFiles = (first: readonly string[], second: readonly string[]) =>
@@ -41,13 +46,20 @@ export function createSendAttempts(createId: () => string) {
     },
     begin(scope: SendScope, input: SendInput) {
       const previous = attempts.get(key(scope))
-      if (previous && previous.mode === input.mode && sameDraft(previous, input)) return previous
+      if (
+        previous &&
+        previous.mode === input.mode &&
+        sameDraft(previous, input) &&
+        sameTurnSettings(previous.turnSettings, input.turnSettings)
+      )
+        return previous
       const attempt: SendAttempt = {
         id: createId(),
         text: input.text.trim(),
         attachmentIds: [...input.attachmentIds],
         mode: input.mode,
         runId: input.runId,
+        turnSettings: input.turnSettings,
       }
       attempts.set(key(scope), attempt)
       return attempt

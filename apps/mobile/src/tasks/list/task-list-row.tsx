@@ -10,6 +10,7 @@ import {
   taskPullStatusFor,
   subagentMetadata,
   subagentListStatus,
+  threadTreeSummary,
   type SubagentListItem,
 } from '@dovo/protocol'
 import {
@@ -26,6 +27,7 @@ import {
   MessageCircleQuestion,
   MessageCircle,
   Pin,
+  Network,
   Save,
   type LucideIcon,
 } from 'lucide-react-native'
@@ -50,8 +52,7 @@ import { isSnoozed } from '@dovo/protocol'
 import { chooseSnoozeDuration, useTaskLifecycle } from '../detail/use-task-lifecycle'
 import { useTheme } from '../../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
-import { memo, useCallback, useRef, useState } from 'react'
-import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
+import { memo, useCallback, useMemo, useState } from 'react'
 import type { TaskListOwner } from './task-list-projection'
 import type { MobilePreferences } from '../../runtime/preferences/app-preferences'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
@@ -112,8 +113,8 @@ function TaskListRowView({
 }) {
   const { colors, styles } = useTheme()
   const { fontScale } = useWindowDimensions()
-  const [subagentsOpen, setSubagentsOpen] = useState(false)
-  const subagentsSheet = useRef<SheetHandle>(null)
+  const [expanded, setExpanded] = useState(false)
+  const open = !!searching || expanded
   const onOpen = useCallback(() => commands.open(row.key), [commands, row.key])
   const onDetails = useCallback(() => commands.details(row.key), [commands, row.key])
   const onSelect = useCallback(() => commands.select(row.key), [commands, row.key])
@@ -166,6 +167,21 @@ function TaskListRowView({
   const icon = projectIcon(displayProject)
   const StatusIcon = statusIcons[state]
   const settled = task.archived || !!task.archivedAt
+  const summary = useMemo(
+    () => threadTreeSummary(thread?.children ?? [], task.acknowledgedSubagentFailures),
+    [thread?.children, task.acknowledgedSubagentFailures],
+  )
+  const childCount = (task.archivedAt ? 0 : summary.total) + (settled ? 0 : subagents.length)
+  const childrenDetail = [
+    `${childCount} subthread${childCount === 1 ? '' : 's'}`,
+    summary.attention ? `${summary.attention} needs input` : '',
+    summary.running ? `${summary.running} running` : '',
+    summary.waiting ? `${summary.waiting} waiting` : '',
+    summary.failed ? `${summary.failed} failed` : '',
+    summary.offline ? `${summary.offline} offline` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
   const unread = hasUnreadTaskActivity(task)
   const readOpacity = unread ? 1 : 0.65
   const contextOpacity = unread ? 1 : 0.6
@@ -301,7 +317,7 @@ function TaskListRowView({
             alignItems: dense ? 'center' : undefined,
             paddingVertical: settled ? 10 : 6,
             paddingLeft: settled ? 0 : 12,
-            paddingRight: dense && !settled ? 44 : 12,
+            paddingRight: (dense && !settled) || (settled && childCount > 0) ? 44 : 12,
             opacity: pressed ? 0.55 : 1,
           })}
         >
@@ -369,6 +385,7 @@ function TaskListRowView({
                   overflow: dense ? 'hidden' : undefined,
                   gap: 6,
                   opacity: contextOpacity,
+                  paddingRight: childCount > 0 ? (dense || car ? 44 : 76) : 0,
                 }}
               >
                 {dense && (
@@ -445,29 +462,45 @@ function TaskListRowView({
                     </Text>
                   </View>
                 )}
-                {dense && subagents.length > 0 && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Show ${subagents.length} working subagents`}
-                    accessibilityState={{ disabled }}
-                    disabled={disabled}
-                    onPress={() => setSubagentsOpen(true)}
-                    style={{
-                      flexShrink: 0,
-                      justifyContent: 'center',
-                      height: compactContextHeight,
-                    }}
-                  >
-                    <Text numberOfLines={1} style={{ color: colors.accent, ...contextText }}>
-                      {subagents.length} {subagents.length === 1 ? 'agent' : 'agents'}
-                    </Text>
-                  </Pressable>
-                )}
                 {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
               </View>
             </View>
           )}
         </Pressable>
+        {childCount > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Subthreads for ${task.title}`}
+            accessibilityHint={childrenDetail}
+            accessibilityState={{
+              expanded: open,
+              disabled: disabled || selectionActive || !!searching,
+            }}
+            disabled={disabled || selectionActive || !!searching}
+            onPress={() => setExpanded(!open)}
+            style={{
+              position: 'absolute',
+              right: !car && !settled ? 44 : 0,
+              bottom: 0,
+              width: 44,
+              height: 44,
+              alignItems: 'center',
+              justifyContent: settled ? 'center' : 'flex-end',
+              paddingBottom: settled ? 0 : 10,
+            }}
+          >
+            <Network
+              size={16}
+              color={
+                summary.failed
+                  ? colors.error
+                  : summary.attention || open
+                    ? colors.accent
+                    : colors.muted
+              }
+            />
+          </Pressable>
+        )}
         {!car && !settled && (
           <View style={{ position: 'absolute', right: 0, top: 0 }}>
             <TaskRowMenu
@@ -481,40 +514,25 @@ function TaskListRowView({
           </View>
         )}
       </View>
-      {thread && !task.archivedAt && (
+      {open && thread && !task.archivedAt && (
         <NestedThreads
+          hideSummary
           thread={thread}
           acknowledgedFailures={task.acknowledgedSubagentFailures}
           disabled={disabled || selectionActive}
           searching={searching}
         />
       )}
-      {!settled && !dense && (
+      {open && !settled && (
         <WorkingSubagents
           subagents={subagents}
           online={row.online}
-          disabled={disabled}
+          disabled={disabled || selectionActive}
           car={car}
+          largeTargets
           onSelect={onSelect}
           onOpenSubagent={onOpenSubagent}
         />
-      )}
-      {dense && subagentsOpen && (
-        <Sheet
-          title="Working subagents"
-          ref={subagentsSheet}
-          onClose={() => setSubagentsOpen(false)}
-        >
-          <WorkingSubagents
-            subagents={subagents}
-            online={row.online}
-            disabled={disabled}
-            car={car}
-            largeTargets
-            onSelect={onSelect}
-            onOpenSubagent={(id) => subagentsSheet.current?.dismiss(() => onOpenSubagent(id))}
-          />
-        </Sheet>
       )}
       {!!actions.error && (
         <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 8 }]}>

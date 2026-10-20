@@ -182,6 +182,11 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
     ],
   },
   [
+    {
+      path: './peer-native',
+      importer: mobile + 'runtime/connection/peer-transport.ts',
+      contents: `export const openPeerTunnel=()=>{throw Error('Unexpected peer transport in LAN fixture')};`,
+    },
     { path: '@dovo/protocol', contents: `export * from '${root}packages/protocol/src/index.ts';` },
     { path: 'react-native', contents: native },
     {

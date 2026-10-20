@@ -389,7 +389,7 @@ export default function UsageSettings() {
                                 className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
                               >
                                 <div
-                                  className={`h-full rounded-full transition-[width] duration-150 motion-reduce:transition-none ${remaining <= 10 ? 'bg-destructive' : remaining <= 25 ? 'bg-amber-400' : 'bg-primary'}`}
+                                  className={`h-full rounded-full transition-[width] duration-150 motion-reduce:transition-none ${remaining <= 10 ? 'bg-destructive' : remaining <= 25 ? 'bg-status-warning' : 'bg-primary'}`}
                                   style={{ width: `${remaining}%` }}
                                 />
                               </div>

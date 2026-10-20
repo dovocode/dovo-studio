@@ -5,6 +5,8 @@ import { identityDeletion } from './delete-identity.js'
 import { pushRelay } from './push-relay.js'
 import { casdoor } from './oidc.js'
 import { createConnectServer } from './server.js'
+import { dovoTurn } from './dovo-turn.js'
+import { approvedRelayInstallations } from './relay-admission.js'
 const root = process.env.DOVO_CONNECT_DATA ?? '/data'
 mkdirSync(root, { recursive: true, mode: 0o700 })
 chmodSync(root, 0o700)
@@ -28,6 +30,27 @@ const server = createConnectServer({
   origin,
   push: pushRelay(),
   deleteIdentity,
+  peerRelays: {
+    dovo:
+      process.env.DOVO_RELAY_TURN_URLS || process.env.DOVO_RELAY_TURN_SECRET
+        ? dovoTurn({
+            urls: (process.env.DOVO_RELAY_TURN_URLS ?? '')
+              .split(',')
+              .map((url) => url.trim())
+              .filter(Boolean),
+            secret: process.env.DOVO_RELAY_TURN_SECRET ?? '',
+            hourlyLimit: process.env.DOVO_TURN_HOURLY_LIMIT
+              ? Number(process.env.DOVO_TURN_HOURLY_LIMIT)
+              : undefined,
+          })
+        : undefined,
+  },
+  peerRelayAdmission: approvedRelayInstallations(
+    (process.env.DOVO_RELAY_APPROVED_KEYS ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ),
   ...oidc,
   trustedProxies: (process.env.DOVO_CONNECT_TRUSTED_PROXIES ?? '')
     .split(',')

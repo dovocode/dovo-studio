@@ -95,7 +95,7 @@ function NestedThreadsView({
             className={cn(
               'size-1.5 shrink-0 rounded-full bg-muted-foreground/50',
               child.online && !child.paused && child.phase === 'running' && 'bg-sky-400',
-              child.online && !child.paused && threadNeedsInput(child) && 'bg-amber-500',
+              child.online && !child.paused && threadNeedsInput(child) && 'bg-status-warning',
               child.online && child.phase === 'failed' && 'bg-destructive',
             )}
             aria-hidden="true"
@@ -120,7 +120,7 @@ function NestedThreadsView({
           </span>
         )}
         {threadNeedsInput(child) && child.phase !== 'needs-input' && (
-          <span className="block text-xs text-amber-500">Needs input in child work</span>
+          <span className="block text-xs text-status-warning">Needs input in child work</span>
         )}
         {child.partial && (
           <span className="block text-xs text-muted-foreground">
@@ -284,7 +284,7 @@ function NestedThreadsView({
           {!!attention.length && (
             <button
               type="button"
-              className="shrink-0 rounded px-1 py-0.5 text-amber-500 hover:bg-accent/50"
+              className="shrink-0 rounded px-1 py-0.5 text-status-warning hover:bg-accent/50"
               disabled={!host.openThread}
               aria-label={`Open input request in ${attention[0]!.title}`}
               onClick={(event) => {

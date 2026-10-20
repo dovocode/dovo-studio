@@ -1,13 +1,30 @@
-import { MAX_ATTACHMENTS, type Attachment } from '@dovo/protocol'
+import {
+  MAX_ATTACHMENTS,
+  sameTurnSettings,
+  resolveTaskAgent,
+  turnSettingsMatchHarness,
+  type TurnSettings,
+  type Attachment,
+} from '@dovo/protocol'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { Activity } from '../../storage/activity.js'
 import { HttpError } from '../../errors.js'
 import { createHash, randomUUID } from 'node:crypto'
-const fingerprint = (text: string, attachments: Attachment[]) =>
+const fingerprint = (text: string, attachments: Attachment[], turnSettings?: TurnSettings) =>
   createHash('sha256')
     .update(
       JSON.stringify({
         text,
+        ...(turnSettings
+          ? {
+              turnSettings: {
+                provider: turnSettings.provider,
+                acpInstallationId: turnSettings.acpInstallationId,
+                model: turnSettings.model,
+                reasoning: turnSettings.reasoning,
+              },
+            }
+          : {}),
         attachments: attachments.map(({ id, name, mime, size }) => ({ id, name, mime, size })),
       }),
     )
@@ -17,17 +34,35 @@ export class TaskQueue {
     private store: WorkspaceStore,
     private activity?: Pick<Activity, 'add'>,
   ) {}
-  accepted(id: string, messageId: string, text: string, attachments: Attachment[] = []) {
+  private validateSettings(id: string, settings?: TurnSettings | null) {
+    if (!settings) return
+    const agent = resolveTaskAgent(this.store.taskSummary(id), this.store.get().agents)
+    if (!agent || !turnSettingsMatchHarness(settings, agent))
+      throw new HttpError(409, 'Choose a model within this thread’s current harness')
+  }
+  accepted(
+    id: string,
+    messageId: string,
+    text: string,
+    attachments: Attachment[] = [],
+    turnSettings?: TurnSettings,
+  ) {
     const task = this.store.task(id)
     const receipt = this.store.taskSubmission(id, messageId)
     if (receipt) {
-      if (receipt !== fingerprint(text, attachments))
-        throw new HttpError(409, 'This message id already has different text or attachments')
+      if (receipt !== fingerprint(text, attachments, turnSettings))
+        throw new HttpError(
+          409,
+          'This message id already has different text or attachments or model settings',
+        )
       return true
     }
     const existing = [...task.messages, ...(task.queue ?? [])].find((m) => m.id === messageId)
     if (existing) {
-      if (fingerprint(existing.text, existing.attachments ?? []) !== fingerprint(text, attachments))
+      if (
+        fingerprint(existing.text, existing.attachments ?? [], existing.turnSettings) !==
+        fingerprint(text, attachments, turnSettings)
+      )
         throw new HttpError(409, 'This message id already has different text')
       return true
     }
@@ -43,13 +78,15 @@ export class TaskQueue {
     resumePaused = false,
     subagentResultId?: string,
     options: {
+      turnSettings?: TurnSettings
       steering?: boolean
       reopenSettled?: boolean
       unsnooze?: boolean
       clearCompletedTodos?: boolean
     } = {},
   ) {
-    if (this.accepted(id, messageId, text, attachments)) return false
+    if (this.accepted(id, messageId, text, attachments, options.turnSettings)) return false
+    this.validateSettings(id, options.turnSettings)
     const task = this.store.taskSummary(id)
     if (task.archivedAt || (task.archived && !task.autoSettled && !options.reopenSettled))
       throw new HttpError(409, 'Restore this task before sending a message')
@@ -74,6 +111,9 @@ export class TaskQueue {
           ? { lastPromptAt: createdAt }
           : {}),
         draft: t.draft.trim() === text.trim() ? '' : t.draft,
+        draftTurnSettings: sameTurnSettings(t.draftTurnSettings, options.turnSettings)
+          ? null
+          : t.draftTurnSettings,
         ...(resumePaused ? { queuePaused: false, restartRecovery: undefined } : {}),
         draftAttachments: t.draftAttachments?.filter(
           (f) => !attachments.some((a) => a.id === f.id),
@@ -83,6 +123,7 @@ export class TaskQueue {
           {
             id: messageId,
             role: 'user',
+            ...(options.turnSettings ? { turnSettings: options.turnSettings } : {}),
             text,
             ...(attachments.length ? { attachments } : {}),
             ...(review ? { review: true } : {}),
@@ -92,28 +133,58 @@ export class TaskQueue {
           },
         ],
       }),
-      { id: messageId, fingerprint: fingerprint(text, attachments), response },
+      {
+        id: messageId,
+        fingerprint: fingerprint(text, attachments, options.turnSettings),
+        response,
+      },
     )
     this.activity?.add(
       'message',
       id,
       'Follow-up queued',
-      { id: messageId, text, attachments },
+      {
+        id: messageId,
+        text,
+        attachments,
+        ...(options.turnSettings ? { turnSettings: options.turnSettings } : {}),
+      },
       `queued:${id}:${messageId}`,
     )
     return true
   }
-  edit(id: string, messageId: string, text: string, expectedText: string) {
+  edit(
+    id: string,
+    messageId: string,
+    text: string,
+    expectedText: string,
+    turnSettings?: TurnSettings | null,
+    expectedTurnSettings?: TurnSettings | null,
+  ) {
     const task = this.store.taskSummary(id)
     const message = task.queue?.find((item) => item.id === messageId)
     if (!message) throw new HttpError(409, 'This message already started or was removed')
-    if (message.text !== expectedText)
+    if (
+      message.text !== expectedText ||
+      (turnSettings !== undefined &&
+        (expectedTurnSettings === undefined ||
+          !sameTurnSettings(message.turnSettings, expectedTurnSettings)))
+    )
       throw new HttpError(409, 'This queued message changed. Reopen it before editing.')
     if (!text.trim() && !message.attachments?.length)
       throw new HttpError(400, 'A message needs text or attachments')
+    this.validateSettings(id, turnSettings)
     this.store.updateTask(id, (current) => ({
       ...current,
-      queue: current.queue?.map((item) => (item.id === messageId ? { ...item, text } : item)),
+      queue: current.queue?.map((item) =>
+        item.id === messageId
+          ? {
+              ...item,
+              text,
+              ...(turnSettings !== undefined ? { turnSettings: turnSettings ?? undefined } : {}),
+            }
+          : item,
+      ),
     }))
     this.activity?.add('queue', id, 'Queued message edited', { messageId })
   }
@@ -131,6 +202,7 @@ export class TaskQueue {
             runId,
             inputMessageIds: message ? [message.id] : [],
             promptAccepted: false,
+            ...(message?.turnSettings ? { turnSettings: message.turnSettings } : {}),
           },
           ...(message ? { queue, messages: [...t.messages, message] } : {}),
         }
@@ -172,6 +244,14 @@ export class TaskQueue {
       index = queue.findIndex((m) => m.id === messageId)
     if (index < 0) throw new HttpError(409, 'This message already started or was removed')
     if (action === 'restore') {
+      if (
+        (task.draft.trim() || task.draftAttachments?.length) &&
+        !sameTurnSettings(queue[index].turnSettings, task.draftTurnSettings)
+      )
+        throw new HttpError(
+          409,
+          'Clear the composer before restoring a message with different model settings',
+        )
       const ids = new Set(
         [...(task.draftAttachments ?? []), ...(queue[index].attachments ?? [])].map(
           (file) => file.id,
@@ -198,6 +278,7 @@ export class TaskQueue {
         ...(action === 'restore' && removed
           ? {
               draft: [t.draft, removed.text].filter(Boolean).join('\n\n'),
+              draftTurnSettings: removed.turnSettings ?? null,
               draftAttachments: [
                 ...(t.draftAttachments ?? []),
                 ...(removed.attachments ?? []).filter(
@@ -213,7 +294,7 @@ export class TaskQueue {
       removed && !this.store.taskSubmission(id, removed.id)
         ? {
             id: removed.id,
-            fingerprint: fingerprint(removed.text, removed.attachments ?? []),
+            fingerprint: fingerprint(removed.text, removed.attachments ?? [], removed.turnSettings),
           }
         : undefined,
     )

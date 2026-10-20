@@ -51,7 +51,7 @@ export function StepStatus({
         step.status === 'failed'
           ? 'text-destructive'
           : step.status === 'waiting' || needsInput
-            ? 'text-amber-500'
+            ? 'text-status-warning'
             : step.status === 'running'
               ? 'text-primary'
               : 'text-muted-foreground',
@@ -146,7 +146,7 @@ export function RunDetails({
             className={cn(
               'font-medium',
               run.status === 'failed' && 'text-destructive',
-              run.status === 'waiting' && 'text-amber-500',
+              run.status === 'waiting' && 'text-status-warning',
             )}
           >
             {inputStep ? 'Needs input' : runLabels[run.status]}
@@ -193,7 +193,7 @@ export function RunDetails({
           </p>
         )}
         {inputTaskId && (
-          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
+          <div className="rounded-lg border border-status-warning/25 bg-status-warning/5 p-3">
             <p className="text-xs font-medium">{inputStep.label} needs your input</p>
             <p className="mt-1 break-words text-xs text-muted-foreground">
               {pendingTaskInput(snapshot, inputTaskId)}
@@ -204,7 +204,7 @@ export function RunDetails({
           </div>
         )}
         {run.status === 'waiting' && (
-          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
+          <div className="rounded-lg border border-status-warning/25 bg-status-warning/5 p-3">
             <p className="text-xs font-medium">{waiting?.label ?? 'Review needed'}</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
               Open the completed tasks below and review their changes before continuing.

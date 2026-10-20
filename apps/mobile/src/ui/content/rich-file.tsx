@@ -9,6 +9,7 @@ import {
   type ArtifactTemplate,
   responses,
   repositoryOpenTargets,
+  runtimeTransportAddress,
   isRepositoryOpenTarget,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -76,13 +77,25 @@ export function RichFile({
   const [revision, setRevision] = useState(0)
   const [result, setResult] = useState<{ key: string; url?: string; error?: string }>()
   const local = localMarkdownPath(path) !== undefined
-  const key = JSON.stringify([taskId, path, connection?.address, connection?.token, revision])
+  const transportAddress = connection ? runtimeTransportAddress(connection) : undefined
+  const key = JSON.stringify([
+    taskId,
+    path,
+    connection?.address,
+    connection?.token,
+    transportAddress,
+    revision,
+  ])
   useEffect(() => {
     if (!local || (!video && !opened) || !taskId || !connected || !connection) return
     let active = true
     void read('/api/tasks/files/share', { taskId, path }, taskFileShareSchema).then(
       (result) => {
-        if (active) setResult({ key, url: new URL(result.url, connection.address).toString() })
+        if (active)
+          setResult({
+            key,
+            url: new URL(result.url, runtimeTransportAddress(connection)).toString(),
+          })
       },
       (error: unknown) => {
         if (active) setResult({ key, error: String(error) })

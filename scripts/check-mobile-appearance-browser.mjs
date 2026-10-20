@@ -17,6 +17,7 @@ const mocks = {
     export const Platform={OS:'web'};
     export const Linking={openURL:async()=>{}};
     export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
+    export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,addEventListener:()=>({remove(){}})};
     export const View=({children,style,testID})=><div data-testid={testID} style={{display:"flex",flexDirection:"column",flexShrink:0,...nativeStyle(style)}}>{children}</div>;
     export const ScrollView=({children,contentContainerStyle})=><div style={{display:"flex",flexDirection:"column",...nativeStyle(contentContainerStyle)}}>{children}</div>;
     export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,accessibilityRole})=><button disabled={disabled} role={accessibilityRole} aria-label={accessibilityLabel} aria-checked={accessibilityState?.checked} style={{display:'flex',flexDirection:'column',flexShrink:0,border:0,background:'transparent',textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}} onClick={onPress}>{children}</button>;
@@ -38,7 +39,8 @@ const mocks = {
   '../ui/layout/sheet': `export const Sheet=({title,children,onClose})=><div role='dialog' aria-label={title} style={{position:'fixed',inset:0,zIndex:10,background:'#f2f2f7',overflowY:'auto',padding:16,display:'flex',flexDirection:'column',gap:12}}><div style={{display:'flex',justifyContent:'space-between'}}><h2 style={{fontSize:17,color:'#222',margin:0,alignSelf:'center'}}>{title}</h2><button aria-label='Close' onClick={onClose} style={{width:44,height:44,border:0,borderRadius:22,background:'#e2e2e7',fontSize:22}}>×</button></div>{children}</div>;export const useInsideSheet=()=>false;`,
   '../ui/controls/field': `export const Field=()=>null;export const SearchField=({label,value,placeholder,onChangeText})=><input aria-label={label} value={value} placeholder={placeholder} onChange={e=>onChangeText(e.target.value)} style={{font:'inherit',minHeight:44,border:'1px solid #ccc',borderRadius:12,padding:'0 12px'}}/>;`,
   './icon-button': `export const IconButton=({label,onPress,disabled})=><button aria-label={label} disabled={disabled} onClick={onPress} style={{alignSelf:'flex-start',flexShrink:0,width:44,height:44,border:0,borderRadius:22,background:'#e2e2e7',fontSize:22}}>←</button>;`,
-  './settings-group': `export const SettingsGroup=({title,footer,children})=><section><h2>{title}</h2>{children}<p>{footer}</p></section>;`,
+  'lucide-react-native': `const Icon=({color})=><span aria-hidden style={{color}}>●</span>;export const CircleCheck=Icon,CircleX=Icon,TriangleAlert=Icon;`,
+  './settings-group': `export const SettingsGroup=({title,footer,children})=><section><h2>{title}</h2>{children}<p>{footer}</p></section>;export const SettingsSwitchRow=({label,value,onValueChange})=><label>{label}<input type="checkbox" role="switch" aria-label={label} checked={value} onChange={e=>onValueChange(e.target.checked)}/></label>;`,
   '../../ui/controls/field': `
     import {useRef,useEffect,useImperativeHandle} from 'react';
     import {StyleSheet} from 'react-native';

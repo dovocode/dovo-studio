@@ -66,7 +66,8 @@ const stubs = [
   {
     path: '../../agents/use-model-catalog',
     importer: mobile,
-    contents: 'export const useModelCatalog=()=>({modelName:"GPT",catalog:null});',
+    contents:
+      'export const useModelCatalog=()=>({modelName:"GPT",catalog:{models:[{id:"large-model",name:"Large model"},{id:"fast-model",name:"Fast model"}],reasoning:[{id:"high",name:"High"},{id:"low",name:"Low"}]}});',
   },
   {
     path: 'react-native-safe-area-context',
@@ -106,12 +107,12 @@ import {Composer} from './src/tasks/composer/composer';import {MessageQueue} fro
 window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
 function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
-  const [text,setText]=useState('Continue the review');const [connected,setConnected]=useState(true);
+  const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;const [text,setText]=useState('Continue the review');const [connected,setConnected]=useState(true);
   window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
-  const snapshot={autoProjectSelectionEnabled:true,questions:[],workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
+  const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,questions:[],workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const draft={text,ready:true,key:'draft',revision:text,update:setText};
   window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
-  window.conversation={send:mode=>window.calls.push({mode:mode??'queue'}),stop:()=>window.calls.push({mode:'stop'}),actions:{connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!text,canSend:connected&&!!text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
+  window.conversation={send:mode=>window.calls.push({mode:mode??'queue'}),stop:()=>window.calls.push({mode:'stop'}),actions:{turnSettings,setTurnSettings,agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!text,canSend:connected&&!!text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
   return <Composer task={task} renderAbove={setup=> <>{setup}<div>Conversation</div></>} queuedMessages={<MessageQueue task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -164,6 +165,24 @@ try {
   await page.getByRole('button', { name: 'Steer agent', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'steer' })
   assert.equal(await page.getByRole('dialog', { name: 'Message actions' }).count(), 0)
+  await page.getByRole('button', { name: 'Next turn model and reasoning', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Turn model', exact: true }).selectOption('large-model')
+  await page
+    .getByRole('combobox', { name: 'Turn reasoning level', exact: true })
+    .selectOption('high')
+  assert.deepEqual(await page.evaluate(() => window.turnSettings), {
+    provider: 'codex',
+    model: 'large-model',
+    reasoning: 'high',
+  })
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Steer agent', exact: true }).isDisabled(),
+    true,
+  )
+  await page.getByRole('button', { name: 'Next turn model and reasoning', exact: true }).click()
+  await page.getByRole('button', { name: 'Use thread defaults', exact: true }).click()
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('button', { name: 'Fork', exact: true }).click()
   await page.waitForFunction(() => window.navigations.length === 1)
   assert.deepEqual(await page.evaluate(() => window.navigations[0]), ['tasks', 'fork', 'runtime'])
@@ -173,9 +192,19 @@ try {
   await page
     .getByRole('textbox', { name: 'Edit queued message', exact: true })
     .fill('Verify before shipping')
+  await page.getByRole('combobox', { name: 'Turn model', exact: true }).selectOption('fast-model')
+  await page
+    .getByRole('combobox', { name: 'Turn reasoning level', exact: true })
+    .selectOption('low')
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'edit')
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.expectedText), 'Check the tests')
+  assert.deepEqual(await page.evaluate(() => window.calls.at(-1).input.turnSettings), {
+    provider: 'codex',
+    model: 'fast-model',
+    reasoning: 'low',
+  })
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.expectedTurnSettings), null)
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Explain this checkout')
   await page.getByRole('button', { name: 'Ask a side question', exact: true }).click()

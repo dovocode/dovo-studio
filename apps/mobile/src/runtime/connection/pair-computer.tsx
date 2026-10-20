@@ -1,4 +1,7 @@
 import { PairingScanner } from './pairing-scanner'
+import { PeerRelayChoice } from './peer-relay-choice'
+import { preparePeerConnection, forgetPeerConnection } from './peer-transport'
+import { peerConfigSchema, peerAddress, type PeerConfig } from '@dovo/protocol'
 import type { PairingInvitation } from '@dovo/protocol'
 import { PAIRING_PROTOCOL_VERSION } from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../state/native-effect'
@@ -36,6 +39,7 @@ export function PairComputer({
   const { connect, cancelPairing } = useRuntime(),
     { busy, error, act } = useAction(),
     [address, setAddress] = useApplicationState(invitation?.address ?? initialAddress ?? ''),
+    [peer, setPeer] = useApplicationState<PeerConfig | undefined>(invitation?.peer),
     [name, setName] = useApplicationState('My phone'),
     [computerName, setComputerName] = useApplicationState(''),
     [code, setCode] = useApplicationState(invitation?.code ?? ''),
@@ -99,12 +103,28 @@ export function PairComputer({
         pairingPhase.current = 'saving'
         setFinishing(true)
         const token = result.token
+        // Replace the two-minute QR capability with a per-device capability, issued
+        // over the authenticated encrypted tunnel and revoked with this pairing.
+        const enabled = peer
+          ? yield* runtimeRequestEffect(
+              { address, token, peer },
+              address,
+              '/api/runtime/peer/enable',
+              {},
+              peerConfigSchema,
+            )
+          : undefined
+        const permanent = enabled
+          ? { ...enabled, ...(peer?.relay ? { relay: peer.relay } : {}) }
+          : undefined
+        if (permanent) preparePeerConnection(permanent)
         yield* Effect.tryPromise({
           try: () =>
             connectRef.current(
               {
-                address,
+                address: permanent ? peerAddress(permanent) : address,
                 token,
+                ...(permanent ? { peer: permanent } : {}),
               },
               computerName.trim() || undefined,
               pending,
@@ -112,6 +132,7 @@ export function PairComputer({
             ),
           catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
         }).pipe(Effect.uninterruptible)
+        if (peer) forgetPeerConnection(address)
         pairingPhase.current = 'waiting'
         if (!stopped) {
           setFinishing(false)
@@ -143,7 +164,7 @@ export function PairComputer({
       subscription.remove()
       void polling?.stop()
     }
-  }, [pending, address, computerName, replaceId])
+  }, [pending, address, computerName, replaceId, peer])
   const digits = code.length
   const submit = () =>
     act(() =>
@@ -151,6 +172,7 @@ export function PairComputer({
         Keyboard.dismiss()
         setPairError('')
         const target = pairingAddress(address)
+        if (peer) preparePeerConnection(peer)
         setAddress(target)
         setPending(
           yield* nativeEffect(() =>
@@ -184,7 +206,8 @@ export function PairComputer({
             Settings → Devices & runtime.
           </Step>
           <Step number={2}>
-            Scan the QR code in this app, or type the address and code it shows.
+            Scan the QR code in this app to connect over the internet. No VPN or local IP needed.
+            You can also pair using a LAN / VPN address.
           </Step>
         </View>
       )}
@@ -204,42 +227,68 @@ export function PairComputer({
           onClose={() => setScanning(false)}
           onScanned={(invitation) => {
             setAddress(invitation.address)
+            setPeer(invitation.peer)
             setCode(invitation.code)
             setPairError('')
             setScanning(false)
           }}
         />
       )}
-      <View style={{ gap: 14 }}>
-        <Field
-          label="Computer address"
-          placeholder="192.168.1.20:51464"
-          hint="Wi-Fi, Tailscale and NetBird addresses all work. Include the port."
-          keyboardType="url"
-          autoCorrect={false}
-          autoComplete="off"
-          returnKeyType="next"
-          value={address}
-          onChangeText={setAddress}
-          editable={!pending && !busy}
-        />
-        <Field
-          label="Pairing code"
-          placeholder="8-digit code"
-          hint={
-            digits && digits < 8
-              ? `${8 - digits} more digit${8 - digits === 1 ? '' : 's'}`
-              : 'Codes expire after two minutes.'
-          }
-          keyboardType="number-pad"
-          textContentType="oneTimeCode"
-          value={code}
-          onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 8))}
-          editable={!pending && !busy}
-          // No letterSpacing: iOS recycles native inputs and leaks it into other placeholders.
-          style={{ fontSize: 20, fontVariant: ['tabular-nums'] }}
-        />
-      </View>
+      {peer ? (
+        <View style={[styles.card, { gap: 6 }]}>
+          <Text>Internet connection</Text>
+          <Text style={styles.muted}>
+            WebRTC + STUN · end-to-end encrypted. No VPN or computer address needed. Keep Dovo open
+            on the computer.
+          </Text>
+          <PeerRelayChoice
+            value={peer.relay}
+            disabled={!!pending || busy}
+            onChange={(relay) => setPeer({ ...peer, relay })}
+          />
+          <Action
+            secondary
+            label="Use a LAN / VPN address instead"
+            disabled={!!pending || busy}
+            onPress={() => {
+              setPeer(undefined)
+              setAddress('')
+              setCode('')
+            }}
+          />
+        </View>
+      ) : (
+        <View style={{ gap: 14 }}>
+          <Field
+            label="Computer address"
+            placeholder="192.168.1.20:51464"
+            hint="Wi-Fi, Tailscale and NetBird addresses all work. Include the port."
+            keyboardType="url"
+            autoCorrect={false}
+            autoComplete="off"
+            returnKeyType="next"
+            value={address}
+            onChangeText={setAddress}
+            editable={!pending && !busy}
+          />
+          <Field
+            label="Pairing code"
+            placeholder="8-digit code"
+            hint={
+              digits && digits < 8
+                ? `${8 - digits} more digit${8 - digits === 1 ? '' : 's'}`
+                : 'Codes expire after two minutes.'
+            }
+            keyboardType="number-pad"
+            textContentType="oneTimeCode"
+            value={code}
+            onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 8))}
+            editable={!pending && !busy}
+            // No letterSpacing: iOS recycles native inputs and leaks it into other placeholders.
+            style={{ fontSize: 20, fontVariant: ['tabular-nums'] }}
+          />
+        </View>
+      )}
       {!!(error || pairError) && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error || pairError}
@@ -288,7 +337,7 @@ export function PairComputer({
         />
       )}
       {keyboard && !inSheet && (
-        <Action secondary label="Dismiss keyboard" onPress={Keyboard.dismiss} />
+        <Action secondary label="Dismiss keyboard" onPress={() => Keyboard.dismiss()} />
       )}
       <View>
         <Disclosure

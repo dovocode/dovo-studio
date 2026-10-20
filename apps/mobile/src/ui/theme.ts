@@ -1,3 +1,4 @@
+import { accessibleThemeColors, statusColors } from '@dovo/studio-core/accessibility'
 import { nativeCodeColors, type resolveCodeTheme } from '@dovo/studio-core/code-themes'
 import { StyleSheet } from 'react-native'
 import { createContext, useContext } from 'react'
@@ -8,8 +9,17 @@ import {
   type StudioThemeMode,
 } from '@dovo/studio-core/themes'
 
-function createMobileColors(palette: StudioThemeId, mode: StudioThemeMode) {
-  const tokens = studioThemes[palette][mode]
+function createMobileColors(
+  palette: StudioThemeId,
+  mode: StudioThemeMode,
+  accessibility: { highContrast?: boolean; colorVision?: 'default' | 'blue-orange' } = {},
+) {
+  const tokens = accessibleThemeColors(
+    studioThemes[palette][mode],
+    mode,
+    !!accessibility.highContrast,
+  )
+  const status = statusColors(mode, accessibility.colorVision)
   return {
     background: tokens.background,
     surface: tokens.card,
@@ -21,10 +31,7 @@ function createMobileColors(palette: StudioThemeId, mode: StudioThemeMode) {
     selection: tokens.selection,
     action: tokens.action,
     onAccent: tokens['action-foreground'],
-    error: mode === 'dark' ? '#ff7e97' : '#ba2549',
-    onError: mode === 'dark' ? '#341520' : '#ffffff',
-    success: mode === 'dark' ? '#8ad5b0' : '#087f5b',
-    warning: mode === 'dark' ? '#e7c681' : '#946200',
+    ...status,
     syntaxFunction: tokens['syntax-function'],
     syntaxKeyword: tokens['syntax-keyword'],
   }
@@ -34,15 +41,31 @@ export function createMobileTheme(
   palette: StudioThemeId,
   mode: StudioThemeMode,
   code?: { theme: ReturnType<typeof resolveCodeTheme>; custom: boolean },
+  accessibility: { highContrast?: boolean; colorVision?: 'default' | 'blue-orange' } = {},
 ) {
-  const colors = createMobileColors(palette, mode)
+  const colors = createMobileColors(palette, mode, accessibility)
   return {
     palette,
     mode,
+    highContrast: !!accessibility.highContrast,
+    reduceMotion: false,
     colors,
     styles: createStyles(colors),
     syntaxTheme: code?.theme ?? studioSyntaxTheme(palette, mode),
-    code: code ? { colors: nativeCodeColors(code.theme), custom: code.custom } : undefined,
+    code: code
+      ? {
+          colors: {
+            ...nativeCodeColors(code.theme),
+            ...(accessibility.colorVision === 'blue-orange'
+              ? {
+                  addition: statusColors(code.theme.type, 'blue-orange').success,
+                  deletion: statusColors(code.theme.type, 'blue-orange').error,
+                }
+              : {}),
+          },
+          custom: code.custom,
+        }
+      : undefined,
   }
 }
 export type MobileTheme = ReturnType<typeof createMobileTheme>

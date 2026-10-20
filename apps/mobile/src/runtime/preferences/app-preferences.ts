@@ -16,10 +16,13 @@ import {
 
 /** Local preferences for this phone. Never synced to computers. */
 const schema = mutableStruct({
+  motion: Schema.Literals(['system', 'reduce']),
   theme: Schema.Literals(['system', 'light', 'dark']),
   terminalFontFamily: Schema.Literals(['', nerdFontFamily]),
   terminalFontSize: terminalFontSizeSchema,
   themePalette: Schema.Literals([...studioThemeIds]),
+  colorVision: Schema.Literals(['default', 'blue-orange']),
+  highContrast: Schema.Boolean,
   codeTheme: codeThemeSchema,
   importedCodeThemes: importedCodeThemesSchema,
   sharedScopedSettings: sharedSettingsSchema,
@@ -55,8 +58,11 @@ const schema = mutableStruct({
 })
 export type MobilePreferences = Schema.Schema.Type<typeof schema>
 const defaults: MobilePreferences = {
+  motion: 'system',
   theme: 'dark',
   themePalette: 'dovo',
+  colorVision: 'default',
+  highContrast: false,
   codeTheme: 'app',
   importedCodeThemes: [],
   terminalFontFamily: '',

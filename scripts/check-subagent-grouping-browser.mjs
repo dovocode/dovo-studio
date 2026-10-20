@@ -60,7 +60,7 @@ window.updatePreferences=changes=>{window.preferences={...window.preferences,...
 async function bundle(contents) {
   const mocks = {
     './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
-    '@dovo/studio-core': `import {useSyncExternalStore} from 'react';export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const sameWorkspaceFields=()=>false;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateAppPreferences=changes=>window.updatePreferences(changes);export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
+    '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;import {useSyncExternalStore} from 'react';export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const sameWorkspaceFields=()=>false;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateAppPreferences=changes=>window.updatePreferences(changes);export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
     '@dovo/studio-core/state': state,
     '@dovo/studio-ui': controls,
     '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',
@@ -175,6 +175,30 @@ try {
       ),
     })
     await page.getByText('Main thread', { exact: true }).waitFor()
+    const subthreads = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
+    assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
+    assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
+    assert.equal(await page.getByText('Native worker · codex', { exact: true }).count(), 0)
+    if (mobile) {
+      await subthreads.click()
+      assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
+      await page
+        .getByRole('button', { name: 'Open child thread Independent child title' })
+        .waitFor()
+      assert.deepEqual(await page.evaluate(() => window.routes), [])
+      await subthreads.click()
+      assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
+      await subthreads.click()
+    } else {
+      await subthreads.hover()
+      assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
+      const child = page.getByRole('button', { name: 'Open child thread Independent child title' })
+      await child.hover()
+      assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
+      await page.getByText('Another main thread', { exact: true }).hover()
+      assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
+      assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
+    }
     if (!mobile) {
       const toggle = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
@@ -666,10 +690,11 @@ try {
       ])
       window.renderList(false)
     })
-    if (!mobile) {
-      const toggle = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
-      if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
-    }
+    const generalToggle = page.getByRole('button', {
+      name: 'Subthreads for Main thread',
+      exact: true,
+    })
+    if ((await generalToggle.getAttribute('aria-expanded')) === 'false') await generalToggle.click()
     await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).waitFor()
     await page.getByText('General', { exact: true }).first().waitFor()
     assert.equal(
@@ -1166,13 +1191,11 @@ try {
       window.renderList(false)
     })
     await page.getByText('Out of scope coordinator', { exact: true }).waitFor()
-    if (!mobile) {
-      const toggle = page.getByRole('button', {
-        name: 'Subthreads for Out of scope coordinator',
-        exact: true,
-      })
-      if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
-    }
+    const scopedToggle = page.getByRole('button', {
+      name: 'Subthreads for Out of scope coordinator',
+      exact: true,
+    })
+    if ((await scopedToggle.getAttribute('aria-expanded')) === 'false') await scopedToggle.click()
     await page.getByRole('button', { name: 'Open child thread Scoped background child' }).waitFor()
     if (!mobile) {
       await page

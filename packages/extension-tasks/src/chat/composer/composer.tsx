@@ -1,3 +1,5 @@
+import { TurnModelControls } from './turn-model-controls'
+import { sameTurnSettings, type TurnSettings } from '@dovo/protocol'
 import { ComposerDictation } from './composer-dictation'
 import { permissionPolicyUIIssue } from '@dovo/studio-ui'
 import { randomUUID, checkpointCanUndo, taskForkResultSchema, taskSchema } from '@dovo/protocol'
@@ -70,6 +72,18 @@ export function Composer({
 }) {
   const { workspace, setWorkspace, request, connected, connection, flush, snapshot } =
     useWorkspace()
+  const [turnSettings, setTurnSettings] = useApplicationState<TurnSettings | null>(
+    task.draftTurnSettings ?? null,
+  )
+  useEffect(() => {
+    setTurnSettings(task.draftTurnSettings ?? null)
+  }, [task.draftTurnSettings, setTurnSettings])
+  const changeTurnSettings = (value: TurnSettings | null) => {
+    setTurnSettings(value)
+    setWorkspace((w) =>
+      updateTask(w, task.id, (current) => ({ ...current, draftTurnSettings: value })),
+    )
+  }
   const [error, setError] = useApplicationState(''),
     [submitBusy, setSending] = useApplicationState(false),
     [stopping, setStopping] = useApplicationState(false)
@@ -236,6 +250,7 @@ export function Composer({
     text: string
     attachmentIds: string[]
     mode: 'queue' | 'steer'
+    turnSettings?: TurnSettings
     title?: string
     accepted?: boolean
     runId?: string
@@ -250,6 +265,9 @@ export function Composer({
     if (submitted?.id === id && !submitted.accepted) {
       submitted.accepted = true
       acceptDraft(submitted.text)
+      setTurnSettings((current) =>
+        sameTurnSettings(current, submitted.turnSettings) ? null : current,
+      )
     }
     pendingSubmission.current = null
     onPending(null)
@@ -260,7 +278,8 @@ export function Composer({
     ? permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true)
     : undefined
   // Settings → General → Follow-ups while a task runs: what Enter does mid-turn.
-  const defaultSteerFirst = useAppPreferences().followUp === 'steer' && task.status === 'running'
+  const defaultSteerFirst =
+    useAppPreferences().followUp === 'steer' && task.status === 'running' && !turnSettings
   const other = defaultSteerFirst ? 'queue' : 'steer'
   const [altPressed, setAltPressed] = useState(false)
   useEffect(() => {
@@ -285,7 +304,7 @@ export function Composer({
       document.removeEventListener('visibilitychange', visibility)
     }
   }, [task.status])
-  const alternative = altPressed && task.status === 'running'
+  const alternative = altPressed && task.status === 'running' && !turnSettings
   const steerFirst = alternative ? !defaultSteerFirst : defaultSteerFirst
   const submitShortcut = alternative ? 'Alt+Enter' : 'Enter'
   const stop = async () => {
@@ -316,6 +335,14 @@ export function Composer({
     }
   }
   const send = async (mode: 'queue' | 'steer' = 'queue') => {
+    if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true) {
+      setError('Update the task computer to choose a model for this turn.')
+      return
+    }
+    if (turnSettings && mode === 'steer') {
+      setError('Queue this message to use its model and reasoning settings.')
+      return
+    }
     if (policyIssue) {
       setError(policyIssue)
       return
@@ -341,6 +368,7 @@ export function Composer({
     if (
       attempt.current?.mode !== mode ||
       attempt.current?.text !== text ||
+      !sameTurnSettings(attempt.current?.turnSettings, turnSettings) ||
       JSON.stringify(attempt.current.attachmentIds) !== JSON.stringify(attachmentIds)
     )
       attempt.current = {
@@ -348,6 +376,7 @@ export function Composer({
         text,
         attachmentIds,
         mode,
+        turnSettings: turnSettings ?? undefined,
         runId: mode === 'steer' ? task.activeRunId : undefined,
       }
     const pending: PendingMessage = {
@@ -360,6 +389,7 @@ export function Composer({
         text,
         createdAt: new Date().toISOString(),
         attachments: attachments.files,
+        turnSettings: attempt.current.turnSettings,
       },
     }
     pendingSubmission.current = pending.message.id
@@ -403,6 +433,7 @@ export function Composer({
             id: task.id,
             messageId: attempt.current.id,
             runId: attempt.current.runId,
+            turnSettings: attempt.current.turnSettings,
             text,
             attachmentIds,
           },
@@ -420,6 +451,7 @@ export function Composer({
         )
       if (!attempt.current.accepted) composerDraft.accept(text)
       attempt.current = null
+      setTurnSettings(null)
     } catch (e) {
       if (attempt.current?.accepted) {
         attempt.current = null
@@ -515,7 +547,19 @@ export function Composer({
               Answer the question above to continue.
             </span>
           ) : (
-            <ComposerHarnessControls task={task} disabled={sending || !!task.archived} />
+            <>
+              <ComposerHarnessControls task={task} disabled={sending || !!task.archived} />
+              {snapshot?.queuedTurnSettingsSupported &&
+                agent &&
+                (task.status === 'running' || !!task.queue?.length || !!turnSettings) && (
+                  <TurnModelControls
+                    agent={agent}
+                    value={turnSettings}
+                    onChange={changeTurnSettings}
+                    disabled={sending || !!task.archived}
+                  />
+                )}
+            </>
           )
         }
         actions={
@@ -621,7 +665,11 @@ export function Composer({
                       >
                         <DropdownMenu.Item
                           className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
-                          disabled={!!policyIssue || !!task.archived}
+                          disabled={
+                            !!policyIssue ||
+                            !!task.archived ||
+                            (!!turnSettings && other === 'steer')
+                          }
                           onSelect={() => void send(other)}
                         >
                           {other === 'steer' ? (
@@ -751,7 +799,9 @@ export function Composer({
           </div>
         )}
         <ComposerEditor
-          onAlternativeSubmit={task.status === 'running' ? () => void send(other) : undefined}
+          onAlternativeSubmit={
+            task.status === 'running' && !turnSettings ? () => void send(other) : undefined
+          }
           controller={composerDraft.controller}
           messages={task.messages}
           taskId={task.id}
