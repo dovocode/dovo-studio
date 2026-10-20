@@ -425,9 +425,15 @@ try {
       threadId: 'parent-thread',
       title: parentTitle,
     })
-    for (const width of mobile ? [390, 320] : [1200, 900]) {
+    for (const width of mobile ? [390, 320, 390, 320] : [1200, 900, 1200, 900]) {
       await page.setViewportSize({ width, height: 900 })
-      const bounds = await breadcrumb.evaluate((element) => {
+      // Crossing the compact breakpoint reparents HeaderContent through a portal. Resolve
+      // and measure the live header in one browser task so React cannot detach it between calls.
+      const measured = await page.waitForFunction(() => {
+        const element = [...document.querySelectorAll('nav[aria-label="Thread breadcrumb"]')].find(
+          (node) => node.getBoundingClientRect().width > 0,
+        )
+        if (!element) return null
         const parent = element.querySelector('.studio-titlebar-parent')
         const start = parent.querySelector('.studio-titlebar-parent-start')
         const suffix = parent.querySelector('.studio-titlebar-parent-end')
@@ -445,7 +451,9 @@ try {
           end: suffix.textContent,
         }
       })
-      assert.equal(bounds.truncated, true)
+      const bounds = await measured.jsonValue()
+      await measured.dispose()
+      assert.equal(bounds.truncated, true, JSON.stringify({ mobile, width, bounds }))
       assert.equal(bounds.ellipsis, 'ellipsis')
       assert.ok(bounds.end.endsWith('New Features'))
       assert.ok(bounds.parent.right <= bounds.nav.right)
