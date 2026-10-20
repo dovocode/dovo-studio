@@ -106,7 +106,7 @@ function Get-WinEvent {
 }
 ${windowsSecurityScript}`,
       ],
-      { windowsHide: true, timeout: 10000, encoding: 'utf8' },
+      { windowsHide: true, timeout: 30_000, encoding: 'utf8' },
     )
     const result = parseWindowsSecurityResult(stdout)
     expect(result).toMatchObject({
@@ -121,7 +121,8 @@ ${windowsSecurityScript}`,
     })
     expect(stdout).not.toMatch(/private-user|private-token/)
   },
-  // Include cold PowerShell startup and keep the test deadline beyond the
-  // subprocess's own 10-second timeout, which still bounds a stalled query.
-  15_000,
+  // This verifies XML parsing, not the app's 10-second diagnostic deadline.
+  // Hosted Windows runners can spend over ten seconds starting PowerShell cold.
+  // Bound the subprocess too, and leave the test time to report its failure.
+  35_000,
 )
