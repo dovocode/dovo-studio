@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtemp, rm, writeFile, mkdir, readFile, symlink, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   SCRATCH_PROJECT_ID,
   defaultTaskHarness,
@@ -17,6 +17,7 @@ vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
 const token = 'projectless-owner-token-at-least-32-characters'
@@ -67,6 +68,56 @@ async function registerFolder(f: Awaited<ReturnType<typeof setup>>, path: string
   expect(repository.kind).toBe('folder')
   return repository
 }
+it('creates named Dovo projects with separate managed folders and shares files between their chats across restarts', async () => {
+  const f = await setup()
+  vi.stubEnv('DOVO_DATA_ROOT', f.root)
+  const create = async (name: string) => {
+    const response = await f.request('/api/scm/repositories/add', { source: 'dovo', name })
+    expect(response.status).toBe(200)
+    return decode(repositorySchema, await response.json())
+  }
+  const [project, duplicate, escaped] = await Promise.all([
+    create(' My notes '),
+    create('My notes'),
+    create('../../研究\\notes'),
+  ])
+  const root = join(await realpath(f.root), 'projects')
+  expect(project).toMatchObject({ name: 'My notes', kind: 'folder', branch: '' })
+  expect(project.path).toMatch(/my-notes-[a-zA-Z0-9]+$/)
+  expect(duplicate.id).not.toBe(project.id)
+  expect(duplicate.path).not.toBe(project.path)
+  for (const item of [project, duplicate, escaped]) {
+    expect(dirname(item.path)).toBe(root)
+    expect(await realpath(item.path)).toBe(item.path)
+    expect(await f.runtime.services.git.isRepository(item.path)).toBe(false)
+  }
+  await f.create(f.draft('notes-one', project.id))
+  await f.create(f.draft('notes-two', project.id))
+  const first = await f.runtime.services.checkouts.directory('notes-one')
+  expect(await f.runtime.services.checkouts.directory('notes-two')).toBe(first)
+  expect(first).toBe(project.path)
+  await writeFile(join(first, 'notes.txt'), 'Shared notes')
+  const files = await f.request('/api/tasks/files/list', { id: 'notes-two' })
+  expect(await files.json()).toEqual({ files: ['notes.txt'] })
+  await f.runtime.close()
+  const reopened = await startRuntime({ databasePath: f.databasePath, ownerToken: token, port: 0 })
+  cleanups.push(reopened.close)
+  expect(reopened.services.store.get().repositories.find((item) => item.id === project.id)).toEqual(
+    project,
+  )
+  expect(await reopened.services.checkouts.directory('notes-one')).toBe(project.path)
+  expect(await readFile(join(project.path, 'notes.txt'), 'utf8')).toBe('Shared notes')
+})
+it('rejects empty Dovo project names and managed folders inside a Git checkout', async () => {
+  const f = await setup()
+  vi.stubEnv('DOVO_DATA_ROOT', f.root)
+  const invalid = await f.request('/api/scm/repositories/add', { source: 'dovo', name: ' ' })
+  expect(invalid.status).toBe(400)
+  await f.runtime.services.git.command(f.root, ['init', '-q'])
+  const nested = await f.request('/api/scm/repositories/add', { source: 'dovo', name: 'Notes' })
+  expect(nested.status).toBe(409)
+  expect(f.runtime.services.store.get().repositories).toEqual([])
+})
 it('offers No project on an empty server and isolates files per thread, preserving them across restarts and deletion', async () => {
   const f = await setup()
   const snapshot = decode(

@@ -3,6 +3,9 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { decode, addRepositorySchema } from '@dovo/protocol'
 import { repositoryPath } from './paths.js'
 import { randomUUID } from 'node:crypto'
+import { mkdir, mkdtemp, realpath } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { Services } from '../../services.js'
 import { HttpError, errorMessage, runtimeOperation, runtimeProgram } from '../../errors.js'
 export function addRepositoryEffect(s: Services, value: unknown) {
@@ -10,6 +13,24 @@ export function addRepositoryEffect(s: Services, value: unknown) {
     Effect.gen(function* () {
       const input = decode(addRepositorySchema, value)
       const checkout = yield* Effect.gen(function* () {
+        if (input.source === 'dovo')
+          return yield* runtimeOperation(async () => {
+            const root = join(process.env.DOVO_DATA_ROOT ?? join(homedir(), '.dovo'), 'projects')
+            await mkdir(root, { recursive: true })
+            const parent = await realpath(root)
+            if (await s.git.isRepository(parent))
+              throw new HttpError(409, 'The Dovo projects folder must be outside a Git repository')
+            const slug =
+              input.name
+                .normalize('NFKD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '')
+                .slice(0, 60) || 'project'
+            const path = await mkdtemp(join(parent, `${slug}-`))
+            return { path, branch: '', kind: 'folder' as const }
+          })
         if (input.source === 'forge') {
           const parent = yield* runtimeOperation(() => repositoryPath(input.directory)).pipe(
             Effect.mapError(

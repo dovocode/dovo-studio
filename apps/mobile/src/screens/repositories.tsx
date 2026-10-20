@@ -42,7 +42,7 @@ export default function RepositoriesScreen() {
         }
         buttons={[
           {
-            label: 'Add repository',
+            label: 'Add project',
             icon: 'add',
             onPress: () => setAdding(true),
           },
@@ -76,11 +76,11 @@ export default function RepositoriesScreen() {
 }
 export function AddProject({
   onClose,
-  initialSource = 'local',
+  initialSource = 'dovo',
   onAdded,
 }: {
   onClose: () => void
-  initialSource?: 'local' | 'github'
+  initialSource?: 'dovo' | 'local' | 'github'
   onAdded?: (repository: import('@dovo/protocol').Repository) => void
 }) {
   const { styles } = useTheme()
@@ -89,11 +89,13 @@ export function AddProject({
     { busy, error, act } = useAction(),
     [customName, setName] = useApplicationState<string | null>(null),
     [path, setPath] = useApplicationState(''),
-    [source, setSource] = useApplicationState<'local' | 'github'>(initialSource),
+    [source, setSource] = useApplicationState<'dovo' | 'local' | 'github'>(initialSource),
     [repository, setRepository] = useApplicationState(''),
     [directory, setDirectory] = useApplicationState(''),
     [picker, setPicker] = useApplicationState<'directory' | 'github' | null>(null)
-  const name = customName ?? suggestedProjectName(source === 'local' ? path : repository)
+  const name =
+    customName ??
+    (source === 'dovo' ? '' : suggestedProjectName(source === 'local' ? path : repository))
   return (
     <Sheet
       scrollable={picker !== 'directory'}
@@ -131,7 +133,13 @@ export function AddProject({
       ) : (
         <>
           <Text style={styles.muted}>{runtimeComputerName({ profile, snapshot })}</Text>
-          <View style={styles.row}>
+          <View style={[styles.row, { flexWrap: 'wrap' }]}>
+            <Action
+              label="Dovo Project"
+              secondary={source !== 'dovo'}
+              disabled={busy}
+              onPress={() => setSource('dovo')}
+            />
             <Action
               label="Local path"
               secondary={source !== 'local'}
@@ -145,8 +153,12 @@ export function AddProject({
               onPress={() => setSource('github')}
             />
           </View>
-          <Text style={styles.muted}>Choose a folder on this computer.</Text>
-          <Field label="Repository name" value={name} onChangeText={setName} editable={!busy} />
+          <Text style={styles.muted}>
+            {source === 'dovo'
+              ? 'Dovo creates a folder in ~/.dovo/projects on this computer. Chats in this project share its files. No Git setup needed.'
+              : 'Choose a folder on this computer.'}
+          </Text>
+          <Field label="Project name" value={name} onChangeText={setName} editable={!busy} />
           {source === 'github' && (
             <>
               <Field
@@ -165,24 +177,28 @@ export function AddProject({
               />
             </>
           )}
-          <Field
-            label={
-              source === 'local'
-                ? 'Local path on runtime host'
-                : 'Clone parent folder on runtime host'
-            }
-            value={source === 'local' ? path : directory}
-            onChangeText={source === 'local' ? setPath : setDirectory}
-            editable={!busy}
-            autoCorrect={false}
-            placeholder={source === 'local' ? '~/Code/my-project' : '~/Code'}
-          />
-          <Action
-            label="Browse runtime folders…"
-            secondary
-            disabled={!connected || busy}
-            onPress={() => setPicker('directory')}
-          />
+          {source !== 'dovo' && (
+            <>
+              <Field
+                label={
+                  source === 'local'
+                    ? 'Local path on runtime host'
+                    : 'Clone parent folder on runtime host'
+                }
+                value={source === 'local' ? path : directory}
+                onChangeText={source === 'local' ? setPath : setDirectory}
+                editable={!busy}
+                autoCorrect={false}
+                placeholder={source === 'local' ? '~/Code/my-project' : '~/Code'}
+              />
+              <Action
+                label="Browse runtime folders…"
+                secondary
+                disabled={!connected || busy}
+                onPress={() => setPicker('directory')}
+              />
+            </>
+          )}
           {source === 'github' && (
             <Text style={styles.muted}>
               Creates a new folder named after the repository inside this existing parent folder.
@@ -198,32 +214,37 @@ export function AddProject({
             label={
               busy
                 ? 'Working…'
-                : source === 'github'
-                  ? 'Clone and add repository'
-                  : 'Add repository'
+                : source === 'dovo'
+                  ? 'Create project'
+                  : source === 'github'
+                    ? 'Clone and add repository'
+                    : 'Add repository'
             }
             disabled={
               !connected ||
               busy ||
               !name.trim() ||
-              !(source === 'local' ? path.trim() : directory.trim() && repository.trim())
+              (source !== 'dovo' &&
+                !(source === 'local' ? path.trim() : directory.trim() && repository.trim()))
             }
             onPress={() =>
               act(() =>
                 mobileWorkflow(function* () {
                   const input =
-                    source === 'local'
-                      ? {
-                          source,
-                          name,
-                          path,
-                        }
-                      : {
-                          source,
-                          name,
-                          repository,
-                          directory,
-                        }
+                    source === 'dovo'
+                      ? { source, name }
+                      : source === 'local'
+                        ? {
+                            source,
+                            name,
+                            path,
+                          }
+                        : {
+                            source,
+                            name,
+                            repository,
+                            directory,
+                          }
                   const parsed = decodeResult(addRepositorySchema, input)
                   if (!parsed.success)
                     return yield* Effect.fail(

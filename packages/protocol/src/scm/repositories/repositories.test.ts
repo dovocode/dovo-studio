@@ -29,6 +29,12 @@ it.each([
   expect(decodeResult(githubRepositorySchema, value).success).toBe(false)
 })
 it('validates the selected source, trims names and preserves exact folder paths', () => {
+  expect(decode(addRepositorySchema, { source: 'dovo', name: ' My notes ' })).toEqual({
+    source: 'dovo',
+    name: 'My notes',
+  })
+  for (const name of ['', '   ', 'x'.repeat(201)])
+    expect(decodeResult(addRepositorySchema, { source: 'dovo', name }).success).toBe(false)
   expect(
     decode(addRepositorySchema, {
       source: 'local',

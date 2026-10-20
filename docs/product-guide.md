@@ -114,24 +114,29 @@ guide before creating a separate workspace.
 ### Desktop walkthrough
 
 1. Run `pnpm dev:desktop`. The footer should show **Connected to personal runtime**.
-2. In Tasks, open **Projects → Add project** to open a **Local path** or clone from **GitHub**.
-   Enter `owner/repo` or an HTTPS GitHub repository URL and an existing clone parent folder; the
-   runtime creates a new subfolder named after the repository. Desktop also offers **Browse this
-   computer…** using a native folder picker. Web/mobile paths refer to the connected runtime host,
-   not the browser or phone. Browse only works with the desktop's local runtime; enter remote paths
-   manually. Local repositories are verified and their branch detected. Offline local paths remain
-   unverified drafts. Cloning requires a connected runtime and its configured Git executable;
-   private repositories use the host's existing Git credentials (for example, configure them with
-   `gh auth setup-git`). Existing destination folders are never overwritten. Failed clones report
-   their recovery path and may leave downloaded files there. **Browse runtime folders…** opens the
-   built-in folder picker on desktop, web and mobile, with Home/Up navigation, path entry,
-   filtering, hidden folders and pagination. It lists directories only, using the paired runtime's
-   filesystem permissions. **Choose from GitHub…** lists personal and organization repositories
-   accessible to the host's configured `gh` account on github.com. The filter applies to loaded
-   repositories; use **Load more** to continue through the account. Missing CLI/authentication and
-   permissions errors are shown without changing the form. Selecting a folder or repository only
-   fills the form; **Clone and add repository** starts the download. Private clones can also use the
-   host's `gh` credentials without changing global Git settings.
+2. In Tasks, open **Projects → Add project**. Choose **Dovo Project** and enter a name to create a
+   shared workspace without choosing a folder or setting up Git. Dovo generates a unique folder
+   under `~/.dovo/projects` on the selected computer (`DOVO_DATA_ROOT/projects` when configured).
+   Select it when starting chats to share its files; use the Projects filter or project grouping to
+   see its chats together. Projects and their files persist across runtime restarts. Alternatively,
+   open a **Local path** or clone from **GitHub**. Enter `owner/repo` or an HTTPS GitHub repository
+   URL and an existing clone parent folder; the runtime creates a new subfolder named after the
+   repository. Desktop also offers **Browse this computer…** using a native folder picker.
+   Web/mobile paths refer to the connected runtime host, not the browser or phone. Browse only works
+   with the desktop's local runtime; enter remote paths manually. Local repositories are verified
+   and their branch detected. Offline local paths remain unverified drafts. Cloning requires a
+   connected runtime and its configured Git executable; private repositories use the host's existing
+   Git credentials (for example, configure them with `gh auth setup-git`). Existing destination
+   folders are never overwritten. Failed clones report their recovery path and may leave downloaded
+   files there. **Browse runtime folders…** opens the built-in folder picker on desktop, web and
+   mobile, with Home/Up navigation, path entry, filtering, hidden folders and pagination. It lists
+   directories only, using the paired runtime's filesystem permissions. **Choose from GitHub…**
+   lists personal and organization repositories accessible to the host's configured `gh` account on
+   github.com. The filter applies to loaded repositories; use **Load more** to continue through the
+   account. Missing CLI/authentication and permissions errors are shown without changing the form.
+   Selecting a folder or repository only fills the form; **Clone and add repository** starts the
+   download. Private clones can also use the host's `gh` credentials without changing global Git
+   settings.
 3. In Agents, use **Set up defaults** to select your task and title models. Configure the provider
    executable/endpoint when needed; reusable custom agents remain optional.
 4. Create a task with that repository and agent. Sending starts execution or queues a follow-up

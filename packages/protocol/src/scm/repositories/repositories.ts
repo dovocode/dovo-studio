@@ -36,7 +36,7 @@ export const githubRepositorySchema = maxValue(
   }),
 )
 const name = maxValue(
-  minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1, 'Enter a repository name'),
+  minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1, 'Enter a project name'),
   200,
 )
 // Preserve paths returned by the folder picker, including legal trailing whitespace.
@@ -46,6 +46,10 @@ const path = refine(
   'Invalid path',
 )
 export const addRepositorySchema = Schema.Union([
+  mutableStruct({
+    source: Schema.Literal('dovo'),
+    name,
+  }),
   mutableStruct({
     source: Schema.Literal('local'),
     name,

@@ -62,7 +62,18 @@ try {
   page.on('pageerror', (e) => errors.push(e.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const name = page.getByRole('textbox', { name: 'Repository name', exact: true })
+  const name = page.getByRole('textbox', { name: 'Project name', exact: true })
+  const create = page.getByRole('button', { name: 'Create project', exact: true })
+  assert.equal(await create.isDisabled(), true)
+  assert.equal(await page.getByRole('button', { name: 'Browse runtime folders…' }).count(), 0)
+  await name.fill('My notes')
+  await create.click()
+  await page.waitForFunction(() => window.submissions.length === 1)
+  assert.deepEqual(await page.evaluate(() => window.submissions.shift()), {
+    source: 'dovo',
+    name: 'My notes',
+  })
+  await page.getByRole('button', { name: 'Local path', exact: true }).click()
   const browse = () =>
     page.getByRole('button', { name: 'Browse runtime folders…', exact: true }).click()
   await browse()
@@ -108,7 +119,7 @@ try {
   })
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile project names follow local folder/GitHub selection, preserve custom names and submit the visible value.',
+    'Mobile Dovo Projects need only a name; local/GitHub selection preserves custom names and submits the visible value.',
   )
 } finally {
   await browser.close()

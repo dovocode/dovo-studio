@@ -28,17 +28,19 @@ import {
 function RepositoryDialogContent({
   onClose,
   projectLabels = false,
-  initialSource = 'local',
+  initialSource = projectLabels ? 'dovo' : 'local',
   onAdded,
 }: {
   onClose: () => void
   projectLabels?: boolean
-  initialSource?: 'local' | 'github' | 'forge'
+  initialSource?: 'dovo' | 'local' | 'github' | 'forge'
   onAdded?: (repository: import('@dovo/protocol').Repository) => void
 }) {
   const { setWorkspace, connection, connected, request } = useWorkspace()
   const { pickDirectory } = useStudioHost()
-  const [source, setSource] = useApplicationState<'local' | 'github' | 'forge'>(initialSource)
+  const [source, setSource] = useApplicationState<'dovo' | 'local' | 'github' | 'forge'>(
+    initialSource,
+  )
   const [name, setName] = useApplicationState('')
   const { addProjectStartsIn } = useAppPreferences()
   const [path, setPath] = useApplicationState('')
@@ -93,8 +95,7 @@ function RepositoryDialogContent({
                 : 'Add repository'}
           </DialogTitle>
           <DialogDescription>
-            Open a checkout or clone a repository. For a folder without Git or a remote, choose
-            Create on GitHub after entering its path. Paths refer to the connected runtime host.
+            Create a Dovo Project, open a folder or clone a repository on the connected computer.
           </DialogDescription>
         </DialogHeader>
         {picker === 'directory' ? (
@@ -127,25 +128,27 @@ function RepositoryDialogContent({
               e.preventDefault()
               void act(async () => {
                 const input =
-                  source === 'local'
-                    ? {
-                        source,
-                        name,
-                        path,
-                      }
-                    : source === 'forge'
+                  source === 'dovo'
+                    ? { source, name }
+                    : source === 'local'
                       ? {
                           source,
                           name,
-                          directory,
-                          forge,
+                          path,
                         }
-                      : {
-                          source,
-                          name,
-                          repository,
-                          directory,
-                        }
+                      : source === 'forge'
+                        ? {
+                            source,
+                            name,
+                            directory,
+                            forge,
+                          }
+                        : {
+                            source,
+                            name,
+                            repository,
+                            directory,
+                          }
                 const parsed = decodeResult(addRepositorySchema, input)
                 if (!parsed.success)
                   throw new Error(validationMessages(parsed.error)[0] ?? 'Invalid repository')
@@ -167,7 +170,7 @@ function RepositoryDialogContent({
                   }))
                   onAdded?.(draft)
                 } else {
-                  throw new Error('Connect to a runtime before cloning a repository')
+                  throw new Error('Connect to a runtime before creating or cloning a project')
                 }
                 onClose()
               })
@@ -175,6 +178,17 @@ function RepositoryDialogContent({
           >
             <fieldset disabled={busy} className="grid gap-4">
               <div className="flex flex-wrap gap-2" role="group" aria-label="Repository source">
+                <Button
+                  type="button"
+                  variant={source === 'dovo' ? 'default' : 'outline'}
+                  aria-pressed={source === 'dovo'}
+                  onClick={() => {
+                    setSource('dovo')
+                    setError('')
+                  }}
+                >
+                  Dovo Project
+                </Button>
                 <Button
                   type="button"
                   variant={source === 'local' ? 'default' : 'outline'}
@@ -248,37 +262,39 @@ function RepositoryDialogContent({
                 />
               )}
               {source === 'local' && <CreateGithub path={path} disabled={busy} />}
-              <div className="grid gap-2">
-                <label htmlFor={pathId} className="text-xs font-medium text-muted-foreground">
-                  {source === 'local' ? 'Local path' : 'Clone parent folder'}
-                </label>
-                <div className="flex min-w-0 items-center gap-2">
-                  <Input
-                    id={pathId}
-                    required
-                    className="min-w-0 flex-1"
-                    value={source === 'local' ? path : directory}
-                    onChange={(e) =>
-                      source === 'local' ? setPath(e.target.value) : setDirectory(e.target.value)
-                    }
-                    placeholder={source === 'local' ? '~/Code/my-project' : '~/Code'}
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="shrink-0"
-                    aria-label="Browse runtime folders…"
-                    disabled={!connected}
-                    onClick={() => setPicker('directory')}
-                  >
-                    <FolderOpen className="size-4" />
-                    Browse
-                  </Button>
+              {source !== 'dovo' && (
+                <div className="grid gap-2">
+                  <label htmlFor={pathId} className="text-xs font-medium text-muted-foreground">
+                    {source === 'local' ? 'Local path' : 'Clone parent folder'}
+                  </label>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Input
+                      id={pathId}
+                      required
+                      className="min-w-0 flex-1"
+                      value={source === 'local' ? path : directory}
+                      onChange={(e) =>
+                        source === 'local' ? setPath(e.target.value) : setDirectory(e.target.value)
+                      }
+                      placeholder={source === 'local' ? '~/Code/my-project' : '~/Code'}
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0"
+                      aria-label="Browse runtime folders…"
+                      disabled={!connected}
+                      onClick={() => setPicker('directory')}
+                    >
+                      <FolderOpen className="size-4" />
+                      Browse
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              {pickDirectory && connection && (
+              )}
+              {source !== 'dovo' && pickDirectory && connection && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -300,15 +316,17 @@ function RepositoryDialogContent({
                 </Button>
               )}
               <p className="text-xs text-muted-foreground">
-                {source !== 'local'
-                  ? 'Clones into a new repository folder inside this parent folder, then adds it as a project on the runtime.'
-                  : !connection
-                    ? 'Offline paths are saved as unverified drafts.'
-                    : 'Choose a project folder. Git controls appear when it contains a repository.'}
+                {source === 'dovo'
+                  ? 'Dovo creates a folder in ~/.dovo/projects on this computer. Chats in this project share its files. No Git setup needed.'
+                  : source !== 'local'
+                    ? 'Clones into a new repository folder inside this parent folder, then adds it as a project on the runtime.'
+                    : !connection
+                      ? 'Offline paths are saved as unverified drafts.'
+                      : 'Choose a project folder. Git controls appear when it contains a repository.'}
               </p>
               {source !== 'local' && !connected && (
                 <p className="text-xs text-muted-foreground">
-                  Connect to a runtime to clone a repository.
+                  Connect to a runtime to create or clone a project.
                 </p>
               )}
               <Button
@@ -321,13 +339,15 @@ function RepositoryDialogContent({
               >
                 {busy
                   ? 'Working…'
-                  : source !== 'local'
-                    ? projectLabels
-                      ? 'Clone and add project'
-                      : 'Clone and add repository'
-                    : projectLabels
-                      ? 'Add project'
-                      : 'Add repository'}
+                  : source === 'dovo'
+                    ? 'Create project'
+                    : source !== 'local'
+                      ? projectLabels
+                        ? 'Clone and add project'
+                        : 'Clone and add repository'
+                      : projectLabels
+                        ? 'Add project'
+                        : 'Add repository'}
               </Button>
             </fieldset>
             {error && (
@@ -344,7 +364,7 @@ function RepositoryDialogContent({
 export function RepositoryDialog(props: {
   onClose: () => void
   projectLabels?: boolean
-  initialSource?: 'local' | 'github' | 'forge'
+  initialSource?: 'dovo' | 'local' | 'github' | 'forge'
   onAdded?: (repository: import('@dovo/protocol').Repository) => void
 }) {
   const { connection } = useWorkspace()
