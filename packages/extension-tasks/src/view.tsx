@@ -81,7 +81,7 @@ import { StartupDraft } from './task-creation/startup-draft'
 import { ProjectSelectionDialog } from './task-creation/project-selection-dialog'
 import { SideQuestion } from './chat/thread/side-question'
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-export default function TasksView({ entityId }: StudioViewProps) {
+export default function TasksView({ entityId, threadParent }: StudioViewProps) {
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
   const { snapshot, connected, runtimes } = store
@@ -851,6 +851,7 @@ export default function TasksView({ entityId }: StudioViewProps) {
           </HeaderContent>
         ) : (
           <TaskHeader
+            parentThread={task.id === entityId ? threadParent : undefined}
             windowRightEdge={!splitTask}
             onPullLink={(url) => openPullPreview(task, url)}
             task={task}

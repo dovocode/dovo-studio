@@ -176,6 +176,11 @@ try {
     })
     await page.getByText('Main thread', { exact: true }).waitFor()
     if (!mobile) {
+      const toggle = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
+      assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
+      assert.equal(await page.getByText('Native worker · codex', { exact: true }).count(), 0)
+      await toggle.click()
       await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
       assert.deepEqual(await page.evaluate(() => window.routes.at(-1)), {
         runtimeId: 'studio',
@@ -190,12 +195,12 @@ try {
         0,
       )
       const disclosure = page.getByRole('button', {
-        name: 'Spawned threads for Main thread',
+        name: 'Subthreads for Main thread',
         exact: true,
       })
       await disclosure.click()
       assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
-      assert.equal(await page.getByText('Configure Play testing', { exact: true }).isHidden(), true)
+      assert.equal(await page.getByText('Configure Play testing', { exact: true }).count(), 0)
       await page.evaluate(() => {
         window.publishTasks(
           window.workspace.tasks.map((task) =>
@@ -213,10 +218,16 @@ try {
         window.renderList(false)
       })
       assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
-      await page
-        .getByRole('button', { name: 'Open input request in Configure Play testing' })
-        .click()
+      await page.waitForFunction(() =>
+        document
+          .querySelector('button[aria-label="Subthreads for Main thread"]')
+          .title.includes('1 needs input'),
+      )
+      assert.match(await disclosure.getAttribute('title'), /1 needs input/)
+      await disclosure.click()
+      await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
       assert.equal(await page.evaluate(() => window.routes.at(-1).threadId), 'remote-child')
+      await disclosure.click()
       await page.evaluate(() => {
         window.publishTasks(
           window.workspace.tasks.map((task) =>
@@ -235,7 +246,13 @@ try {
         )
         window.renderList(false)
       })
-      await page.getByRole('button', { name: /Open input request/ }).waitFor({ state: 'detached' })
+      await page.waitForFunction(
+        () =>
+          !document
+            .querySelector('button[aria-label="Subthreads for Main thread"]')
+            .title.includes('needs input'),
+      )
+      assert.doesNotMatch(await disclosure.getAttribute('title'), /needs input/)
       const search = page.getByRole('textbox', { name: 'Search threads', exact: true })
       await search.fill('Independent nested title')
       await page.getByText('Independent nested title', { exact: true }).waitFor()
@@ -606,6 +623,10 @@ try {
       ])
       window.renderList(false)
     })
+    if (!mobile) {
+      const toggle = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
+      if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    }
     await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).waitFor()
     await page.getByText('General', { exact: true }).first().waitFor()
     assert.equal(
@@ -1017,6 +1038,13 @@ try {
       window.renderList(false)
     })
     await page.getByText('Out of scope coordinator', { exact: true }).waitFor()
+    if (!mobile) {
+      const toggle = page.getByRole('button', {
+        name: 'Subthreads for Out of scope coordinator',
+        exact: true,
+      })
+      if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    }
     await page.getByRole('button', { name: 'Open child thread Scoped background child' }).waitFor()
     if (!mobile) {
       await page

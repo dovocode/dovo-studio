@@ -1,6 +1,11 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
-import { runtimeComputerName, taskDisplayProject, projectDisplayName } from '@dovo/protocol'
+import {
+  runtimeComputerName,
+  taskDisplayProject,
+  projectDisplayName,
+  taskParentReference,
+} from '@dovo/protocol'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
   useWorkspace,
@@ -8,6 +13,7 @@ import {
   encodeWorkTarget,
   issueLabel,
   type Task,
+  type StudioThreadReference,
 } from '@dovo/studio-core'
 import {
   Bot,
@@ -46,6 +52,7 @@ export type TaskSurface =
   | 'artifacts'
 export function TaskHeader({
   task,
+  parentThread,
   windowRightEdge = true,
   onPullLink,
   surface,
@@ -67,6 +74,7 @@ export function TaskHeader({
   onCreate: () => void
   onDeselect: () => void
   task: Task
+  parentThread?: StudioThreadReference
   windowRightEdge?: boolean
   onPullLink?: (url: string) => boolean
   surface: TaskSurface
@@ -81,6 +89,43 @@ export function TaskHeader({
 }) {
   const { workspace, snapshot, connected, connection, runtimes, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
+  const parent =
+    parentThread ??
+    taskParentReference(
+      task,
+      activeRuntimeId,
+      workspace.tasks,
+      snapshot?.runtimeId,
+      runtimes.map((source) => ({
+        runtimeId: source.profile.id,
+        runtimeIdentity: source.snapshot?.runtimeId,
+        tasks: source.snapshot?.workspace.tasks ?? [],
+      })),
+    )
+  const parentTitle = Array.from(parent?.title ?? '')
+  const parentTitleMiddle = Math.ceil(parentTitle.length / 2)
+  const parentCrumb = parent && (
+    <>
+      <button
+        type="button"
+        className="studio-titlebar-parent"
+        aria-label={`Open parent thread ${parent.title}`}
+        title={parent.title}
+        disabled={!host.openThread}
+        onClick={() => host.openThread?.(parent)}
+      >
+        <span className="studio-titlebar-parent-start">
+          {parentTitle.slice(0, parentTitleMiddle).join('')}
+        </span>
+        <span className="studio-titlebar-parent-end">
+          <span>{parentTitle.slice(parentTitleMiddle).join('')}</span>
+        </span>
+      </button>
+      <span className="studio-titlebar-divider" aria-hidden="true">
+        /
+      </span>
+    </>
+  )
   const repo = workspace.repositories.find((r) => r.id === task.repositoryId)
   const displayProject = taskDisplayProject(task, workspace.repositories)
   const projectName = projectDisplayName(displayProject, 'Project')
@@ -156,14 +201,16 @@ export function TaskHeader({
             data-window-right-edge={windowRightEdge || undefined}
           >
             <ProjectIcon repository={displayProject} className="size-4" />
-            <h1
-              className="studio-titlebar-heading min-w-0 flex-1"
-              title={`${projectName} / ${task.title}`}
-            >
+            <nav className="studio-titlebar-heading min-w-0 flex-1" aria-label="Thread breadcrumb">
               <span className="studio-titlebar-project">{projectName}</span>
-              <span className="studio-titlebar-divider">/</span>
-              <span className="studio-titlebar-task min-w-0">{titleMenu}</span>
-            </h1>
+              <span className="studio-titlebar-divider" aria-hidden="true">
+                /
+              </span>
+              {parentCrumb}
+              <h1 className="studio-titlebar-task min-w-0" aria-current="page" title={task.title}>
+                {titleMenu}
+              </h1>
+            </nav>
             <div className="flex shrink-0 items-center gap-0.5 border-l pl-2">
               {actions}
               <IconButton
@@ -193,7 +240,12 @@ export function TaskHeader({
         )}
       >
         <div className="min-w-0 flex-1 basis-full @min-[30rem]:basis-0">
-          <div className="text-xs">{titleMenu}</div>
+          <nav className="studio-titlebar-heading text-xs" aria-label="Thread breadcrumb">
+            {parentCrumb}
+            <span className="studio-titlebar-task min-w-0" aria-current="page">
+              {titleMenu}
+            </span>
+          </nav>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.625rem] text-muted-foreground">
             <span
               className={cn(

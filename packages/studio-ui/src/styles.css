@@ -405,6 +405,32 @@ textarea {
 .studio-titlebar-task {
   min-width: 0;
 }
+.studio-titlebar-parent {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(32%, 200px);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.studio-titlebar-parent:hover {
+  color: var(--foreground);
+}
+.studio-titlebar-parent-start {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.studio-titlebar-parent-end {
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.studio-titlebar-parent-end > span {
+  flex: none;
+}
 .studio-titlebar-section {
   overflow: hidden;
   margin-left: 4px;

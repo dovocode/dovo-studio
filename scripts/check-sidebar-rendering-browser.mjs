@@ -190,6 +190,27 @@ try {
     `${streaming.rows} row renders for 30 frames of one thread (${initial} rows mounted)`,
   )
 
+  const childToggle = page.getByRole('button', {
+    name: 'Subthreads for Parent thread',
+    exact: true,
+  })
+  assert.equal(await childToggle.getAttribute('aria-expanded'), 'false')
+  assert.equal(
+    await page.getByRole('button', { name: 'Open child thread Child thread' }).count(),
+    0,
+  )
+  await childToggle.press('Enter')
+  assert.equal(await page.evaluate(() => window.selected), undefined)
+  await page.evaluate(() => window.setMounted(false))
+  await page.evaluate(() => window.setMounted(true))
+  assert.equal(await childToggle.getAttribute('aria-expanded'), 'true')
+  await childToggle.click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Open child thread Child thread' }).count(),
+    0,
+  )
+  await childToggle.click()
+
   // Large child payloads do not repaint the parent's pills. Visible activity still updates.
   await page.evaluate(() => {
     window.counts.pills = 0

@@ -18,7 +18,7 @@ const mocks = {
     export const useWorkspace=()=>window.store;
     export const useWorkspaceSelector=select=>select(window.store);
     export const sameWorkspaceFields=()=>false;
-    export const useStudioHost=()=>({appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url});
+    export const useStudioHost=()=>window.host;
     export const useAppPreferences=()=>window.preferences;
     export const readAppPreferences=()=>window.preferences;
     export const updateAppPreferences=changes=>{Object.assign(window.preferences,changes);window.render()};
@@ -75,14 +75,14 @@ const built = await build({
     import {TaskTools} from '../extension-tasks/src/detail/task-tools';
     import {TaskLinkedPullPanel} from '../extension-tasks/src/detail/task-linked-pull-panel';
     import {TaskWaitingPanel} from '../extension-tasks/src/detail/task-waiting-panel';
-    window.preferences={confirmDelete:true,confirmUnpin:false};window.calls=[];
+    window.preferences={confirmDelete:true,confirmUnpin:false};window.calls=[];window.host={appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
     const repo={id:'repo',name:'Project',path:'/project',branch:'main'};
     const root=createRoot(document.getElementById('app'));
     let initial={id:'thread',title:'Fix reconnection',repositoryId:'repo',agentId:'',status:'done',createdAt:'2026-10-14',messages:[],files:[{path:'connection.ts',before:'old connection\\nremove timeout\\n',after:'new connection\\nrestore session\\nhandle network switch\\n'}],draft:'',example:false,execution:'worktree',checkoutBranch:'fix/reconnection',turns:[],linkedPullRequests:[{number:7,url:'https://github.com/test/project/pull/7',repositoryUrl:'https://github.com/test/project',title:'Fix iOS reconnection across Wi-Fi switches'},{number:9,url:'https://github.com/test/project/pull/9',repositoryUrl:'https://github.com/test/project',title:'Preserve the runtime session'}],pullStatus:{number:7,url:'https://github.com/test/project/pull/7',state:'open',checks:'passed',checkedAt:''}};
     function App(){
       const [task,setTask]=useState(initial),[panel,setPanel]=useState(false),[surface,setSurface]=useState('chat'),[hideSidebar,setHideSidebar]=useState(false),[toolsWidth,setToolsWidth]=useState(0);window.generalProject=()=>{repo.kind='scratch';repo.name='No project';setPanel(true)};window.hideSidebar=setHideSidebar;window.setToolsWidth=setToolsWidth;
       window.switchThread=()=>setTask(task=>({...task,id:task.id==='other-thread'?'thread':'other-thread',title:task.id==='other-thread'?'Fix reconnection':'Another thread'}));window.setPullState=(state,draft=false)=>setTask(task=>({...task,pullStatus:{...task.pullStatus,state,draft,checks:'failed'}}));
-      window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));
+      window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));
       const request=async(path,input)=>{
         window.calls.push({path,input});
         if(path==='/api/scm/action-state')return {dirty:true,ahead:0,behind:0,tracking:true,canPush:true};
@@ -95,7 +95,7 @@ const built = await build({
       const activeRequest=async(path,input,...rest)=>{if(path==='/api/tasks/waiting'&&input.unlink)window.stopped=true;return request(path,input,...rest)};
       window.store={workspace:{tasks:[task],repositories:[repo],agents:[]},snapshot:{runtimeHost:'Dominic Mac',questions:[],approvals:[],terminals:[],threadBehaviorSupported:true},connection:{address:'http://runtime',token:'token'},activeRuntimeId:'runtime',runtimes:[],connected:true,request:activeRequest,
         runtimeRegistry:{profiles:[]},readRuntime:activeRequest,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},previewTask:async(_,__,___,apply)=>apply(),setWorkspace:()=>{}};
-      if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,turns:[{id:'completed',status:'completed',startedAt:'2026-10-14T08:00:00Z',finishedAt:'2026-10-14T08:01:00Z'}],lastViewedTurnId:i%2?'completed':undefined,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} subagents={[]} selected={i===0} onSelect={()=>{}} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false} onOpenSubagent={()=>{}}/>)}</div>;
+      if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,turns:[{id:'completed',status:'completed',startedAt:'2026-10-14T08:00:00Z',finishedAt:'2026-10-14T08:01:00Z'}],lastViewedTurnId:i%2?'completed':undefined,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} nestedThreads={i===0?[{key:'child',runtimeId:'runtime',threadId:'child',title:'Review implementation',computerName:'Dominic Mac',phase:'running',online:true,children:[]}]:[]} subagents={i===1?[{id:'native',name:'Native reviewer',provider:'codex',status:'working'}]:[]} selected={i===0} onSelect={()=>window.selectedRow=name} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false} onOpenSubagent={()=>{}}/>)}</div>;
       return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)',display:hideSidebar?'none':undefined}}><SidebarHeader/></aside></>}<Popover.Root open={panel} onOpenChange={setPanel}><div data-thread-content style={{minWidth:0,flex:1,display:'flex',flexDirection:'column'}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={next=>{window.surface=next;setSurface(next)}} sidebarVisible={true} hasDiff={false} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}} projectPanelOpen={panel} onProjectPanel={()=>setPanel(p=>!p)} onCreate={()=>{}} onDeselect={()=>{}}/>
         <div data-thread-workspace style={{position:'relative',display:'flex',minHeight:0,flex:1,marginRight:window.mobile?0:56}}>
         <div data-project-panel-frame style={{position:'relative',minWidth:0,minHeight:0,flex:1}}>
@@ -400,6 +400,83 @@ try {
       await page.getByRole('button', { name: 'Threads', exact: true }).click()
       await page.locator('.studio-titlebar[data-sidebar-brand=true]').waitFor()
     }
+    // Parent navigation shares the existing header and retains both ends of long names.
+    const parentTitle = 'Improve Dovo Studio’s Website Design and Add New Features'
+    await page.evaluate(
+      (title) =>
+        window.setParent({
+          runtimeId: 'parent-identity',
+          threadId: 'parent-thread',
+          title,
+        }),
+      parentTitle,
+    )
+    const breadcrumb = page
+      .getByRole('navigation', { name: 'Thread breadcrumb', exact: true })
+      .filter({ visible: true })
+    const parent = breadcrumb.getByRole('button', {
+      name: `Open parent thread ${parentTitle}`,
+      exact: true,
+    })
+    await parent.click()
+    assert.deepEqual(await page.evaluate(() => window.openedThread), {
+      runtimeId: 'parent-identity',
+      runtimeIdentity: 'parent-identity',
+      threadId: 'parent-thread',
+      title: parentTitle,
+    })
+    for (const width of mobile ? [390, 320] : [1200, 900]) {
+      await page.setViewportSize({ width, height: 900 })
+      const bounds = await breadcrumb.evaluate((element) => {
+        const parent = element.querySelector('.studio-titlebar-parent')
+        const start = parent.querySelector('.studio-titlebar-parent-start')
+        const suffix = parent.querySelector('.studio-titlebar-parent-end')
+        const rect = (node) => {
+          const b = node.getBoundingClientRect()
+          return { left: b.left, right: b.right, top: b.top, bottom: b.bottom }
+        }
+        return {
+          nav: rect(element),
+          parent: rect(parent),
+          current: rect(element.querySelector('[aria-current="page"]')),
+          suffix: rect(suffix),
+          truncated: start.scrollWidth > start.clientWidth,
+          ellipsis: getComputedStyle(start).textOverflow,
+          end: suffix.textContent,
+        }
+      })
+      assert.equal(bounds.truncated, true)
+      assert.equal(bounds.ellipsis, 'ellipsis')
+      assert.ok(bounds.end.endsWith('New Features'))
+      assert.ok(bounds.parent.right <= bounds.nav.right)
+      assert.ok(bounds.current.right <= bounds.nav.right + 1)
+      assert.ok(bounds.current.left >= bounds.parent.right)
+      assert.ok(Math.abs(bounds.current.top - bounds.parent.top) < 4)
+      if (stylesheet) await page.screenshot({ path: `/tmp/dovo-thread-breadcrumb-${width}.png` })
+    }
+    await page.evaluate(() =>
+      window.setParent({
+        runtimeId: 'parent-identity',
+        threadId: 'parent-thread',
+        title: 'Parent',
+      }),
+    )
+    await page
+      .getByRole('button', { name: 'Open parent thread Parent', exact: true })
+      .filter({ visible: true })
+      .waitFor()
+    assert.equal(await breadcrumb.locator('.studio-titlebar-parent').textContent(), 'Parent')
+    assert.equal(
+      await breadcrumb
+        .locator('.studio-titlebar-parent')
+        .evaluate((element) =>
+          [...element.children].every((child) => child.scrollWidth <= child.clientWidth),
+        ),
+      true,
+    )
+    await page.evaluate(() => window.setParent(undefined))
+    assert.equal(await breadcrumb.locator('.studio-titlebar-parent').count(), 0)
+    await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1200, height: 900 })
     await page.evaluate(() => window.generalProject())
     const generalProject = page.getByRole('region', { name: 'Thread project', exact: true })
     await generalProject.getByRole('heading', { name: 'General', exact: true }).waitFor()
@@ -430,7 +507,40 @@ try {
         await page.locator('.studio-thread-card-context > span.text-emerald-400').count(),
         4,
       )
+      const toggle = page.getByRole('button', {
+        name: 'Subthreads for Fix reconnection across Wi-Fi switches',
+        exact: true,
+      })
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
+      assert.equal(
+        await page.getByRole('button', { name: 'Open child thread Review implementation' }).count(),
+        0,
+      )
+      const bottomRow = page.locator('.studio-thread-card-context').nth(1)
+      const toggleBounds = await toggle.boundingBox()
+      const rowBounds = await bottomRow.boundingBox()
+      assert.ok(
+        toggleBounds.y >= rowBounds.y - 4 && toggleBounds.y < rowBounds.y + rowBounds.height,
+      )
       await page.screenshot({ path: `/tmp/dovo-thread-cards-${scheme}.png` })
+      await toggle.click()
+      await page.getByRole('button', { name: 'Open child thread Review implementation' }).waitFor()
+      assert.equal(await page.evaluate(() => window.selectedRow), undefined)
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true')
+      await page.screenshot({ path: `/tmp/dovo-subthreads-expanded-${scheme}.png` })
+      await toggle.click()
+      assert.equal(
+        await page.getByRole('button', { name: 'Open child thread Review implementation' }).count(),
+        0,
+      )
+      const nativeToggle = page.getByRole('button', {
+        name: 'Subthreads for Keep sidebar state between restarts',
+        exact: true,
+      })
+      assert.equal(await page.getByText('Native reviewer · codex', { exact: true }).count(), 0)
+      await nativeToggle.click()
+      await page.getByText('Native reviewer · codex', { exact: true }).waitFor()
+      assert.equal(await page.locator('button button').count(), 0)
       await page.close()
     }
 } finally {

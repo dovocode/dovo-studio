@@ -785,25 +785,13 @@ function WorkbenchContent({
                       }
                     >
                       {ready && View ? (
-                        <>
-                          {target.viewId === 'tasks' && parentThread && (
-                            <Button
-                              variant="ghost"
-                              className="justify-start shrink-0"
-                              onClick={() => {
-                                if (parentThread) openThread(parentThread)
-                              }}
-                            >
-                              Back to parent · {parentThread.title}
-                            </Button>
-                          )}
-                          <View
-                            entityId={target.entityId}
-                            pullTarget={target.pullTarget}
-                            threadConnection={target.threadConnection}
-                            navigationKey={navigationKey}
-                          />
-                        </>
+                        <View
+                          entityId={target.entityId}
+                          threadParent={parentThread}
+                          pullTarget={target.pullTarget}
+                          threadConnection={target.threadConnection}
+                          navigationKey={navigationKey}
+                        />
                       ) : !ready ? (
                         <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
                       ) : (

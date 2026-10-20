@@ -36,6 +36,7 @@ export interface StudioPullTarget {
   connectionId?: string
 }
 export interface StudioViewProps {
+  threadParent?: StudioThreadReference
   threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }
   entityId?: string
   pullTarget?: StudioPullTarget

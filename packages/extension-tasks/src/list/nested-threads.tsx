@@ -22,6 +22,7 @@ function NestedThreadsView({
   acknowledgedFailures = [],
   onAcknowledgeFailure,
   className,
+  hideSummary = false,
 }: {
   threads: readonly NestedThread[]
   parent: ThreadTarget
@@ -30,6 +31,7 @@ function NestedThreadsView({
   acknowledgedFailures?: readonly string[]
   onAcknowledgeFailure?: (key: string) => void
   className?: string
+  hideSummary?: boolean
 }) {
   const host = useStudioHost()
   const id = useId()
@@ -46,7 +48,7 @@ function NestedThreadsView({
     (child) => child.online && !child.paused && child.phase === 'running',
   ).length
   const summary = threadTreeSummary(threads, acknowledgedFailures)
-  const open = searching || expanded
+  const open = hideSummary || searching || expanded
   const navigate = (child: NestedThread) =>
     host.openThread?.({
       runtimeId: child.runtimeId,
@@ -65,75 +67,84 @@ function NestedThreadsView({
       className={cn('mb-1 min-w-0 px-2', className)}
       aria-label={`Spawned threads for ${parent.title}`}
     >
-      <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 rounded px-0.5 py-1 text-left hover:bg-accent/50"
-          aria-label={`Spawned threads for ${parent.title}`}
-          aria-expanded={open}
-          aria-controls={id}
-          disabled={searching}
-          onClick={(event) => {
-            event.stopPropagation()
-            const next = !open
-            setExpanded(next)
-            saveTaskListViewState(host, {
-              threadExpansion: {
-                ...readTaskListViewState(host).threadExpansion,
-                [parentKey]: next,
-              },
-            })
-          }}
-        >
-          <ChevronRight className={cn('size-3 shrink-0', open && 'rotate-90')} aria-hidden="true" />
-          <span>
-            {descendants.length} spawned {descendants.length === 1 ? 'thread' : 'threads'}
-          </span>
-          {!!running && <span>· {running} running</span>}
-          {!!summary.waiting && <span>· {summary.waiting} waiting</span>}
-          {!!summary.failed && <span className="text-destructive">· {summary.failed} failed</span>}
-          {!!summary.offline && <span>· {summary.offline} offline</span>}
-        </button>
-        {!!attention.length && (
+      {!hideSummary && (
+        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           <button
             type="button"
-            className="shrink-0 rounded px-1 py-0.5 text-amber-500 hover:bg-accent/50"
-            disabled={!host.openThread}
-            aria-label={`Open input request in ${attention[0]!.title}`}
+            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 rounded px-0.5 py-1 text-left hover:bg-accent/50"
+            aria-label={`Spawned threads for ${parent.title}`}
+            aria-expanded={open}
+            aria-controls={id}
+            disabled={searching}
             onClick={(event) => {
               event.stopPropagation()
-              // Navigate with the immediate parent even for a deeply nested input request.
-              const child = attention[0]!
-              const owner = descendants.find((node) =>
-                node.children.some((item) => item.key === child.key),
-              )
-              host.openThread?.({
-                runtimeId: child.runtimeId,
-                ...(child.runtimeIdentity ? { runtimeIdentity: child.runtimeIdentity } : {}),
-                threadId: child.threadId,
-                title: child.title,
-                parent: owner
-                  ? {
-                      runtimeId: owner.runtimeId,
-                      ...(owner.runtimeIdentity ? { runtimeIdentity: owner.runtimeIdentity } : {}),
-                      threadId: owner.threadId,
-                      title: owner.title,
-                    }
-                  : {
-                      runtimeId: parent.runtimeId,
-                      ...(parent.runtimeIdentity
-                        ? { runtimeIdentity: parent.runtimeIdentity }
-                        : {}),
-                      threadId: parent.threadId,
-                      title: parent.title,
-                    },
+              const next = !open
+              setExpanded(next)
+              saveTaskListViewState(host, {
+                threadExpansion: {
+                  ...readTaskListViewState(host).threadExpansion,
+                  [parentKey]: next,
+                },
               })
             }}
           >
-            {attention.length} needs input
+            <ChevronRight
+              className={cn('size-3 shrink-0', open && 'rotate-90')}
+              aria-hidden="true"
+            />
+            <span>
+              {descendants.length} spawned {descendants.length === 1 ? 'thread' : 'threads'}
+            </span>
+            {!!running && <span>· {running} running</span>}
+            {!!summary.waiting && <span>· {summary.waiting} waiting</span>}
+            {!!summary.failed && (
+              <span className="text-destructive">· {summary.failed} failed</span>
+            )}
+            {!!summary.offline && <span>· {summary.offline} offline</span>}
           </button>
-        )}
-      </div>
+          {!!attention.length && (
+            <button
+              type="button"
+              className="shrink-0 rounded px-1 py-0.5 text-amber-500 hover:bg-accent/50"
+              disabled={!host.openThread}
+              aria-label={`Open input request in ${attention[0]!.title}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                // Navigate with the immediate parent even for a deeply nested input request.
+                const child = attention[0]!
+                const owner = descendants.find((node) =>
+                  node.children.some((item) => item.key === child.key),
+                )
+                host.openThread?.({
+                  runtimeId: child.runtimeId,
+                  ...(child.runtimeIdentity ? { runtimeIdentity: child.runtimeIdentity } : {}),
+                  threadId: child.threadId,
+                  title: child.title,
+                  parent: owner
+                    ? {
+                        runtimeId: owner.runtimeId,
+                        ...(owner.runtimeIdentity
+                          ? { runtimeIdentity: owner.runtimeIdentity }
+                          : {}),
+                        threadId: owner.threadId,
+                        title: owner.title,
+                      }
+                    : {
+                        runtimeId: parent.runtimeId,
+                        ...(parent.runtimeIdentity
+                          ? { runtimeIdentity: parent.runtimeIdentity }
+                          : {}),
+                        threadId: parent.threadId,
+                        title: parent.title,
+                      },
+                })
+              }}
+            >
+              {attention.length} needs input
+            </button>
+          )}
+        </div>
+      )}
       <ul id={id} hidden={!open} className="ml-1.5 border-l border-border/70 pl-2">
         {threads.map((child) => (
           <li key={child.key} className="min-w-0 py-0.5">
