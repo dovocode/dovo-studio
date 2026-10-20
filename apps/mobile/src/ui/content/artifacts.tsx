@@ -8,9 +8,16 @@ import * as Sharing from 'expo-sharing'
 import * as Crypto from 'expo-crypto'
 import {
   artifactFile,
+  artifactBundleSource,
+  artifactLabel,
+  artifactDownloadResponseSchema,
   artifactPdfResponseSchema,
+  artifactExportPreviewResponseSchema,
+  artifactPngResponseSchema,
+  type ArtifactPdfOptions,
+  artifactHtmlResponseSchema,
+  artifactMhtmlResponseSchema,
   artifactSourceMarkdown,
-  artifactFormatLabels,
   artifactListSchema,
   artifactLinkLabel,
   artifactResponseSchema,
@@ -28,6 +35,8 @@ import { Icon, type IconName } from '../controls/icon'
 import { IconButton } from '../controls/icon-button'
 import { useTheme } from '../theme'
 import { useOpenAppLink } from './open-link'
+import { ArtifactExportEditor } from './artifact-export-editor'
+import { ArtifactExportOptions } from './artifact-export-options'
 import { ArtifactFormatIcon } from './artifact-presentation'
 
 export const ArtifactCard = memo(function ArtifactCard({
@@ -65,7 +74,7 @@ export const ArtifactCard = memo(function ArtifactCard({
             {reference.title}
           </Text>
           <Text style={styles.muted}>
-            {artifactFormatLabels[reference.format]} · Version {reference.revision}
+            {artifactLabel(reference)} · Version {reference.revision}
           </Text>
         </View>
         <Icon name="external" size={16} color={colors.muted} />
@@ -150,13 +159,27 @@ export function ArtifactBrowser({
   const selection = JSON.stringify([taskId, id, revision, reload])
   const [loaded, setLoaded] = useState<{ selection: string; artifact: Artifact }>()
   const artifact = loaded?.selection === selection ? loaded.artifact : undefined
+  const [fileSelection, setFileSelection] = useState<{ id: string; path: string }>()
+  const selectedFile =
+    artifact?.files?.find((file) => fileSelection?.id === id && file.path === fileSelection.path) ??
+    artifact?.files?.find((file) => file.path === artifact.entrypoint) ??
+    artifact?.files?.[0]
+  const sourceArtifact = artifact
+    ? artifactBundleSource(artifact, selectedFile?.path ?? '')
+    : undefined
   const [listError, setListError] = useState('')
   const [previewError, setPreviewError] = useState('')
   const [versionsError, setVersionsError] = useState('')
   const error = listError || previewError
   const [source, setSource] = useState(false)
   const [sharing, setSharing] = useState(false)
-  const [picker, setPicker] = useState<'artifacts' | 'versions' | 'export'>()
+  const [exportDraft, setExportDraft] = useState<{ key: string; content: string }>()
+  const [editingExport, setEditingExport] = useState<{ key: string; content: string }>()
+  const [preparingEditor, setPreparingEditor] = useState(false)
+  const editorRequest = useRef(false)
+  const exportKey = JSON.stringify([taskId, id, artifact?.revision])
+  const draftHtml = exportDraft?.key === exportKey ? exportDraft.content : undefined
+  const [picker, setPicker] = useState<'artifacts' | 'versions' | 'export' | 'files'>()
   useEffect(() => {
     let disposed = false
     setListError('')
@@ -211,37 +234,110 @@ export function ArtifactBrowser({
       disposed = true
     }
   }, [read, taskId, id, metadata?.revision, revision, connected, reload, selection])
+  const editExport = async () => {
+    if (!artifact || !connected || editorRequest.current) return
+    if (draftHtml !== undefined) {
+      setEditingExport({ key: exportKey, content: draftHtml })
+      return
+    }
+    editorRequest.current = true
+    setPreparingEditor(true)
+    try {
+      const { content } = await read(
+        '/api/artifacts/export-preview',
+        { taskId: artifact.taskId, id: artifact.id, revision: artifact.revision },
+        artifactExportPreviewResponseSchema,
+      )
+      setEditingExport({ key: exportKey, content })
+    } catch (cause) {
+      Alert.alert('Could not prepare export editor', String(cause))
+    } finally {
+      editorRequest.current = false
+      setPreparingEditor(false)
+    }
+  }
   const sharingRequest = useRef(false)
-  const share = async (format: 'source' | 'pdf') => {
+  const share = async (
+    format: 'source' | 'pdf' | 'png' | 'folder' | 'html' | 'mhtml',
+    options?: ArtifactPdfOptions,
+    width?: number,
+  ) => {
     if (!artifact || sharingRequest.current) return
     sharingRequest.current = true
     setSharing(true)
     let file: File | undefined
     try {
+      const edited = draftHtml === undefined ? {} : { draftHtml }
       if (!(await Sharing.isAvailableAsync()))
         throw new Error('Sharing is unavailable on this device')
       const result =
-        format === 'pdf'
+        format === 'png'
           ? await read(
-              '/api/artifacts/pdf',
-              {
-                taskId: artifact.taskId,
-                id: artifact.id,
-                revision: artifact.revision,
-              },
-              artifactPdfResponseSchema,
+              '/api/artifacts/png',
+              { taskId: artifact.taskId, id: artifact.id, revision: artifact.revision, width },
+              artifactPngResponseSchema,
             )
-          : { ...artifactFile(artifact), data: artifact.content }
+          : format === 'html'
+            ? await read(
+                '/api/artifacts/html',
+                { taskId: artifact.taskId, id: artifact.id, revision: artifact.revision },
+                artifactHtmlResponseSchema,
+              )
+            : format === 'mhtml'
+              ? await read(
+                  '/api/artifacts/mhtml',
+                  {
+                    taskId: artifact.taskId,
+                    id: artifact.id,
+                    revision: artifact.revision,
+                    ...edited,
+                  },
+                  artifactMhtmlResponseSchema,
+                )
+              : format === 'folder'
+                ? await read(
+                    '/api/artifacts/download',
+                    { taskId: artifact.taskId, id: artifact.id, revision: artifact.revision },
+                    artifactDownloadResponseSchema,
+                  )
+                : format === 'pdf'
+                  ? await read(
+                      '/api/artifacts/pdf',
+                      {
+                        taskId: artifact.taskId,
+                        id: artifact.id,
+                        revision: artifact.revision,
+                        options,
+                        ...edited,
+                      },
+                      artifactPdfResponseSchema,
+                    )
+                  : selectedFile
+                    ? {
+                        name: selectedFile.path.split('/').at(-1) ?? 'file',
+                        mime:
+                          selectedFile.encoding === 'base64'
+                            ? 'application/octet-stream'
+                            : 'text/plain',
+                        data: selectedFile.content,
+                      }
+                    : { ...artifactFile(artifact), data: artifact.content }
       file = new File(Paths.cache, `artifact-${Crypto.randomUUID()}-${result.name}`)
-      file.write(
-        format === 'pdf'
+      await file.write(
+        format !== 'source' || selectedFile?.encoding === 'base64'
           ? Uint8Array.from(atob(result.data), (char) => char.charCodeAt(0))
           : result.data,
       )
       await Sharing.shareAsync(file.uri, {
         mimeType: result.mime,
         dialogTitle: artifact.title,
-        ...(format === 'pdf' ? { UTI: 'com.adobe.pdf' } : {}),
+        ...(format === 'pdf'
+          ? { UTI: 'com.adobe.pdf' }
+          : format === 'png'
+            ? { UTI: 'public.png' }
+            : format === 'html'
+              ? { UTI: 'public.html' }
+              : {}),
       })
     } catch (cause) {
       Alert.alert('Could not share artifact', String(cause))
@@ -252,8 +348,8 @@ export function ArtifactBrowser({
     }
   }
   return (
-    <SafeModal animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeModal animationType="slide" onRequestClose={onClose} contentStyle={{ minHeight: 0 }}>
+      <View style={{ flex: 1, minHeight: 0, backgroundColor: colors.background }}>
         <View
           style={{
             paddingHorizontal: 16,
@@ -278,7 +374,7 @@ export function ArtifactBrowser({
                 {link
                   ? artifactLinkLabel(link.provider)
                   : metadata
-                    ? artifactFormatLabels[metadata.format]
+                    ? artifactLabel(metadata)
                     : 'Saved in this thread'}
                 {artifact &&
                   ` · Version ${artifact.revision}${revision === undefined ? ' · Latest' : ''}`}
@@ -297,7 +393,7 @@ export function ArtifactBrowser({
           >
             <ArtifactAction
               icon="artifactList"
-              caption="Files"
+              caption="Artifacts"
               label="Choose artifact"
               selected={picker === 'artifacts'}
               onPress={() => setPicker('artifacts')}
@@ -344,6 +440,18 @@ export function ArtifactBrowser({
               onPress={onClose}
             />
           </View>
+          {artifact?.files && (
+            <Action
+              secondary
+              label={`Browse files · ${artifact.files.length}`}
+              onPress={() => setPicker('files')}
+            />
+          )}
+          {source && selectedFile && (
+            <Text numberOfLines={2} style={styles.muted}>
+              {selectedFile.path}
+            </Text>
+          )}
           {!!versionsError && <Text style={styles.muted}>{versionsError}</Text>}
           {!!error && <Text style={styles.error}>{error}</Text>}
           {!error && (!items || (!!id && !link && !artifact)) && <ActivityIndicator />}
@@ -358,13 +466,63 @@ export function ArtifactBrowser({
           )}
         </View>
         {picker === 'export' ? (
-          <ScrollView contentContainerStyle={{ padding: 24, gap: 16 }}>
-            <Text style={styles.muted}>Save or share the selected artifact version.</Text>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            style={{ flex: 1, minHeight: 0 }}
+            contentContainerStyle={{ padding: 16, gap: 16 }}
+          >
+            <Text style={styles.muted}>Save or share this saved version.</Text>
             <Action
-              label={sharing ? 'Exporting…' : 'Export PDF'}
-              disabled={!artifact || !connected || sharing}
-              onPress={() => void share('pdf')}
+              label={preparingEditor ? 'Preparing editor…' : 'Edit before export'}
+              secondary
+              disabled={!artifact || !connected || sharing || preparingEditor}
+              onPress={() => void editExport()}
             />
+            <Text style={styles.muted}>
+              {draftHtml !== undefined
+                ? 'Edited copy applied to PDF and MHTML. Saved source is unchanged.'
+                : 'Edit text, remove elements or mark them as non-printable for PDF and MHTML.'}
+            </Text>
+            {draftHtml !== undefined && (
+              <Action
+                label="Reset edits"
+                secondary
+                disabled={sharing}
+                onPress={() => setExportDraft(undefined)}
+              />
+            )}
+            <ArtifactExportOptions
+              busy={sharing}
+              disabled={!artifact || !connected}
+              onPdf={(options) => void share('pdf', options)}
+              onPng={(width) => void share('png', undefined, width)}
+            />
+            {sharing && (
+              <Text accessibilityLiveRegion="polite" style={styles.muted}>
+                Preparing export…
+              </Text>
+            )}
+            {artifact?.files && (
+              <>
+                <Action
+                  label="Interactive HTML"
+                  disabled={!connected || sharing}
+                  onPress={() => void share('html')}
+                />
+                <Text style={styles.muted}>One file with working controls.</Text>
+                <Action
+                  label="MHTML snapshot"
+                  disabled={!connected || sharing}
+                  onPress={() => void share('mhtml')}
+                />
+                <Text style={styles.muted}>Offline page archive without interaction.</Text>
+                <Action
+                  label="Share folder (ZIP)"
+                  disabled={!connected || sharing}
+                  onPress={() => void share('folder')}
+                />
+              </>
+            )}
             <Action
               label="Share source"
               secondary
@@ -372,6 +530,36 @@ export function ArtifactBrowser({
               onPress={() => void share('source')}
             />
             <Action label="Back to preview" secondary onPress={() => setPicker(undefined)} />
+          </ScrollView>
+        ) : picker === 'files' ? (
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
+            <Action secondary label="Back to preview" onPress={() => setPicker(undefined)} />
+            {artifact?.files?.map((file) => (
+              <Pressable
+                key={file.path}
+                accessibilityRole="button"
+                accessibilityLabel={file.path}
+                accessibilityState={{ selected: selectedFile?.path === file.path }}
+                style={{
+                  padding: 12,
+                  minHeight: 48,
+                  borderRadius: 12,
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: selectedFile?.path === file.path ? colors.accent : colors.border,
+                }}
+                onPress={() => {
+                  setFileSelection({ id, path: file.path })
+                  setSource(true)
+                  setPicker(undefined)
+                }}
+              >
+                <Text style={styles.text}>{file.path}</Text>
+                {file.path === artifact.entrypoint && (
+                  <Text style={styles.muted}>Preview entry file</Text>
+                )}
+              </Pressable>
+            ))}
           </ScrollView>
         ) : picker ? (
           <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
@@ -422,8 +610,7 @@ export function ArtifactBrowser({
                     {picker === 'artifacts' ? item.title : `Version ${item.revision}`}
                   </Text>
                   <Text style={styles.muted}>
-                    {artifactFormatLabels[item.format]} ·{' '}
-                    {new Date(item.updatedAt).toLocaleString()}
+                    {artifactLabel(item)} · {new Date(item.updatedAt).toLocaleString()}
                   </Text>
                 </View>
                 {(picker === 'artifacts' ? item.id === id : item.revision === revision) && (
@@ -479,19 +666,20 @@ export function ArtifactBrowser({
               }}
             />
           </ScrollView>
-        ) : (
-          artifact && (
-            <>
-              {(artifact.format === 'html' || artifact.format === 'svg') && (
-                <View style={{ flex: 1, display: source ? 'none' : 'flex' }}>
-                  <ArtifactWebView
-                    key={`${id}:${artifact.revision}`}
-                    content={artifact.content}
-                    onError={() => setPreviewError('Could not load artifact preview')}
-                  />
-                </View>
-              )}
-              {(source || artifact.format === 'code' || artifact.format === 'markdown') && (
+        ) : null}
+        {artifact && (
+          <View style={{ flex: 1, display: picker ? 'none' : 'flex' }}>
+            {(artifact.format === 'html' || artifact.format === 'svg') && (
+              <View style={{ flex: 1, display: source ? 'none' : 'flex' }}>
+                <ArtifactWebView
+                  key={`${id}:${artifact.revision}`}
+                  content={artifact.content}
+                  onError={() => setPreviewError('Could not load artifact preview')}
+                />
+              </View>
+            )}
+            {(source || artifact.format === 'code' || artifact.format === 'markdown') &&
+              sourceArtifact && (
                 <ScrollView
                   contentContainerStyle={{
                     padding: source || artifact.format === 'code' ? 20 : 24,
@@ -499,8 +687,8 @@ export function ArtifactBrowser({
                 >
                   {!source && artifact.format === 'markdown' ? (
                     <Markdown text={artifact.content} />
-                  ) : artifact.content.length <= 1024 * 1024 ? (
-                    <Markdown text={artifactSourceMarkdown(artifact)} />
+                  ) : sourceArtifact.content.length <= 1024 * 1024 ? (
+                    <Markdown text={artifactSourceMarkdown(sourceArtifact)} />
                   ) : (
                     <Text
                       selectable
@@ -511,13 +699,22 @@ export function ArtifactBrowser({
                         lineHeight: 22,
                       }}
                     >
-                      {artifact.content}
+                      {sourceArtifact.content}
                     </Text>
                   )}
                 </ScrollView>
               )}
-            </>
-          )
+          </View>
+        )}
+        {editingExport && (
+          <ArtifactExportEditor
+            content={editingExport.content}
+            onAction={(edit) => {
+              if (edit.action === 'apply')
+                setExportDraft({ key: editingExport.key, content: edit.content })
+              setEditingExport(undefined)
+            }}
+          />
         )}
       </View>
     </SafeModal>

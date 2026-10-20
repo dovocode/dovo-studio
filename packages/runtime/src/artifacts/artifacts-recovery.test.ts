@@ -22,7 +22,7 @@ const task: Task = {
   draft: '',
   example: false,
 }
-function fixture() {
+async function fixture() {
   const db = openDatabase(':memory:')
   const preferences: Preferences = {
     enableArtifacts: true,
@@ -41,13 +41,13 @@ function fixture() {
     ...workspace,
     tasks: [task, { ...task, id: 'kept' }],
   }))
-  const first = initial.artifacts.write({
+  const first = await initial.artifacts.write({
     taskId: task.id,
     title: 'Saved artifact',
     format: 'markdown',
     content: 'first revision',
   })
-  initial.artifacts.write({
+  await initial.artifacts.write({
     ...first,
     content: 'second revision',
     expectedRevision: 1,
@@ -80,8 +80,8 @@ function fixture() {
 
 it.each(['{broken', JSON.stringify({ ...task, status: 'unsupported-status' })])(
   'preserves revisions and activity through invalid metadata recovery, writes, restart and repair (%s)',
-  (invalid) => {
-    const f = fixture()
+  async (invalid) => {
+    const f = await fixture()
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       f.db.prepare('UPDATE workspace_tasks SET value=? WHERE task_id=?').run(invalid, task.id)
@@ -120,8 +120,8 @@ it.each(['{broken', JSON.stringify({ ...task, status: 'unsupported-status' })])(
 
 it.each([1, 2])(
   'preserves artifacts while migrating unreadable version %i task metadata',
-  (version) => {
-    const f = fixture()
+  async (version) => {
+    const f = await fixture()
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       const workspace = {
@@ -167,8 +167,8 @@ it.each([1, 2])(
 
 it.each(['settled', 'archived'] as const)(
   'pauses %s retention while metadata is unavailable and resumes the original deadline after repair',
-  (state) => {
-    const f = fixture()
+  async (state) => {
+    const f = await fixture()
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       f.preferences.settledArtifactRetention = '7-days'
@@ -203,8 +203,8 @@ it.each(['settled', 'archived'] as const)(
   },
 )
 
-it('finishes artifact cleanup after a task deletion committed without its cleanup callback', () => {
-  const f = fixture()
+it('finishes artifact cleanup after a task deletion committed without its cleanup callback', async () => {
+  const f = await fixture()
   try {
     const store = new WorkspaceStore(f.db)
     store.update((workspace) => ({
@@ -220,8 +220,8 @@ it('finishes artifact cleanup after a task deletion committed without its cleanu
   }
 })
 
-it('preserves unreadable current metadata even when an older deletion marker remains', () => {
-  const f = fixture()
+it('preserves unreadable current metadata even when an older deletion marker remains', async () => {
+  const f = await fixture()
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
   try {
     f.db

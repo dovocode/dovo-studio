@@ -6,6 +6,7 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { useTheme } from '../../ui/theme'
 import { useAction } from '../../ui/controls/use-action'
+import { ApprovalDetails } from './approval-details'
 export function TaskApprovals({ taskId }: { taskId: string }) {
   const { styles } = useTheme()
 
@@ -30,9 +31,7 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
             >
               {item.title}
             </Text>
-            <Text selectable style={styles.muted}>
-              {item.detail}
-            </Text>
+            <ApprovalDetails key={item.id} detail={item.detail} />
             <View style={styles.row}>
               {approvalActions(item).map((action) => (
                 <Action

@@ -1,4 +1,4 @@
-import { artifactFormatLabels, runtimeComputerName } from '@dovo/protocol'
+import { artifactLabel, artifactFormatLabels, runtimeComputerName } from '@dovo/protocol'
 import { router } from 'expo-router'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from 'react-native'
@@ -90,7 +90,7 @@ export default function ArtifactsScreen() {
   const matching = entries.filter(
     ({ artifact, computerName }) =>
       (state === 'all' || artifact.threadState === state) &&
-      `${artifact.title} ${artifact.threadTitle} ${artifact.format} ${artifactFormatLabels[artifact.format]} ${artifact.language ?? ''} ${computerName}`
+      `${artifact.title} ${artifact.threadTitle} ${artifact.format} ${artifactLabel(artifact)} ${artifact.language ?? ''} ${computerName}`
         .toLowerCase()
         .includes(search),
   )
@@ -265,7 +265,7 @@ export default function ArtifactsScreen() {
                   {item.artifact.threadTitle} · {item.computerName}
                 </Text>
                 <Text style={styles.muted}>
-                  {artifactFormatLabels[item.artifact.format]} · v{item.artifact.revision} ·{' '}
+                  {artifactLabel(item.artifact)} · v{item.artifact.revision} ·{' '}
                   {new Date(item.artifact.updatedAt).toLocaleDateString(undefined, {
                     month: 'short',
                     day: 'numeric',

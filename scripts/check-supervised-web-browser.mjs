@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
+import { readFile, readdir } from 'node:fs/promises'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -13,6 +14,7 @@ const built = await bundleBrowser(
       react: dirname(webRequire.resolve('react/package.json')),
       'react-dom': dirname(webRequire.resolve('react-dom/package.json')),
       '@dovo/client-runtime': `${root}packages/client-runtime/src/index.ts`,
+      '@dovo/protocol': `${root}packages/protocol/src/index.ts`,
     },
     stdin: {
       resolveDir: `${root}packages/studio-ui`,
@@ -62,7 +64,15 @@ const built = await bundleBrowser(
     define: { 'process.env.NODE_ENV': '"production"' },
   },
   [
-    { path: 'react-native', contents: 'export const View=({children})=><div>{children}</div>;' },
+    {
+      path: 'react-native',
+      contents: `
+      const css=style=>Object.assign({},...(Array.isArray(style)?style:[style]).flat().filter(Boolean));
+      export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',minWidth:0,flexShrink:0,...css(style)}}>{children}</div>;
+      export const ScrollView=({children,style,contentContainerStyle})=><div style={{...css(style),overflowY:'auto'}}><div style={css(contentContainerStyle)}>{children}</div></div>;
+      export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState,style})=><button role={accessibilityRole} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} onClick={onPress} style={css(style)}>{children}</button>;
+    `,
+    },
     {
       path: '../../runtime/connection/provider',
       importer: native,
@@ -76,12 +86,14 @@ const built = await bundleBrowser(
     {
       path: '../../ui/theme',
       importer: native,
-      contents: 'export const useTheme=()=>({styles:{}});',
+      contents:
+        'export const useTheme=()=>({styles:{card:{padding:12,border:"1px solid #444",borderRadius:12,display:"flex",flexDirection:"column",gap:8},text:{color:"#eee"},muted:{color:"#aaa"},row:{display:"flex",flexDirection:"row",gap:6,flexWrap:"wrap"}},colors:{border:"#444",background:"#181818"}});',
     },
     {
       path: '../../ui/content/text',
       importer: native,
-      contents: 'export const Text=({children})=><span>{children}</span>;',
+      contents:
+        'export const Text=({children,style})=>{const flat=Object.assign({},...(Array.isArray(style)?style:[style]).filter(Boolean));return <span style={{...flat,...(typeof flat.lineHeight==="number"?{lineHeight:flat.lineHeight+"px"}:{})}}>{children}</span>};',
     },
     {
       path: '../../ui/layout/sheet',
@@ -106,7 +118,7 @@ const built = await bundleBrowser(
     {
       path: '@dovo/studio-ui',
       contents: `
-    export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;
+    export {Button} from './src/components/ui/button';
     export const IconButton=({children,label,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;
     const Wrapper=({children})=><div>{children}</div>;
     export const Dialog=Wrapper,DialogContent=Wrapper,DialogTitle=Wrapper,DialogDescription=Wrapper,Input=()=>null;
@@ -158,6 +170,13 @@ try {
     console.error(error.message)
   })
   await page.setContent('<div id="app"></div>')
+  const assetDirectory = new URL('../apps/web/dist/client/assets/', import.meta.url)
+  const css = (await readdir(assetDirectory)).filter((path) => path.endsWith('.css'))
+  for (const file of css)
+    await page.addStyleTag({ content: await readFile(new URL(file, assetDirectory), 'utf8') })
+  await page.addStyleTag({
+    content: 'html{color-scheme:dark;background:var(--background);color:var(--foreground)}',
+  })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   for (const id of ['mobile', 'desktop']) {
     const ui = page.locator(`#${id}`)
@@ -180,6 +199,85 @@ try {
       })
     }
   }
+  const writesBeforeDetails = await page.evaluate(() => window.writes.length)
+  const requestDetail = {
+    threadId: 'provider-thread-id',
+    turnId: 'provider-turn-id',
+    itemId: 'provider-item-id',
+    command: 'pnpm test --filter "mobile app"',
+    cwd: '/work/my project',
+    reason: 'Verify the mobile changes',
+    additionalPermissions: { fileSystem: { write: ['/tmp/test-output'] }, network: false },
+    unfamiliar_option: { timeout: 0, mode: null },
+  }
+  await page.evaluate(
+    (detail) => window.approval({ title: 'Run command', detail: JSON.stringify(detail) }),
+    requestDetail,
+  )
+  if (process.env.DOVO_PERMISSION_SCREENSHOTS) {
+    await page.locator('#mobile').getByText(requestDetail.command, { exact: true }).waitFor()
+    for (const platform of ['desktop', 'mobile']) {
+      await page.setViewportSize({ width: platform === 'desktop' ? 1080 : 390, height: 844 })
+      const style = await page.addStyleTag({
+        content: `#${platform === 'desktop' ? 'mobile' : 'desktop'}{display:none}#${platform}{padding:16px}`,
+      })
+      await page.screenshot({ path: `/tmp/dovo-permission-${platform}.png` })
+      await style.evaluate((element) => element.remove())
+    }
+  }
+  for (const id of ['mobile', 'desktop']) {
+    const ui = page.locator(`#${id}`)
+    for (const value of [
+      'Reason',
+      requestDetail.reason,
+      'Command',
+      requestDetail.command,
+      'Working folder',
+      requestDetail.cwd,
+      'Additional permissions',
+      'File access',
+      '/tmp/test-output',
+      'Unfamiliar option',
+      'Not set',
+    ])
+      await ui.getByText(value, { exact: true }).waitFor()
+    await ui.getByText('/tmp/test-output', { exact: true }).scrollIntoViewIfNeeded()
+    assert.equal(
+      await ui.getByRole('button', { name: 'Allow once', exact: true }).isVisible(),
+      true,
+    )
+    assert.equal(
+      await ui.getByText(/provider-thread-id/).isVisible(),
+      false,
+      'Provider metadata stays in the full payload',
+    )
+    const toggle =
+      id === 'mobile'
+        ? ui.getByRole('button', { name: 'Show full JSON' })
+        : ui.locator('summary').filter({ hasText: 'Full JSON' })
+    await toggle.click()
+    const raw = ui.getByText(/"threadId": "provider-thread-id"/)
+    await raw.waitFor()
+    assert.deepEqual(JSON.parse(await raw.textContent()), requestDetail)
+    await (id === 'mobile' ? ui.getByRole('button', { name: 'Hide full JSON' }) : toggle).click()
+    assert.equal(await raw.isVisible(), false)
+  }
+  for (const detail of [
+    'https://example.com/docs\nhttps://example.com/api',
+    '{"command":',
+    '<script>window.permissionInjected=true</script>',
+  ]) {
+    await page.evaluate((detail) => window.approval({ detail }), detail)
+    for (const id of ['mobile', 'desktop'])
+      await page.locator(`#${id}`).getByText(detail, { exact: true }).waitFor()
+  }
+  assert.equal(await page.evaluate(() => window.permissionInjected), undefined)
+  assert.equal(
+    await page.evaluate(() => window.writes.length),
+    writesBeforeDetails,
+    'Inspecting details never approves a request',
+  )
+  await page.evaluate(() => window.approval({}))
   await page.evaluate(() => window.online(false))
   await page.waitForFunction(() =>
     [...document.querySelectorAll('button')]

@@ -15,16 +15,72 @@ and code changes. Agents should create an artifact when requested or when a pers
 deliverable adds clear value, and update an existing artifact when appropriate. Progress updates and
 copies of existing answers or files do not need artifacts.
 
-- `artifact_create`: title, format, full content and optional language. Returns an ID and revision.
+- `artifact_create`: title, format, full content (or a folder of files) and optional language.
+  Returns an ID and revision.
 - `artifact_list`: metadata for the current thread, without content bodies.
 - `artifact_read`: ID and optional revision; returns content and metadata.
-- `artifact_update`: ID, expectedRevision, title, format, full content and optional language. Saves
-  a new revision. A stale expectedRevision returns a conflict rather than overwriting newer work.
+- `artifact_update`: ID, expectedRevision, title, format, full content (or a folder of files) and
+  optional language. Saves a new revision. A stale expectedRevision returns a conflict rather than
+  overwriting newer work.
 
 Supported formats are `markdown`, `html`, `svg` and `code`. Use self-contained HTML with embedded
-scripts and assets for interactive artifacts. HTML and SVG previews run in an opaque sandbox with no
-external network, host DOM, runtime credentials, filesystem, native bridge or popup access.
-Artifacts do not receive the interactive MCP Apps tool bridge.
+scripts and assets, or a folder of files, for interactive artifacts. HTML and SVG previews run in an
+opaque sandbox with no external network, host DOM, runtime credentials, filesystem, native bridge or
+popup access. Artifacts do not receive the interactive MCP Apps tool bridge.
+
+Interactive artifacts can download files they generate locally using `<a download>` with Blob or
+data URLs, including canvas exports. Desktop and web use the normal browser download flow; mobile
+opens the share sheet so the user can save or share the file. Mobile downloads are limited to 20 MB.
+The mobile wrapper relays only validated file payloads, never general native commands. External
+downloads and network access remain blocked, and temporary mobile files are removed after sharing.
+
+Multi-file artifacts use `format: "html"` with `files` instead of `content`. Paths can include
+subfolders. The default entry file is `index.html`; set `entrypoint` to use another HTML file:
+
+```json
+{
+  "title": "Counter",
+  "format": "html",
+  "entrypoint": "index.html",
+  "files": [
+    {
+      "path": "index.html",
+      "content": "<link rel=\"stylesheet\" href=\"styles.css\"><button id=\"count\">0</button><script defer src=\"main.js\"></script>"
+    },
+    { "path": "styles.css", "content": "button { color: royalblue }" },
+    {
+      "path": "main.js",
+      "content": "document.querySelector('#count').onclick = event => event.target.textContent = Number(event.target.textContent) + 1;"
+    }
+  ]
+}
+```
+
+The runtime compiles the folder into a working, isolated preview. Relative stylesheets, CSS imports,
+JavaScript module imports, images, fonts and media are included from the supplied files. Inline CSS
+backgrounds and responsive images also resolve against the folder. Use `encoding: "base64"` for
+binary assets; text defaults to UTF-8. No host filesystem, npm packages or external network is
+available. Files that are not used by the preview are still saved and included in downloads.
+
+Folders support up to 128 files, with a combined 100 MB source limit and a separate 100 MB compiled
+preview limit. Paths must be relative and unique, including on case-insensitive filesystems. Each
+update supplies the complete folder and creates one atomic revision; a failed build leaves the saved
+version intact. To convert back to a single-file artifact, omit `files` and supply `content`.
+
+Desktop has a file selector for browsing source and **Download folder** for a ZIP containing the
+selected revision. On mobile, use **Browse files**, then **Export → Share folder (ZIP)**. The
+archive contains one top-level folder with the original directory structure and binary assets.
+Returning to Preview preserves interactive state while browsing source. PDF export and library
+snapshots use the combined HTML preview.
+
+Folder exports also offer **Interactive HTML** and **MHTML snapshot** on desktop and mobile.
+Interactive HTML bundles the saved preview into one `.html` file with its CSS, JavaScript and
+assets; controls continue to work offline inside the same networkless sandbox. MHTML saves a
+`.mhtml` page archive of the rendered initial state. Chromium removes scripts and event handlers
+from this snapshot, so it preserves the page’s appearance rather than its interactions. Both export
+the selected saved revision, rather than unsaved interactions in the viewer. MHTML generation uses
+the owning computer’s isolated Chromium browser and requires it to be connected with Chromium
+available. ZIP preserves all original files, including files unused by the preview.
 
 HTML and SVG viewers follow the app's light/dark mode and color palette, with themed typography,
 links and form controls when the artifact does not supply its own styles. Authored styles take
@@ -38,13 +94,40 @@ work group is collapsed. Cards appear only at the message that produced that rev
 artifacts do not appear in the trailing activity area while their conversation history is unloaded.
 Mobile previews rebuild after WebView process termination. Both viewers support selecting artifacts
 and saved versions, preview/source switching and explicit refresh. Desktop can copy and download
-sources; mobile can share the selected version through the system share sheet. **Export PDF**
-exports the selected saved version, including older revisions, as a paginated PDF: documents render
-as formatted Markdown, code wraps on the page, and HTML/SVG preserve authored print styles. On
-mobile, choose **Export → Export PDF** to save or share the file. Export runs on the owning computer
-in the same isolated, networkless browser used for snapshots, so that computer must be connected and
-have Chromium available. Interactive artifacts export their saved initial state; hosted external
-links cannot be exported.
+sources; mobile can share the selected version through the system share sheet. **Export PDF or PNG**
+on desktop and **Export** on mobile open compact export options for every artifact format.
+
+PDF offers automatic/artifact-defined paper sizing or A4, A3, US Letter and US Legal, portrait or
+landscape orientation, 0–50 mm margins, 10–200% content scaling and optional backgrounds. Automatic
+sizing keeps the artifact's authored page size and orientation, with A4 as the fallback. An explicit
+paper size and orientation override authored page rules. Documents render as formatted Markdown,
+code wraps, and HTML/SVG retain their other print styles. Output paginates instead of clipping.
+
+**Edit before export** prepares a temporary rendered copy for PDF and MHTML. Edit text directly with
+`contenteditable`, or switch to **Select elements** to delete a node, select its parent section, or
+**Exclude from export**. Excluded elements remain dimmed in the editor; **Include in export**
+restores them. Removal/exclusion has an undo button. **Use edited copy** applies the temporary copy
+to later PDF/MHTML exports of that saved revision; **Discard edits** closes the editor without
+applying its changes, and **Reset edits** returns to the saved version. Editing does not create a
+revision, change source files or affect the original live preview. Temporary edits stay within the
+open viewer and never carry into another artifact or revision. Guest scripts run while preparing the
+initial state, then are removed; the editing guest cannot execute scripts or access the host/native
+bridge.
+
+Authors can mark non-printable elements with `class="no-print"` or the `data-no-print` attribute.
+PDF and MHTML exports remove those elements, including their descendants, without modifying the
+saved artifact. They remain present in normal previews, source/ZIP/interactive HTML and PNG exports.
+These markers also work inside compiled multi-file artifacts. Editor actions use a compact icon
+toolbar with tooltips and accessibility labels, with larger touch targets on phones.
+
+PNG exports the full page using its screen layout at a configurable width of 320–4096 pixels
+(default 1440). Height follows the content; responsive styles use the selected width. Extremely tall
+pages (over 32,768 pixels or 64 megapixels) return an error instead of being silently cropped; use
+PDF for those documents. On mobile, both formats use the native share sheet.
+
+Exports use the selected saved version, including older revisions, and the owning computer's
+isolated, networkless Chromium browser. That computer must be connected and have Chromium available.
+Interactive artifacts export their saved initial state; hosted external links cannot be exported.
 
 The desktop left sidebar and mobile navigation also expose **Artifacts** when a connected computer
 has the feature enabled. This library lists artifacts across enabled computers, most recently
@@ -83,8 +166,8 @@ revisions. Paired devices can read artifacts; creation and updates use the runti
 and respect read-only thread permissions.
 
 Run `pnpm test:artifacts:browser` for sandbox and desktop/mobile viewer interaction checks, and
-`pnpm test:artifact-pdf:browser` for actual PDF rendering, pagination and print isolation. Run the
-runtime artifact and agent-tools tests for HTTP authorization, revision conflicts, persistence,
-thread scoping, retention and real provider MCP transport coverage. Browser checks also verify
-multi-computer library routing, lazy snapshots, copy/delete actions and failure recovery. Native
-WebView and OS share-sheet behavior still require device verification.
+`pnpm test:artifact-pdf:browser` for actual PDF/PNG rendering, dimensions, pagination and export
+isolation. Run the runtime artifact and agent-tools tests for HTTP authorization, revision
+conflicts, persistence, thread scoping, retention and real provider MCP transport coverage. Browser
+checks also verify multi-computer library routing, lazy snapshots, copy/delete actions and failure
+recovery. Native WebView and OS share-sheet behavior still require device verification.

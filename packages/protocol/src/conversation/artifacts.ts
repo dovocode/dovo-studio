@@ -1,10 +1,12 @@
 import { Schema } from 'effect'
+import { artifactDownloadScripts } from './artifact-download.js'
 import {
   decodeResult,
   maxValue,
   minValue,
   mutableArray,
   mutableStruct,
+  refine,
   uuidSchema,
 } from '../shared/schema.js'
 
@@ -35,6 +37,30 @@ const revisionSchema = Schema.Number.pipe(
   Schema.check(Schema.isGreaterThan(0)),
 )
 export const artifactFormatSchema = Schema.Literals(['markdown', 'html', 'svg', 'code'])
+export const artifactPathSchema = refine(
+  maxValue(minValue(Schema.String, 1), 512),
+  (path) =>
+    !/[\\\p{Cc}<>:"|?*#%]/u.test(path) &&
+    path.split('/').every((part) => !!part && !['.', '..'].includes(part) && !/[. ]$/.test(part)),
+  'Use a relative file path inside the artifact folder, without dot segments or reserved characters',
+)
+export const artifactBundleFileSchema = mutableStruct({
+  path: artifactPathSchema,
+  content: maxValue(Schema.String, ARTIFACT_MAX_BYTES),
+  encoding: Schema.optional(Schema.Literals(['utf8', 'base64'])),
+})
+export type ArtifactBundleFile = typeof artifactBundleFileSchema.Type
+const bundleFiles = refine(
+  maxValue(minValue(mutableArray(artifactBundleFileSchema), 1), 128),
+  (files) => {
+    const paths = files.map((file) => file.path.toLowerCase())
+    return (
+      new Set(paths).size === paths.length &&
+      !paths.some((path) => paths.some((other) => other.startsWith(`${path}/`)))
+    )
+  },
+  'Use distinct file paths; a file cannot also be a folder',
+)
 const titleSchema = maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 200)
 export const artifactScopeSchema = mutableStruct({
   taskId: maxValue(minValue(Schema.String, 1), 200),
@@ -45,22 +71,27 @@ export const artifactReferenceSchema = mutableStruct({
   title: titleSchema,
   format: artifactFormatSchema,
   revision: revisionSchema,
+  fileCount: Schema.optional(revisionSchema),
 })
 export const artifactMetadataSchema = mutableStruct({
   ...artifactReferenceSchema.fields,
   language: Schema.optional(maxValue(Schema.String, 80)),
+  entrypoint: Schema.optional(artifactPathSchema),
   createdAt: Schema.String,
   updatedAt: Schema.String,
 })
 export const artifactSchema = mutableStruct({
   ...artifactMetadataSchema.fields,
   content: maxValue(Schema.String, ARTIFACT_MAX_BYTES),
+  files: Schema.optional(bundleFiles),
 })
 export const artifactCreateSchema = mutableStruct({
   ...artifactScopeSchema.fields,
   title: titleSchema,
   format: artifactFormatSchema,
-  content: artifactSchema.fields.content,
+  content: Schema.optional(artifactSchema.fields.content),
+  files: artifactSchema.fields.files,
+  entrypoint: artifactMetadataSchema.fields.entrypoint,
   language: artifactMetadataSchema.fields.language,
 })
 export const artifactUpdateSchema = mutableStruct({
@@ -86,9 +117,75 @@ export const artifactSnapshotSchema = mutableStruct({
   image: Schema.optional(Schema.String),
   excerpt: Schema.String,
 })
+const exportNumber = (min: number, max: number) => maxValue(minValue(Schema.Number, min), max)
+export const artifactPdfPaperChoices = [
+  { value: 'auto', label: 'From artifact (A4 fallback)' },
+  { value: 'A4', label: 'A4' },
+  { value: 'A3', label: 'A3' },
+  { value: 'Letter', label: 'US Letter' },
+  { value: 'Legal', label: 'US Legal' },
+] as const
+export const artifactPdfOptionsSchema = mutableStruct({
+  paperSize: Schema.optional(Schema.Literals(['auto', 'A4', 'A3', 'Letter', 'Legal'])),
+  landscape: Schema.optional(Schema.Boolean),
+  marginMm: Schema.optional(exportNumber(0, 50)),
+  scale: Schema.optional(exportNumber(10, 200)),
+  background: Schema.optional(Schema.Boolean),
+})
+export type ArtifactPdfOptions = typeof artifactPdfOptionsSchema.Type
+export const artifactPdfDefaults = {
+  paperSize: 'auto',
+  landscape: false,
+  marginMm: 16,
+  scale: 100,
+  background: true,
+} satisfies Required<ArtifactPdfOptions>
+export const ARTIFACT_PNG_MIN_WIDTH = 320
+export const ARTIFACT_PNG_MAX_WIDTH = 4096
+export const ARTIFACT_PNG_DEFAULT_WIDTH = 1440
+export const artifactPngWidthSchema = exportNumber(
+  ARTIFACT_PNG_MIN_WIDTH,
+  ARTIFACT_PNG_MAX_WIDTH,
+).pipe(Schema.check(Schema.isInt()))
+export const artifactPdfRequestSchema = mutableStruct({
+  ...artifactReadSchema.fields,
+  options: Schema.optional(artifactPdfOptionsSchema),
+  draftHtml: Schema.optional(artifactSchema.fields.content),
+})
+export const artifactMhtmlRequestSchema = mutableStruct({
+  ...artifactReadSchema.fields,
+  draftHtml: Schema.optional(artifactSchema.fields.content),
+})
+export const artifactExportPreviewResponseSchema = mutableStruct({
+  content: artifactSchema.fields.content,
+})
+export const artifactPngRequestSchema = mutableStruct({
+  ...artifactReadSchema.fields,
+  width: Schema.optional(artifactPngWidthSchema),
+})
+export const artifactPngResponseSchema = mutableStruct({
+  name: Schema.String,
+  mime: Schema.Literal('image/png'),
+  data: Schema.String,
+})
 export const artifactPdfResponseSchema = mutableStruct({
   name: Schema.String,
   mime: Schema.Literal('application/pdf'),
+  data: Schema.String,
+})
+export const artifactDownloadResponseSchema = mutableStruct({
+  name: Schema.String,
+  mime: Schema.Literal('application/zip'),
+  data: Schema.String,
+})
+export const artifactHtmlResponseSchema = mutableStruct({
+  name: Schema.String,
+  mime: Schema.Literal('text/html'),
+  data: Schema.String,
+})
+export const artifactMhtmlResponseSchema = mutableStruct({
+  name: Schema.String,
+  mime: Schema.Literal('multipart/related'),
   data: Schema.String,
 })
 export const artifactDeleteResponseSchema = mutableStruct({ ok: Schema.Boolean })
@@ -141,7 +238,7 @@ export function artifactReferences(payload: unknown): ArtifactReference[] {
     return []
   }
 }
-export function artifactFile(artifact: Artifact) {
+export function artifactFile(artifact: Pick<Artifact, 'title' | 'format'>) {
   const extension = { markdown: 'md', html: 'html', svg: 'svg', code: 'txt' }[artifact.format]
   return {
     name: `${
@@ -158,6 +255,24 @@ export function artifactFile(artifact: Artifact) {
     }[artifact.format],
   }
 }
+export function artifactLabel(artifact: Pick<ArtifactMetadata, 'format' | 'fileCount'>) {
+  return artifact.fileCount
+    ? `Folder · ${artifact.fileCount} ${artifact.fileCount === 1 ? 'file' : 'files'}`
+    : artifactFormatLabels[artifact.format]
+}
+export function artifactBundleSource(artifact: Artifact, path: string) {
+  const file =
+    artifact.files?.find((file) => file.path === path) ??
+    artifact.files?.find((file) => file.path === artifact.entrypoint) ??
+    artifact.files?.[0]
+  if (!file) return artifact
+  return {
+    ...artifact,
+    content: file.encoding === 'base64' ? `Binary asset: ${file.path}` : file.content,
+    format: 'code' as const,
+    language: file.path.split('.').at(-1) || 'text',
+  }
+}
 export type ArtifactPreviewTheme = {
   mode: 'light' | 'dark'
   background: string
@@ -167,7 +282,11 @@ export type ArtifactPreviewTheme = {
   accent: string
 }
 /** Guest gets no host APIs, runtime credentials, network or navigation privileges. */
-function artifactDocument(content: string, theme?: ArtifactPreviewTheme) {
+function artifactDocument(
+  content: string,
+  theme?: ArtifactPreviewTheme,
+  downloads?: { nonce: string },
+) {
   const dark = theme?.mode === 'dark'
   const defaults = dark
     ? {
@@ -206,12 +325,15 @@ function artifactDocument(content: string, theme?: ArtifactPreviewTheme) {
 :where(table){border-collapse:collapse}
 :where(th,td){padding:8px 12px;border-bottom:1px solid var(--preview-border);text-align:left}`
   const policy =
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; worker-src 'none'"
-  const html = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${themeStyle}</style>${content}`
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; worker-src 'none'".replace(
+      "connect-src 'none'",
+      downloads ? 'connect-src data: blob:' : "connect-src 'none'",
+    )
+  const html = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${themeStyle}</style>${downloads ? artifactDownloadScripts(downloads.nonce).guest : ''}${content}`
   return { html, policy, background: color('background'), foreground: color('foreground'), dark }
 }
 
-/** A standalone guest for paginated printing; deliver the policy as an HTTP header. */
+/** A standalone guest for exports; deliver the policy as an HTTP header. */
 export function artifactPrintDocument(content: string) {
   const document = artifactDocument(content, {
     mode: 'light',
@@ -225,16 +347,20 @@ export function artifactPrintDocument(content: string) {
 }
 
 /** Guest gets no host APIs, runtime credentials, network or navigation privileges. */
-export function artifactPreviewHtml(content: string, theme?: ArtifactPreviewTheme) {
-  const { html, policy, background, foreground, dark } = artifactDocument(content, theme)
+export function artifactPreviewHtml(
+  content: string,
+  theme?: ArtifactPreviewTheme,
+  downloads?: { nonce: string },
+) {
+  const { html, policy, background, foreground, dark } = artifactDocument(content, theme, downloads)
   const escaped = html
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-  // The outer document is trusted and has no bridge to the guest. This also isolates iOS's native WebView channel.
+  // The trusted wrapper exposes only the optional file relay, isolating the native WebView channel.
   const outerPolicy = policy.replace("frame-src 'none'", 'frame-src about:')
-  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${outerPolicy}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;height:100%;background:${background};color:${foreground};color-scheme:${dark ? 'dark' : 'light'}}iframe{border:0;width:100%;height:100%;display:block}</style><iframe title="Artifact preview" sandbox="allow-scripts" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'" srcdoc="${escaped}"></iframe>`
+  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${outerPolicy}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;height:100%;background:${background};color:${foreground};color-scheme:${dark ? 'dark' : 'light'}}iframe{border:0;width:100%;height:100%;display:block}</style>${downloads ? artifactDownloadScripts(downloads.nonce).wrapper : ''}</head><body><iframe id="artifact-preview" title="Artifact preview" sandbox="allow-scripts allow-downloads" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'" srcdoc="${escaped}"></iframe></body></html>`
 }
 
 /** Fence arbitrary source without allowing embedded fences to become Markdown markup. */

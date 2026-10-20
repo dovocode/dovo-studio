@@ -7,6 +7,9 @@ import {
   decode,
   mutableStruct,
   artifactSchema,
+  artifactCreateSchema,
+  artifactUpdateSchema,
+  artifactFile,
   artifactMetadataSchema,
   resolveTaskAgent,
   type ArtifactCreate,
@@ -20,6 +23,7 @@ import {
 import type { WorkspaceChange, WorkspaceStore } from '../storage/workspace.js'
 import type { Activity } from '../storage/activity.js'
 import { HttpError } from '../errors.js'
+import { artifactFileBytes, compileArtifactBundle } from './artifact-bundle.js'
 
 const stored = mutableStruct({ value: Schema.String })
 const lifecycle = mutableStruct({
@@ -265,8 +269,36 @@ export class Artifacts {
     const target = this.store.taskSummary(targetTaskId)
     if (target.archived || target.archivedAt)
       throw new HttpError(409, 'Reopen the destination thread before adding artifacts')
-    const { title, format, content, language } = this.read(taskId, id, revision)
-    return this.write({ taskId: targetTaskId, title, format, content, language }, false)
+    const { title, format, content, language, files, entrypoint } = this.read(taskId, id, revision)
+    return this.write(
+      {
+        taskId: targetTaskId,
+        title,
+        format,
+        content: files ? undefined : content,
+        language,
+        files,
+        entrypoint,
+      },
+      false,
+    )
+  }
+  async download(taskId: string, id: string, revision?: number) {
+    const artifact = this.read(taskId, id, revision)
+    if (!artifact.files) throw new HttpError(400, 'This artifact has no folder to download')
+    const { zip } = await import('fflate')
+    const folder = artifactFile(artifact).name.replace(/\.[^.]+$/, '')
+    const files = Object.fromEntries(
+      artifact.files.map((file) => [`${folder}/${file.path}`, artifactFileBytes(file)]),
+    )
+    const bytes = await new Promise<Uint8Array>((resolve, reject) =>
+      zip(files, { level: 6 }, (error, bytes) => (error ? reject(error) : resolve(bytes))),
+    )
+    return {
+      name: `${folder}.zip`,
+      mime: 'application/zip' as const,
+      data: Buffer.from(bytes).toString('base64'),
+    }
   }
   snapshot(
     taskId: string,
@@ -300,17 +332,34 @@ export class Artifacts {
     })
     return pending
   }
-  write(input: ArtifactCreate | ArtifactUpdate, fromAgent = true) {
-    if (!this.preferences().enableArtifacts)
-      throw new HttpError(403, 'Enable Dovo Artifacts in this computer’s settings first')
-    const task = this.store.task(input.taskId)
-    if (permissionPolicyReadOnly(resolveTaskAgent(task, this.store.get().agents)))
-      throw new HttpError(403, 'Creating artifacts is disabled for read-only threads')
-    if (Buffer.byteLength(input.content, 'utf8') > ARTIFACT_MAX_BYTES)
+  async write(value: ArtifactCreate | ArtifactUpdate, fromAgent = true) {
+    const update = 'id' in value ? decode(artifactUpdateSchema, value) : undefined
+    const input = update ?? decode(artifactCreateSchema, value)
+    const authorize = () => {
+      if (!this.preferences().enableArtifacts)
+        throw new HttpError(403, 'Enable Dovo Artifacts in this computer’s settings first')
+      const task = this.store.task(input.taskId)
+      if (permissionPolicyReadOnly(resolveTaskAgent(task, this.store.get().agents)))
+        throw new HttpError(403, 'Creating artifacts is disabled for read-only threads')
+      return task
+    }
+    authorize()
+    if (input.files && input.content !== undefined)
+      throw new HttpError(400, 'Supply either content or a folder of files')
+    if (input.files && input.format !== 'html')
+      throw new HttpError(400, 'Artifact folders use the HTML format')
+    if (!input.files && (input.content === undefined || input.entrypoint !== undefined))
+      throw new HttpError(400, 'Supply content, or files and an HTML entrypoint')
+    const entrypoint = input.files ? (input.entrypoint ?? 'index.html') : undefined
+    const content = input.files
+      ? await compileArtifactBundle(input.files, entrypoint ?? 'index.html')
+      : (input.content ?? '')
+    if (Buffer.byteLength(content, 'utf8') > ARTIFACT_MAX_BYTES)
       throw new HttpError(413, 'Artifact exceeds the 100 MB limit')
     return this.db.transaction(() => {
-      const previous = 'id' in input ? this.read(input.taskId, input.id) : undefined
-      if ('expectedRevision' in input && previous?.revision !== input.expectedRevision)
+      const task = authorize()
+      const previous = update ? this.read(input.taskId, update.id) : undefined
+      if (update && previous?.revision !== update.expectedRevision)
         throw new HttpError(409, 'Artifact changed. Read the latest revision before updating it.')
       const now = new Date().toISOString()
       const artifact = decode(artifactSchema, {
@@ -318,13 +367,16 @@ export class Artifacts {
         taskId: input.taskId,
         title: input.title,
         format: input.format,
-        content: input.content,
+        content,
+        files: input.files,
+        entrypoint,
+        fileCount: input.files?.length,
         language: input.language,
         revision: (previous?.revision ?? 0) + 1,
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
       })
-      const { content: _, ...metadata } = artifact
+      const { content: _, files: _files, ...metadata } = artifact
       this.db
         .prepare('INSERT INTO artifacts VALUES (?,?,?,?,?)')
         .run(

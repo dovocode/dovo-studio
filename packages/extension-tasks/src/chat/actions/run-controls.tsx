@@ -4,6 +4,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
+import { ApprovalDetails } from './approval-details'
 export function RunControls({ task }: { task: Task }) {
   const { request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace(),
     [error, setError] = useApplicationState(''),
@@ -124,9 +125,7 @@ export function RunControls({ task }: { task: Task }) {
             Permission request · {executionHost}
           </p>
           <p className="text-xs font-medium">{approval.title}</p>
-          <pre className="my-2 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[0.6875rem] text-muted-foreground">
-            {approval.detail}
-          </pre>
+          <ApprovalDetails key={approval.id} detail={approval.detail} />
           <div className="flex flex-wrap gap-2">
             {approvalActions(approval).map((action) => (
               <Button

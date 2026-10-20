@@ -41,10 +41,14 @@ import {
   artifactCreateSchema,
   artifactUpdateSchema,
   artifactReadSchema,
+  artifactPdfRequestSchema,
+  artifactMhtmlRequestSchema,
+  artifactPngRequestSchema,
   artifactDeleteSchema,
   artifactAttachSchema,
   artifactScopeSchema,
   artifactFile,
+  artifactPreviewHtml,
 } from '@dovo/protocol'
 import { mutableArray } from '@dovo/protocol'
 import { runtimeSnapshot } from './support/runtime-snapshot.js'
@@ -109,7 +113,7 @@ export function route(
               body(
                 request,
                 ['/api/artifacts/create', '/api/artifacts/update'].includes(path)
-                  ? ARTIFACT_MAX_BYTES * 6 + 4096
+                  ? ARTIFACT_MAX_BYTES * 6 + 128 * 1024
                   : undefined,
               ),
             ),
@@ -307,20 +311,86 @@ export function route(
             yield* serviceResult(body(request, 4096)),
           )
           return yield* serviceResult({
-            artifact: s.artifacts.attach(taskId, id, targetTaskId, revision),
+            artifact: yield* serviceResult(s.artifacts.attach(taskId, id, targetTaskId, revision)),
           })
         }
-        if (path === '/api/artifacts/pdf') {
+        if (path === '/api/artifacts/download') {
+          const { taskId, id, revision } = decode(
+            artifactReadSchema,
+            yield* serviceResult(body(request, 4096)),
+          )
+          return yield* serviceResult(s.artifacts.download(taskId, id, revision))
+        }
+        if (path === '/api/artifacts/html') {
           const { taskId, id, revision } = decode(
             artifactReadSchema,
             yield* serviceResult(body(request, 4096)),
           )
           const artifact = s.artifacts.read(taskId, id, revision)
-          const pdf = yield* serviceResult(s.browsers.artifactPdf(artifact))
+          if (artifact.format !== 'html' && artifact.format !== 'svg')
+            throw new HttpError(400, 'Interactive HTML export requires an HTML or SVG artifact')
           return {
-            name: artifactFile(artifact).name.replace(/\.[^.]+$/, '.pdf'),
+            name: artifactFile(artifact).name.replace(/\.[^.]+$/, '.html'),
+            mime: 'text/html',
+            data: Buffer.from(artifactPreviewHtml(artifact.content), 'utf8').toString('base64'),
+          }
+        }
+        if (path === '/api/artifacts/export-preview') {
+          const { taskId, id, revision } = decode(
+            artifactReadSchema,
+            yield* serviceResult(body(request, 4096)),
+          )
+          return {
+            content: yield* serviceResult(
+              s.browsers.artifactExportPreview(s.artifacts.read(taskId, id, revision)),
+            ),
+          }
+        }
+        if (path === '/api/artifacts/mhtml') {
+          const { taskId, id, revision, draftHtml } = decode(
+            artifactMhtmlRequestSchema,
+            yield* serviceResult(body(request, ARTIFACT_MAX_BYTES * 6 + 4096)),
+          )
+          const saved = s.artifacts.read(taskId, id, revision)
+          const artifact =
+            draftHtml === undefined
+              ? saved
+              : { ...saved, format: 'html' as const, content: draftHtml }
+          const archive = yield* serviceResult(s.browsers.artifactMhtml(artifact))
+          return {
+            name: artifactFile(saved).name.replace(/\.[^.]+$/, '.mhtml'),
+            mime: 'multipart/related',
+            data: archive.toString('base64'),
+          }
+        }
+        if (path === '/api/artifacts/pdf') {
+          const { taskId, id, revision, options, draftHtml } = decode(
+            artifactPdfRequestSchema,
+            yield* serviceResult(body(request, ARTIFACT_MAX_BYTES * 6 + 4096)),
+          )
+          const saved = s.artifacts.read(taskId, id, revision)
+          const artifact =
+            draftHtml === undefined
+              ? saved
+              : { ...saved, format: 'html' as const, content: draftHtml }
+          const pdf = yield* serviceResult(s.browsers.artifactPdf(artifact, options))
+          return {
+            name: artifactFile(saved).name.replace(/\.[^.]+$/, '.pdf'),
             mime: 'application/pdf',
             data: pdf.toString('base64'),
+          }
+        }
+        if (path === '/api/artifacts/png') {
+          const { taskId, id, revision, width } = decode(
+            artifactPngRequestSchema,
+            yield* serviceResult(body(request, 4096)),
+          )
+          const artifact = s.artifacts.read(taskId, id, revision)
+          const image = yield* serviceResult(s.browsers.artifactPng(artifact, width))
+          return {
+            name: artifactFile(artifact).name.replace(/\.[^.]+$/, '.png'),
+            mime: 'image/png',
+            data: image.toString('base64'),
           }
         }
         if (path === '/api/artifacts/snapshot') {
@@ -338,11 +408,11 @@ export function route(
           if (!device.owner && !run)
             throw new HttpError(403, 'Artifacts are created by the thread’s agent')
           // JSON can escape each content byte as six characters; metadata stays small.
-          const value = yield* serviceResult(body(request, ARTIFACT_MAX_BYTES * 6 + 4096))
+          const value = yield* serviceResult(body(request, ARTIFACT_MAX_BYTES * 6 + 128 * 1024))
           const input = path.endsWith('/create')
             ? decode(artifactCreateSchema, value)
             : decode(artifactUpdateSchema, value)
-          return yield* serviceResult({ artifact: s.artifacts.write(input) })
+          return { artifact: yield* serviceResult(s.artifacts.write(input)) }
         }
         if (path === '/api/artifacts/list') {
           const { taskId } = decode(artifactScopeSchema, yield* serviceResult(body(request, 4096)))

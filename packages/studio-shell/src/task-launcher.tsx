@@ -226,7 +226,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
       }}
     >
       <DialogContent
-        className="max-w-[calc(100vw-24px)] max-h-[calc(100vh-24px)] overflow-y-auto gap-5 rounded-2xl p-6"
+        className="max-w-[calc(100vw-24px)] max-h-[calc(100dvh-var(--studio-window-top-inset,0px)-24px)] overflow-y-auto gap-5 rounded-2xl p-6"
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           input.current?.focus()

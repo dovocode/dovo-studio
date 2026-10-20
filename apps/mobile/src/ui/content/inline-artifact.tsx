@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ActivityIndicator, Platform, ScrollView, View } from 'react-native'
 import {
   artifactResponseSchema,
+  artifactBundleSource,
   artifactSourceMarkdown,
   type Artifact,
   type ArtifactReference,
@@ -50,6 +51,9 @@ export function InlineArtifact({
       disposed = true
     }
   }, [read, connected, reference.taskId, reference.id, reference.revision, reload])
+  const sourceArtifact = artifact
+    ? artifactBundleSource(artifact, artifact.entrypoint ?? '')
+    : undefined
   const interactive = artifact?.format === 'html' || artifact?.format === 'svg'
   return (
     <View
@@ -69,7 +73,9 @@ export function InlineArtifact({
           backgroundColor: colors.surface,
         }}
       >
-        <Text style={[styles.muted, { flex: 1, fontSize: 11 }]}>Version {reference.revision}</Text>
+        <Text style={[styles.muted, { flex: 1, fontSize: 11 }]}>
+          {reference.fileCount ? `${reference.fileCount} files · ` : ''}Version {reference.revision}
+        </Text>
         <IconButton
           label={source ? 'Show rendered artifact' : 'View inline artifact source'}
           icon={source ? 'preview' : 'code'}
@@ -103,8 +109,8 @@ export function InlineArtifact({
               <ScrollView contentContainerStyle={{ padding: 16 }}>
                 {!source && artifact.format === 'markdown' ? (
                   <Markdown text={artifact.content} />
-                ) : artifact.content.length <= 1024 * 1024 ? (
-                  <Markdown text={artifactSourceMarkdown(artifact)} />
+                ) : (sourceArtifact?.content ?? artifact.content).length <= 1024 * 1024 ? (
+                  <Markdown text={artifactSourceMarkdown(sourceArtifact ?? artifact)} />
                 ) : (
                   <Text
                     selectable
@@ -115,7 +121,7 @@ export function InlineArtifact({
                       lineHeight: 20,
                     }}
                   >
-                    {artifact.content}
+                    {sourceArtifact?.content ?? artifact.content}
                   </Text>
                 )}
               </ScrollView>

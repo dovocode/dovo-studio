@@ -281,7 +281,50 @@ try {
     }
     assert.equal(await page.getByText('Independent child title', { exact: true }).count(), 1)
     assert.equal(await page.getByText('Independent nested title', { exact: true }).count(), 1)
+    assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
+    const finishedThreads = page.getByRole('button', {
+      name: 'Finished threads for Main thread',
+      exact: true,
+    })
+    assert.equal(await finishedThreads.getAttribute('aria-expanded'), 'false')
+    await finishedThreads.click()
+    await page.getByRole('button', { name: 'Open child thread Independent ended title' }).waitFor()
     assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 1)
+    await finishedThreads.click()
+    assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
+    if (!mobile) {
+      const search = page.getByRole('textbox', { name: 'Search threads', exact: true })
+      await search.fill('Independent ended title')
+      await page
+        .getByRole('button', { name: 'Open child thread Independent ended title' })
+        .waitFor()
+      assert.equal(await finishedThreads.getAttribute('aria-expanded'), 'true')
+      await search.fill('')
+      await page.getByText('Another main thread', { exact: true }).waitFor()
+      assert.equal(await finishedThreads.getAttribute('aria-expanded'), 'false')
+      assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
+    }
+    // A resumed child leaves Finished threads immediately, without opening that group.
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) =>
+          task.id === 'done' ? { ...task, status: 'running' } : task,
+        ),
+      )
+      window.renderList(false)
+    })
+    await page.getByRole('button', { name: 'Open child thread Independent ended title' }).waitFor()
+    assert.equal(await finishedThreads.count(), 0)
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) =>
+          task.id === 'done' ? { ...task, status: 'done' } : task,
+        ),
+      )
+      window.renderList(false)
+    })
+    await finishedThreads.waitFor()
+    assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
     assert.equal(await page.getByText('Ended child · codex', { exact: true }).count(), 0)
     await page.getByText('Native worker · codex', { exact: true }).waitFor()
     await page.getByText('Nested native · codex', { exact: true }).waitFor()

@@ -452,7 +452,7 @@ it('pushes created artifacts through compact activity, retains them past later c
   const sync = startRuntimeSync(connection, { onSnapshot: () => {} })
   cleanup.push(sync.stop)
   await expect.poll(() => sync.online()).toBe(true)
-  const artifact = runtime.services.artifacts.write({
+  const artifact = await runtime.services.artifacts.write({
     taskId: 'task',
     title: 'Live preview',
     format: 'html',

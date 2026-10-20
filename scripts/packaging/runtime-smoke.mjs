@@ -14,6 +14,14 @@ try {
   ]);
   if (groups.length !== 1 || groups[0].basis !== 'ast' || groups[0].paths[0] !== 'Sources/App/User.swift')
     throw new Error('Packaged Swift review parser did not resolve dependencies');
+  // Multi-file artifacts bundle locally through the packaged esbuild executable.
+  const { compileArtifactBundle } = await import(new URL('./artifacts/artifact-bundle.js', import.meta.resolve('@dovo/runtime')));
+  const preview = await compileArtifactBundle([
+    { path: 'index.html', content: '<script type="module" src="main.js"></script>' },
+    { path: 'main.js', content: 'import {label} from "./label.js"; document.body.textContent=label;' },
+    { path: 'label.js', content: 'export const label="Packaged folder ready";' },
+  ], 'index.html');
+  if (!preview.includes('Packaged folder ready')) throw new Error('Packaged artifact compiler failed');
   for (const provider of ['codex', 'claude', 'opencode', 'hermes', 'copilot', 'grok', 'muse', 'cursor', 'acp']) await runtime.services.agents.get(provider);
   const terminal = runtime.services.terminals.createCommand('packaging-check', process.cwd(), {
     command: process.execPath,

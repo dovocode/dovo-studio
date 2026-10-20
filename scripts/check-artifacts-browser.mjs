@@ -18,6 +18,111 @@ async function prepareView(page, native = false) {
   )
   if (css && !native) await page.addStyleTag({ content: css })
 }
+async function checkGeneratedDownloads(page, frame, native) {
+  let externalRequests = 0
+  await page.route('https://artifact-download.invalid/**', (route) => {
+    externalRequests++
+    return route.abort()
+  })
+  await frame.locator('body').evaluate((body) => {
+    for (const kind of ['blob', 'data', 'empty']) {
+      const button = document.createElement('button')
+      button.id = 'download-' + kind
+      button.textContent = 'Download ' + kind
+      button.onclick = () => {
+        const anchor = document.createElement('a')
+        const blob = new Blob([kind === 'empty' ? '' : 'name,value\nDovo,42\n'], {
+          type: 'text/csv',
+        })
+        anchor.href =
+          kind === 'data'
+            ? 'data:text/csv;charset=utf-8,name%2Cvalue%0ADovo%2C42%0A'
+            : URL.createObjectURL(blob)
+        anchor.download = 'report-' + kind + '.csv'
+        if (kind === 'data') body.append(anchor)
+        anchor.click()
+        if (kind !== 'data') URL.revokeObjectURL(anchor.href)
+        anchor.remove()
+      }
+      body.append(button)
+    }
+    const link = document.createElement('a')
+    link.id = 'download-link'
+    link.href = 'data:text/csv,name%2Cvalue%0ADovo%2C42%0A'
+    link.download = 'report-link.csv'
+    link.textContent = 'Download link'
+    body.append(link)
+    const external = document.createElement('a')
+    external.id = 'download-external'
+    external.href = 'https://artifact-download.invalid/file.csv'
+    external.download = 'external.csv'
+    external.textContent = 'External download'
+    body.append(external)
+    fetch('https://artifact-download.invalid/leak').catch(() => {
+      body.dataset.downloadNetworkBlocked = 'yes'
+    })
+  })
+  await frame.locator('body[data-download-network-blocked="yes"]').waitFor()
+  for (const kind of ['blob', 'data', 'empty', 'link']) {
+    const expected = kind === 'empty' ? '' : 'name,value\nDovo,42\n'
+    if (native) {
+      const count = await page.evaluate(() => window.sharedArtifacts?.length ?? 0)
+      await frame.locator('#download-' + kind).click()
+      await page.waitForFunction((count) => window.sharedArtifacts?.length === count + 1, count)
+      const result = await page.evaluate(() => window.sharedArtifacts.at(-1))
+      assert.equal(result.options.dialogTitle, 'report-' + kind + '.csv')
+      assert.equal(Buffer.from(result.data).toString(), expected)
+      await page.waitForFunction((uri) => window.deletedArtifactFiles.includes(uri), result.uri)
+    } else {
+      const [result] = await Promise.all([
+        page.waitForEvent('download'),
+        frame.locator('#download-' + kind).click(),
+      ])
+      assert.equal(result.suggestedFilename(), 'report-' + kind + '.csv')
+      assert.equal(readFileSync(await result.path()).toString(), expected)
+    }
+  }
+  if (native) {
+    const alerts = await page.evaluate(() => window.artifactAlerts?.length ?? 0)
+    await frame.locator('body').evaluate((body) => {
+      const button = document.createElement('button')
+      button.id = 'download-too-large'
+      button.textContent = 'Download too large'
+      button.onclick = () => {
+        const url = URL.createObjectURL(new Blob([new Uint8Array(21 * 1024 * 1024)]))
+        const anchor = document.createElement('a')
+        anchor.download = 'large.bin'
+        anchor.href = url
+        anchor.click()
+        URL.revokeObjectURL(url)
+      }
+      body.append(button)
+    })
+    await frame.locator('#download-too-large').click()
+    await page.waitForFunction((count) => window.artifactAlerts?.length === count + 1, alerts)
+    assert.match(await page.evaluate(() => window.artifactAlerts.at(-1)[1]), /20 MB/)
+    await page.evaluate(() => {
+      window.failGeneratedDownload = true
+    })
+    await frame.locator('#download-blob').click()
+    await page.waitForFunction((count) => window.artifactAlerts?.length === count + 2, alerts)
+    assert.match(await page.evaluate(() => window.artifactAlerts.at(-1)[1]), /Sharing failed/)
+    await page.evaluate(() => {
+      window.failGeneratedDownload = false
+    })
+    const count = await page.evaluate(() => window.sharedArtifacts.length)
+    await frame.locator('#download-blob').click()
+    await page.waitForFunction((count) => window.sharedArtifacts.length === count + 1, count)
+  }
+  const blocked = page.waitForEvent('console', {
+    predicate: (message) =>
+      message.text().includes('artifact-download.invalid') && message.text().includes('frame-src'),
+  })
+  await frame.locator('#download-external').click()
+  await blocked
+  assert.equal(externalRequests, 0, 'Downloads do not grant external network access')
+  await page.unroute('https://artifact-download.invalid/**')
+}
 const built = await build({
   stdin: {
     contents: `import {artifactPreviewHtml} from './src/conversation/artifacts.ts';window.preview=artifactPreviewHtml;`,
@@ -34,7 +139,7 @@ const mocks = {
   '@dovo/studio-core': `export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo'});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
   '@dovo/studio-ui': `
 import React from 'react';import {Button} from '${uiRoot}components/ui/button.tsx';
-export {Button};export {cn} from '${uiRoot}lib/utils.ts';
+export {Button};export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {cn} from '${uiRoot}lib/utils.ts';
 export {Input} from '${uiRoot}components/ui/input.tsx';
 export {PageHeader} from '${uiRoot}page-header.tsx';
 export {Dialog,DialogContent,DialogDescription,DialogTitle} from '${uiRoot}components/ui/dialog.tsx';
@@ -51,16 +156,17 @@ export const flatten=style=>Object.assign({},...(Array.isArray(style)?style.flat
 const webStyle=style=>{const value=flatten(style);if(typeof value.lineHeight==='number')value.lineHeight=value.lineHeight+'px';if(value.paddingHorizontal!==undefined){value.paddingLeft=value.paddingRight=value.paddingHorizontal;delete value.paddingHorizontal}if(value.paddingVertical!==undefined){value.paddingTop=value.paddingBottom=value.paddingVertical;delete value.paddingVertical}if(value.marginVertical!==undefined){value.marginTop=value.marginBottom=value.marginVertical;delete value.marginVertical}return value};
 export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',boxSizing:'border-box',flexShrink:0,...webStyle(style)}}>{children}</div>;
 export const ScrollView=({children,style,contentContainerStyle,horizontal})=><View style={[{overflow:'auto',flexShrink:1},style]}><View style={[horizontal?{flexDirection:'row'}:{},contentContainerStyle]}>{children}</View></View>;
-export const Modal=({children,visible=true})=>visible?<div role="dialog" style={{position:'fixed',inset:0,zIndex:100,background:'#0a0a0a'}}>{children}</div>:null;export const ActivityIndicator=()=> <p>Loading</p>;
+export const Modal=({children,visible=true})=>visible?<div role="dialog" style={{position:'fixed',inset:0,zIndex:100,background:'#0a0a0a',display:'flex',flexDirection:'column'}}>{children}</div>:null;export const ActivityIndicator=()=> <p>Loading</p>;
 export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,disabled,style})=><button onClick={onPress} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',color:'#e8e9ed',textAlign:'left',fontFamily:'system-ui',flexShrink:0,...webStyle(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={event=>onValueChange(event.target.checked)}/>;
 export const Image=({source,style})=><img src={source.uri} style={webStyle(style)}/>;export const Text=({children,style})=><span style={webStyle(style)}>{children}</span>;
 export const FlatList=({data,renderItem,ListEmptyComponent,contentContainerStyle})=><ScrollView contentContainerStyle={contentContainerStyle}>{data.length?data.map((item,index)=><React.Fragment key={index}>{renderItem({item})}</React.Fragment>):ListEmptyComponent}</ScrollView>;
 export const Alert={alert:(...args)=>(window.artifactAlerts??=[]).push(args)};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};
 `,
   'react-native-safe-area-context': `import {View} from 'react-native';export const SafeAreaProvider=({children})=><View style={{flex:1,minHeight:0}}>{children}</View>;export const SafeAreaView=View;`,
-  'react-native-webview': `import React,{useEffect} from 'react';export default ({source,onContentProcessDidTerminate,onRenderProcessGone})=>{useEffect(()=>{window.mobilePreviewMounts=(window.mobilePreviewMounts||0)+1},[]);window.terminateMobilePreview=()=>onContentProcessDidTerminate?.();window.crashMobilePreview=()=>onRenderProcessGone?.();return <iframe title="Mobile preview" sandbox="allow-scripts" srcDoc={source.html}/>;};`,
+  'react-native-webview': `import React,{useEffect,useMemo,useRef} from 'react';export default ({source,onContentProcessDidTerminate,onRenderProcessGone,onMessage})=>{const frame=useRef(),callback=useRef(onMessage);callback.current=onMessage;const editor=source.html.includes('id="canvas"');const html=useMemo(()=>source.html.replace('<head>','<head><script>window.ReactNativeWebView={postMessage:data=>parent.postMessage({nativeArtifactMessage:data},"*")}</script>'),[source.html]);useEffect(()=>{if(!editor)window.mobilePreviewMounts=(window.mobilePreviewMounts||0)+1;const receive=event=>{if(event.source===frame.current?.contentWindow&&typeof event.data?.nativeArtifactMessage==='string')callback.current?.({nativeEvent:{data:event.data.nativeArtifactMessage}})};window.addEventListener('message',receive);return()=>window.removeEventListener('message',receive)},[editor]);if(!editor){window.terminateMobilePreview=()=>onContentProcessDidTerminate?.();window.crashMobilePreview=()=>onRenderProcessGone?.()}return <iframe ref={frame} title={editor?'Export editor':'Mobile preview'} sandbox={editor?'allow-scripts allow-same-origin':'allow-scripts allow-downloads'} style={editor?{height:'100%',flex:1,border:0}:undefined} srcDoc={html}/>;};`,
   'expo-file-system': `export class File {constructor(path,name){this.uri='cache://'+name;this.exists=false}write(data){this.exists=true;(window.artifactFiles??={})[this.uri]=typeof data==='string'?data:Array.from(data)}delete(){this.exists=false;(window.deletedArtifactFiles??=[]).push(this.uri)}};export const Paths={cache:''};`,
-  'expo-sharing': `export const isAvailableAsync=async()=>true;export const shareAsync=async(uri,options)=>{(window.sharedArtifacts??=[]).push({uri,options,data:window.artifactFiles[uri]})};`,
+  'expo-sharing': `export const isAvailableAsync=async()=>true;export const shareAsync=async(uri,options)=>{if(window.failGeneratedDownload)throw Error('Sharing failed');(window.sharedArtifacts??=[]).push({uri,options,data:window.artifactFiles[uri]})};`,
   'expo-crypto': `let id=0;export const randomUUID=()=> 'share-'+(++id);`,
   './text': `export {Text} from 'react-native';`,
   '../ui/content/text': `export {Text} from 'react-native';`,
@@ -73,7 +179,7 @@ export const Alert={alert:(...args)=>(window.artifactAlerts??=[]).push(args)};ex
   '../runtime/connection/provider': `import {useWorkspace,WorkspaceScope} from '@dovo/studio-core';export const useRuntime=()=>useWorkspace();export const RuntimeScope=({runtimeId,children})=><WorkspaceScope profile={window.artifactWorkspace.overviews.find(x=>x.profile.id===runtimeId).profile}>{children}</WorkspaceScope>;`,
   '../shell/navigation': `export const useNavigation=()=>({focused:true,navigate:(view,entityId,runtimeId)=>window.artifactNavigation={view,entityId,runtimeId}});`,
   '../ui/layout/screen-header': `export const ScreenHeader=({title,subtitle,buttons,onBack})=><header>{onBack&&<button aria-label="Back" onClick={onBack}>Back</button>}<h1>{title}</h1><p>{subtitle}</p>{buttons.map(button=><button key={button.label} aria-label={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;`,
-  '../ui/controls/field': `export const SearchField=({label,value,onChangeText,placeholder})=><input aria-label={label} value={value} placeholder={placeholder} onChange={event=>onChangeText(event.target.value)}/>;`,
+  '../ui/controls/field': `export const Field=({label,value,onChangeText,editable})=><label>{label}<input aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/></label>;export const SearchField=Field;`,
   '../ui/controls/choice': `export const Choice=({label,value,items,onChange})=><select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;`,
   '../ui/controls/action': `export {Action} from '../controls/action';`,
 }
@@ -89,7 +195,7 @@ const interfaces = await Promise.all(
           ? `import {createRoot} from 'react-dom/client';import ArtifactsScreen from './src/screens/artifacts.tsx';createRoot(document.getElementById('app')).render(<ArtifactsScreen/>);`
           : platform === 'desktop'
             ? `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {ThreadArtifacts,ArtifactCard} from './src/chat/artifacts.tsx';import {ArtifactOpenContext} from './src/chat/artifact-open-context.ts';import {TaskTools} from './src/detail/task-tools.tsx';function App(){const[surface,setSurface]=useState('chat'),[taskId,setTaskId]=useState('thread'),[selection,setSelection]=useState();window.switchArtifactThread=setTaskId;return <div style={{height:'100%',display:'flex'}}><div style={{flex:1,padding:24}}><ArtifactOpenContext value={reference=>{setSelection(previous=>({taskId:reference.taskId,id:reference.id,key:(previous?.key??0)+1}));setSurface('artifacts')}}><ArtifactCard reference={{id:'interactive',taskId,title:'Counter',format:'html',revision:1}}/></ArtifactOpenContext></div>{surface==='artifacts'&&<div style={{width:480,height:'100%'}}><ThreadArtifacts key={taskId+':'+selection?.key} taskId={taskId} initialId={selection?.taskId===taskId?selection.id:undefined} onClose={()=>{setSurface('chat');setSelection(undefined)}}/></div>}<TaskTools surface={surface} onSelect={setSurface} hasDiff={false} artifactsEnabled={window.artifactsEnabled}/></div>}createRoot(document.getElementById('app')).render(<App/>);`
-            : `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {ArtifactCard} from './src/ui/content/artifacts.tsx';function App(){const [html,setHtml]=useState(false);window.showInlineHtml=()=>setHtml(true);return <ArtifactCard reference={html?{id:'interactive',taskId:'thread',title:'Counter',format:'html',revision:1}:{id:'notes',taskId:'thread',title:'Notes',format:'markdown',revision:2}}/>}createRoot(document.getElementById('app')).render(<App/>);`
+            : `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {ArtifactCard} from './src/ui/content/artifacts.tsx';function App(){const [kind,setKind]=useState('notes');window.showInlineHtml=()=>setKind('interactive');window.showInlineFolder=()=>setKind('folder');return <ArtifactCard reference={kind==='folder'?{id:'folder',taskId:'thread',title:'Folder demo',format:'html',revision:2,fileCount:3}:kind==='interactive'?{id:'interactive',taskId:'thread',title:'Counter',format:'html',revision:1}:{id:'notes',taskId:'thread',title:'Notes',format:'markdown',revision:2}}/>}createRoot(document.getElementById('app')).render(<App/>);`
     const result = await build({
       stdin: {
         contents,
@@ -157,7 +263,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
 </script><img src="https://artifact-test.invalid/image"><iframe src="https://artifact-test.invalid/frame"></iframe>`
   await page.evaluate((content) => {
     const frame = document.createElement('iframe')
-    frame.sandbox = 'allow-scripts'
+    frame.sandbox = 'allow-scripts allow-downloads'
     frame.srcdoc = window.preview(content)
     document.body.append(frame)
   }, guest)
@@ -310,8 +416,62 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         format: 'html',
         revision: 1,
       }
+      const folder = {
+        ...interactive,
+        id: 'folder',
+        title: 'Folder demo',
+        fileCount: 3,
+        entrypoint: 'index.html',
+        revision: 2,
+      }
+      const folderFiles = [
+        {
+          path: 'index.html',
+          content: '<button id="folder">0</button><script src="scripts/main.js"></script>',
+        },
+        {
+          path: 'scripts/main.js',
+          content:
+            'document.querySelector("#folder").onclick=event=>event.target.textContent=Number(event.target.textContent)+1;',
+        },
+        { path: 'assets/logo.png', content: 'aW1hZ2U=', encoding: 'base64' },
+      ]
       window.artifactRequest = async (path, input) => {
         window.artifactCalls.push({ path, input })
+        if (path.endsWith('/html') || path.endsWith('/mhtml')) {
+          if (window.failFolderExport) throw Error('Archive export failed')
+          const mhtml = path.endsWith('/mhtml')
+          return {
+            name: 'Folder demo.' + (mhtml ? 'mhtml' : 'html'),
+            mime: mhtml ? 'multipart/related' : 'text/html',
+            data: btoa(
+              mhtml
+                ? 'MIME-Version: 1.0 Folder revision ' + input.revision
+                : '<!doctype html><h1>Folder revision ' + input.revision + '</h1>',
+            ),
+          }
+        }
+        if (path.endsWith('/download'))
+          return {
+            name: 'Folder demo.zip',
+            mime: 'application/zip',
+            data: btoa('PK-Folder revision ' + input.revision),
+          }
+        if (path.endsWith('/export-preview')) {
+          if (window.failEditorPreview) throw Error('Editor preparation failed')
+          return {
+            content:
+              '<style>body{margin:16px;font-family:system-ui}section{padding:8px}</style><section id="keep"><h1>Editable export heading</h1><p>Keep this paragraph</p></section><section id="remove-me"><h2>Delete this section</h2></section><section id="exclude-me">Exclude this section</section><script>parent.editorGuestExecuted=true</script>',
+          }
+        }
+        if (path.endsWith('/png')) {
+          if (window.failArtifactPng) throw Error('PNG generation failed')
+          return {
+            name: 'Notes.png',
+            mime: 'image/png',
+            data: btoa('PNG revision ' + input.revision + ' width ' + input.width),
+          }
+        }
         if (path.endsWith('/pdf')) {
           if (window.failArtifactPdf) throw Error('PDF generation failed')
           return {
@@ -322,7 +482,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         }
         if (path.endsWith('/list'))
           return {
-            artifacts: window.artifactLinksOnly ? [] : [notes, interactive],
+            artifacts: window.artifactLinksOnly ? [] : [notes, interactive, folder],
             links:
               input.taskId === 'thread'
                 ? [
@@ -341,15 +501,24 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
           }
         if (input.id.startsWith('http'))
           throw Error('Hosted links must not read Dovo artifact bodies')
-        const metadata = { ...(input.id === 'notes' ? notes : interactive), taskId: input.taskId }
+        const metadata = {
+          ...(input.id === 'notes' ? notes : input.id === 'folder' ? folder : interactive),
+          taskId: input.taskId,
+        }
         if (path.endsWith('/versions'))
           return {
-            versions: metadata.id === 'notes' ? [notes, { ...notes, revision: 1 }] : [interactive],
+            versions:
+              metadata.id === 'notes'
+                ? [notes, { ...notes, revision: 1 }]
+                : metadata.id === 'folder'
+                  ? [folder, { ...folder, revision: 1 }]
+                  : [interactive],
           }
         return {
           artifact: {
             ...metadata,
             revision: input.revision ?? metadata.revision,
+            ...(metadata.id === 'folder' ? { files: folderFiles } : {}),
             content:
               metadata.id === 'notes'
                 ? input.revision === 1
@@ -357,7 +526,9 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
                   : input.taskId === 'other-thread'
                     ? 'Other thread notes'
                     : 'Current notes'
-                : '<button id="interactive" onclick="this.textContent=Number(this.textContent)||1">Interactive artifact</button>',
+                : metadata.id === 'folder'
+                  ? '<button id="folder" onclick="this.textContent=Number(this.textContent)+1">0</button>'
+                  : '<button id="interactive" onclick="this.textContent=Number(this.textContent)||1">Interactive artifact</button>',
           },
         }
       }
@@ -458,6 +629,8 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       await view.getByText('Version 1', { exact: true }).click()
     }
     await view.getByText('Earlier notes', { exact: true }).last().waitFor()
+    if (ui.platform === 'desktop')
+      await view.getByRole('button', { name: 'Export PDF or PNG', exact: true }).click()
     const exportPdf = async () => {
       if (ui.platform === 'mobile') {
         await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
@@ -508,7 +681,12 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     const pdfRequest = await view.evaluate(() =>
       window.artifactCalls.findLast((call) => call.path === '/api/artifacts/pdf'),
     )
-    assert.deepEqual(pdfRequest.input, { taskId: 'thread', id: 'notes', revision: 1 })
+    assert.deepEqual(pdfRequest.input, {
+      taskId: 'thread',
+      id: 'notes',
+      revision: 1,
+      options: { paperSize: 'auto', landscape: false, marginMm: 16, scale: 100, background: true },
+    })
     await view.evaluate(() => {
       window.failArtifactPdf = true
     })
@@ -525,7 +703,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     assert.equal(
       await view
         .getByRole('button', {
-          name: ui.platform === 'mobile' ? 'Export artifact' : 'Export PDF',
+          name: ui.platform === 'mobile' ? 'Export artifact' : 'Export PDF or PNG',
           exact: true,
         })
         .isDisabled(),
@@ -545,6 +723,202 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       ])
       assert.equal(retry.suggestedFilename(), 'Notes.pdf')
     }
+    // Non-default PDF settings, numeric validation and PNG dimensions use the selected saved revision.
+    if (ui.platform === 'mobile')
+      await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+    await view.getByLabel('Paper size', { exact: true }).selectOption('Letter')
+    await view.getByLabel('Orientation', { exact: true }).selectOption('landscape')
+    await view.getByLabel('Margins (mm)', { exact: true }).fill('8.5')
+    await view.getByLabel('Scale (%)', { exact: true }).fill('75')
+    await view.getByLabel('Include backgrounds', { exact: true }).uncheck()
+    await view.getByLabel('Margins (mm)', { exact: true }).fill('')
+    assert.equal(
+      await view.getByRole('button', { name: 'Export PDF', exact: true }).isDisabled(),
+      true,
+    )
+    await view.getByLabel('Margins (mm)', { exact: true }).fill('8.5')
+    if (screenshotDirectory)
+      await view.screenshot({ path: `${screenshotDirectory}/${ui.platform}-pdf-options.png` })
+    const sharesBeforeOptions = await view.evaluate(() => window.sharedArtifacts?.length ?? 0)
+    if (ui.platform === 'desktop') {
+      await Promise.all([
+        view.waitForEvent('download'),
+        view.getByRole('button', { name: 'Export PDF', exact: true }).click(),
+      ])
+    } else {
+      await view.getByRole('button', { name: 'Export PDF', exact: true }).click()
+      await view.waitForFunction(
+        (count) => window.sharedArtifacts.length === count + 1,
+        sharesBeforeOptions,
+      )
+    }
+    const configuredPdf = await view.evaluate(() =>
+      window.artifactCalls.findLast((call) => call.path === '/api/artifacts/pdf'),
+    )
+    assert.deepEqual(configuredPdf.input, {
+      taskId: 'thread',
+      id: 'notes',
+      revision: 1,
+      options: {
+        paperSize: 'Letter',
+        landscape: true,
+        marginMm: 8.5,
+        scale: 75,
+        background: false,
+      },
+    })
+    if (ui.platform === 'desktop')
+      await view.getByRole('button', { name: 'PNG', exact: true }).click()
+    else await view.getByLabel('Format', { exact: true }).selectOption('png')
+    for (const value of ['', '319', '4097', '640.5']) {
+      await view.getByLabel('Width (px)', { exact: true }).fill(value)
+      assert.equal(
+        await view.getByRole('button', { name: 'Export PNG', exact: true }).isDisabled(),
+        true,
+      )
+    }
+    await view.getByLabel('Width (px)', { exact: true }).fill('960')
+    if (screenshotDirectory)
+      await view.screenshot({ path: `${screenshotDirectory}/${ui.platform}-png-options.png` })
+    await view.evaluate(() => (window.failArtifactPng = true))
+    await view.getByRole('button', { name: 'Export PNG', exact: true }).click()
+    if (ui.platform === 'desktop')
+      await view.getByText('PNG generation failed', { exact: true }).waitFor()
+    else
+      await view.waitForFunction(() =>
+        window.artifactAlerts.some((args) => args.join(' ').includes('PNG generation failed')),
+      )
+    await view.evaluate(() => (window.failArtifactPng = false))
+    if (ui.platform === 'desktop') {
+      const [download] = await Promise.all([
+        view.waitForEvent('download'),
+        view.getByRole('button', { name: 'Export PNG', exact: true }).click(),
+      ])
+      assert.equal(download.suggestedFilename(), 'Notes.png')
+      assert.equal(readFileSync(await download.path()).toString(), 'PNG revision 1 width 960')
+      await view.getByRole('button', { name: 'Close export options', exact: true }).click()
+    } else {
+      const count = await view.evaluate(() => window.sharedArtifacts.length)
+      await view.getByRole('button', { name: 'Export PNG', exact: true }).click()
+      await view.waitForFunction((count) => window.sharedArtifacts.length === count + 1, count)
+      const png = await view.evaluate(() => window.sharedArtifacts.at(-1))
+      assert.equal(png.options.mimeType, 'image/png')
+      assert.equal(png.options.UTI, 'public.png')
+      assert.equal(Buffer.from(png.data).toString(), 'PNG revision 1 width 960')
+      await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+    }
+    assert.deepEqual(
+      await view.evaluate(
+        () => window.artifactCalls.findLast((call) => call.path === '/api/artifacts/png').input,
+      ),
+      { taskId: 'thread', id: 'notes', revision: 1, width: 960 },
+    )
+    // Temporary editing uses a separate, inert guest; apply, cancel and reset never write the artifact.
+    if (ui.platform === 'mobile')
+      await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+    else await view.getByRole('button', { name: 'Export PDF or PNG', exact: true }).click()
+    await view.evaluate(() => (window.failEditorPreview = true))
+    await view.getByRole('button', { name: 'Edit before export', exact: true }).click()
+    if (ui.platform === 'desktop')
+      await view.getByText('Editor preparation failed', { exact: true }).waitFor()
+    else
+      await view.waitForFunction(() =>
+        window.artifactAlerts.some((args) => args.join(' ').includes('Editor preparation failed')),
+      )
+    await view.evaluate(() => (window.failEditorPreview = false))
+    await view.getByRole('button', { name: 'Edit before export', exact: true }).click()
+    const editor = view.frameLocator('iframe[title="Export editor"]')
+    const editing = editor.frameLocator('iframe[title="Editable export content"]')
+    await editing.locator('#keep h1').waitFor()
+    assert.equal(
+      await view.evaluate(() => window.editorGuestExecuted),
+      undefined,
+      'Editing guest scripts must never run',
+    )
+    assert.equal(await editing.locator('body').getAttribute('contenteditable'), 'true')
+    const editHeading = async (value) => {
+      const heading = editing.locator('#keep h1')
+      await heading.click()
+      await heading.evaluate((node) => {
+        const range = node.ownerDocument.createRange()
+        range.selectNodeContents(node)
+        const selection = node.ownerDocument.getSelection()
+        selection.removeAllRanges()
+        selection.addRange(range)
+      })
+      // Native keystrokes exercise contenteditable in a guest with scripts disabled.
+      await view.keyboard.type(value)
+    }
+    await editHeading('Edited export heading')
+    assert.equal(
+      await editing.locator('#keep h1').textContent(),
+      'Edited export heading',
+      'Text editing must update the temporary copy immediately',
+    )
+    await editor.getByRole('button', { name: 'Select elements', exact: true }).click()
+    await editing.locator('#remove-me h2').click()
+    await editor.getByRole('button', { name: 'Select parent', exact: true }).click()
+    await editor.getByRole('button', { name: 'Delete element', exact: true }).click()
+    assert.equal(await editing.locator('#remove-me').count(), 0)
+    await editor.getByRole('button', { name: 'Undo removal / exclusion', exact: true }).click()
+    assert.equal(await editing.locator('#remove-me').count(), 1)
+    await editing.locator('#remove-me h2').click()
+    await editor.getByRole('button', { name: 'Select parent', exact: true }).click()
+    await editor.getByRole('button', { name: 'Delete element', exact: true }).click()
+    await editing.locator('#exclude-me').click()
+    await editor.getByRole('button', { name: 'Exclude from export', exact: true }).click()
+    assert.equal(await editing.locator('#exclude-me').getAttribute('data-no-print'), '')
+    await editor.getByRole('button', { name: 'Include in export', exact: true }).click()
+    assert.equal(await editing.locator('#exclude-me').getAttribute('data-no-print'), null)
+    await editor.getByRole('button', { name: 'Undo removal / exclusion', exact: true }).click()
+    assert.equal(await editing.locator('#exclude-me').getAttribute('data-no-print'), '')
+    await editing.locator('#exclude-me').click()
+
+    if (screenshotDirectory)
+      await view.screenshot({ path: `${screenshotDirectory}/${ui.platform}-export-editor.png` })
+    await editor.getByRole('button', { name: 'Use edited copy', exact: true }).click()
+    if (ui.platform === 'desktop')
+      await view.getByRole('button', { name: 'PDF', exact: true }).click()
+    else await view.getByLabel('Format', { exact: true }).selectOption('pdf')
+    if (ui.platform === 'desktop')
+      await Promise.all([
+        view.waitForEvent('download'),
+        view.getByRole('button', { name: 'Export PDF', exact: true }).click(),
+      ])
+    else {
+      const count = await view.evaluate(() => window.sharedArtifacts.length)
+      await view.getByRole('button', { name: 'Export PDF', exact: true }).click()
+      await view.waitForFunction((count) => window.sharedArtifacts.length === count + 1, count)
+    }
+    const editedPdf = await view.evaluate(() =>
+      window.artifactCalls.findLast((call) => call.path === '/api/artifacts/pdf'),
+    )
+    assert.ok(editedPdf.input.draftHtml.includes('Edited export heading'))
+    assert.ok(!editedPdf.input.draftHtml.includes('id="remove-me"'))
+    assert.ok(editedPdf.input.draftHtml.includes('data-no-print'))
+    assert.ok(!editedPdf.input.draftHtml.includes('data-dovo-export-selected'))
+    assert.ok(!editedPdf.input.draftHtml.includes('contenteditable'))
+    // Reopening the edit copy, then discarding, retains the previously applied draft.
+    await view.getByRole('button', { name: 'Edit before export', exact: true }).click()
+    await editHeading('Discard this change')
+    await editor.getByRole('button', { name: 'Discard edits', exact: true }).click()
+    await view.getByRole('button', { name: 'Edit before export', exact: true }).click()
+    assert.equal(await editing.locator('#keep h1').textContent(), 'Edited export heading')
+    await editor.getByRole('button', { name: 'Discard edits', exact: true }).click()
+    await view.getByRole('button', { name: 'Reset edits', exact: true }).click()
+    assert.equal(await view.getByRole('button', { name: 'Reset edits', exact: true }).count(), 0)
+    assert.ok(
+      await view.evaluate(
+        () =>
+          !window.artifactCalls.some((call) =>
+            ['/api/artifacts/create', '/api/artifacts/update'].includes(call.path),
+          ),
+      ),
+    )
+    if (ui.platform === 'desktop')
+      await view.getByRole('button', { name: 'Close export options', exact: true }).click()
+    else await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+    await view.getByText('Earlier notes', { exact: true }).last().waitFor()
     if (ui.platform === 'desktop') {
       await view.getByRole('button', { name: 'Expand artifact', exact: true }).click()
       await view.getByRole('dialog').waitFor()
@@ -615,6 +989,199 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       '1',
       'Viewing source preserves artifact interaction',
     )
+
+    if (ui.platform === 'desktop')
+      await view.getByLabel('Artifact', { exact: true }).selectOption('folder')
+    else {
+      await view.getByRole('button', { name: 'Choose artifact', exact: true }).click()
+      await view.getByText('Folder demo', { exact: true }).click()
+    }
+    const folderFrame = view
+      .locator('[aria-label="Thread artifacts"], [role="dialog"]')
+      .frameLocator('iframe')
+      .frameLocator('iframe')
+    await folderFrame.locator('#folder').click()
+    assert.equal(await folderFrame.locator('#folder').textContent(), '1')
+    if (ui.platform === 'desktop')
+      await view.getByLabel('Artifact file', { exact: true }).selectOption('scripts/main.js')
+    else {
+      await view.getByRole('button', { name: 'Browse files · 3', exact: true }).click()
+      await view.getByRole('button', { name: 'scripts/main.js', exact: true }).click()
+    }
+    await view
+      .getByText(/document.querySelector\("#folder"\).onclick/)
+      .last()
+      .waitFor()
+    await view
+      .getByRole('button', {
+        name: ui.platform === 'desktop' ? 'Preview' : 'Show artifact preview',
+        exact: true,
+      })
+      .click()
+    assert.equal(
+      await folderFrame.locator('#folder').textContent(),
+      '1',
+      'Browsing a folder preserves live preview state',
+    )
+    if (ui.platform === 'desktop') await view.getByLabel('Artifact version').selectOption('1')
+    else {
+      await view
+        .getByRole('button', { name: 'Choose version · latest version', exact: true })
+        .click()
+      await view.getByText('Version 1', { exact: true }).click()
+    }
+    await folderFrame.locator('#folder').waitFor()
+    if (ui.platform === 'desktop') {
+      const [download] = await Promise.all([
+        view.waitForEvent('download'),
+        view.getByRole('button', { name: 'Download folder', exact: true }).click(),
+      ])
+      assert.equal(download.suggestedFilename(), 'Folder demo.zip')
+      assert.equal(readFileSync(await download.path()).toString(), 'PK-Folder revision 1')
+    } else {
+      await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+      await view.getByRole('button', { name: 'Share folder (ZIP)', exact: true }).click()
+      await view.waitForFunction(() => window.sharedArtifacts.length === 7)
+      const shared = await view.evaluate(() => window.sharedArtifacts.at(-1))
+      assert.equal(shared.options.mimeType, 'application/zip')
+      assert.equal(Buffer.from(shared.data).toString(), 'PK-Folder revision 1')
+      await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+      await view.getByRole('button', { name: 'Browse files · 3', exact: true }).click()
+      await view.getByRole('button', { name: 'assets/logo.png', exact: true }).click()
+      await view
+        .getByText(/Binary asset: assets\/logo.png/)
+        .last()
+        .waitFor()
+      await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+      await view.getByRole('button', { name: 'Share source', exact: true }).click()
+      await view.waitForFunction(() => window.sharedArtifacts.length === 8)
+      assert.equal(
+        Buffer.from(await view.evaluate(() => window.sharedArtifacts.at(-1).data)).toString(),
+        'image',
+      )
+      await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+    }
+    assert.deepEqual(
+      (
+        await view.evaluate(() =>
+          window.artifactCalls.findLast((call) => call.path === '/api/artifacts/download'),
+        )
+      ).input,
+      { taskId: 'thread', id: 'folder', revision: 1 },
+    )
+
+    for (const format of ['html', 'mhtml']) {
+      const label = format === 'html' ? 'Interactive HTML' : 'MHTML snapshot'
+      if (ui.platform === 'desktop') {
+        await view.getByRole('button', { name: 'Export folder', exact: true }).click()
+        const [download] = await Promise.all([
+          view.waitForEvent('download'),
+          view.getByRole('menuitem', { name: new RegExp(label) }).click(),
+        ])
+        assert.equal(download.suggestedFilename(), `Folder demo.${format}`)
+        assert.ok(
+          readFileSync(await download.path())
+            .toString()
+            .includes('Folder revision 1'),
+        )
+      } else {
+        const count = await view.evaluate(() => window.sharedArtifacts.length)
+        await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+        await view.getByRole('button', { name: label, exact: true }).click()
+        await view.waitForFunction((count) => window.sharedArtifacts.length === count + 1, count)
+        const shared = await view.evaluate(() => window.sharedArtifacts.at(-1))
+        assert.equal(shared.options.mimeType, format === 'html' ? 'text/html' : 'multipart/related')
+        assert.ok(shared.uri.endsWith(`Folder demo.${format}`))
+        assert.ok(Buffer.from(shared.data).toString().includes('Folder revision 1'))
+        await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+      }
+      const call = await view.evaluate(
+        (format) =>
+          window.artifactCalls.findLast((call) => call.path === '/api/artifacts/' + format),
+        format,
+      )
+      assert.deepEqual(call.input, { taskId: 'thread', id: 'folder', revision: 1 })
+    }
+    if (ui.platform === 'desktop') {
+      await view.getByRole('button', { name: 'Export folder', exact: true }).click()
+      await view.getByRole('menuitem', { name: 'Edit before export…', exact: true }).click()
+    } else {
+      await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+      await view.getByRole('button', { name: 'Edit before export', exact: true }).click()
+    }
+    await editing.locator('#keep h1').waitFor()
+    await editHeading('Folder edited export')
+    await editor.getByRole('button', { name: 'Use edited copy', exact: true }).click()
+    if (ui.platform === 'desktop') {
+      await view.getByRole('button', { name: 'Export folder', exact: true }).click()
+      await Promise.all([
+        view.waitForEvent('download'),
+        view.getByRole('menuitem', { name: /MHTML snapshot/ }).click(),
+      ])
+    } else {
+      const count = await view.evaluate(() => window.sharedArtifacts.length)
+      await view.getByRole('button', { name: 'MHTML snapshot', exact: true }).click()
+      await view.waitForFunction((count) => window.sharedArtifacts.length === count + 1, count)
+    }
+    const editedMhtml = await view.evaluate(() =>
+      window.artifactCalls.findLast((call) => call.path === '/api/artifacts/mhtml'),
+    )
+    assert.equal(editedMhtml.input.id, 'folder')
+    assert.equal(editedMhtml.input.revision, 1)
+    assert.ok(editedMhtml.input.draftHtml.includes('Folder edited export'))
+    await view.getByRole('button', { name: 'Reset edits', exact: true }).click()
+    if (ui.platform === 'mobile')
+      await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+    await view.evaluate(() => (window.failFolderExport = true))
+    if (ui.platform === 'desktop') {
+      await view.getByRole('button', { name: 'Export folder', exact: true }).click()
+      await view.getByRole('menuitem', { name: /MHTML snapshot/ }).click()
+      await view.getByText('Archive export failed', { exact: true }).waitFor()
+      assert.equal(
+        await view.getByRole('button', { name: 'Export folder', exact: true }).isDisabled(),
+        false,
+      )
+    } else {
+      await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+      await view.getByRole('button', { name: 'MHTML snapshot', exact: true }).click()
+      await view.waitForFunction(() =>
+        window.artifactAlerts.some((args) => args.join(' ').includes('Archive export failed')),
+      )
+      assert.equal(
+        await view.getByRole('button', { name: 'MHTML snapshot', exact: true }).isDisabled(),
+        false,
+      )
+      await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+    }
+    await view.evaluate(() => (window.failFolderExport = false))
+    if (ui.platform === 'desktop') {
+      await view.getByRole('button', { name: 'Export folder', exact: true }).click()
+      const [retried] = await Promise.all([
+        view.waitForEvent('download'),
+        view.getByRole('menuitem', { name: /MHTML snapshot/ }).click(),
+      ])
+      assert.equal(retried.suggestedFilename(), 'Folder demo.mhtml')
+    } else {
+      const count = await view.evaluate(() => window.sharedArtifacts.length)
+      await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+      await view.getByRole('button', { name: 'MHTML snapshot', exact: true }).click()
+      await view.waitForFunction((count) => window.sharedArtifacts.length === count + 1, count)
+      await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+    }
+    if (screenshotDirectory) {
+      if (ui.platform === 'desktop') {
+        await view.getByRole('button', { name: 'Export folder', exact: true }).click()
+        await view.screenshot({ path: `${screenshotDirectory}/desktop-folder-exports.png` })
+        await view.keyboard.press('Escape')
+      } else {
+        await view.getByRole('button', { name: 'Export artifact', exact: true }).click()
+        await view.screenshot({ path: `${screenshotDirectory}/mobile-folder-exports.png` })
+        await view.getByRole('button', { name: 'Back to preview', exact: true }).click()
+      }
+    }
+
+    if (screenshotDirectory)
+      await view.screenshot({ path: `${screenshotDirectory}/${ui.platform}-folder.png` })
 
     const chooseLink = async (title, url) => {
       if (ui.platform === 'desktop')
@@ -718,9 +1285,42 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         'Clicked inline',
         'Source toggle preserves native WebView state',
       )
+      await view.evaluate(() => window.showInlineFolder())
+      const folderInline = view.frameLocator('iframe').frameLocator('iframe')
+      await folderInline.locator('#folder').click()
+      assert.equal(await folderInline.locator('#folder').textContent(), '1')
+      await view.getByRole('button', { name: 'View inline artifact source', exact: true }).click()
+      await view
+        .getByText(/<script src="scripts\/main.js"><\/script>/)
+        .last()
+        .waitFor()
+      await view.getByRole('button', { name: 'Show rendered artifact', exact: true }).click()
+      assert.equal(await folderInline.locator('#folder').textContent(), '1')
+      await checkGeneratedDownloads(view, folderInline, true)
       await view.getByRole('button', { name: 'Expand inline artifact', exact: true }).click()
       await view.getByRole('dialog').waitFor()
+      await checkGeneratedDownloads(
+        view,
+        view.getByRole('dialog').frameLocator('iframe').frameLocator('iframe'),
+        true,
+      )
       await view.getByRole('button', { name: 'Close artifact preview', exact: true }).click()
+    }
+    if (ui.platform === 'desktop') {
+      await checkGeneratedDownloads(
+        view,
+        view.locator('[data-inline-artifact]').frameLocator('iframe').frameLocator('iframe'),
+        false,
+      )
+      await view.getByLabel('Artifact', { exact: true }).selectOption('interactive')
+      await checkGeneratedDownloads(
+        view,
+        view
+          .getByRole('region', { name: 'Thread artifacts' })
+          .frameLocator('iframe')
+          .frameLocator('iframe'),
+        false,
+      )
     }
     await view.close()
     const disabled = await browser.newPage()
@@ -1150,7 +1750,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
   }
   assert.deepEqual(pageErrors, [], 'Artifact interfaces must not raise browser errors')
   console.log(
-    'Artifacts: thread cards open beside chat, expanded versions, desktop/mobile galleries and filters, desktop sidebar detail, per-owner offline retention, re-pairing isolation, slow replies, remembered filters and selection, hosted links, thread and host isolation, interactive HTML/SVG, sandbox, lazy snapshots, versions, PDF downloads/mobile sharing/failure recovery, add to thread, deletion/cancellation/error recovery, copy and source views passed.',
+    'Artifacts: thread cards open beside chat, expanded versions, desktop/mobile galleries and filters, desktop sidebar detail, per-owner offline retention, re-pairing isolation, slow replies, remembered filters and selection, hosted links, thread and host isolation, interactive HTML/SVG, sandbox, lazy snapshots, versions, PDF/PNG configuration and downloads/mobile sharing/failure recovery, temporary export editing and exclusions, add to thread, deletion/cancellation/error recovery, copy and source views passed.',
   )
 } finally {
   await browser.close()

@@ -213,6 +213,22 @@ it('offers task-scoped simulator controls through a provider MCP connection', as
     expect(runtime.services.artifacts.read('task', result.artifact.id).content).toBe(
       '# Persisted notes',
     )
+    const folder = await client.callTool({
+      name: 'artifact_create',
+      arguments: {
+        title: 'Folder tool',
+        format: 'html',
+        files: [
+          { path: 'index.html', content: '<script type="module" src="main.js"></script>' },
+          { path: 'main.js', content: 'document.body.textContent="Folder tool ready";' },
+        ],
+      },
+    })
+    const folderResult = decode(artifactWriteResponseSchema, JSON.parse(decodeToolText(folder)))
+    expect(folderResult.artifact.fileCount).toBe(2)
+    expect(runtime.services.artifacts.read('task', folderResult.artifact.id).content).toContain(
+      'Folder tool ready',
+    )
     const read = await client.callTool({
       name: 'artifact_read',
       arguments: { id: result.artifact.id },

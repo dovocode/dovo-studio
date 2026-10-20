@@ -3,6 +3,7 @@ import { CodeXml, Eye, Layers, RotateCw } from 'lucide-react'
 import {
   artifactPreviewHtml,
   artifactResponseSchema,
+  artifactBundleSource,
   type Artifact,
   type ArtifactReference,
 } from '@dovo/protocol'
@@ -66,6 +67,9 @@ export function InlineArtifact({
       disposed = true
     }
   }, [request, connected, visible, reference.taskId, reference.id, reference.revision, reload])
+  const sourceArtifact = artifact
+    ? artifactBundleSource(artifact, artifact.entrypoint ?? '')
+    : undefined
   const interactive = artifact?.format === 'html' || artifact?.format === 'svg'
   return (
     <div
@@ -123,7 +127,7 @@ export function InlineArtifact({
             {interactive && (
               <iframe
                 title={artifact.title}
-                sandbox="allow-scripts"
+                sandbox="allow-scripts allow-downloads"
                 referrerPolicy="no-referrer"
                 srcDoc={artifactPreviewHtml(artifact.content, previewTheme)}
                 className={source ? 'hidden' : 'min-h-0 w-full flex-1 border-0 bg-background'}
@@ -131,7 +135,7 @@ export function InlineArtifact({
             )}
             {(source || artifact.format === 'code') && (
               <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-4 text-xs">
-                <code>{artifact.content}</code>
+                <code>{sourceArtifact?.content}</code>
               </pre>
             )}
             {!source && artifact.format === 'markdown' && (
@@ -143,7 +147,7 @@ export function InlineArtifact({
         )}
       </FloatingPreview>
       <div className="border-t px-3 py-1 text-[0.625rem] text-muted-foreground">
-        Version {reference.revision}
+        {reference.fileCount ? `${reference.fileCount} files · ` : ''}Version {reference.revision}
       </div>
     </div>
   )

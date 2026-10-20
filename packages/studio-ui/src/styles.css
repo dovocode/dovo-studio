@@ -215,6 +215,14 @@ textarea {
   flex-direction: column;
   overflow: hidden;
 }
+/* Portalled dialogs and detached previews share the native titlebar clearance.
+   Electron reports a zero-height titlebar when its controls disappear in fullscreen. */
+:root:has(.studio:is([data-platform='win32'], [data-platform='linux'])) {
+  --studio-window-top-inset: env(titlebar-area-height, 52px);
+}
+.studio-preview-expanded {
+  top: calc(var(--studio-window-top-inset, 0px) + 8px);
+}
 .studio-titlebar {
   display: flex;
   height: var(--studio-header-height, 52px);

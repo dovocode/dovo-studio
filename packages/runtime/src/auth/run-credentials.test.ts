@@ -96,7 +96,7 @@ it('allows task artifact and enabled memory tools over raw HTTP, preserving huma
   const { artifact } = decode(artifactWriteResponseSchema, await created.json())
   expect((await post('/api/artifacts/read', { taskId, id: artifact.id })).status).toBe(200)
   expect((await post('/api/artifacts/read', { taskId: otherId, id: artifact.id })).status).toBe(403)
-  const foreign = s.artifacts.write({
+  const foreign = await s.artifacts.write({
     taskId: otherId,
     title: 'Other report',
     format: 'markdown',

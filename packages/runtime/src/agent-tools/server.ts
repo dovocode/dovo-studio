@@ -66,6 +66,28 @@ const linkedProjectsEnabled = process.env.DOVO_TASK_LINKED_PROJECTS_ENABLED !== 
 const artifactsEnabled = process.env.DOVO_TASK_ARTIFACTS_ENABLED === '1'
 const pipelineWatchingEnabled = process.env.DOVO_TASK_PIPELINE_WATCHING_ENABLED === '1'
 const pullRequestWatchingEnabled = process.env.DOVO_TASK_PR_WATCHING_ENABLED === '1'
+const artifactBundleFields = {
+  entrypoint: {
+    type: 'string' as const,
+    description: 'HTML entry file for a folder, defaults to index.html.',
+  },
+  files: {
+    type: 'array' as const,
+    minItems: 1,
+    maxItems: 128,
+    description:
+      'Complete artifact folder. Relative paths may include subfolders. Include every CSS, JavaScript and asset dependency; no external network or packages.',
+    items: {
+      type: 'object' as const,
+      properties: {
+        path: { type: 'string' as const },
+        content: { type: 'string' as const },
+        encoding: { type: 'string' as const, enum: ['utf8', 'base64'] },
+      },
+      required: ['path', 'content'],
+    },
+  },
+}
 const artifacts = () => {
   if (!artifactsEnabled) throw new Error('Dovo Artifacts is disabled')
 }
@@ -536,7 +558,7 @@ const tools: Array<
               {
                 name: 'artifact_create',
                 description:
-                  'Create a persistent artifact when the user requests one or a viewable deliverable adds clear value. Prefer normal replies and repository files for routine work; reuse an existing artifact where appropriate. Dovo renders artifacts directly in the thread on desktop and mobile. Use self-contained HTML for interactive explanations, diagrams, simulations and 3D views with useful controls; previews can expand or float on desktop. Formats: markdown, self-contained html, svg and code. HTML has no external network access; embed assets and scripts. Returns the ID and revision, not the body.',
+                  'Create a persistent artifact when the user requests one or a viewable deliverable adds clear value. Prefer normal replies and repository files for routine work; reuse an existing artifact where appropriate. Dovo renders artifacts directly in the thread on desktop and mobile. Use self-contained HTML for interactive explanations, diagrams, simulations and 3D views with useful controls; previews can expand or float on desktop. Formats: markdown, html, svg and code. For a multi-file artifact folder, use html with files and an entrypoint (default index.html), omitting content. Relative CSS, JavaScript imports and assets are bundled into a working preview. Use UTF-8 text or base64 binary assets. HTML has no external network access. Returns the ID and revision, not the body.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
@@ -544,14 +566,15 @@ const tools: Array<
                     format: { type: 'string' as const, enum: ['markdown', 'html', 'svg', 'code'] },
                     content: { type: 'string' as const },
                     language: { type: 'string' as const },
+                    ...artifactBundleFields,
                   },
-                  required: ['title', 'format', 'content'],
+                  required: ['title', 'format'],
                 },
               },
               {
                 name: 'artifact_update',
                 description:
-                  'Save a new revision of an existing Dovo artifact, keeping earlier versions. Read first and pass expectedRevision to avoid overwriting newer work. Supply its complete title, format and content.',
+                  'Save a new revision of an existing Dovo artifact, keeping earlier versions. Read first and pass expectedRevision to avoid overwriting newer work. Supply its complete title and format, plus content for a single file or the complete files array and entrypoint for a folder. Omitting files converts it to a single-file artifact.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
@@ -561,8 +584,9 @@ const tools: Array<
                     format: { type: 'string' as const, enum: ['markdown', 'html', 'svg', 'code'] },
                     content: { type: 'string' as const },
                     language: { type: 'string' as const },
+                    ...artifactBundleFields,
                   },
-                  required: ['id', 'expectedRevision', 'title', 'format', 'content'],
+                  required: ['id', 'expectedRevision', 'title', 'format'],
                 },
               },
             ]

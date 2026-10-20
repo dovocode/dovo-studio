@@ -1,6 +1,7 @@
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
   artifactFormatLabels,
+  artifactLabel,
   artifactLibrarySchema,
   runtimeComputerName,
   type ArtifactLibraryEntry,
@@ -172,7 +173,7 @@ export default function ArtifactsView() {
   const matching = entries.filter(
     ({ source, artifact }) =>
       (state === 'all' || artifact.threadState === state) &&
-      `${artifact.title} ${artifact.threadTitle} ${source.computerName} ${artifact.format} ${artifactFormatLabels[artifact.format]} ${artifact.language ?? ''}`
+      `${artifact.title} ${artifact.threadTitle} ${source.computerName} ${artifact.format} ${artifactLabel(artifact)} ${artifact.language ?? ''}`
         .toLowerCase()
         .includes(query),
   )
@@ -471,7 +472,7 @@ export default function ArtifactsView() {
                             <div className="mt-auto flex items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
                               <span className="flex items-center gap-1.5">
                                 <ArtifactIcon format={artifact.format} className="size-3.5" />
-                                {artifactFormatLabels[artifact.format]} · v{artifact.revision}
+                                {artifactLabel(artifact)} · v{artifact.revision}
                               </span>
                               <time dateTime={artifact.updatedAt}>
                                 {shortDate(artifact.updatedAt)}
@@ -593,7 +594,7 @@ function ArtifactDetail({
           <EmptyState
             icon={<WifiOff />}
             title={`${source.computerName} is offline`}
-            description={`Reconnect it to open this ${artifactFormatLabels[artifact.format].toLowerCase()}. Version ${artifact.revision} was last updated ${shortDate(artifact.updatedAt)}.`}
+            description={`Reconnect it to open this ${artifact.fileCount ? 'folder' : artifactFormatLabels[artifact.format].toLowerCase()}. Version ${artifact.revision} was last updated ${shortDate(artifact.updatedAt)}.`}
           />
         )}
       </div>

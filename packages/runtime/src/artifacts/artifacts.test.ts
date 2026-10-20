@@ -3,10 +3,16 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { unzipSync, strFromU8 } from 'fflate'
 import {
   ARTIFACT_MAX_BYTES,
   artifactReferences,
   artifactPdfResponseSchema,
+  artifactExportPreviewResponseSchema,
+  artifactPngResponseSchema,
+  artifactHtmlResponseSchema,
+  artifactMhtmlResponseSchema,
+  artifactDownloadResponseSchema,
   compactActivityEvents,
   decode,
   artifactResponseSchema,
@@ -285,11 +291,14 @@ it('keeps saved content and revisions after a runtime restart', async () => {
     const input = {
       taskId: f.taskId,
       title: 'Diagram',
-      format: 'svg' as const,
-      content: '<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>',
+      format: 'html' as const,
+      files: [
+        { path: 'index.html', content: '<h1>Persisted folder</h1>' },
+        { path: 'notes.txt', content: 'Unreferenced file retained' },
+      ],
     }
-    const first = f.runtime.services.artifacts.write(input)
-    f.runtime.services.artifacts.write({
+    const first = await f.runtime.services.artifacts.write(input)
+    await f.runtime.services.artifacts.write({
       ...input,
       id: first.id,
       expectedRevision: 1,
@@ -314,6 +323,8 @@ it('keeps saved content and revisions after a runtime restart', async () => {
     })
     try {
       expect(restarted.services.artifacts.read(f.taskId, first.id).revision).toBe(2)
+      expect(restarted.services.artifacts.read(f.taskId, first.id).files).toEqual(input.files)
+      expect(restarted.services.artifacts.read(f.taskId, first.id, 1).files).toEqual(input.files)
       expect(restarted.services.artifacts.library()[0]?.deleteAt).toBe(deadline)
       expect(restarted.services.artifacts.read(f.taskId, first.id, 1).title).toBe('Diagram')
       expect(restarted.services.artifacts.list(f.taskId)[0]).not.toHaveProperty('content')
@@ -354,7 +365,7 @@ it('defaults to disabled and immediately blocks old sessions when switched off, 
 
 it('keeps artifacts forever by default and exposes only metadata in the global library', async () => {
   const f = await fixture()
-  const artifact = f.runtime.services.artifacts.write({
+  const artifact = await f.runtime.services.artifacts.write({
     taskId: f.taskId,
     title: 'Library note',
     format: 'markdown',
@@ -377,13 +388,13 @@ it('keeps artifacts forever by default and exposes only metadata in the global l
 it('retains settle timers through edits, cancels on reopen and starts fresh when settled again', async () => {
   const f = await fixture()
   f.runtime.services.preferences.save({ settledArtifactRetention: '7-days' })
-  const artifact = f.runtime.services.artifacts.write({
+  const artifact = await f.runtime.services.artifacts.write({
     taskId: f.taskId,
     title: 'Keep versions',
     format: 'code',
     content: 'first',
   })
-  f.runtime.services.artifacts.write({
+  await f.runtime.services.artifacts.write({
     taskId: f.taskId,
     id: artifact.id,
     expectedRevision: 1,
@@ -421,7 +432,7 @@ it('gives archived retention priority and immediately applies changed rules to a
     settledArtifactRetention: '7-days',
     archivedArtifactRetention: 'forever',
   })
-  const artifact = f.runtime.services.artifacts.write({
+  const artifact = await f.runtime.services.artifacts.write({
     taskId: f.taskId,
     title: 'Archive',
     format: 'svg',
@@ -447,7 +458,7 @@ it('gives archived retention priority and immediately applies changed rules to a
 it('immediately removes all artifact versions on settlement when configured', async () => {
   const f = await fixture()
   f.runtime.services.preferences.save({ settledArtifactRetention: 'immediately' })
-  f.runtime.services.artifacts.write({
+  await f.runtime.services.artifacts.write({
     taskId: f.taskId,
     title: 'Transient',
     format: 'html',
@@ -463,7 +474,7 @@ it('cancels archive cleanup on restore and restarts settlement retention', async
     settledArtifactRetention: '30-days',
     archivedArtifactRetention: '7-days',
   })
-  f.runtime.services.artifacts.write({
+  await f.runtime.services.artifacts.write({
     taskId: f.taskId,
     title: 'Restored document',
     format: 'markdown',
@@ -506,9 +517,9 @@ it('lets paired devices copy artifacts between writable threads and delete all v
     format: 'markdown' as const,
     content: '# Original',
   }
-  const original = artifacts.write(input)
-  const sibling = artifacts.write({ ...input, title: 'Keep me' })
-  artifacts.write({ ...input, id: original.id, expectedRevision: 1, content: '# Latest' })
+  const original = await artifacts.write(input)
+  const sibling = await artifacts.write({ ...input, title: 'Keep me' })
+  await artifacts.write({ ...input, id: original.id, expectedRevision: 1, content: '# Latest' })
   expect(
     (await f.post('attach', { taskId: f.otherId, id: original.id, targetTaskId: f.taskId }, paired))
       .status,
@@ -561,7 +572,7 @@ it.each(['permission', 'sandboxMode'] as const)(
   'rejects copying into settled, archived, missing and %s read-only threads',
   async (dimension) => {
     const f = await fixture()
-    const source = f.runtime.services.artifacts.write({
+    const source = await f.runtime.services.artifacts.write({
       taskId: f.taskId,
       title: 'Source',
       format: 'code',
@@ -603,7 +614,7 @@ it('caches revision snapshots, checks scope on cache hits, and invalidates delet
     format: 'html' as const,
     content: '<h1>Hello</h1>',
   }
-  const saved = artifacts.write(input)
+  const saved = await artifacts.write(input)
   const render = vi
     .spyOn(f.runtime.services.browsers, 'artifactSnapshot')
     .mockResolvedValue('data:image/jpeg;base64,cHJldmlldw==')
@@ -615,17 +626,22 @@ it('caches revision snapshots, checks scope on cache hits, and invalidates delet
   await f.post('snapshot', request)
   expect(render).toHaveBeenCalledTimes(1)
   expect((await f.post('snapshot', { ...request, taskId: f.otherId })).status).toBe(404)
-  artifacts.write({ ...input, id: saved.id, expectedRevision: 1, content: '<h1>Updated</h1>' })
+  await artifacts.write({
+    ...input,
+    id: saved.id,
+    expectedRevision: 1,
+    content: '<h1>Updated</h1>',
+  })
   await f.post('snapshot', request)
   expect(render).toHaveBeenCalledTimes(2)
   artifacts.delete(f.taskId, saved.id, 2)
   expect((await f.post('snapshot', request)).status).toBe(404)
-  const text = artifacts.write({ ...input, format: 'markdown', content: 'x'.repeat(2000) })
+  const text = await artifacts.write({ ...input, format: 'markdown', content: 'x'.repeat(2000) })
   expect((await f.post('snapshot', { taskId: f.taskId, id: text.id })).value).toEqual({
     excerpt: 'x'.repeat(1200),
   })
   expect(render).toHaveBeenCalledTimes(2)
-  const retry = artifacts.write(input)
+  const retry = await artifacts.write(input)
   render.mockRejectedValueOnce(new Error('Browser unavailable'))
   expect((await f.post('snapshot', { taskId: f.taskId, id: retry.id })).status).toBe(500)
   expect((await f.post('snapshot', { taskId: f.taskId, id: retry.id })).status).toBe(200)
@@ -635,13 +651,13 @@ it('caches revision snapshots, checks scope on cache hits, and invalidates delet
 it('exports the selected saved revision as PDF for paired devices and enforces artifact scope', async () => {
   const f = await fixture()
   const artifacts = f.runtime.services.artifacts
-  const saved = artifacts.write({
+  const saved = await artifacts.write({
     taskId: f.taskId,
     title: '../Quarterly: report',
     format: 'markdown',
     content: '# Version one',
   })
-  artifacts.write({
+  await artifacts.write({
     ...artifacts.read(f.taskId, saved.id),
     expectedRevision: 1,
     content: '# Version two',
@@ -660,10 +676,12 @@ it('exports the selected saved revision as PDF for paired devices and enforces a
   expect(Buffer.from(result.data, 'base64').toString()).toBe('%PDF-1.7\nfixture')
   expect(render).toHaveBeenCalledWith(
     expect.objectContaining({ revision: 1, content: '# Version one' }),
+    undefined,
   )
   expect((await f.post('pdf', { taskId: f.taskId, id: saved.id })).status).toBe(200)
   expect(render).toHaveBeenLastCalledWith(
     expect.objectContaining({ revision: 2, content: '# Version two' }),
+    undefined,
   )
   expect((await f.post('pdf', { ...input, taskId: f.otherId })).status).toBe(404)
   expect((await f.post('pdf', { ...input, revision: 99 })).status).toBe(404)
@@ -674,5 +692,358 @@ it('exports the selected saved revision as PDF for paired devices and enforces a
   expect((await f.post('pdf', input)).status).toBe(200)
   f.runtime.services.preferences.save({ enableArtifacts: false })
   expect((await f.post('pdf', input)).status).toBe(403)
+  render.mockRestore()
+})
+
+it('versions, copies and downloads complete artifact folders without leaking sources into metadata', async () => {
+  const f = await fixture()
+  const input = {
+    taskId: f.taskId,
+    title: 'Dashboard',
+    format: 'html' as const,
+    files: [
+      {
+        path: 'index.html',
+        content:
+          '<link rel="stylesheet" href="styles/main.css"><h1>Folder preview</h1><script src="scripts/main.js"></script><img src="assets/image.png">',
+      },
+      { path: 'styles/main.css', content: 'h1 { color: blue }' },
+      { path: 'scripts/main.js', content: 'document.body.dataset.ready = "yes";' },
+      { path: 'assets/image.png', content: 'aW1hZ2U=', encoding: 'base64' as const },
+    ],
+  }
+  const created = await f.post('create', input)
+  expect(created.status).toBe(200)
+  const artifact = decode(artifactWriteResponseSchema, created.value).artifact
+  expect(artifact).toMatchObject({ entrypoint: 'index.html', fileCount: 4 })
+  expect(created.value).not.toHaveProperty('artifact.files')
+  expect(JSON.stringify(f.runtime.services.artifacts.library())).not.toContain('dataset.ready')
+  expect(JSON.stringify(f.runtime.services.activity.list('', '', 0, f.taskId))).not.toContain(
+    'dataset.ready',
+  )
+  const saved = f.runtime.services.artifacts.read(f.taskId, artifact.id)
+  expect(saved.files).toEqual(input.files)
+  expect(saved.content).toContain('data:image/png;base64,aW1hZ2U=')
+  const newer = {
+    ...input,
+    id: artifact.id,
+    expectedRevision: 1,
+    files: input.files.map((file) =>
+      file.path === 'scripts/main.js'
+        ? { ...file, content: 'document.body.dataset.ready = "new";' }
+        : file,
+    ),
+  }
+  expect((await f.post('update', newer)).status).toBe(200)
+  expect((await f.post('update', newer)).status).toBe(409)
+  expect(f.runtime.services.artifacts.read(f.taskId, artifact.id, 1).files).toEqual(input.files)
+  const paired = 'artifact-folder-paired-device-token-at-least-thirty-two-characters'
+  f.runtime.services.devices.add('Phone', paired)
+  const download = await f.post(
+    'download',
+    { taskId: f.taskId, id: artifact.id, revision: 1 },
+    paired,
+  )
+  expect(download.status).toBe(200)
+  const archive = decode(artifactDownloadResponseSchema, download.value)
+  expect(archive.name).toBe('Dashboard.zip')
+  const files = unzipSync(Buffer.from(archive.data, 'base64'))
+  expect(Object.keys(files)).toEqual(input.files.map((file) => `Dashboard/${file.path}`))
+  expect(strFromU8(files['Dashboard/scripts/main.js']!)).toBe(input.files[2]!.content)
+  expect(strFromU8(files['Dashboard/assets/image.png']!)).toBe('image')
+  expect((await f.post('download', { taskId: f.otherId, id: artifact.id })).status).toBe(404)
+  expect((await f.post('download', { taskId: f.taskId, id: artifact.id }, 'invalid')).status).toBe(
+    401,
+  )
+  const copied = decode(
+    artifactWriteResponseSchema,
+    (
+      await f.post(
+        'attach',
+        { taskId: f.taskId, id: artifact.id, revision: 1, targetTaskId: f.otherId },
+        paired,
+      )
+    ).value,
+  ).artifact
+  expect(f.runtime.services.artifacts.read(f.otherId, copied.id).files).toEqual(input.files)
+  expect(
+    (await f.post('delete', { taskId: f.taskId, id: artifact.id, expectedRevision: 2 })).status,
+  ).toBe(200)
+  expect((await f.post('download', { taskId: f.taskId, id: artifact.id })).status).toBe(404)
+  expect(f.runtime.services.artifacts.read(f.otherId, copied.id).fileCount).toBe(4)
+})
+it('rejects malformed folders and keeps the previous revision when compilation fails', async () => {
+  const f = await fixture()
+  const input = {
+    taskId: f.taskId,
+    title: 'Bundle',
+    format: 'html',
+    files: [{ path: 'index.html', content: '<h1>Saved</h1>' }],
+  }
+  const saved = decode(artifactWriteResponseSchema, (await f.post('create', input)).value).artifact
+  for (const changes of [
+    { files: [{ path: '../escape', content: '' }] },
+    {
+      files: [
+        { path: 'index.html', content: '' },
+        { path: 'INDEX.html', content: '' },
+      ],
+    },
+    { files: [{ path: 'index.html', content: '<script src="missing.js"></script>' }] },
+    { entrypoint: 'missing.html' },
+    { format: 'code' },
+    { files: undefined },
+    { content: 'Ambiguous content and files' },
+  ])
+    expect(
+      (await f.post('update', { ...input, ...changes, id: saved.id, expectedRevision: 1 })).status,
+    ).toBe(400)
+  expect(f.runtime.services.artifacts.read(f.taskId, saved.id).revision).toBe(1)
+  expect(
+    (
+      await f.post('update', {
+        taskId: f.taskId,
+        id: saved.id,
+        expectedRevision: 1,
+        title: 'Single file',
+        format: 'html',
+        content: '<p>Converted</p>',
+      })
+    ).status,
+  ).toBe(200)
+  expect(f.runtime.services.artifacts.read(f.taskId, saved.id).files).toBeUndefined()
+  expect((await f.post('download', { taskId: f.taskId, id: saved.id })).status).toBe(400)
+})
+
+it('rechecks authorization after a folder build and prevents concurrent revision overwrites', async () => {
+  const f = await fixture()
+  const artifacts = f.runtime.services.artifacts
+  const input = {
+    taskId: f.taskId,
+    title: 'Concurrent folder',
+    format: 'html' as const,
+    files: [{ path: 'index.html', content: '<script>document.body.dataset.ready="yes";</script>' }],
+  }
+  const pending = artifacts.write(input)
+  f.runtime.services.preferences.save({ enableArtifacts: false })
+  await expect(pending).rejects.toThrow('Enable Dovo Artifacts')
+  expect(artifacts.list(f.taskId)).toEqual([])
+  f.runtime.services.preferences.save({ enableArtifacts: true })
+  const saved = await artifacts.write(input)
+  const results = await Promise.allSettled([
+    artifacts.write({ ...input, id: saved.id, expectedRevision: 1, title: 'First update' }),
+    artifacts.write({ ...input, id: saved.id, expectedRevision: 1, title: 'Second update' }),
+  ])
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+  expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
+  expect(artifacts.versions(f.taskId, saved.id).map((version) => version.revision)).toEqual([2, 1])
+})
+
+it.each(['html', 'mhtml'] as const)(
+  'exports a selected folder revision as %s with paired-device authorization',
+  async (format) => {
+    const f = await fixture()
+    const artifacts = f.runtime.services.artifacts
+    const files = [
+      {
+        path: 'index.html',
+        content: '<button onclick="this.textContent=1">First revision</button>',
+      },
+    ]
+    const saved = await artifacts.write({
+      taskId: f.taskId,
+      title: 'Folder export',
+      format: 'html',
+      files,
+    })
+    await artifacts.write({
+      taskId: f.taskId,
+      title: 'Folder export',
+      format: 'html',
+      files: [{ path: 'index.html', content: '<h1>Second revision</h1>' }],
+      id: saved.id,
+      expectedRevision: 1,
+    })
+    const render = vi
+      .spyOn(f.runtime.services.browsers, 'artifactMhtml')
+      .mockResolvedValue(Buffer.from('MIME-Version: 1.0\r\nContent-Type: multipart/related\r\n'))
+    const paired = 'paired-folder-export-token-at-least-thirty-two-characters'
+    f.runtime.services.devices.add('Phone', paired)
+    const input = { taskId: f.taskId, id: saved.id, revision: 1 }
+    const exported = await f.post(format, input, paired)
+    expect(exported.status).toBe(200)
+    const result =
+      format === 'html'
+        ? decode(artifactHtmlResponseSchema, exported.value)
+        : decode(artifactMhtmlResponseSchema, exported.value)
+    expect(result.name).toBe(`Folder export.${format}`)
+    const content = Buffer.from(result.data, 'base64').toString()
+    expect(content).toContain(format === 'html' ? 'First revision' : 'MIME-Version: 1.0')
+    expect(content).not.toContain('Second revision')
+    expect(content.includes('sandbox="allow-scripts allow-downloads"')).toBe(format === 'html')
+    expect(content.includes("connect-src 'none'")).toBe(format === 'html')
+    expect(
+      render.mock.calls.map(([artifact]) => ({
+        revision: artifact.revision,
+        files: artifact.files,
+      })),
+    ).toEqual(format === 'html' ? [] : [{ revision: 1, files }])
+    render.mockRejectedValueOnce(new Error('Chromium unavailable'))
+    expect((await f.post(format, input, paired)).status).toBe(format === 'mhtml' ? 500 : 200)
+    expect((await f.post(format, input, paired)).status).toBe(200)
+    expect((await f.post(format, { ...input, revision: 99 }, paired)).status).toBe(404)
+    expect((await f.post(format, { ...input, taskId: f.otherId }, paired)).status).toBe(404)
+    expect((await f.post(format, input, 'invalid')).status).toBe(401)
+    f.runtime.services.preferences.save({ enableArtifacts: false })
+    expect((await f.post(format, input, paired)).status).toBe(403)
+    render.mockRestore()
+  },
+)
+
+it('validates PDF options before rendering and forwards selected settings', async () => {
+  const f = await fixture()
+  const saved = await f.runtime.services.artifacts.write({
+    taskId: f.taskId,
+    title: 'Document',
+    format: 'markdown',
+    content: '# Report',
+  })
+  const render = vi
+    .spyOn(f.runtime.services.browsers, 'artifactPdf')
+    .mockResolvedValue(Buffer.from('%PDF-1.7'))
+  const input = { taskId: f.taskId, id: saved.id }
+  for (const options of [
+    { paperSize: 'A0' },
+    { landscape: 'true' },
+    { marginMm: -1 },
+    { marginMm: 51 },
+    { scale: 9 },
+    { scale: 201 },
+    { background: 'yes' },
+  ]) {
+    expect((await f.post('pdf', { ...input, options })).status).toBe(400)
+  }
+  expect(render).not.toHaveBeenCalled()
+  const options = {
+    paperSize: 'Letter',
+    landscape: true,
+    marginMm: 8.5,
+    scale: 85,
+    background: false,
+  }
+  expect((await f.post('pdf', { ...input, options })).status).toBe(200)
+  expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ id: saved.id }), options)
+  render.mockRestore()
+})
+it('exports scoped PNG revisions and validates width before rendering', async () => {
+  const f = await fixture()
+  const artifacts = f.runtime.services.artifacts
+  const saved = await artifacts.write({
+    taskId: f.taskId,
+    title: 'Preview',
+    format: 'html',
+    content: '<h1>Earlier</h1>',
+  })
+  await artifacts.write({
+    ...artifacts.read(f.taskId, saved.id),
+    expectedRevision: 1,
+    content: '<h1>Current</h1>',
+  })
+  const render = vi
+    .spyOn(f.runtime.services.browsers, 'artifactPng')
+    .mockResolvedValue(Buffer.from('PNG fixture'))
+  const paired = 'paired-artifact-png-token-at-least-thirty-two-characters'
+  f.runtime.services.devices.add('Phone', paired)
+  const input = { taskId: f.taskId, id: saved.id, revision: 1, width: 960 }
+  const exported = await f.post('png', input, paired)
+  expect(exported.status).toBe(200)
+  const result = decode(artifactPngResponseSchema, exported.value)
+  expect(result.name).toBe('Preview.png')
+  expect(result.mime).toBe('image/png')
+  expect(Buffer.from(result.data, 'base64').toString()).toBe('PNG fixture')
+  expect(render).toHaveBeenLastCalledWith(
+    expect.objectContaining({ revision: 1, content: '<h1>Earlier</h1>' }),
+    960,
+  )
+  expect((await f.post('png', { taskId: f.taskId, id: saved.id })).status).toBe(200)
+  expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ revision: 2 }), undefined)
+  for (const width of [0, 319, 4097, 640.5, '960'])
+    expect((await f.post('png', { ...input, width })).status).toBe(400)
+  expect((await f.post('png', { ...input, taskId: f.otherId })).status).toBe(404)
+  expect((await f.post('png', { ...input, revision: 99 })).status).toBe(404)
+  expect((await f.post('png', input, 'wrong-token')).status).toBe(401)
+  expect(render).toHaveBeenCalledTimes(2)
+  render.mockRejectedValueOnce(new Error('Browser unavailable'))
+  expect((await f.post('png', input)).status).toBe(500)
+  expect((await f.post('png', input)).status).toBe(200)
+  f.runtime.services.preferences.save({ enableArtifacts: false })
+  expect((await f.post('png', input)).status).toBe(403)
+  render.mockRestore()
+})
+
+it.each(['pdf', 'mhtml'] as const)(
+  'exports a temporary %s edit without updating the saved source',
+  async (format) => {
+    const f = await fixture()
+    const saved = await f.runtime.services.artifacts.write({
+      taskId: f.taskId,
+      title: 'Saved source',
+      format: 'markdown',
+      content: '# Saved source',
+    })
+    const artifact = f.runtime.services.artifacts.read(f.taskId, saved.id)
+    const render = vi
+      .spyOn(f.runtime.services.browsers, format === 'pdf' ? 'artifactPdf' : 'artifactMhtml')
+      .mockResolvedValue(Buffer.from('export'))
+    const input = {
+      taskId: f.taskId,
+      id: saved.id,
+      revision: 1,
+      draftHtml: '<h1>Temporary changes</h1><aside data-no-print>Skip</aside>',
+    }
+    expect((await f.post(format, input)).status).toBe(200)
+    expect(render.mock.calls[0]?.[0]).toEqual({
+      ...artifact,
+      format: 'html',
+      content: input.draftHtml,
+    })
+    expect(f.runtime.services.artifacts.read(f.taskId, saved.id)).toEqual(artifact)
+    expect(f.runtime.services.artifacts.versions(f.taskId, saved.id)).toHaveLength(1)
+    expect((await f.post(format, { ...input, draftHtml: 42 })).status).toBe(400)
+    expect((await f.post(format, { ...input, taskId: f.otherId })).status).toBe(404)
+    expect((await f.post(format, { ...input, revision: 99 })).status).toBe(404)
+    expect(render).toHaveBeenCalledTimes(1)
+    render.mockRestore()
+  },
+)
+it('prepares a scoped rendered export copy for paired devices without creating a revision', async () => {
+  const f = await fixture()
+  const saved = await f.runtime.services.artifacts.write({
+    taskId: f.taskId,
+    title: 'Editor',
+    format: 'html',
+    content: '<h1>Source</h1>',
+  })
+  const render = vi
+    .spyOn(f.runtime.services.browsers, 'artifactExportPreview')
+    .mockResolvedValue('<h1>Rendered initial state</h1>')
+  const paired = 'paired-export-editor-token-at-least-thirty-two-characters'
+  f.runtime.services.devices.add('Phone', paired)
+  const input = { taskId: f.taskId, id: saved.id, revision: 1 }
+  const response = await f.post('export-preview', input, paired)
+  expect(response.status).toBe(200)
+  expect(decode(artifactExportPreviewResponseSchema, response.value).content).toBe(
+    '<h1>Rendered initial state</h1>',
+  )
+  expect(render).toHaveBeenCalledWith(expect.objectContaining({ id: saved.id, revision: 1 }))
+  expect((await f.post('export-preview', { ...input, taskId: f.otherId })).status).toBe(404)
+  expect((await f.post('export-preview', { ...input, revision: 99 })).status).toBe(404)
+  expect((await f.post('export-preview', input, 'wrong-token')).status).toBe(401)
+  render.mockRejectedValueOnce(new Error('Renderer unavailable'))
+  expect((await f.post('export-preview', input)).status).toBe(500)
+  expect((await f.post('export-preview', input)).status).toBe(200)
+  expect(f.runtime.services.artifacts.versions(f.taskId, saved.id)).toHaveLength(1)
+  f.runtime.services.preferences.save({ enableArtifacts: false })
+  expect((await f.post('export-preview', input)).status).toBe(403)
   render.mockRestore()
 })

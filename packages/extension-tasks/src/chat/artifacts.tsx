@@ -2,9 +2,16 @@ import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { memo, useContext, useEffect, useRef, useState } from 'react'
 import {
   artifactFile,
+  artifactDownloadResponseSchema,
+  artifactBundleSource,
+  artifactLabel,
   artifactPdfResponseSchema,
+  artifactExportPreviewResponseSchema,
+  artifactPngResponseSchema,
+  type ArtifactPdfOptions,
+  artifactHtmlResponseSchema,
+  artifactMhtmlResponseSchema,
   artifactSourceMarkdown,
-  artifactFormatLabels,
   artifactListSchema,
   artifactLinkLabel,
   artifactPreviewHtml,
@@ -22,6 +29,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
+  DropdownMenu,
   EmptyState,
   IconButton,
   MessageResponse,
@@ -29,6 +37,7 @@ import {
 } from '@dovo/studio-ui'
 import {
   ArrowUpRight,
+  ChevronDown,
   Check,
   CodeXml,
   Copy,
@@ -41,6 +50,8 @@ import {
   RotateCw,
   X,
 } from 'lucide-react'
+import { ArtifactExportEditor } from './artifact-export-editor'
+import { ArtifactExportOptions } from './artifact-export-options'
 import { ArtifactIcon } from './artifact-presentation'
 import { InlineArtifact } from './inline-artifact'
 import { useArtifactPreviewTheme } from './preview-theme'
@@ -110,6 +121,14 @@ export function ArtifactBrowser({
   const selection = JSON.stringify([taskId, id, revision, reload])
   const [loaded, setLoaded] = useState<{ selection: string; artifact: Artifact }>()
   const artifact = loaded?.selection === selection ? loaded.artifact : undefined
+  const [fileSelection, setFileSelection] = useState<{ id: string; path: string }>()
+  const selectedFile =
+    artifact?.files?.find((file) => fileSelection?.id === id && file.path === fileSelection.path) ??
+    artifact?.files?.find((file) => file.path === artifact.entrypoint) ??
+    artifact?.files?.[0]
+  const sourceArtifact = artifact
+    ? artifactBundleSource(artifact, selectedFile?.path ?? '')
+    : undefined
   const [listError, setListError] = useState('')
   const [previewError, setPreviewError] = useState('')
   const [versionsError, setVersionsError] = useState('')
@@ -119,7 +138,15 @@ export function ArtifactBrowser({
   const [source, setSource] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState<'pdf' | 'png' | 'html' | 'mhtml'>()
+  const [exportOptions, setExportOptions] = useState(false)
+  const [exportDraft, setExportDraft] = useState<{ key: string; content: string }>()
+  const [editingExport, setEditingExport] = useState<{ key: string; content: string }>()
+  const [preparingEditor, setPreparingEditor] = useState(false)
+  const editorRequest = useRef(false)
+  const exportKey = JSON.stringify([taskId, id, artifact?.revision])
+  const draftHtml = exportDraft?.key === exportKey ? exportDraft.content : undefined
+  const [downloading, setDownloading] = useState(false)
   const exportingRequest = useRef(false)
   useEffect(() => {
     if (!copied) return
@@ -186,31 +213,84 @@ export function ArtifactBrowser({
       disposed = true
     }
   }, [request, taskId, id, metadata?.revision, revision, connected, reload, selection])
-  const download = () => {
-    if (!artifact) return
-    const file = artifactFile(artifact)
-    const url = URL.createObjectURL(new Blob([artifact.content], { type: file.mime }))
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = file.name
-    anchor.click()
-    setTimeout(() => URL.revokeObjectURL(url), 30_000)
-  }
-  const exportPdf = async () => {
-    if (!artifact || !connected || exportingRequest.current) return
-    exportingRequest.current = true
-    setExporting(true)
+  const download = async () => {
+    if (!artifact || downloading) return
+    setDownloading(true)
     setActionError('')
     try {
-      const result = await request(
-        '/api/artifacts/pdf',
-        {
-          taskId: artifact.taskId,
-          id: artifact.id,
-          revision: artifact.revision,
-        },
-        artifactPdfResponseSchema,
+      const file = artifact.files
+        ? await request(
+            '/api/artifacts/download',
+            { taskId: artifact.taskId, id: artifact.id, revision: artifact.revision },
+            artifactDownloadResponseSchema,
+          )
+        : { ...artifactFile(artifact), data: artifact.content }
+      const data = artifact.files
+        ? Uint8Array.from(atob(file.data), (char) => char.charCodeAt(0))
+        : file.data
+      const url = URL.createObjectURL(new Blob([data], { type: file.mime }))
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = file.name
+      anchor.click()
+      setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setDownloading(false)
+    }
+  }
+  const editExport = async () => {
+    if (!artifact || !connected || editorRequest.current) return
+    if (draftHtml !== undefined) {
+      setEditingExport({ key: exportKey, content: draftHtml })
+      return
+    }
+    editorRequest.current = true
+    setPreparingEditor(true)
+    setActionError('')
+    try {
+      const { content } = await request(
+        '/api/artifacts/export-preview',
+        { taskId: artifact.taskId, id: artifact.id, revision: artifact.revision },
+        artifactExportPreviewResponseSchema,
       )
+      setEditingExport({ key: exportKey, content })
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      editorRequest.current = false
+      setPreparingEditor(false)
+    }
+  }
+  const exportFile = async (
+    format: 'pdf' | 'png' | 'html' | 'mhtml',
+    options?: ArtifactPdfOptions,
+    width?: number,
+  ) => {
+    if (!artifact || !connected || exportingRequest.current) return
+    exportingRequest.current = true
+    setExporting(format)
+    setActionError('')
+    try {
+      const input = { taskId: artifact.taskId, id: artifact.id, revision: artifact.revision }
+      const edited = draftHtml === undefined ? {} : { draftHtml }
+      const result =
+        format === 'pdf'
+          ? await request(
+              '/api/artifacts/pdf',
+              { ...input, options, ...edited },
+              artifactPdfResponseSchema,
+            )
+          : format === 'png'
+            ? await request('/api/artifacts/png', { ...input, width }, artifactPngResponseSchema)
+            : format === 'html'
+              ? await request('/api/artifacts/html', input, artifactHtmlResponseSchema)
+              : await request(
+                  '/api/artifacts/mhtml',
+                  { ...input, ...edited },
+                  artifactMhtmlResponseSchema,
+                )
       const bytes = Uint8Array.from(atob(result.data), (char) => char.charCodeAt(0))
       const url = URL.createObjectURL(new Blob([bytes], { type: result.mime }))
       const anchor = document.createElement('a')
@@ -222,14 +302,14 @@ export function ArtifactBrowser({
       setActionError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       exportingRequest.current = false
-      setExporting(false)
+      setExporting(undefined)
     }
   }
   const copy = async () => {
-    if (!artifact) return
+    if (!sourceArtifact) return
     setActionError('')
     try {
-      await copyTextToClipboard(artifact.content)
+      await copyTextToClipboard(sourceArtifact.content)
       setCopied(true)
     } catch (cause) {
       setActionError(String(cause))
@@ -289,7 +369,7 @@ export function ArtifactBrowser({
             {link
               ? artifactLinkLabel(link.provider)
               : metadata
-                ? artifactFormatLabels[metadata.format]
+                ? artifactLabel(metadata)
                 : 'Saved in this thread'}
             {items &&
               ` · ${items.length + links.length} ${items.length + links.length === 1 ? 'artifact' : 'artifacts'}`}
@@ -360,28 +440,159 @@ export function ArtifactBrowser({
               label={copied ? 'Copied source' : 'Copy source'}
               className="size-7"
               onClick={() => void copy()}
-              disabled={!artifact}
+              disabled={!artifact || selectedFile?.encoding === 'base64'}
             >
               {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             </IconButton>
             <IconButton
-              label={exporting ? 'Exporting PDF' : 'Export PDF'}
+              label="Export PDF or PNG"
               type="button"
               className="size-7"
-              onClick={() => void exportPdf()}
-              disabled={!artifact || !connected || exporting}
+              onClick={() => setExportOptions((value) => !value)}
+              disabled={!artifact || !connected || !!exporting}
             >
-              {exporting ? (
+              {exporting === 'pdf' || exporting === 'png' ? (
                 <LoaderCircle className="size-3.5 animate-spin" />
               ) : (
                 <FileDown className="size-3.5" />
               )}
             </IconButton>
-            <IconButton label="Download" className="size-7" onClick={download} disabled={!artifact}>
+            <IconButton
+              label={artifact?.files ? 'Download folder' : 'Download'}
+              className="size-7"
+              onClick={() => void download()}
+              disabled={!artifact || downloading || (!!artifact.files && !connected)}
+            >
               <Download className="size-3.5" />
             </IconButton>
           </div>
         </div>
+      )}
+      {artifact?.files && (
+        <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs">
+          <span className="shrink-0 text-muted-foreground">Files</span>
+          <select
+            aria-label="Artifact file"
+            className="min-w-0 flex-1 truncate rounded bg-background py-1"
+            value={selectedFile?.path ?? ''}
+            onChange={(event) => {
+              setFileSelection({ id, path: event.target.value })
+              setSource(true)
+              setCopied(false)
+            }}
+          >
+            {artifact.files.map((file) => (
+              <option key={file.path} value={file.path}>
+                {file.path}
+              </option>
+            ))}
+          </select>
+          <span className="shrink-0 text-muted-foreground">{artifact.files.length} files</span>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs"
+                aria-label="Export folder"
+                disabled={!connected || !!exporting}
+                aria-busy={!!exporting}
+              >
+                {exporting && exporting !== 'pdf' ? (
+                  <>
+                    <LoaderCircle className="size-3 animate-spin" />
+                    Exporting…
+                  </>
+                ) : (
+                  <>
+                    Export <ChevronDown className="size-3" />
+                  </>
+                )}
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="end"
+                sideOffset={4}
+                className="z-50 min-w-56 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
+              >
+                <DropdownMenu.Item
+                  className="cursor-pointer rounded px-3 py-2 text-xs outline-none focus:bg-accent"
+                  onSelect={() => void exportFile('html')}
+                >
+                  <span className="block font-medium">Interactive HTML</span>
+                  <span className="block text-muted-foreground">
+                    One file with working controls
+                  </span>
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="cursor-pointer rounded px-3 py-2 text-xs outline-none focus:bg-accent"
+                  disabled={preparingEditor}
+                  onSelect={() => void editExport()}
+                >
+                  Edit before export…
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="cursor-pointer rounded px-3 py-2 text-xs outline-none focus:bg-accent"
+                  onSelect={() => void exportFile('mhtml')}
+                >
+                  <span className="block font-medium">MHTML snapshot</span>
+                  <span className="block text-muted-foreground">
+                    Offline page archive without interaction
+                  </span>
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </div>
+      )}
+      {artifact && !link && (exportOptions || draftHtml !== undefined) && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-xs">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            disabled={!connected || !!exporting || preparingEditor}
+            onClick={() => void editExport()}
+          >
+            {preparingEditor ? 'Preparing editor…' : 'Edit before export'}
+          </Button>
+          <span className="text-muted-foreground">
+            {draftHtml !== undefined
+              ? 'Edited copy · PDF / MHTML only'
+              : 'Temporary edits for PDF / MHTML'}
+          </span>
+          {draftHtml !== undefined && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              disabled={!!exporting}
+              onClick={() => setExportDraft(undefined)}
+            >
+              Reset edits
+            </Button>
+          )}
+        </div>
+      )}
+      {editingExport && (
+        <ArtifactExportEditor
+          content={editingExport.content}
+          onAction={(edit) => {
+            if (edit.action === 'apply')
+              setExportDraft({ key: editingExport.key, content: edit.content })
+            setEditingExport(undefined)
+          }}
+        />
+      )}
+      {exportOptions && !link && (
+        <ArtifactExportOptions
+          busy={!!exporting}
+          disabled={!artifact || !connected}
+          onPdf={(options) => void exportFile('pdf', options)}
+          onPng={(width) => void exportFile('png', undefined, width)}
+          onClose={() => setExportOptions(false)}
+        />
       )}
       {versionsError && (
         <p role="alert" className="border-b px-4 py-2 text-xs text-muted-foreground">
@@ -451,19 +662,19 @@ export function ArtifactBrowser({
                   key={`${id}:${artifact.revision}`}
                   title={artifact.title}
                   className="h-full min-h-80 w-full border-0 bg-background"
-                  sandbox="allow-scripts"
+                  sandbox="allow-scripts allow-downloads"
                   referrerPolicy="no-referrer"
                   srcDoc={artifactPreviewHtml(artifact.content, previewTheme)}
                 />
               ) : null}
             </div>
-            {(source || artifact.format === 'code') && (
+            {(source || artifact.format === 'code') && sourceArtifact && (
               <div className="min-h-full bg-background p-5 font-mono text-xs leading-6">
-                {artifact.content.length <= 1024 * 1024 ? (
-                  <MessageResponse>{artifactSourceMarkdown(artifact)}</MessageResponse>
+                {sourceArtifact.content.length <= 1024 * 1024 ? (
+                  <MessageResponse>{artifactSourceMarkdown(sourceArtifact)}</MessageResponse>
                 ) : (
                   <pre className="whitespace-pre-wrap break-words">
-                    <code>{artifact.content}</code>
+                    <code>{sourceArtifact.content}</code>
                   </pre>
                 )}
               </div>
@@ -474,8 +685,7 @@ export function ArtifactBrowser({
       {artifact && (
         <footer className="flex shrink-0 items-center justify-between gap-3 border-t px-4 py-2 text-[0.6875rem] text-muted-foreground">
           <span>
-            {artifact.language || artifactFormatLabels[artifact.format]} · Version{' '}
-            {artifact.revision}
+            {artifact.language || artifactLabel(artifact)} · Version {artifact.revision}
             {revision === undefined && ' · Latest'}
           </span>
           <time dateTime={artifact.updatedAt}>

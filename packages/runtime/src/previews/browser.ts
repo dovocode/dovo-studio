@@ -10,6 +10,9 @@ import {
   remoteBrowserDialogSchema,
   artifactPreviewHtml,
   artifactPrintDocument,
+  artifactPdfDefaults,
+  ARTIFACT_PNG_DEFAULT_WIDTH,
+  type ArtifactPdfOptions,
   type Artifact,
   remoteBrowserInputSchema,
   type RemoteBrowserInput,
@@ -188,36 +191,155 @@ export class RemoteBrowsers {
       return `data:image/jpeg;base64,${image.toString('base64')}`
     })
   }
-  artifactPdf(artifact: Artifact) {
-    return this.renderArtifact(async (page) => {
-      const { artifactPrintContent } = await import('../artifacts/artifact-print.js')
-      const printDocument = artifactPrintDocument(artifactPrintContent(artifact))
-      await page.setViewportSize({ width: 794, height: 1123 })
-      await page.emulateMedia({ media: 'print', colorScheme: 'light', reducedMotion: 'reduce' })
-      // A response-header sandbox gives the standalone document the same opaque origin and
-      // restrictions as the preview iframe, while allowing the entire document to paginate.
-      const url = 'http://artifact.dovo.invalid/print'
-      await page.route(
-        url,
-        (route) =>
-          route.fulfill({
-            contentType: 'text/html; charset=utf-8',
-            headers: { 'Content-Security-Policy': printDocument.policy },
-            body: printDocument.html,
-          }),
-        { times: 1 },
+  /** Standalone exports retain the preview's opaque origin and network restrictions. */
+  private async loadArtifact(
+    page: Page,
+    artifact: Artifact,
+    media: 'print' | 'screen',
+    width: number,
+    height: number,
+  ) {
+    const { artifactPrintContent } = await import('../artifacts/artifact-print.js')
+    const exportDocument = artifactPrintDocument(artifactPrintContent(artifact))
+    await page.setViewportSize({ width, height })
+    await page.emulateMedia({ media, colorScheme: 'light', reducedMotion: 'reduce' })
+    const url = 'http://artifact.dovo.invalid/export'
+    await page.route(
+      url,
+      (route) =>
+        route.fulfill({
+          contentType: 'text/html; charset=utf-8',
+          headers: { 'Content-Security-Policy': exportDocument.policy },
+          body: exportDocument.html,
+        }),
+      { times: 1 },
+    )
+    await page.goto(url, { waitUntil: 'load', timeout: 10_000 })
+    await page.evaluate(async (title) => {
+      if (!document.title) document.title = title
+      await document.fonts.ready
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       )
-      await page.goto(url, { waitUntil: 'load', timeout: 10_000 })
-      await page.evaluate((title) => {
-        if (!document.title) document.title = title
-      }, artifact.title)
+    }, artifact.title)
+  }
+  /** Freeze the rendered initial state so guest scripts cannot interfere with editing. */
+  artifactExportPreview(artifact: Artifact) {
+    return this.renderArtifact(async (page) => {
+      await this.loadArtifact(page, artifact, 'screen', 1280, 800)
+      return page.evaluate(() => {
+        const clone = document.documentElement.cloneNode(true)
+        if (!(clone instanceof HTMLElement)) throw new Error('Export document is unavailable')
+        const canvases = document.querySelectorAll('canvas')
+        clone.querySelectorAll('canvas').forEach((node, index) => {
+          const canvas = canvases[index]
+          const image = document.createElement('img')
+          for (const attribute of [...node.attributes])
+            image.setAttribute(attribute.name, attribute.value)
+          image.src = canvas.toDataURL('image/png')
+          image.width = canvas.width
+          image.height = canvas.height
+          image.style.maxWidth = '100%'
+          image.style.height = 'auto'
+          node.replaceWith(image)
+        })
+        clone
+          .querySelectorAll('script,iframe,object,embed,base,meta[http-equiv="refresh"]')
+          .forEach((node) => node.remove())
+        for (const node of [clone, ...clone.querySelectorAll('*')]) {
+          for (const attribute of [...node.attributes]) {
+            if (/^on/i.test(attribute.name) || attribute.name === 'contenteditable')
+              node.removeAttribute(attribute.name)
+          }
+        }
+        return '<!doctype html>' + clone.outerHTML
+      })
+    })
+  }
+  private async omitNonPrintable(page: Page) {
+    await page.evaluate(() =>
+      document.querySelectorAll('.no-print,[data-no-print]').forEach((node) => node.remove()),
+    )
+    // Covers elements that are later recreated by beforeprint handlers or reactive scripts.
+    await page.addStyleTag({ content: '.no-print,[data-no-print]{display:none!important}' })
+  }
+  artifactPdf(artifact: Artifact, options?: ArtifactPdfOptions) {
+    const settings = { ...artifactPdfDefaults, ...options }
+    return this.renderArtifact(async (page) => {
+      const sizes = {
+        auto: [794, 1123],
+        A4: [794, 1123],
+        A3: [1123, 1587],
+        Letter: [816, 1056],
+        Legal: [816, 1344],
+      }
+      const [width, height] = sizes[settings.paperSize]
+      await this.loadArtifact(
+        page,
+        artifact,
+        'print',
+        settings.landscape ? height : width,
+        settings.landscape ? width : height,
+      )
+      await this.omitNonPrintable(page)
+      const margin = `${settings.marginMm}mm`
+      // User-selected paper and margins must win over authored @page rules.
+      if (options?.marginMm !== undefined || settings.paperSize !== 'auto') {
+        const size =
+          settings.paperSize === 'auto'
+            ? ''
+            : `size:${settings.paperSize} ${settings.landscape ? 'landscape' : 'portrait'};`
+        await page.addStyleTag({
+          content: `@page{${size}${options?.marginMm !== undefined ? `margin:${margin};` : ''}}`,
+        })
+      }
       return page.pdf({
-        format: 'A4',
-        printBackground: true,
-        preferCSSPageSize: true,
-        margin: { top: '16mm', right: '16mm', bottom: '16mm', left: '16mm' },
+        format: settings.paperSize === 'auto' ? 'A4' : settings.paperSize,
+        landscape: settings.landscape,
+        scale: settings.scale / 100,
+        printBackground: settings.background,
+        preferCSSPageSize: settings.paperSize === 'auto',
+        margin: { top: margin, right: margin, bottom: margin, left: margin },
         tagged: true,
       })
+    })
+  }
+  /** Export the entire page at exactly the requested viewport width, at one pixel per CSS pixel. */
+  artifactPng(artifact: Artifact, width = ARTIFACT_PNG_DEFAULT_WIDTH) {
+    return this.renderArtifact(async (page) => {
+      await this.loadArtifact(page, artifact, 'screen', width, 800)
+      const height = await page.evaluate(() =>
+        Math.ceil(
+          Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
+        ),
+      )
+      // Bound decoded image memory and Chromium's screenshot dimensions; never silently crop a tall page.
+      if (height > 32_768 || width * height > 64_000_000)
+        throw new HttpError(
+          400,
+          'This page is too tall for PNG export. Use a smaller width or export PDF instead.',
+        )
+      return page.screenshot({
+        type: 'png',
+        fullPage: true,
+        clip: { x: 0, y: 0, width, height },
+        animations: 'disabled',
+        timeout: 10_000,
+      })
+    })
+  }
+  /** MHTML is a rendered offline snapshot. Chromium deliberately removes executable scripts. */
+  artifactMhtml(artifact: Artifact) {
+    return this.renderArtifact(async (page) => {
+      await this.loadArtifact(page, artifact, 'screen', 1280, 800)
+      await this.omitNonPrintable(page)
+      const cdp = await page.context().newCDPSession(page)
+      try {
+        const { data } = await cdp.send('Page.captureSnapshot', { format: 'mhtml' })
+        return Buffer.from(data, 'utf8')
+      } finally {
+        await cdp.detach()
+      }
     })
   }
   async open(

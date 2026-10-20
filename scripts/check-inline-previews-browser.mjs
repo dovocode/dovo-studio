@@ -9,15 +9,16 @@ const built = await build({
     contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {ApplicationStateProvider} from '@dovo/studio-core/state';
-import {TooltipProvider} from '@dovo/studio-ui';
+import {TooltipProvider,Dialog,DialogContent,DialogTitle,DialogDescription} from '@dovo/studio-ui';
 import {ArtifactCard} from './src/chat/artifacts.tsx';
 import {FloatingPreview} from './src/detail/floating-preview.tsx';
 import {BrowserPane} from './src/browser/browser-pane.tsx';
 function App(){
- const [thread,setThread]=useState('one'),[host,setHost]=useState('first'),[tick,setTick]=useState(0),[browser,setBrowser]=useState(false),[placement,setPlacement]=useState('inline');
+ const [thread,setThread]=useState('one'),[host,setHost]=useState('first'),[tick,setTick]=useState(0),[browser,setBrowser]=useState(false),[placement,setPlacement]=useState('inline'),[dialog,setDialog]=useState(false);
+ window.showDialog=setDialog;
  window.changeThread=setThread;window.changeHost=setHost;window.updatePreview=()=>setTick(x=>x+1);window.showBrowser=()=>setBrowser(true);
  window.previewWorkspace={...window.previewWorkspace,activeRuntimeId:host};
- return <TooltipProvider><main className="flex h-screen min-w-0"><div className="min-w-0 flex-1 overflow-auto p-5"><p>Conversation stays here</p><section className="studio-chat-turn" style={{contentVisibility:'auto',containIntrinsicSize:'auto 240px'}}><div className="max-w-full overflow-hidden" style={{width:420}}><ArtifactCard reference={{id:'counter',taskId:thread,title:'Interactive counter',format:'html',revision:3}}/></div></section><div style={{height:1500}}/><ArtifactCard reference={{id:'offscreen',taskId:thread,title:'Offscreen',format:'html',revision:1}}/></div>{browser&&<aside className={placement==='inline'?'shrink-0 border-l':'contents'} style={placement==='inline'?{width:500}:undefined}><FloatingPreview title="Browser" placement={placement} onPlacementChange={setPlacement} inlineClassName="h-full" returnLabel="Dock preview" onClose={()=>setBrowser(false)}><BrowserPane taskId={thread}/></FloatingPreview></aside>}</main></TooltipProvider>
+ return <TooltipProvider><main className="flex h-screen min-w-0"><div className="min-w-0 flex-1 overflow-auto p-5"><p>Conversation stays here</p><section className="studio-chat-turn" style={{contentVisibility:'auto',containIntrinsicSize:'auto 240px'}}><div className="max-w-full overflow-hidden" style={{width:420}}><ArtifactCard reference={{id:'counter',taskId:thread,title:'Interactive counter',format:'html',revision:3}}/></div></section><div style={{height:1500}}/><ArtifactCard reference={{id:'offscreen',taskId:thread,title:'Offscreen',format:'html',revision:1}}/></div>{browser&&<aside className={placement==='inline'?'shrink-0 border-l':'contents'} style={placement==='inline'?{width:500}:undefined}><FloatingPreview title="Browser" placement={placement} onPlacementChange={setPlacement} inlineClassName="h-full" returnLabel="Dock preview" onClose={()=>setBrowser(false)}><BrowserPane taskId={thread}/></FloatingPreview></aside>}{dialog&&<Dialog open onOpenChange={setDialog}><DialogContent className="h-[92dvh] w-[min(1120px,96vw)] max-w-none"><DialogTitle>Export copy</DialogTitle><DialogDescription>Large artifact dialog</DialogDescription></DialogContent></Dialog>}</main></TooltipProvider>
 }
 createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
 `,
@@ -233,9 +234,84 @@ try {
   })
   await live.getByRole('button', { name: 'Close preview', exact: true }).click()
   await live.waitFor({ state: 'hidden' })
+  // Native caption buttons paint above the renderer even for portalled content.
+  // Check minimum desktop and maximized sizes, plus fullscreen where they disappear.
+  await page.evaluate(() => {
+    const app = document.querySelector('#app')
+    app.classList.add('studio')
+    const caption = document.createElement('div')
+    caption.id = 'native-caption'
+    caption.style.cssText = 'position:fixed;top:0;right:0;width:144px;height:52px;z-index:9999'
+    document.body.append(caption)
+  })
+  const retainedFrame = await inline.locator('iframe').elementHandle()
+  const retainedWindow = await retainedFrame.evaluateHandle((frame) => frame.contentWindow)
+  for (const platform of ['win32', 'linux']) {
+    await page.evaluate((platform) => {
+      document.querySelector('#app').dataset.platform = platform
+    }, platform)
+    for (const viewport of [
+      { width: 840, height: 560 },
+      { width: 1920, height: 1080 },
+    ]) {
+      await page.setViewportSize(viewport)
+      await inline.getByRole('button', { name: 'Expand preview', exact: true }).click()
+      assert.ok(
+        (await floating.boundingBox()).y >= 52,
+        `${platform}: expanded preview clears captions`,
+      )
+      if (viewport.width === 840 && platform === 'win32')
+        await page.screenshot({ path: '/tmp/dovo-windows-expanded-preview.png' })
+      assert.equal(
+        await retainedFrame.evaluate(
+          (frame, original) => frame.contentWindow === original,
+          retainedWindow,
+        ),
+        true,
+        'Native window layout changes preserve the preview',
+      )
+      await inline.getByRole('button', { name: 'Float preview', exact: true }).click()
+      const mover = inline.getByRole('button', { name: 'Move Interactive counter preview' })
+      await mover.focus()
+      for (let i = 0; i < 25; i++) await mover.press('Shift+ArrowUp')
+      assert.ok((await floating.boundingBox()).y >= 52, `${platform}: dragging clears captions`)
+      await inline.getByRole('button', { name: 'Return to thread', exact: true }).click()
+      await page.evaluate(() => window.showDialog(true))
+      const dialog = page.getByRole('dialog', { name: 'Export copy' })
+      await dialog.waitFor()
+      const box = await dialog.boundingBox()
+      assert.ok(
+        box.y >= 52 && box.y + box.height <= viewport.height,
+        `${platform}: dialog fits below captions`,
+      )
+      if (viewport.width === 840 && platform === 'win32')
+        await page.screenshot({ path: '/tmp/dovo-windows-export-dialog.png' })
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    }
+    await inline.getByRole('button', { name: 'Expand preview', exact: true }).click()
+    await page.evaluate(() => {
+      document.documentElement.style.setProperty('--studio-window-top-inset', '0px')
+      document.querySelector('#native-caption').hidden = true
+    })
+    assert.equal((await floating.boundingBox()).y, 8, 'Fullscreen reclaims hidden caption space')
+    await inline.getByRole('button', { name: 'Return to thread', exact: true }).click()
+    await page.evaluate(() => {
+      document.documentElement.style.removeProperty('--studio-window-top-inset')
+      document.querySelector('#native-caption').hidden = false
+    })
+  }
+  for (const platform of ['darwin', '']) {
+    await page.evaluate((platform) => {
+      document.querySelector('#app').dataset.platform = platform
+      document.querySelector('#native-caption').hidden = true
+    }, platform)
+    await inline.getByRole('button', { name: 'Expand preview', exact: true }).click()
+    assert.equal((await floating.boundingBox()).y, 8, 'Web and macOS keep their existing spacing')
+    await inline.getByRole('button', { name: 'Return to thread', exact: true }).click()
+  }
   assert.deepEqual(errors, [])
   console.log(
-    'Inline previews: controls, canvas interaction, sandbox, pinned revisions, lazy loading, source, float/drag/resize/expand without reload, runtime/thread isolation, retry/offline, and live browser dock/float/session/native bounds verified.',
+    'Inline previews: controls, canvas interaction, sandbox, pinned revisions, lazy loading, source, float/drag/resize/expand without reload, runtime/thread isolation, retry/offline, live browser sessions, and Windows/Linux caption clearance for previews and dialogs at minimum/maximized/fullscreen sizes verified.',
   )
 } finally {
   await browser.close()

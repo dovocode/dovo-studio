@@ -82,8 +82,8 @@ function RepositoryDialogContent({
       <DialogContent
         className={
           picker === 'directory'
-            ? 'flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:rounded-2xl [&>button:last-child]:hidden'
-            : 'max-h-[calc(100dvh-2rem)] overflow-y-auto'
+            ? 'flex max-h-[calc(100dvh-var(--studio-window-top-inset,0px)-2rem)] w-[calc(100vw-2rem)] max-w-xl flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:rounded-2xl [&>button:last-child]:hidden'
+            : 'max-h-[calc(100dvh-var(--studio-window-top-inset,0px)-2rem)] overflow-y-auto'
         }
       >
         <DialogHeader className={picker === 'directory' ? 'sr-only' : undefined}>

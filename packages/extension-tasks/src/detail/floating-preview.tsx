@@ -5,13 +5,18 @@ import { cn, IconButton } from '@dovo/studio-ui'
 export type PreviewPlacement = 'inline' | 'floating' | 'expanded'
 type Frame = { x: number; y: number; width: number; height: number }
 const bounds = (frame: Frame): Frame => {
+  const top =
+    8 +
+    (parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--studio-window-top-inset'),
+    ) || 0)
   const width = Math.min(Math.max(280, frame.width), Math.max(0, window.innerWidth - 16))
-  const height = Math.min(Math.max(220, frame.height), Math.max(0, window.innerHeight - 16))
+  const height = Math.min(Math.max(220, frame.height), Math.max(0, window.innerHeight - top - 8))
   return {
     width,
     height,
     x: Math.max(8, Math.min(window.innerWidth - width - 8, frame.x)),
-    y: Math.max(8, Math.min(window.innerHeight - height - 8, frame.y)),
+    y: Math.max(top, Math.min(window.innerHeight - height - 8, frame.y)),
   }
 }
 
@@ -63,7 +68,7 @@ export function FloatingPreview({
         placement === 'inline'
           ? inlineClassName
           : placement === 'expanded'
-            ? 'fixed inset-2 z-50 rounded-xl border shadow-2xl'
+            ? 'studio-preview-expanded fixed inset-2 z-50 rounded-xl border shadow-2xl'
             : 'fixed z-40 rounded-xl border shadow-2xl',
       )}
       style={

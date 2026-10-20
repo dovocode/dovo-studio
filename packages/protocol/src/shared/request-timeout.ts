@@ -24,7 +24,19 @@ export function runtimeRequestTimeout(path: string, input?: unknown) {
     return 150000
   }
   // Rendering may wait for the shared artifact queue and a cold Chromium launch.
-  if (path === '/api/artifacts/pdf') return 120000
+  if (
+    [
+      '/api/artifacts/pdf',
+      '/api/artifacts/png',
+      '/api/artifacts/export-preview',
+      '/api/artifacts/mhtml',
+      '/api/artifacts/html',
+      '/api/artifacts/download',
+      '/api/artifacts/create',
+      '/api/artifacts/update',
+    ].includes(path)
+  )
+    return 120000
   if (path === '/api/tasks/commit-message') return 120000
   if (path === '/api/tasks/commit') return 180000
   // Authentication, optional Git initialization, creation and final inspection are sequential.
