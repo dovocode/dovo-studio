@@ -4,6 +4,7 @@ import { useStudioHost } from '@dovo/studio-core'
 import type { DesktopUpdateState } from '@dovo/protocol'
 import { SettingRow, SettingsGroup } from './layout'
 import { SettingsSelect } from './settings-select'
+import { UpdateProgress } from '../update-progress'
 export function UpdateSettings() {
   const { updates, appInfo } = useStudioHost()
   const [state, setState] = useState<DesktopUpdateState | null>(null)
@@ -78,6 +79,11 @@ export function UpdateSettings() {
                   : 'Check for updates'}
         </Button>
       </SettingRow>
+      {state && ['downloading', 'downloaded', 'restarting'].includes(state.status) && (
+        <div className="px-4 pb-4">
+          <UpdateProgress state={state} />
+        </div>
+      )}
       <SettingRow
         label="Release channel"
         description="Stable is recommended. Nightly includes newer changes and may be less stable. Uses this build’s channel until you choose another."

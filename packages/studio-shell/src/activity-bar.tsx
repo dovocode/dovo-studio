@@ -14,6 +14,7 @@ import {
   Shapes,
 } from 'lucide-react'
 import type { DesktopUpdateState } from '@dovo/protocol'
+import { useEffect, useState } from 'react'
 import type { StudioIcon, StudioView } from '@dovo/studio-core'
 import {
   useNavigationSidebar,
@@ -26,7 +27,7 @@ import {
   cn,
 } from '@dovo/studio-ui'
 
-const size = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+import { UpdateProgress } from './update-progress'
 
 const icons: Record<StudioIcon, typeof Bot> = {
   tasks: MessagesSquare,
@@ -57,6 +58,15 @@ export function ActivityBar({
   onCheckUpdates?: () => void
 }) {
   const sidebar = useNavigationSidebar()
+  const [updateOpen, setUpdateOpen] = useState(false)
+  useEffect(() => {
+    if (
+      update?.status === 'downloading' ||
+      update?.status === 'downloaded' ||
+      update?.status === 'restarting'
+    )
+      setUpdateOpen(true)
+  }, [update?.status])
   const settings = views.filter((view) => view.navigationGroup === 'settings')
   const settingsActive = settings.some((view) => view.id === activeId)
   const item = (
@@ -106,7 +116,7 @@ export function ActivityBar({
         )}
       <div className="studio-navigation-settings">
         {(onCheckUpdates || onUpdate) && (
-          <Popover.Root>
+          <Popover.Root open={updateOpen} onOpenChange={setUpdateOpen}>
             <Popover.Trigger asChild>
               <Button
                 variant="ghost"
@@ -143,9 +153,14 @@ export function ActivityBar({
                 sideOffset={10}
                 className="z-50 w-80 max-w-[calc(100vw-4rem)] rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg"
                 aria-label="Desktop update"
+                onOpenAutoFocus={(event) => {
+                  if (update?.status === 'downloading' || update?.status === 'restarting')
+                    event.preventDefault()
+                }}
               >
                 <h2 className="text-sm font-semibold">Dovo Studio {update?.version}</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <UpdateProgress state={update} />
+                <p className="mt-3 text-xs text-muted-foreground">
                   {update?.version
                     ? 'What’s new in this update'
                     : `Check the ${update?.channel === 'nightly' ? 'Nightly' : 'Stable'} channel. Change it in Settings → General → Updates.`}
@@ -163,32 +178,6 @@ export function ActivityBar({
                   <p role="alert" className="mt-2 text-xs text-destructive">
                     {update.error}
                   </p>
-                )}
-                {update?.status === 'downloading' && (
-                  <div className="mt-4" role="status" aria-live="polite">
-                    <div className="flex justify-between text-xs">
-                      <span>Downloading {Math.round(update?.progress ?? 0)}%</span>
-                      {update?.total && (
-                        <span>
-                          {size(update?.transferred ?? 0)} / {size(update?.total)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full bg-primary"
-                        style={{ width: `${Math.min(100, Math.max(0, update?.progress ?? 0))}%` }}
-                      />
-                    </div>
-                    {!!update?.bytesPerSecond && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {size(update?.bytesPerSecond)}/s
-                      </p>
-                    )}
-                  </div>
-                )}
-                {update?.status === 'restarting' && (
-                  <p className="mt-4 text-xs">Preparing to restart…</p>
                 )}
                 {(!update ||
                   ['idle', 'error', 'available', 'downloaded'].includes(update.status)) && (

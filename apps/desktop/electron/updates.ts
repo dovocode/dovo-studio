@@ -253,7 +253,9 @@ export function registerUpdates(
             type: 'info',
             message: `${appName} ${state.version ?? ''} is ready`,
             detail:
-              'The update is downloaded. Restart now to install it, or keep working and restart later.',
+              process.platform === 'win32'
+                ? 'Dovo will close and open the Windows installer with installation progress. Follow the installer to finish and reopen Dovo. Your projects, conversations and paired devices are kept. Choose Later to keep working.'
+                : 'The update is downloaded. Restart now to install it, or keep working and restart later.',
             buttons: ['Restart and install', 'Later'],
             cancelId: 1,
             defaultId: 1,
@@ -311,7 +313,9 @@ export function registerUpdates(
       }
       publish({ ...state, status: 'restarting' })
       restoreRuntime = await prepareQuit()
-      autoUpdater.quitAndInstall(process.platform === 'win32', true)
+      // Show local Windows installation progress. Remote updates must finish unattended
+      // so paired devices can reconnect without someone clicking Finish on this computer.
+      autoUpdater.quitAndInstall(process.platform === 'win32' && remote !== undefined, true)
     } catch (error) {
       let message = error instanceof Error ? error.message : String(error)
       try {

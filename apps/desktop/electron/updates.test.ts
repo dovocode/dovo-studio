@@ -215,7 +215,7 @@ it('keeps the downloaded update ready when restart is deferred', async () => {
   expect(prepare).not.toHaveBeenCalled()
   expect(f.install).not.toHaveBeenCalled()
 })
-it('installs Windows updates silently and relaunches only after restart is confirmed', async () => {
+it('shows Windows installation progress only after restart is confirmed', async () => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
   vi.spyOn(process, 'arch', 'get').mockReturnValue('x64')
   vi.stubGlobal(
@@ -230,7 +230,10 @@ it('installs Windows updates silently and relaunches only after restart is confi
   await updates.check()
   expect(updates.state().status).toBe('downloaded')
   expect(f.message).toHaveBeenLastCalledWith(
-    expect.objectContaining({ buttons: ['Restart and install', 'Later'] }),
+    expect.objectContaining({
+      buttons: ['Restart and install', 'Later'],
+      detail: expect.stringContaining('Dovo will close and open the Windows installer'),
+    }),
   )
   expect(prepare).not.toHaveBeenCalled()
   expect(f.install).not.toHaveBeenCalled()
@@ -238,7 +241,7 @@ it('installs Windows updates silently and relaunches only after restart is confi
   // Clicking the downloaded update's restart action is explicit confirmation.
   await updates.install()
   expect(prepare).toHaveBeenCalledOnce()
-  expect(f.install).toHaveBeenCalledExactlyOnceWith(true, true)
+  expect(f.install).toHaveBeenCalledExactlyOnceWith(false, true)
   expect(updates.state().status).toBe('restarting')
 })
 it('uses the same check action from the application menu and sidebar bridge', async () => {
@@ -491,6 +494,8 @@ it('allows an explicit stable-to-nightly change despite prerelease version order
 it.each([false, true])(
   'installs remotely with restart resume choice %s without a host dialog',
   async (resumeInterrupted) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    vi.spyOn(process, 'arch', 'get').mockReturnValue('x64')
     const request = vi.fn<typeof fetch>(async (input) =>
       (input instanceof Request ? input.url : input.toString()).endsWith('/prepare-restart')
         ? Response.json({ id: 'restart-lease' })
@@ -502,7 +507,7 @@ it.each([false, true])(
     const updates = registerUpdates('/unused', prepare)
     await updates.remote('install', 'next', resumeInterrupted)
     expect(f.downloads).toHaveBeenCalledOnce()
-    expect(f.install).toHaveBeenCalledOnce()
+    expect(f.install).toHaveBeenCalledExactlyOnceWith(true, true)
     expect(f.message).not.toHaveBeenCalled()
     expect(request).toHaveBeenCalledWith(
       'http://fixture/api/runtime/prepare-restart',
