@@ -94,6 +94,7 @@ export const ButtonSizesAndIconNames = note(
       <Button size="sm">Small</Button>
       <Button>Default</Button>
       <Button size="lg">Large action</Button>
+      <Button size="touch">Touch action</Button>
       <Button size="icon" variant="outline" aria-label="Add project">
         <Plus aria-hidden="true" />
       </Button>

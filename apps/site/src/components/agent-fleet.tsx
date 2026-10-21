@@ -1,5 +1,7 @@
 'use client'
 
+import { Button } from '@dovo/web-ui'
+
 import { useEffect, useRef, useState } from 'react'
 import { FleetWebGL } from './fleet-webgl'
 import { repository } from './site-links'
@@ -519,7 +521,9 @@ export function AgentFleet() {
       <div className="fleet-story">
         <div className="fleet-stages" role="group" aria-label="Fleet growth stages">
           {stages.map((item, index) => (
-            <button
+            <Button
+              size="touch"
+              variant={stage === index ? 'secondary' : 'ghost'}
               type="button"
               key={item.name}
               aria-pressed={stage === index}
@@ -546,7 +550,7 @@ export function AgentFleet() {
                         : '0%',
                 }}
               />
-            </button>
+            </Button>
           ))}
         </div>
         <div className="fleet-caption">
@@ -569,16 +573,20 @@ export function AgentFleet() {
           </div>
           <div className="fleet-controls">
             {!reduced && (
-              <button
+              <Button
+                size="touch"
+                variant="ghost"
                 type="button"
                 onClick={() => {
                   setPlaying(!playing)
                 }}
               >
                 {playing ? 'Pause animation' : 'Play animation'}
-              </button>
+              </Button>
             )}
-            <button
+            <Button
+              size="touch"
+              variant="ghost"
               type="button"
               onClick={() => {
                 setTick(0)
@@ -586,7 +594,7 @@ export function AgentFleet() {
               }}
             >
               Replay from start
-            </button>
+            </Button>
           </div>
         </div>
         <div

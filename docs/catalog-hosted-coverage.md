@@ -10,7 +10,7 @@ or change publications.
 
 | Product / route                           | Stories and states                                                                                                | Source                                                                             |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Auth `/`, `/sign-in`                      | GitHub sign-in and app-continuation explanation                                                                   | `apps/auth-server/src/pages.ts` `signInPage`                                       |
+| Auth `/`, `/sign-in`                      | GitHub sign-in and app-continuation explanation                                                                   | `apps/auth-server/src/pages.tsx` `signInPage`                                      |
 | Auth `/account`                           | Profile, current/other sessions, empty sessions, saved notice                                                     | `accountPage`                                                                      |
 | Auth `/error`                             | Interrupted/cancelled sign-in and safe continuation                                                               | shared `authStatusViews.interrupted`, used by server                               |
 | Auth `/resume` / invalid `/sign-in` query | Both expired-sign-in response variants                                                                            | shared `authStatusViews.expired/signInExpired`                                     |
@@ -19,7 +19,7 @@ or change publications.
 | Auth unknown routes / unavailable service | Signed-in and public not-found variants, service retry                                                            | shared `authStatusViews.notFound/publicNotFound/unavailable`                       |
 | Connect `/auth/start`                     | Device-consent code, organization choices, artifact-only scope                                                    | `connectConsent`, used by `browser-auth.ts`                                        |
 | Connect `/auth/callback`                  | Device and artifact success                                                                                       | `connectSuccess`, used by `browser-auth.ts`                                        |
-| Artifacts `/`                             | Anonymous sign-in, pending sign-in/code comparison, empty library, populated library                              | actual `pages.ts` and `viewer.ts`                                                  |
+| Artifacts `/`                             | Anonymous sign-in, pending sign-in/code comparison, empty library, populated library                              | actual `pages.ts` and `viewer.tsx`                                                 |
 | Artifacts `/s/:id`                        | Owner viewer, anonymous share viewer, current/stale/no live feed, loading, missing/revoked access, server failure | actual viewer with synthetic protocol responses                                    |
 | Artifacts `/manage/:id`                   | Invitations, expiring links, publisher-approved live-feed stop control, remove hosted copy                        | actual viewer; mutation requests intentionally return synthetic forbidden response |
 | Website `/`                               | Full landing page including header/footer, product tour, feature/agent sections                                   | actual Next page and layout                                                        |
@@ -65,3 +65,19 @@ Next's server metadata injection.
 
 The original `Dovo / Hosted services` story URLs remain as aliases to these production fixtures.
 Their older handcrafted Artifacts/Connect content is removed.
+
+## Shared production controls
+
+Auth and Connect render React components on the server through `@dovo/web-ui`; their forms remain
+ordinary POST requests and do not require client-side hydration. Artifacts uses those same
+components in its React viewer. The website imports the same Button and Card, with its product
+layout CSS in Tailwind's components layer so it cannot override the shared control utilities.
+
+The original desktop imports in `@dovo/studio-ui` re-export Button, Input, Textarea, Badge and
+Select from `@dovo/web-ui`. This package has no runtime/account providers. Both CSS builds import
+the same semantic theme, and its utility CSS is generated from the actual shared and hosted source
+files. Publisher HTML remains inside the existing sandbox and never receives service UI CSS or
+components.
+
+After editing shared primitives, build `@dovo/web-ui` and rebuild consumers. Storybook runs the real
+hosted templates/bundle with synthetic data; native mobile controls remain platform implementations.

@@ -84,7 +84,9 @@ describe('optional account discovery', () => {
       `default-src 'none'; style-src 'sha256-${hostedStylesHash}'; form-action 'self' https://auth.test; frame-ancestors 'none'; base-uri 'none'`,
     )
     const markup = await page.text()
-    expect(markup).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">')
+    expect(markup).toMatch(
+      /<meta name="viewport" content="width=device-width, initial-scale=1"\s*\/?>/,
+    )
     expect(markup).toContain('--dovo-background')
     expect(markup).toContain(
       'Signing in grants access to computers where you enable Dovo Connect on this account. LAN / VPN access still requires separate device pairing.',

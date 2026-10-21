@@ -7,17 +7,22 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && esbuild src/viewer.ts --bundle --platform=browser --format=iife --target=es2022 --minify --outfile=dist/viewer.js",
+    "build": "tsc -p tsconfig.build.json && esbuild src/viewer.tsx --bundle --platform=browser --format=iife --target=es2022 --minify --outfile=dist/viewer.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/main.js"
   },
   "dependencies": {
     "@dovo/design": "workspace:*",
     "@dovo/protocol": "workspace:*",
+    "@dovo/web-ui": "workspace:*",
     "effect": "4.0.5",
-    "marked": "^18.1.1"
+    "marked": "^18.1.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "esbuild": "0.28.2"
   }
 }

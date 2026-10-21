@@ -58,7 +58,7 @@ function Frame({
 const theme = (context: { globals: Record<string, unknown> }) =>
   context.globals.theme === 'light' ? 'light' : 'dark'
 const authDocument = (html: string) =>
-  html.replace('<link rel="stylesheet" href="/styles.css">', `<style>${styles}</style>`)
+  html.replace(/<link rel="stylesheet" href="\/styles.css"\s*\/?>/, `<style>${styles}</style>`)
 const authStory = (title: string, html: string): StoryObj => ({
   render: (_, context) => <Frame title={title} theme={theme(context)} html={authDocument(html)} />,
 })

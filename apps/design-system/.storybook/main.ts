@@ -45,6 +45,21 @@ const config: StorybookConfig = {
         name: 'mobile-thread-navigation-boundary',
         enforce: 'pre',
         transform(code, id) {
+          if (
+            /\/packages\/protocol\/(src|dist)\/runtime\/connection\/runtime-upgrades\.(ts|js)$/.test(
+              id,
+            )
+          ) {
+            const releaseImport = /\bfetchRuntimeReleases,\s*/
+            if (!releaseImport.test(code))
+              throw new Error('Catalog upgrade boundary no longer matches the release import')
+            return {
+              code:
+                "import { fetchRuntimeReleases } from 'dovo:catalog-releases'\n" +
+                code.replace(releaseImport, ''),
+              map: null,
+            }
+          }
           if (id.endsWith('/packages/studio-core/src/workspace/runtime-updates.ts')) {
             const releaseImport =
               "import { fetchRuntimeReleases, type RuntimeReleases } from '@dovo/protocol'"

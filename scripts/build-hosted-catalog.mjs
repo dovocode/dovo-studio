@@ -35,7 +35,7 @@ const website = await bundle('apps/design-system/src/hosted-screens-website-entr
   // CSS is embedded in the isolated document separately.
   loader: { '.css': 'empty' },
 })
-const viewer = await bundle('apps/artifact-server/src/viewer.ts', {
+const viewer = await bundle('apps/artifact-server/src/viewer.tsx', {
   define: { location: '__dovoCatalogLocation' },
 })
 await writeFile(

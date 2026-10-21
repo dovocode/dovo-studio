@@ -85,3 +85,5 @@ export {
 export { useNavigationSidebar, useLeftSidebar } from './sidebar-header'
 
 export { PullRequestIcon, pullRequestIconTone } from './pull-request-icon'
+
+export { Card } from '@dovo/web-ui/card'

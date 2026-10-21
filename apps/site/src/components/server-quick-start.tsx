@@ -1,5 +1,7 @@
 'use client'
 
+import { Button } from '@dovo/web-ui'
+
 import { useState } from 'react'
 import { serverCommands } from './server-commands'
 import { serverGuide } from './site-links'
@@ -30,7 +32,9 @@ export function ServerQuickStart() {
         <div className="command-toolbar">
           <div role="group" aria-label="Server release channel">
             {(['stable', 'nightly'] as const).map((value) => (
-              <button
+              <Button
+                size="touch"
+                variant={channel === value ? 'secondary' : 'ghost'}
                 key={value}
                 type="button"
                 aria-label={`${value === 'stable' ? 'Stable' : 'Nightly'} server`}
@@ -41,12 +45,18 @@ export function ServerQuickStart() {
                 }}
               >
                 {value === 'stable' ? 'Stable' : 'Nightly'}
-              </button>
+              </Button>
             ))}
           </div>
-          <button type="button" className="copy-command" onClick={() => void copy()}>
+          <Button
+            size="touch"
+            variant="ghost"
+            type="button"
+            className="copy-command"
+            onClick={() => void copy()}
+          >
             {copyStatus === 'copied' ? 'Copied' : 'Copy command'}
-          </button>
+          </Button>
         </div>
         <pre aria-label={`${channel === 'stable' ? 'Stable' : 'Nightly'} server install command`}>
           <code>{command}</code>

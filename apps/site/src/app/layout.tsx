@@ -1,3 +1,4 @@
+import { Button } from '@dovo/web-ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -49,9 +50,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a className="source-nav" href={repository}>
               GitHub <span aria-hidden="true">↗</span>
             </a>
-            <Link className="button button-small" href="/download/">
-              Download <span aria-hidden="true">↓</span>
-            </Link>
+            <Button asChild size="touch">
+              <Link href="/download/">
+                Download <span aria-hidden="true">↓</span>
+              </Link>
+            </Button>
           </nav>
         </header>
         <main id="main">{children}</main>

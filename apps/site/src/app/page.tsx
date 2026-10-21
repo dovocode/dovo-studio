@@ -1,3 +1,4 @@
+import { Button, Card } from '@dovo/web-ui'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { WorkspaceScreenshot } from '../components/workspace-screenshots'
@@ -32,9 +33,11 @@ export default function Home() {
               previews and automations together, from the first idea to the final diff.
             </p>
             <div className="actions">
-              <Link href="/download/" className="button">
-                Get Dovo Studio <span aria-hidden="true">↓</span>
-              </Link>
+              <Button asChild size="touch">
+                <Link href="/download/">
+                  Get Dovo Studio <span aria-hidden="true">↓</span>
+                </Link>
+              </Button>
               <a href="#product" className="hero-explore">
                 Explore the workspace <span aria-hidden="true">↗</span>
               </a>
@@ -109,55 +112,61 @@ export default function Home() {
           <p>From the first idea to the final diff, keep the context close to the work.</p>
         </div>
         <div className="feature-grid">
-          <article className="feature-card">
-            <div className="feature-top" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-8l-6 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
-                <path d="m7 9 3 3-3 3m6 0h4" />
-              </svg>
-              <span>01</span>
-            </div>
-            <h3>Give your agents direction.</h3>
-            <p>
-              Run agents against your projects. Follow streamed progress, answer questions and
-              review approvals without losing the conversation.
-            </p>
-            <span className="feature-tag">Agents & threads</span>
-          </article>
-          <article className="feature-card">
-            <div className="feature-top" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <circle cx="6" cy="5" r="3" />
-                <circle cx="6" cy="19" r="3" />
-                <circle cx="18" cy="5" r="3" />
-                <path d="M6 8v8m12-8a8 8 0 0 1-8 8H6" />
-              </svg>
-              <span>02</span>
-            </div>
-            <h3>Own the final diff.</h3>
-            <p>
-              Review diffs, work with branches and worktrees, browse pull requests and open a real
-              terminal on your host.
-            </p>
-            <span className="feature-tag">Git & terminals</span>
-          </article>
-          <article className="feature-card">
-            <div className="feature-top" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <rect x="2" y="9" width="6" height="6" rx="1" />
-                <rect x="16" y="2" width="6" height="6" rx="1" />
-                <rect x="16" y="16" width="6" height="6" rx="1" />
-                <path d="M8 12h4m0 0V5h4m-4 7v7h4" />
-              </svg>
-              <span>03</span>
-            </div>
-            <h3>Put busywork on autopilot.</h3>
-            <p>
-              Build automations with schedules, webhooks and task runs. Keep human review in the
-              loop where it matters.
-            </p>
-            <span className="feature-tag">Jobs & automations</span>
-          </article>
+          <Card asChild>
+            <article className="feature-card">
+              <div className="feature-top" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-8l-6 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+                  <path d="m7 9 3 3-3 3m6 0h4" />
+                </svg>
+                <span>01</span>
+              </div>
+              <h3>Give your agents direction.</h3>
+              <p>
+                Run agents against your projects. Follow streamed progress, answer questions and
+                review approvals without losing the conversation.
+              </p>
+              <span className="feature-tag">Agents & threads</span>
+            </article>
+          </Card>
+          <Card asChild>
+            <article className="feature-card">
+              <div className="feature-top" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <circle cx="6" cy="5" r="3" />
+                  <circle cx="6" cy="19" r="3" />
+                  <circle cx="18" cy="5" r="3" />
+                  <path d="M6 8v8m12-8a8 8 0 0 1-8 8H6" />
+                </svg>
+                <span>02</span>
+              </div>
+              <h3>Own the final diff.</h3>
+              <p>
+                Review diffs, work with branches and worktrees, browse pull requests and open a real
+                terminal on your host.
+              </p>
+              <span className="feature-tag">Git & terminals</span>
+            </article>
+          </Card>
+          <Card asChild>
+            <article className="feature-card">
+              <div className="feature-top" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="2" y="9" width="6" height="6" rx="1" />
+                  <rect x="16" y="2" width="6" height="6" rx="1" />
+                  <rect x="16" y="16" width="6" height="6" rx="1" />
+                  <path d="M8 12h4m0 0V5h4m-4 7v7h4" />
+                </svg>
+                <span>03</span>
+              </div>
+              <h3>Put busywork on autopilot.</h3>
+              <p>
+                Build automations with schedules, webhooks and task runs. Keep human review in the
+                loop where it matters.
+              </p>
+              <span className="feature-tag">Jobs & automations</span>
+            </article>
+          </Card>
         </div>
         <ProductTour />
         <div className="automation-showcase">
@@ -276,9 +285,11 @@ export default function Home() {
           <span>a better workspace.</span>
         </h2>
         <p>Open your project. Pick your agent. Get to work.</p>
-        <Link href="/download/" className="button">
-          Download Dovo Studio <span aria-hidden="true">↓</span>
-        </Link>
+        <Button asChild size="touch">
+          <Link href="/download/">
+            Download Dovo Studio <span aria-hidden="true">↓</span>
+          </Link>
+        </Button>
       </section>
     </>
   )

@@ -172,7 +172,13 @@ try {
     true,
   )
 
+  await owner.getByRole('combobox', { name: 'Share link lifetime' }).click()
+  await owner.getByRole('option', { name: '1 day', exact: true }).click()
+  const linkRequest = owner.waitForRequest(
+    (request) => request.method() === 'POST' && request.url().endsWith('/links'),
+  )
   await owner.getByRole('button', { name: 'Create anyone-with-link access', exact: true }).click()
+  assert.equal((await linkRequest).postDataJSON().seconds, 86400)
   const shared = owner.getByLabel('Shareable artifact link', { exact: true })
   await shared.waitFor()
   const sharedUrl = await shared.inputValue()

@@ -1,3 +1,4 @@
+import { Card } from '@dovo/web-ui/card'
 import { Switch } from './components/ui/switch'
 import { PageHeader } from './page-header'
 import { useId, useRef, type ReactNode } from 'react'
@@ -56,7 +57,9 @@ export function SettingsGroup({
           </p>
         )}
       </div>
-      <div className="divide-y rounded-lg border bg-card">{children}</div>
+      <Card asChild className="divide-y p-0">
+        <div>{children}</div>
+      </Card>
     </section>
   )
 }

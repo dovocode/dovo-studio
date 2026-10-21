@@ -1,3 +1,4 @@
+import { Button } from '@dovo/web-ui'
 import Link from 'next/link'
 
 export default function NotFound() {
@@ -7,9 +8,9 @@ export default function NotFound() {
       <h1>This page wandered off.</h1>
       <p className="page-intro">Head back to the workspace, or find the setup instructions.</p>
       <div className="actions">
-        <Link className="button" href="/">
-          Back to home
-        </Link>
+        <Button asChild size="touch">
+          <Link href="/">Back to home</Link>
+        </Button>
         <Link className="text-link" href="/docs/">
           Getting started →
         </Link>

@@ -58,6 +58,20 @@ export async function checkHostedScreens(page, origin, { interactionsOnly = fals
                 .map((animation) => animation.finished),
             )
           })
+          assert.ok(
+            await frame.evaluate(() =>
+              getComputedStyle(document.documentElement).getPropertyValue('--action').trim(),
+            ),
+            `${entry.id}: shared UI stylesheet missing`,
+          )
+          for (const control of await frame.locator('[data-slot="button"]').all()) {
+            if (await control.isVisible())
+              assert.ok(
+                (await control.boundingBox()).height >= 44,
+                `${entry.id}: hosted control must use the shared touch size`,
+              )
+          }
+
           await frame.evaluate(axeSource)
           const result = await frame.evaluate(async () => {
             const result = await window.axe.run(document, {

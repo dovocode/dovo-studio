@@ -1,5 +1,7 @@
 'use client'
 
+import { Button, Card } from '@dovo/web-ui'
+
 import { useEffect, useState } from 'react'
 import { releases, repository } from './site-links'
 
@@ -98,14 +100,28 @@ export function ReleaseDownloads() {
   return (
     <>
       <div className="release-channels" role="group" aria-label="Release channel">
-        <button type="button" aria-pressed={!isNightly} onClick={() => setChannel('stable')}>
+        <Button
+          size="touch"
+          variant={!isNightly ? 'secondary' : 'outline'}
+          className="h-auto min-h-11 flex-col items-start whitespace-normal px-6 py-5"
+          type="button"
+          aria-pressed={!isNightly}
+          onClick={() => setChannel('stable')}
+        >
           <strong>Stable</strong>
           <span>Recommended for everyday work</span>
-        </button>
-        <button type="button" aria-pressed={isNightly} onClick={() => setChannel('nightly')}>
+        </Button>
+        <Button
+          size="touch"
+          variant={isNightly ? 'secondary' : 'outline'}
+          className="h-auto min-h-11 flex-col items-start whitespace-normal px-6 py-5"
+          type="button"
+          aria-pressed={isNightly}
+          onClick={() => setChannel('nightly')}
+        >
           <strong>Nightly</strong>
           <span>Try the latest changes</span>
-        </button>
+        </Button>
       </div>
       <div className="channel-description" aria-live="polite">
         {isNightly ? (
@@ -144,22 +160,26 @@ export function ReleaseDownloads() {
       </div>
       <div className="feature-grid downloads">
         {platforms.map((platform) => (
-          <article className="feature-card" key={platform.name}>
-            <span className="feature-symbol" aria-hidden="true">
-              {platform.symbol}
-            </span>
-            <h2>{platform.name}</h2>
-            <p>
-              {platform.architecture}
-              <br />
-              {platform.formats}
-            </p>
-            <a className="button" href={url}>
-              View {platform.name} {isNightly ? 'nightlies' : 'downloads'}{' '}
-              <span aria-hidden="true">↗</span>
-            </a>
-            <small>{platform.detail}</small>
-          </article>
+          <Card asChild key={platform.name}>
+            <article className="feature-card">
+              <span className="feature-symbol" aria-hidden="true">
+                {platform.symbol}
+              </span>
+              <h2>{platform.name}</h2>
+              <p>
+                {platform.architecture}
+                <br />
+                {platform.formats}
+              </p>
+              <Button asChild size="touch">
+                <a href={url}>
+                  View {platform.name} {isNightly ? 'nightlies' : 'downloads'}{' '}
+                  <span aria-hidden="true">↗</span>
+                </a>
+              </Button>
+              <small>{platform.detail}</small>
+            </article>
+          </Card>
         ))}
       </div>
       <p className="download-note">

@@ -1,5 +1,7 @@
 'use client'
 
+import { Button } from '@dovo/web-ui'
+
 import { useState } from 'react'
 import { WorkspaceScreenshot } from './workspace-screenshots'
 
@@ -42,7 +44,9 @@ export function ProductTour() {
     <section className="product-tour" id="product" aria-label="Explore the product">
       <div className="tour-tabs" role="group" aria-label="Product features">
         {views.map((item, index) => (
-          <button
+          <Button
+            size="touch"
+            variant={selected === index ? 'secondary' : 'ghost'}
             type="button"
             key={item.name}
             aria-pressed={selected === index}
@@ -50,7 +54,7 @@ export function ProductTour() {
             onClick={() => setSelected(index)}
           >
             <span aria-hidden="true">0{index + 1}</span> {item.name}
-          </button>
+          </Button>
         ))}
       </div>
       <div className="tour-content" id="tour-content">

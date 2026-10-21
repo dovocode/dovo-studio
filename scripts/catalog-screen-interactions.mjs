@@ -114,6 +114,15 @@ export async function checkScreenInteractions(page, origin) {
     })
     checks += 4
 
+    await open('dovo-screens-desktop--runtime')
+    await page.getByRole('button', { name: 'Check updates', exact: true }).waitFor()
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('[role="button"],button')].some(
+        (node) =>
+          node.textContent === 'Check updates' && node.getAttribute('aria-disabled') !== 'true',
+      ),
+    )
+    checks++
     await page.setViewportSize({ width: 390, height: 900 })
     await open('dovo-screens-mobile--full-composer')
     await visible('Full native composer')
