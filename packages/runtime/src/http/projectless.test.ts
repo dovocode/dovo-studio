@@ -13,6 +13,7 @@ import {
 import { startRuntime } from '../index'
 import type { AgentAdapter, AgentRun } from '../agents/execution/types'
 import { runtimeIntegration } from '../testing/integration'
+import { Effect } from 'effect'
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -186,9 +187,55 @@ it('deletes a project history while preserving repository and checkout files, an
       task.id === projectTask.id ? { ...task, status: 'draft' as const } : task,
     ),
   }))
-  const response = await f.request('/api/scm/repositories/delete', {
-    repositoryId: repository.id,
+  const stopFeeds = f.runtime.services.artifactFeeds.stopTasks.bind(
+    f.runtime.services.artifactFeeds,
+  )
+  let signalReached!: () => void
+  let releaseDeletion!: () => void
+  const reachedStopFeeds = new Promise<void>((resolve) => (signalReached = resolve))
+  const deletionGate = new Promise<void>((resolve) => (releaseDeletion = resolve))
+  vi.spyOn(f.runtime.services.artifactFeeds, 'stopTasks').mockImplementation(async (ids) => {
+    signalReached()
+    await deletionGate
+    await stopFeeds(ids)
   })
+  const deleting = f.request('/api/scm/repositories/delete', { repositoryId: repository.id })
+  await reachedStopFeeds
+  try {
+    const concurrentMessage = await f.request('/api/tasks/message', {
+      id: projectTask.id,
+      messageId: 'during-project-deletion',
+      text: 'Start a new turn',
+    })
+    expect(concurrentMessage.status).toBe(409)
+    await expect(
+      Effect.runPromise(f.runtime.services.tasks.startEffect(projectTask.id)),
+    ).rejects.toThrow('This thread is being deleted.')
+    const concurrentCreate = await f.request(
+      '/api/workspace',
+      {
+        collection: 'tasks',
+        id: 'late-project-thread',
+        create: f.draft('late-project-thread', repository.id),
+        changes: {},
+      },
+      'PATCH',
+    )
+    expect(concurrentCreate.status).toBe(409)
+    const concurrentReassign = await f.request(
+      '/api/workspace',
+      {
+        collection: 'tasks',
+        id: unrelatedTask.id,
+        changes: { repositoryId: { before: SCRATCH_PROJECT_ID, after: repository.id } },
+      },
+      'PATCH',
+    )
+    expect(concurrentReassign.status).toBe(409)
+  } finally {
+    releaseDeletion()
+  }
+  const response = await deleting
   expect(response.status).toBe(200)
   expect(await response.json()).toEqual({ ok: true })
   expect(

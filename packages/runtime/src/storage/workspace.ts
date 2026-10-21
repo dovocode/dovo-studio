@@ -211,6 +211,7 @@ export class WorkspaceStore {
   readonly usageTranscripts = new UsageTranscripts()
   private revision = 0
   private transactionDepth = 0
+  private deletingRepositories = new Map<string, symbol>()
   private readonly commitListeners = new Set<
     (before: WorkspaceSummary, after: WorkspaceSummary) => void
   >()
@@ -755,6 +756,17 @@ export class WorkspaceStore {
     action?: ProviderAction,
   ): WorkspaceSummary {
     const draft = fn(this.workspace)
+    for (const [repositoryId] of this.deletingRepositories) {
+      const previousTasks = new Map(this.workspace.tasks.map((task) => [task.id, task]))
+      if (
+        draft.tasks.some(
+          (task) =>
+            task.repositoryId === repositoryId &&
+            previousTasks.get(task.id)?.repositoryId !== repositoryId,
+        )
+      )
+        throw new HttpError(409, 'This project is being deleted.')
+    }
     const previousTasks = new Map(this.workspace.tasks.map((task) => [task.id, task]))
     const written = new Map<string, History>()
     const candidates = draft.tasks.map((task): TaskSummary | TaskMetadata => {
@@ -1047,6 +1059,17 @@ export class WorkspaceStore {
     }
     this.committed(committedBefore)
     return next
+  }
+  reserveRepositoryDeletion(repositoryId: string) {
+    if (this.deletingRepositories.has(repositoryId))
+      throw new HttpError(409, 'This project is already being deleted.')
+    const reservation = Symbol('project deletion')
+    this.deletingRepositories.set(repositoryId, reservation)
+    return reservation
+  }
+  releaseRepositoryDeletion(repositoryId: string, reservation: symbol) {
+    if (this.deletingRepositories.get(repositoryId) === reservation)
+      this.deletingRepositories.delete(repositoryId)
   }
   taskDefaults(repositoryId?: string) {
     return resolveTaskDefaults(

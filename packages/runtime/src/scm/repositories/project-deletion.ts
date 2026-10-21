@@ -90,9 +90,11 @@ export function deleteProjectEffect(s: Services, value: unknown) {
         (task) => !task.delegation || !projectTaskIds.has(task.delegation.parentTaskId),
       )
       const flowIds = new Set(affectedFlows.map((flow) => flow.id))
-      const taskReservation = s.tasks.reserveDeletion([...guardedTaskIds])
+      const projectReservation = s.store.reserveRepositoryDeletion(repositoryId)
+      let taskReservation: symbol | undefined
       let automationReservation: symbol | undefined
       try {
+        taskReservation = s.tasks.reserveDeletion([...guardedTaskIds])
         automationReservation = s.jobs.reserveDeletion([...flowIds])
         if (flowIds.size)
           s.store.update((current) => ({
@@ -104,8 +106,8 @@ export function deleteProjectEffect(s: Services, value: unknown) {
 
         yield* serviceResult(s.artifactFeeds.stopTasks([...deletedTaskIds]))
         try {
-          for (const task of roots)
-            yield* taskLifecycle(s, task.id, 'delete', false, taskReservation)
+          const reservedTasks = taskReservation
+          for (const task of roots) yield* taskLifecycle(s, task.id, 'delete', false, reservedTasks)
 
           const remainingProjectTasks = s.store
             .get()
@@ -204,8 +206,9 @@ export function deleteProjectEffect(s: Services, value: unknown) {
           s.artifactFeeds.releaseTasks([...deletedTaskIds])
         }
       } finally {
-        s.tasks.releaseDeletion([...guardedTaskIds], taskReservation)
+        if (taskReservation) s.tasks.releaseDeletion([...guardedTaskIds], taskReservation)
         if (automationReservation) s.jobs.releaseDeletion([...flowIds], automationReservation)
+        s.store.releaseRepositoryDeletion(repositoryId, projectReservation)
       }
       return { ok: true }
     }),

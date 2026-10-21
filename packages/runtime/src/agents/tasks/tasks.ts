@@ -800,10 +800,16 @@ export class Tasks {
     resumePaused = false,
     turnSettings?: TurnSettings,
   ) {
-    return runtimeOperation(() => this.attachments.metadata(id, attachmentIds)).pipe(
+    return runtimeOperation(() => {
+      if (this.deletionReservations.has(id))
+        throw new HttpError(409, 'This thread is being deleted.')
+      return this.attachments.metadata(id, attachmentIds)
+    }).pipe(
       Effect.tap(() => (turnSettings ? Effect.void : this.resolveModel(id, text))),
       Effect.flatMap((attachments) =>
         runtimeOperation(() => {
+          if (this.deletionReservations.has(id))
+            throw new HttpError(409, 'This thread is being deleted.')
           this.queue.add(
             id,
             messageId,
@@ -1050,6 +1056,8 @@ export class Tasks {
     continuingRunId?: string,
   ): Effect.Effect<{ completion: Effect.Effect<void, RuntimeFailure> }, RuntimeFailure> {
     return Effect.suspend(() => {
+      if (this.deletionReservations.has(id))
+        return Effect.fail(new HttpError(409, 'This thread is being deleted.'))
       if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
       const next = this.store.taskSummary(id)
@@ -1062,6 +1070,8 @@ export class Tasks {
         Effect.flatMap((task) => {
           // The native boundary above yields. Admission must be rechecked in the
           // same synchronous turn that registers the worker with its executor.
+          if (this.deletionReservations.has(id))
+            return Effect.fail(new HttpError(409, 'This thread is being deleted.'))
           if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
             return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
           if (admit && !admit()) {
