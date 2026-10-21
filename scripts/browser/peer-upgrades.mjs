@@ -8,6 +8,7 @@ export async function checkPeerUpgrades(browser, root) {
       stdin: {
         contents: `
       import {createRoot} from 'react-dom/client';
+      import {flushSync} from 'react-dom';
       import {Effect} from 'effect';
       import {DeviceManager} from '${root}/packages/extension-runtime/src/device-manager.tsx';
       import {UpgradeInternet} from '${mobile}upgrade-internet.tsx';
@@ -30,8 +31,9 @@ export async function checkPeerUpgrades(browser, root) {
       window.desktop=()=>({snapshot:{owner:true,devices:[{id:'phone',name:'My phone'}],pendingDevices:[],pendingPeerUpgrades:window.pending?.status==='pending'?[window.pending]:[]},request:window.dispatch,connected:true,runtimeRegistry:{profiles:[]},refreshRuntime:async()=>{window.render()}});
       window.runtime={connected:true,upgradeInternetEffect:(id,previous,peer)=>window.failProbe?Effect.fail(new Error('Internet path blocked; original connection kept')):Effect.sync(()=>{window.upgrades.push({id,previous,peer});window.finished=true;window.render()})};
       const app=createRoot(document.getElementById('app'));
-      window.reset=()=>{window.round=(window.round??0)+1;window.pending=null;window.finished=false;window.failProbe=false;window.holdClaim=false;window.hidden=false;window.render()};
-      window.render=()=>app.render(<><DeviceManager/>{window.finished?<p>Internet enabled</p>:!window.hidden&&<UpgradeInternet key={window.round} profile={window.profile}/>}</>);
+      // A new keyed form must be mounted before Playwright changes its relay choice.
+      window.reset=()=>{window.round=(window.round??0)+1;window.pending=null;window.finished=false;window.failProbe=false;window.holdClaim=false;window.hidden=false;flushSync(()=>window.render())};
+      window.render=()=>app.render(<><DeviceManager/><div data-upgrade-round={window.round}>{window.finished?<p>Internet enabled</p>:!window.hidden&&<UpgradeInternet key={window.round} profile={window.profile}/>}</div></>);
       window.reset();`,
         loader: 'tsx',
         resolveDir: root,
@@ -117,6 +119,17 @@ export async function checkPeerUpgrades(browser, root) {
   try {
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
+    assert.equal(
+      await page.evaluate(() => {
+        window.reset()
+        return (
+          document.querySelector('[data-upgrade-round]')?.dataset.upgradeRound ===
+          String(window.round)
+        )
+      }),
+      true,
+      'Reset must commit the new form before the next action can change its relay choice',
+    )
     await page.getByRole('button', { name: 'Enable internet connection', exact: true }).click()
     await page.getByText(/Waiting for approval/).waitFor()
     await page
