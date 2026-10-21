@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "storybook dev -p 6006 --no-open --disable-telemetry",
-    "build": "storybook build --disable-telemetry",
+    "dev": "node ../../scripts/build-mcp-apps.mjs && storybook dev -p 6006 --no-open --disable-telemetry",
+    "build": "node ../../scripts/build-mcp-apps.mjs && storybook build --disable-telemetry",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
