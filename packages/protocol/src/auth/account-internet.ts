@@ -24,6 +24,16 @@ export const internetRegistrationSchema = mutableStruct({
   signature: Schema.String,
 })
 export type InternetRegistration = typeof internetRegistrationSchema.Type
+export const internetSetupSchema = mutableStruct({
+  id: Schema.String,
+  registration: internetRegistrationSchema,
+})
+export const internetHostSchema = mutableStruct({
+  id: Schema.String,
+  identity: Schema.String,
+  publicKey: internetKeySchema,
+  session: Schema.String,
+})
 export const internetRegistrationPayload = (
   origin: string,
   sessionHash: string,

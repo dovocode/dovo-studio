@@ -166,3 +166,76 @@ it('restores the deletion retry flow after restarting without discarding its sec
   expect(saved).toBeNull()
   expect(calls).toEqual([origin + '/v1/servers', origin + '/v1/account'])
 })
+
+it('keeps account sessions out of paired setup and revokes a grant when completion fails', async () => {
+  const f = fixture()
+  await f.client.signIn()
+  const setup = {
+    id: 'setup',
+    registration: {
+      id: 'runtime',
+      name: 'Server',
+      identity: 'key',
+      publicKey: 'a'.repeat(64),
+      timestamp: Date.now(),
+      signature: 'signed',
+    },
+  }
+  const prepare = vi.fn<(hash: string) => Promise<typeof setup>>(async () => setup)
+  const complete = vi.fn<(id: string, grant: string) => Promise<void>>(async () => {
+    throw new Error('Device revoked')
+  })
+  const fetchBefore = fetch
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (new URL(url instanceof Request ? url.url : url).pathname === '/v1/internet/hosts')
+        return Response.json({ grant: 'scoped-host-grant' })
+      return fetchBefore(url, init)
+    }),
+  )
+  await expect(f.client.enablePairedInternet('runtime', prepare, complete)).rejects.toThrow(
+    'Device revoked',
+  )
+  expect(prepare.mock.calls[0][0]).toMatch(/^[A-Za-z0-9_-]{43}$/)
+  expect(prepare.mock.calls[0][0]).not.toBe(token)
+  expect(complete).toHaveBeenCalledWith('setup', 'scoped-host-grant')
+  expect(f.calls.at(-1)).toMatchObject({
+    path: '/v1/internet/host',
+    method: 'DELETE',
+    authorization: 'Bearer scoped-host-grant',
+  })
+})
+
+it('refuses another runtime or a signout during setup before issuing its account grant', async () => {
+  const f = fixture()
+  await f.client.signIn()
+  const setup = {
+    id: 'setup',
+    registration: {
+      id: 'other',
+      name: 'Server',
+      identity: 'key',
+      publicKey: 'a'.repeat(64),
+      timestamp: Date.now(),
+      signature: 'signed',
+    },
+  }
+  const complete = vi.fn<() => Promise<void>>(async () => {})
+  await expect(
+    f.client.enablePairedInternet('runtime', async () => setup, complete),
+  ).rejects.toThrow('different computer')
+  setup.registration.id = 'runtime'
+  await expect(
+    f.client.enablePairedInternet(
+      'runtime',
+      async () => {
+        await f.client.signOut()
+        return setup
+      },
+      complete,
+    ),
+  ).rejects.toThrow('cancelled')
+  expect(complete).not.toHaveBeenCalled()
+  expect(f.calls.some((call) => call.path === '/v1/internet/hosts')).toBe(false)
+})

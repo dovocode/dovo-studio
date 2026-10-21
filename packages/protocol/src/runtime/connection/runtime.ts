@@ -21,6 +21,7 @@ import {
 import { runtimeDefaultsSchema } from './runtime-setup.js'
 import { pendingQuestionSchema } from '../../conversation/workflow/questions.js'
 import { acpInstallationSchema } from '../../auth/acp-registry.js'
+import { internetSetupSchema } from '../../auth/account-internet.js'
 export const deviceSchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,
@@ -119,6 +120,7 @@ export const internetStatusSchema = mutableStruct({
 })
 export const snapshotSchema = mutableStruct({
   internet: Schema.optional(internetStatusSchema),
+  internetSetupSupported: Schema.optional(Schema.Boolean),
   peerUpgradeSupported: Schema.optional(Schema.Boolean),
   remoteDesktopEnabled: Schema.optional(Schema.Boolean),
   remoteDesktopSession: Schema.optional(Schema.NullOr(remoteDesktopSessionSchema)),
@@ -329,6 +331,7 @@ export type JobRunStep = Schema.Schema.Type<typeof jobRunStepSchema>
 export type ProviderStatus = Schema.Schema.Type<typeof providerStatusSchema>
 export const responses = {
   internetStatus: internetStatusSchema,
+  internetSetup: internetSetupSchema,
   peerUpgrade: peerUpgradeSchema,
   peerRelayIdentity: mutableStruct({ publicKey: peerRelayIdentitySchema }),
   repositoryOpenTargets: repositoryOpenTargetsSchema,

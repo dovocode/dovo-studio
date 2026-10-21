@@ -28,6 +28,7 @@ import { ActivityLog } from '../runtime/state/activity'
 import { CommandSettings } from '../runtime/preferences/command-settings'
 import { PairComputer } from '../runtime/connection/pair-computer'
 import { UpgradeInternet } from '../runtime/connection/upgrade-internet'
+import { ConnectSettings } from '../runtime/connection/connect-settings'
 import { PeerRelayChoice } from '../runtime/connection/peer-relay-choice'
 import { ConnectionHelp } from '../runtime/connection/connection-help'
 import { useConnectionTypes } from '../runtime/connection/connection-type'
@@ -414,6 +415,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
               ? 'Internet · WebRTC · end-to-end encrypted'
               : profile.connection.address}
           </Text>
+          <ConnectSettings key={profile.id} onBusyChange={setPairingBusy} />
           {profile.connection.peer && (
             <PeerRelayChoice
               value={profile.connection.peer.relay}

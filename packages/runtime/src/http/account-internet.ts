@@ -1,4 +1,4 @@
-import { randomBytes, createHash } from 'node:crypto'
+import { randomBytes, createHash, randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { Schema } from 'effect'
 import {
@@ -8,11 +8,14 @@ import {
   internetBytes,
   internetBoxSchema,
   internetRegistrationPayload,
+  internetHostSchema,
   sealInternet,
   peerAddress,
   peerConfigSchema,
   type PeerConfig,
+  type InternetRegistration,
 } from '@dovo/protocol'
+import { HttpError } from '../errors.js'
 import type { Devices } from '../auth/devices.js'
 import type { PeerConnections } from './peer-connections.js'
 import type { peerRelayIdentity } from './peer-relay-identity.js'
@@ -38,6 +41,10 @@ export class AccountInternet {
   private lease = 0
   private running = false
   private enabling = false
+  private setups = new Map<
+    string,
+    { id: string; session: string; registration: InternetRegistration; generation: number }
+  >()
   private error = ''
   private readonly privateKey: Uint8Array
   readonly publicKey: string
@@ -102,6 +109,85 @@ export class AccountInternet {
     this.running = true
     if (this.state) void this.poll()
   }
+  prepareSetup(deviceId: string, session: string, runtimeId: string, name: string) {
+    if (!this.running) throw new HttpError(409, 'Internet connections are not running')
+    if (this.state || this.enabling)
+      throw new HttpError(409, 'Dovo Connect is already enabled or being configured')
+    for (const [device, setup] of this.setups)
+      if (Date.now() - setup.registration.timestamp >= 60000) this.setups.delete(device)
+    const previous = this.setups.get(deviceId)
+    if (previous?.session === session)
+      return { id: previous.id, registration: previous.registration }
+    if (this.setups.size)
+      throw new HttpError(409, 'Dovo Connect setup is already pending. Try again in one minute.')
+    const registration = {
+      id: runtimeId,
+      name,
+      identity: this.identity.publicKey,
+      publicKey: this.publicKey,
+      timestamp: Date.now(),
+    }
+    const setup = {
+      id: randomUUID(),
+      session,
+      generation: this.generation,
+      registration: {
+        ...registration,
+        signature: this.identity.signRegistration(
+          internetRegistrationPayload(this.origin, session, registration),
+        ),
+      },
+    }
+    this.setups.set(deviceId, setup)
+    return { id: setup.id, registration: setup.registration }
+  }
+  async completeSetup(deviceId: string, id: string, grant: string, validate: () => void) {
+    const setup = this.setups.get(deviceId)
+    if (!setup || setup.id !== id || Date.now() - setup.registration.timestamp >= 60000)
+      throw new HttpError(404, 'Dovo Connect setup expired. Confirm setup again.')
+    if (!this.running || setup.generation !== this.generation || this.state || this.enabling)
+      throw new HttpError(409, 'Dovo Connect setup changed. Refresh this computer.')
+    this.setups.delete(deviceId)
+    this.enabling = true
+    try {
+      const { host } = decode(
+        Schema.Struct({ host: Schema.optional(internetHostSchema) }),
+        await this.request('/v1/internet/host', grant),
+      )
+      if (!host)
+        throw new HttpError(
+          502,
+          'Update the Dovo Connect service to enable setup from paired devices',
+        )
+      if (
+        host.id !== setup.registration.id ||
+        host.identity !== this.identity.publicKey ||
+        host.publicKey !== this.publicKey ||
+        host.session !== setup.session
+      )
+        throw new HttpError(403, 'Account grant belongs to a different installation or session')
+      validate()
+      if (
+        !this.running ||
+        setup.generation !== this.generation ||
+        Date.now() - setup.registration.timestamp >= 60000
+      )
+        throw new HttpError(409, 'Dovo Connect setup was cancelled')
+      this.saveGrant(grant, setup.registration.id, setup.registration.name)
+      return this.status()
+    } finally {
+      this.enabling = false
+    }
+  }
+  private saveGrant(grant: string, runtimeId: string, name: string) {
+    this.state = { grant, runtimeId, name }
+    this.db
+      .prepare('UPDATE account_internet SET state=? WHERE id=1')
+      .run(JSON.stringify(this.state))
+    this.setups.clear()
+    this.error = ''
+    void this.poll()
+  }
   async enable(token: string, runtimeId: string, name: string) {
     if (!this.running) throw new Error('Internet connections are not running')
     if (this.state || this.enabling)
@@ -130,12 +216,7 @@ export class AccountInternet {
         await this.request('/v1/internet/host', result.grant, 'DELETE')
         throw new Error('Internet setup was cancelled')
       }
-      this.state = { grant: result.grant, runtimeId, name }
-      this.db
-        .prepare('UPDATE account_internet SET state=? WHERE id=1')
-        .run(JSON.stringify(this.state))
-      this.error = ''
-      void this.poll()
+      this.saveGrant(result.grant, runtimeId, name)
       return this.status()
     } finally {
       this.enabling = false
@@ -289,6 +370,7 @@ export class AccountInternet {
   stop() {
     this.running = false
     this.generation++
+    this.setups.clear()
     this.lease = 0
     this.controller?.abort()
     if (this.timer) clearTimeout(this.timer)

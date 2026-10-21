@@ -1,10 +1,16 @@
 import { type ManagedLiveActivity } from '../runtime/previews/live-activities.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
-import { internetPublicKey, internetBoxSchema, openInternet } from './account-internet.js'
+import {
+  internetPublicKey,
+  internetBoxSchema,
+  openInternet,
+  type internetSetupSchema,
+} from './account-internet.js'
 import { connectionSchema, type RuntimeConnection } from '../runtime/connection/runtime.js'
 import { peerAddress } from '../runtime/connection/peer.js'
 import { Schema } from 'effect'
+import { Base64Url } from 'effect/encoding'
 import {
   managedPushGrantSchema,
   type ManagedPushSubscription,
@@ -69,6 +75,41 @@ export class AccountClient {
   enableInternet = async (enable: (accountToken: string) => Promise<unknown>) => {
     if (!this.token || !this.state.directory) throw new Error('Sign in first')
     await enable(this.token)
+    await this.refreshDirectory()
+  }
+  /** A paired runtime signs a session-bound registration. Only its restricted host grant
+   * crosses the pairing; the full account session stays with this client and Connect. */
+  enablePairedInternet = async (
+    runtimeId: string,
+    prepare: (sessionHash: string) => Promise<typeof internetSetupSchema.Type>,
+    complete: (id: string, grant: string) => Promise<unknown>,
+  ) => {
+    const token = this.token
+    if (!token || !this.state.directory || this.state.deletionPending)
+      throw new Error('Sign in first')
+    const setup = await prepare(Base64Url.encode(sha256(utf8ToBytes(token))))
+    if (setup.registration.id !== runtimeId)
+      throw new Error('Setup belongs to a different computer')
+    if (this.token !== token) throw new Error('Account setup cancelled')
+    const { grant } = decode(
+      Schema.Struct({ grant: Schema.String }),
+      await this.request('/v1/internet/hosts', 'PUT', setup.registration, undefined, token),
+    )
+    try {
+      if (this.token !== token) throw new Error('Account setup cancelled')
+      await complete(setup.id, grant)
+      if (this.token !== token) throw new Error('Account setup cancelled')
+    } catch (error) {
+      try {
+        await this.request('/v1/internet/host', 'DELETE', undefined, undefined, grant)
+      } catch (cleanupError) {
+        throw new Error(
+          'Setup failed and its grant could not be revoked. Unlink this computer from your account.',
+          { cause: cleanupError },
+        )
+      }
+      throw error
+    }
     await this.refreshDirectory()
   }
   connectInternet = async (

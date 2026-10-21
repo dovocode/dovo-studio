@@ -1256,6 +1256,38 @@ export function route(
           s.peers.internet.enable(input.accountToken, s.runtimeId, hostname()),
         )
       }
+      if (
+        method === 'POST' &&
+        (path === '/api/runtime/internet/setup' || path === '/api/runtime/internet/complete')
+      ) {
+        // Account-derived tunnels and agent runs cannot expand account access. A separate
+        // pairing is trusted to grant access after explicit confirmation on that client.
+        if (agentDeviceAccess || s.peers.internet.contains(device.id))
+          throw new HttpError(403, 'A separately paired human client is required')
+        if (path === '/api/runtime/internet/setup') {
+          const input = decode(
+            mutableStruct({
+              session: Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/))),
+              consent: Schema.Literal(true),
+              relay: Schema.Literal('dovo'),
+            }),
+            yield* serviceResult(body(request, 4096)),
+          )
+          return s.peers.internet.prepareSetup(device.id, input.session, s.runtimeId, hostname())
+        }
+        const input = decode(
+          mutableStruct({
+            id: uuidSchema,
+            grant: Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/))),
+          }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        return yield* serviceResult(
+          s.peers.internet.completeSetup(device.id, input.id, input.grant, () => {
+            s.devices.authenticate(token)
+          }),
+        )
+      }
       if (method === 'POST' && path === '/api/runtime/peer/enable') {
         if (!peer?.claimed(device.id) && !s.peers.enabled(device.id))
           throw new HttpError(

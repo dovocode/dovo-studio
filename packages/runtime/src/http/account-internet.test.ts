@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { createServer as tcpServer, type Socket } from 'node:net'
 import { once } from 'node:events'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, createHash } from 'node:crypto'
 import { WebSocket } from 'ws'
 import { RTCPeerConnection } from 'werift'
 import {
@@ -21,6 +21,7 @@ import {
   peerReadySchema,
   validPeerRelay,
   syncTicketSchema,
+  responses,
   verifyPeerSignal,
   type PeerConfig,
 } from '@dovo/protocol'
@@ -104,6 +105,12 @@ async function fixture(persistent = false, issueRelay?: PeerRelayIssuer) {
     async () => {},
     origin,
   )
+  const call = (path: string, input: object, token: string, headers: Record<string, string> = {}) =>
+    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(input),
+    })
   return {
     get runtime() {
       return runtime
@@ -114,6 +121,7 @@ async function fixture(persistent = false, issueRelay?: PeerRelayIssuer) {
     phone,
     client,
     request,
+    call,
     restart: async () => {
       await runtime.close()
       runtime = await startRuntime(options)
@@ -140,14 +148,17 @@ async function tunnel(config: PeerConfig) {
       room: peerRoom(config),
       key: peerCapability(config, 'client'),
       session,
+      relay: config.relay,
     }),
   )
-  await joined
+  const relay = decode(peerReadySchema, JSON.parse(String((await joined)[0]))).relay?.provider
   await pc.setLocalDescription(await pc.createOffer())
   const sdp = pc.localDescription!.sdp,
     answered = once(signaling, 'message')
   signaling.send(
-    JSON.stringify(signPeerSignal(config, { session, role: 'offer', offer: peerDigest(sdp), sdp })),
+    JSON.stringify(
+      signPeerSignal(config, { session, role: 'offer', offer: peerDigest(sdp), sdp, relay }),
+    ),
   )
   const answer = decode(peerSignalSchema, JSON.parse(String((await answered)[0])))
   expect(verifyPeerSignal(config, answer)).toBe(true)
@@ -485,3 +496,203 @@ it('automatically authorizes Dovo TURN with the account grant and installation p
   expect((await closed)[0]).toBe(1008)
   expect(issue).toHaveBeenCalledTimes(2)
 }, 30000)
+
+it('enables account access and TURN from a confirmed separate pairing without sending its account session to the runtime', async () => {
+  const issue = vi.fn<PeerRelayIssuer>(
+    dovoTurn({
+      urls: ['turn:turn.test:3478?transport=udp'],
+      secret: 'remote-setup-turn-secret-1234567890',
+    }),
+  )
+  const f = await fixture(false, issue)
+  const paired = 'paired-human-device-for-remote-setup'
+  f.runtime.services.devices.add('Desktop or mobile', paired)
+  await f.client.load()
+  const inputs: object[] = []
+  await f.client.enablePairedInternet(
+    f.runtime.services.runtimeId,
+    async (session) => {
+      const input = { session, consent: true, relay: 'dovo' }
+      inputs.push(input)
+      const response = await f.call('/api/runtime/internet/setup', input, paired)
+      expect(response.status).toBe(200)
+      return decode(responses.internetSetup, await response.json())
+    },
+    async (id, grant) => {
+      inputs.push({ id, grant })
+      const response = await f.call('/api/runtime/internet/complete', { id, grant }, paired)
+      expect(response.status).toBe(200)
+      return decode(responses.internetStatus, await response.json())
+    },
+  )
+  expect(JSON.stringify(inputs)).not.toContain(f.phone)
+  expect(JSON.stringify(inputs)).not.toContain(paired)
+  await vi.waitFor(() => expect(f.runtime.services.peers.internet.status().connected).toBe(true))
+  const connection = await f.client.connectInternet(
+    f.client.snapshot().directory!.servers[0],
+    randomBytes(32),
+    AbortSignal.timeout(20000),
+  )
+  expect(connection.peer?.relay).toBe('dovo')
+  const signaling = new WebSocket(peerSocketUrl(connection.peer!))
+  cleanup.push(() => signaling.terminate())
+  await once(signaling, 'open')
+  const issued = once(signaling, 'message')
+  signaling.send(
+    JSON.stringify({
+      type: 'client',
+      room: peerRoom(connection.peer!),
+      key: peerCapability(connection.peer!, 'client'),
+      session: randomBytes(32).toString('hex'),
+      relay: 'dovo',
+    }),
+  )
+  expect(decode(peerReadySchema, JSON.parse(String((await issued)[0]))).relay?.provider).toBe(
+    'dovo',
+  )
+  expect(issue).toHaveBeenCalled()
+  const closed = once(signaling, 'close')
+  signaling.close()
+  await closed
+  const token = f.runtime.services.devices.authenticate(paired)
+  expect(token.owner).toBe(false)
+  const snapshot = await fetch(`http://127.0.0.1:${f.runtime.port}/api/snapshot?scope=overview`, {
+    headers: { Authorization: 'Bearer ' + paired },
+  }).then((r) => r.json())
+  expect(snapshot).toMatchObject({
+    internetSetupSupported: true,
+    internet: { enabled: true, connected: true },
+  })
+  const peer = await tunnel({ ...connection.peer!, relay: undefined })
+  const denied = await fetch(peer.address + '/api/runtime/internet/setup', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + connection.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session: 'a'.repeat(43), consent: true, relay: 'dovo' }),
+  })
+  expect(denied.status).toBe(403)
+  await f.client.signOut()
+  await vi.waitFor(() => expect(f.runtime.services.peers.internet.status().enabled).toBe(false), {
+    timeout: 6000,
+  })
+  expect(f.runtime.services.devices.authenticate(paired)).toEqual(token)
+}, 25000)
+
+it('requires human authentication and explicit consent and binds single-use setup to the requesting device', async () => {
+  const f = await fixture()
+  const paired = 'remote-setup-paired-device'
+  f.runtime.services.devices.add('Paired', paired)
+  const other = 'another-paired-device-token'
+  f.runtime.services.devices.add('Other device', other)
+  const session = createHash('sha256').update(f.phone).digest('base64url')
+  const input = { session, consent: true, relay: 'dovo' }
+  expect((await f.call('/api/runtime/internet/setup', input, 'unknown')).status).toBe(401)
+  expect((await f.call('/api/runtime/internet/setup', { session }, paired)).status).toBe(400)
+  expect(
+    (await f.call('/api/runtime/internet/setup', { ...input, consent: false }, paired)).status,
+  ).toBe(400)
+  expect(
+    (await f.call('/api/runtime/internet/setup', input, paired, { 'x-dovo-agent-access': '1' }))
+      .status,
+  ).toBe(403)
+  const setup = decode(
+    responses.internetSetup,
+    await (await f.call('/api/runtime/internet/setup', input, paired)).json(),
+  )
+  expect(await (await f.call('/api/runtime/internet/setup', input, paired)).json()).toEqual(setup)
+  expect((await f.call('/api/runtime/internet/setup', input, other)).status).toBe(409)
+  const { grant } = f.internet.register(f.phone, setup.registration)
+  expect(
+    (await f.call('/api/runtime/internet/complete', { id: setup.id, grant }, other)).status,
+  ).toBe(404)
+  expect(
+    (await f.call('/api/runtime/internet/complete', { id: setup.id, grant }, paired)).status,
+  ).toBe(200)
+  expect(
+    (await f.call('/api/runtime/internet/complete', { id: setup.id, grant }, paired)).status,
+  ).toBe(404)
+})
+
+it('rejects expired, cancelled and mismatched installation or session grants', async () => {
+  const f = await fixture()
+  const paired = 'remote-setup-paired-device'
+  const deviceId = f.runtime.services.devices.add('Paired', paired)
+  const session = createHash('sha256').update(f.phone).digest('base64url')
+  const make = async () =>
+    decode(
+      responses.internetSetup,
+      await (
+        await f.call(
+          '/api/runtime/internet/setup',
+          { session, consent: true, relay: 'dovo' },
+          paired,
+        )
+      ).json(),
+    )
+  const complete = (id: string, grant: string) =>
+    f.call('/api/runtime/internet/complete', { id, grant }, paired)
+  let setup = await make()
+  let grant = f.internet.register(f.phone, setup.registration).grant
+  const now = Date.now()
+  vi.spyOn(Date, 'now').mockReturnValue(now + 61000)
+  expect((await complete(setup.id, grant)).status).toBe(404)
+  vi.restoreAllMocks()
+  setup = await make()
+  grant = f.internet.register(f.phone, setup.registration).grant
+  await f.request({ enabled: false })
+  expect((await complete(setup.id, grant)).status).toBe(404)
+  const originalFetch = fetch
+  for (const mismatch of [
+    { id: 'different-runtime' },
+    { identity: 'different-installation' },
+    { publicKey: 'f'.repeat(64) },
+    { session: 'different-session' },
+  ]) {
+    setup = await make()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url, options) => {
+        if (new URL(url instanceof Request ? url.url : url).pathname === '/v1/internet/host')
+          return Response.json({
+            host: {
+              id: setup.registration.id,
+              identity: setup.registration.identity,
+              publicKey: setup.registration.publicKey,
+              session,
+              ...mismatch,
+            },
+          })
+        return originalFetch(url, options)
+      }),
+    )
+    expect((await complete(setup.id, grant)).status).toBe(403)
+    expect(f.runtime.services.peers.internet.status().enabled).toBe(false)
+    vi.unstubAllGlobals()
+  }
+  setup = await make()
+  grant = f.internet.register(f.phone, setup.registration).grant
+  let entered!: () => void
+  let release!: () => void
+  const waiting = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const paused = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, options) => {
+      const result = await originalFetch(url, options)
+      if (new URL(url instanceof Request ? url.url : url).pathname === '/v1/internet/host') {
+        entered()
+        await paused
+      }
+      return result
+    }),
+  )
+  const result = complete(setup.id, grant)
+  await waiting
+  f.runtime.services.devices.revoke(deviceId)
+  release()
+  expect((await result).status).toBe(401)
+  expect(f.runtime.services.peers.internet.status().enabled).toBe(false)
+})

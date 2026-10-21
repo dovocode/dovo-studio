@@ -1,5 +1,6 @@
 import { DesktopNetwork } from './desktop-network'
 import { PairingGuide } from './pairing-guide'
+import { ConnectSettings } from './connect-settings'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { responses, useWorkspace } from '@dovo/studio-core'
@@ -44,6 +45,7 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
   }, [connectPhone, connected, snapshot?.owner])
   return (
     <article className="space-y-3 rounded-md border p-3">
+      <ConnectSettings key={activeRuntimeId} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-medium">Trusted devices</h2>

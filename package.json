@@ -119,6 +119,7 @@
     "test:file-review:browser": "node scripts/check-file-review-browser.mjs && node scripts/check-file-trees-browser.mjs && node scripts/check-project-file-preview-browser.mjs",
     "test:diff-scroll:browser": "pnpm --filter @dovo/desktop build && node scripts/check-diff-scroll-browser.mjs && node scripts/check-checkpoint-diff-browser.mjs",
     "test:account-directory:browser": "node scripts/check-account-directory-browser.mjs",
+    "test:paired-connect:browser": "node scripts/check-paired-connect-browser.mjs",
     "test:github-accounts:browser": "node scripts/check-github-accounts-browser.mjs",
     "test:mobile:smoke": "maestro test apps/mobile/maestro/smoke.yaml",
     "dev:site": "pnpm --filter @dovo/site dev",

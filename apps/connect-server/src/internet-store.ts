@@ -68,6 +68,7 @@ export class InternetStore {
       id: String(row.id),
       identity: String(row.identity),
       publicKey: String(row.public_key),
+      session: String(row.session),
       seen: Number(row.seen),
     }
   }
@@ -141,6 +142,12 @@ export class InternetStore {
       .prepare('SELECT id,public_key,session,answer FROM internet_requests WHERE user=? AND host=?')
       .all(host.user, host.id)
     return {
+      host: {
+        id: host.id,
+        identity: host.identity,
+        publicKey: host.publicKey,
+        session: host.session,
+      },
       active: requests.map((row) => String(row.id)),
       requests: requests
         .filter((row) => !row.answer)

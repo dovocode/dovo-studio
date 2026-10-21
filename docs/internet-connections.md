@@ -10,6 +10,14 @@ and terminal commands on this computer. The checkbox also permits the encrypted 
 when WebRTC + STUN cannot establish a direct internet path. Notifications and Live Activities keep
 their existing delivery behavior. Both clients and the Connect service need updated builds.
 
+You can also enable it for an already paired server: on desktop open that computer's settings under
+**Devices & runtime**, or on mobile open **Computers → your computer**. Choose **Enable Dovo
+Connect + relay**, sign in, and confirm the named computer and account. A trusted, separately paired
+device can grant this access without a second approval on the server. This confirmation grants
+same-account devices full runtime access and permits encrypted TURN fallback. Mobile saves the
+account connection alongside its existing LAN / VPN pairing. Older servers show an update notice.
+Account-derived connections and agent credentials cannot use this setup flow.
+
 **LAN / VPN pairing remains separate and account-free.** Use **Pair LAN / VPN device** on desktop
 and scan its code on the phone. An internet-connected phone can add that pairing with **Computers →
 your computer → Pair LAN / VPN**. A separately paired connection is preferred; Dovo Connect is used
@@ -26,16 +34,24 @@ expires with the account session (currently 30 days), after which enable Connect
 
 ## Authorization and encryption
 
-Each runtime generates its signing and encryption private keys locally. An owner-only runtime
-endpoint signs a registration bound to its runtime ID, encryption key, Connect origin, current
-account session and a one-minute timestamp. Connect pins those keys for that account's installation;
-replacing keys requires unlinking the old installation. A manually linked LAN address grants no
-internet access. The phone obtains the public encryption key from the authenticated account
-directory and sends a fresh public key. The runtime seals its per-device bearer token and tunnel
-configuration using authenticated X25519/XSalsa20-Poly1305 encryption (TweetNaCl), bound inside the
-ciphertext to the runtime ID and connection request. Connect stores and forwards only ciphertext and
-public connection metadata. The private phone key stays in memory until setup finishes; its
-connection credentials are saved in the phone's secure registry.
+Each runtime generates its signing and encryption private keys locally. The local owner or an
+explicitly confirmed, separately paired client requests a registration bound to its runtime ID,
+encryption key, Connect origin, current account session and a one-minute timestamp. Connect pins
+those keys for that account's installation; replacing keys requires unlinking the old installation.
+A manually linked LAN address grants no internet access. The phone obtains the public encryption key
+from the authenticated account directory and sends a fresh public key. The runtime seals its
+per-device bearer token and tunnel configuration using authenticated X25519/XSalsa20-Poly1305
+encryption (TweetNaCl), bound inside the ciphertext to the runtime ID and connection request.
+Connect stores and forwards only ciphertext and public connection metadata. The private phone key
+stays in memory until setup finishes; its connection credentials are saved in the phone's secure
+registry.
+
+Remote setup sends only the account session's hash to the paired runtime. The signed registration is
+exchanged by the client directly with Connect; the full account session never goes to the remote
+runtime. The runtime accepts only an installation-scoped grant with matching runtime ID, signing
+key, encryption key and session hash. Setup is single-use, expires after one minute, is bound to the
+requesting device, and rechecks device revocation after the broker response. Disabling Connect also
+cancels pending setup. Account sign-out and unlinking continue to revoke the resulting grant.
 
 The account directory is the authority for first-time device access and public-key distribution.
 This protects content from ordinary signaling and TURN relays; it does not remove trust in the
