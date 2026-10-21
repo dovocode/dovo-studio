@@ -11,6 +11,7 @@ import { Icon } from '../../ui/controls/icon'
 import { Sheet, type SheetHandle, useSheetNavigation } from '../../ui/layout/sheet'
 import { formatDateTime } from '../../ui/content/format-date'
 import { Action } from '../../ui/controls/action'
+import { useConnectionTypes } from './connection-type'
 function status(entry: RuntimeOverview) {
   const reachability = runtimeReachability(entry)
   return reachability === 'online'
@@ -45,6 +46,7 @@ export function FleetOverview({
   source?: string
 }) {
   const { colors, styles } = useTheme()
+  const connectionType = useConnectionTypes()
 
   const { navigate } = useNavigation()
   const sheet = useRef<SheetHandle>(null)
@@ -60,7 +62,13 @@ export function FleetOverview({
         : undefined
       : entries.find((entry) => entry.profile.id === source)
   const compactSummary = sourceEntry
-    ? `${runtimeComputerName(sourceEntry)} · ${status(sourceEntry)}`
+    ? [
+        runtimeComputerName(sourceEntry),
+        status(sourceEntry),
+        connectionType(sourceEntry.profile.connection, sourceEntry.connected)?.name,
+      ]
+        .filter(Boolean)
+        .join(' · ')
     : `${entries.length} computers · ${entries.filter((entry) => entry.connected).length} online`
   if (!entries.length) return null
   const summary = (entry: RuntimeOverview, compact: boolean) => (
@@ -68,7 +76,14 @@ export function FleetOverview({
       key={entry.profile.id}
       testID={`Runtime summary ${entry.profile.id}`}
       accessibilityRole="button"
-      accessibilityLabel={`${runtimeComputerName(entry)}, ${status(entry)}, ${activity(entry)}`}
+      accessibilityLabel={[
+        runtimeComputerName(entry),
+        status(entry),
+        connectionType(entry.profile.connection, entry.connected)?.label,
+        activity(entry),
+      ]
+        .filter(Boolean)
+        .join(', ')}
       accessibilityHint="Show device activity and connection details."
       onPress={() => setSelected(entry.profile.id)}
       style={({ pressed }) => ({
@@ -121,6 +136,11 @@ export function FleetOverview({
         </Text>
         <Icon name="next" size={11} color={colors.muted} />
       </View>
+      {entry.connected && (
+        <Text style={[styles.muted, { fontSize: 12 }]}>
+          {connectionType(entry.profile.connection, entry.connected)?.label}
+        </Text>
+      )}
       {!compact && (
         <Text
           numberOfLines={2}
@@ -159,7 +179,7 @@ export function FleetOverview({
         >
           <RuntimeIcon icon={sourceEntry?.snapshot?.runtimeIcon} size={14} color={colors.muted} />
           <Text
-            numberOfLines={1}
+            numberOfLines={2}
             style={[
               styles.muted,
               {
@@ -209,7 +229,14 @@ export function FleetOverview({
                 key={entry.profile.id}
                 testID={`Runtime summary ${entry.profile.id}`}
                 accessibilityRole="button"
-                accessibilityLabel={`${runtimeComputerName(entry)}, ${status(entry)}, ${activity(entry)}`}
+                accessibilityLabel={[
+                  runtimeComputerName(entry),
+                  status(entry),
+                  connectionType(entry.profile.connection, entry.connected)?.label,
+                  activity(entry),
+                ]
+                  .filter(Boolean)
+                  .join(', ')}
                 onPress={() => setSelected(entry.profile.id)}
                 style={({ pressed }) => [
                   styles.listItem,
@@ -235,7 +262,13 @@ export function FleetOverview({
                 >
                   <Text style={styles.text}>{runtimeComputerName(entry)}</Text>
                   <Text style={styles.muted}>
-                    {status(entry)} · {activity(entry)}
+                    {[
+                      status(entry),
+                      connectionType(entry.profile.connection, entry.connected)?.name,
+                      activity(entry),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </Text>
                 </View>
                 <Icon name="next" size={12} color={colors.muted} />
@@ -266,6 +299,11 @@ export function FleetOverview({
                 />
                 <Text style={styles.text}>{status(detail)}</Text>
               </View>
+              {detail.connected && (
+                <Text style={styles.muted}>
+                  {connectionType(detail.profile.connection, detail.connected)?.label}
+                </Text>
+              )}
               <Text style={styles.text}>{activity(detail)}</Text>
               {!detail.connected && detail.snapshot && (
                 <Text style={styles.muted}>Showing saved activity</Text>

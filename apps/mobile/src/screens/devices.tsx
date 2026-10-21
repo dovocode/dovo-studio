@@ -30,6 +30,7 @@ import { PairComputer } from '../runtime/connection/pair-computer'
 import { UpgradeInternet } from '../runtime/connection/upgrade-internet'
 import { PeerRelayChoice } from '../runtime/connection/peer-relay-choice'
 import { ConnectionHelp } from '../runtime/connection/connection-help'
+import { useConnectionTypes } from '../runtime/connection/connection-type'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { Text } from '../ui/content/text'
 import { SettingsSheet as Sheet } from './settings-theme'
@@ -43,6 +44,7 @@ export default function DevicesScreen() {
   const { colors, styles } = useTheme()
 
   const runtime = useRuntime()
+  const connectionType = useConnectionTypes()
   const { profiles, overviews, activeId, error: runtimeError } = runtime
   const [discoveredAddress, setDiscoveredAddress] = useState<string | undefined>(undefined)
   const [adding, setAdding] = useApplicationState(false)
@@ -166,7 +168,7 @@ export default function DevicesScreen() {
                 title={runtimeComputerName(entry)}
                 subtitle={
                   entry.connected
-                    ? 'Online'
+                    ? `Online · ${connectionType(entry.profile.connection, entry.connected)?.label}`
                     : !entry.error
                       ? 'Connecting…'
                       : entry.lastSeen
@@ -310,6 +312,7 @@ export default function DevicesScreen() {
 }
 function ComputerSettings({ onClose }: { onClose: () => void }) {
   const { colors, styles } = useTheme()
+  const connectionType = useConnectionTypes()
 
   const {
     profile,
@@ -403,6 +406,9 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
           >
             {connected ? 'Online' : recovering ? 'Reconnecting…' : 'Offline'}
           </Text>
+          {connected && (
+            <Text style={styles.muted}>{connectionType(profile.connection, connected)?.label}</Text>
+          )}
           <Text selectable style={styles.muted}>
             {isPeerAddress(profile.connection.address)
               ? 'Internet · WebRTC · end-to-end encrypted'

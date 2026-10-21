@@ -6,6 +6,8 @@ import {
   resolveRuntimeEndpoint,
   runtimeTransportAddress,
   invalidateRuntimeRoute,
+  runtimePeerAddress,
+  runtimeRouteVersion,
 } from './routes.js'
 import { runtimeRequest } from '../../shared/client.js'
 import type { RuntimeConnection } from './runtime.js'
@@ -71,6 +73,7 @@ it('prefers verified LAN, uses the internet credential only on the tunnel, and r
     address: direct.address,
     token: direct.token,
   })
+  expect(runtimePeerAddress(connection)).toBeUndefined()
   await runtimeRequest(
     connection,
     connection.address,
@@ -80,6 +83,7 @@ it('prefers verified LAN, uses the internet credential only on the tunnel, and r
   )
   lan = false
   invalidateRuntimeRoute(connection)
+  const privateVersion = runtimeRouteVersion()
   await runtimeRequest(
     connection,
     connection.address,
@@ -88,6 +92,9 @@ it('prefers verified LAN, uses the internet credential only on the tunnel, and r
     Schema.Struct({ ok: Schema.Boolean }),
   )
   expect(runtimeTransportAddress(connection)).toBe('http://127.0.0.1:4444')
+  expect(runtimePeerAddress(connection)).toBe(internet.address)
+  expect(runtimeRouteVersion()).toBeGreaterThan(privateVersion)
+  const peerVersion = runtimeRouteVersion()
   lan = true
   vi.setSystemTime(Date.now() + 10001)
   await runtimeRequest(
@@ -97,6 +104,8 @@ it('prefers verified LAN, uses the internet credential only on the tunnel, and r
     {},
     Schema.Struct({ ok: Schema.Boolean }),
   )
+  expect(runtimePeerAddress(connection)).toBeUndefined()
+  expect(runtimeRouteVersion()).toBeGreaterThan(peerVersion)
   expect(calls.filter((call) => call.token)).toEqual([
     { host: 'lan.test', token: 'Bearer ' + direct.token },
     { host: '127.0.0.1:4444', token: 'Bearer ' + internet.token },

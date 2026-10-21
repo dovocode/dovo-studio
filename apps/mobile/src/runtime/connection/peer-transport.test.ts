@@ -7,6 +7,7 @@ import {
   setPeerConnectionsActive,
   replacePeerConnection,
   setPeerConnectionNetwork,
+  peerConnectionRoute,
 } from './peer-transport'
 const native = vi.hoisted(() => ({ open: vi.fn<typeof import('./peer-native').openPeerTunnel>() }))
 vi.mock('./peer-native', () => ({ openPeerTunnel: native.open }))
@@ -28,6 +29,7 @@ it('shares one encrypted connection across reads and returns only its loopback o
     address: 'http://127.0.0.1:12345',
     close: vi.fn<() => void>(),
     alive: () => true,
+    route: () => 'direct' as const,
   }
   native.open.mockResolvedValue(tunnel)
   const results = await Promise.all([
@@ -37,6 +39,7 @@ it('shares one encrypted connection across reads and returns only its loopback o
   expect(native.open).toHaveBeenCalledOnce()
   expect(results).toEqual([tunnel.address, tunnel.address])
   expect(peerTransportAddress(address)).toBe(tunnel.address)
+  expect(peerConnectionRoute(address)).toBe('direct')
   expect(await resolvePeerTransport(address, config, signal())).toBe(tunnel.address)
   expect(native.open).toHaveBeenCalledOnce()
 })
@@ -48,6 +51,7 @@ it.each(['background', 'network'])(
       address: string
       close: () => void
       alive: () => boolean
+      route: () => 'direct'
     }) => void = () => {}
     native.open.mockImplementationOnce(
       () =>
@@ -66,6 +70,7 @@ it.each(['background', 'network'])(
       address: 'http://127.0.0.1:12345',
       close: vi.fn<() => void>(),
       alive: () => true,
+      route: () => 'direct' as const,
     }
     const fresh = { ...stale, address: 'http://127.0.0.1:23456', close: vi.fn<() => void>() }
     native.open.mockResolvedValueOnce(fresh)
@@ -79,6 +84,7 @@ it.each(['background', 'network'])(
 it('does not send credentials to a stale proxy, forgotten pairing or mismatched key', async () => {
   preparePeerConnection(config)
   expect(peerTransportAddress(address)).toBe('http://127.0.0.1:0')
+  expect(peerConnectionRoute(address)).toBeUndefined()
   forgetPeerConnection(address)
   await expect(resolvePeerTransport(address, undefined, signal())).rejects.toThrow('QR code')
   await expect(resolvePeerTransport(address, config, signal())).rejects.toThrow('QR code')
@@ -92,6 +98,7 @@ it('aborts one caller without cancelling other reads or replaying requests', asy
     address: 'http://127.0.0.1:12345',
     close: vi.fn<() => void>(),
     alive: () => true,
+    route: () => 'direct' as const,
   }
   native.open.mockResolvedValue(tunnel)
   const abort = new AbortController()
@@ -107,6 +114,7 @@ it('closes an opted-in relay immediately and prevents stale reads from enabling 
     address: 'http://127.0.0.1:12345',
     close: vi.fn<() => void>(),
     alive: () => true,
+    route: () => 'direct' as const,
   }
   native.open.mockResolvedValue(tunnel)
   await resolvePeerTransport(address, relay, signal())
@@ -123,6 +131,7 @@ it('reuses a tunnel for the same network and opens a fresh one after Wi-Fi/cellu
     address: 'http://127.0.0.1:12345',
     close: vi.fn<() => void>(),
     alive: () => true,
+    route: () => 'direct' as const,
   }
   const next = { ...first, address: 'http://127.0.0.1:23456', close: vi.fn<() => void>() }
   native.open.mockResolvedValueOnce(first).mockResolvedValueOnce(next)
@@ -133,8 +142,10 @@ it('reuses a tunnel for the same network and opens a fresh one after Wi-Fi/cellu
   setPeerConnectionNetwork({ type: 'CELLULAR', isConnected: true })
   expect(first.close).toHaveBeenCalledOnce()
   expect(peerTransportAddress(address)).toBe('http://127.0.0.1:0')
+  expect(peerConnectionRoute(address)).toBeUndefined()
   expect(await resolvePeerTransport(address, config, signal())).toBe(next.address)
   setPeerConnectionNetwork({ type: 'CELLULAR', isConnected: false })
   expect(next.close).toHaveBeenCalledOnce()
   expect(peerTransportAddress(address)).toBe('http://127.0.0.1:0')
+  expect(peerConnectionRoute(address)).toBeUndefined()
 })

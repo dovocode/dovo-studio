@@ -41,6 +41,7 @@ class Peer {
   ready = new Channel()
   createDataChannel = () => this.ready
   setConfiguration = vi.fn<() => void>()
+  getStats = vi.fn<() => Promise<Map<string, unknown>>>(async () => new Map())
   setLocalDescription = vi.fn<() => Promise<void>>(async () => {})
   setRemoteDescription = vi.fn<() => Promise<void>>(async () => {
     this.state('connected')
@@ -93,10 +94,18 @@ afterEach(() => {
 async function start() {
   const abort = new AbortController()
   const onClosed = vi.fn<() => void>()
-  const result = openPeerTunnel(config, onClosed, abort.signal)
+  const onRouteChanged = vi.fn<() => void>()
+  const result = openPeerTunnel(config, onClosed, abort.signal, onRouteChanged)
   void result.catch(() => {})
   await vi.advanceTimersByTimeAsync(0)
-  return { result, abort, onClosed, pc: native.peers[0]!, signal: native.signals[0]! }
+  return {
+    result,
+    abort,
+    onClosed,
+    onRouteChanged,
+    pc: native.peers[0]!,
+    signal: native.signals[0]!,
+  }
 }
 async function offer(f: Awaited<ReturnType<typeof start>>) {
   f.signal.onopen?.()
@@ -216,4 +225,67 @@ it('rejects cancellation during native binding and closes a listener that binds 
   listener.completeBinding()
   expect(listener.close).toHaveBeenCalledTimes(2)
   expect(f.onClosed).toHaveBeenCalledOnce()
+})
+
+const stats = (local: string, remote: string) =>
+  new Map<string, unknown>([
+    ['transport', { type: 'transport', selectedCandidatePairId: 'pair' }],
+    [
+      'pair',
+      {
+        type: 'candidate-pair',
+        state: 'succeeded',
+        localCandidateId: 'local',
+        remoteCandidateId: 'remote',
+      },
+    ],
+    ['local', { type: 'local-candidate', candidateType: local }],
+    ['remote', { type: 'remote-candidate', candidateType: remote }],
+  ])
+it('tracks the selected route and ICE recovery without retaining a route after closure', async () => {
+  const f = await start()
+  f.pc.getStats.mockResolvedValue(stats('srflx', 'host'))
+  await offer(f)
+  await answer(f)
+  const tunnel = await f.result
+  expect(tunnel.route()).toBe('direct')
+  f.pc.getStats.mockResolvedValue(stats('host', 'relay'))
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(tunnel.route()).toBe('relay')
+  expect(f.onRouteChanged).toHaveBeenCalledTimes(2)
+  f.pc.state('disconnected')
+  expect(tunnel.route()).toBeUndefined()
+  f.pc.getStats.mockResolvedValue(stats('host', 'host'))
+  f.pc.state('connected')
+  await vi.advanceTimersByTimeAsync(0)
+  expect(tunnel.route()).toBe('direct')
+  tunnel.close()
+  expect(tunnel.route()).toBeUndefined()
+  const reads = f.pc.getStats.mock.calls.length
+  await vi.advanceTimersByTimeAsync(10000)
+  expect(f.pc.getStats).toHaveBeenCalledTimes(reads)
+  expect(vi.getTimerCount()).toBe(0)
+})
+it('keeps traffic open when native stats fail and ignores a report that arrives after closure', async () => {
+  const f = await start()
+  f.pc.getStats.mockRejectedValueOnce(new Error('Native stats unavailable'))
+  await offer(f)
+  await answer(f)
+  const tunnel = await f.result
+  expect(tunnel.route()).toBeUndefined()
+  expect(tunnel.alive()).toBe(true)
+  let finish: (value: Map<string, unknown>) => void = () => {}
+  f.pc.getStats.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  await vi.advanceTimersByTimeAsync(5000)
+  tunnel.close()
+  finish(stats('relay', 'host'))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(tunnel.route()).toBeUndefined()
+  expect(f.onRouteChanged).not.toHaveBeenCalled()
+  expect(vi.getTimerCount()).toBe(0)
 })

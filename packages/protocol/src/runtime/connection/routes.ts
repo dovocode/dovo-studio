@@ -3,6 +3,19 @@ import { isPeerAddress, peerTransportAddress, resolvePeerTransport, peerAddress 
 
 type Selection = { selected?: string; checkedAt: number; retryAt?: number }
 type RoutePurpose = 'http' | 'stream'
+let version = 0
+const listeners = new Set<() => void>()
+const publish = () => {
+  version++
+  for (const listener of listeners) listener()
+}
+export const runtimeRouteVersion = () => version
+export function subscribeRuntimeRoutes(listener: () => void) {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
 const routes = new Map<
   string,
   Selection & {
@@ -70,11 +83,18 @@ export function runtimeTransportAddress(
   const saved = routes.get(key(connection))
   return (purpose === 'stream' ? saved?.stream?.selected : saved?.selected) ?? connection.address
 }
+/** Logical peer identity for the selected route, before its native loopback translation. */
+export function runtimePeerAddress(connection: RuntimeConnection, purpose: RoutePurpose = 'http') {
+  return (
+    internetRoutes.get(key(connection) + purpose)?.peerAddress ??
+    (isPeerAddress(connection.address) ? connection.address : undefined)
+  )
+}
 export function invalidateRuntimeRoute(
   connection: RuntimeConnection,
   purpose: RoutePurpose = 'http',
 ) {
-  internetRoutes.delete(key(connection) + purpose)
+  if (internetRoutes.delete(key(connection) + purpose)) publish()
   const saved = routes.get(key(connection))
   const selection = purpose === 'stream' ? saved?.stream : saved
   if (selection) selection.checkedAt = -Infinity
@@ -82,7 +102,7 @@ export function invalidateRuntimeRoute(
 /** Upgrade failures must not displace a working HTTP route. Give a blocked proxy thirty
  * seconds to recover, while the stream can use another verified address of the same runtime. */
 export function failRuntimeStreamingRoute(connection: RuntimeConnection, address: string) {
-  internetRoutes.delete(key(connection) + 'stream')
+  if (internetRoutes.delete(key(connection) + 'stream')) publish()
   const saved = routes.get(key(connection))
   if (!saved) return
   const candidate = origin(address)
@@ -91,6 +111,7 @@ export function failRuntimeStreamingRoute(connection: RuntimeConnection, address
   if (saved.stream?.selected === candidate) {
     saved.stream.selected = undefined
     saved.stream.checkedAt = 0
+    publish()
   }
 }
 /** Resolve before sending a request, including mutations. Never replay an uncertain write
@@ -163,13 +184,18 @@ async function resolveDirectRoute(
       const selected = await probe
       if (signal.aborted) throw signal.reason
       if (!selected) continue
+      const changed = selection.selected !== selected
       selection.selected = selected
       selection.checkedAt = Date.now()
       selection.retryAt =
         purpose === 'stream' ? Math.min(...(saved.streamCooldowns?.values() ?? [])) : undefined
+      if (changed) publish()
       return selected
     }
-    selection.selected = undefined
+    if (selection.selected !== undefined) {
+      selection.selected = undefined
+      publish()
+    }
     throw new Error(
       'No verified address for this paired runtime is reachable. Check its LAN or VPN connection.',
     )
@@ -206,7 +232,7 @@ export async function resolveRuntimeEndpoint(
   if (!saved || Date.now() - saved.checkedAt >= 10000) {
     try {
       const address = await resolveDirectRoute(connection, signal, purpose)
-      internetRoutes.delete(id)
+      if (internetRoutes.delete(id)) publish()
       return { address, token: connection.token }
     } catch (error) {
       if (signal.aborted) throw error
@@ -219,6 +245,7 @@ export async function resolveRuntimeEndpoint(
     checkedAt:
       saved?.checkedAt && Date.now() - saved.checkedAt < 10000 ? saved.checkedAt : Date.now(),
   })
+  if (saved?.peerAddress !== internet.address || saved.address !== address) publish()
   return { address, token: internet.token }
 }
 export async function resolveRuntimeRoute(

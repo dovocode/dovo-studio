@@ -77,7 +77,7 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
     {
       path: './peer-native',
       importer: root + 'apps/mobile/src/runtime/connection/peer-transport.ts',
-      contents: `export const openPeerTunnel=async(config,onClosed,abort)=>{window.peerOpens.push(config);let live=true;const close=()=>{if(!live)return;live=false;window.peerCloses++;onClosed()};abort.addEventListener('abort',close,{once:true});return {address:'http://127.0.0.1:44555',alive:()=>live,close}};`,
+      contents: `export const openPeerTunnel=async(config,onClosed,abort)=>{window.peerOpens.push(config);let live=true;const close=()=>{if(!live)return;live=false;window.peerCloses++;onClosed()};abort.addEventListener('abort',close,{once:true});return {address:'http://127.0.0.1:44555',alive:()=>live,route:()=>live?'direct':undefined,close}};`,
     },
     {
       path: '@dovo/protocol',

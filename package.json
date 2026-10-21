@@ -114,6 +114,7 @@
     "test:remote-browser-recovery:browser": "node scripts/check-remote-browser-recovery-browser.mjs",
     "test:browser-stream-latency:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-browser-stream-latency-browser.mjs",
     "test:connection-pill:browser": "node scripts/check-connection-pill-browser.mjs",
+    "test:mobile-connection-type:browser": "node scripts/check-mobile-connection-type-browser.mjs",
     "test:chat-files:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-chat-files-browser.mjs",
     "test:file-review:browser": "node scripts/check-file-review-browser.mjs && node scripts/check-file-trees-browser.mjs && node scripts/check-project-file-preview-browser.mjs",
     "test:diff-scroll:browser": "pnpm --filter @dovo/desktop build && node scripts/check-diff-scroll-browser.mjs && node scripts/check-checkpoint-diff-browser.mjs",

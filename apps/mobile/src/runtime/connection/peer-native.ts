@@ -1,6 +1,7 @@
 import { RTCPeerConnection } from 'react-native-webrtc'
 import TcpSocket from 'react-native-tcp-socket'
 import * as Crypto from 'expo-crypto'
+import { selectedPeerRoute, type PeerRoute } from './peer-route'
 import {
   decode,
   peerRoom,
@@ -27,6 +28,7 @@ export async function openPeerTunnel(
   config: PeerConfig,
   onClosed: () => void = () => {},
   abort?: AbortSignal,
+  onRouteChanged: () => void = () => {},
 ) {
   const session = Array.from(await Crypto.getRandomBytesAsync(32), (byte) =>
     byte.toString(16).padStart(2, '0'),
@@ -43,6 +45,31 @@ export async function openPeerTunnel(
   let relayUnavailable = false
   let expiry: ReturnType<typeof setTimeout> | undefined
   let disconnected: ReturnType<typeof setTimeout> | undefined
+  let statsTimer: ReturnType<typeof setTimeout> | undefined
+  let route: PeerRoute | undefined
+  let readingStats = false
+  const setRoute = (value: PeerRoute | undefined) => {
+    if (stopped || route === value) return
+    route = value
+    onRouteChanged()
+  }
+  const refreshRoute = async () => {
+    if (stopped || readingStats || pc.connectionState !== 'connected') return
+    clearTimeout(statsTimer)
+    readingStats = true
+    try {
+      const value = selectedPeerRoute(await pc.getStats())
+      if (pc.connectionState === 'connected') setRoute(value)
+    } catch {
+      // Diagnostics are optional: show an unknown route rather than guess or close traffic.
+      setRoute(undefined)
+    } finally {
+      readingStats = false
+      // Native WebRTC has no selected-pair-change event. Track ICE changes while active.
+      if (!stopped && pc.connectionState === 'connected')
+        statsTimer = setTimeout(() => void refreshRoute(), 5000)
+    }
+  }
   let finishGathering: (() => void) | undefined
   let fail: (error: Error) => void = () => {}
   const closed = new Promise<never>((_, reject) => {
@@ -59,6 +86,8 @@ export async function openPeerTunnel(
     clearTimeout(timeout)
     if (expiry) clearTimeout(expiry)
     if (disconnected) clearTimeout(disconnected)
+    clearTimeout(statsTimer)
+    route = undefined
     finishGathering?.()
     for (const pipe of pipes) pipe.stop()
     server?.close()
@@ -86,6 +115,8 @@ export async function openPeerTunnel(
     pc.onconnectionstatechange = () => {
       if (stopped) return
       if (pc.connectionState === 'disconnected') {
+        clearTimeout(statsTimer)
+        setRoute(undefined)
         // ICE can recover a temporary network interruption without replacing every
         // HTTP/WebSocket connection. Repeated events must not extend the deadline.
         disconnected ??= setTimeout(close, PEER_DISCONNECT_GRACE_MS)
@@ -93,6 +124,7 @@ export async function openPeerTunnel(
         if (pc.connectionState === 'connected') {
           if (disconnected) clearTimeout(disconnected)
           disconnected = undefined
+          void refreshRoute()
         }
         if (['failed', 'closed'].includes(pc.connectionState)) close()
       }
@@ -312,6 +344,7 @@ export async function openPeerTunnel(
       close,
       // Keep the shared tunnel during the bounded ICE recovery window.
       alive: () => !stopped && connected,
+      route: () => (stopped ? undefined : route),
     }
   } catch (error) {
     close()

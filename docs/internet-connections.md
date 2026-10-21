@@ -90,6 +90,13 @@ Mobile verifies a new account connection or an upgraded peer route using the aut
 initial identity check must not download the legacy full snapshot: a computer with extensive history
 can otherwise complete WebRTC setup but exceed the mobile request deadline.
 
+The mobile computer overview and connection settings show the active transport: **Dovo Direct**
+(WebRTC / STUN), **Dovo Connect** (TURN), or **Private** (LAN / VPN). WebRTC checks the selected ICE
+pair at both ends; merely enabling relay fallback does not mean it is in use. Missing native stats
+show an unknown route, and offline computers have no active transport label. If live updates use a
+different path from HTTP requests, both paths are shown. Private groups explicit LAN and VPN
+connections; it does not infer the presence of a VPN from an IP address.
+
 ## Operating Connect
 
 The runtime makes an outbound WSS connection to `/v1/peer` at `https://connect.dovo.studio`.

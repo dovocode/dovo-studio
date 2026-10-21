@@ -5,7 +5,7 @@ import {
   type PeerConfig,
 } from '@dovo/protocol'
 
-type Tunnel = { address: string; close: () => void; alive: () => boolean }
+type Tunnel = Awaited<ReturnType<typeof import('./peer-native').openPeerTunnel>>
 const configs = new Map<string, PeerConfig>()
 const tunnels = new Map<string, Tunnel>()
 const pending = new Map<string, Promise<Tunnel>>()
@@ -27,6 +27,10 @@ export const subscribePeerConnections = (listener: () => void) => {
   }
 }
 export const peerConnectionReady = (address: string) => tunnels.get(address)?.alive() ?? false
+export const peerConnectionRoute = (address: string) => {
+  const tunnel = tunnels.get(address)
+  return tunnel?.alive() ? tunnel.route() : undefined
+}
 
 export function preparePeerConnection(config: PeerConfig) {
   const address = peerAddress(config)
@@ -84,7 +88,7 @@ async function ensure(address: string) {
   const attempt = new AbortController()
   attempts.set(address, attempt)
   const connecting = import('./peer-native')
-    .then(({ openPeerTunnel }) => openPeerTunnel(selected, publish, attempt.signal))
+    .then(({ openPeerTunnel }) => openPeerTunnel(selected, publish, attempt.signal, publish))
     .then((tunnel) => {
       if (
         !active ||

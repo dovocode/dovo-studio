@@ -220,6 +220,9 @@ export {
 export {
   learnRuntimeRoutes,
   runtimeTransportAddress,
+  runtimePeerAddress,
+  runtimeRouteVersion,
+  subscribeRuntimeRoutes,
   invalidateRuntimeRoute,
 } from './runtime/connection/routes.js'
 
