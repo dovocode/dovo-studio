@@ -88,3 +88,24 @@ destructive confirmation and coarse-pointer targets. To apply the same checks to
 ```sh
 DOVO_DESIGN_ORIGIN=https://ui.dovo.studio node scripts/check-design-system-browser.mjs
 ```
+
+## Task interaction ownership
+
+Find the full interactive example under **Dovo / Composers / Production task composer**. It covers
+new, idle, running, disconnected, long-draft and failed-send states. The conversation examples use
+the real message queue for editing, reordering and pause/resume; question and permission examples
+use their production controls. Included attachment bytes are synthetic; uploads, image edits, branch
+changes and queue steering explicitly fail in the local preview.
+
+The complete task composer lives in `packages/extension-tasks/src/chat/composer/composer.tsx`. Its
+editor, attachments, context suggestions, harness controls and workspace bar stay with their
+production owners. The smaller Controls / Composer surface anatomy story explains the shared shell;
+it does not stand in for the full task flow.
+
+Task stories use a synthetic workspace adapter instead of opening a runtime connection. Request
+results are decoded with the actual protocol schemas. Supported actions update only the preview;
+unsupported actions must fail visibly. Do not return a successful response for an operation the
+preview did not perform. Keep request callbacks stable, restore any changed preferences on unmount,
+and never include production credentials, production filesystem paths, account data or runtime URLs
+in these fixtures. Question answers and permission edits are local examples, never authorization
+grants.

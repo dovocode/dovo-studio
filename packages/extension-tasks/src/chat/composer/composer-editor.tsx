@@ -73,7 +73,6 @@ export const ComposerEditor = memo(function ComposerEditor({
         aria-autocomplete="list"
         aria-controls={mentions.open ? mentions.menuId : undefined}
         aria-activedescendant={mentions.open ? mentions.activeId : undefined}
-        aria-expanded={mentions.open && !submitBusy}
         hidden={hidden}
         value={submitBusy && submittedText !== null && draft.trim() === submittedText ? '' : draft}
         disabled={disabled}

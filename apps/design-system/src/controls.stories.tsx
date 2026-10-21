@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Button } from '../../../packages/studio-ui/src/components/ui/button'
 import { Input } from '../../../packages/studio-ui/src/components/ui/input'
 import { Textarea } from '../../../packages/studio-ui/src/components/ui/textarea'
-import { PromptInput } from '../../../packages/studio-ui/src/components/ai-elements/prompt-input'
+import { ComposerSurface } from '../../../packages/studio-ui/src/composer-surface'
 
 const meta = { title: 'Dovo/Controls', tags: ['autodocs'] } satisfies Meta
 export default meta
@@ -53,8 +53,17 @@ function ComposerExample() {
   return (
     <section className="max-w-3xl">
       <h2 className="mb-4 text-xl">Compose a task</h2>
-      <PromptInput
-        className="studio-composer"
+      <ComposerSurface
+        controls={
+          <Button variant="ghost" type="button">
+            Add context
+          </Button>
+        }
+        actions={
+          <Button type="submit" disabled={!value.trim()}>
+            Send task
+          </Button>
+        }
         onSubmit={(e) => {
           e.preventDefault()
           setSent(true)
@@ -70,15 +79,7 @@ function ComposerExample() {
           }}
           placeholder="What would you like to build?"
         />
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t px-3 py-2">
-          <Button variant="ghost" type="button">
-            Add context
-          </Button>
-          <Button type="submit" disabled={!value.trim()}>
-            Send task
-          </Button>
-        </div>
-      </PromptInput>
+      </ComposerSurface>
       {sent && (
         <p role="status" className="mt-3 text-muted-foreground">
           Preview submitted. No runtime request is made.
@@ -87,7 +88,18 @@ function ComposerExample() {
     </section>
   )
 }
-export const Composer: StoryObj = { render: () => <ComposerExample /> }
+export const Composer: StoryObj = {
+  name: 'Composer surface anatomy',
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Minimal anatomy of the real ComposerSurface. Use Dovo / Composers / Production task composer for the complete task composer, model controls, context and lifecycle states.',
+      },
+    },
+  },
+  render: () => <ComposerExample />,
+}
 export const States: StoryObj = {
   render: () => (
     <section className="grid max-w-2xl gap-4">

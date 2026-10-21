@@ -41,9 +41,21 @@ try {
     stories.length >= 45,
     'Keep the component anatomy, primitives and product patterns covered',
   )
+  assert.ok(
+    stories.some(
+      (story) => story.id === 'dovo-composers-production-task-composer--full-production-composer',
+    ),
+    'The catalog must render the production composer',
+  )
   const page = await browser.newPage()
   page.setDefaultTimeout(10000)
   const errors = []
+  const externalRequests = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (['http:', 'https:'].includes(url.protocol) && url.origin !== new URL(origin).origin)
+      externalRequests.push(url.origin + url.pathname)
+  })
   const accessibilityFailures = []
   page.on('pageerror', (e) => errors.push(e.message))
   let checks = 0
@@ -52,7 +64,14 @@ try {
       for (const story of stories) {
         await page.setViewportSize({ width, height: 900 })
         await page.goto(`${origin}/iframe.html?id=${story.id}&viewMode=story&globals=theme:${mode}`)
-        await page.locator('#storybook-root').waitFor()
+        try {
+          await page.locator('#storybook-root').waitFor()
+        } catch (cause) {
+          throw new Error(
+            `${story.id} ${mode} ${width}: ${await page.locator('body').innerText()}`,
+            { cause },
+          )
+        }
         await page.waitForFunction(
           () =>
             document.documentElement.dataset.theme &&
@@ -221,6 +240,88 @@ try {
   assert.ok(await page.getByRole('button', { name: 'Save preferences', exact: true }).isEnabled())
   await page.emulateMedia({ reducedMotion: 'no-preference' })
 
+  await openStory('dovo-interactions--question-choices-and-validation')
+  await page.getByRole('button', { name: 'Send answers', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Answer Where should the work run?' }).waitFor()
+  await page
+    .getByRole('group', { name: 'Where should the work run?', exact: true })
+    .getByRole('button', { name: /This computer/ })
+    .click()
+  await page
+    .getByRole('group', { name: 'What should the review include?', exact: true })
+    .getByRole('button', { name: /Accessibility/ })
+    .click()
+  await page
+    .getByRole('textbox', { name: 'Answer: What should the review include?', exact: true })
+    .fill('Focus return after cancellation')
+  await page.getByRole('button', { name: 'Send answers', exact: true }).click()
+  await page.getByRole('heading', { name: 'Answer received', exact: true }).waitFor()
+  await page.getByText('accessibility, Focus return after cancellation', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Ask again', exact: true }).click()
+  await page.getByRole('button', { name: 'Decline', exact: true }).click()
+  await page.getByRole('heading', { name: 'Question declined', exact: true }).waitFor()
+
+  await openStory('dovo-interactions--question-disconnected')
+  assert.ok(await page.getByRole('button', { name: 'Send answers', exact: true }).isDisabled())
+  assert.ok(await page.getByRole('button', { name: 'Decline', exact: true }).isDisabled())
+  await openStory('dovo-interactions--permission-presets-and-details')
+  await page.locator('summary').click()
+  await page.getByRole('button', { name: 'Approval policy', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Reset to access mode', exact: true }).click()
+  await page.getByRole('button', { name: 'Reset local preview', exact: true }).click()
+
+  await openStory('dovo-patterns-task-conversation--editable-queued-follow-ups')
+  await page.getByRole('button', { name: 'Confirmed', exact: true }).click()
+  await page.locator('summary').filter({ hasText: '2 queued' }).click()
+  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'Edit queued message', exact: true })
+    .fill('Edited local follow-up')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.getByTitle('Edited local follow-up', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Move queued message 2 up', exact: true }).click()
+  await page.getByRole('button', { name: 'Pause queue', exact: true }).click()
+  await page.getByRole('button', { name: 'Resume queue', exact: true }).click()
+  await page.getByRole('button', { name: 'Steer with queued message 1', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'not available in this local preview' }).waitFor()
+
+  await openStory('dovo-composers-production-task-composer--full-production-composer')
+  await page.getByRole('button', { name: 'New task', exact: true }).click()
+  await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
+  await page.getByRole('combobox').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Remove preview.png', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Remove preview.png', exact: true })
+    .waitFor({ state: 'hidden' })
+  const mentionField = page.getByRole('textbox', { name: 'Message task', exact: true })
+  await mentionField.fill('@src')
+  await page.getByRole('listbox', { name: 'Files and MCP servers', exact: true }).waitFor()
+  await page.getByRole('option').filter({ hasText: 'App.tsx' }).click()
+  assert.ok((await mentionField.inputValue()).includes('src/App.tsx'))
+  await page.getByRole('button', { name: 'Idle task', exact: true }).click()
+  const composerField = page.getByRole('textbox', { name: 'Message task', exact: true })
+  await composerField.fill('Verify a full production composer')
+  await page.getByRole('button', { name: 'Fail next send', exact: true }).click()
+  await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'set to fail' }).waitFor()
+  assert.equal(
+    await composerField.inputValue(),
+    'Verify a full production composer',
+    'Failed sends retain the draft',
+  )
+  await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('textarea[aria-label="Message task"]')?.value === '',
+  )
+  await page.getByRole('button', { name: 'Disconnect', exact: true }).click()
+  assert.ok(
+    await page.getByRole('button', { name: 'Save message to task', exact: true }).isDisabled(),
+  )
+  await page.getByRole('button', { name: 'Reconnect', exact: true }).click()
+  await page.getByRole('button', { name: 'Long draft', exact: true }).click()
+  assert.ok((await composerField.inputValue()).includes('A detailed local preview draft'))
+
   const touch = await browser.newContext({
     hasTouch: true,
     isMobile: true,
@@ -247,6 +348,8 @@ try {
   )
   await page.getByRole('textbox', { name: 'Task message' }).fill('One focused border, no glow.')
   await page.screenshot({ path: '/tmp/dovo-design-composer.png', fullPage: true })
+  assert.deepEqual(errors, [], 'Interactive stories must not throw page errors')
+  assert.deepEqual(externalRequests, [], 'Stories must not contact runtimes or external services')
   console.log(
     `Dovo design catalog: ${checks} story/theme/viewport checks, axe accessibility, composer focus and submit pass.`,
   )

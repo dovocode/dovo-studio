@@ -105,7 +105,12 @@ export function QuestionForm({
           {request.prompt.blocking === false ? 'Answer when ready' : 'Needs input'}
         </span>
       </div>
-      <div className="max-h-64 space-y-4 overflow-auto p-3">
+      <div
+        role="region"
+        aria-label="Questions"
+        tabIndex={0}
+        className="max-h-64 space-y-4 overflow-auto p-3"
+      >
         {request.prompt.questions.map((q, index) => (
           <QuestionField
             key={q.id}

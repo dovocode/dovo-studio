@@ -29,7 +29,7 @@ export function ComposerSurface({
   return (
     <PromptInput
       className={cn(
-        'studio-composer relative z-10 mx-auto max-w-[var(--chat-max)] rounded-xl border-border/70 bg-card shadow-none',
+        'studio-composer relative z-10 mx-auto overflow-visible max-w-[var(--chat-max)] rounded-xl border-border/70 bg-card shadow-none',
         collapsed && 'max-h-12 overflow-hidden',
         className,
       )}

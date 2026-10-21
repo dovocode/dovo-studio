@@ -860,7 +860,7 @@ export function Composer({
             onMachineMoving={setMachineMoving}
           />
         )}
-        <p className="mx-auto mt-1 hidden max-w-[var(--chat-max)] text-right text-[0.625rem] text-muted-foreground/70">
+        <p className="mx-auto mt-1 hidden max-w-[var(--chat-max)] text-right text-[0.625rem] text-muted-foreground">
           {task.status === 'running'
             ? defaultSteerFirst
               ? 'Enter to steer · Alt+Enter to queue'

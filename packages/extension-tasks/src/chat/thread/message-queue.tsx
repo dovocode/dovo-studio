@@ -118,7 +118,7 @@ export function MessageQueue({
                 ? 'Paused'
                 : 'Runs after this turn'}
           </span>
-          <span className="min-w-0 flex-1 truncate text-left text-muted-foreground/70">
+          <span className="min-w-0 flex-1 truncate text-left text-muted-foreground">
             {queue[0]?.text || queue[0]?.attachments?.map((file) => file.name).join(', ')}
           </span>
         </QueueSectionTrigger>

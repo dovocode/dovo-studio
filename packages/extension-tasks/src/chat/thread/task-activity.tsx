@@ -295,7 +295,7 @@ export function TaskActivity({
                 />
               ))}
               {showToolDetails && turn && (
-                <details className="pt-1 text-[0.6875rem] text-muted-foreground/70">
+                <details className="pt-1 text-[0.6875rem] text-muted-foreground">
                   <summary className="w-fit cursor-pointer py-1 hover:text-muted-foreground">
                     Run details
                   </summary>
@@ -382,7 +382,7 @@ const ActivityEntry = memo(function ActivityEntry({
         >
           <span className="min-w-0 truncate">{title}</span>
           {presentation.detail && (
-            <span className="min-w-0 flex-1 truncate text-[0.625rem] text-muted-foreground/70">
+            <span className="min-w-0 flex-1 truncate text-[0.625rem] text-muted-foreground">
               {presentation.detail}
             </span>
           )}
