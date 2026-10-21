@@ -8,7 +8,13 @@ import {
 } from '@dovo/protocol'
 import { bearerToken, json, readJson, RequestError } from './http.js'
 import type { InternetStore } from './internet-store.js'
-export function internetApi(store: InternetStore) {
+import type { PeerRelay } from '@dovo/protocol'
+export function internetApi(
+  store: InternetStore,
+  relay?: (
+    host: NonNullable<ReturnType<InternetStore['host']>>,
+  ) => Promise<{ name: string; relay?: PeerRelay; unavailable?: true } | undefined>,
+) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (!url.pathname.startsWith('/v1/internet/')) return false
     const token = bearerToken(req)
@@ -18,8 +24,13 @@ export function internetApi(store: InternetStore) {
         200,
         store.register(token, decode(internetRegistrationSchema, await readJson(req))),
       )
-    if (req.method === 'GET' && url.pathname === '/v1/internet/host')
-      return json(res, 200, store.inbox(token))
+    if (req.method === 'GET' && url.pathname === '/v1/internet/host') {
+      const inbox = store.inbox(token)
+      const host = store.host(token)
+      const organizationRelay = host && (await relay?.(host))
+      if (!store.host(token)) throw new RequestError(401, 'Internet access has been revoked')
+      return json(res, 200, { ...inbox, ...(organizationRelay ? { organizationRelay } : {}) })
+    }
     if (req.method === 'POST' && url.pathname === '/v1/internet/host/block') {
       const input = decode(Schema.Struct({ session: Schema.String }), await readJson(req))
       store.block(token, input.session)

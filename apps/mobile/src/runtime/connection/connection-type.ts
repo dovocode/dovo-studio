@@ -14,6 +14,7 @@ import {
 
 const types = {
   relay: { name: 'Dovo Connect', label: 'Dovo Connect · TURN' },
+  custom: { name: 'Custom relay', label: 'Custom relay · TURN' },
   direct: { name: 'Dovo Direct', label: 'Dovo Direct · WebRTC / STUN' },
   private: { name: 'Private', label: 'Private · LAN / VPN' },
   unknown: { name: 'WebRTC', label: 'WebRTC · Checking route…' },

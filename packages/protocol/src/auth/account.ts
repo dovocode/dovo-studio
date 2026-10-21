@@ -3,7 +3,11 @@ import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../shared/schema.js'
 
 export const ACCOUNT_DIRECTORY_URL = 'https://connect.dovo.studio'
-export const accountUserSchema = mutableStruct({ id: Schema.String, name: Schema.String })
+export const accountUserSchema = mutableStruct({
+  id: Schema.String,
+  name: Schema.String,
+  organization: Schema.optional(mutableStruct({ id: Schema.String, name: Schema.String })),
+})
 export const accountServerSchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,

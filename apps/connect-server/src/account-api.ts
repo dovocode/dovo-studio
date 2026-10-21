@@ -37,6 +37,10 @@ export function accountApi(
         confirmation.confirm !== 'DELETE'
       )
         throw new RequestError(400, 'Confirm account deletion')
+      if (store.organizationIdentity(account.user.id)) {
+        store.deleteAccount(account.user.id)
+        return json(res, 200, { ok: true })
+      }
       if (!deleteIdentity)
         throw new RequestError(503, 'Account deletion is temporarily unavailable')
       // Block all ordinary account access and in-flight sign-ins before contacting the identity service.

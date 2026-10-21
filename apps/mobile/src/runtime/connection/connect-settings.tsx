@@ -105,7 +105,7 @@ export function ConnectSettings({ onBusyChange }: { onBusyChange?: (busy: boolea
                 onPress={() =>
                   Alert.alert(
                     `Enable Dovo Connect on ${name}?`,
-                    `Devices signed in as ${directory.user.name} will have access to files, agents and terminal commands on this computer. Encrypted traffic may pass through Dovo TURN servers when a direct connection fails.`,
+                    `Devices signed in as ${directory.user.name}${directory.user.organization ? ` (${directory.user.organization.name})` : ''} will have access to files, agents and terminal commands on this computer. Encrypted traffic may pass through Dovo TURN servers when a direct connection fails.${directory.user.organization ? ' Organization relay settings will be applied automatically unless this computer has a manual TURN override.' : ''}`,
                     [
                       { text: 'Cancel', style: 'cancel' },
                       { text: 'Enable Connect + relay', onPress: () => act(enable) },

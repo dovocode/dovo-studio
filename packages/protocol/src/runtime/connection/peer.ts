@@ -3,6 +3,8 @@ import { hmac } from '@noble/hashes/hmac.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js'
 import { mutableStruct, mutableArray, refine } from '../../shared/schema.js'
+import { internetBoxSchema } from '../../auth/account-internet.js'
+import { normalizeTurnUrl } from './turn-url.js'
 
 const hex = Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{64}$/)))
 export const peerRelayIdentitySchema = Schema.String.pipe(
@@ -34,18 +36,21 @@ export const peerRelayAdmissionPayload = (
     relayAllowed,
   ])
 // Retain the prototype value when decoding saved profiles; only Dovo is offered/issued.
-export const peerRelayProviderSchema = Schema.Literals(['cloudflare', 'dovo'])
+export const peerRelayProviderSchema = Schema.Literals(['cloudflare', 'dovo', 'custom'])
 export type PeerRelayProvider = typeof peerRelayProviderSchema.Type
 export const PEER_RELAY_CHOICES = [
   { id: 'direct', name: 'Direct only (default)' },
   { id: 'dovo', name: 'Dovo relay fallback' },
+  { id: 'custom', name: 'Computer / organization relay' },
 ]
 export const peerRelayDescription = (relay: PeerRelayProvider | undefined) =>
-  relay === 'cloudflare'
-    ? 'This saved relay is no longer available. Choose Direct only or Dovo relay fallback.'
-    : relay === 'dovo'
-      ? 'Try direct first. Account-authorized or operator-approved computers can use Dovo servers for encrypted traffic when needed. Only your phone and computer can read it.'
-      : 'Your content travels directly between devices. No relay is used. Some networks may not connect.'
+  relay === 'custom'
+    ? 'Try direct first, then use the TURN server configured on this computer or supplied by your organization.'
+    : relay === 'cloudflare'
+      ? 'This saved relay is no longer available. Choose Direct only or Dovo relay fallback.'
+      : relay === 'dovo'
+        ? 'Try direct first. Account-authorized or operator-approved computers can use Dovo servers for encrypted traffic when needed. Only your phone and computer can read it.'
+        : 'Your content travels directly between devices. No relay is used. Some networks may not connect.'
 export const peerConfigSchema = mutableStruct({
   origin: refine(
     Schema.String,
@@ -96,17 +101,13 @@ const credential = Schema.String.pipe(
 )
 /** The same TURN URL rules apply when issuing credentials and accepting them. */
 export function validPeerRelayUrl(url: string, hosts?: readonly string[]) {
-  const match = /^(turns?):([a-z0-9.-]+):(\d{1,5})\?transport=(udp|tcp)$/.exec(url)
-  return !!(
-    url.length <= 256 &&
-    match &&
-    match[2]!.length <= 253 &&
-    match[2]!.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) &&
-    (!hosts || hosts.includes(match[2]!)) &&
-    Number(match[3]) > 0 &&
-    Number(match[3]) <= 65535 &&
-    (match[1] !== 'turns' || match[4] === 'tcp')
-  )
+  try {
+    const normalized = normalizeTurnUrl(url)
+    const host = new URL('http://' + normalized.replace(/^turns?:/, '').split('?')[0]).hostname
+    return normalized === url && (!hosts || hosts.includes(host))
+  } catch {
+    return false
+  }
 }
 export const peerRelaySchema = mutableStruct({
   provider: peerRelayProviderSchema,
@@ -137,6 +138,7 @@ export function validPeerRelay(
   hosts: readonly string[] = ['turn.dovo.studio'],
 ) {
   return (
+    relay.provider !== 'custom' &&
     relay.provider === provider &&
     relay.expiresAt > now + 60000 &&
     relay.expiresAt <= now + PEER_RELAY_MAX_TTL_MS &&
@@ -149,8 +151,18 @@ export function validPeerRelay(
 }
 export const peerReadySchema = mutableStruct({
   type: Schema.Literal('ready'),
+  customRelay: Schema.optional(internetBoxSchema),
   relay: Schema.optional(peerRelaySchema),
   relayUnavailable: Schema.optional(peerRelayProviderSchema),
+})
+export const peerRelayRequestSchema = mutableStruct({
+  type: Schema.Literals(['relay-request', 'relay-cancel']),
+  session: hex,
+})
+export const peerRelayResponseSchema = mutableStruct({
+  type: Schema.Literal('relay-response'),
+  session: hex,
+  box: Schema.optional(internetBoxSchema),
 })
 export const peerOfferSchema = mutableStruct({
   type: Schema.Literal('offer'),

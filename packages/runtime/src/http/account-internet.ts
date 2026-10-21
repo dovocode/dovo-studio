@@ -12,6 +12,7 @@ import {
   sealInternet,
   peerAddress,
   peerConfigSchema,
+  peerRelaySchema,
   type PeerConfig,
   type InternetRegistration,
 } from '@dovo/protocol'
@@ -20,6 +21,13 @@ import type { Devices } from '../auth/devices.js'
 import type { PeerConnections } from './peer-connections.js'
 import type { peerRelayIdentity } from './peer-relay-identity.js'
 const inboxSchema = Schema.Struct({
+  organizationRelay: Schema.optional(
+    Schema.Struct({
+      name: Schema.String,
+      relay: Schema.optional(peerRelaySchema),
+      unavailable: Schema.optional(Schema.Literal(true)),
+    }),
+  ),
   active: Schema.Array(Schema.String),
   requests: Schema.Array(
     Schema.Struct({ id: Schema.String, publicKey: Schema.String, session: Schema.String }),
@@ -267,7 +275,17 @@ export class AccountInternet {
       }
       const inbox = decode(inboxSchema, await this.request('/v1/internet/host', state.grant))
       if (generation !== this.generation) return
+      if (
+        inbox.organizationRelay?.relay &&
+        (inbox.organizationRelay.relay.provider !== 'custom' ||
+          inbox.organizationRelay.relay.expiresAt <= Date.now() + 60_000 ||
+          inbox.organizationRelay.relay.expiresAt > Date.now() + 600_000)
+      )
+        throw new Error('Invalid organization relay policy')
       this.lease = Date.now() + 12000
+      this.peers.relay.setOrganization(
+        inbox.organizationRelay ? { ...inbox.organizationRelay, lease: this.lease } : undefined,
+      )
       this.error = ''
       this.removeExcept(new Set(inbox.active))
       for (const request of inbox.requests) {
@@ -368,6 +386,7 @@ export class AccountInternet {
     }
   }
   stop() {
+    this.peers.relay.setOrganization(undefined)
     this.running = false
     this.generation++
     this.setups.clear()

@@ -119,6 +119,8 @@ try {
   await page.getByRole('button', { name: /dovo-agent, Online, Dovo Connect/ }).click()
   await page.getByRole('dialog').getByText('Dovo Connect · TURN', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.evaluate(() => window.changeRoute('custom'))
+  await label('Custom relay · TURN')
   await page.evaluate(() => window.changeRoute(undefined))
   await label('WebRTC · Checking route…')
   await page.evaluate(() => window.setConnected(false))

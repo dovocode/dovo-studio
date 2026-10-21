@@ -20,6 +20,8 @@ import {
   PEER_STUN_URLS,
   PEER_DISCONNECT_GRACE_MS,
   createPeerPipe,
+  peerRelayRequestSchema,
+  sealCustomRelay,
   type PeerConfig,
   type PeerSignal,
   type PeerRelay,
@@ -29,6 +31,7 @@ import type { Devices } from '../auth/devices.js'
 import { AccountInternet } from './account-internet.js'
 import { PeerUpgrades } from './peer-upgrades.js'
 import { peerRelayIdentity } from './peer-relay-identity.js'
+import { RuntimeRelaySettings } from './relay-settings.js'
 
 type Room = {
   config: PeerConfig
@@ -41,6 +44,7 @@ type Room = {
   /** Each negotiated peer's teardown: pipes, loopback sockets, timers, then the ICE session. */
   peers: Map<RTCPeerConnection, () => void>
   sessions: Set<string>
+  customRelays: Map<string, PeerRelay>
   stopped: boolean
   origin: PeerOrigin
 }
@@ -65,6 +69,7 @@ export function acceptableOffer(
   config: PeerConfig,
   offer: typeof peerOfferSchema.Type,
   now = Date.now(),
+  customRelay?: PeerRelay,
 ) {
   const signal = offer.signal
   return (
@@ -74,13 +79,17 @@ export function acceptableOffer(
     (offer.relay
       ? config.relay === signal.relay &&
         validPeerRelay(offer.relay, signal.relay, now, config.relayHosts)
-      : signal.relay === undefined)
+      : signal.relay === undefined ||
+        (signal.relay === 'custom' &&
+          customRelay?.provider === 'custom' &&
+          customRelay.expiresAt > now + 60_000))
   )
 }
 
 /** Outbound-only signaling and ICE. The tunnel destination is a dedicated ordinary
  * runtime listener; it cannot select arbitrary ports or use desktop-only routes. */
 export class PeerConnections {
+  readonly relay: RuntimeRelaySettings
   readonly internet: AccountInternet
   readonly upgrades: PeerUpgrades
   private rooms = new Map<string, Room>()
@@ -98,6 +107,7 @@ export class PeerConnections {
       'CREATE TABLE IF NOT EXISTS peer_connections (device_id TEXT PRIMARY KEY, config TEXT NOT NULL)',
     )
     this.identity = peerRelayIdentity(db)
+    this.relay = new RuntimeRelaySettings(db)
     this.internet = new AccountInternet(db, devices, this, this.identity)
     this.upgrades = new PeerUpgrades(devices)
   }
@@ -148,6 +158,8 @@ export class PeerConnections {
   private reap() {
     const active = this.active()
     for (const [id, room] of this.rooms) {
+      for (const [session, relay] of room.customRelays)
+        if (relay.expiresAt <= Date.now() + 60_000) room.customRelays.delete(session)
       if (room.deviceId && !this.internet.authorized(room.deviceId)) this.remove(id, room)
       if (
         (room.expiresAt && room.expiresAt <= Date.now()) ||
@@ -230,6 +242,7 @@ export class PeerConnections {
       expiresAt,
       peers: new Map(),
       sessions: new Set(),
+      customRelays: new Map(),
       stopped: false,
       origin: {
         deviceId,
@@ -282,6 +295,9 @@ export class PeerConnections {
         ...(room.accountGrant ? { accountGrant: room.accountGrant } : {}),
         // The computer's consent; each phone still signs whether it uses the relay.
         relayAllowed: config.relay === 'dovo',
+        // This advertises protocol support. Settings consent and the requesting client's
+        // relay preference must both permit issuance before any credentials are sealed.
+        customRelay: true,
       }
       // Connect without issuers or admission answers `ready` at once. Otherwise it challenges
       // once, and the room is ready only on the `ready` that follows this installation's proof.
@@ -335,14 +351,37 @@ export class PeerConnections {
             return
           }
           if (phase !== 'ready') throw new Error('Offer before admission')
+          if (type === 'relay-request' || type === 'relay-cancel') {
+            const { session } = decode(peerRelayRequestSchema, value)
+            if (type === 'relay-cancel') {
+              room.customRelays.delete(session)
+              return
+            }
+            if (!host.customRelay || room.customRelays.size >= 4) {
+              socket.send(JSON.stringify({ type: 'relay-response', session }))
+              return
+            }
+            const relay = this.relay.issue()
+            if (relay) room.customRelays.set(session, relay)
+            socket.send(
+              JSON.stringify({
+                type: 'relay-response',
+                session,
+                ...(relay ? { box: sealCustomRelay(config, session, relay, randomBytes(24)) } : {}),
+              }),
+            )
+            return
+          }
           const offer = decode(peerOfferSchema, value)
           const signal = offer.signal
-          if (!acceptableOffer(room.config, offer)) return
+          const custom = room.customRelays.get(signal.session)
+          room.customRelays.delete(signal.session)
+          if (!acceptableOffer(room.config, offer, Date.now(), custom)) return
           if (room.sessions.has(signal.session) || room.peers.size >= 4) return
           if (room.sessions.size >= 128) room.sessions.delete(room.sessions.values().next().value!)
           room.sessions.add(signal.session)
-          void this.accept(room, signal, offer.relay).catch(() =>
-            console.error('Internet peer negotiation failed'),
+          void this.accept(room, signal, signal.relay === 'custom' ? custom : offer.relay).catch(
+            () => console.error('Internet peer negotiation failed'),
           )
         } catch {
           socket.close(1008, 'Invalid signaling metadata')
@@ -359,6 +398,7 @@ export class PeerConnections {
     socket.on('error', () => socket.terminate())
     socket.once('close', () => {
       if (room.socket === socket) {
+        room.customRelays.clear()
         room.socket = undefined
         room.ready = undefined
       }

@@ -152,7 +152,8 @@
     "test:code-theme-editor:browser": "node scripts/check-code-theme-editor-browser.mjs",
     "test:model-catalog-cache:browser": "node scripts/check-model-catalog-cache-browser.mjs",
     "test:permission-policy:browser": "node scripts/check-permission-policy-browser.mjs",
-    "test:mobile-thread-files:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-mobile-thread-files-browser.mjs"
+    "test:mobile-thread-files:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-mobile-thread-files-browser.mjs",
+    "test:custom-turn:browser": "node scripts/check-custom-turn-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

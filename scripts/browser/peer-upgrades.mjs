@@ -63,7 +63,7 @@ export async function checkPeerUpgrades(browser, root) {
       },
       {
         path: '@dovo/studio-ui',
-        contents: `export const Button=({children,onClick,disabled,...props})=><button aria-label={props['aria-label']} onClick={onClick} disabled={disabled}>{children}</button>;`,
+        contents: `export const Button=({children,onClick,disabled,...props})=><button aria-label={props['aria-label']} onClick={onClick} disabled={disabled}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;`,
       },
       {
         path: './desktop-network',

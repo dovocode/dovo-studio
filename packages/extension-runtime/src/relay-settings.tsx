@@ -1,0 +1,141 @@
+import { useState } from 'react'
+import { customTurnSchema, decode, responses } from '@dovo/protocol'
+import { useWorkspace } from '@dovo/studio-core'
+import { Button, Input, Textarea } from '@dovo/studio-ui'
+
+export function RelaySettings() {
+  const { activeRuntimeId } = useWorkspace()
+  return <RelaySettingsContent key={activeRuntimeId} />
+}
+function RelaySettingsContent() {
+  const { snapshot, connected, request, runtimeRegistry, activeRuntimeId, refreshRuntime } =
+    useWorkspace()
+  const profile = runtimeRegistry.profiles.find((item) => item.id === activeRuntimeId)
+  const status = snapshot?.relaySettings
+  const [urls, setUrls] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState<'save' | 'reset'>()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  if (!profile) return null
+  const save = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const config =
+        confirm === 'reset'
+          ? null
+          : decode(customTurnSchema, {
+              urls: urls
+                .split(/[\n,]+/)
+                .map((url) => url.trim())
+                .filter(Boolean),
+              username,
+              credential: password,
+            })
+      await request('/api/runtime/relay', { consent: true, config }, responses.relaySettings)
+      setPassword('')
+      setUsername('')
+      setUrls('')
+      setConfirm(undefined)
+      await refreshRuntime(profile)
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not save relay settings')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section
+      className="space-y-2 rounded-md border p-3"
+      aria-label={`TURN relay for ${profile.name}`}
+    >
+      <h2 className="text-sm font-medium">TURN relay</h2>
+      <p className="text-xs text-muted-foreground">
+        {status?.mode === 'organization'
+          ? `Supplied by ${status.organization}${status.configured ? '' : ' · Relay unavailable or sign-in expired'}.`
+          : status?.mode === 'custom'
+            ? 'Custom TURN server configured.'
+            : 'Automatic: use your organization relay when signed in, otherwise Dovo relay when authorized.'}{' '}
+        Direct connections are tried first.
+      </p>
+      {!!status?.urls.length && (
+        <p className="break-all text-xs text-muted-foreground">{status.urls.join('\n')}</p>
+      )}
+      {!snapshot?.relaySetupSupported ? (
+        <p className="text-xs text-muted-foreground">
+          Use a separately paired device with an updated runtime to change relay settings.
+        </p>
+      ) : (
+        <>
+          <label className="block text-xs">
+            TURN URLs (one per line or comma separated)
+            <Textarea
+              aria-label="TURN URLs"
+              value={urls}
+              onChange={(event) => setUrls(event.target.value)}
+              placeholder="turns:relay.example.com:5349?transport=tcp"
+              disabled={busy}
+            />
+          </label>
+          <label className="block text-xs">
+            Username
+            <Input
+              aria-label="TURN username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="off"
+              disabled={busy}
+            />
+          </label>
+          <label className="block text-xs">
+            Password
+            <Input
+              aria-label="TURN password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="new-password"
+              disabled={busy}
+            />
+          </label>
+          {confirm ? (
+            <>
+              <p role="alert" className="text-sm">
+                {confirm === 'save'
+                  ? `Use this TURN server for ${profile.name} and share relay credentials with its paired clients? This replaces the automatic relay policy.`
+                  : `Restore automatic relay settings on ${profile.name}?`}
+              </p>
+              <Button disabled={!connected || busy} onClick={() => void save()}>
+                {busy ? 'Saving…' : 'Confirm relay settings'}
+              </Button>
+              <Button variant="ghost" disabled={busy} onClick={() => setConfirm(undefined)}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                disabled={!connected || !urls.trim() || !username || !password}
+                onClick={() => setConfirm('save')}
+              >
+                Use custom TURN
+              </Button>
+              {status?.mode === 'custom' && (
+                <Button variant="ghost" disabled={!connected} onClick={() => setConfirm('reset')}>
+                  Use automatic relay
+                </Button>
+              )}
+            </>
+          )}
+        </>
+      )}
+      {!!error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+    </section>
+  )
+}

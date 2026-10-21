@@ -9,6 +9,8 @@ import {
   peerRelayIdentitySchema,
   peerRelayProofSchema,
   peerRelayAdmissionPayload,
+  peerRelayResponseSchema,
+  internetBoxSchema,
   type PeerRelay,
   type PeerRelayProvider,
 } from '@dovo/protocol'
@@ -28,6 +30,7 @@ const helloSchema = Schema.Union([
     relayIdentity: Schema.optional(peerRelayIdentitySchema),
     relayAllowed: Schema.optional(Schema.Boolean),
     accountGrant: Schema.optional(Schema.String),
+    customRelay: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal('client'),
@@ -35,6 +38,7 @@ const helloSchema = Schema.Union([
     key,
     session: key,
     relay: Schema.optional(peerRelayProviderSchema),
+    customRelaySupported: Schema.optional(Schema.Boolean),
   }),
 ])
 const equal = (a: string, b: string) => timingSafeEqual(Buffer.from(a), Buffer.from(b))
@@ -69,6 +73,8 @@ export function attachPeerSignaling(
       admitted: Promise<void>
       relayIdentity?: string
       accountGrant?: string
+      customRelay: boolean
+      pendingRelays: Map<string, (box?: typeof internetBoxSchema.Type) => void>
     }
   >()
   const authorized = (room: { accountGrant?: string; relayIdentity?: string }) =>
@@ -105,6 +111,7 @@ export function attachPeerSignaling(
       let sent = false
       let joining = false
       let relay: PeerRelay | undefined
+      let customRelay: typeof internetBoxSchema.Type | undefined
       let admissionChallenge: string | undefined
       let finishAdmission: (() => void) | undefined
       const deadline = setTimeout(
@@ -138,8 +145,13 @@ export function attachPeerSignaling(
         if (hello.type === 'host' && room?.host === client) {
           rooms.delete(hello.room)
           for (const joined of room.clients.values()) joined.close(1012, 'Computer disconnected')
-        } else if (hello.type === 'client' && room?.clients.get(hello.session) === client)
+        } else if (hello.type === 'client' && room?.clients.get(hello.session) === client) {
           room.clients.delete(hello.session)
+          if (room.customRelay && room.host.readyState === WebSocket.OPEN)
+            room.host.send(JSON.stringify({ type: 'relay-cancel', session: hello.session }))
+          room.pendingRelays.get(hello.session)?.()
+          room.pendingRelays.delete(hello.session)
+        }
       })
       client.on('message', (raw, binary) => {
         try {
@@ -173,6 +185,8 @@ export function attachPeerSignaling(
                 relayAllowed: input.relayAllowed === true,
                 relayIdentity: input.relayIdentity,
                 accountGrant: input.accountGrant,
+                customRelay: input.customRelay === true,
+                pendingRelays: new Map(),
               })
             } else {
               if (
@@ -213,8 +227,40 @@ export function attachPeerSignaling(
               }
               clearTimeout(deadline)
               const provider = input.type === 'client' ? input.relay : undefined
+              if (
+                input.type === 'client' &&
+                input.customRelaySupported &&
+                provider &&
+                provider !== 'cloudflare' &&
+                existing?.customRelay
+              ) {
+                customRelay = await new Promise<typeof internetBoxSchema.Type | undefined>(
+                  (resolve) => {
+                    const timeout = setTimeout(() => {
+                      existing.pendingRelays.delete(input.session)
+                      resolve(undefined)
+                    }, 5000)
+                    timeout.unref()
+                    existing.pendingRelays.set(input.session, (box) => {
+                      clearTimeout(timeout)
+                      resolve(box)
+                    })
+                    existing.host.send(
+                      JSON.stringify({ type: 'relay-request', session: input.session }),
+                    )
+                  },
+                )
+              }
+              if (!availableRoom()) {
+                client.close(1008, 'Signaling access revoked')
+                return
+              }
               const issue =
-                provider && existing?.relayApproved && existing.relayAllowed
+                !customRelay &&
+                provider !== 'custom' &&
+                provider &&
+                existing?.relayApproved &&
+                existing.relayAllowed
                   ? relayIssuers[provider]
                   : undefined
               if (issue) {
@@ -233,7 +279,13 @@ export function attachPeerSignaling(
               client.send(
                 JSON.stringify({
                   type: 'ready',
-                  ...(relay ? { relay } : provider ? { relayUnavailable: provider } : {}),
+                  ...(customRelay
+                    ? { customRelay }
+                    : relay
+                      ? { relay }
+                      : provider
+                        ? { relayUnavailable: provider }
+                        : {}),
                 }),
               )
             })()
@@ -267,13 +319,27 @@ export function attachPeerSignaling(
             finishAdmission?.()
             return
           }
+          if (
+            hello.type === 'host' &&
+            value &&
+            typeof value === 'object' &&
+            'type' in value &&
+            value.type === 'relay-response'
+          ) {
+            const response = decode(peerRelayResponseSchema, value)
+            const room = availableRoom()
+            if (!room) throw new Error('Computer is unavailable')
+            room.pendingRelays.get(response.session)?.(response.box)
+            room.pendingRelays.delete(response.session)
+            return
+          }
           const signal = decode(peerSignalSchema, value)
           const room = availableRoom()
           if (!room) throw new Error('Computer is unavailable')
           if (hello.type === 'client') {
             if (sent || signal.role !== 'offer' || signal.session !== hello.session)
               throw new Error('Unexpected offer')
-            if (signal.relay !== relay?.provider)
+            if (signal.relay !== (customRelay ? 'custom' : relay?.provider))
               throw new Error('Relay consent does not match offer')
             sent = true
             room.host.send(JSON.stringify({ type: 'offer', signal, ...(relay ? { relay } : {}) }))

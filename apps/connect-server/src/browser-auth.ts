@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { AccountStore, hash, secret } from './store.js'
 import type { IdentityProvider } from './oidc.js'
 import { html, RequestError } from './http.js'
+import type { Organization } from './organizations.js'
 
 const escape = (value: string) =>
   value.replace(
@@ -9,7 +10,13 @@ const escape = (value: string) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
   )
 
-export function browserAuth(options: { store: AccountStore; origin: string } & IdentityProvider) {
+export function browserAuth(
+  options: {
+    store: AccountStore
+    origin: string
+    organizations?: readonly Organization[]
+  } & IdentityProvider,
+) {
   const { store, origin } = options
   const cookieName = origin.startsWith('https:') ? '__Host-dovo-login' : 'dovo-login'
   const cookieFlags = `HttpOnly; SameSite=Lax; Path=/${origin.startsWith('https:') ? '; Secure' : ''}`
@@ -27,7 +34,7 @@ export function browserAuth(options: { store: AccountStore; origin: string } & I
       html(
         res,
         200,
-        `<h2>Sign in to connect your devices</h2><p>Only continue if you started sign-in in Dovo Studio and see this code there:</p><h2>${escape(login.code)}</h2><p>Signing in grants access to computers where you enable Dovo Connect on this account. LAN / VPN access still requires separate device pairing.</p><form method="post" action="/auth/authorize"><button type="submit">Continue to sign in</button></form>`,
+        `<h2>Sign in to connect your devices</h2><p>Only continue if you started sign-in in Dovo Studio and see this code there:</p><h2>${escape(login.code)}</h2><p>Signing in grants access to computers where you enable Dovo Connect on this account. LAN / VPN access still requires separate device pairing.</p><form method="post" action="/auth/authorize"><button type="submit">Continue to Dovo sign-in</button></form>${(options.organizations ?? []).map((organization) => `<form method="post" action="/auth/authorize?organization=${encodeURIComponent(organization.id)}"><button type="submit">Sign in with ${escape(organization.name)} SSO</button></form>`).join('')}`,
       )
       return true
     }
@@ -49,7 +56,11 @@ export function browserAuth(options: { store: AccountStore; origin: string } & I
       if (req.headers.origin !== origin)
         throw new RequestError(403, 'Sign-in must start from this page')
       const login = browserLogin()
-      const location = await options.authorize(login)
+      const id = url.searchParams.get('organization')
+      const organization = options.organizations?.find((item) => item.id === id)
+      if (id && !organization) throw new RequestError(400, 'Unknown organization')
+      login.organization = organization?.id
+      const location = await (organization?.provider ?? options).authorize(login)
       store.saveLogin(login)
       res.writeHead(303, { Location: location })
       res.end()
@@ -67,7 +78,10 @@ export function browserAuth(options: { store: AccountStore; origin: string } & I
       const state = login.state
       login.state = undefined
       store.saveLogin(login)
-      const user = await options.exchange({ ...login, state }, code)
+      const organization = options.organizations?.find((item) => item.id === login.organization)
+      if (login.organization && !organization)
+        throw new RequestError(403, 'Organization sign-in is unavailable')
+      const user = await (organization?.provider ?? options).exchange({ ...login, state }, code)
       store.approve(login, user)
       res.setHeader('Set-Cookie', `${cookieName}=; Max-Age=0; ${cookieFlags}`)
       html(

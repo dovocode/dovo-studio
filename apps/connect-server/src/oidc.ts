@@ -3,20 +3,41 @@ import { hash, secret, type Login } from './store.js'
 export type IdentityProvider = {
   authorizationOrigin: string
   authorize(login: Login): Promise<string>
-  exchange(login: Login, code: string): Promise<{ id: string; name: string }>
+  exchange(login: Login, code: string): Promise<AccountIdentity>
+}
+export type AccountIdentity = {
+  id: string
+  name: string
+  organization?: { id: string; name: string; policy: string }
+  sessionExpiresAt?: number
 }
 export function casdoor(options: {
   issuer: string
   clientId: string
   origin: string
+  clientSecret?: string
+  endpointOrigins?: readonly string[]
+  requiredClaim?: { name: string; values: readonly string[] }
+  organization?: { id: string; name: string; policy: string; sessionHours: number }
 }): IdentityProvider {
-  const issuer = new URL(options.issuer).origin
+  const issuer = options.issuer
+  const parsedIssuer = new URL(issuer)
+  if (
+    parsedIssuer.username ||
+    parsedIssuer.password ||
+    parsedIssuer.search ||
+    parsedIssuer.hash ||
+    (parsedIssuer.protocol !== 'https:' &&
+      !(parsedIssuer.protocol === 'http:' && parsedIssuer.hostname === '127.0.0.1'))
+  )
+    throw new Error('Configure a trusted HTTPS OIDC issuer')
+  const endpointOrigins = [parsedIssuer.origin, ...(options.endpointOrigins ?? [])]
   let keys: ReturnType<typeof createRemoteJWKSet> | undefined
   let discovery:
     | Promise<{ authorization_endpoint: string; token_endpoint: string; jwks_uri: string }>
     | undefined
   const metadata = () =>
-    (discovery ??= fetch(new URL('/.well-known/openid-configuration', issuer), {
+    (discovery ??= fetch(issuer.replace(/\/$/, '') + '/.well-known/openid-configuration', {
       signal: AbortSignal.timeout(10_000),
       redirect: 'error',
     })
@@ -37,7 +58,11 @@ export function casdoor(options: {
         )
           throw new Error('Invalid identity provider discovery')
         for (const endpoint of [value.authorization_endpoint, value.token_endpoint, value.jwks_uri])
-          if (new URL(endpoint).origin !== issuer)
+          if (
+            !endpointOrigins.includes(new URL(endpoint).origin) ||
+            new URL(endpoint).username ||
+            new URL(endpoint).password
+          )
             throw new Error('Unexpected identity provider endpoint')
         return {
           authorization_endpoint: value.authorization_endpoint,
@@ -50,7 +75,7 @@ export function casdoor(options: {
         throw error
       }))
   return {
-    authorizationOrigin: issuer,
+    authorizationOrigin: parsedIssuer.origin,
     async authorize(login: Login) {
       const meta = await metadata()
       login.state = secret()
@@ -83,6 +108,7 @@ export function casdoor(options: {
           redirect_uri: options.origin + '/auth/callback',
           code,
           code_verifier: login.verifier,
+          ...(options.clientSecret ? { client_secret: options.clientSecret } : {}),
         }),
       })
       if (!response.ok) throw new Error('Sign-in could not be completed')
@@ -98,7 +124,7 @@ export function casdoor(options: {
       const { payload } = await jwtVerify(tokens.id_token, keys, {
         issuer,
         audience: options.clientId,
-        algorithms: ['RS256'],
+        algorithms: ['RS256', 'ES256'],
         requiredClaims: ['sub', 'exp', 'iat', 'nonce'],
         maxTokenAge: '10m',
       })
@@ -108,9 +134,32 @@ export function casdoor(options: {
         (payload.azp !== undefined && payload.azp !== options.clientId)
       )
         throw new Error('Sign-in identity did not match')
+      if (options.requiredClaim) {
+        const claim = payload[options.requiredClaim.name]
+        const values =
+          typeof claim === 'string'
+            ? [claim]
+            : Array.isArray(claim)
+              ? claim.filter((value): value is string => typeof value === 'string')
+              : []
+        if (!options.requiredClaim.values.some((value) => values.includes(value)))
+          throw new Error('Organization membership is required')
+      }
       return {
-        id: payload.sub,
+        id: options.organization
+          ? `oidc:${options.organization.id}:${hash(issuer + '\0' + payload.sub)}`
+          : payload.sub,
         name: typeof payload.name === 'string' ? payload.name.slice(0, 200) : payload.sub,
+        ...(options.organization
+          ? {
+              organization: {
+                id: options.organization.id,
+                name: options.organization.name,
+                policy: options.organization.policy,
+              },
+              sessionExpiresAt: Date.now() + options.organization.sessionHours * 3600_000,
+            }
+          : {}),
       }
     },
   }

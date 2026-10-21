@@ -18,7 +18,7 @@ import { dovoTurn } from '../apps/connect-server/dist/dovo-turn.js'
 import { approvedRelayInstallations } from '../apps/connect-server/dist/relay-admission.js'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
-async function run(relay, externalOrigin, forcedProtocol, attack) {
+async function run(relay, externalOrigin, forcedProtocol, attack, custom = false) {
   const provider =
     forcedProtocol === 'direct'
       ? undefined
@@ -31,7 +31,7 @@ async function run(relay, externalOrigin, forcedProtocol, attack) {
   attachPeerSignaling(
     broker,
     [],
-    relay ? { [relay.provider]: async () => relay } : {},
+    relay && !custom ? { [relay.provider]: async () => relay } : {},
     (key, payload, signature) =>
       approvedKey === key && approvedRelayInstallations([key])(key, payload, signature),
     process.env.DOVO_CONNECT_ORIGIN,
@@ -46,6 +46,7 @@ async function run(relay, externalOrigin, forcedProtocol, attack) {
   approvedKey = runtime.services.peers.relayIdentity().publicKey
   const credential = 'browser-phone-' + randomBytes(24).toString('hex')
   const device = runtime.services.devices.add('Phone browser', credential)
+  if (custom) runtime.services.peers.relay.set(relay.iceServers[0])
   const issuedConfig = await runtime.services.peers.enable(device, provider)
   const config = { ...issuedConfig, ...(provider ? { relay: provider } : {}) }
   const built = await bundleBrowser(
@@ -261,7 +262,10 @@ async function run(relay, externalOrigin, forcedProtocol, attack) {
       if (forcedProtocol) assert.equal(selected.relayProtocol, forcedProtocol)
     } else assert.notEqual(selected.type, 'relay')
     await page.waitForFunction(() => window.tunnel.route() !== undefined)
-    assert.equal(await page.evaluate(() => window.tunnel.route()), provider ? 'relay' : 'direct')
+    assert.equal(
+      await page.evaluate(() => window.tunnel.route()),
+      custom ? 'custom' : provider ? 'relay' : 'direct',
+    )
     await page.evaluate(() => window.tunnel.close())
     assert.equal(await page.evaluate(() => window.tunnel.alive()), false)
     assert.equal(await page.evaluate(() => window.tunnel.route()), undefined)
@@ -394,6 +398,13 @@ if (process.env.DOVO_TEST_TURN_BINARY) {
         secret: 'local-test-only-turn-secret-1234567890',
       })
       await run(await issue('test-room-' + transport, '127.0.0.1'), undefined, transport)
+      await run(
+        { ...(await issue('custom-room-' + transport, '127.0.0.1')), provider: 'custom' },
+        undefined,
+        transport,
+        undefined,
+        true,
+      )
     }
   } finally {
     turn.kill()

@@ -1,5 +1,8 @@
 # Internet connections
 
+For your own TURN server or organization OIDC and automatic relay distribution, see
+[Custom TURN and organization SSO](custom-turn-and-sso.md).
+
 In desktop **Settings → Devices & runtime → Dovo account**, sign in and check **Enable Dovo
 Connect**. On iPhone or Android, sign in to the same Dovo Studio account under **Computers**, then
 choose **Connect** beside the computer. No device pairing code, phone approval, VPN, port forwarding

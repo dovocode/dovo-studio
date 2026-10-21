@@ -42,7 +42,7 @@ const app=createRoot(document.getElementById('app'));window.kind='desktop';windo
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;`,
+      contents: `export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;`,
     },
     {
       path: './provider',

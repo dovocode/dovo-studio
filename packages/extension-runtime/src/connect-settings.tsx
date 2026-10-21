@@ -2,11 +2,18 @@ import { useRef, useState } from 'react'
 import { responses } from '@dovo/protocol'
 import { useAccount, useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
+import { RelaySettings } from './relay-settings'
 
 export function ConnectSettings() {
   const host = useStudioHost()
-  if (!host.accountStorage || !host.openExternalLink) return null
-  return <ConnectSettingsContent storage={host.accountStorage} open={host.openExternalLink} />
+  return (
+    <>
+      {host.accountStorage && host.openExternalLink && (
+        <ConnectSettingsContent storage={host.accountStorage} open={host.openExternalLink} />
+      )}
+      <RelaySettings />
+    </>
+  )
 }
 
 function ConnectSettingsContent({
@@ -88,9 +95,12 @@ function ConnectSettingsContent({
               <>
                 <p role="alert" className="text-sm">
                   Enable Dovo Connect on {name} for {directory.user.name}? Devices signed in to this
-                  account will have access to files, agents and terminal commands on this computer.
-                  Encrypted traffic may pass through Dovo TURN servers when a direct connection
-                  fails.
+                  account
+                  {directory.user.organization ? ` (${directory.user.organization.name})` : ''} will
+                  have access to files, agents and terminal commands on this computer. Encrypted
+                  traffic may pass through Dovo TURN servers when a direct connection fails.
+                  {directory.user.organization &&
+                    ' Its organization relay settings will be applied automatically unless this computer has a manual TURN override.'}
                 </p>
                 <Button
                   disabled={!connected || busy || saving || deletionPending}

@@ -1,4 +1,4 @@
-import { mkdirSync, chmodSync } from 'node:fs'
+import { mkdirSync, chmodSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AccountStore } from './store.js'
 import { identityDeletion } from './delete-identity.js'
@@ -7,6 +7,7 @@ import { casdoor } from './oidc.js'
 import { createConnectServer } from './server.js'
 import { dovoTurn } from './dovo-turn.js'
 import { approvedRelayInstallations } from './relay-admission.js'
+import { organizations } from './organizations.js'
 const root = process.env.DOVO_CONNECT_DATA ?? '/data'
 mkdirSync(root, { recursive: true, mode: 0o700 })
 chmodSync(root, 0o700)
@@ -28,6 +29,9 @@ const deleteIdentity = process.env.DOVO_ACCOUNT_DELETE_CLIENT_SECRET
 const server = createConnectServer({
   store,
   origin,
+  organizations: process.env.DOVO_ORGANIZATIONS_FILE
+    ? organizations(JSON.parse(readFileSync(process.env.DOVO_ORGANIZATIONS_FILE, 'utf8')), origin)
+    : [],
   push: pushRelay(),
   deleteIdentity,
   peerRelays: {

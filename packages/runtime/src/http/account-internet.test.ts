@@ -33,6 +33,10 @@ import { attachPeerSignaling } from '../../../../apps/connect-server/src/peer-si
 import { dovoTurn } from '../../../../apps/connect-server/src/dovo-turn.js'
 import type { PeerRelayIssuer } from '../../../../apps/connect-server/src/relay-credentials.js'
 import { RequestError } from '../../../../apps/connect-server/src/http.js'
+import {
+  organizations,
+  organizationRelay,
+} from '../../../../apps/connect-server/src/organizations.js'
 import { startRuntime } from '../index.js'
 const cleanup: Array<() => void | Promise<void>> = []
 afterEach(async () => {
@@ -41,8 +45,26 @@ afterEach(async () => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
-async function fixture(persistent = false, issueRelay?: PeerRelayIssuer) {
+async function fixture(persistent = false, issueRelay?: PeerRelayIssuer, organization = false) {
   const accounts = new AccountStore(':memory:')
+  const configs = organization
+    ? organizations(
+        [
+          {
+            id: 'company',
+            name: 'Company',
+            issuer: 'https://sso.example.com/tenant',
+            clientId: 'dovo',
+            relay: {
+              urls: ['turn:relay.company.example:3478?transport=udp'],
+              secret: 'organization-test-master-secret-1234567890',
+            },
+          },
+        ],
+        'https://connect.test',
+      )
+    : []
+  accounts.configureOrganizations(new Map(configs.map((config) => [config.id, config.policy])))
   cleanup.push(() => accounts.db.close())
   let handler: ReturnType<typeof internetApi> | undefined
   let directory: ReturnType<typeof accountApi> | undefined
@@ -60,7 +82,7 @@ async function fixture(persistent = false, issueRelay?: PeerRelayIssuer) {
   if (!bound || typeof bound === 'string') throw new Error('No broker')
   const origin = `http://127.0.0.1:${bound.port}`
   const internet = new InternetStore(accounts, origin)
-  handler = internetApi(internet)
+  handler = internetApi(internet, (host) => organizationRelay(configs, accounts, host))
   directory = accountApi(accounts, origin, undefined, internet)
   attachPeerSignaling(
     broker,
@@ -89,7 +111,17 @@ async function fixture(persistent = false, issueRelay?: PeerRelayIssuer) {
   cleanup.push(() => runtime.close())
   const signIn = () => {
     const { login, token } = accounts.createLogin()
-    accounts.approve(login, { id: 'same-account', name: 'Dominic' })
+    const config = configs[0]
+    accounts.approve(login, {
+      id: 'same-account',
+      name: 'Dominic',
+      ...(config
+        ? {
+            organization: { id: config.id, name: config.name, policy: config.policy },
+            sessionExpiresAt: Date.now() + 3600_000,
+          }
+        : {}),
+    })
     return token
   }
   const owner = signIn(),
@@ -222,6 +254,61 @@ async function tunnel(config: PeerConfig) {
   if (!local || typeof local === 'string') throw new Error('No proxy')
   return { address: `http://127.0.0.1:${local.port}`, pc, ready }
 }
+it('automatically receives organization policy, preserves manual overrides and stops issuance after account revocation', async () => {
+  const f = await fixture(false, undefined, true)
+  expect((await f.request({ enabled: true, accountToken: f.owner })).status).toBe(200)
+  await vi.waitFor(() =>
+    expect(f.runtime.services.peers.relay.status()).toMatchObject({
+      mode: 'organization',
+      organization: 'Company',
+      configured: true,
+    }),
+  )
+  const policy = f.runtime.services.peers.relay.issue()
+  expect(policy?.provider).toBe('custom')
+  expect(JSON.stringify(policy)).not.toContain('organization-test-master-secret')
+  await f.client.load()
+  const connection = await f.client.connectInternet(
+    f.client.snapshot().directory!.servers[0],
+    randomBytes(32),
+    AbortSignal.timeout(20_000),
+  )
+  const accountTunnel = await tunnel(connection.peer!)
+  const attempted = await fetch(accountTunnel.address + '/api/runtime/relay', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + connection.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ consent: true, config: null }),
+  })
+  expect(attempted.status).toBe(403)
+  const pairedToken = 'separate-paired-human-token'
+  f.runtime.services.devices.add('Paired human', pairedToken)
+  const localConfig = {
+    urls: ['turn:10.0.0.1'],
+    username: 'local-user',
+    credential: 'local-password',
+  }
+  expect(
+    (await f.call('/api/runtime/relay', { consent: true, config: localConfig }, pairedToken))
+      .status,
+  ).toBe(200)
+  expect(f.runtime.services.peers.relay.status().mode).toBe('custom')
+  expect(
+    (await f.call('/api/runtime/relay', { consent: true, config: null }, pairedToken)).status,
+  ).toBe(200)
+  expect(f.runtime.services.peers.relay.status().mode).toBe('organization')
+  f.accounts.revoke(f.owner)
+  await vi.waitFor(() => expect(f.runtime.services.peers.internet.status().enabled).toBe(false), {
+    timeout: 5000,
+  })
+  expect(f.runtime.services.peers.relay.issue()).toBeUndefined()
+  expect(
+    (
+      await fetch(`http://127.0.0.1:${f.runtime.port}/api/snapshot`, {
+        headers: { Authorization: 'Bearer ' + pairedToken },
+      })
+    ).status,
+  ).toBe(200)
+}, 30_000)
 it('connects same-account phones without pairing, isolates LAN credentials, and closes access on phone signout', async () => {
   const f = await fixture()
   const enable = await f.request({ enabled: true, accountToken: f.owner })

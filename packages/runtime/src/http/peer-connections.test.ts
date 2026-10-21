@@ -20,6 +20,8 @@ import {
   createPeerPipe,
   peerConfigSchema,
   peerRelayAdmissionPayload,
+  peerReadySchema,
+  openCustomRelay,
   PEER_RELAY_MAX_TTL_MS,
   PEER_DISCONNECT_GRACE_MS,
   type PeerConfig,
@@ -196,6 +198,65 @@ async function fixture(persistent = false) {
   }
   return { runtime, tunnel, directory, restart }
 }
+
+it('allows confirmed paired TURN setup, keeps secrets out of snapshots and refreshes encrypted policy without pairing again', async () => {
+  const { runtime } = await fixture()
+  const credential = 'trusted-phone-relay-token'
+  const device = runtime.services.devices.add('Trusted phone', credential)
+  const call = (body: unknown, token = credential) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/runtime/relay`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  const config = {
+    urls: ['turn:10.0.0.1'],
+    username: 'private-user',
+    credential: 'private-password',
+  }
+  expect((await call({ config })).status).toBe(400)
+  expect((await call({ consent: true, config }, 'invalid')).status).toBe(401)
+  const response = await call({ consent: true, config })
+  expect(response.status).toBe(200)
+  expect(await response.text()).not.toContain('private')
+  const snapshot = await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, {
+    headers: { Authorization: 'Bearer ' + credential },
+  })
+  expect(await snapshot.text()).not.toContain('private-password')
+  // This room was originally direct. Explicit client relay choice plus server settings
+  // allows custom fallback without replacing the existing pairing secret or device token.
+  const room = await runtime.services.peers.enable(device)
+  const join = async (enabled: boolean) => {
+    const socket = new WebSocket(peerSocketUrl(room))
+    cleanup.push(() => socket.terminate())
+    await once(socket, 'open')
+    const session = randomBytes(32).toString('hex'),
+      ready = once(socket, 'message')
+    socket.send(
+      JSON.stringify({
+        type: 'client',
+        room: peerRoom(room),
+        key: peerCapability(room, 'client'),
+        session,
+        customRelaySupported: true,
+        ...(enabled ? { relay: 'custom' } : {}),
+      }),
+    )
+    const message = decode(peerReadySchema, JSON.parse(String((await ready)[0])))
+    socket.close()
+    return message.customRelay
+      ? openCustomRelay({ ...room, relay: 'custom' }, session, message.customRelay)
+      : undefined
+  }
+  expect((await join(true))?.iceServers[0]?.credential).toBe('private-password')
+  expect(await join(false)).toBeUndefined()
+  expect(
+    (await call({ consent: true, config: { ...config, credential: 'rotated-password' } })).status,
+  ).toBe(200)
+  expect((await join(true))?.iceServers[0]?.credential).toBe('rotated-password')
+  runtime.services.devices.revoke(device)
+  expect((await call({ consent: true, config })).status).toBe(401)
+})
 
 it('pairs remotely, carries authenticated HTTP and live WebSockets, then revokes all peer access', async () => {
   const { runtime, tunnel } = await fixture()

@@ -232,6 +232,8 @@ export function runtimeSnapshot(
       peerUpgradeSupported: true,
       internet: s.peers.internet.status(),
       internetSetupSupported: !s.peers.internet.contains(device.id),
+      relaySettings: s.peers.relay.status(),
+      relaySetupSupported: !s.peers.internet.contains(device.id),
       pendingPeerUpgrades: device.owner ? s.peers.upgrades.pending() : [],
       pendingDevices: device.owner ? s.pairing.pending() : [],
       owner: device.owner,

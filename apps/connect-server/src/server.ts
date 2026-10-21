@@ -17,6 +17,7 @@ import { attachPeerSignaling } from './peer-signaling.js'
 import type { PeerRelayIssuer } from './relay-credentials.js'
 import type { PeerRelayAdmission } from './relay-admission.js'
 import type { PeerRelayProvider } from '@dovo/protocol'
+import { organizationRelay, type Organization } from './organizations.js'
 
 export function createConnectServer(
   options: {
@@ -27,15 +28,23 @@ export function createConnectServer(
     trustedProxies?: readonly string[]
     peerRelays?: Partial<Record<PeerRelayProvider, PeerRelayIssuer>>
     peerRelayAdmission?: PeerRelayAdmission
+    organizations?: readonly Organization[]
   } & IdentityProvider,
 ) {
   const origin = new URL(options.origin).origin
+  options.store.configureOrganizations(
+    new Map(
+      (options.organizations ?? []).map((organization) => [organization.id, organization.policy]),
+    ),
+  )
   const identityOrigin = new URL(options.authorizationOrigin).origin
   const authenticate = browserAuth({ ...options, origin })
   const pushStore = new PushStore(options.store)
   const push = pushApi(options.store, pushStore, options.push)
   const internetStore = new InternetStore(options.store, origin)
-  const internet = internetApi(internetStore)
+  const internet = internetApi(internetStore, (host) =>
+    organizationRelay(options.organizations ?? [], options.store, host),
+  )
   const account = accountApi(options.store, origin, options.deleteIdentity, internetStore)
   const limit = rateLimit(options.store.now)
   const address = clientAddress(options.trustedProxies ?? [])
@@ -46,7 +55,7 @@ export function createConnectServer(
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader(
       'Content-Security-Policy',
-      `default-src 'none'; form-action 'self' ${identityOrigin}; frame-ancestors 'none'; base-uri 'none'`,
+      `default-src 'none'; form-action 'self' ${[identityOrigin, ...(options.organizations ?? []).flatMap((organization) => [organization.provider.authorizationOrigin, ...organization.endpointOrigins])].join(' ')}; frame-ancestors 'none'; base-uri 'none'`,
     )
     const url = new URL(req.url ?? '/', origin)
     if (url.pathname.startsWith('/v1/')) {

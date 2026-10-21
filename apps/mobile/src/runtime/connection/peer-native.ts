@@ -13,6 +13,7 @@ import {
   signPeerSignal,
   verifyPeerSignal,
   validPeerRelay,
+  openCustomRelay,
   PEER_STUN_URLS,
   PEER_CONNECTION_ERROR,
   PEER_DISCONNECT_GRACE_MS,
@@ -99,7 +100,9 @@ export async function openPeerTunnel(
         ? cause
         : new Error(
             relayUnavailable
-              ? 'Dovo relay is unavailable and a direct connection could not be established. Check that Dovo Connect is enabled and your account is signed in on both devices, then reconnect.'
+              ? config.relay === 'custom'
+                ? 'The configured relay is unavailable and a direct connection could not be established. Check the computer’s TURN settings or organization sign-in, then reconnect.'
+                : 'Dovo relay is unavailable and a direct connection could not be established. Check that Dovo Connect is enabled and your account is signed in on both devices, then reconnect.'
               : PEER_CONNECTION_ERROR,
           )
     fail(error)
@@ -144,6 +147,7 @@ export async function openPeerTunnel(
           room: peerRoom(config),
           key: peerCapability(config, 'client'),
           session,
+          customRelaySupported: true,
           ...(config.relay ? { relay: config.relay } : {}),
         }),
       )
@@ -171,9 +175,15 @@ export async function openPeerTunnel(
           if (brokerJoined) throw new Error('Duplicate signaling readiness')
           brokerJoined = true
           const joined = decode(peerReadySchema, value)
-          relay = joined.relay
+          relay = joined.customRelay
+            ? openCustomRelay(config, session, joined.customRelay)
+            : joined.relay
           relayUnavailable = !!joined.relayUnavailable
-          if (relay && !validPeerRelay(relay, config.relay, Date.now(), config.relayHosts))
+          if (
+            !joined.customRelay &&
+            relay &&
+            !validPeerRelay(relay, config.relay, Date.now(), config.relayHosts)
+          )
             throw new Error('Relay was not enabled or its credentials have an invalid lifetime')
           resolve()
           return
@@ -344,7 +354,12 @@ export async function openPeerTunnel(
       close,
       // Keep the shared tunnel during the bounded ICE recovery window.
       alive: () => !stopped && connected,
-      route: () => (stopped ? undefined : route),
+      route: () =>
+        stopped
+          ? undefined
+          : route === 'relay' && relay?.provider === 'custom'
+            ? ('custom' as const)
+            : route,
     }
   } catch (error) {
     close()

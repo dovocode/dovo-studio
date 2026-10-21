@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { createHash, randomBytes } from 'node:crypto'
 import type { AccountDirectory, AccountServer } from '@dovo/protocol'
+import type { AccountIdentity } from './oidc.js'
 export const secret = () => randomBytes(32).toString('base64url')
 export const hash = (value: string) => createHash('sha256').update(value).digest('base64url')
 export type Login = {
@@ -12,8 +13,10 @@ export type Login = {
   nonce?: string
   verifier?: string
   browserHash?: string
+  organization?: string
 }
 export class AccountStore {
+  private organizations: ReadonlyMap<string, string> = new Map()
   readonly db: DatabaseSync
   constructor(
     path: string,
@@ -25,6 +28,8 @@ export class AccountStore {
       CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS deleted_accounts(id TEXT PRIMARY KEY,verified INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user TEXT NOT NULL,expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS organization_sessions(token TEXT PRIMARY KEY,organization TEXT NOT NULL,name TEXT NOT NULL,policy TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS organization_identities(user TEXT PRIMARY KEY,organization TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS servers(user TEXT NOT NULL,id TEXT NOT NULL,name TEXT NOT NULL,address TEXT NOT NULL,PRIMARY KEY(user,id));`)
     if (
       !this.db
@@ -37,6 +42,9 @@ export class AccountStore {
   cleanup() {
     this.db.prepare('DELETE FROM logins WHERE expires<=?').run(this.now())
     this.db.prepare('DELETE FROM sessions WHERE expires<=?').run(this.now())
+    this.db
+      .prepare('DELETE FROM organization_sessions WHERE token NOT IN (SELECT token FROM sessions)')
+      .run()
   }
   createLogin() {
     this.cleanup()
@@ -71,8 +79,41 @@ export class AccountStore {
       .prepare("SELECT id FROM logins WHERE json_extract(value,'$.tokenHash')=? AND expires>?")
       .get(hash(token), this.now())
   }
-  approve(login: Login, user: { id: string; name: string }) {
+  configureOrganizations(versions: ReadonlyMap<string, string>) {
+    this.organizations = versions
+    for (const row of this.db
+      .prepare('SELECT token,organization,policy FROM organization_sessions')
+      .all()) {
+      if (typeof row.organization !== 'string' || versions.get(row.organization) !== row.policy)
+        this.db.prepare('DELETE FROM sessions WHERE token=?').run(String(row.token))
+    }
+    this.cleanup()
+  }
+  organizationSession(sessionHash: string) {
+    const row = this.db
+      .prepare(
+        'SELECT o.* FROM organization_sessions o JOIN sessions s ON s.token=o.token WHERE o.token=? AND s.expires>?',
+      )
+      .get(sessionHash, this.now())
+    if (
+      !row ||
+      typeof row.organization !== 'string' ||
+      typeof row.name !== 'string' ||
+      this.organizations.get(row.organization) !== row.policy
+    )
+      return
+    return { id: row.organization, name: row.name }
+  }
+  organizationIdentity(user: string) {
+    return !!this.db.prepare('SELECT user FROM organization_identities WHERE user=?').get(user)
+  }
+  approve(login: Login, user: AccountIdentity) {
     if (this.deleting(user.id)) throw new Error('Account deletion has started')
+    if (
+      user.organization &&
+      this.organizations.get(user.organization.id) !== user.organization.policy
+    )
+      throw new Error('Organization access is unavailable')
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const removed = this.db
@@ -82,7 +123,24 @@ export class AccountStore {
       this.db.prepare('INSERT OR REPLACE INTO users VALUES(?,?)').run(user.id, user.name)
       this.db
         .prepare('INSERT INTO sessions VALUES(?,?,?)')
-        .run(login.tokenHash, user.id, this.now() + 30 * 86400_000)
+        .run(
+          login.tokenHash,
+          user.id,
+          Math.min(this.now() + 30 * 86400_000, user.sessionExpiresAt ?? Infinity),
+        )
+      if (user.organization) {
+        this.db
+          .prepare('INSERT INTO organization_sessions VALUES(?,?,?,?)')
+          .run(
+            login.tokenHash,
+            user.organization.id,
+            user.organization.name,
+            user.organization.policy,
+          )
+        this.db
+          .prepare('INSERT OR REPLACE INTO organization_identities VALUES(?,?)')
+          .run(user.id, user.organization.id)
+      }
       this.db.exec('COMMIT')
     } catch (error) {
       this.db.exec('ROLLBACK')
@@ -105,7 +163,11 @@ export class AccountStore {
       .prepare('SELECT id,name,address FROM servers WHERE user=? ORDER BY name,id')
       .all(user.id)
       .map((row) => ({ id: String(row.id), name: String(row.name), address: String(row.address) }))
-    return { user: { id: user.id, name: user.name }, servers }
+    const organization = this.organizationSession(hash(token))
+    return {
+      user: { id: user.id, name: user.name, ...(organization ? { organization } : {}) },
+      servers,
+    }
   }
   link(user: string, server: AccountServer) {
     const count = this.db.prepare('SELECT count(*) AS n FROM servers WHERE user=?').get(user)
@@ -150,6 +212,12 @@ export class AccountStore {
           this.db.prepare(`DELETE FROM ${table} WHERE user=?`).run(user)
       }
       this.db.prepare('DELETE FROM users WHERE id=?').run(user)
+      this.db.prepare('DELETE FROM organization_identities WHERE user=?').run(user)
+      this.db
+        .prepare(
+          'DELETE FROM organization_sessions WHERE token NOT IN (SELECT token FROM sessions)',
+        )
+        .run()
       this.db.exec('COMMIT')
     } catch (error) {
       this.db.exec('ROLLBACK')
