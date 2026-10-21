@@ -1,0 +1,22 @@
+{
+  "name": "@dovo/artifact-server",
+  "version": "0.0.1",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && esbuild src/viewer.ts --bundle --platform=browser --format=iife --target=es2022 --minify --outfile=dist/viewer.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@dovo/protocol": "workspace:*",
+    "effect": "4.0.5",
+    "marked": "^18.1.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

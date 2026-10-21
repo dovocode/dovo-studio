@@ -37,6 +37,11 @@ import { recoverableMutation } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
 import { mcpAppRpcSchema } from '@dovo/protocol'
 import {
+  artifactFeedPreviewSchema,
+  artifactFeedEnableSchema,
+  uuidSchema as feedUuidSchema,
+} from '@dovo/protocol'
+import {
   ARTIFACT_MAX_BYTES,
   artifactCreateSchema,
   artifactUpdateSchema,
@@ -341,6 +346,31 @@ export function route(
       if (method === 'POST' && path.startsWith('/api/artifacts/')) {
         if (!s.preferences.get().enableArtifacts)
           throw new HttpError(403, 'Enable Dovo Artifacts in this computer’s settings first')
+        if (path.startsWith('/api/artifacts/feed/')) {
+          if (agentDeviceAccess || s.peers.internet.contains(device.id))
+            throw new HttpError(403, 'A separately paired human client must approve artifact feeds')
+          const input = yield* serviceResult(body(request, 32 * 1024))
+          if (path.endsWith('/tools'))
+            return yield* serviceResult(
+              s.artifactFeeds.tools(decode(artifactReadSchema, input), device.id),
+            )
+          if (path.endsWith('/preview')) {
+            const ref = decode(artifactFeedPreviewSchema, input)
+            return yield* serviceResult(s.artifactFeeds.preview(ref, ref.query, device.id))
+          }
+          if (path.endsWith('/enable')) {
+            const { previewId, credential } = decode(artifactFeedEnableSchema, input)
+            return yield* serviceResult(s.artifactFeeds.enable(previewId, credential, device.id))
+          }
+          const ref = decode(
+            mutableStruct({ ...artifactReadSchema.fields, publicationId: feedUuidSchema }),
+            input,
+          )
+          if (path.endsWith('/status'))
+            return s.artifactFeeds.status(ref, ref.publicationId, device.id)
+          if (path.endsWith('/stop')) return s.artifactFeeds.stop(ref, ref.publicationId, device.id)
+          throw new HttpError(404, 'Unknown artifact feed action')
+        }
         if (path === '/api/artifacts/library')
           return yield* serviceResult({ artifacts: s.artifacts.library() })
         if (path === '/api/artifacts/delete') {

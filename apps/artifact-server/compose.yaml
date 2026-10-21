@@ -1,0 +1,17 @@
+services:
+  artifacts:
+    build:
+      context: ../..
+      dockerfile: apps/artifact-server/Dockerfile
+    restart: unless-stopped
+    init: true
+    user: '1000:1000'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=32m,mode=1777']
+    env_file: [.env]
+    ports: ['127.0.0.1:8082:8080']
+    volumes: [artifact-data:/data]
+volumes:
+  artifact-data:

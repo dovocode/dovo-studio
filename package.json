@@ -38,6 +38,7 @@
     "test:mcp-apps:browser": "node scripts/build-mcp-apps.mjs && node scripts/check-mcp-apps-browser.mjs",
     "test:artifacts:browser": "pnpm --filter @dovo/web build && node scripts/check-artifacts-browser.mjs && node scripts/check-inline-previews-browser.mjs && node scripts/check-floating-preview-retention-browser.mjs",
     "test:artifact-pdf:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-artifact-pdf-browser.mjs",
+    "test:artifact-sharing:browser": "pnpm --filter @dovo/artifact-server... --filter @dovo/connect-server... -r build && node scripts/check-artifact-sharing-browser.mjs && node scripts/check-artifact-sharing-controls-browser.mjs",
     "test:windows-runtime:browser": "node scripts/check-windows-runtime-browser.mjs",
     "test:turn-grouping:browser": "node scripts/check-turn-grouping-browser.mjs",
     "test:thread-scroll:browser": "node scripts/check-thread-scroll-browser.mjs",

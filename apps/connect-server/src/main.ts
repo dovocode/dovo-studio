@@ -8,6 +8,7 @@ import { createConnectServer } from './server.js'
 import { dovoTurn } from './dovo-turn.js'
 import { approvedRelayInstallations } from './relay-admission.js'
 import { organizations } from './organizations.js'
+import { artifactService } from './artifact-api.js'
 const root = process.env.DOVO_CONNECT_DATA ?? '/data'
 mkdirSync(root, { recursive: true, mode: 0o700 })
 chmodSync(root, 0o700)
@@ -29,6 +30,10 @@ const deleteIdentity = process.env.DOVO_ACCOUNT_DELETE_CLIENT_SECRET
 const server = createConnectServer({
   store,
   origin,
+  artifacts: artifactService(
+    process.env.DOVO_ARTIFACTS_ORIGIN,
+    process.env.DOVO_ARTIFACTS_SERVICE_KEY,
+  ),
   organizations: process.env.DOVO_ORGANIZATIONS_FILE
     ? organizations(JSON.parse(readFileSync(process.env.DOVO_ORGANIZATIONS_FILE, 'utf8')), origin)
     : [],

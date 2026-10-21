@@ -245,5 +245,6 @@ export {
   type ImageEditorResult,
 } from '@dovo/client-runtime'
 export { useAccount } from './use-account'
+export { useArtifactFeed } from './use-artifact-feed'
 
 export * from './accessibility'

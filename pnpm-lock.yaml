@@ -215,6 +215,22 @@ importers:
         specifier: ^4.23.15
         version: 4.23.15
 
+  apps/artifact-server:
+    dependencies:
+      '@dovo/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      effect:
+        specifier: 4.0.5
+        version: 4.0.5
+      marked:
+        specifier: ^18.1.1
+        version: 18.1.1
+    devDependencies:
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+
   apps/connect-server:
     dependencies:
       '@dovo/protocol':

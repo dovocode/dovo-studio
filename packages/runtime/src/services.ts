@@ -24,6 +24,7 @@ import { RuntimeBackups } from './storage/backups.js'
 import { MutationReceipts } from './storage/mutation-receipts.js'
 import { McpApps } from './mcp-apps/bridge.js'
 import { Artifacts } from './artifacts/artifacts.js'
+import { ArtifactFeeds } from './artifacts/feeds.js'
 import { ScratchWorkspaces } from './scm/repositories/scratch-workspaces.js'
 import { AcpInstallations } from './agents/configuration/acp-installations.js'
 import type { ExternalListener } from './http/external-listener.js'
@@ -419,6 +420,14 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     peers: (peerConnections = new PeerConnections(db, devices)),
     mcpApps,
     artifacts,
+    artifactFeeds: new ArtifactFeeds(
+      db,
+      artifacts,
+      mcpApps,
+      devices,
+      store,
+      () => preferences.get().enableArtifacts,
+    ),
     memory,
     scratch,
     pushNotifications,
@@ -475,6 +484,7 @@ export interface Services {
   pipelineWatch: PipelineWatch
   pullRequestWatch: PullRequestWatch
   artifacts: Artifacts
+  artifactFeeds: ArtifactFeeds
   mutations: MutationReceipts
   mcpApps: McpApps
   instanceId: string

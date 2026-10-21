@@ -1,6 +1,6 @@
 import { RequestError } from './http.js'
 
-export function rateLimit(now: () => number) {
+export function rateLimit(now: () => number, maximum = 300) {
   const attempts = new Map<string, { count: number; expires: number }>()
   return (key: string) => {
     const time = now()
@@ -9,7 +9,7 @@ export function rateLimit(now: () => number) {
       throw new RequestError(429, 'Try again later')
     const limit = attempts.get(key) ?? { count: 0, expires: time + 60_000 }
     attempts.set(key, limit)
-    if (++limit.count > 300)
+    if (++limit.count > maximum)
       throw new RequestError(429, 'Too many requests. Try again in a minute.')
   }
 }

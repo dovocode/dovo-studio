@@ -56,6 +56,7 @@ import { ArtifactIcon } from './artifact-presentation'
 import { InlineArtifact } from './inline-artifact'
 import { useArtifactPreviewTheme } from './preview-theme'
 import { ArtifactOpenContext } from './artifact-open-context'
+import { ArtifactSharing } from './artifact-sharing'
 
 export const ArtifactCard = memo(function ArtifactCard({
   reference,
@@ -436,6 +437,9 @@ export function ArtifactBrowser({
                 </option>
               ))}
             </select>
+            {artifact && (
+              <ArtifactSharing key={`${artifact.id}:${artifact.revision}`} artifact={artifact} />
+            )}
             <IconButton
               label={copied ? 'Copied source' : 'Copy source'}
               className="size-7"

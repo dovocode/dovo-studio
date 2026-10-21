@@ -1,5 +1,8 @@
 # Dovo artifacts
 
+For optional private hosted copies, account invitations and expiring share links, see
+[Hosted artifact sharing](hosted-artifacts.md).
+
 Dovo Artifacts is disabled by default. Enable **Dovo Artifacts** in Settings → Tasks & projects →
 Artifacts on desktop, or the computer’s **Artifacts** settings on mobile. The setting is stored on
 the runtime and shared by all connected devices. Disabling it hides artifact UI and removes the
@@ -171,3 +174,14 @@ isolation. Run the runtime artifact and agent-tools tests for HTTP authorization
 conflicts, persistence, thread scoping, retention and real provider MCP transport coverage. Browser
 checks also verify multi-computer library routing, lazy snapshots, copy/delete actions and failure
 recovery. Native WebView and OS share-sheet behavior still require device verification.
+
+## Shared live dashboards
+
+Published artifacts can receive a fixed, explicitly approved read query from the publisher's MCP
+server. Desktop and mobile sharing controls provide tool selection, fixed JSON arguments, field
+selection, preview, approval and stopping/clearing the feed. Readers receive selected data through a
+one-way sandbox event; they cannot call tools or inherit credentials. Read-only tool annotations
+require a trusted server with source credentials restricted to read-only.
+
+See [hosted artifact sharing](hosted-artifacts.md#publisher-approved-live-mcp-dashboards) for setup,
+the `dovo:artifact-data` event API, expiry, cached-data behavior and revocation limits.

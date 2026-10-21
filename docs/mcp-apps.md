@@ -81,3 +81,14 @@ Run `pnpm check`, `pnpm build`, and the focused MCP Apps tests. The browser host
 CDN dependency. `pnpm test:mcp-apps:browser` exercises modern and all three legacy formats with
 protocol fixtures; native-device coverage remains necessary for OS-specific WebView and sharing
 behavior.
+
+## Shared live dashboards
+
+Published artifacts can receive a fixed, explicitly approved read query from the publisher's MCP
+server. Desktop and mobile sharing controls provide tool selection, fixed JSON arguments, field
+selection, preview, approval and stopping/clearing the feed. Readers receive selected data through a
+one-way sandbox event; they cannot call tools or inherit credentials. Read-only tool annotations
+require a trusted server with source credentials restricted to read-only.
+
+See [hosted artifact sharing](hosted-artifacts.md#publisher-approved-live-mcp-dashboards) for setup,
+the `dovo:artifact-data` event API, expiry, cached-data behavior and revocation limits.

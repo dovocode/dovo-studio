@@ -18,6 +18,7 @@ import type { PeerRelayIssuer } from './relay-credentials.js'
 import type { PeerRelayAdmission } from './relay-admission.js'
 import type { PeerRelayProvider } from '@dovo/protocol'
 import { organizationRelay, type Organization } from './organizations.js'
+import { artifactApi, artifactServiceToken, type ArtifactService } from './artifact-api.js'
 
 export function createConnectServer(
   options: {
@@ -29,6 +30,7 @@ export function createConnectServer(
     peerRelays?: Partial<Record<PeerRelayProvider, PeerRelayIssuer>>
     peerRelayAdmission?: PeerRelayAdmission
     organizations?: readonly Organization[]
+    artifacts?: ArtifactService
   } & IdentityProvider,
 ) {
   const origin = new URL(options.origin).origin
@@ -39,6 +41,7 @@ export function createConnectServer(
   )
   const identityOrigin = new URL(options.authorizationOrigin).origin
   const authenticate = browserAuth({ ...options, origin })
+  const artifacts = artifactApi(options.store, origin, options.artifacts)
   const pushStore = new PushStore(options.store)
   const push = pushApi(options.store, pushStore, options.push)
   const internetStore = new InternetStore(options.store, origin)
@@ -47,6 +50,7 @@ export function createConnectServer(
   )
   const account = accountApi(options.store, origin, options.deleteIdentity, internetStore)
   const limit = rateLimit(options.store.now)
+  const artifactLimit = rateLimit(options.store.now, 3000)
   const address = clientAddress(options.trustedProxies ?? [])
   let active = 0
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
@@ -75,16 +79,26 @@ export function createConnectServer(
     const internetHost = url.pathname.startsWith('/v1/internet/host')
       ? internetStore.host(token)
       : undefined
-    limit(
-      user
-        ? `account:${hash(user)}`
-        : internetHost
-          ? `internet:${hash(token)}`
-          : grant
-            ? `push:${hash(token)}`
-            : `ip:${address(req)}`,
-    )
+    const artifactUser = url.pathname.startsWith('/v1/artifacts/')
+      ? (options.store.artifactSession(token) ?? options.store.artifactSession(token, true))?.user
+          .id
+      : undefined
+    if (url.pathname === '/v1/artifacts/owners' && artifactServiceToken(token, options.artifacts))
+      artifactLimit('artifact-service')
+    else
+      limit(
+        artifactUser
+          ? `artifact:${hash(artifactUser)}`
+          : user
+            ? `account:${hash(user)}`
+            : internetHost
+              ? `internet:${hash(token)}`
+              : grant
+                ? `push:${hash(token)}`
+                : `ip:${address(req)}`,
+      )
     if (await authenticate(req, res, url)) return
+    if (await artifacts(req, res, url)) return
     if (await push(req, res, url)) return
     if (url.pathname.startsWith('/v1/internet/')) return internet(req, res, url)
     return account(req, res, url)

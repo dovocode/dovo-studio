@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import type Database from 'better-sqlite3'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import {
   StreamableHTTPClientTransport,
@@ -36,6 +37,9 @@ import {
   type McpServer,
   type Agent,
   type McpApp,
+  type ArtifactFeedQuery,
+  artifactFeedSelect,
+  ARTIFACT_FEED_MAX_BYTES,
 } from '@dovo/protocol'
 import { mcpHeaders, mcpServerEnvironment } from '../agents/configuration/mcp-settings.js'
 import type { WorkspaceStore } from '../storage/workspace.js'
@@ -365,6 +369,167 @@ export class McpApps {
       session.busy--
       session.lastUsed = Date.now()
     }
+  }
+  private async feedTool(
+    taskId: string,
+    server: string,
+    name: string,
+    signal: AbortSignal,
+    authorize: () => void,
+    expected?: string,
+  ) {
+    const scope = this.current(taskId, server)
+    if (scope.permission === 'read-only')
+      throw new HttpError(403, 'Live feeds are disabled for read-only threads')
+    const scopeKey = createHash('sha256')
+      .update(
+        JSON.stringify({
+          server: fingerprint(scope.server),
+          cwd: scope.cwd,
+          permission: scope.permission,
+          approvalPolicy: scope.approvalPolicy,
+          sandboxMode: scope.sandboxMode,
+        }),
+      )
+      .digest('hex')
+    if (expected && !expected.startsWith(scopeKey + ':'))
+      throw new HttpError(409, 'MCP configuration changed; preview and approve again')
+    authorize()
+    signal.throwIfAborted()
+    const session = await this.connect(scope)
+    // Recheck the upstream declaration before every background read, even without notifications.
+    session.toolsDirty = true
+    await this.rpc(scope, 'tools/list', {}, true, signal, authorize)
+    const tool = session.tools.find((tool) => tool.name === name)
+    if (
+      !tool ||
+      tool.annotations?.readOnlyHint !== true ||
+      tool.annotations.destructiveHint === true
+    )
+      throw new HttpError(
+        403,
+        'Data feeds require a tool explicitly declared read-only and non-destructive',
+      )
+    const key = scopeKey + ':' + createHash('sha256').update(JSON.stringify(tool)).digest('hex')
+    if (expected && expected !== key)
+      throw new HttpError(409, 'MCP tool changed; preview and approve again')
+    return { scope, session, tool, key }
+  }
+  async feedCatalog(taskId: string, signal: AbortSignal, authorize: () => void) {
+    const task = this.store.taskSummary(taskId),
+      agent = resolveTaskAgent(task, this.store.get().agents)
+    if (!agent || permissionPolicyReadOnly(agent))
+      throw new HttpError(403, 'Live feeds require an editable thread')
+    const servers = mergeResources(
+      this.store.projectSettings(task.repositoryId).resources,
+      agent.resources,
+    ).mcpServers.filter((server) => server.enabled && server.name !== 'dovo_task')
+    if (servers.length > 32) throw new HttpError(413, 'Too many configured MCP servers')
+    const tools: Array<{
+      server: string
+      tool: string
+      description: string
+      inputSchema: unknown
+    }> = []
+    for (const server of servers) {
+      authorize()
+      signal.throwIfAborted()
+      const scope = this.current(taskId, server.name),
+        session = await this.connect(scope)
+      session.toolsDirty = true
+      await this.rpc(scope, 'tools/list', {}, true, signal, authorize)
+      for (const tool of session.tools)
+        if (tool.annotations?.readOnlyHint === true && tool.annotations.destructiveHint !== true)
+          tools.push({
+            server: server.name,
+            tool: tool.name,
+            description: tool.description ?? '',
+            inputSchema: tool.inputSchema,
+          })
+      if (tools.length > 500) throw new HttpError(413, 'Too many read-only tools')
+    }
+    return { tools }
+  }
+  async feedRead(
+    taskId: string,
+    query: ArtifactFeedQuery,
+    expected: string | undefined,
+    signal: AbortSignal,
+    authorize: () => void,
+  ) {
+    const { scope, session, tool, key } = await this.feedTool(
+      taskId,
+      query.server,
+      query.tool,
+      signal,
+      authorize,
+      expected,
+    )
+    if (expected && expected !== key)
+      throw new HttpError(409, 'MCP tool or configuration changed; preview and approve again')
+    const validation = new AjvJsonSchemaValidator().getValidator(tool.inputSchema)(query.arguments)
+    if (!validation.valid)
+      throw new HttpError(400, 'Arguments do not match the MCP tool input schema')
+    authorize()
+    signal.throwIfAborted()
+    session.busy++
+    try {
+      const result = CallToolResultSchema.parse(
+        await session.client.callTool({ name: tool.name, arguments: query.arguments }, undefined, {
+          signal,
+          timeout: 30_000,
+        }),
+      )
+      authorize()
+      signal.throwIfAborted()
+      const current = this.current(taskId, query.server)
+      if (
+        fingerprint(current.server) !== fingerprint(scope.server) ||
+        current.permission !== scope.permission ||
+        current.approvalPolicy !== scope.approvalPolicy ||
+        current.sandboxMode !== scope.sandboxMode
+      )
+        throw new HttpError(409, 'MCP configuration changed during the read')
+      if (result.isError) throw new HttpError(502, 'MCP data read failed')
+      let value: unknown = result.structuredContent
+      if (value === undefined) {
+        const text = result.content
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text)
+          .join('\n')
+        try {
+          value = JSON.parse(text) as unknown
+        } catch {
+          value = text
+        }
+      }
+      const data = artifactFeedSelect(value, query.pointer),
+        encoded = JSON.stringify(data)
+      if (encoded === undefined || Buffer.byteLength(encoded) > ARTIFACT_FEED_MAX_BYTES)
+        throw new HttpError(413, 'Select a JSON field smaller than 256 KB')
+      return { fingerprint: key, data: JSON.parse(encoded) as unknown }
+    } finally {
+      session.busy--
+      session.lastUsed = Date.now()
+    }
+  }
+  async feedCheck(
+    taskId: string,
+    query: ArtifactFeedQuery,
+    expected: string,
+    signal: AbortSignal,
+    authorize: () => void,
+  ) {
+    const { key } = await this.feedTool(
+      taskId,
+      query.server,
+      query.tool,
+      signal,
+      authorize,
+      expected,
+    )
+    if (key !== expected)
+      throw new HttpError(409, 'MCP tool or configuration changed; preview and approve again')
   }
   private async performRpc(
     session: Session,

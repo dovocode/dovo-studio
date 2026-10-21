@@ -38,6 +38,7 @@ import { useOpenAppLink } from './open-link'
 import { ArtifactExportEditor } from './artifact-export-editor'
 import { ArtifactExportOptions } from './artifact-export-options'
 import { ArtifactFormatIcon } from './artifact-presentation'
+import { ArtifactSharing } from './artifact-sharing'
 
 export const ArtifactCard = memo(function ArtifactCard({
   reference,
@@ -522,6 +523,9 @@ export function ArtifactBrowser({
                   onPress={() => void share('folder')}
                 />
               </>
+            )}
+            {artifact && (
+              <ArtifactSharing key={`${artifact.id}:${artifact.revision}`} artifact={artifact} />
             )}
             <Action
               label="Share source"

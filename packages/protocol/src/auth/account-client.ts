@@ -15,7 +15,22 @@ import {
   managedPushGrantSchema,
   type ManagedPushSubscription,
 } from '../runtime/push-notifications.js'
-import { decode } from '../shared/schema.js'
+import { decode, mutableStruct, uuidSchema } from '../shared/schema.js'
+import {
+  artifactServiceSchema,
+  artifactServiceOrigin,
+  artifactGrantSchema,
+  artifactPublicationInput,
+  artifactPublicationResponseSchema,
+  HOSTED_ARTIFACT_MAX_BYTES,
+} from '../conversation/artifact-sharing.js'
+import type { Artifact } from '../conversation/artifacts.js'
+import {
+  artifactFeedCredentialSchema,
+  artifactFeedGrantSchema,
+  ARTIFACT_FEED_MAX_BYTES,
+  type ArtifactFeedCredential,
+} from '../conversation/artifact-feeds.js'
 import {
   ACCOUNT_DIRECTORY_URL,
   accountDirectorySchema,
@@ -33,6 +48,7 @@ export type AccountState = {
   deletionPending: boolean
   loaded: boolean
 }
+export type PublishedArtifact = { publicationId: string; url: string; manageUrl: string }
 class AccountError extends Error {
   constructor(
     readonly status: number,
@@ -70,6 +86,157 @@ export class AccountClient {
     for (const listener of this.listeners) listener()
   }
   sessionId = () => (this.token ? bytesToHex(sha256(utf8ToBytes(this.token))) : null)
+  artifactService = async () => {
+    const service = decode(artifactServiceSchema, await this.request('/v1/artifacts/service'))
+    return artifactServiceOrigin(service.origin)
+  }
+  /** Only a short-lived artifact grant crosses to the separately configured storage service. */
+  publishArtifact = async (
+    artifact: Artifact,
+    expectedOrigin: string,
+  ): Promise<PublishedArtifact> => {
+    const token = this.token
+    if (!token || !this.state.directory || this.state.deletionPending)
+      throw new Error('Sign in to publish an artifact')
+    const body = JSON.stringify(artifactPublicationInput(artifact))
+    if (new TextEncoder().encode(body).length > HOSTED_ARTIFACT_MAX_BYTES)
+      throw new Error('Hosted artifacts are limited to 20 MB, including source files')
+    const grant = decode(
+      artifactGrantSchema,
+      await this.request('/v1/artifacts/session', 'POST', undefined, undefined, token),
+    )
+    const origin = artifactServiceOrigin(grant.origin)
+    if (origin !== expectedOrigin)
+      throw new Error('Artifact service changed. Review the destination and try again')
+    if (!/^[A-Za-z0-9_-]{43}$/.test(grant.token) || grant.expiresAt <= Date.now())
+      throw new Error('Invalid artifact sharing session')
+    if (this.token !== token) throw new Error('Artifact publication cancelled')
+    const response = await fetch(origin + '/v1/publications', {
+      method: 'POST',
+      redirect: 'error',
+      credentials: 'omit',
+      signal: AbortSignal.timeout(30_000),
+      headers: { Authorization: 'Bearer ' + grant.token, 'Content-Type': 'application/json' },
+      body,
+    })
+    if (!response.ok)
+      throw new Error(
+        response.status === 413
+          ? 'Artifact storage limit reached. Delete a hosted copy or publish a smaller artifact'
+          : 'Artifact publication failed. Try again; the same saved version will not create duplicate copies',
+      )
+    const result = decode(artifactPublicationResponseSchema, await response.json())
+    if (this.token !== token)
+      throw new Error(
+        'Account changed. Sign in to the previous account to check its hosted publications',
+      )
+    return {
+      publicationId: result.publication.id,
+      url: origin + '/s/' + result.publication.id,
+      manageUrl: origin + '/manage/' + result.publication.id + '#session=' + grant.token,
+    }
+  }
+  enableArtifactFeed = async (
+    publicationId: string,
+    expectedOrigin: string,
+    seconds: number,
+    data: unknown,
+    enable: (credential: ArtifactFeedCredential) => Promise<unknown>,
+  ) => {
+    const token = this.token
+    if (!token || !this.state.directory || this.state.deletionPending)
+      throw new Error('Sign in to approve a data feed')
+    const encoded = JSON.stringify(data)
+    if (encoded === undefined || new TextEncoder().encode(encoded).length > ARTIFACT_FEED_MAX_BYTES)
+      throw new Error('Select JSON data smaller than 256 KB')
+    const writer = decode(
+      artifactFeedGrantSchema,
+      await this.request('/v1/artifacts/feed-session', 'POST', { publicationId }, undefined, token),
+    )
+    const grant = decode(
+      artifactGrantSchema,
+      await this.request('/v1/artifacts/session', 'POST', undefined, undefined, token),
+    )
+    if (
+      artifactServiceOrigin(writer.origin) !== expectedOrigin ||
+      artifactServiceOrigin(grant.origin) !== expectedOrigin ||
+      writer.publicationId !== publicationId ||
+      !/^[A-Za-z0-9_-]{43}$/.test(writer.token) ||
+      !/^[A-Za-z0-9_-]{43}$/.test(grant.token) ||
+      writer.expiresAt <= Date.now() ||
+      grant.expiresAt <= Date.now()
+    )
+      throw new Error('Feed service changed or permission expired. Preview and approve again')
+    if (this.token !== token) throw new Error('Account changed. Preview and approve again')
+    const path = expectedOrigin + '/v1/publications/' + publicationId + '/feed'
+    const response = await fetch(path, {
+      method: 'POST',
+      redirect: 'error',
+      credentials: 'omit',
+      signal: AbortSignal.timeout(30_000),
+      headers: { Authorization: 'Bearer ' + grant.token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ writer: writer.token, seconds, data }),
+    })
+    if (!response.ok) throw new Error('Hosted feed setup failed')
+    let generation: { generation: string }
+    try {
+      generation = decode(mutableStruct({ generation: uuidSchema }), await response.json())
+    } catch (cause) {
+      throw new Error(
+        'Hosted feed setup response was invalid. Check sharing settings and clear the feed before trying again',
+        { cause },
+      )
+    }
+    const credential = decode(artifactFeedCredentialSchema, { ...writer, ...generation })
+    try {
+      if (this.token !== token) throw new Error('Account changed. Preview and approve again')
+      await enable(credential)
+      if (this.token !== token) throw new Error('Account changed during feed setup')
+    } catch (error) {
+      try {
+        const cleanup = await fetch(path, {
+          method: 'DELETE',
+          redirect: 'error',
+          credentials: 'omit',
+          signal: AbortSignal.timeout(10_000),
+          headers: { Authorization: 'Bearer ' + grant.token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generation: credential.generation }),
+        })
+        if (!cleanup.ok) throw new Error('Hosted feed cleanup rejected')
+      } catch (cause) {
+        throw new Error(
+          'Feed setup failed and its hosted data could not be cleared. Stop the feed in sharing settings',
+          { cause: new AggregateError([error, cause]) },
+        )
+      }
+      throw error
+    }
+    return { generation: credential.generation }
+  }
+  stopArtifactFeed = async (publicationId: string, expectedOrigin: string, generation: string) => {
+    const token = this.token
+    if (!token || !this.state.directory || this.state.deletionPending)
+      throw new Error('Sign in to stop the hosted feed')
+    const grant = decode(
+      artifactGrantSchema,
+      await this.request('/v1/artifacts/session', 'POST', undefined, undefined, token),
+    )
+    if (
+      artifactServiceOrigin(grant.origin) !== expectedOrigin ||
+      this.token !== token ||
+      grant.expiresAt <= Date.now()
+    )
+      throw new Error('Account or destination changed')
+    const response = await fetch(expectedOrigin + '/v1/publications/' + publicationId + '/feed', {
+      method: 'DELETE',
+      redirect: 'error',
+      credentials: 'omit',
+      signal: AbortSignal.timeout(10_000),
+      headers: { Authorization: 'Bearer ' + grant.token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ generation }),
+    })
+    if (!response.ok) throw new Error('Could not stop the hosted feed. Use sharing settings')
+  }
   /** Send the account session only to an owner-authorized local runtime to exchange it
    * for an installation-scoped grant. The runtime never persists this account session. */
   enableInternet = async (enable: (accountToken: string) => Promise<unknown>) => {
@@ -212,11 +379,15 @@ export class AccountClient {
       if (!response.ok)
         throw new AccountError(
           response.status,
-          response.status === 401
-            ? 'Sign in again to see your computers.'
-            : response.status === 409
-              ? 'Account deletion has started. Retry to finish deleting your account.'
-              : 'Account service is unavailable. Please try again.',
+          path.startsWith('/v1/artifacts/')
+            ? response.status === 401
+              ? 'Sign in to use hosted artifact sharing.'
+              : 'Hosted artifact sharing is not configured or is unavailable on this Connect broker.'
+            : response.status === 401
+              ? 'Sign in again to see your computers.'
+              : response.status === 409
+                ? 'Account deletion has started. Retry to finish deleting your account.'
+                : 'Account service is unavailable. Please try again.',
         )
       const value: unknown = response.status === 204 ? null : await response.json()
       return value
