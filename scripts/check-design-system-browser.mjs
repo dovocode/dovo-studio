@@ -32,7 +32,7 @@ const server = createServer(async (req, res) => {
   }
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
-const origin = 'http://127.0.0.1:' + server.address().port
+const origin = process.env.DOVO_DESIGN_ORIGIN ?? 'http://127.0.0.1:' + server.address().port
 const browser = await chromium.launch()
 try {
   const index = JSON.parse(await readFile(output + '/index.json', 'utf8'))
