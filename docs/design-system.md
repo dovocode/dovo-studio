@@ -50,3 +50,9 @@ Respect reduced motion, light mode, high contrast and native dynamic type.
 Keep primary actions, danger actions, disabled states, empty states and errors explicit. Dense
 mouse-oriented desktop controls may be smaller, while coarse-pointer controls need larger targets.
 The catalog's service examples are presentation-only and contain no production credentials.
+
+Use the shared `Button` variants: `default` for the primary action, `outline` for cancellation or
+secondary form actions, `secondary` for a quiet filled action, `ghost` for toolbars, `link` for
+inline navigation and `destructive` for confirmed deletion. Keep hover feedback restrained, keyboard
+focus crisp, and loading or disabled labels readable. Hosted controls follow the same
+filled/outlined hierarchy; native actions retain platform touch feedback and confirmation sheets.

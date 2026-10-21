@@ -3,7 +3,7 @@ WORKDIR /workspace
 RUN corepack enable && corepack prepare pnpm@12.3.4 --activate
 COPY . .
 RUN pnpm install --frozen-lockfile --ignore-scripts
-RUN pnpm --filter @dovo/design build && pnpm --filter @dovo/design-system build
+RUN pnpm --filter @dovo/design-system... -r build
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine
 COPY apps/design-system/nginx.conf /etc/nginx/nginx.conf
