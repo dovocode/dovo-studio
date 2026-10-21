@@ -612,7 +612,7 @@ try {
       const style = getComputedStyle(element)
       return { color: style.color, opacity: Number(style.opacity), weight: style.fontWeight }
     })
-    assert.equal(style.opacity, 0.65, palette.name + ' read title must be dimmed')
+    assert.equal(style.opacity, 1, palette.name + ' read title must retain contrast')
     assert.equal(style.weight, '500')
     const metadataOpacity = () =>
       title.evaluate((element) =>
@@ -623,8 +623,8 @@ try {
       )
     assert.deepEqual(
       await metadataOpacity(),
-      [0.6, 0.6],
-      palette.name + ' read metadata must be slightly dimmer than the title',
+      [1, 1],
+      palette.name + ' read metadata must retain contrast',
     )
     await page.evaluate(() => window.publish({ 'task-0': { status: 'running' } }))
     const unreadStyle = await title.evaluate((element) => {
@@ -632,7 +632,7 @@ try {
       return { color: style.color, opacity: Number(style.opacity), weight: style.fontWeight }
     })
     assert.equal(unreadStyle.opacity, 1, palette.name + ' unread title must stay opaque')
-    assert.equal(unreadStyle.weight, style.weight)
+    assert.equal(unreadStyle.weight, '600', palette.name + ' unread title must use stronger weight')
     assert.deepEqual(
       await metadataOpacity(),
       [1, 1],
@@ -646,6 +646,11 @@ try {
           .join(',') +
         ')',
     )
+    assert.equal(
+      style.color,
+      unreadStyle.color,
+      palette.name + ' read and unread titles use the same accessible color',
+    )
     const foreground = luminance(unreadStyle.color)
     const contrast =
       (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05)
@@ -656,7 +661,7 @@ try {
   assert.equal(await page.getByTestId('Task task-0').getByText('Codex', { exact: true }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    `Mobile task titles: read dimming and unread emphasis verified across 28 shipped palette/mode combinations; unread contrast >= ${minimumContrast.toFixed(2)}:1.`,
+    `Mobile task titles: opaque read text and unread weight emphasis verified across 28 shipped palette/mode combinations; read/unread contrast >= ${minimumContrast.toFixed(2)}:1.`,
   )
   // Settled rows keep only the project icon and title, with details on the icon.
   await page.evaluate(() => window.publish({ 'task-1': { archived: true } }))
@@ -668,13 +673,13 @@ try {
     await settled
       .getByText('Task 1', { exact: true })
       .evaluate((el) => getComputedStyle(el).opacity),
-    '0.65',
+    '1',
   )
   assert.equal(
     await page
       .getByRole('button', { name: 'Task details for Task 1', exact: true })
       .evaluate((el) => getComputedStyle(el).opacity),
-    '0.5',
+    '1',
   )
   await settled.click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'task-1')
