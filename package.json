@@ -11,7 +11,7 @@
     "dev:mobile": "node scripts/build-mcp-apps.mjs && pnpm --filter @dovo/design --filter @dovo/protocol --filter @dovo/client-runtime -r build && node scripts/build-mobile-terminal.mjs && node scripts/build-mobile-mermaid.mjs && pnpm --filter @dovo/mobile start",
     "dev:web": "pnpm --filter @dovo/design --filter @dovo/protocol --filter @dovo/client-runtime -r build && vp -C apps/web dev",
     "build": "node scripts/build-mcp-apps.mjs && vp run -r --no-cache build",
-    "check": "vp check",
+    "check": "pnpm --filter @dovo/mobile exec sb-rn-get-stories --config-path .rnstorybook && vp check",
     "check:fix": "vp check --fix",
     "fmt": "vp fmt",
     "fmt:fix": "vp fmt",

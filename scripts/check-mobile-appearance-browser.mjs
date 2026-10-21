@@ -6,6 +6,7 @@ import { chromium } from 'playwright'
 import { studioThemeIds, studioThemes } from '../packages/studio-core/src/themes.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
+// Exercise native input identity and imperative updates; RN Web replacements are covered by Storybook.
 const mocks = {
   'expo-document-picker': `export const getDocumentAsync=async()=>window.themeFile?{canceled:false,assets:[{uri:'theme.jsonc',name:'native.jsonc'}]}:{canceled:true};`,
   'expo-file-system': `export class File{get size(){return window.themeFile.length}async text(){return window.themeFile}}`,
@@ -14,7 +15,7 @@ const mocks = {
     const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
     const nativeStyle=style=>{const result={...flat(style)};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(result[key]!==undefined){for(const axis of axes)result[axis]=result[key];delete result[key]}}return result};
     export const StyleSheet={create:styles=>styles,flatten:flat,hairlineWidth:1};
-    export const Platform={OS:'web'};
+    export const Platform={OS:'ios'};
     export const Linking={openURL:async()=>{}};
     export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
     export const AccessibilityInfo={isReduceMotionEnabled:async()=>false,addEventListener:()=>({remove(){}})};
