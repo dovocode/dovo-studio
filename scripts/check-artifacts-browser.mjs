@@ -150,7 +150,8 @@ export const IconButton=({label,...props})=><Button variant="ghost" size="icon" 
 export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true,()=>{}];
 export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=({children})=>children;export const TooltipContent=()=>null;
 `,
-  '../../runtime/connection/account-provider': `import {useAccount} from '@dovo/studio-core';const storage={read:async()=>null,write:async()=>{throw Error('Local artifact fixture has no account storage')}};export const useMobileAccount=()=>useAccount(storage,async url=>window.openedArtifactLinks.push(url));`,
+  // Stable dependencies keep the real account hook from reloading on each fixture render.
+  '../../runtime/connection/account-provider': `import {useAccount} from '@dovo/studio-core';const storage={read:async()=>null,write:async()=>{throw Error('Local artifact fixture has no account storage')}};const open=async url=>window.openedArtifactLinks.push(url);export const useMobileAccount=()=>useAccount(storage,open);`,
   '../../runtime/connection/provider': `import {useWorkspace} from '@dovo/studio-core';export const useRuntime=()=>{const value=useWorkspace();return {...value,read:value.request,activeId:value.activeRuntimeId}};`,
   'react-native': `
 import React from 'react';
