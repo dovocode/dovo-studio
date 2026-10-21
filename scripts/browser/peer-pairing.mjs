@@ -149,7 +149,10 @@ export async function checkPeerPairing(browser, root) {
     assert.equal(await page.getByRole('textbox').count(), 0)
     assert.equal(await page.getByLabel('Relay fallback').inputValue(), 'direct')
     await page.getByLabel('Relay fallback').selectOption('dovo')
-    await page.getByText(/Dovo servers carry encrypted traffic/).waitFor()
+    await page
+      .getByText(/Account-authorized or operator-approved computers can use Dovo servers/)
+      .waitFor()
+    await page.getByText(/Only your phone and computer can read it/).waitFor()
     await page.getByRole('button', { name: 'Connect', exact: true }).click()
     await page.waitForFunction(() => window.connections.length === 1)
     const result = await page.evaluate(() => ({
