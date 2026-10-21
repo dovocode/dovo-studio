@@ -96,13 +96,12 @@ diff --git a/ios/utils/MarkdownAccessibilityElementBuilder.m b/ios/utils/Markdow
 index 7b25f715131795638f9997b3c466ffabb2e53c84..e5103d63372298f0cbe0e02b1a75de18643354d7 100644
 --- a/ios/utils/MarkdownAccessibilityElementBuilder.m
 +++ b/ios/utils/MarkdownAccessibilityElementBuilder.m
-@@ -8,6 +8,39 @@ typedef NS_ENUM(NSInteger, ElementType) { ElementTypeText, ElementTypeLink, Elem
+@@ -8,6 +8,31 @@ typedef NS_ENUM(NSInteger, ElementType) { ElementTypeText, ElementTypeLink, Elem
  
  static const CGFloat kFocusRectPadding = 2.0;
  
 +#if !TARGET_OS_OSX
 +@interface MarkdownAccessibilityElementBuilder (LiveGeometry)
-++ (UIBezierPath *)accessibilityPathForRange:(NSRange)range inTextView:(UITextView *)textView;
 ++ (CGRect)frameForRange:(NSRange)range inTextView:(UITextView *)textView container:(id)container;
 +@end
 +
@@ -114,17 +113,10 @@ index 7b25f715131795638f9997b3c466ffabb2e53c84..e5103d63372298f0cbe0e02b1a75de18
 +@end
 +
 +@implementation ENRMLiveAccessibilityElement
-+- (UIBezierPath *)accessibilityPath
-+{
-+  UITextView *view = self.textView;
-+  return view ? [MarkdownAccessibilityElementBuilder accessibilityPathForRange:self.textRange inTextView:view] : nil;
-+}
 +- (CGRect)accessibilityFrame
 +{
 +  UITextView *view = self.textView;
 +  if (!view) return CGRectZero;
-+  UIBezierPath *path = self.accessibilityPath;
-+  if (path) return path.bounds;
 +  CGRect frame = [MarkdownAccessibilityElementBuilder frameForRange:self.textRange
 +                                                       inTextView:view
 +                                                        container:self.accessibilityContainer];
@@ -136,7 +128,7 @@ index 7b25f715131795638f9997b3c466ffabb2e53c84..e5103d63372298f0cbe0e02b1a75de18
  @implementation MarkdownAccessibilityElementBuilder
  
  #if !TARGET_OS_OSX
-@@ -157,11 +190,19 @@ static const CGFloat kFocusRectPadding = 2.0;
+@@ -157,11 +182,19 @@ static const CGFloat kFocusRectPadding = 2.0;
                                               view:(UITextView *)textView
                                          container:(id)container
  {

@@ -1,9 +1,7 @@
 import { memo, useState } from 'react'
 import { View } from 'react-native'
-import { Pressable } from 'react-native-gesture-handler'
-import { router } from 'expo-router'
+import { Pressable } from './thread-pressable'
 import {
-  resolveThreadRuntime,
   threadTreeSummary,
   visibleThreadChildren,
   nativeOverflowFailures,
@@ -11,8 +9,8 @@ import {
   threadPhaseLabels,
   type NestedThread,
 } from '@dovo/protocol'
-import { taskHref } from '../../shell/task-route'
-import { useRuntime } from '../../runtime/connection/provider'
+import { useRuntime } from '../../runtime/connection/context'
+import { openNestedThread } from './open-nested-thread'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
@@ -36,27 +34,7 @@ export const NestedThreads = memo(function NestedThreads({
   const { profiles, overviews } = useRuntime()
   const [expanded, setExpanded] = useState(true)
   const [finishedExpanded, setFinishedExpanded] = useState(false)
-  const navigate = (child: NestedThread) => {
-    const resolveRuntime = (node: NestedThread) =>
-      resolveThreadRuntime(node, profiles, overviews)?.id ?? node.runtimeId
-    const runtimeId = resolveRuntime(child)
-    const parentRuntimeId = resolveRuntime(thread)
-    if (!runtimeId || !parentRuntimeId) return
-    router.push(
-      taskHref(
-        runtimeId,
-        child.threadId,
-        undefined,
-        {
-          runtimeId: parentRuntimeId,
-          runtimeIdentity: thread.runtimeIdentity,
-          taskId: thread.threadId,
-          title: thread.title,
-        },
-        child.runtimeIdentity,
-      ),
-    )
-  }
+  const navigate = (child: NestedThread) => openNestedThread(child, thread, profiles, overviews)
   const summary = threadTreeSummary(thread.children, acknowledgedFailures)
   if (!summary.total) return null
   const activeKeys = new Set(
@@ -90,7 +68,7 @@ export const NestedThreads = memo(function NestedThreads({
           style={{
             fontWeight: '600',
             fontSize: 13,
-            color: child.phase === 'failed' ? colors.error : undefined,
+            color: child.phase === 'failed' ? colors.error : colors.text,
           }}
         >
           {child.title}
@@ -232,6 +210,7 @@ export const NestedThreads = memo(function NestedThreads({
           accessibilityRole="button"
           accessibilityLabel={`Spawned threads for ${thread.title}`}
           accessibilityState={{ expanded: open }}
+          aria-expanded={open}
           disabled={searching}
           onPress={() => setExpanded(!open)}
           style={{ paddingVertical: 10 }}
@@ -250,6 +229,7 @@ export const NestedThreads = memo(function NestedThreads({
                 accessibilityRole="button"
                 accessibilityLabel={`Finished threads for ${thread.title}`}
                 accessibilityState={{ expanded: finishedOpen }}
+                aria-expanded={finishedOpen}
                 disabled={searching}
                 onPress={() => setFinishedExpanded(!finishedOpen)}
                 style={{ paddingVertical: 12, minHeight: 44 }}

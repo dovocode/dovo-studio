@@ -3,6 +3,7 @@ import {
   createContext,
   isValidElement,
   useContext,
+  useState,
   type ComponentProps,
   type ReactNode,
 } from 'react'
@@ -102,7 +103,8 @@ export function SettingsRow({
   const { colors, styles } = useTheme()
   const grouped = useContext(GroupContext)
   const { width, fontScale } = useWindowDimensions()
-  const stacked = width / fontScale < 360
+  const [contentWidth, setContentWidth] = useState<number | null>(null)
+  const stacked = (contentWidth ?? width) / fontScale < 360
   return (
     <Pressable
       testID={testID ?? label ?? title}
@@ -147,6 +149,7 @@ export function SettingsRow({
         }}
       >
         <View
+          onLayout={({ nativeEvent }) => setContentWidth(nativeEvent.layout.width)}
           style={{
             flex: 1,
             minWidth: 0,

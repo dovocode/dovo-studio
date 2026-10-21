@@ -54,8 +54,8 @@ export function TaskPullStatus({
     <span
       className={
         panel
-          ? 'studio-project-pull flex min-w-0 items-start'
-          : 'inline-flex min-w-0 items-center gap-1'
+          ? 'studio-project-pull flex min-w-0 flex-wrap items-start'
+          : 'inline-flex min-w-0 flex-wrap items-center gap-1'
       }
     >
       <a
@@ -122,6 +122,11 @@ export function TaskPullStatus({
           <Wrench className="size-3" />
           Fix
         </Button>
+      )}
+      {error && (
+        <span role="alert" className="basis-full whitespace-normal text-xs text-destructive">
+          {error}
+        </span>
       )}
     </span>
   )

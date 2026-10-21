@@ -46,7 +46,7 @@ export const WorkingSubagents = memo(function WorkingSubagents({
             <span
               className={cn(
                 'size-1.5 shrink-0 rounded-full',
-                online && agent.status === 'working' ? 'bg-sky-400' : 'bg-muted-foreground/50',
+                online && agent.status === 'working' ? 'bg-primary' : 'bg-muted-foreground/50',
               )}
               aria-hidden="true"
             />
@@ -62,7 +62,7 @@ export const WorkingSubagents = memo(function WorkingSubagents({
             <span
               className={cn(
                 'size-1.5 shrink-0 rounded-full',
-                online && agent.status === 'working' ? 'bg-sky-400' : 'bg-muted-foreground/50',
+                online && agent.status === 'working' ? 'bg-primary' : 'bg-muted-foreground/50',
               )}
               aria-hidden="true"
             />

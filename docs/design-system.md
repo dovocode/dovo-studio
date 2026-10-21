@@ -109,3 +109,93 @@ preview did not perform. Keep request callbacks stable, restore any changed pref
 and never include production credentials, production filesystem paths, account data or runtime URLs
 in these fixtures. Question answers and permission edits are local examples, never authorization
 grants.
+
+## Build consistent product screens
+
+Start with **Dovo / Build screens / Component map**, then open the production thread, pull-request,
+review or composer pattern. The catalog is a working reference for component selection and behavior,
+not a source of copied markup. Storybook controls vary the real component inputs; local fixture
+state stands in for runtime/forge state without granting permissions or contacting either service.
+
+| Product responsibility             | Production owner                                              | Composition rule                                                                                                          |
+| ---------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Thread cards and navigation        | `extension-tasks/src/list/task-row.tsx`                       | Keep title/status first, project/runtime/model secondary, and nested threads and lifecycle actions distinct.              |
+| List selection and menus           | `extension-tasks/src/list/task-list-row.tsx`                  | Let the list own selection/navigation and its existing interaction wrapper; preserve keyboard and nested-action behavior. |
+| Pull request identity and checks   | `extension-tasks/src/detail/task-pull-status.tsx`             | Keep draft/open/merged/closed separate from pending/passed/failed checks; use labels alongside semantic color.            |
+| Linked pull requests               | `extension-tasks/src/detail/task-linked-pull-panel.tsx`       | Compose the existing status component; keep empty/disconnected states and per-item actions explicit.                      |
+| Independent review                 | `extension-tasks/src/review`                                  | Preserve severity, finding status, file/line context, stale-review state and remediation ownership.                       |
+| Screen identity and content states | `studio-ui/src/page-header.tsx`, `components/empty-state.tsx` | Keep a stable page heading, one primary action, contextual retries and clear loading/error/empty content.                 |
+
+Use polished button variants consistently: the primary action is the next productive step; outline
+is a secondary action, ghost is a quiet local action, and destructive is reserved for removal or
+revocation. Status badges are information, not controls. Selection, hover, unread activity and
+failure are separate states; do not reuse one accent treatment for all of them.
+
+At flex/grid boundaries use shrinkable content (`min-w-0` and `minmax(0, 1fr)` tracks) before
+truncating text. Truncation inside a content-sized parent does not prevent page overflow.
+
+Desktop can expose denser metadata. Narrow and touch layouts can wrap or move secondary details, but
+must retain identity, status, active selection and access to actions. Long branches, titles,
+repository names and findings belong in the examples. Keep loading, empty, disconnected, stale,
+failure and cancellation distinct when the production component supports them. Browser examples do
+not replace native Dynamic Type, context-menu and touch testing.
+
+Native counterparts live in `apps/mobile/src/tasks/list/task-list-row.tsx`,
+`tasks/detail/pull-status.tsx`, `tasks/detail/task-linked-pull-sheet.tsx` and
+`scm/review/code-review-report.tsx`. Review these alongside the browser patterns when changing
+hierarchy, labels or states. Preserve native sheets, platform context menus and text scaling rather
+than importing DOM components into React Native. The browser catalog does not claim to render those
+native implementations.
+
+## Mobile component catalog
+
+The **Dovo / Mobile** interactive browser stories import the production mobile components and use
+React Native Web for browser layout and interaction. PR review status is native-only because its
+production Markdown renderer depends on native modules; its web entry explains how to open the real
+story rather than replacing the renderer. Keep the mobile component as the owner; do not copy
+browser fixture markup into the native app. The preview is an additional rendering target, not an
+iPhone screenshot or a replacement for native review.
+
+- `apps/mobile/src/ui/controls` owns native actions, fields, search, choices, pills and switches.
+- `apps/mobile/src/screens/settings-group.tsx` owns grouped navigation rows and switch rows;
+  `settings-controls.tsx` and `settings-theme.tsx` own settings editing and presentation.
+- `apps/mobile/src/tasks/composer/composer-field.tsx` owns the mobile multiline draft input.
+  `question-field.tsx` owns single/multiple choice and custom-answer interaction. The conversation
+  stories exercise these inputs with local draft/send simulation; they do not render the full mobile
+  composer or perform an agent send.
+
+Keep state in the feature: save/cancel must distinguish the edited draft from its committed value,
+failed saves must retain input, and a disabled control must have an understandable reason. Respect
+the existing 44-point minimum hit areas. A narrow browser viewport does not simulate Dynamic Type, a
+software keyboard, VoiceOver, native gesture cancellation, UIKit navigation, glass controls or
+SwiftUI menus. Review those on the device separately. Catalog platform adapters must never return a
+successful native operation; unsupported native code paths should fail explicitly.
+
+### Native Storybook on the Mac Studio
+
+Run `pnpm --filter @dovo/mobile storybook:ios --device "Dovo UI Review"` on a Mac with the project's
+normal Expo/Xcode dependencies installed. `pnpm --filter @dovo/mobile storybook` starts Metro alone
+when the simulator binary already exists. Both commands regenerate the native story registry first.
+Expo 58 already enables Metro `require.context`; no second Metro configuration or runtime-provider
+mocks are needed. Storybook is guarded by `__DEV__` and the explicit `EXPO_PUBLIC_DOVO_STORYBOOK=1`
+flag. Release builds always use the normal app entry.
+
+Use the native Storybook menu to select controls, settings, conversation inputs, nested thread
+activity or pull-request review status. Controls and settings share their React Native fixtures with
+the website catalog. Native choices and presentation use the real iOS implementations; there are no
+SwiftUI stubs in the simulator. The web catalog has explicit fail-fast boundaries for those
+native-only branches. The full mobile task row and full mobile composer are not yet catalogued:
+their runtime, model-cache, lifecycle, attachment and dictation integration still belongs in
+app-level/device checks.
+
+The native settings examples are isolated local state, including save failure, cancellation and
+forget confirmation. They must never connect, change account access, delete a real pairing or grant
+permissions. Native review must check the body and actions of a confirmation, not only its title:
+flexible sheet bodies must not collapse inside a dialog sized to its content.
+
+The **Mobile / Native simulator** web story contains dated captures from the actual Mac Studio iOS
+simulator. They are visual references, not interactive native tests or a claim of full-screen
+coverage. The reviewed simulator installation uses a separate application ID and leaves the normal
+Dovo app and its pairings untouched. The development commands above use the normal Expo app
+identity; run them on the dedicated review simulator, not a device with a pairing you want to
+preserve.

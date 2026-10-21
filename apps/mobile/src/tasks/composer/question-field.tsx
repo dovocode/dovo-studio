@@ -29,6 +29,7 @@ export function QuestionField({
           key={option.value}
           accessibilityRole={q.multiple ? 'checkbox' : 'radio'}
           accessibilityLabel={option.label}
+          aria-checked={draft.selected.includes(option.value)}
           accessibilityState={{ checked: draft.selected.includes(option.value), disabled }}
           disabled={disabled}
           onPress={() => onChange(toggleQuestionChoice(q, draft, option.value))}

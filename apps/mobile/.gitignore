@@ -9,3 +9,6 @@ web-build/
 !.env.example
 *.jks
 *.keystore
+
+# Storybook generated Metro import registry
+.rnstorybook/storybook.requires.ts

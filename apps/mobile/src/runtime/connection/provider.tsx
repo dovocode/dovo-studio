@@ -1,5 +1,5 @@
 import { mergeAccountInternetConnection } from '@dovo/protocol'
-import type { WorkspacePatchResult, PendingMessage, Task } from '@dovo/protocol'
+import type { WorkspacePatchResult, Task } from '@dovo/protocol'
 import {
   setPeerConnectionsActive,
   setPeerConnectionNetwork,
@@ -78,7 +78,6 @@ import {
   isUnauthorizedRuntimeError,
   sameRuntimeConnection,
   type RuntimeConnection,
-  type RuntimeSnapshot,
   type RuntimeRegistry,
   type RuntimeProfile,
   type RuntimeOverview,
@@ -93,6 +92,11 @@ import {
 } from '@dovo/client-runtime'
 import { retainOverviewSnapshot, shouldPublishOverview } from './overview-state'
 import { registryKey, restoreRegistry } from '../state/restore-registry'
+import { RuntimeContext as Context, useRuntime } from './context'
+import type { Runtime } from './context'
+export { RuntimeContext } from './context'
+export { useRuntime }
+export type { Runtime } from './context'
 const empty: RuntimeRegistry = {
   version: 1,
   activeId: null,
@@ -127,79 +131,6 @@ type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
   schema: T,
   method?: string,
 ) => Effect.Effect<T['Type'], Error>
-export type Runtime = {
-  previewTaskEffect: <A extends WorkspacePatchResult, E>(
-    profile: RuntimeProfile,
-    taskId: string,
-    changes: TaskPreview,
-    request: Effect.Effect<A, E>,
-  ) => Effect.Effect<A, E>
-
-  snapshot: RuntimeSnapshot | null
-  connection: RuntimeConnection | null
-  profile: RuntimeProfile | null
-  profiles: RuntimeProfile[]
-  overviews: RuntimeOverview[]
-  activeId: string | null
-  legacyDraftRuntimeId: string | null
-  connected: boolean
-  ready: boolean
-  registryLoaded: boolean
-  /** Saved pairings are being checked after launch; connections wait for the result. */
-  recovering: boolean
-  error: string
-  syncAccountSession: (session: string | null) => Promise<void>
-  connectEffect: (
-    value: RuntimeConnection,
-    name?: string,
-    proof?: PairingProof,
-    replaceId?: string,
-  ) => Effect.Effect<void, Error>
-  selectRuntimeEffect: (id: string) => Effect.Effect<void, Error>
-  forgetRuntimeEffect: (id: string) => Effect.Effect<void, Error>
-  renameRuntimeEffect: (id: string, name: string) => Effect.Effect<void, Error>
-  upgradeInternetEffect: (
-    id: string,
-    previous: RuntimeConnection,
-    peer: PeerConfig,
-  ) => Effect.Effect<void, Error>
-  setPeerRelayEffect: (
-    id: string,
-    relay: PeerRelayProvider | undefined,
-  ) => Effect.Effect<void, Error>
-  disconnectEffect: () => Effect.Effect<void, Error>
-  refreshEffect: () => Effect.Effect<void, Error>
-  connect: (
-    value: RuntimeConnection,
-    name?: string,
-    proof?: PairingProof,
-    replaceId?: string,
-  ) => Promise<void>
-  selectRuntime: (id: string) => Promise<void>
-  forgetRuntime: (id: string) => Promise<void>
-  renameRuntime: (id: string, name: string) => Promise<void>
-  cancelPairing: (address: string, proof: PairingProof) => Promise<void>
-  disconnect: () => Promise<void>
-  refresh: () => Promise<void>
-  refreshAll: () => Promise<void>
-  refreshRuntime: (profile: RuntimeProfile) => Promise<void>
-  call: Call
-  callEffect: CallEffect
-  readEffect: CallEffect
-  readRuntimeEffect: RuntimeReadEffect
-  refreshRuntimeEffect: (profile: RuntimeProfile) => Effect.Effect<void, Error>
-  pendingMessages: (task: Task) => PendingMessage[]
-  pendingMessagesFor: (profile: RuntimeProfile, task: Task) => PendingMessage[]
-  mutationStatus: (profile: RuntimeProfile) => { pending: number; error: string | null }
-  retryMutations: (profile: RuntimeProfile) => Promise<void>
-  discardMutations: (profile: RuntimeProfile) => Promise<void>
-  read: Call
-  readRuntime: RuntimeRead
-  cacheForRuntime: (profile: RuntimeProfile) => RuntimeReadCache
-  readCache: RuntimeReadCache | null
-}
-export const RuntimeContext = createContext<Runtime | null>(null)
-const Context = RuntimeContext
 const RuntimeStateContext = createContext<Atom.Writable<Runtime> | null>(null)
 /** Broad readers keep the context value; selectors subscribe only to the slice they render. */
 function RuntimeValueProvider({ value, children }: { value: Runtime; children: ReactNode }) {
@@ -1728,11 +1659,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     ],
   )
   return <RuntimeValueProvider value={value}>{children}</RuntimeValueProvider>
-}
-export function useRuntime() {
-  const runtime = useContext(Context)
-  if (!runtime) throw new Error('RuntimeProvider required')
-  return runtime
 }
 /**
  * Re-render only when the selected value changes. Keep `select` and `equals` stable, for

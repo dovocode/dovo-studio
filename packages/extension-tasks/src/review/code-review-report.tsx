@@ -63,6 +63,27 @@ export function CodeReviewReport({
                 key={value}
                 role="tab"
                 aria-selected={tab === value}
+                tabIndex={tab === value ? 0 : -1}
+                onKeyDown={(event) => {
+                  const tabs = ['diff', 'findings', 'verification'] as const
+                  const index = tabs.indexOf(value)
+                  const next =
+                    event.key === 'ArrowRight'
+                      ? (index + 1) % tabs.length
+                      : event.key === 'ArrowLeft'
+                        ? (index + tabs.length - 1) % tabs.length
+                        : event.key === 'Home'
+                          ? 0
+                          : event.key === 'End'
+                            ? tabs.length - 1
+                            : -1
+                  if (next < 0) return
+                  event.preventDefault()
+                  onTab(tabs[next])
+                  event.currentTarget.parentElement
+                    ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+                    [next]?.focus()
+                }}
                 size="sm"
                 variant={tab === value ? 'secondary' : 'ghost'}
                 className="h-8 text-xs"

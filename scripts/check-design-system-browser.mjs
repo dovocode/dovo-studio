@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, extname, resolve, sep } from 'node:path'
 import { chromium } from './browser/harness.mjs'
+import { checkMobileSettingsAndThreads } from './design-system-mobile-interactions.mjs'
 const output = resolve('apps/design-system/storybook-static')
 const require = createRequire(new URL('../apps/design-system/package.json', import.meta.url))
 const axePath = require.resolve('axe-core', {
@@ -14,6 +15,7 @@ const types = {
   '.js': 'text/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
+  '.png': 'image/png',
   '.woff2': 'font/woff2',
 }
 const server = createServer(async (req, res) => {
@@ -59,106 +61,276 @@ try {
   const accessibilityFailures = []
   page.on('pageerror', (e) => errors.push(e.message))
   let checks = 0
-  for (const mode of ['dark', 'light'])
-    for (const width of [390, 1280])
-      for (const story of stories) {
-        await page.setViewportSize({ width, height: 900 })
-        await page.goto(`${origin}/iframe.html?id=${story.id}&viewMode=story&globals=theme:${mode}`)
-        try {
-          await page.locator('#storybook-root').waitFor()
-        } catch (cause) {
-          throw new Error(
-            `${story.id} ${mode} ${width}: ${await page.locator('body').innerText()}`,
-            { cause },
+  if (!process.env.DOVO_DESIGN_INTERACTIONS_ONLY)
+    for (const mode of ['dark', 'light'])
+      for (const width of [390, 1280])
+        for (const story of stories) {
+          await page.setViewportSize({ width, height: 900 })
+          await page.goto(
+            `${origin}/iframe.html?id=${story.id}&viewMode=story&globals=theme:${mode}`,
           )
-        }
-        await page.waitForFunction(
-          () =>
-            document.documentElement.dataset.theme &&
-            document.querySelector('#storybook-root')?.children.length,
-        )
-        assert.equal(await page.locator('html').getAttribute('data-theme'), mode)
-        await page.evaluate(async () => {
-          await document.fonts.ready
-          const transitions = document
-            .getAnimations()
-            .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
-          await Promise.all(
-            transitions.map((animation) => animation.finished.catch(() => undefined)),
-          )
-        })
-        assert.ok(
-          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
-          `${story.id} ${mode} ${width}: horizontal overflow`,
-        )
-        if (story.title === 'Dovo/Hosted services') {
-          const root = page.frameLocator('iframe[title="Hosted service preview"]').locator('html')
-          await root.locator('body').waitFor()
-          assert.equal(await root.getAttribute('data-theme'), mode)
-          assert.ok(
-            await root.evaluate((el) => el.scrollWidth <= el.clientWidth),
-            `${story.id} ${mode} ${width}: hosted page overflow`,
-          )
-          const buttons = root.locator('button')
-          for (const button of await buttons.all())
-            assert.ok(
-              await button.evaluate((el) => el.getBoundingClientRect().height >= 44),
-              'Hosted touch target must be at least 44px',
+          try {
+            await page.locator('#storybook-root').waitFor()
+          } catch (cause) {
+            throw new Error(
+              `${story.id} ${mode} ${width}: ${await page.locator('body').innerText()}`,
+              { cause },
             )
-        }
-        if (story.id === 'dovo-controls--composer') {
-          const field = page.getByRole('textbox', { name: 'Task message' })
-          await field.fill('Verify a consistent Dovo UI')
-          await field.focus()
-          const focused = await field.evaluate((el) => {
-            const form = el.closest('form')
-            return {
-              boxShadow: getComputedStyle(form).boxShadow,
-              border: getComputedStyle(form).borderTopColor,
-              outline: getComputedStyle(el).outlineStyle,
-            }
-          })
-          assert.equal(focused.boxShadow, 'none', 'Composer must not glow')
-          assert.equal(
-            focused.outline,
-            'none',
-            'Composer textarea must not add a second focus ring',
+          }
+          await page.waitForFunction(
+            () =>
+              document.documentElement.dataset.theme &&
+              document.querySelector('#storybook-root')?.children.length,
           )
-          const button = page.getByRole('button', { name: 'Send task', exact: true })
-          await button.focus()
-          const focus = await button.evaluate((el) => {
-            const s = getComputedStyle(el)
-            return { outline: s.outlineStyle, shadow: s.boxShadow }
+          assert.equal(await page.locator('html').getAttribute('data-theme'), mode)
+          await page.evaluate(async () => {
+            await document.fonts.ready
+            const transitions = document
+              .getAnimations()
+              .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+            await Promise.all(
+              transitions.map((animation) => animation.finished.catch(() => undefined)),
+            )
           })
           assert.ok(
-            focus.outline !== 'none' || focus.shadow !== 'none',
-            'Keyboard focus must remain visible',
+            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+            `${story.id} ${mode} ${width}: horizontal overflow`,
           )
-          await button.click()
-          await page.getByRole('status').waitFor()
+          if (story.title === 'Dovo/Hosted services') {
+            const root = page.frameLocator('iframe[title="Hosted service preview"]').locator('html')
+            await root.locator('body').waitFor()
+            assert.equal(await root.getAttribute('data-theme'), mode)
+            assert.ok(
+              await root.evaluate((el) => el.scrollWidth <= el.clientWidth),
+              `${story.id} ${mode} ${width}: hosted page overflow`,
+            )
+            const buttons = root.locator('button')
+            for (const button of await buttons.all())
+              assert.ok(
+                await button.evaluate((el) => el.getBoundingClientRect().height >= 44),
+                'Hosted touch target must be at least 44px',
+              )
+          }
+          if (story.id === 'dovo-controls--composer') {
+            const field = page.getByRole('textbox', { name: 'Task message' })
+            await field.fill('Verify a consistent Dovo UI')
+            await field.focus()
+            const focused = await field.evaluate((el) => {
+              const form = el.closest('form')
+              return {
+                boxShadow: getComputedStyle(form).boxShadow,
+                border: getComputedStyle(form).borderTopColor,
+                outline: getComputedStyle(el).outlineStyle,
+              }
+            })
+            assert.equal(focused.boxShadow, 'none', 'Composer must not glow')
+            assert.equal(
+              focused.outline,
+              'none',
+              'Composer textarea must not add a second focus ring',
+            )
+            const button = page.getByRole('button', { name: 'Send task', exact: true })
+            await button.focus()
+            const focus = await button.evaluate((el) => {
+              const s = getComputedStyle(el)
+              return { outline: s.outlineStyle, shadow: s.boxShadow }
+            })
+            assert.ok(
+              focus.outline !== 'none' || focus.shadow !== 'none',
+              'Keyboard focus must remain visible',
+            )
+            await button.click()
+            await page.getByRole('status').waitFor()
+          }
+          if (width === 390) {
+            await page.addScriptTag({ path: axePath })
+            const violations = await page.evaluate(async () =>
+              (
+                await window.axe.run(document.querySelector('#storybook-root'), {
+                  runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] },
+                })
+              ).violations.map((v) => ({
+                id: v.id,
+                nodes: v.nodes.map((n) => ({ target: n.target, summary: n.failureSummary })),
+              })),
+            )
+            if (violations.length) accessibilityFailures.push({ story: story.id, mode, violations })
+          }
+          checks++
         }
-        if (width === 390) {
-          await page.addScriptTag({ path: axePath })
-          const violations = await page.evaluate(async () =>
-            (
-              await window.axe.run(document.querySelector('#storybook-root'), {
-                runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] },
-              })
-            ).violations.map((v) => ({
-              id: v.id,
-              nodes: v.nodes.map((n) => ({ target: n.target, summary: n.failureSummary })),
-            })),
-          )
-          if (violations.length) accessibilityFailures.push({ story: story.id, mode, violations })
-        }
-        checks++
-      }
   assert.deepEqual(errors, [])
   assert.deepEqual(accessibilityFailures, [], 'Component accessibility violations')
   const openStory = async (id) => {
     await page.goto(`${origin}/iframe.html?id=${id}&viewMode=story&globals=theme:dark`)
     await page.locator('#storybook-root > *').first().waitFor()
   }
+  await openStory('dovo-settings-desktop-settings--scoped-lifecycle-settings')
+  await page
+    .getByRole('status')
+    .filter({ hasText: 'Changes apply to existing tasks too' })
+    .waitFor()
+  await page.getByRole('button', { name: 'Edit Project settings', exact: true }).click()
+  const inactiveSetting = page.getByRole('combobox', {
+    name: 'Auto-settle inactive tasks',
+    exact: true,
+  })
+  await inactiveSetting.click()
+  await page.getByRole('option', { name: 'Off', exact: true }).click()
+  const saveLifecycle = page.getByRole('button', { name: 'Save lifecycle settings', exact: true })
+  assert.ok(await saveLifecycle.isEnabled(), 'Changing a scoped value enables saving')
+  await saveLifecycle.click()
+  await page.getByRole('status').filter({ hasText: 'Lifecycle settings saved.' }).waitFor()
+  assert.equal(await inactiveSetting.innerText(), 'Off')
+  await page
+    .getByRole('button', {
+      name: 'View inheritance for auto-settle inactive tasks',
+      exact: true,
+    })
+    .click()
+  await page
+    .getByText(
+      'Project overrides Computer; Project on computer wins over both. The check marks the effective value for each computer, including later overrides.',
+      { exact: true },
+    )
+    .waitFor()
+  await page.keyboard.press('Escape')
+
+  await checkMobileSettingsAndThreads(page, origin)
+  await openStory('dovo-mobile-conversation-controls--draft-and-recovery')
+  const mobileDraft = page.getByRole('textbox', { name: 'Message', exact: true })
+  await mobileDraft.fill('Keep the mobile draft after failure')
+  await page.getByRole('button', { name: 'Send preview', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Simulated send failed' }).waitFor()
+  assert.equal(await mobileDraft.inputValue(), 'Keep the mobile draft after failure')
+  await page.getByRole('checkbox', { name: 'Simulate failed send', exact: true }).uncheck()
+  await page.getByRole('button', { name: 'Send preview', exact: true }).click()
+  await page.getByText('Keep the mobile draft after failure', { exact: true }).waitFor()
+  await page.waitForFunction(
+    () => document.querySelector('textarea[aria-label="Message"]')?.value === '',
+  )
+  await page.getByRole('button', { name: 'Restore example draft', exact: true }).click()
+  await page.waitForFunction(() =>
+    document
+      .querySelector('textarea[aria-label="Message"]')
+      ?.value?.startsWith('Review the navigation changes'),
+  )
+  await page.getByRole('button', { name: 'Clear draft', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('textarea[aria-label="Message"]')?.value === '',
+  )
+  await openStory('dovo-mobile-conversation-controls--disconnected-draft')
+  await page
+    .getByRole('textbox', { name: 'Message', exact: true })
+    .fill('Saved locally while offline')
+  assert.ok(await page.getByRole('button', { name: 'Send preview', exact: true }).isDisabled())
+  await openStory('dovo-mobile-conversation-controls--multiple-choice')
+  await page.getByRole('checkbox', { name: 'Layout and navigation', exact: true }).click()
+  await page.getByRole('checkbox', { name: 'Accessibility', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'Answer: Review scope', exact: true })
+    .fill('Also check the settings editor')
+  await page
+    .getByRole('status')
+    .filter({ hasText: 'layout, accessibility, Also check the settings editor' })
+    .waitFor()
+  await openStory('dovo-mobile-conversation-controls--single-choice')
+  await page.getByRole('radio', { name: 'Layout and navigation', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'Answer: Review scope', exact: true })
+    .fill('Custom scope only')
+  assert.equal(
+    await page
+      .getByRole('radio', { name: 'Layout and navigation', exact: true })
+      .getAttribute('aria-checked'),
+    'false',
+  )
+  await page.getByRole('status').filter({ hasText: 'Local answer: Custom scope only' }).waitFor()
+
+  await openStory('dovo-build-screens--screen-states-and-actions')
+  await page.getByRole('button', { name: 'Start a thread', exact: true }).click()
+  await page.getByText('Local example ready', { exact: true }).waitFor()
+  const screenStates = page.getByRole('group', { name: 'Screen preview state', exact: true })
+  await screenStates.getByRole('button', { name: 'error', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'could not be loaded' }).waitFor()
+  await page.getByRole('button', { name: 'Retry loading threads', exact: true }).click()
+  await page.getByText('Local example ready', { exact: true }).waitFor()
+  await screenStates.getByRole('button', { name: 'loading', exact: true }).click()
+  assert.ok(await page.getByRole('button', { name: 'New thread', exact: true }).isDisabled())
+
+  await openStory('dovo-threads-cards-and-lists--thread-list-and-cards')
+  const selectedThread = page
+    .getByRole('button')
+    .filter({ hasText: 'Update the component usage guide' })
+    .first()
+  await selectedThread.click()
+  assert.equal(await selectedThread.getAttribute('aria-current'), 'true')
+  const firstThread = page
+    .getByRole('button')
+    .filter({ hasText: 'Refine the dashboard navigation' })
+    .first()
+  await firstThread.focus()
+  await page.keyboard.press('Enter')
+  assert.equal(await firstThread.getAttribute('aria-current'), 'true')
+
+  await openStory('dovo-patterns-pull-requests--linked-pull-panel-catalog')
+  await page.getByRole('button', { name: 'Close linked pull requests', exact: true }).click()
+  await page.getByRole('button', { name: 'Reopen linked pull requests', exact: true }).click()
+  await page.getByRole('button', { name: 'Manage linked pull requests', exact: true }).click()
+  const pullDialog = page.getByRole('dialog')
+  await pullDialog.getByRole('button', { name: 'Unlink PR #42', exact: true }).click()
+  await pullDialog
+    .getByRole('button', { name: 'Unlink PR #42', exact: true })
+    .waitFor({ state: 'hidden' })
+  await pullDialog
+    .getByRole('textbox', { name: 'Pull request number or URL', exact: true })
+    .fill('https://github.com/example/demo/pull/99')
+  await pullDialog.getByRole('button', { name: 'Link PR', exact: true }).click()
+  await pullDialog.getByRole('alert').filter({ hasText: 'No local preview response' }).waitFor()
+  await page.keyboard.press('Escape')
+
+  await openStory('dovo-patterns-pull-requests--failed-checks-and-request-error')
+  await page.getByRole('button', { name: 'Make next local request fail', exact: true }).click()
+  await page.getByRole('button', { name: 'Fix', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'set to fail' }).waitFor()
+
+  await openStory('dovo-reviews-and-checks--checks-cached-and-stale')
+  await page.getByRole('button', { name: 'Refresh checks', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Local preview refreshed' }).waitFor()
+  await openStory('dovo-reviews-and-checks--review-findings')
+  const findingTab = page.getByRole('tab', { name: /Findings/ })
+  await findingTab.focus()
+  await page.keyboard.press('ArrowRight')
+  assert.equal(
+    await page
+      .getByRole('tab', { name: 'Verification', exact: true })
+      .getAttribute('aria-selected'),
+    'true',
+  )
+  await page.keyboard.press('Home')
+  assert.equal(
+    await page
+      .getByRole('tab', { name: 'Diff & comments', exact: true })
+      .getAttribute('aria-selected'),
+    'true',
+  )
+  await page.keyboard.press('End')
+  await page.getByRole('tab', { name: 'Verification', exact: true }).click()
+  await page.getByRole('tabpanel', { name: 'Code review verification', exact: true }).waitFor()
+  await page.getByRole('tab', { name: /Findings/ }).click()
+  await page.getByRole('tabpanel', { name: 'Code review findings', exact: true }).waitFor()
+
+  await openStory('dovo-patterns-forge-pull-requests--pull-rows')
+  await page.getByRole('button', { name: 'Actions for PR #81', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Add to thread', exact: true }).click()
+  await page.getByText('Added to thread: #81', { exact: true }).waitFor()
+  await openStory('dovo-patterns-forge-pull-requests--detail-status-and-stack')
+  await page.getByRole('button', { name: 'Stack a PR', exact: true }).click()
+  await page.getByText(/Stack PR action previewed locally/).waitFor()
+  await page.getByRole('button', { name: 'Ask agent to update stack', exact: true }).click()
+  await page.getByText(/Update-stack request previewed locally/).waitFor()
+  await openStory('dovo-patterns-forge-pull-requests--pipeline-runs-disconnected')
+  assert.ok(await page.getByRole('button', { name: 'Refresh runs', exact: true }).isDisabled())
+
   await openStory('dovo-primitives--checkbox-states')
   const mixed = page.getByRole('checkbox', { name: 'Select all projects', exact: true })
   assert.equal(await mixed.getAttribute('aria-checked'), 'mixed')

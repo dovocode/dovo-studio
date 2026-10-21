@@ -223,7 +223,7 @@ function TaskRowView({
               disabled={disabled}
             >
               {compact ? (
-                <span className={cn('shrink-0', !unread && 'opacity-50')}>{projectIcon}</span>
+                <span className="shrink-0">{projectIcon}</span>
               ) : (
                 <span
                   className={cn(
@@ -246,7 +246,7 @@ function TaskRowView({
                   <span
                     className={cn(
                       'flex shrink-0 items-center gap-1 text-xs',
-                      !offline && presentation.state === 'Working' && 'text-sky-400',
+                      !offline && presentation.state === 'Working' && 'text-primary',
                       !offline &&
                         ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
                         'text-status-success',

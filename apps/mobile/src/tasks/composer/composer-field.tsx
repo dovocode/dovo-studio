@@ -1,5 +1,5 @@
 import { type ComponentRef, memo, useCallback, useLayoutEffect, useRef } from 'react'
-import type { TextInput, TextInputProps } from 'react-native'
+import { Platform, type TextInput, type TextInputProps } from 'react-native'
 import { Field } from '../../ui/controls/field'
 import { useTheme } from '../../ui/theme'
 import type { DraftSelection } from './dictation-draft'
@@ -29,6 +29,7 @@ export const ComposerField = memo(function ComposerField({
   const nativeText = useRef(value)
   const appliedRevision = useRef(revision)
   useLayoutEffect(() => {
+    if (Platform.OS === 'web') return
     if (appliedRevision.current === revision) return
     appliedRevision.current = revision
     if (nativeText.current === value) return
@@ -52,9 +53,10 @@ export const ComposerField = memo(function ComposerField({
   )
   return (
     <Field
+      key={Platform.OS === 'web' ? revision : undefined}
       {...props}
       inputRef={input}
-      defaultValue={initial.current}
+      defaultValue={Platform.OS === 'web' ? value : initial.current}
       onChangeText={type}
       label="Message"
       hideLabel

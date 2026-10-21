@@ -11,6 +11,8 @@
     "*.cts",
     "plugins/**/*.ts",
     "terminal/**/*.ts",
-    "mermaid/**/*.ts"
+    "mermaid/**/*.ts",
+    ".rnstorybook/**/*.ts",
+    ".rnstorybook/**/*.tsx"
   ]
 }

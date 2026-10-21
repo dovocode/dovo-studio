@@ -33,7 +33,29 @@ const preview: Preview = {
     },
   },
   initialGlobals: { theme: 'dark', a11y: { manual: true } },
-  parameters: { layout: 'fullscreen', a11y: { test: 'error' }, controls: { expanded: true } },
+  parameters: {
+    layout: 'fullscreen',
+    a11y: { test: 'error' },
+    controls: { expanded: true },
+    options: {
+      storySort: {
+        order: [
+          'Dovo',
+          [
+            'Build screens',
+            'Foundations',
+            'Anatomy',
+            'Primitives',
+            'Button playground',
+            'Selection',
+            'Controls',
+            'Composers',
+            '*',
+          ],
+        ],
+      },
+    },
+  },
   decorators: [
     (Story, context) => (
       <Theme mode={context.globals.theme === 'light' ? 'light' : 'dark'}>

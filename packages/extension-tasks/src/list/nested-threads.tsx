@@ -94,7 +94,7 @@ function NestedThreadsView({
           <span
             className={cn(
               'size-1.5 shrink-0 rounded-full bg-muted-foreground/50',
-              child.online && !child.paused && child.phase === 'running' && 'bg-sky-400',
+              child.online && !child.paused && child.phase === 'running' && 'bg-primary',
               child.online && !child.paused && threadNeedsInput(child) && 'bg-status-warning',
               child.online && child.phase === 'failed' && 'bg-destructive',
             )}

@@ -76,6 +76,13 @@ export function SettingsPage({ children }: { children: ReactNode }) {
 
 export function SettingsSheet(props: ComponentProps<typeof Sheet>) {
   const { colors, styles } = useSettingsTheme()
+  // Dialogs size to their contents. A flex: 1 sheet body collapses in this intrinsic container.
+  if (props.presentation === 'dialog')
+    return (
+      <SettingsTheme>
+        <Sheet {...props} />
+      </SettingsTheme>
+    )
   return (
     <SettingsTheme>
       <Sheet {...props} scrollable={false}>

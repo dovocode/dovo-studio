@@ -22,7 +22,7 @@ export function TaskLinkedPullPanel({
   return (
     <section
       aria-label="Thread pull requests"
-      className="studio-side-panel flex min-h-0 flex-1 flex-col"
+      className="studio-side-panel flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3 text-xs">
         <GitPullRequest size={15} />
