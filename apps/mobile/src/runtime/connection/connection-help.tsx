@@ -10,26 +10,25 @@ export function ConnectionHelp({ pairing = false }: { pairing?: boolean }) {
       <View style={{ gap: 5 }}>
         <Text style={[styles.text, { fontWeight: '600' }]}>Start your computer</Text>
         <Text style={styles.muted}>
-          Open Dovo on your computer and keep it awake. In Settings → Devices & runtime, choose
-          Connect your phone and scan the QR code. Internet pairing needs no VPN, local IP or extra
-          account.
+          Open Dovo on your computer and keep it awake. In Settings → Devices & runtime, sign in and
+          enable Dovo Connect. Sign in to the same account on your phone and choose Connect. No
+          pairing code, VPN or local IP is needed for internet access.
         </Text>
       </View>
       <View style={{ gap: 5 }}>
         <Text style={[styles.text, { fontWeight: '600' }]}>Direct internet connection</Text>
         <Text style={styles.muted}>
           WebRTC + STUN connects your phone directly to the computer. Your content is end-to-end
-          encrypted. Relay fallback is off by default. If a network blocks direct connections,
-          enable Dovo relay fallback in this computer’s settings. The computer needs one-time
-          operator approval for relay access. The relay carries encrypted traffic through Dovo
-          servers; it cannot read your content.
+          encrypted. Enabling Dovo Connect permits an encrypted relay fallback if a network blocks
+          direct connections. The relay forwards encrypted traffic; it cannot read your content.
         </Text>
       </View>
       <View style={{ gap: 5 }}>
         <Text style={[styles.text, { fontWeight: '600' }]}>LAN / VPN connections</Text>
         <Text style={styles.muted}>
-          Copy the full Wi-Fi, Tailscale, NetBird, or HTTPS address shown on your computer,
-          including its port. localhost and 0.0.0.0 are not addresses your phone can connect to.
+          Pair LAN / VPN separately to prefer that connection when available. Copy the full Wi-Fi,
+          Tailscale, NetBird, or HTTPS address shown on your computer, including its port. localhost
+          and 0.0.0.0 are not addresses your phone can connect to.
         </Text>
       </View>
       <View style={{ gap: 5 }}>

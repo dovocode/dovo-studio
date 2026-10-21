@@ -27,7 +27,7 @@ export function browserAuth(options: { store: AccountStore; origin: string } & I
       html(
         res,
         200,
-        `<h2>Sign in to discover your computers</h2><p>Only continue if you started sign-in in Dovo Studio and see this code there:</p><h2>${escape(login.code)}</h2><p>Pairing approval is still required to access a computer.</p><form method="post" action="/auth/authorize"><button type="submit">Continue to sign in</button></form>`,
+        `<h2>Sign in to connect your devices</h2><p>Only continue if you started sign-in in Dovo Studio and see this code there:</p><h2>${escape(login.code)}</h2><p>Signing in grants access to computers where you enable Dovo Connect on this account. LAN / VPN access still requires separate device pairing.</p><form method="post" action="/auth/authorize"><button type="submit">Continue to sign in</button></form>`,
       )
       return true
     }

@@ -403,6 +403,8 @@ class RuntimeSync {
       s.projectTransfers.revision,
       s.devices.version(),
       s.pairing.pending(),
+      s.peers.upgrades.pending(),
+      s.peers.internet.status(),
       s.defaults.version(),
       s.acpInstallations.list(),
     ])
@@ -443,6 +445,8 @@ class RuntimeSync {
           owner: false,
           devices: common.devices.filter((device) => device.id === view.device.id),
           pendingDevices: [],
+          pendingPeerUpgrades: [],
+          internet: undefined,
         }
     const tag = snapshotTag(next)
     view.signature = signature

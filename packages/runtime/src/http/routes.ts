@@ -248,6 +248,11 @@ export function route(
         )
       }
       const device = run ? { id: `run:${run.runId}`, owner: false } : s.devices.authenticate(token)
+      if (
+        s.peers.internet.contains(device.id) &&
+        (!peer || !s.peers.internet.authorized(device.id))
+      )
+        throw new HttpError(403, 'Account access requires an authorized Dovo Connect tunnel')
       if (method === 'POST' && path === '/api/remote-desktop') {
         if (run || request.headers['x-dovo-agent-access'] === '1')
           throw new HttpError(403, 'Remote desktop is available only to paired human clients.')
@@ -1237,6 +1242,20 @@ export function route(
           addresses: addresses(),
         })
       }
+      if (method === 'POST' && path === '/api/runtime/internet') {
+        owner()
+        requireLocalStudioUI(remoteAddress)
+        const input = decode(
+          mutableStruct({ enabled: Schema.Boolean, accountToken: Schema.optional(Schema.String) }),
+          yield* serviceResult(body(request)),
+        )
+        if (!input.enabled) return yield* serviceResult(s.peers.internet.disable())
+        if (!input.accountToken || !/^[A-Za-z0-9_-]{43}$/.test(input.accountToken))
+          throw new HttpError(400, 'Sign in to enable Dovo Connect')
+        return yield* serviceResult(
+          s.peers.internet.enable(input.accountToken, s.runtimeId, hostname()),
+        )
+      }
       if (method === 'POST' && path === '/api/runtime/peer/enable') {
         if (!peer?.claimed(device.id) && !s.peers.enabled(device.id))
           throw new HttpError(
@@ -1244,6 +1263,38 @@ export function route(
             'Enable internet access by pairing with a QR code from the computer',
           )
         return yield* serviceResult(s.peers.enable(device.id, peer?.relay))
+      }
+      if (method === 'POST' && path === '/api/runtime/peer/upgrade/request') {
+        const input = decode(
+          mutableStruct({ relay: Schema.optional(Schema.Literal('dovo')) }),
+          yield* serviceResult(body(request)),
+        )
+        return s.peers.upgrades.request(device.id, input.relay)
+      }
+      if (method === 'POST' && path === '/api/runtime/peer/upgrade/approve') {
+        owner()
+        const input = decode(
+          mutableStruct({ id: idSchema, allow: Schema.Boolean }),
+          yield* serviceResult(body(request)),
+        )
+        s.peers.upgrades.approve(input.id, input.allow)
+        return { ok: true }
+      }
+      if (method === 'POST' && path === '/api/runtime/peer/upgrade/claim') {
+        const input = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        return yield* serviceResult(
+          s.peers.upgrades.claim(
+            device.id,
+            input.id,
+            (relay) => s.peers.enable(device.id, relay),
+            () => s.peers.disable(device.id),
+          ),
+        )
+      }
+      if (method === 'POST' && path === '/api/runtime/peer/upgrade/cancel') {
+        const input = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        if (s.peers.upgrades.cancel(device.id, input.id)) s.peers.disable(device.id)
+        return { ok: true }
       }
       if (method === 'POST' && path === '/api/runtime/peer/identity') {
         owner()

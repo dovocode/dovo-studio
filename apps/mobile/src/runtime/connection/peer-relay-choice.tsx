@@ -14,10 +14,12 @@ export function PeerRelayChoice({
   value,
   onChange,
   disabled = false,
+  approval = false,
 }: {
   value?: PeerRelayProvider
   onChange: (value: PeerRelayProvider | undefined) => void
   disabled?: boolean
+  approval?: boolean
 }) {
   const { styles } = useTheme()
   return (
@@ -32,7 +34,7 @@ export function PeerRelayChoice({
         }
       />
       <Text style={styles.muted}>{peerRelayDescription(value)}</Text>
-      {value === 'dovo' && (
+      {value === 'dovo' && !approval && (
         <Text style={styles.muted}>
           The computer must allow relay in its pairing QR. For a Direct-only pairing, generate a new
           Dovo-enabled QR on the computer and pair again.

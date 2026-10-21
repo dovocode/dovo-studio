@@ -1,4 +1,9 @@
 import { type ManagedLiveActivity } from '../runtime/previews/live-activities.js'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
+import { internetPublicKey, internetBoxSchema, openInternet } from './account-internet.js'
+import { connectionSchema, type RuntimeConnection } from '../runtime/connection/runtime.js'
+import { peerAddress } from '../runtime/connection/peer.js'
 import { Schema } from 'effect'
 import {
   managedPushGrantSchema,
@@ -57,6 +62,86 @@ export class AccountClient {
   private set(value: Partial<AccountState>) {
     this.state = { ...this.state, ...value }
     for (const listener of this.listeners) listener()
+  }
+  sessionId = () => (this.token ? bytesToHex(sha256(utf8ToBytes(this.token))) : null)
+  /** Send the account session only to an owner-authorized local runtime to exchange it
+   * for an installation-scoped grant. The runtime never persists this account session. */
+  enableInternet = async (enable: (accountToken: string) => Promise<unknown>) => {
+    if (!this.token || !this.state.directory) throw new Error('Sign in first')
+    await enable(this.token)
+    await this.refreshDirectory()
+  }
+  connectInternet = async (
+    server: AccountServer,
+    secret: Uint8Array,
+    signal: AbortSignal,
+  ): Promise<RuntimeConnection> => {
+    const token = this.token,
+      session = this.sessionId()
+    if (!token || !session || !this.state.directory || !server.internet)
+      throw new Error('Sign in to connect')
+    const request = decode(
+      Schema.Struct({ id: Schema.String }),
+      await this.request(
+        '/v1/internet/connections',
+        'POST',
+        { runtimeId: server.id, publicKey: internetPublicKey(secret) },
+        signal,
+        token,
+      ),
+    )
+    const deadline = Date.now() + 25000
+    while (Date.now() < deadline) {
+      if (signal.aborted || this.token !== token) throw new Error('Internet connection cancelled')
+      const response = decode(
+        Schema.Struct({ publicKey: Schema.String, box: Schema.NullOr(internetBoxSchema) }),
+        await this.request(
+          '/v1/internet/connections?id=' + encodeURIComponent(request.id),
+          'GET',
+          undefined,
+          signal,
+          token,
+        ),
+      )
+      if (response.publicKey !== server.internet.publicKey)
+        throw new Error(
+          'Computer encryption key changed. Refresh your computers before connecting.',
+        )
+      if (response.box) {
+        const value = decode(
+          Schema.Struct({
+            requestId: Schema.String,
+            runtimeId: Schema.String,
+            connection: connectionSchema,
+          }),
+          openInternet(response.box, response.publicKey, secret),
+        )
+        if (
+          value.requestId !== request.id ||
+          value.runtimeId !== server.id ||
+          value.connection.runtimeId !== server.id ||
+          !value.connection.peer ||
+          value.connection.address !== peerAddress(value.connection.peer)
+        )
+          throw new Error('Encrypted connection belongs to a different computer or request')
+        if (this.token !== token || signal.aborted) throw new Error('Internet connection cancelled')
+        return { ...value.connection, accountSession: session }
+      }
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => {
+          clearTimeout(timer)
+          reject(new Error('Internet connection cancelled'))
+        }
+        const timer = setTimeout(() => {
+          signal.removeEventListener('abort', abort)
+          resolve()
+        }, 500)
+        signal.addEventListener('abort', abort, { once: true })
+      })
+    }
+    throw new Error(
+      'Computer did not answer. Check that Dovo Connect is enabled and the computer is online.',
+    )
   }
   private async request(
     path: string,

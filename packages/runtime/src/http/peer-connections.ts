@@ -25,10 +25,13 @@ import {
   type PeerRelayProvider,
 } from '@dovo/protocol'
 import type { Devices } from '../auth/devices.js'
+import { AccountInternet } from './account-internet.js'
+import { PeerUpgrades } from './peer-upgrades.js'
 import { peerRelayIdentity } from './peer-relay-identity.js'
 
 type Room = {
   config: PeerConfig
+  accountGrant?: string
   deviceId?: string
   expiresAt?: number
   socket?: WebSocket
@@ -77,6 +80,8 @@ export function acceptableOffer(
 /** Outbound-only signaling and ICE. The tunnel destination is a dedicated ordinary
  * runtime listener; it cannot select arbitrary ports or use desktop-only routes. */
 export class PeerConnections {
+  readonly internet: AccountInternet
+  readonly upgrades: PeerUpgrades
   private rooms = new Map<string, Room>()
   /** Loopback source port of each tunneled socket, registered before any tunnel byte is sent. */
   private origins = new Map<number, { socket: Socket; origin: PeerOrigin }>()
@@ -92,6 +97,8 @@ export class PeerConnections {
       'CREATE TABLE IF NOT EXISTS peer_connections (device_id TEXT PRIMARY KEY, config TEXT NOT NULL)',
     )
     this.identity = peerRelayIdentity(db)
+    this.internet = new AccountInternet(db, devices, this, this.identity)
+    this.upgrades = new PeerUpgrades(devices)
   }
   relayIdentity() {
     return { publicKey: this.identity.publicKey }
@@ -102,8 +109,10 @@ export class PeerConnections {
       .prepare('SELECT device_id AS deviceId, config FROM peer_connections')
       .all()) {
       const saved = decode(Schema.Struct({ deviceId: Schema.String, config: Schema.String }), row)
-      this.add(decode(peerConfigSchema, JSON.parse(saved.config)), saved.deviceId)
+      if (!this.internet.contains(saved.deviceId))
+        this.add(decode(peerConfigSchema, JSON.parse(saved.config)), saved.deviceId)
     }
+    this.internet.start()
     this.reap()
     this.timer = setInterval(() => this.reap(), 1000)
     this.timer.unref()
@@ -138,6 +147,7 @@ export class PeerConnections {
   private reap() {
     const active = this.active()
     for (const [id, room] of this.rooms) {
+      if (room.deviceId && !this.internet.authorized(room.deviceId)) this.remove(id, room)
       if (
         (room.expiresAt && room.expiresAt <= Date.now()) ||
         (room.deviceId && !active.has(room.deviceId))
@@ -174,16 +184,24 @@ export class PeerConnections {
     await room.ready
     return config
   }
-  async enable(deviceId: string, relay?: PeerRelayProvider) {
+  async enable(deviceId: string, relay?: PeerRelayProvider, accountGrant?: string) {
     if (!this.port || deviceId === 'owner' || !this.active().has(deviceId))
       throw new Error('Enable internet access from a paired phone')
     let room = [...this.rooms.values()].find((room) => room.deviceId === deviceId)
     if (!room) {
-      const config = { ...this.config(), ...(relay ? { relay } : {}) }
+      const saved = this.db
+        .prepare('SELECT config FROM peer_connections WHERE device_id=?')
+        .get(deviceId)
+      const config = saved
+        ? decode(
+            peerConfigSchema,
+            JSON.parse(decode(Schema.Struct({ config: Schema.String }), saved).config),
+          )
+        : { ...this.config(), ...(relay ? { relay } : {}) }
       this.db
         .prepare('INSERT OR REPLACE INTO peer_connections VALUES (?,?)')
         .run(deviceId, JSON.stringify(config))
-      room = this.add(config, deviceId)
+      room = this.add(config, deviceId, undefined, accountGrant)
     }
     if (!room.ready) this.open(room)
     await room.ready
@@ -201,10 +219,12 @@ export class PeerConnections {
   enabled(deviceId: string) {
     return [...this.rooms.values()].some((room) => room.deviceId === deviceId && !room.stopped)
   }
-  private add(config: PeerConfig, deviceId?: string, expiresAt?: number) {
+  private add(config: PeerConfig, deviceId?: string, expiresAt?: number, accountGrant?: string) {
     const claims = new Set<string>()
+    const internet = this.internet
     const room: Room = {
       config,
+      accountGrant,
       deviceId,
       expiresAt,
       peers: new Map(),
@@ -214,7 +234,11 @@ export class PeerConnections {
         deviceId,
         relay: deviceId ? undefined : config.relay,
         get active() {
-          return !room.stopped && (!room.expiresAt || room.expiresAt > Date.now())
+          return (
+            !room.stopped &&
+            (!room.expiresAt || room.expiresAt > Date.now()) &&
+            (!deviceId || internet.authorized(deviceId))
+          )
         },
         claim: (id) => {
           if (!deviceId && !room.stopped) claims.add(id)
@@ -254,6 +278,7 @@ export class PeerConnections {
         key: peerCapability(config, 'host'),
         clientKey: peerCapability(config, 'client'),
         ...(config.relay === 'dovo' ? { relayIdentity: this.identity.publicKey } : {}),
+        ...(room.accountGrant ? { accountGrant: room.accountGrant } : {}),
         // The computer's consent; each phone still signs whether it uses the relay.
         relayAllowed: config.relay === 'dovo',
       }
@@ -515,6 +540,7 @@ export class PeerConnections {
     if (this.rooms.get(id) === room) this.rooms.delete(id)
   }
   async dispose() {
+    this.internet.stop()
     if (this.timer) clearInterval(this.timer)
     const peers = [...this.rooms.values()].flatMap((room) => [...room.peers.keys()])
     for (const [id, room] of this.rooms) this.remove(id, room)

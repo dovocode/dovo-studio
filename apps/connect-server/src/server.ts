@@ -4,6 +4,8 @@ import { hash, type AccountStore } from './store.js'
 import type { IdentityProvider } from './oidc.js'
 import { bearerToken, json, RequestError } from './http.js'
 import { browserAuth } from './browser-auth.js'
+import { InternetStore } from './internet-store.js'
+import { internetApi } from './internet-api.js'
 import { accountApi } from './account-api.js'
 import { pushApi } from './push-api.js'
 import type { PushDelivery } from './push-relay.js'
@@ -32,7 +34,9 @@ export function createConnectServer(
   const authenticate = browserAuth({ ...options, origin })
   const pushStore = new PushStore(options.store)
   const push = pushApi(options.store, pushStore, options.push)
-  const account = accountApi(options.store, origin, options.deleteIdentity)
+  const internetStore = new InternetStore(options.store, origin)
+  const internet = internetApi(internetStore)
+  const account = accountApi(options.store, origin, options.deleteIdentity, internetStore)
   const limit = rateLimit(options.store.now)
   const address = clientAddress(options.trustedProxies ?? [])
   let active = 0
@@ -59,9 +63,21 @@ export function createConnectServer(
       req.method === 'POST' &&
       ((url.pathname === '/v1/push/send' && pushStore.subscription(token)) ||
         (url.pathname === '/v1/push/activities/send' && pushStore.activity(token)))
-    limit(user ? `account:${hash(user)}` : grant ? `push:${hash(token)}` : `ip:${address(req)}`)
+    const internetHost = url.pathname.startsWith('/v1/internet/host')
+      ? internetStore.host(token)
+      : undefined
+    limit(
+      user
+        ? `account:${hash(user)}`
+        : internetHost
+          ? `internet:${hash(token)}`
+          : grant
+            ? `push:${hash(token)}`
+            : `ip:${address(req)}`,
+    )
     if (await authenticate(req, res, url)) return
     if (await push(req, res, url)) return
+    if (url.pathname.startsWith('/v1/internet/')) return internet(req, res, url)
     return account(req, res, url)
   }
   const server = createServer((req, res) => {
@@ -100,8 +116,9 @@ export function createConnectServer(
     server,
     options.trustedProxies,
     options.peerRelays,
-    options.peerRelayAdmission,
+    (key, payload, signature) => options.peerRelayAdmission?.(key, payload, signature) ?? false,
     options.origin,
+    (grant, identity) => internetStore.host(grant)?.identity === identity,
   )
   return server
 }

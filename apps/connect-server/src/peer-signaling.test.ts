@@ -18,7 +18,11 @@ const cleanup: Array<() => void | Promise<void>> = []
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close()
 })
-async function fixture(issueRelay?: PeerRelayIssuer, approved = true) {
+async function fixture(
+  issueRelay?: PeerRelayIssuer,
+  approved = true,
+  account?: { grant: string; active: boolean },
+) {
   const server = createServer()
   const identity = generateKeyPairSync('ed25519')
   const publicKey = identity.publicKey.export({ format: 'der', type: 'spki' }).toString('base64url')
@@ -33,6 +37,9 @@ async function fixture(issueRelay?: PeerRelayIssuer, approved = true) {
     { cloudflare: issueRelay },
     approvedRelayInstallations(approved ? [publicKey] : []),
     `http://127.0.0.1:${port.port}`,
+    account
+      ? (grant, key) => account.active && account.grant === grant && key === publicKey
+      : undefined,
   )
   const open = async (hello: object, prove = true) => {
     const socket = new WebSocket(`ws://127.0.0.1:${port.port}/v1/peer`)
@@ -58,6 +65,7 @@ async function fixture(issueRelay?: PeerRelayIssuer, approved = true) {
     clientKey: peerCapability(config, 'client'),
     relayIdentity: publicKey,
     relayAllowed: true,
+    ...(account ? { accountGrant: account.grant } : {}),
   }
   const clientHello = {
     type: 'client',
@@ -287,4 +295,40 @@ it('closes pending joins when the computer disconnects and permits clean reconne
   expect((await gone)[0]).toBe(1012)
   const replacement = await f.open(f.hostHello)
   expect(JSON.parse(String((await replacement.reply)[0]))).toEqual({ type: 'ready' })
+})
+
+it('admits a proven account installation without an operator key and closes its room on account revocation', async () => {
+  const account = { grant: 'g'.repeat(43), active: true }
+  const issue = vi.fn<PeerRelayIssuer>(async () => ({
+    provider: 'cloudflare',
+    expiresAt: Date.now() + 600000,
+    iceServers: [
+      {
+        urls: ['turn:turn.dovo.studio:3478?transport=udp'],
+        username: 'approved-account',
+        credential: 'short-lived',
+      },
+    ],
+  }))
+  const f = await fixture(issue, false, account)
+  const host = await f.open(f.hostHello)
+  expect(JSON.parse(String((await host.reply)[0]))).toEqual({ type: 'ready', relayApproved: true })
+  const client = await f.open({ ...f.clientHello, relay: 'cloudflare' })
+  expect(JSON.parse(String((await client.reply)[0])).relay.iceServers[0].username).toBe(
+    'approved-account',
+  )
+  expect(issue).toHaveBeenCalledOnce()
+  const closed = once(host.socket, 'close')
+  account.active = false
+  await closed
+  const denied = await f.open(f.hostHello)
+  void denied.reply.catch(() => {})
+  expect((await once(denied.socket, 'close'))[0]).toBe(1008)
+  expect(issue).toHaveBeenCalledOnce()
+})
+it('rejects a host registration that substitutes another account installation grant', async () => {
+  const f = await fixture(undefined, false, { grant: 'g'.repeat(43), active: true })
+  const denied = await f.open({ ...f.hostHello, accountGrant: 'z'.repeat(43) })
+  void denied.reply.catch(() => {})
+  expect((await once(denied.socket, 'close'))[0]).toBe(1008)
 })

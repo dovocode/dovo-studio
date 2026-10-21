@@ -1,10 +1,16 @@
+import type { InternetStore } from './internet-store.js'
 import type { DeleteIdentity } from './delete-identity.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { decode, accountServerSchema, accountServerAddress } from '@dovo/protocol'
 import { AccountStore } from './store.js'
 import { json, readJson, bearerToken, RequestError } from './http.js'
 
-export function accountApi(store: AccountStore, origin: string, deleteIdentity?: DeleteIdentity) {
+export function accountApi(
+  store: AccountStore,
+  origin: string,
+  deleteIdentity?: DeleteIdentity,
+  internet?: InternetStore,
+) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (req.method === 'POST' && url.pathname === '/v1/login') {
       const { login, token } = store.createLogin()
@@ -65,7 +71,20 @@ export function accountApi(store: AccountStore, origin: string, deleteIdentity?:
         )
       throw new RequestError(401, 'Sign in to see your linked computers')
     }
-    if (req.method === 'GET' && url.pathname === '/v1/servers') return json(res, 200, directory)
+    if (req.method === 'GET' && url.pathname === '/v1/servers') {
+      const hosted = internet?.directory(directory.user.id) ?? []
+      return json(res, 200, {
+        ...directory,
+        servers: [
+          ...hosted.map((server) => ({
+            ...server,
+            address:
+              directory.servers.find((link) => link.id === server.id)?.address ?? server.address,
+          })),
+          ...directory.servers.filter((item) => !hosted.some((server) => server.id === item.id)),
+        ],
+      })
+    }
     if (req.method === 'PUT' && url.pathname === '/v1/servers') {
       let server
       try {
@@ -95,7 +114,9 @@ export function accountApi(store: AccountStore, origin: string, deleteIdentity?:
       return json(res, 200, { ok: true })
     }
     if (req.method === 'DELETE' && url.pathname.startsWith('/v1/servers/')) {
-      store.unlink(directory.user.id, decodeURIComponent(url.pathname.slice('/v1/servers/'.length)))
+      const id = decodeURIComponent(url.pathname.slice('/v1/servers/'.length))
+      internet?.remove(directory.user.id, id)
+      store.unlink(directory.user.id, id)
       return json(res, 200, { ok: true })
     }
     throw new RequestError(404, 'Not found')

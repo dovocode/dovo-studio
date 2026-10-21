@@ -14,13 +14,14 @@ import {Effect} from 'effect';
 import {runtimeProfile,peerAddress,workspacePatchResultSchema} from '@dovo/protocol';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {RuntimeProvider,useRuntime,useRuntimeSelector} from './apps/mobile/src/runtime/connection/provider.tsx';
-import {preparePeerConnection} from './apps/mobile/src/runtime/connection/peer-transport.ts';
-window.readFails=true;window.writes=[];window.requests=[];window.peerOpens=[];window.peerCloses=0;window.setPeerRelay=(id,relay)=>Effect.runPromise(window.runtime.setPeerRelayEffect(id,relay));window.connectPeer=()=>{const peer={origin:'https://connect.example',secret:'a'.repeat(64)};preparePeerConnection(peer);return window.runtime.connect({address:peerAddress(peer),token:'private-peer-device-token',peer},'Peer')};
+import {preparePeerConnection} from './apps/mobile/src/runtime/connection/peer-transport.ts';window.prepareAccountPeer=preparePeerConnection;window.accountPeerAddress=peerAddress;
+window.readFails=true;window.writes=[];window.requests=[];window.peerOpens=[];window.peerCloses=0;window.setPeerRelay=(id,relay)=>Effect.runPromise(window.runtime.setPeerRelayEffect(id,relay));window.upgradePeer=(profile,peer)=>Effect.runPromise(window.runtime.upgradeInternetEffect(profile.id,profile.connection,peer));window.connectPeer=()=>{const peer={origin:'https://connect.example',secret:'a'.repeat(64)};preparePeerConnection(peer);return window.runtime.connect({address:peerAddress(peer),token:'private-peer-device-token',peer},'Peer')};
 const profiles=['one','two'].map(name=>runtimeProfile({address:'http://'+name+'.lan:8787',token:'test-private-token-at-least-32-characters-'+name},name));
 window.saved=JSON.stringify({version:1,activeId:profiles[0].id,profiles});
 window.servers={};window.patchOffline=false;window.patchCalls=[];
 window.fetch=async(url,init={})=>{
   window.requests.push(String(url));const parsed=new URL(url);
+  if(window.rejectPeerSnapshot && parsed.host==='127.0.0.1:44555')return Response.json({error:'Peer path unavailable'},{status:503});
   if(parsed.pathname==='/api/mutations/status')return Response.json({version:1,workspaceMutations:1});
   const server=window.servers[parsed.host]??= {revision:1,runtimeInstanceId:'runtime-'+parsed.host,owner:false,workspaceReconciliationSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],tasks:[],repositories:[{id:'repo',name:'Runtime name',path:'/before',branch:'main'}],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]};
   if(parsed.pathname==='/api/workspace'){
@@ -380,6 +381,109 @@ try {
     opened,
   )
   assert.equal(await page.evaluate(() => window.peerOpens.at(-1).relay), undefined)
+  // Upgrade an existing saved profile without a new token or a duplicate registry entry.
+  const beforeUpgrade = await page.evaluate(() => {
+    window.upgradingProfile = window.runtime.profiles.find((profile) => profile.name === 'two')
+    window.rejectPeerSnapshot = true
+    return { saved: JSON.parse(window.saved), profile: window.upgradingProfile }
+  })
+  const failedUpgrade = await page.evaluate(() =>
+    window
+      .upgradePeer(window.upgradingProfile, {
+        origin: 'https://connect.example',
+        secret: 'c'.repeat(64),
+      })
+      .then(
+        () => '',
+        (error) => error.message,
+      ),
+  )
+  assert.match(failedUpgrade, /Peer path unavailable/)
+  assert.deepEqual(
+    await page.evaluate(() =>
+      JSON.parse(window.saved).profiles.find(
+        (profile) => profile.id === window.upgradingProfile.id,
+      ),
+    ),
+    beforeUpgrade.profile,
+    'A failed internet probe must keep the old saved connection',
+  )
+  await page.evaluate(async () => {
+    window.rejectPeerSnapshot = false
+    await window.upgradePeer(window.upgradingProfile, {
+      origin: 'https://connect.example',
+      secret: 'c'.repeat(64),
+    })
+  })
+  const afterUpgrade = await page.evaluate(() => JSON.parse(window.saved))
+  assert.equal(afterUpgrade.profiles.length, beforeUpgrade.saved.profiles.length)
+  const upgraded = afterUpgrade.profiles.find((profile) => profile.id === beforeUpgrade.profile.id)
+  assert.equal(upgraded.connection.token, beforeUpgrade.profile.connection.token)
+  assert.equal(upgraded.name, beforeUpgrade.profile.name)
+  assert.ok(upgraded.connection.address.endsWith('.p2p.invalid'))
+  assert.equal(upgraded.connection.peer.secret, 'c'.repeat(64))
+  assert.equal(
+    afterUpgrade.activeId,
+    beforeUpgrade.saved.activeId,
+    'Upgrading another computer must not change the active computer',
+  )
+  await page.evaluate(async () => {
+    window.rejectPeerSnapshot = false
+    window.accountOriginalCount = window.runtime.profiles.length
+    await window.runtime.syncAccountSession('signed-in-phone')
+    const peer = { origin: 'https://connect.example', secret: 'e'.repeat(64), relay: 'dovo' }
+    window.prepareAccountPeer(peer)
+    window.servers['127.0.0.1:44555'].runtimeId = 'account-computer'
+    await window.runtime.connect(
+      {
+        address: window.accountPeerAddress(peer),
+        peer,
+        runtimeId: 'account-computer',
+        token: 'account-internet-token-private',
+        accountSession: 'signed-in-phone',
+      },
+      'Account computer',
+    )
+    window.accountProfileId = window.runtime.profile.id
+  })
+  await page.waitForFunction(
+    () => window.runtime.profile?.connection.accountSession === 'signed-in-phone',
+  )
+  await page.evaluate(async () => {
+    window.servers['account.lan:8787'] = {
+      ...window.servers['127.0.0.1:44555'],
+      runtimeId: 'account-computer',
+    }
+    await window.runtime.connect(
+      {
+        address: 'http://account.lan:8787',
+        token: 'explicit-lan-pairing-token-private',
+        runtimeId: 'account-computer',
+      },
+      'Account computer',
+    )
+  })
+  await page.waitForFunction(
+    () => window.runtime.profile?.connection.address === 'http://account.lan:8787',
+  )
+  assert.equal(
+    await page.evaluate(() => window.runtime.profile.id),
+    await page.evaluate(() => window.accountProfileId),
+  )
+  assert.equal(
+    await page.evaluate(() => window.runtime.profiles.length),
+    await page.evaluate(() => window.accountOriginalCount + 1),
+  )
+  assert.equal(
+    await page.evaluate(() => window.runtime.profile.connection.internet.token),
+    'account-internet-token-private',
+  )
+  await page.evaluate(() => window.runtime.syncAccountSession(null))
+  await page.waitForFunction(() => !window.runtime.profile.connection.internet)
+  assert.equal(
+    await page.evaluate(() => window.runtime.profile.connection.token),
+    'explicit-lan-pairing-token-private',
+  )
   const renders = await page.evaluate(() => window.renders)
   assert.ok(renders.broad > 3, `broad runtime reader rendered ${renders.broad} times`)
   assert.equal(renders.selected, 1, 'an action selector re-rendered for runtime state changes')

@@ -229,6 +229,9 @@ export function runtimeSnapshot(
       terminals: s.terminals.list(),
       runs: s.jobs.list(),
       devices: device.owner ? s.devices.list() : s.devices.list().filter((d) => d.id === device.id),
+      peerUpgradeSupported: true,
+      internet: device.owner ? s.peers.internet.status() : undefined,
+      pendingPeerUpgrades: device.owner ? s.peers.upgrades.pending() : [],
       pendingDevices: device.owner ? s.pairing.pending() : [],
       owner: device.owner,
     } satisfies RuntimeSnapshot)

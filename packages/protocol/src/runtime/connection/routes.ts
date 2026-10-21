@@ -1,5 +1,5 @@
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
-import { isPeerAddress, peerTransportAddress, resolvePeerTransport } from './peer.js'
+import { isPeerAddress, peerTransportAddress, resolvePeerTransport, peerAddress } from './peer.js'
 
 type Selection = { selected?: string; checkedAt: number; retryAt?: number }
 type RoutePurpose = 'http' | 'stream'
@@ -13,7 +13,7 @@ const routes = new Map<
   }
 >()
 const key = (connection: RuntimeConnection) =>
-  JSON.stringify([new URL(connection.address).origin, connection.token])
+  JSON.stringify([new URL(connection.address).origin, connection.token, connection.internet])
 function origin(address: string) {
   const url = new URL(address)
   if (
@@ -64,6 +64,8 @@ export function runtimeTransportAddress(
   connection: RuntimeConnection,
   purpose: RoutePurpose = 'http',
 ) {
+  const fallback = internetRoutes.get(key(connection) + purpose)
+  if (fallback) return peerTransportAddress(fallback.peerAddress) ?? fallback.address
   if (isPeerAddress(connection.address)) return peerTransportAddress(connection.address)
   const saved = routes.get(key(connection))
   return (purpose === 'stream' ? saved?.stream?.selected : saved?.selected) ?? connection.address
@@ -72,6 +74,7 @@ export function invalidateRuntimeRoute(
   connection: RuntimeConnection,
   purpose: RoutePurpose = 'http',
 ) {
+  internetRoutes.delete(key(connection) + purpose)
   const saved = routes.get(key(connection))
   const selection = purpose === 'stream' ? saved?.stream : saved
   if (selection) selection.checkedAt = -Infinity
@@ -79,6 +82,7 @@ export function invalidateRuntimeRoute(
 /** Upgrade failures must not displace a working HTTP route. Give a blocked proxy thirty
  * seconds to recover, while the stream can use another verified address of the same runtime. */
 export function failRuntimeStreamingRoute(connection: RuntimeConnection, address: string) {
+  internetRoutes.delete(key(connection) + 'stream')
   const saved = routes.get(key(connection))
   if (!saved) return
   const candidate = origin(address)
@@ -91,7 +95,7 @@ export function failRuntimeStreamingRoute(connection: RuntimeConnection, address
 }
 /** Resolve before sending a request, including mutations. Never replay an uncertain write
  * on another route. Prefer the configured origin among verified routes without a bearer token. */
-export async function resolveRuntimeRoute(
+async function resolveDirectRoute(
   connection: RuntimeConnection,
   signal: AbortSignal,
   purpose: RoutePurpose = 'http',
@@ -172,4 +176,55 @@ export async function resolveRuntimeRoute(
   } finally {
     probes.abort()
   }
+}
+
+const internetRoutes = new Map<
+  string,
+  { address: string; peerAddress: string; checkedAt: number }
+>()
+/** Choose the route and its own credential together, before sending anything. A failed
+ * mutation is never replayed through the other transport. Explicit LAN/VPN pairing wins. */
+export async function resolveRuntimeEndpoint(
+  connection: RuntimeConnection,
+  signal: AbortSignal,
+  purpose: RoutePurpose = 'http',
+) {
+  const internet = connection.internet
+  if (!internet)
+    return {
+      address: await resolveDirectRoute(connection, signal, purpose),
+      token: connection.token,
+    }
+  if (
+    !connection.runtimeId ||
+    connection.runtimeId !== internet.runtimeId ||
+    internet.address !== peerAddress(internet.peer)
+  )
+    throw new Error('Internet fallback belongs to another computer')
+  const id = key(connection) + purpose
+  const saved = internetRoutes.get(id)
+  if (!saved || Date.now() - saved.checkedAt >= 10000) {
+    try {
+      const address = await resolveDirectRoute(connection, signal, purpose)
+      internetRoutes.delete(id)
+      return { address, token: connection.token }
+    } catch (error) {
+      if (signal.aborted) throw error
+    }
+  }
+  const address = await resolvePeerTransport(internet.address, internet.peer, signal)
+  internetRoutes.set(id, {
+    address,
+    peerAddress: internet.address,
+    checkedAt:
+      saved?.checkedAt && Date.now() - saved.checkedAt < 10000 ? saved.checkedAt : Date.now(),
+  })
+  return { address, token: internet.token }
+}
+export async function resolveRuntimeRoute(
+  connection: RuntimeConnection,
+  signal: AbortSignal,
+  purpose: RoutePurpose = 'http',
+) {
+  return (await resolveRuntimeEndpoint(connection, signal, purpose)).address
 }

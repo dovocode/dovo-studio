@@ -1,5 +1,5 @@
 import { remoteDesktopSessionSchema } from '../remote-desktop.js'
-import { peerConfigSchema, peerRelayIdentitySchema } from './peer.js'
+import { peerConfigSchema, peerRelayIdentitySchema, peerRelayProviderSchema } from './peer.js'
 import { projectTransferSchema } from '../../scm/repositories/project-transfer.js'
 import { studioToolsSchema } from '../studio-tools.js'
 import { runtimeIconSchema } from './runtime-icon.js'
@@ -103,7 +103,23 @@ export const providerStatusSchema = mutableStruct({
   available: Schema.Boolean,
   detail: Schema.String,
 })
+export const peerUpgradeSchema = mutableStruct({
+  id: Schema.String,
+  deviceId: Schema.String,
+  name: Schema.String,
+  expiresAt: Schema.String,
+  relay: Schema.optional(peerRelayProviderSchema),
+  status: Schema.Literals(['pending', 'approved', 'denied']),
+  peer: Schema.optional(peerConfigSchema),
+})
+export const internetStatusSchema = mutableStruct({
+  enabled: Schema.Boolean,
+  connected: Schema.Boolean,
+  error: Schema.String,
+})
 export const snapshotSchema = mutableStruct({
+  internet: Schema.optional(internetStatusSchema),
+  peerUpgradeSupported: Schema.optional(Schema.Boolean),
   remoteDesktopEnabled: Schema.optional(Schema.Boolean),
   remoteDesktopSession: Schema.optional(Schema.NullOr(remoteDesktopSessionSchema)),
   /** Computer-wide web approval rule, derived from its persisted preferences. */
@@ -159,6 +175,7 @@ export const snapshotSchema = mutableStruct({
   terminals: mutableArray(terminalSchema),
   runs: mutableArray(jobRunSchema),
   devices: mutableArray(deviceSchema),
+  pendingPeerUpgrades: Schema.optional(mutableArray(peerUpgradeSchema)),
   pendingDevices: mutableArray(
     mutableStruct({
       id: Schema.String,
@@ -168,7 +185,16 @@ export const snapshotSchema = mutableStruct({
   ),
   owner: Schema.Boolean,
 })
+export const accountInternetConnectionSchema = mutableStruct({
+  address: Schema.String,
+  token: minValue(Schema.String, 20),
+  peer: peerConfigSchema,
+  runtimeId: Schema.String,
+  session: Schema.String,
+})
 export const connectionSchema = mutableStruct({
+  internet: Schema.optional(accountInternetConnectionSchema),
+  accountSession: Schema.optional(Schema.String),
   peer: Schema.optional(peerConfigSchema),
   address: refine(
     urlSchema({
@@ -302,6 +328,8 @@ export type JobRun = Schema.Schema.Type<typeof jobRunSchema>
 export type JobRunStep = Schema.Schema.Type<typeof jobRunStepSchema>
 export type ProviderStatus = Schema.Schema.Type<typeof providerStatusSchema>
 export const responses = {
+  internetStatus: internetStatusSchema,
+  peerUpgrade: peerUpgradeSchema,
   peerRelayIdentity: mutableStruct({ publicKey: peerRelayIdentitySchema }),
   repositoryOpenTargets: repositoryOpenTargetsSchema,
   ok: mutableStruct({

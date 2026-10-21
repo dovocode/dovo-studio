@@ -1,4 +1,4 @@
-import { resolveRuntimeRoute, invalidateRuntimeRoute } from '../runtime/connection/routes.js'
+import { resolveRuntimeEndpoint, invalidateRuntimeRoute } from '../runtime/connection/routes.js'
 import {
   isPeerAddress,
   resolvePeerTransport,
@@ -135,10 +135,6 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
           message: `Runtime ${method.toUpperCase()} requests cannot include a body.`,
         }),
       )
-    const conditional =
-      connection && method === 'GET' && target.pathname === '/api/snapshot' && input === undefined
-        ? snapshotResponseCache(target.origin, connection.token, target.pathname + target.search)
-        : undefined
     const decodeResponse = (value: unknown) =>
       Effect.suspend(() => {
         const result = decodeResult(schema, value)
@@ -163,10 +159,10 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
               if (Exit.hasInterrupts(exit)) controller.abort()
             }),
         )
-        const resolved =
+        const endpoint =
           connection && target.origin === new URL(connection.address).origin
             ? yield* Effect.tryPromise({
-                try: () => resolveRuntimeRoute(connection, controller.signal, options?.route),
+                try: () => resolveRuntimeEndpoint(connection, controller.signal, options?.route),
                 catch: (cause) =>
                   new RuntimeRequestError({
                     kind: 'connection',
@@ -186,6 +182,15 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
                     }),
                 })
               : target.origin
+        const resolved = typeof endpoint === 'string' ? endpoint : endpoint.address
+        const token = typeof endpoint === 'string' ? connection?.token : endpoint.token
+        const conditional =
+          connection &&
+          method === 'GET' &&
+          target.pathname === '/api/snapshot' &&
+          input === undefined
+            ? snapshotResponseCache(target.origin, token ?? '', target.pathname + target.search)
+            : undefined
         const transportTarget = new URL(resolved)
         transportTarget.pathname = target.pathname
         transportTarget.search = target.search
@@ -198,7 +203,7 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
                 headers: {
                   'Content-Type': 'application/json',
                   ...(options?.mutationId ? { 'X-Dovo-Mutation-Id': options.mutationId } : {}),
-                  ...(connection ? { Authorization: `Bearer ${connection.token}` } : {}),
+                  ...(connection ? { Authorization: `Bearer ${token}` } : {}),
                   ...(tag ? { 'If-None-Match': tag } : {}),
                 },
                 ...(conditional ? { cache: 'no-store' as const } : {}),

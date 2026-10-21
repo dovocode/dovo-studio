@@ -208,6 +208,14 @@ export function createRuntimeServer(
     const track = (client: WebSocket, token: string) => remember(client, token, peer)
     // A tunnel carries one device: tickets minted by another device's credential are refused.
     const bind = (token: string) => {
+      if (!isRunToken(token)) {
+        const device = services.devices.authenticate(token)
+        if (
+          services.peers.internet.contains(device.id) &&
+          (!peer || !services.peers.internet.authorized(device.id))
+        )
+          throw new HttpError(403, 'Account access requires an authorized Dovo Connect tunnel')
+      }
       if (!tunnel) return
       const device = isRunToken(token) ? undefined : services.devices.authenticate(token)
       if (!peer?.active || !peer.deviceId || device?.id !== peer.deviceId)

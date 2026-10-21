@@ -142,6 +142,13 @@ export class AccountStore {
       this.beginDeletion(user)
       this.db.prepare('DELETE FROM sessions WHERE user=?').run(user)
       this.db.prepare('DELETE FROM servers WHERE user=?').run(user)
+      // Internet tables are optional for stores opened by offline maintenance tools.
+      for (const table of ['internet_requests', 'internet_hosts', 'internet_blocks']) {
+        if (
+          this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)
+        )
+          this.db.prepare(`DELETE FROM ${table} WHERE user=?`).run(user)
+      }
       this.db.prepare('DELETE FROM users WHERE id=?').run(user)
       this.db.exec('COMMIT')
     } catch (error) {

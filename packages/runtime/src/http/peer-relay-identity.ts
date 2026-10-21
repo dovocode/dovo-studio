@@ -30,6 +30,9 @@ export function peerRelayIdentity(db: Database.Database) {
   )
   return {
     publicKey,
+    signRegistration(payload: string) {
+      return sign(null, Buffer.from(payload), privateKey).toString('base64url')
+    },
     prove(
       challenge: string,
       room: string,

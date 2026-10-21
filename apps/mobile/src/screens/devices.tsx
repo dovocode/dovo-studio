@@ -27,6 +27,7 @@ import { clientScopeKey } from '@dovo/client-runtime'
 import { ActivityLog } from '../runtime/state/activity'
 import { CommandSettings } from '../runtime/preferences/command-settings'
 import { PairComputer } from '../runtime/connection/pair-computer'
+import { UpgradeInternet } from '../runtime/connection/upgrade-internet'
 import { PeerRelayChoice } from '../runtime/connection/peer-relay-choice'
 import { ConnectionHelp } from '../runtime/connection/connection-help'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
@@ -414,11 +415,32 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
               onChange={(relay) => act(() => setPeerRelayEffect(profile.id, relay))}
             />
           )}
-          <Action label="Reconnect" disabled={busy} onPress={() => act(refresh)} />
+          {profile.connection.internet && (
+            <Text style={styles.muted}>
+              LAN / VPN is preferred. Dovo Connect is available as an encrypted internet fallback.
+            </Text>
+          )}
+          {!profile.connection.peer &&
+            !profile.connection.internet &&
+            snapshot?.peerUpgradeSupported && (
+              <UpgradeInternet key={profile.id} profile={profile} onBusyChange={setPairingBusy} />
+            )}
+          {!profile.connection.peer && connected && snapshot && !snapshot.peerUpgradeSupported && (
+            <Text style={styles.muted}>
+              Update Dovo on this computer to enable internet access without re-pairing.
+            </Text>
+          )}
+          <Action label="Reconnect" disabled={busy || pairingBusy} onPress={() => act(refresh)} />
           <Action
             secondary
-            label="Update connection address"
-            disabled={busy}
+            label={
+              profile.connection.accountSession
+                ? 'Pair LAN / VPN'
+                : profile.connection.internet
+                  ? 'Update LAN / VPN pairing'
+                  : 'Update connection address'
+            }
+            disabled={busy || pairingBusy}
             onPress={() => setChangingAddress(true)}
           />
           {!!(error || connectionError) && (

@@ -14,6 +14,7 @@ import {
 } from '@dovo/protocol'
 import type { PeerRelayIssuer } from './relay-credentials.js'
 import type { PeerRelayAdmission } from './relay-admission.js'
+import { approvedRelayInstallations } from './relay-admission.js'
 import { clientAddress } from './client-address.js'
 import { rateLimit } from './rate-limit.js'
 
@@ -26,6 +27,7 @@ const helloSchema = Schema.Union([
     clientKey: key,
     relayIdentity: Schema.optional(peerRelayIdentitySchema),
     relayAllowed: Schema.optional(Schema.Boolean),
+    accountGrant: Schema.optional(Schema.String),
   }),
   Schema.Struct({
     type: Schema.Literal('client'),
@@ -46,6 +48,7 @@ export function attachPeerSignaling(
   relayIssuers: Partial<Record<PeerRelayProvider, PeerRelayIssuer>> = {},
   relayAdmission?: PeerRelayAdmission,
   origin = 'https://connect.dovo.studio',
+  accountAdmission?: (grant: string, identity: string) => boolean,
 ) {
   const ws = new WebSocketServer({
     noServer: true,
@@ -65,6 +68,7 @@ export function attachPeerSignaling(
       relayAllowed: boolean
       admitted: Promise<void>
       relayIdentity?: string
+      accountGrant?: string
     }
   >()
   const alive = new WeakSet<WebSocket>()
@@ -137,6 +141,12 @@ export function attachPeerSignaling(
             const input = decode(helloSchema, value)
             const existing = rooms.get(input.room)
             if (input.type === 'host') {
+              if (
+                input.accountGrant &&
+                (!input.relayIdentity ||
+                  !accountAdmission?.(input.accountGrant, input.relayIdentity))
+              )
+                throw new Error('Internet access revoked')
               // A live host cannot be displaced, including by another account/device.
               if (existing || rooms.size >= 2048) throw new Error('Computer already connected')
               const admitted = new Promise<void>((resolve) => {
@@ -150,10 +160,13 @@ export function attachPeerSignaling(
                 relayApproved: false,
                 relayAllowed: input.relayAllowed === true,
                 relayIdentity: input.relayIdentity,
+                accountGrant: input.accountGrant,
               })
             } else {
               if (
                 !existing ||
+                (existing.accountGrant &&
+                  !accountAdmission?.(existing.accountGrant, existing.relayIdentity ?? '')) ||
                 !equal(existing.clientKey, input.key) ||
                 existing.clients.size >= 4 ||
                 existing.clients.has(input.session)
@@ -218,7 +231,11 @@ export function attachPeerSignaling(
             const room = rooms.get(hello.room)
             if (!room || room.host !== client || !hello.relayIdentity || !relayAdmission)
               throw new Error('Relay installation is unavailable')
-            room.relayApproved = relayAdmission(
+            const admit =
+              room.accountGrant && accountAdmission?.(room.accountGrant, hello.relayIdentity)
+                ? approvedRelayInstallations([hello.relayIdentity])
+                : relayAdmission
+            room.relayApproved = admit(
               hello.relayIdentity,
               peerRelayAdmissionPayload(
                 challenge,
@@ -266,7 +283,14 @@ export function attachPeerSignaling(
     }
   }, 25000)
   heartbeat.unref()
+  const revocations = setInterval(() => {
+    for (const room of rooms.values())
+      if (room.accountGrant && !accountAdmission?.(room.accountGrant, room.relayIdentity ?? ''))
+        room.host.terminate()
+  }, 1000)
+  revocations.unref()
   server.once('close', () => {
+    clearInterval(revocations)
     clearInterval(heartbeat)
     server.removeListener('upgrade', upgrade)
     for (const client of ws.clients) client.terminate()

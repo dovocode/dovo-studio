@@ -1,7 +1,7 @@
 import { decode } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { snapshotSchema, parsePairingInvitation } from '@dovo/protocol'
-const outputOptions = vi.hoisted(() => ({ json: true }))
+const outputOptions = vi.hoisted(() => ({ json: true, positionals: ['code'] }))
 vi.mock('node:util', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:util')>()),
   parseArgs: () => ({
@@ -11,7 +11,7 @@ vi.mock('node:util', async (importOriginal) => ({
       network: 'local',
       json: outputOptions.json,
     },
-    positionals: ['code'],
+    positionals: outputOptions.positionals,
   }),
 }))
 vi.mock('./connection.js', () => ({
@@ -36,6 +36,7 @@ vi.mock('./network.js', async (importOriginal) => ({
 }))
 afterEach(() => {
   outputOptions.json = true
+  outputOptions.positionals = ['code']
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -146,3 +147,181 @@ it('prints a scannable pairing invitation in human-readable server output', asyn
   expect(text).toContain('▄')
   expect(text).not.toContain('test-owner-token-at-least-thirty-two-characters')
 })
+
+it.each(['approve', 'deny'])(
+  'routes server %s to the owner-only internet approval endpoint',
+  async (command) => {
+    vi.resetModules()
+    outputOptions.positionals = [command, 'upgrade-id']
+    const snapshot = decode(snapshotSchema, {
+      owner: true,
+      revision: 0,
+      workspace: {
+        version: 1,
+        agents: [],
+        repositories: [],
+        tasks: [],
+        automations: [],
+        runtimeAddress: '',
+      },
+      approvals: [],
+      terminals: [],
+      runs: [],
+      devices: [],
+      pendingDevices: [],
+      pendingPeerUpgrades: [
+        {
+          id: 'upgrade-id',
+          deviceId: 'phone',
+          name: 'My phone',
+          status: 'pending',
+          relay: 'dovo',
+          expiresAt: new Date(Date.now() + 120000).toISOString(),
+        },
+      ],
+    })
+    const request = vi.fn<(address: string, options: RequestInit) => Promise<Response>>((address) =>
+      Promise.resolve(Response.json(address.endsWith('/api/snapshot') ? snapshot : { ok: true })),
+    )
+    vi.stubGlobal('fetch', request)
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {})
+    await import('./cli')
+    await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
+    expect(request).toHaveBeenLastCalledWith(
+      'http://127.0.0.1:8787/api/runtime/peer/upgrade/approve',
+      expect.objectContaining({
+        body: JSON.stringify({ id: 'upgrade-id', allow: command === 'approve' }),
+      }),
+    )
+  },
+)
+
+it('lists internet requests with explicit relay consent for headless server operators', async () => {
+  vi.resetModules()
+  outputOptions.json = false
+  outputOptions.positionals = ['devices']
+  const snapshot = decode(snapshotSchema, {
+    owner: true,
+    revision: 0,
+    workspace: {
+      version: 1,
+      agents: [],
+      repositories: [],
+      tasks: [],
+      automations: [],
+      runtimeAddress: '',
+    },
+    approvals: [],
+    terminals: [],
+    runs: [],
+    devices: [],
+    pendingDevices: [],
+    pendingPeerUpgrades: [
+      {
+        id: 'upgrade-id',
+        deviceId: 'phone',
+        name: 'My phone',
+        status: 'pending',
+        relay: 'dovo',
+        expiresAt: new Date(Date.now() + 120000).toISOString(),
+      },
+    ],
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json(snapshot)),
+  )
+  const output = vi.spyOn(console, 'log').mockImplementation(() => {})
+  await import('./cli')
+  await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
+  expect(output).toHaveBeenCalledWith(
+    expect.stringContaining('upgrade-id  My phone  Dovo relay fallback (encrypted)'),
+  )
+})
+
+it('shows only the public relay key for headless server admission', async () => {
+  vi.resetModules()
+  outputOptions.positionals = ['relay-key']
+  const snapshot = decode(snapshotSchema, {
+    owner: true,
+    revision: 0,
+    workspace: {
+      version: 1,
+      agents: [],
+      repositories: [],
+      tasks: [],
+      automations: [],
+      runtimeAddress: '',
+    },
+    approvals: [],
+    terminals: [],
+    runs: [],
+    devices: [],
+    pendingDevices: [],
+  })
+  const publicKey = 'A'.repeat(59)
+  const request = vi.fn<(address: string) => Promise<Response>>(async (address) =>
+    Response.json(address.endsWith('/api/snapshot') ? snapshot : { publicKey }),
+  )
+  vi.stubGlobal('fetch', request)
+  const output = vi.spyOn(console, 'log').mockImplementation(() => {})
+  await import('./cli')
+  await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
+  expect(output).toHaveBeenCalledWith(JSON.stringify({ publicKey }))
+  expect(request).toHaveBeenLastCalledWith(
+    'http://127.0.0.1:8787/api/runtime/peer/identity',
+    expect.objectContaining({ method: 'POST', body: '{}' }),
+  )
+})
+
+it.each(['status', 'off'])(
+  'manages account internet %s locally without requesting or printing account tokens',
+  async (command) => {
+    vi.resetModules()
+    outputOptions.positionals = ['internet', command]
+    const internet = { enabled: true, connected: true, error: '' }
+    const snapshot = decode(snapshotSchema, {
+      owner: true,
+      revision: 0,
+      internet,
+      workspace: {
+        version: 1,
+        runtimeAddress: '',
+        agents: [],
+        repositories: [],
+        tasks: [],
+        automations: [],
+      },
+      approvals: [],
+      terminals: [],
+      runs: [],
+      devices: [],
+      pendingDevices: [],
+    })
+    const request = vi.fn<(address: string, init: RequestInit) => Promise<Response>>(
+      async (address) =>
+        Response.json(
+          address.endsWith('/api/snapshot')
+            ? snapshot
+            : { ...internet, enabled: false, connected: false },
+        ),
+    )
+    vi.stubGlobal('fetch', request)
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {})
+    await import('./cli')
+    await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
+    expect(output).toHaveBeenCalledWith(
+      JSON.stringify(
+        command === 'status' ? internet : { ...internet, enabled: false, connected: false },
+      ),
+    )
+    expect(request).toHaveBeenCalledTimes(command === 'off' ? 2 : 1)
+    expect(
+      request.mock.calls
+        .filter(([address]) => address.endsWith('/api/runtime/internet'))
+        .map(([, options]) => ({ method: options.method, body: options.body })),
+    ).toEqual(
+      command === 'off' ? [{ method: 'POST', body: JSON.stringify({ enabled: false }) }] : [],
+    )
+  },
+)

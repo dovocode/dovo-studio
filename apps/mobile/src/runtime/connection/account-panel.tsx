@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Alert, View } from 'react-native'
 import { useMobileAccount } from './account-provider'
-import { runtimeComputerName, accountServerAddresses } from '@dovo/protocol'
+import * as Crypto from 'expo-crypto'
+import { preparePeerConnection } from './peer-transport'
+import { runtimeComputerName, accountServerAddresses, type AccountServer } from '@dovo/protocol'
 import { useRuntime } from './provider'
 import { Text } from '../../ui/content/text'
 import { SettingsChoice as Choice } from '../../screens/settings-controls'
@@ -9,7 +11,34 @@ import { SettingsAction as Action } from '../../screens/settings-controls'
 import { useSettingsTheme } from '../../screens/settings-theme'
 export function AccountPanel({ onPair }: { onPair: (address: string) => void }) {
   const { client, directory, login, busy, error, loaded, deletionPending } = useMobileAccount()
-  const { overviews } = useRuntime()
+  const { overviews, connect } = useRuntime()
+  const [connecting, setConnecting] = useState<string | null>(null)
+  const [connectionError, setConnectionError] = useState('')
+  const attempt = useRef<AbortController | null>(null)
+  useEffect(() => () => attempt.current?.abort(), [])
+  const connectComputer = async (server: AccountServer) => {
+    if (attempt.current) return
+    const controller = new AbortController()
+    attempt.current = controller
+    setConnecting(server.id)
+    setConnectionError('')
+    try {
+      const connection = await client.connectInternet(
+        server,
+        Crypto.getRandomBytes(32),
+        controller.signal,
+      )
+      if (!connection.peer) throw new Error('Computer did not provide an encrypted connection')
+      preparePeerConnection(connection.peer)
+      await connect(connection, server.name)
+    } catch (error) {
+      if (!controller.signal.aborted)
+        setConnectionError(error instanceof Error ? error.message : 'Could not connect')
+    } finally {
+      if (attempt.current === controller) attempt.current = null
+      setConnecting(null)
+    }
+  }
   const [selected, setSelected] = useState<Record<string, string>>({})
   const { styles } = useSettingsTheme()
   return (
@@ -18,8 +47,14 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
         {directory ? `Signed in as ${directory.user.name}` : 'Your computers, across devices'}
       </Text>
       <Text style={styles.text}>
-        Sign-in is optional. Discover linked computers, then pair to access them.
+        Use the same account as your computer for Dovo Connect. No pairing code needed. LAN / VPN
+        pairing is separate and takes priority when available.
       </Text>
+      {!!connectionError && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {connectionError}
+        </Text>
+      )}
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
@@ -79,7 +114,8 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
         <>
           {!directory.servers.length && (
             <Text style={styles.text}>
-              No computers linked yet. Link one of your paired computers below.
+              Enable Dovo Connect on your computer to see it here, or link a separately paired
+              computer below.
             </Text>
           )}
           {directory.servers.map((server) => {
@@ -91,8 +127,24 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
             return (
               <View key={server.id} style={{ gap: 8 }}>
                 <Text style={styles.title}>{server.name}</Text>
-                <Text style={styles.text}>{server.address}</Text>
-                {paired ? (
+                <Text style={styles.text}>
+                  {server.internet
+                    ? server.internet.online
+                      ? 'Dovo Connect · Online'
+                      : 'Dovo Connect · Offline'
+                    : server.address}
+                </Text>
+                {server.internet ? (
+                  <Action
+                    label={
+                      connecting === server.id
+                        ? 'Connecting…'
+                        : `${paired ? 'Reconnect' : 'Connect'} ${server.name}`
+                    }
+                    disabled={busy || !!connecting || !server.internet.online}
+                    onPress={() => void connectComputer(server)}
+                  />
+                ) : paired ? (
                   <Text style={styles.text}>Already paired</Text>
                 ) : (
                   <Action
@@ -102,7 +154,11 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
                   />
                 )}
                 <Action
-                  label={`Unlink ${server.name}`}
+                  label={
+                    server.internet
+                      ? `Disable Dovo Connect for ${server.name}`
+                      : `Unlink ${server.name}`
+                  }
                   disabled={busy}
                   onPress={() => void client.unlink(server.id)}
                 />

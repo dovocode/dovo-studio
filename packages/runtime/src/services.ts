@@ -129,6 +129,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   // revocation closes encrypted streams synchronously rather than waiting for the reaper.
   let peerConnections: PeerConnections | undefined
   const devices = new Devices(db, ownerToken, (id) => {
+      peerConnections?.internet.revoke(id)
       peerConnections?.disable(id)
       mutations.revoke(id)
       deviceHostUploads.cancelDevice(id)

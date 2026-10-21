@@ -1,3 +1,4 @@
+import { mergeAccountInternetConnection } from '@dovo/protocol'
 import type { WorkspacePatchResult, PendingMessage, Task } from '@dovo/protocol'
 import {
   setPeerConnectionsActive,
@@ -8,7 +9,7 @@ import {
   replacePeerConnection,
   preparePeerConnection,
 } from './peer-transport'
-import { isPeerAddress, type PeerRelayProvider } from '@dovo/protocol'
+import { isPeerAddress, type PeerConfig, type PeerRelayProvider } from '@dovo/protocol'
 import type { Repository } from '@dovo/protocol'
 import {
   runtimeHasCustomName,
@@ -146,6 +147,7 @@ export type Runtime = {
   /** Saved pairings are being checked after launch; connections wait for the result. */
   recovering: boolean
   error: string
+  syncAccountSession: (session: string | null) => Promise<void>
   connectEffect: (
     value: RuntimeConnection,
     name?: string,
@@ -155,6 +157,11 @@ export type Runtime = {
   selectRuntimeEffect: (id: string) => Effect.Effect<void, Error>
   forgetRuntimeEffect: (id: string) => Effect.Effect<void, Error>
   renameRuntimeEffect: (id: string, name: string) => Effect.Effect<void, Error>
+  upgradeInternetEffect: (
+    id: string,
+    previous: RuntimeConnection,
+    peer: PeerConfig,
+  ) => Effect.Effect<void, Error>
   setPeerRelayEffect: (
     id: string,
     relay: PeerRelayProvider | undefined,
@@ -225,6 +232,7 @@ const initialOverview = (profile: RuntimeProfile): RuntimeOverview => ({
   pullError: null,
 })
 export function RuntimeProvider({ children }: { children: ReactNode }) {
+  const accountSession = useRef<string | null>(null)
   const [registry, setRegistry, current] = useApplicationState<RuntimeRegistry>(empty),
     [entries, setEntries, entryRef] = useApplicationState<Record<string, RuntimeOverview>>(
       {},
@@ -477,8 +485,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             for (const profile of [
               ...next.profiles,
               ...(next.pendingPairings ?? []).map((entry) => entry.profile),
-            ])
+            ]) {
               if (profile.connection.peer) preparePeerConnection(profile.connection.peer)
+              if (profile.connection.internet)
+                preparePeerConnection(profile.connection.internet.peer)
+            }
             setRegistry(next)
             setStorageError('')
           }),
@@ -769,13 +780,31 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               'Saved computers could not be loaded. Retry loading before pairing or editing connections.',
             ),
           )
-        const previous = current.current.profiles.find((item) => item.id === replaceId)
+        if (proof || value.accountSession) {
+          const snapshot = yield* runtimeRequestEffect(
+            value,
+            value.address,
+            '/api/snapshot',
+            undefined,
+            snapshotSchema,
+            'GET',
+          )
+          value = learnRuntimeRoutes(value, snapshot)
+        }
+        const previous = current.current.profiles.find((item) =>
+          replaceId
+            ? item.id === replaceId
+            : !!value.runtimeId && item.connection.runtimeId === value.runtimeId,
+        )
         if (replaceId && (!previous || !proof))
           return yield* Effect.fail(
             new Error('Select a saved computer and pair its new address before replacing it.'),
           )
         const next = {
-          ...runtimeProfile(value, name || previous?.name),
+          ...runtimeProfile(
+            mergeAccountInternetConnection(previous?.connection, value),
+            name || previous?.name,
+          ),
           nameIsCustom: name?.trim() ? true : previous ? runtimeHasCustomName(previous) : false,
           ...(previous ? { id: previous.id } : {}),
         }
@@ -793,7 +822,18 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               ),
             ),
           )
-        else yield* changeRegistryEffect((saved) => upsertRuntime(saved, next))
+        else
+          yield* changeRegistryEffect((saved) => {
+            if (value.accountSession && accountSession.current !== value.accountSession)
+              throw new Error('Account changed while connecting. Sign in again.')
+            const current = saved.profiles.find((item) => item.id === next.id)
+            if (
+              previous &&
+              (!current || !sameRuntimeConnection(current.connection, previous.connection))
+            )
+              throw new Error('Computer connection changed while connecting. Try again.')
+            return upsertRuntime(saved, next)
+          })
         yield* refreshOverviewEffect(next)
       })
     },
@@ -805,6 +845,50 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       persistRegistryEffect,
       beforeReplace,
     ],
+  )
+  const syncAccountSession = useCallback(
+    (session: string | null) => {
+      accountSession.current = session
+      if (
+        !current.current.profiles.some(
+          (profile) =>
+            (profile.connection.accountSession && profile.connection.accountSession !== session) ||
+            (profile.connection.internet && profile.connection.internet.session !== session),
+        )
+      )
+        return Promise.resolve()
+      return runClientEffect(
+        changeRegistryEffect((saved) => {
+          let changed = false
+          const profiles = saved.profiles.flatMap((profile) => {
+            if (
+              profile.connection.accountSession &&
+              profile.connection.accountSession !== session
+            ) {
+              forgetPeerConnection(profile.connection.address)
+              changed = true
+              return []
+            }
+            if (profile.connection.internet && profile.connection.internet.session !== session) {
+              forgetPeerConnection(profile.connection.internet.address)
+              changed = true
+              return [{ ...profile, connection: { ...profile.connection, internet: undefined } }]
+            }
+            return [profile]
+          })
+          return changed
+            ? {
+                ...saved,
+                profiles,
+                activeId: profiles.some((item) => item.id === saved.activeId)
+                  ? saved.activeId
+                  : (profiles[0]?.id ?? null),
+              }
+            : saved
+        }),
+      )
+    },
+    [changeRegistryEffect],
   )
   const selectRuntimeEffect = useCallback(
     (id: string) => {
@@ -849,7 +933,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             'POST',
             4000,
           ).pipe(Effect.ignore)
-        if (profile) forgetPeerConnection(profile.connection.address)
+        if (profile) {
+          forgetPeerConnection(profile.connection.address)
+          if (profile.connection.internet) forgetPeerConnection(profile.connection.internet.address)
+        }
       })
     },
     [changeRegistryEffect, cacheFor, mutations],
@@ -884,6 +971,65 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       }))
     })
   }, [changeRegistryEffect])
+  const upgradeInternetEffect = useCallback(
+    (id: string, previous: RuntimeConnection, peer: PeerConfig) =>
+      mobileWorkflow(function* () {
+        const profile = current.current.profiles.find((item) => item.id === id)
+        if (!profile || !sameRuntimeConnection(profile.connection, previous))
+          return yield* Effect.fail(new Error('This computer connection changed. Try again.'))
+        yield* beforeReplace(previous)
+        const address = preparePeerConnection(peer)
+        const connection = { ...previous, address, peer, alternateAddresses: undefined }
+        let committed = false
+        yield* mobileWorkflow(function* () {
+          // Prove the new path works with the existing token before replacing the saved route.
+          const snapshot = yield* runtimeRequestEffect(
+            connection,
+            address,
+            '/api/snapshot',
+            undefined,
+            snapshotSchema,
+            'GET',
+            30000,
+          )
+          const verified = learnRuntimeRoutes(connection, snapshot)
+          yield* beforeReplace(previous)
+          yield* changeRegistryEffect((saved) => {
+            const current = saved.profiles.find((item) => item.id === id)
+            if (!current || !sameRuntimeConnection(current.connection, previous))
+              throw new Error('This computer connection changed. Try again.')
+            return {
+              ...saved,
+              profiles: saved.profiles.map((item) =>
+                item.id === id ? { ...item, connection: verified } : item,
+              ),
+            }
+          }).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                committed = true
+              }),
+            ),
+            Effect.uninterruptible,
+          )
+          clearRuntimeRequestCache(previous)
+          updateEntry({ ...profile, connection: verified }, (entry) => ({
+            ...entry,
+            snapshot,
+            connected: true,
+            error: null,
+            unauthorized: false,
+          }))
+        }).pipe(
+          Effect.onError(() =>
+            Effect.sync(() => {
+              if (!committed) forgetPeerConnection(address)
+            }),
+          ),
+        )
+      }),
+    [beforeReplace, changeRegistryEffect, updateEntry],
+  )
   const setPeerRelayEffect = useCallback(
     (id: string, relay: PeerRelayProvider | undefined) =>
       mobileWorkflow(function* () {
@@ -1007,8 +1153,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       for (const profile of [
         ...saved.profiles,
         ...(saved.pendingPairings ?? []).map((entry) => entry.profile),
-      ])
+      ]) {
         if (profile.connection.peer) preparePeerConnection(profile.connection.peer)
+        if (profile.connection.internet) preparePeerConnection(profile.connection.internet.peer)
+      }
       setRegistry(saved)
       setRegistryLoaded(true)
       setStorageError('')
@@ -1502,10 +1650,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       cacheForRuntime: cacheFor,
       readCache,
       refreshEffect,
+      syncAccountSession,
       connectEffect,
       selectRuntimeEffect,
       forgetRuntimeEffect,
       renameRuntimeEffect,
+      upgradeInternetEffect,
       setPeerRelayEffect,
       disconnectEffect,
     }),
@@ -1548,10 +1698,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       cacheFor,
       readCache,
       refreshEffect,
+      syncAccountSession,
       connectEffect,
       selectRuntimeEffect,
       forgetRuntimeEffect,
       renameRuntimeEffect,
+      upgradeInternetEffect,
       setPeerRelayEffect,
       disconnectEffect,
     ],

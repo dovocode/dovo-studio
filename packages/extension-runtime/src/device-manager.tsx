@@ -4,14 +4,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
-import {
-  decode,
-  peerRelayProviderSchema,
-  PEER_RELAY_CHOICES,
-  peerRelayDescription,
-  type PeerConfig,
-  type PeerRelayProvider,
-} from '@dovo/protocol'
+import { type PeerConfig } from '@dovo/protocol'
 /** `connectPhone` starts pairing immediately, for entry points that exist only to pair. */
 export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean }) {
   const { snapshot, request, connected, activeRuntimeId, runtimeRegistry, refreshRuntime } =
@@ -26,7 +19,6 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
     [error, setError] = useApplicationState(''),
     [notice, setNotice] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
-  const [relay, setRelay] = useApplicationState<PeerRelayProvider | undefined>(undefined)
   const pending = useRef(false)
   const act = (action: () => Promise<unknown>) => {
     if (!connected || pending.current) return
@@ -48,15 +40,7 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
   useEffect(() => {
     if (!connectPhone || started.current || !connected || !snapshot?.owner) return
     started.current = true
-    act(async () =>
-      setCode(
-        await request(
-          '/api/pair/code',
-          { internet: true, ...(relay ? { relay } : {}) },
-          responses.pairCode,
-        ),
-      ),
-    )
+    act(async () => setCode(await request('/api/pair/code', {}, responses.pairCode)))
   }, [connectPhone, connected, snapshot?.owner])
   return (
     <article className="space-y-3 rounded-md border p-3">
@@ -72,88 +56,13 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
             size="sm"
             disabled={!connected || busy}
             onClick={() =>
-              act(async () =>
-                setCode(
-                  await request(
-                    '/api/pair/code',
-                    { internet: true, ...(relay ? { relay } : {}) },
-                    responses.pairCode,
-                  ),
-                ),
-              )
+              act(async () => setCode(await request('/api/pair/code', {}, responses.pairCode)))
             }
           >
-            {code ? 'Generate new pairing code' : 'Connect your phone'}
+            {code ? 'Generate new pairing code' : 'Pair LAN / VPN device'}
           </Button>
         )}
       </div>
-      {snapshot?.owner && (
-        <div className="space-y-1.5">
-          <label className="flex items-center gap-3 text-xs">
-            Relay fallback
-            <select
-              aria-label="Relay fallback"
-              value={relay ?? 'direct'}
-              disabled={!connected || busy}
-              className="h-8 rounded-md border bg-background px-2"
-              onChange={(event) => {
-                setRelay(
-                  event.target.value === 'direct'
-                    ? undefined
-                    : decode(peerRelayProviderSchema, event.target.value),
-                )
-                setCode(null)
-              }}
-            >
-              {PEER_RELAY_CHOICES.map((choice) => (
-                <option key={choice.id} value={choice.id}>
-                  {choice.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="max-w-lg text-xs text-muted-foreground">{peerRelayDescription(relay)}</p>
-          {relay === 'dovo' && (
-            <div className="space-y-1.5">
-              <p className="max-w-lg text-xs text-muted-foreground">
-                Dovo relay access needs one-time operator approval for this computer. Copy its
-                public approval key and share it with your Dovo operator. It grants no access to
-                your files. Direct connections work without approval.
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!connected || busy}
-                onClick={() =>
-                  act(async () => {
-                    const identity = await request(
-                      '/api/runtime/peer/identity',
-                      {},
-                      responses.peerRelayIdentity,
-                    )
-                    await navigator.clipboard.writeText(identity.publicKey)
-                    setNotice('Public relay approval key copied. Share it with your Dovo operator.')
-                  })
-                }
-              >
-                Copy relay approval key
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-      {snapshot?.owner && (
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!connected || busy}
-          onClick={() =>
-            act(async () => setCode(await request('/api/pair/code', {}, responses.pairCode)))
-          }
-        >
-          Pair using LAN / VPN instead
-        </Button>
-      )}
       {snapshot?.owner && (
         <DesktopNetwork
           onChanged={async (moved) => {
@@ -223,6 +132,47 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
           </div>
         </div>
       ))}
+      {snapshot?.owner &&
+        snapshot.pendingPeerUpgrades?.map((upgrade) => (
+          <div key={upgrade.id} className="space-y-2 rounded border p-3 text-xs">
+            <p>
+              <strong>{upgrade.name}</strong> requests internet access using its existing pairing.
+              No new access to files or tools is granted.
+            </p>
+            <p className="text-muted-foreground">
+              {upgrade.relay === 'dovo'
+                ? 'Allows Dovo relay fallback: encrypted traffic may pass through Dovo servers. Operator approval is also required.'
+                : 'Direct WebRTC only. No relay will carry your content.'}
+            </p>
+            <div className="flex gap-2">
+              {[true, false].map((allow) => (
+                <Button
+                  key={String(allow)}
+                  size="sm"
+                  variant={allow ? 'default' : 'outline'}
+                  disabled={!connected || busy}
+                  aria-label={`${allow ? 'Approve' : 'Deny'} internet access for ${upgrade.name}`}
+                  onClick={() =>
+                    act(async () => {
+                      await request(
+                        '/api/runtime/peer/upgrade/approve',
+                        { id: upgrade.id, allow },
+                        responses.ok,
+                      )
+                      setNotice(
+                        allow
+                          ? 'Internet access approved. Your phone will finish connecting.'
+                          : 'Internet access denied. Your existing pairing still works.',
+                      )
+                    })
+                  }
+                >
+                  {allow ? 'Approve internet access' : 'Deny'}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ))}
       {code && (
         <PairingGuide
           key={code.code}

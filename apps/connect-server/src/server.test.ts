@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from 'vite-plus/test'
+import { generateKeyPairSync, randomBytes, sign } from 'node:crypto'
+import { internetPublicKey, internetRegistrationPayload } from '@dovo/protocol'
 import { once } from 'node:events'
 import { AccountStore, hash } from './store.js'
 import { createConnectServer } from './server.js'
@@ -303,4 +305,59 @@ describe('optional account discovery', () => {
     expect(b.directory(token)?.servers[0].id).toBe('server')
     expect(b.db.prepare('SELECT token FROM sessions').get()?.token).toBe(hash(token))
   })
+})
+
+it('serves owner-proven account internet registration and ciphertext setup through the HTTP API', async () => {
+  const f = await fixture()
+  const { login, token } = f.store.createLogin()
+  f.store.approve(login, { id: 'internet-user', name: 'Dominic' })
+  const keys = generateKeyPairSync('ed25519')
+  const registration = {
+    id: 'internet-runtime',
+    name: 'Desktop',
+    identity: keys.publicKey.export({ format: 'der', type: 'spki' }).toString('base64url'),
+    publicKey: internetPublicKey(randomBytes(32)),
+    timestamp: f.store.now(),
+  }
+  const response = await f.request('/v1/internet/hosts', {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...registration,
+      signature: sign(
+        null,
+        Buffer.from(internetRegistrationPayload('http://connect.test', hash(token), registration)),
+        keys.privateKey,
+      ).toString('base64url'),
+    }),
+  })
+  expect(response.status).toBe(200)
+  const grant = await response.json()
+  expect(grant).toMatchObject({ grant: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) })
+  expect(
+    (await f.request('/v1/internet/host', { headers: { Authorization: 'Bearer ' + grant.grant } }))
+      .status,
+  ).toBe(200)
+  expect(
+    await (
+      await f.request('/v1/servers', { headers: { Authorization: 'Bearer ' + token } })
+    ).json(),
+  ).toMatchObject({
+    servers: [
+      { id: 'internet-runtime', internet: { online: true, publicKey: registration.publicKey } },
+    ],
+  })
+  expect((await f.request('/v1/internet/host')).status).toBe(401)
+  expect(
+    (
+      await f.request('/v1/internet/connections', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          runtimeId: 'internet-runtime',
+          publicKey: internetPublicKey(randomBytes(32)),
+        }),
+      })
+    ).status,
+  ).toBe(200)
 })

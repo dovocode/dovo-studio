@@ -1,44 +1,62 @@
 # Internet connections
 
-In desktop **Settings → Devices & runtime → Connect your phone**, scan the QR code in mobile
-**Computers**. Review the connection and tap **Connect**, then approve the named phone on the
-computer. No VPN, public runtime address, port forwarding, provider account or extra software is
-required for direct connections. Dovo relay access needs one-time operator approval for the
-computer. Both apps need an updated build and Connect must run the updated signaling service.
+In desktop **Settings → Devices & runtime → Dovo account**, sign in and check **Enable Dovo
+Connect**. On iPhone or Android, sign in to the same Dovo Studio account under **Computers**, then
+choose **Connect** beside the computer. No device pairing code, phone approval, VPN, port forwarding
+or external network account is required for this account-authorized internet connection.
 
-**Relay fallback is opt in, per connection.** The default is **Direct only**. On desktop choose the
-fallback before generating the QR; on mobile choose during pairing or under **Computers → your
-computer → Relay fallback**. Changes are saved securely and switching off closes the previous
-transport immediately. Old cached requests cannot re-enable a relay. The computer's QR sets the
-maximum permission: a phone cannot turn a Direct-only pairing into a relayed connection. To allow
-relay later, generate a Dovo-enabled QR on the computer and pair again. An ordinary LAN/VPN pairing
-cannot silently enable internet connectivity.
+Enabling Dovo Connect explicitly grants devices signed in to that account access to files, agents
+and terminal commands on this computer. The checkbox also permits the encrypted Dovo TURN fallback
+when WebRTC + STUN cannot establish a direct internet path. Notifications and Live Activities keep
+their existing delivery behavior. Both clients and the Connect service need updated builds.
 
-- **Direct only:** WebRTC + STUN, without a relay. Some networks cannot connect.
-- **Dovo relay fallback:** ICE prefers a direct path; Dovo's coturn service can carry encrypted
-  packets when necessary. This explicitly permits ciphertext to pass through Dovo infrastructure.
+**LAN / VPN pairing remains separate and account-free.** Use **Pair LAN / VPN device** on desktop
+and scan its code on the phone. An internet-connected phone can add that pairing with **Computers →
+your computer → Pair LAN / VPN**. A separately paired connection is preferred; Dovo Connect is used
+only when its verified LAN / VPN addresses cannot be reached. Both credentials stay separate. Adding
+either connection preserves the computer entry and its chat grouping. Route selection happens before
+a request is sent; an uncertain mutation is never replayed on the other transport.
 
-The relay does not terminate WebRTC's DTLS encryption. It can observe IPs, timing and traffic
-volume. Cloudflare TURN is not offered or configured. When a selected provider is unconfigured,
-unavailable or rate-limited, only direct ICE remains available; blocked direct connections report
-the selected relay as unavailable. ICE may gather relay candidates even when it ultimately selects
-direct. No extra software or account is required. To request relay approval, select Dovo relay
-fallback on the computer, copy its public relay approval key and share it with the operator.
+For a headless server, run `dovo-server connect on` through SSH and open the printed sign-in URL in
+your browser. Verify its confirmation code, then sign in to the same account on your phone.
+`dovo-server connect status` reports availability; `dovo-server connect off` disables internet
+access and preserves separate pairings. In a source checkout use `pnpm pair internet on|off|status`.
+The runtime stores a restricted installation grant, never the full account session. That grant
+expires with the account session (currently 30 days), after which enable Connect again.
 
-Internet connections use reliable WebRTC data channels and STUN, with DTLS encryption between the
-phone and computer. Connect exchanges bounded ICE/SDP connection metadata only. Pairing codes,
-device bearer tokens, chats, files, terminal traffic and previews do not pass through Connect. IP
-candidates, opaque rendezvous identifiers and connection timing are visible to signaling/STUN
-services. Existing notification and Live Activity delivery is unchanged, including its relay
-content.
+## Authorization and encryption
 
-The QR contains a high-entropy temporary key. Both complete SDP descriptions (including DTLS
-fingerprints and ICE credentials), their roles, session nonce, offer binding and relay choice are
-authenticated using that key. The signaling service cannot substitute another computer's
-certificate. The ordinary single-use two-minute pairing code and desktop approval are still
-required. Once paired, a separate per-device capability is issued over the encrypted connection and
-saved in the phone's secure registry. Revoking the device closes its peers and removes its
-capability. The bootstrap capability expires with the invitation.
+Each runtime generates its signing and encryption private keys locally. An owner-only runtime
+endpoint signs a registration bound to its runtime ID, encryption key, Connect origin, current
+account session and a one-minute timestamp. Connect pins those keys for that account's installation;
+replacing keys requires unlinking the old installation. A manually linked LAN address grants no
+internet access. The phone obtains the public encryption key from the authenticated account
+directory and sends a fresh public key. The runtime seals its per-device bearer token and tunnel
+configuration using authenticated X25519/XSalsa20-Poly1305 encryption (TweetNaCl), bound inside the
+ciphertext to the runtime ID and connection request. Connect stores and forwards only ciphertext and
+public connection metadata. The private phone key stays in memory until setup finishes; its
+connection credentials are saved in the phone's secure registry.
+
+The account directory is the authority for first-time device access and public-key distribution.
+This protects content from ordinary signaling and TURN relays; it does not remove trust in the
+account authentication/directory service. Account IDs, computer names, public keys, IP candidates,
+connection timing and opaque session identifiers are visible to the corresponding services. Existing
+notification content remains governed by its separate notification settings.
+
+Runtime traffic uses authenticated WebRTC DTLS data channels. Both complete SDP descriptions
+(including fingerprints and ICE credentials), roles, nonce, offer binding and relay choice are
+HMAC-authenticated with the encrypted configuration secret. Account credentials work only in their
+own internet room; they cannot authorize ordinary LAN/VPN HTTP or WebSocket access. A separate
+LAN/VPN pairing issues its own device credential.
+
+Signing out of the phone removes its account connection, without removing a separate pairing.
+Signing out on the host, deleting the account, unlinking the installation, disabling Connect or
+revoking an internet device prevents further access. The host refreshes authorization every three
+seconds and its internet rooms fail closed after a twelve-second lease if Connect cannot be reached.
+Existing tunneled sockets close as authorization is removed. Device revocation also blocks reissuing
+access to that phone's current account session; a new sign-in authorizes a new session. Local
+disablement closes access immediately even if the directory is unavailable. In that case, an offline
+directory entry may remain until it can be unlinked.
 
 On the phone, an ephemeral loopback listener carries existing HTTP, WebSockets, images, files and
 WebViews over the same peer connection. On the computer, the only tunnel destination is an ordinary
@@ -63,12 +81,14 @@ The runtime makes an outbound WSS connection to `/v1/peer` at `https://connect.d
 `DOVO_CONNECT_ORIGIN` can select another HTTPS signaling origin. Loopback HTTP is accepted only for
 local integration testing. The reverse proxy must forward WebSocket upgrades and allow idle
 connections longer than the 25-second heartbeat. Use one signaling instance: room state is bounded,
-ephemeral and in memory, and is not replicated between processes. No accounts or account sessions
-are required. Do not log WebSocket bodies or pairing links. Set `DOVO_CONNECT_TRUSTED_PROXIES` to
-the exact immediate proxy address after verifying that proxy sanitizes client-supplied forwarded
-headers. Never trust all private networks or arbitrary `X-Forwarded-For` values. With no trusted
-proxy configured, forwarded headers are ignored safely, but clients behind one proxy share its
-connection and request limits. Recheck the address when a container changes networks.
+ephemeral and in memory, and is not replicated between processes. Account-authorized connections
+require a signed-in session and explicit owner enablement. Legacy QR-based internet pairing and
+operator-approved relay installations remain supported for existing connections. Do not log
+WebSocket bodies or pairing links. Set `DOVO_CONNECT_TRUSTED_PROXIES` to the exact immediate proxy
+address after verifying that proxy sanitizes client-supplied forwarded headers. Never trust all
+private networks or arbitrary `X-Forwarded-For` values. With no trusted proxy configured, forwarded
+headers are ignored safely, but clients behind one proxy share its connection and request limits.
+Recheck the address when a container changes networks.
 
 There are no media capture permissions for this transport: it uses data channels only. Mobile
 requires a new native build containing `react-native-webrtc` and `react-native-tcp-socket`; an
@@ -113,17 +133,18 @@ TURN over TCP/TLS still uses the UDP relay port range for WebRTC peer traffic. F
 even if advertising only TCP/TLS listeners. A valid certificate or STUN binding response does not
 establish that authenticated relay payloads can flow end to end.
 
-Before enabling relay issuance, configure `DOVO_RELAY_APPROVED_KEYS` with a comma-separated list of
-public approval keys copied from computers' Settings. An empty list denies every relay grant even
-when TURN URLs and the shared secret are configured. Each runtime stores its own Ed25519 private
-installation key locally. It signs a fresh, single-use broker challenge bound to its room and both
-signaling capabilities, the Connect origin and the computer's relay consent; approval cannot be
-obtained by copying a public key or replaying an old proof. An unapproved installation can still use
-direct WebRTC without an account. Removing a key and restarting Connect blocks new grants for that
-installation; previously issued grants expire within ten minutes. To invalidate all outstanding
-grants immediately, rotate the private coturn shared secret, restart coturn to close existing
-allocations, and configure the matching new secret on Connect. Keep issuance disabled throughout
-that operation.
+Account-enabled installations use their active account-scoped grant plus a proof of their pinned
+installation key for relay admission. For legacy account-free installations, configure
+`DOVO_RELAY_APPROVED_KEYS` with a comma-separated list of public approval keys. An empty list denies
+legacy relay grants; it does not disable account-authorized installations. Each runtime stores its
+own Ed25519 private installation key locally. It signs a fresh, single-use broker challenge bound to
+its room and both signaling capabilities, the Connect origin and the computer's relay consent;
+approval cannot be obtained by copying a public key or replaying an old proof. An unapproved
+installation can still use direct WebRTC without an account. Removing a key and restarting Connect
+blocks new grants for that installation; previously issued grants expire within ten minutes. To
+invalidate all outstanding grants immediately, rotate the private coturn shared secret, restart
+coturn to close existing allocations, and configure the matching new secret on Connect. Keep
+issuance disabled throughout that operation.
 
 Connect issues standard coturn REST credentials: an expiring, randomized username and its HMAC-SHA1
 password. Approved installations share cached grants across their rooms and TURN usernames include a

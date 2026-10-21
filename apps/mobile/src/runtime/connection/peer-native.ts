@@ -59,7 +59,7 @@ export async function openPeerTunnel(
         ? cause
         : new Error(
             relayUnavailable
-              ? 'Dovo relay is unavailable and a direct connection could not be established. Ask your Dovo operator to check this computer’s relay approval and service availability.'
+              ? 'Dovo relay is unavailable and a direct connection could not be established. Check that Dovo Connect is enabled and your account is signed in on both devices, then reconnect.'
               : PEER_CONNECTION_ERROR,
           )
     fail(error)
@@ -99,7 +99,7 @@ export async function openPeerTunnel(
     }
     signal.onclose = () => {
       if (!connected && !accepted) {
-        reject(new Error('Computer is offline or internet pairing expired'))
+        reject(new Error('Computer is offline or internet access is no longer authorized'))
         close()
       }
     }

@@ -260,6 +260,31 @@ it('shares client activity watches and resumes its cursor after background teard
   await expect.poll(() => activity).toBe('Tool updated')
 })
 
+it('streams internet consent requests only to the owner and updates after a decision', async () => {
+  const { startRuntimeSync } = await import('@dovo/protocol')
+  const { runtime, address, open } = await setup()
+  const credential = 'internet-upgrade-phone-token-at-least-32-characters'
+  const deviceId = runtime.services.devices.add('Upgrade phone', credential)
+  vi.stubGlobal('WebSocket', WebSocket)
+  cleanup.push(() => {
+    vi.unstubAllGlobals()
+  })
+  const snapshots: Array<import('@dovo/protocol').RuntimeSnapshot> = []
+  const owner = startRuntimeSync(
+    { address, token },
+    { onSnapshot: (snapshot) => snapshots.push(snapshot) },
+  )
+  cleanup.push(owner.stop)
+  await expect.poll(() => owner.online()).toBe(true)
+  const request = runtime.services.peers.upgrades.request(deviceId, 'dovo')
+  await expect.poll(() => snapshots.at(-1)?.pendingPeerUpgrades?.[0]?.id).toBe(request.id)
+  const phone = await open(credential)
+  phone.socket.send(JSON.stringify({ type: 'resume' }))
+  expect((await phone.wait('snapshot')).snapshot.pendingPeerUpgrades).toEqual([])
+  runtime.services.peers.upgrades.approve(request.id, false)
+  await expect.poll(() => snapshots.at(-1)?.pendingPeerUpgrades).toEqual([])
+})
+
 it('shares snapshot preparation without sharing device trust views or replay epochs', async () => {
   const { runtime, open } = await setup()
   const credential = 'second-sync-phone-with-at-least-32-characters'

@@ -390,6 +390,58 @@ it('refuses connections to the tunnel listener that did not arrive through a tun
   expect(await upgrade(`ws://127.0.0.1:${port}/ws/sync?ticket=none`)).toBe(401)
 })
 
+it('upgrades an existing pairing only after owner approval, preserving identity and private request details', async () => {
+  const { runtime, tunnel } = await fixture()
+  const token = 'existing-paired-phone-token'
+  const id = runtime.services.devices.add('Existing phone', token)
+  const otherToken = 'other-paired-phone-token'
+  runtime.services.devices.add('Other phone', otherToken)
+  const call = (path: string, credential = token, input?: object) =>
+    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+      method: input ? 'POST' : 'GET',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      ...(input ? { body: JSON.stringify(input) } : {}),
+    })
+  expect((await call('/api/runtime/peer/enable', token, {})).status).toBe(403)
+  const requested = await call('/api/runtime/peer/upgrade/request', token, {})
+  expect(requested.status).toBe(200)
+  const request: { id: string } = await requested.json()
+  const pending = await call('/api/runtime/peer/upgrade/claim', token, request).then((r) =>
+    r.json(),
+  )
+  expect(pending.status).toBe('pending')
+  expect(pending.peer).toBeUndefined()
+  expect(runtime.services.peers.enabled(id)).toBe(false)
+  for (const credential of [token, otherToken]) {
+    const view = await call('/api/snapshot', credential).then((r) => r.json())
+    expect(view.pendingPeerUpgrades).toEqual([])
+    expect(
+      (await call('/api/runtime/peer/upgrade/approve', credential, { ...request, allow: true }))
+        .status,
+    ).toBe(403)
+  }
+  const view = await call('/api/snapshot', ownerToken).then((r) => r.json())
+  expect(view.pendingPeerUpgrades).toMatchObject([{ id: request.id, name: 'Existing phone' }])
+  expect((await call('/api/runtime/peer/upgrade/claim', otherToken, request)).status).toBe(404)
+  expect(
+    (await call('/api/runtime/peer/upgrade/approve', ownerToken, { ...request, allow: true }))
+      .status,
+  ).toBe(200)
+  const claimed = await call('/api/runtime/peer/upgrade/claim', token, request).then((r) =>
+    r.json(),
+  )
+  const config = decode(peerConfigSchema, claimed.peer)
+  expect(config.relay).toBeUndefined()
+  const peer = await tunnel(config)
+  expect((await peer.request('/api/snapshot', undefined, token)).status).toBe(200)
+  expect(runtime.services.devices.authenticate(token).id).toBe(id)
+  expect(runtime.services.devices.list()).toHaveLength(2)
+  // Approval never grants capabilities to another paired device.
+  expect((await peer.request('/api/snapshot', undefined, otherToken)).status).toBe(403)
+  expect((await call('/api/runtime/peer/upgrade/cancel', token, request)).status).toBe(200)
+  expect(runtime.services.peers.enabled(id)).toBe(false)
+}, 45000)
+
 it('requires desktop internet consent and binds provenance to the live socket endpoints', async () => {
   const f = await fixture()
   const token = 'consent-phone-token'

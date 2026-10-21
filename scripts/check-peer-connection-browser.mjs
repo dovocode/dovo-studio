@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium, bundleBrowser } from './browser/harness.mjs'
 import { startRuntime } from '../packages/runtime/dist/index.js'
 import { attachPeerSignaling } from '../apps/connect-server/dist/peer-signaling.js'
+import { checkPeerUpgrades } from './browser/peer-upgrades.mjs'
 import { checkPeerPairing } from './browser/peer-pairing.mjs'
 import { dovoTurn } from '../apps/connect-server/dist/dovo-turn.js'
 import { approvedRelayInstallations } from '../apps/connect-server/dist/relay-admission.js'
@@ -274,6 +275,7 @@ await run(undefined, undefined, undefined, 'native-open')
 const pairingBrowser = await chromium.launch()
 try {
   await checkPeerPairing(pairingBrowser, root)
+  await checkPeerUpgrades(pairingBrowser, root)
 } finally {
   await pairingBrowser.close()
 }

@@ -1,3 +1,4 @@
+import { internetKeySchema } from './account-internet.js'
 import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../shared/schema.js'
 
@@ -7,6 +8,9 @@ export const accountServerSchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,
   address: Schema.String,
+  internet: Schema.optional(
+    mutableStruct({ publicKey: internetKeySchema, online: Schema.Boolean }),
+  ),
 })
 export const accountDirectorySchema = mutableStruct({
   user: accountUserSchema,

@@ -59,7 +59,7 @@ async function main() {
       'This server is managed by Homebrew, mise or an archive install. Finish active work, stop the server, upgrade with your package manager, then run dovo-server start. Your data directory is preserved.',
     )
   if (values.help) {
-    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | studio-tools | doctor | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove> [options]
+    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | connect | studio-tools | doctor | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove> [options]
   --data-dir <directory>    Workspace data directory (default: ~/.dovo)
   --host <host>             Setup: 0.0.0.0, an IP, local, tailscale, or netbird
   --port <number>           Setup: fixed port (default: 51464)
@@ -75,7 +75,8 @@ Setup preserves the existing database and saved listening address. Start runs in
 background, independently of the terminal or desktop app. Logs: <data-dir>/server.log.
 Plain start does not install an OS service or restart after reboot. See docs/server-setup.md.
 Service install creates a user-level launchd (macOS) or systemd (Linux) service and starts it.
-Pair accepts code/devices/approve/deny and --network/--manual, like pnpm pair.
+Connect on|off|status manages account-authorized internet access (browser sign-in, no device pairing).
+Pair accepts code/devices/relay-key/approve/deny and --network/--manual, like pnpm pair.
 ${
   packaged
     ? 'Update with Homebrew or mise after stopping the server, then start again. Data is preserved.'
@@ -93,6 +94,7 @@ Build first: pnpm --filter @dovo/api... -r build`
       'stop',
       'restart',
       'pair',
+      'connect',
       'studio-tools',
       'doctor',
       'backup',
@@ -103,7 +105,7 @@ Build first: pnpm --filter @dovo/api... -r build`
       'service',
       'remote-update',
     ].includes(command) ||
-    (command !== 'pair' && command !== 'service' && args.length) ||
+    (command !== 'pair' && command !== 'connect' && command !== 'service' && args.length) ||
     (command === 'service' &&
       (args.length !== 1 ||
         !['install', 'status', 'restart', 'update', 'remove', 'run'].includes(args[0])))
@@ -169,9 +171,13 @@ Build first: pnpm --filter @dovo/api... -r build`
     if (!report.runtime.running) process.exitCode = 1
     return
   }
-  if (command === 'pair') {
+  if (command === 'pair' || command === 'connect') {
     const config = readServerConfig(directory)
-    const pairArgs = [...args, '--connection', join(directory, 'runtime-connection.json')]
+    const pairArgs = [
+      ...(command === 'connect' ? ['internet', ...args] : args),
+      '--connection',
+      join(directory, 'runtime-connection.json'),
+    ]
     const address = values['public-address'] ?? config.publicAddress
     if (address) pairArgs.push('--public-address', address)
     if (values.network) pairArgs.push('--network', values.network)

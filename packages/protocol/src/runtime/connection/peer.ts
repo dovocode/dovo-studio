@@ -44,7 +44,7 @@ export const peerRelayDescription = (relay: PeerRelayProvider | undefined) =>
   relay === 'cloudflare'
     ? 'This saved relay is no longer available. Choose Direct only or Dovo relay fallback.'
     : relay === 'dovo'
-      ? 'Try direct first. With operator approval, Dovo servers carry encrypted traffic when needed. Only your phone and computer can read it.'
+      ? 'Try direct first. Account-authorized or operator-approved computers can use Dovo servers for encrypted traffic when needed. Only your phone and computer can read it.'
       : 'Your content travels directly between devices. No relay is used. Some networks may not connect.'
 export const peerConfigSchema = mutableStruct({
   origin: refine(

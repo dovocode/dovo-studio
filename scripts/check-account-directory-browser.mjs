@@ -7,17 +7,17 @@ const built = await bundleBrowser(
   {
     stdin: {
       contents: `
-import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
+import React,{useState} from 'react';import {internetPublicKey,sealInternet,peerAddress} from '${root}/packages/protocol/src/index.ts';import {createRoot} from 'react-dom/client';
 import {AccountPanel as Desktop} from '${root}/packages/extension-runtime/src/account-panel';
 import {MobileAccountProvider} from '${root}/apps/mobile/src/runtime/connection/account-provider';
 import {AccountPanel as Mobile} from '${root}/apps/mobile/src/runtime/connection/account-panel';
-window.saved=null;window.calls=[];window.ready=false;window.unavailable=false;
+window.internetRequests=[];window.connects=[];window.boxSecret=new Uint8Array(32).fill(7);window.internetStatus={enabled:false,connected:false,error:''};window.syncSession=async session=>{window.session=session};window.runtimeRequest=async(path,body)=>{window.internetRequests.push({path,body});window.internetStatus={enabled:body.enabled,connected:body.enabled,error:''};window.hosted(body.enabled);return window.internetStatus};window.saved=null;window.calls=[];window.ready=false;window.unavailable=false;
 window.sources=[{name:'Mac Studio',profile:{id:'local',name:'Mac Studio',connection:{address:'http://127.0.0.1:51464',token:'runtime-token-never-upload',runtimeId:'mac'}},snapshot:{runtimeId:'mac',runtimeAddresses:['http://lan:51464','http://vpn:51464']},connected:true}];
 window.overviews=window.sources;
 window.storage={read:async()=>window.saved,write:async token=>{window.saved=token}};
 window.open=async url=>{window.browserOpened=url};window.host={accountStorage:window.storage,openExternalLink:window.open};
-let servers=[{id:'server',name:'My Server',address:'http://server.internal:51464'}];
-window.fetch=async(url,init)=>{const path=new URL(url).pathname;window.calls.push({path,method:init.method,body:init.body?JSON.parse(init.body):null});if(window.unavailable)return Response.json({error:'unavailable'},{status:503});if(path==='/v1/login'&&init.method==='POST')return Response.json({token:'a'.repeat(43),code:'ABCD1234',url:'https://connect.dovo.studio/auth/start?id=test',expiresAt:Date.now()+300000});if(path==='/v1/login')return Response.json({ready:window.ready});if(path==='/v1/servers'&&init.method==='GET')return Response.json({user:{id:'person',name:'Dominic'},servers});if(init.method==='PUT')servers=servers.filter(server=>server.id!==JSON.parse(init.body).id).concat(JSON.parse(init.body));if(init.method==='DELETE'&&path.startsWith('/v1/servers/'))servers=servers.filter(server=>server.id!==decodeURIComponent(path.split('/').at(-1)));return Response.json({ok:true})};
+let servers=[{id:'server',name:'My Server',address:'http://server.internal:51464'}];window.hosted=enabled=>{servers=servers.filter(s=>s.id!=='internet');if(enabled)servers.push({id:'internet',name:'Internet Computer',address:'',internet:{publicKey:internetPublicKey(window.boxSecret),online:true}})};
+window.fetch=async(url,init)=>{const path=new URL(url).pathname;window.calls.push({path,method:init.method,body:init.body?JSON.parse(init.body):null});if(path==='/v1/internet/connections'){if(init.method==='POST'){const input=JSON.parse(init.body);window.connectionRequest={id:'encrypted-request',publicKey:input.publicKey};return Response.json({id:'encrypted-request'})}const peer={origin:'https://connect.dovo.studio',secret:'f'.repeat(64)};return Response.json({publicKey:internetPublicKey(window.boxSecret),box:sealInternet({requestId:'encrypted-request',runtimeId:'internet',connection:{address:peerAddress(peer),token:'internet-private-token-stays-on-device',peer,runtimeId:'internet'}},window.connectionRequest.publicKey,window.boxSecret,new Uint8Array(24).fill(8))})}if(window.unavailable)return Response.json({error:'unavailable'},{status:503});if(path==='/v1/login'&&init.method==='POST')return Response.json({token:'a'.repeat(43),code:'ABCD1234',url:'https://connect.dovo.studio/auth/start?id=test',expiresAt:Date.now()+300000});if(path==='/v1/login')return Response.json({ready:window.ready});if(path==='/v1/servers'&&init.method==='GET')return Response.json({user:{id:'person',name:'Dominic'},servers});if(init.method==='PUT')servers=servers.filter(server=>server.id!==JSON.parse(init.body).id).concat(JSON.parse(init.body));if(init.method==='DELETE'&&path.startsWith('/v1/servers/'))servers=servers.filter(server=>server.id!==decodeURIComponent(path.split('/').at(-1)));return Response.json({ok:true})};
 function App(){const [address,setAddress]=useState('');return <><MobileAccountProvider><window.Panel onPair={setAddress}/></MobileAccountProvider><input aria-label='Pairing address' value={address} readOnly/><p>Pairing code required</p></>}
 const app=createRoot(document.getElementById('app'));window.show=kind=>{window.Panel=kind==='desktop'?Desktop:Mobile;app.render(<App key={kind}/>)};window.show('desktop');
 `,
@@ -38,7 +38,7 @@ const app=createRoot(document.getElementById('app'));window.show=kind=>{window.P
   [
     {
       path: '@dovo/studio-core',
-      contents: `export {useAccount} from '${root}/packages/studio-core/src/use-account';export const useStudioHost=()=>window.host;export const useRuntimeSources=()=>window.sources;`,
+      contents: `export {useAccount} from '${root}/packages/studio-core/src/use-account';export const useStudioHost=()=>window.host;export const useRuntimeSources=()=>window.sources;export const useWorkspace=()=>({snapshot:{owner:true,internet:window.internetStatus},connected:true,request:window.runtimeRequest,activeRuntimeId:'local',runtimeRegistry:{profiles:window.sources.map(s=>s.profile)},refreshRuntime:async()=>{}});`,
     },
     {
       path: '@dovo/studio-ui',
@@ -51,13 +51,22 @@ const app=createRoot(document.getElementById('app'));window.show=kind=>{window.P
         `export const Linking={openURL:url=>window.open(url)};export const Alert={alert:(title,message,buttons)=>{if(window.confirm(title+"\\n"+message))buttons.find(button=>button.style==='destructive').onPress();}};`,
     },
     {
+      path: 'expo-crypto',
+      contents: `export const getRandomBytes=count=>crypto.getRandomValues(new Uint8Array(count));`,
+    },
+    {
+      path: './peer-transport',
+      importer: root + '/apps/mobile/src/runtime/connection',
+      contents: `export const preparePeerConnection=()=>{};`,
+    },
+    {
       path: 'expo-secure-store',
       contents: `export const WHEN_UNLOCKED_THIS_DEVICE_ONLY='private';export const getItemAsync=()=>window.storage.read();export const setItemAsync=(key,value)=>window.storage.write(value);export const deleteItemAsync=()=>window.storage.write(null);`,
     },
     {
       path: './provider',
       importer: root + '/apps/mobile/src/runtime/connection',
-      contents: `export const useRuntime=()=>({overviews:window.overviews});`,
+      contents: `export const useRuntime=()=>({overviews:window.overviews,registryLoaded:true,syncAccountSession:window.syncSession,connect:async(connection,name)=>{window.connects.push({connection,name})}});`,
     },
     {
       path: '../../ui/content/text',
@@ -129,6 +138,30 @@ try {
     await page.getByRole('button', { name: 'Link Mac Studio to account', exact: true }).waitFor()
     const requests = await page.evaluate(() => window.calls.filter((call) => call.method === 'PUT'))
     assert.equal(JSON.stringify(requests).includes('runtime-token-never-upload'), false)
+    if (kind === 'desktop') {
+      await page.getByRole('checkbox', { name: 'Enable Dovo Connect', exact: true }).check()
+      await page.getByText(/Available to devices signed in to your account/).waitFor()
+      assert.deepEqual(await page.evaluate(() => window.internetRequests[0]), {
+        path: '/api/runtime/internet',
+        body: { enabled: true, accountToken: 'a'.repeat(43) },
+      })
+      await page.getByRole('checkbox', { name: 'Enable Dovo Connect', exact: true }).uncheck()
+    } else {
+      await page.evaluate(() => window.hosted(true))
+      await page.getByRole('button', { name: 'Refresh linked computers', exact: true }).click()
+      await page.getByRole('button', { name: 'Connect Internet Computer', exact: true }).click()
+      await page.waitForFunction(() => window.connects.length === 1)
+      const connected = await page.evaluate(() => window.connects[0])
+      assert.equal(connected.connection.runtimeId, 'internet')
+      assert.equal(connected.connection.token, 'internet-private-token-stays-on-device')
+      assert.ok(connected.connection.accountSession)
+      assert.equal(
+        await page.evaluate(() =>
+          window.calls.some((c) => JSON.stringify(c.body).includes('internet-private-token')),
+        ),
+        false,
+      )
+    }
     await page.getByRole('button', { name: 'Sign out', exact: true }).click()
     await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor()
     assert.equal(await page.evaluate(() => window.saved), null)
@@ -169,7 +202,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Desktop/mobile optional accounts: browser confirmation, secure storage adapters, private metadata linking, discovery into pairing, no runtime credentials or automatic pairing, sign-out, and confirmed account deletion with cancellation passed.',
+    'Desktop/mobile optional accounts: browser confirmation, secure storage adapters, private metadata linking, discovery into pairing, encrypted account internet setup without pairing, owner checkbox, no plaintext runtime credentials in Connect requests, sign-out, and confirmed account deletion with cancellation passed.',
   )
 } finally {
   await browser.close()

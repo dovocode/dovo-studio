@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { accountServerAddresses } from '@dovo/protocol'
-import { useAccount, useStudioHost, useRuntimeSources } from '@dovo/studio-core'
+import { accountServerAddresses, responses } from '@dovo/protocol'
+import { useAccount, useStudioHost, useRuntimeSources, useWorkspace } from '@dovo/studio-core'
 import { Button, ChoicePicker } from '@dovo/studio-ui'
 export function AccountPanel({ onPair }: { onPair: (address: string) => void }) {
   const host = useStudioHost()
@@ -27,6 +27,30 @@ function AccountPanelContent({
     open,
   )
   const sources = useRuntimeSources()
+  const { snapshot, request, connected, activeRuntimeId, runtimeRegistry, refreshRuntime } =
+    useWorkspace()
+  const [internetBusy, setInternetBusy] = useState(false)
+  const [internetError, setInternetError] = useState('')
+  const setInternet = async (enabled: boolean) => {
+    setInternetBusy(true)
+    setInternetError('')
+    try {
+      if (enabled)
+        await client.enableInternet((accountToken) =>
+          request('/api/runtime/internet', { enabled, accountToken }, responses.internetStatus),
+        )
+      else {
+        await request('/api/runtime/internet', { enabled }, responses.internetStatus)
+        if (directory) await client.refresh()
+      }
+      const profile = runtimeRegistry.profiles.find((item) => item.id === activeRuntimeId)
+      if (profile) await refreshRuntime(profile)
+    } catch (error) {
+      setInternetError(error instanceof Error ? error.message : 'Could not change Dovo Connect')
+    } finally {
+      setInternetBusy(false)
+    }
+  }
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [selected, setSelected] = useState<Record<string, string>>({})
   return (
@@ -36,10 +60,40 @@ function AccountPanelContent({
           {directory ? `Signed in as ${directory.user.name}` : 'Your computers, across devices'}
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Sign-in is optional. Discover linked computers, then pair to access them. Credentials stay
-          on your device.
+          Enable Dovo Connect to access this computer from your phone using the same account. LAN /
+          VPN pairing stays separate and works without sign-in.
         </p>
       </div>
+      {snapshot?.owner && snapshot.internet && (
+        <div className="space-y-2 border-t pt-3">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={snapshot.internet.enabled}
+              disabled={
+                busy || internetBusy || !connected || (!directory && !snapshot.internet.enabled)
+              }
+              onChange={(event) => void setInternet(event.target.checked)}
+            />
+            Enable Dovo Connect
+          </label>
+          <p className="text-xs text-muted-foreground">
+            {snapshot.internet.enabled
+              ? snapshot.internet.connected
+                ? 'Available to devices signed in to your account. No pairing code needed.'
+                : 'Connecting to Dovo Connect…'
+              : 'Sign in on both devices, then enable internet access here. No network setup needed.'}{' '}
+            Connections are encrypted between your devices; Dovo relay is used when a direct
+            internet connection is unavailable. Separately paired LAN / VPN connections take
+            priority.
+          </p>
+          {(internetError || snapshot.internet.error) && (
+            <p role="alert" className="text-xs text-destructive">
+              {internetError || snapshot.internet.error}
+            </p>
+          )}
+        </div>
+      )}
       {!!error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -108,7 +162,8 @@ function AccountPanelContent({
         <>
           {directory.servers.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              No computers linked yet. Link one of your paired computers below.
+              No computers linked yet. Enable Dovo Connect on a computer or link a separately paired
+              computer below.
             </p>
           )}
           {directory.servers.map((server) => {
@@ -121,9 +176,19 @@ function AccountPanelContent({
               <div key={server.id} className="flex flex-wrap items-center gap-2 border-t pt-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm">{server.name}</p>
-                  <p className="break-all text-xs text-muted-foreground">{server.address}</p>
+                  <p className="break-all text-xs text-muted-foreground">
+                    {server.internet
+                      ? server.internet.online
+                        ? 'Dovo Connect · Online'
+                        : 'Dovo Connect · Offline'
+                      : server.address}
+                  </p>
                 </div>
-                {paired ? (
+                {server.internet ? (
+                  <span className="text-xs text-muted-foreground">
+                    Available in the Dovo mobile app
+                  </span>
+                ) : paired ? (
                   <span className="text-xs text-muted-foreground">Already paired</span>
                 ) : (
                   <Button variant="outline" disabled={busy} onClick={() => onPair(server.address)}>
@@ -135,7 +200,7 @@ function AccountPanelContent({
                   disabled={busy}
                   onClick={() => void client.unlink(server.id)}
                 >
-                  Unlink
+                  {server.internet ? 'Disable Dovo Connect' : 'Unlink'}
                 </Button>
               </div>
             )
