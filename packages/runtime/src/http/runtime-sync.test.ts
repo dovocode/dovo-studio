@@ -310,6 +310,60 @@ it('shares snapshot preparation without sharing device trust views or replay epo
   expect(available).toHaveBeenCalledOnce()
 })
 
+it.each([false, true])(
+  'streams Connect and relay status with account-derived device=%s setup permissions',
+  async (accountDerived) => {
+    const { runtime, open } = await setup()
+    const credential = 'connect-status-phone-with-at-least-32-characters'
+    const device = runtime.services.devices.add('Phone', credential)
+    runtime.services.devices.add('Other phone', 'connect-status-other-device-token')
+    const status = vi
+      .spyOn(runtime.services.peers.internet, 'status')
+      .mockReturnValue({ enabled: false, connected: false, error: '' })
+    const contains = vi.spyOn(runtime.services.peers.internet, 'contains').mockReturnValue(false)
+    cleanup.push(() => {
+      status.mockRestore()
+      contains.mockRestore()
+    })
+    const owner = await open()
+    owner.socket.send(JSON.stringify({ type: 'resume' }))
+    await owner.wait('snapshot')
+    const phone = await open(credential)
+    // Account credentials normally enter through their own WebRTC tunnel. Keep that
+    // transport guard intact while checking the authenticated sync projection here.
+    contains.mockImplementation((id) => accountDerived && id === device)
+    phone.socket.send(JSON.stringify({ type: 'resume' }))
+    const baseline = (await phone.wait('snapshot')).snapshot
+    expect(baseline.internet).toEqual({ enabled: false, connected: false, error: '' })
+    expect(baseline.internetSetupSupported).toBe(!accountDerived)
+    expect(baseline.relaySetupSupported).toBe(!accountDerived)
+    expect(baseline.devices).toHaveLength(1)
+    expect(baseline.pendingDevices).toEqual([])
+    expect(baseline.pendingPeerUpgrades).toEqual([])
+
+    status.mockReturnValue({ enabled: true, connected: true, error: '' })
+    const connected = applySnapshotDelta(baseline, (await phone.wait('delta')).delta)
+    expect(connected.internet).toEqual({ enabled: true, connected: true, error: '' })
+    phone.frames.length = 0
+    runtime.services.peers.relay.set({
+      urls: ['turns:relay.example.com:5349?transport=tcp'],
+      username: 'private-username',
+      credential: 'private-password',
+    })
+    const relayDelta = await phone.wait('delta')
+    const configured = applySnapshotDelta(connected, relayDelta.delta)
+    expect(configured.relaySettings).toEqual({
+      mode: 'custom',
+      configured: true,
+      urls: ['turns:relay.example.com:5349?transport=tcp'],
+    })
+    expect(JSON.stringify(relayDelta)).not.toContain('private-password')
+    expect(JSON.stringify(relayDelta)).not.toContain('private-username')
+    expect(configured.internetSetupSupported).toBe(!accountDerived)
+    expect(configured.relaySetupSupported).toBe(!accountDerived)
+  },
+)
+
 it('keeps a snapshot revision paired with the workspace captured before asynchronous preparation', async () => {
   const { Effect } = await import('effect')
   const { runtimeSnapshot } = await import('./support/runtime-snapshot.js')

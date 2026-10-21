@@ -208,6 +208,13 @@ removal alone does not terminate an existing allocation immediately. The credent
 can briefly overlap two usernames, so the eight-allocation quota per username permits up to sixteen
 allocations for one installation during that overlap.
 
+The default bandwidth limits are 10 Mbps per allocation and 500 Mbps total, separately in each
+direction. Coturn reserves each allocation's bandwidth even while it is idle, so these settings
+permit 50 simultaneous allocations. A client can gather several relay candidates, and a relayed
+connection can use allocations on both endpoints; this is not a 50-device limit. Exhausting this
+reservation returns TURN error 486, "Allocation Bandwidth Quota Reached", even when actual traffic
+is low. The hard daily egress budget below still applies.
+
 These protections apply to this phone-to-computer transport. They do not promise protection from a
 compromised phone/computer, leaked pairing links, operating-system vulnerabilities or a hostile
 operator replacing the software. Existing model-provider requests, local storage, notifications and
