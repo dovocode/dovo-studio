@@ -48,8 +48,6 @@ sharing capabilities; artifacts never receive GitHub tokens or Auth cookies.
    DOVO_AUTH_ORIGIN=https://auth.dovo.studio
    DOVO_AUTH_DATA=/data/private
    DOVO_AUTH_SECRET=REPLACE_WITH_A_PERSISTENT_RANDOM_SECRET
-   DOVO_AUTH_GITHUB_CLIENT_ID=YOUR_GITHUB_CLIENT_ID
-   DOVO_AUTH_GITHUB_CLIENT_SECRET=YOUR_GITHUB_CLIENT_SECRET
    DOVO_AUTH_CONNECT_CLIENT_ID=dovo-connect
    DOVO_AUTH_CONNECT_CLIENT_SECRET=REPLACE_WITH_A_SEPARATE_RANDOM_CLIENT_SECRET
    DOVO_AUTH_SERVICE_KEY=REPLACE_WITH_A_SEPARATE_RANDOM_SERVICE_KEY
@@ -64,11 +62,14 @@ sharing capabilities; artifacts never receive GitHub tokens or Auth cookies.
    client secret and callback take effect when Auth restarts.
 
 3. Deploy `apps/auth-server/compose.dokploy.yaml` from GitHub `main` as a **separate Dokploy
-   service**. Route `auth.dovo.studio` to `auth:8080` with HTTPS. It uses its own
-   `dovo-studio-auth-data` volume. Build locally with `pnpm --filter @dovo/auth-server... -r build`,
-   or use `apps/auth-server/Dockerfile` with repository-root context. Startup applies SQLite
-   migrations. Verify `/health` and `/api/auth/.well-known/openid-configuration` before enabling
-   Connect.
+   service**. In its **Environment** tab, set `DOVO_AUTH_GITHUB_CLIENT_ID` and
+   `DOVO_AUTH_GITHUB_CLIENT_SECRET`, save, then click **Deploy**. The Compose file forwards those
+   two Dokploy values into Auth, overriding the host file; keep the other secrets in the private
+   host file above. Auth deliberately refuses startup until both OAuth fields are filled in. Route
+   `auth.dovo.studio` to `auth:8080` with HTTPS. It uses its own `dovo-studio-auth-data` volume.
+   Build locally with `pnpm --filter @dovo/auth-server... -r build`, or use
+   `apps/auth-server/Dockerfile` with repository-root context. Startup applies SQLite migrations.
+   Verify `/health` and `/api/auth/.well-known/openid-configuration` before enabling Connect.
 4. Configure Connect's private environment file separately:
 
    ```dotenv
