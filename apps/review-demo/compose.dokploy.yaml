@@ -1,0 +1,18 @@
+services:
+  demo:
+    build:
+      context: ../..
+      dockerfile: apps/review-demo/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    env_file:
+      - /etc/dokploy/secrets/dovo-review-demo/demo.env
+    expose:
+      - '8080'

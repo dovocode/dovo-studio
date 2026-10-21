@@ -1,0 +1,18 @@
+services:
+  demo:
+    build:
+      context: ../..
+      dockerfile: apps/review-demo/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    user: node
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    environment:
+      PORT: '8080'
+      DOVO_DEMO_ORIGIN: ${DOVO_DEMO_ORIGIN:-https://demo.dovo.studio}
+      DOVO_DEMO_PASSWORD: ${DOVO_DEMO_PASSWORD:?Set a dedicated random reviewer password}
+    ports: ['127.0.0.1:8082:8080']

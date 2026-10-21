@@ -530,6 +530,12 @@ importers:
         specifier: ^14.5.0
         version: 14.5.0(supports-color@8.1.1)
 
+  apps/review-demo:
+    dependencies:
+      '@dovo/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+
   apps/site:
     dependencies:
       next:
