@@ -1,10 +1,31 @@
 import { afterEach, expect, test } from 'vite-plus/test'
 import { once } from 'node:events'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { decode, responses, snapshotSchema, conversationPageSchema } from '@dovo/protocol'
 import { createDemoServer } from './server.js'
 import { DemoSessions } from './sessions.js'
 
 const cleanups: Array<() => Promise<void>> = []
+test('the production bundle starts with its bundled CommonJS dependencies', () => {
+  const bundle = fileURLToPath(new URL('../dist/demo.cjs', import.meta.url))
+  expect(() =>
+    execFileSync(
+      process.execPath,
+      ['-e', `require(${JSON.stringify(bundle)}); setImmediate(() => process.exit(0))`],
+      {
+        env: {
+          ...process.env,
+          DOVO_DEMO_ORIGIN: 'http://review.test',
+          DOVO_DEMO_PASSWORD: 'bundle-test-password-with-at-least-24-characters',
+          PORT: '0',
+        },
+        timeout: 10_000,
+        stdio: 'pipe',
+      },
+    ),
+  ).not.toThrow()
+})
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
