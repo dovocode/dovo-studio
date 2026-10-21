@@ -105,3 +105,10 @@ The outer `SelectedPullPage`, `SelectedIssuePage`, and `SelectedPipelinePage` st
 render the original full extension route modules, using real deep-link navigation and populated
 synthetic lists. This preserves each page's source selector/list sidebar alongside its selected
 detail. The controller-level detail stories above remain useful for inspecting tabs independently.
+
+Desktop release checks use the same typed synthetic release fixture as the mobile App & updates
+screen. A catalog-only transform replaces just the release loader import in the production
+`useRuntimeReleaseCheck` module; version comparison and runtime update helpers keep their real
+implementation. The transform fails the build if that import changes, so a refactor cannot silently
+restore GitHub requests. Production builds retain their normal release lookup. Browser checks cover
+both themes and viewport sizes and reject external/API requests.

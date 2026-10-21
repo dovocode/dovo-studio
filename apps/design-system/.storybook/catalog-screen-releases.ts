@@ -1,7 +1,7 @@
-// Only the catalog's App & updates screen resolves this boundary. Production keeps
-// the protocol release loader; catalog checks never contact GitHub.
-export type { RuntimeRelease } from '../../../packages/protocol/src'
-import type { RuntimeReleases } from '../../../packages/protocol/src'
+// Only catalog mobile/desktop update screens resolve this boundary. Production
+// keeps the protocol release loader; catalog checks never contact GitHub.
+export type { RuntimeRelease } from '@dovo/protocol'
+import type { RuntimeReleases } from '@dovo/protocol'
 
 export async function fetchRuntimeReleases(): Promise<RuntimeReleases> {
   return {

@@ -28,3 +28,10 @@ for (const id of studioThemeIds) {
     })
   }
 }
+
+it('keeps Dovo light string tokens readable on highlighted deleted diff lines', () => {
+  const deletedLineBackground = '#ffcecd'
+  expect(contrast(studioThemes.dovo.light.signal, deletedLineBackground)).toBeGreaterThanOrEqual(
+    4.5,
+  )
+})

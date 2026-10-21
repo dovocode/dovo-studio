@@ -45,6 +45,21 @@ const config: StorybookConfig = {
         name: 'mobile-thread-navigation-boundary',
         enforce: 'pre',
         transform(code, id) {
+          if (id.endsWith('/packages/studio-core/src/workspace/runtime-updates.ts')) {
+            const releaseImport =
+              "import { fetchRuntimeReleases, type RuntimeReleases } from '@dovo/protocol'"
+            if (!code.includes(releaseImport))
+              throw new Error(
+                'Catalog release boundary no longer matches the desktop release import',
+              )
+            return {
+              code: code.replace(
+                releaseImport,
+                "import type { RuntimeReleases } from '@dovo/protocol'\nimport { fetchRuntimeReleases } from 'dovo:catalog-releases'",
+              ),
+              map: null,
+            }
+          }
           // Expo's declaration-only globals import ambient classes as values. Metro erases
           // these; make their type-only intent explicit for the catalog's TS compiler.
           if (id.includes('/expo-modules-core/src/ts-declarations/global.ts'))
@@ -59,11 +74,13 @@ const config: StorybookConfig = {
           return { code: imports.join('\n') + '\n' + transformed, map: null }
         },
         resolveId(source, importer) {
+          if (source === 'dovo:catalog-releases')
+            return catalogBoundary('catalog-screen-releases.ts')
           if (
             source === '@dovo/protocol' &&
             importer?.endsWith('/apps/mobile/src/screens/app-updates.tsx')
           )
-            return catalogBoundary('mobile-screen-releases.ts')
+            return catalogBoundary('catalog-screen-releases.ts')
           if (
             importer &&
             source.startsWith('.') &&

@@ -33,7 +33,7 @@ export const dovoColors = {
     selection: '#e7f3ff',
     action: '#151515',
     'action-foreground': '#ffffff',
-    signal: '#006a83',
+    signal: '#005f76',
     pink: '#0965b5',
     'syntax-function': '#0965b5',
     'syntax-keyword': '#0965b5',
