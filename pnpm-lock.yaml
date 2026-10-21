@@ -273,6 +273,9 @@ importers:
       '@dovo/design':
         specifier: workspace:*
         version: link:../../packages/design
+      '@dovo/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@dovo/studio-core':
         specifier: workspace:*
         version: link:../../packages/studio-core

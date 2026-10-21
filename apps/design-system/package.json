@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@dovo/design": "workspace:*",
+    "@dovo/protocol": "workspace:*",
     "@dovo/studio-core": "workspace:*",
     "@dovo/studio-ui": "workspace:*",
     "lucide-react": "^1.57.0",
