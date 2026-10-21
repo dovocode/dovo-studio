@@ -56,7 +56,7 @@ try {
   })
   const { login, token } = store.createLogin()
   await page.goto(`${connectOrigin}/auth/start?id=${login.id}`)
-  await page.getByRole('button', { name: 'Continue to sign in' }).click()
+  await page.getByRole('button', { name: 'Continue to Dovo sign-in', exact: true }).click()
   try {
     await page
       .getByRole('heading', { name: 'You are signed in', exact: true })
