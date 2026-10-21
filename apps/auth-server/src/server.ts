@@ -4,7 +4,7 @@ import { fromNodeHeaders, toNodeHandler } from 'better-auth/node'
 import { verifyOAuthQueryParams } from '@better-auth/oauth-provider'
 import type { createAuth } from './auth.js'
 
-import { escape, page, signInPage, styles, sessionLabel } from './pages.js'
+import { accountPage, page, signInPage, styles, sessionLabel } from './pages.js'
 
 export function createAuthServer(
   identity: Awaited<ReturnType<typeof createAuth>>,
@@ -187,16 +187,25 @@ export function createAuthServer(
           sessions: 'Other Auth sessions signed out.',
         }[url.searchParams.get('notice') ?? '']
         const date = (value: Date) =>
-          escape(
-            value.toLocaleString('en-GB', {
-              timeZone: 'UTC',
-              dateStyle: 'medium',
-              timeStyle: 'short',
-            }),
-          ) + ' UTC'
+          value.toLocaleString('en-GB', {
+            timeZone: 'UTC',
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          }) + ' UTC'
         sendPage(
           'Your account',
-          `<div class="layout"><section><div class="eyebrow">Your Dovo identity</div><h1>Welcome, ${escape(session.user.name)}.</h1><p>Manage your profile and the browsers signed in to Dovo Auth.</p><a class="button secondary" href="https://artifacts.dovo.studio">Open Dovo Artifacts</a><p class="meta">To connect a computer, start in Dovo Studio. Account sign-in never replaces device consent.</p></section><section>${notice ? '<div class="notice" role="status">' + notice + '</div>' : ''}<div class="card"><h2>Profile</h2><form method="post" action="/account/profile"><label for="name">Display name</label><input id="name" name="name" value="${escape(session.user.name)}" required maxlength="100" autocomplete="name"><p><strong>Email from GitHub</strong></p><p>${escape(session.user.email)}</p><button>Save profile</button></form><p class="meta">GitHub manages your sign-in and email address.</p></div><div class="card"><h2>Active Auth sessions</h2><p class="meta">Signing out here ends Auth browser sessions. Existing Dovo app sessions and paired computers are managed separately in Dovo Studio.</p>${sessions.map((item) => `<div class="row"><div><strong>${escape(sessionLabel(item.userAgent))}</strong> ${item.id === session.session.id ? '<span class="badge">This browser</span>' : ''}<div class="meta">Last active ${date(item.updatedAt)}<br>Expires ${date(item.expiresAt)}</div></div>${item.id !== session.session.id ? `<form method="post" action="/account/revoke-session"><input type="hidden" name="id" value="${escape(item.id)}"><button class="secondary">Sign out session</button></form>` : ''}</div>`).join('')}<form method="post" action="/account/revoke-others"><button class="secondary">Sign out other browsers</button></form></div><div class="card"><h2>Account access</h2><p>Use Dovo Studio’s account settings to revoke computer access or delete your Dovo account and its linked identity.</p><form method="post" action="/account/sign-out"><button class="secondary">Sign out of this browser</button></form></div></section></div>`,
+          accountPage({
+            name: session.user.name,
+            email: session.user.email,
+            notice,
+            sessions: sessions.map((item) => ({
+              id: item.id,
+              label: sessionLabel(item.userAgent),
+              lastActive: date(item.updatedAt),
+              expiresAt: date(item.expiresAt),
+              current: item.id === session.session.id,
+            })),
+          }),
           true,
         )
         return

@@ -55,3 +55,36 @@ secondary form actions, `secondary` for a quiet filled action, `ghost` for toolb
 inline navigation and `destructive` for confirmed deletion. Keep hover feedback restrained, keyboard
 focus crisp, and loading or disabled labels readable. Hosted controls follow the same
 filled/outlined hierarchy; native actions retain platform touch feedback and confirmation sheets.
+
+## Catalog depth
+
+The catalog is organized by responsibility rather than by application:
+
+| Layer                      | What to inspect                                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Foundations and anatomy    | Semantic color roles, typography, icon naming, surfaces, borders, spacing, touch targets, motion and focus                      |
+| Primitives                 | Button variants/sizes, named icon actions, inputs, textareas, mixed checkboxes, switches, selects, dialogs, tooltips and badges |
+| Form and settings patterns | Labels and help, validation, responsive settings rows, permissions, destructive confirmation and long content                   |
+| Content and navigation     | Page identity, projects, file trees and change counts, empty/error/progress, messages, tools and queues                         |
+| Hosted services            | Actual Auth, Connect and Artifacts templates with synthetic data; scoped consent and account-session UI                         |
+
+A story must state which layer owns behavior. A badge is not a button; a tooltip does not supply a
+missing accessible name; a color is not a status announcement. Demonstrate the actual component, not
+a styled screenshot or a second implementation. Stateful examples operate locally and must not
+contact a runtime or publish data. Use the existing Lucide icon family rather than inventing a
+catalog-only icon set.
+
+Check unchecked/checked/mixed, idle/loading/disabled, valid/invalid/read-only, selected/unselected,
+empty/populated/overflow and closed/open states where they apply. Modal examples must demonstrate
+focus containment, Escape dismissal and focus return; selects and checkboxes must work from the
+keyboard. Coarse-pointer controls need real touch emulation, not only a narrow browser viewport.
+Keep native control behavior and Dynamic Type visible in reviews; browser coverage remains separate
+from the physical-device checklist.
+
+`pnpm test:design-system:browser` checks all catalog stories in both palettes at desktop and phone
+widths, audits accessibility, and exercises mixed selection, keyboard choice, modal focus,
+destructive confirmation and coarse-pointer targets. To apply the same checks to a deployed build:
+
+```sh
+DOVO_DESIGN_ORIGIN=https://ui.dovo.studio node scripts/check-design-system-browser.mjs
+```

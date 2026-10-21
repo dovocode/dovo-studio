@@ -49,7 +49,16 @@ if (existsSync(output))
 mkdirSync(output, { recursive: true, mode: 0o700 })
 const run = (command, values, cwd = root) =>
   execFileSync(command, values, { cwd, env, stdio: 'inherit' })
-run('pnpm', ['--filter', '@dovo/protocol', '--filter', '@dovo/client-runtime', '-r', 'build'])
+run('pnpm', [
+  '--filter',
+  '@dovo/design',
+  '--filter',
+  '@dovo/protocol',
+  '--filter',
+  '@dovo/client-runtime',
+  '-r',
+  'build',
+])
 run('pnpm', ['--filter', '@dovo/mobile', 'build'])
 run('pnpm', ['exec', 'expo', 'prebuild', '--platform', platform, '--no-install'], mobile)
 if (platform === 'ios') {

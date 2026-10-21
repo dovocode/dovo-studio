@@ -40,6 +40,16 @@ export const dovoColors = {
   },
 } as const
 
+/** Semantic states are always accompanied by text or icons. */
+export const semanticColors = {
+  dark: { success: '#8ad5b0', error: '#ff7e97', warning: '#e7c681', onError: '#341520' },
+  light: { success: '#08734f', error: '#ba2549', warning: '#855700', onError: '#ffffff' },
+} as const
+export const colorVisionColors = {
+  dark: { success: '#79bfff', error: '#ffb570', warning: '#ffe08a', onError: '#241000' },
+  light: { success: '#005a9c', error: '#963b00', warning: '#715400', onError: '#ffffff' },
+} as const
+
 export const designTokens = {
   font: {
     sans: "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
@@ -55,6 +65,9 @@ export function cssVariables(mode: keyof typeof dovoColors) {
   return (
     Object.entries(dovoColors[mode])
       .map(([name, value]) => '--dovo-' + name + ':' + value + ';')
+      .join('') +
+    Object.entries(semanticColors[mode])
+      .map(([name, value]) => '--dovo-status-' + name + ':' + value + ';')
       .join('') +
     '--dovo-font-sans:' +
     designTokens.font.sans +

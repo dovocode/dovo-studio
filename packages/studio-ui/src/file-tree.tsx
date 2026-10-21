@@ -41,14 +41,8 @@ export function FileChangeCounts({
       className="inline-flex shrink-0 items-center gap-1.5 text-[0.625rem] font-mono tabular-nums"
       aria-label={`${additions ?? 0} additions, ${deletions ?? 0} deletions`}
     >
-      {!!additions && (
-        <span className="text-emerald-600 dark:text-emerald-400">
-          +{additions.toLocaleString()}
-        </span>
-      )}
-      {!!deletions && (
-        <span className="text-rose-600 dark:text-rose-400">−{deletions.toLocaleString()}</span>
-      )}
+      {!!additions && <span className="text-status-success">+{additions.toLocaleString()}</span>}
+      {!!deletions && <span className="text-status-error">−{deletions.toLocaleString()}</span>}
     </span>
   )
 }

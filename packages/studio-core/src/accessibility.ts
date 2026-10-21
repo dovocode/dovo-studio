@@ -1,24 +1,12 @@
+import { semanticColors, colorVisionColors } from '@dovo/design'
 import type { StudioThemeColors, StudioThemeMode } from './themes'
 
 /** Status colors are paired with icons/text, never used as the sole state indicator. */
 export function statusColors(
   mode: StudioThemeMode,
   colorVision: 'default' | 'blue-orange' = 'default',
-) {
-  const dark = mode === 'dark'
-  if (colorVision === 'blue-orange')
-    return {
-      success: dark ? '#79bfff' : '#005a9c',
-      error: dark ? '#ffb570' : '#963b00',
-      warning: dark ? '#ffe08a' : '#715400',
-      onError: dark ? '#241000' : '#ffffff',
-    }
-  return {
-    success: dark ? '#8ad5b0' : '#08734f',
-    error: dark ? '#ff7e97' : '#ba2549',
-    warning: dark ? '#e7c681' : '#855700',
-    onError: dark ? '#341520' : '#ffffff',
-  }
+): { success: string; error: string; warning: string; onError: string } {
+  return { ...(colorVision === 'blue-orange' ? colorVisionColors[mode] : semanticColors[mode]) }
 }
 
 /** Neutral high-contrast surfaces keep code syntax colors independent. */

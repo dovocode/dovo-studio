@@ -85,11 +85,11 @@
   --selection: var(--dovo-selection);
   --signal: var(--dovo-signal);
   --pink: var(--dovo-pink);
-  --status-success: #8ad5b0;
-  --status-error: #ff7e97;
-  --status-warning: #e7c681;
-  --destructive: #ff7e97;
-  --destructive-foreground: #341520;
+  --status-success: var(--dovo-status-success);
+  --status-error: var(--dovo-status-error);
+  --status-warning: var(--dovo-status-warning);
+  --destructive: var(--dovo-status-error);
+  --destructive-foreground: var(--dovo-status-onError);
   --app-font-family: var(--dovo-font-sans);
   --code-font-family: var(--dovo-font-mono);
   font-family: var(--app-font-family);
@@ -117,10 +117,10 @@
   --selection: var(--dovo-selection);
   --signal: var(--dovo-signal);
   --pink: var(--dovo-pink);
-  --status-success: #08734f;
-  --status-error: #ba2549;
-  --status-warning: #855700;
-  --destructive: #ba2549;
+  --status-success: var(--dovo-status-success);
+  --status-error: var(--dovo-status-error);
+  --status-warning: var(--dovo-status-warning);
+  --destructive: var(--dovo-status-error);
   --destructive-foreground: #ffffff;
 }
 /* Text size scales rem-based spacing and type together, like a browser zoom for the UI. */

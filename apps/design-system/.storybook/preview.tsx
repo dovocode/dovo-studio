@@ -6,6 +6,8 @@ import '../src/catalog.css'
 function Theme({ mode, children }: { mode: 'light' | 'dark'; children: React.ReactNode }) {
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = mode
+    document.documentElement.classList.toggle('dark', mode === 'dark')
+    document.documentElement.dataset.motion = 'system'
     document.documentElement.style.colorScheme = mode
     for (const [key, value] of Object.entries(dovoColors[mode]))
       document.documentElement.style.setProperty('--' + key, value)
