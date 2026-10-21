@@ -271,6 +271,7 @@ export default function UsageScreen() {
                         <View
                           key={day.key}
                           accessible
+                          accessibilityRole="image"
                           accessibilityLabel={`${day.label}: ${view === 'tokens' ? formatUsageTokens(value) + ' tokens' : day.pricedTurns ? formatUsageCost(value) : day.turns ? 'Unpriced' : 'No usage'}`}
                           style={{
                             flex: 1,

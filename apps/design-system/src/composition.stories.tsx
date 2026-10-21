@@ -20,6 +20,24 @@ export default meta
 
 const components = [
   [
+    'Desktop pages and sidebars',
+    'Screens / Desktop and Desktop detail and overlays',
+    'packages/studio-shell and packages/extension-*',
+    'Compare the whole page before changing a component: navigation, title, list selection, detail and tools rail. The catalog imports every registered page; synthetic reads and blocked mutations keep review separate from a live workspace.',
+  ],
+  [
+    'Mobile pages and native navigation',
+    'Screens / Mobile and native Storybook / Native navigation',
+    'apps/mobile/src/screens and apps/mobile/src/shell',
+    'Use browser stories for responsive content and the native catalog for actual tabs, stacks, menus and keyboard behavior. Full composer stories include attachments, provider controls and queued messages; recognition and uploads require separate verification.',
+  ],
+  [
+    'Auth, Connect, Artifacts and website',
+    'Screens / Hosted',
+    'apps/auth-server, apps/connect-server, apps/artifact-server and apps/site',
+    'Reuse the production page owners and semantic tokens. Hosted previews run inside isolated frames with synthetic identities and responses; a sign-in preview does not perform real authentication.',
+  ],
+  [
     'Mobile controls and settings',
     'Field / Action / SettingsGroup / SettingsRow',
     'apps/mobile/src/ui and apps/mobile/src/screens/settings-*',

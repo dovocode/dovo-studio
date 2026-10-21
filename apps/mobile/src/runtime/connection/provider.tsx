@@ -133,7 +133,7 @@ type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
 ) => Effect.Effect<T['Type'], Error>
 const RuntimeStateContext = createContext<Atom.Writable<Runtime> | null>(null)
 /** Broad readers keep the context value; selectors subscribe only to the slice they render. */
-function RuntimeValueProvider({ value, children }: { value: Runtime; children: ReactNode }) {
+export function RuntimeValueProvider({ value, children }: { value: Runtime; children: ReactNode }) {
   // A rebuilt atom node reads the latest committed value, never a retained first snapshot.
   const committed = useRef(value)
   const [atom] = useState(() =>

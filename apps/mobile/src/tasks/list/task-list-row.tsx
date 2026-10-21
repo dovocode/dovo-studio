@@ -183,8 +183,6 @@ function TaskListRowView({
     .filter(Boolean)
     .join(' · ')
   const unread = hasUnreadTaskActivity(task)
-  const readOpacity = unread ? 1 : 0.65
-  const contextOpacity = unread ? 1 : 0.6
 
   const compactTitleHeight = Math.ceil(18 * fontScale)
   const compactContextHeight = Math.max(24, Math.ceil(16 * fontScale))
@@ -231,10 +229,9 @@ function TaskListRowView({
       style={{
         flex: 1,
         color: colors.text,
-        opacity: readOpacity,
         fontSize: dense ? 15 : 16,
         lineHeight: dense ? 18 : 20,
-        fontWeight: '500',
+        fontWeight: unread ? '600' : '500',
       }}
     >
       {task.title}
@@ -249,7 +246,6 @@ function TaskListRowView({
         gap: 4,
         flexShrink: 0,
         maxWidth: dense ? '45%' : undefined,
-        opacity: dense ? contextOpacity : 1,
       }}
     >
       {StatusIcon && <StatusIcon size={12} color={stateColor} />}
@@ -279,7 +275,6 @@ function TaskListRowView({
               height: dense ? compactRowHeight : 44,
               alignItems: 'center',
               justifyContent: 'center',
-              opacity: unread ? 1 : 0.5,
             }}
           >
             {projectBadge}
@@ -351,7 +346,6 @@ function TaskListRowView({
                     gap: 6,
                     minHeight: 26,
                     paddingRight: car ? 0 : 32,
-                    opacity: contextOpacity,
                   }}
                 >
                   {projectBadge}
@@ -384,7 +378,6 @@ function TaskListRowView({
                   height: dense ? compactContextHeight : undefined,
                   overflow: dense ? 'hidden' : undefined,
                   gap: 6,
-                  opacity: contextOpacity,
                   paddingRight: childCount > 0 ? (dense || car ? 44 : 76) : 0,
                 }}
               >

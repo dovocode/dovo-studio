@@ -18,7 +18,7 @@ export function MobilePreview({
 }) {
   const theme = createMobileTheme(palette, mode)
   return (
-    <MobileCatalogProviders>
+    <MobileCatalogProviders width={width}>
       <MobileThemeContext.Provider value={theme}>
         <div
           style={{

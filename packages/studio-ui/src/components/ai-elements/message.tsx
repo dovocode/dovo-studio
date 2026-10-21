@@ -110,8 +110,8 @@ export const MessageResponse = memo(function MessageResponse({
                 <defaultComponents.a {...props} />
               )
             },
-            img: ({ src, alt }: { src?: string; alt?: string }) => {
-              const path = src ? markdownURLLocalPath(src) : undefined
+            img: ({ src, alt }: ComponentProps<'img'>) => {
+              const path = typeof src === 'string' ? markdownURLLocalPath(src) : undefined
               return path !== undefined ? (
                 localFiles.image(path, alt ?? 'Image')
               ) : (

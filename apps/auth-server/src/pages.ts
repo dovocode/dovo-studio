@@ -99,3 +99,29 @@ export function accountPage({
     : '<p class="meta">No active Auth browser sessions are available.</p>'
   return `<div class="layout"><section><div class="eyebrow">Your Dovo identity</div><h1>Welcome, ${escape(name)}.</h1><p>Manage your profile and the browsers signed in to Dovo Auth.</p><a class="button secondary" href="https://artifacts.dovo.studio">Open Dovo Artifacts</a><p class="meta">To connect a computer, start in Dovo Studio. Account sign-in never replaces device consent.</p></section><section>${notice ? '<div class="notice" role="status">' + escape(notice) + '</div>' : ''}<div class="card"><h2>Profile</h2><form method="post" action="/account/profile"><label for="name">Display name</label><input id="name" name="name" value="${escape(name)}" required maxlength="100" autocomplete="name"><p><strong>Email from GitHub</strong></p><p>${escape(email)}</p><button>Save profile</button></form><p class="meta">GitHub manages your sign-in and email address.</p></div><div class="card"><h2>Active Auth sessions</h2><p class="meta">Signing out here ends Auth browser sessions. Existing Dovo app sessions and paired computers are managed separately in Dovo Studio.</p>${sessionRows}<form method="post" action="/account/revoke-others"><button class="secondary">Sign out other browsers</button></form></div><div class="card"><h2>Account access</h2><p>Use Dovo Studio’s account settings to revoke computer access or delete your Dovo account and its linked identity.</p><form method="post" action="/account/sign-out"><button class="secondary">Sign out of this browser</button></form></div></section></div>`
 }
+
+/** Shared production status bodies for service responses and isolated catalog previews. */
+export const authStatusViews = {
+  sessionEnded:
+    '<h1>Your session has ended.</h1><p>Sign in again to manage your account.</p><a class="button" href="/sign-in">Sign in</a>',
+  tooLarge: '<h1>Request too large.</h1>',
+  invalidName:
+    '<h1>Enter a name between 1 and 100 characters.</h1><a href="/account">Back to your account</a>',
+  sessionInactive:
+    '<h1>This session is no longer active.</h1><a href="/account">Back to your account</a>',
+  signInExpired:
+    '<h1>This sign-in has expired.</h1><p>Start again from Dovo Studio, or sign in to manage your account.</p><a class="button" href="/sign-in">Sign in</a>',
+  signInBlocked:
+    '<h1>Request blocked.</h1><p>Start sign-in from Dovo Auth or Dovo Studio.</p><a href="/sign-in">Sign in</a>',
+  publicNotFound:
+    '<h1>Page not found.</h1><p>Return to Dovo Auth to continue.</p><a class="button" href="/">Dovo Auth</a>',
+  interrupted:
+    '<div class="layout"><section><div class="eyebrow">Dovo Auth</div><h1>Let’s try that again.</h1><p>Sign-in was cancelled, expired or could not be completed. Your existing computers and pairings are unchanged.</p></section><section class="card"><h2>Continue safely</h2><p>If you started in Dovo Studio or Artifacts, return there and start sign-in again. To manage your identity here, continue below.</p><a class="button" href="/sign-in">Back to sign-in</a></section></div>',
+  expired:
+    '<h1>This sign-in has expired.</h1><p>Start again from Dovo Studio.</p><a href="/sign-in">Sign in</a>',
+  blocked:
+    '<h1>Request blocked.</h1><p>Return to your account and try again.</p><a href="/account">Your account</a>',
+  notFound: '<h1>Page not found.</h1><a href="/account">Your account</a>',
+  unavailable:
+    '<h1>We couldn’t complete that request.</h1><p>Try again, or restart sign-in from Dovo Studio if your request expired.</p><a class="button" href="/">Back to Dovo Auth</a>',
+} as const

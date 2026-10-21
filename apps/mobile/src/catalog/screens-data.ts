@@ -1,0 +1,167 @@
+import {
+  decode,
+  forgeIssueSchema,
+  forgePipelineSchema,
+  pullDetailSchema,
+  pullSummarySchema,
+} from '@dovo/protocol'
+const at = '2026-10-21T12:00:00.000Z'
+export const screenPull = decode(pullSummarySchema, {
+  provider: 'github',
+  number: 42,
+  title: 'Unify mobile navigation and settings',
+  url: 'https://github.com/example/catalog/pull/42',
+  state: 'open',
+  draft: false,
+  author: 'catalog-reviewer',
+  updatedAt: at,
+  head: 'design-system',
+  base: 'main',
+  labels: ['design-system'],
+  checksState: 'FAILURE',
+  reviewDecision: 'REVIEW_REQUIRED',
+})
+export const screenPullDetail = decode(pullDetailSchema, {
+  destination: 'catalog-destination',
+  pull: {
+    ...screenPull,
+    body: 'Use shared controls across the settings and conversation surfaces.\n\nThis is synthetic catalog content.',
+    repositoryUrl: 'https://github.com/example/catalog',
+    headSha: 'a'.repeat(40),
+    baseSha: 'b'.repeat(40),
+    additions: 38,
+    deletions: 12,
+    changedFiles: 2,
+    mergeable: true,
+    reviewers: ['catalog-owner'],
+    assignees: [],
+  },
+  comments: [
+    {
+      id: 'catalog-comment',
+      author: 'catalog-owner',
+      body: 'Please check the narrow layout and native touch targets.',
+      date: at,
+      kind: 'comment',
+      url: 'https://github.com/example/catalog/pull/42#comment-1',
+    },
+  ],
+  files: [
+    {
+      path: 'src/settings.tsx',
+      status: 'modified',
+      additions: 38,
+      deletions: 12,
+      patch: '@@ -1 +1 @@\n-const radius = 10\n+const radius = theme.radius.control',
+    },
+  ],
+  checks: [
+    {
+      name: 'Native accessibility',
+      status: 'FAILURE',
+      summary: 'A control needs a larger touch target.',
+    },
+    { name: 'Typecheck', status: 'SUCCESS' },
+  ],
+  warnings: [],
+})
+export const screenIssue = decode(forgeIssueSchema, {
+  destination: 'catalog-destination',
+  id: '17',
+  title: 'Keep native settings readable at larger text sizes',
+  body: 'Review label wrapping, touch targets, and the confirmation dialog.',
+  state: 'open',
+  url: 'https://github.com/example/catalog/issues/17',
+  author: 'catalog-owner',
+  assignees: ['catalog-reviewer'],
+  labels: ['accessibility'],
+  updatedAt: at,
+  revision: 'catalog-revision',
+})
+export const screenJiraIssue = decode(forgeIssueSchema, {
+  destination: 'catalog-destination',
+  id: 'CAT-17',
+  title: 'Review settings at accessible text sizes',
+  body: 'Use the native simulator to verify labels and confirmation layouts.',
+  state: 'In Progress',
+  type: 'Story',
+  url: 'https://catalog.atlassian.net/browse/CAT-17',
+  author: 'catalog-owner',
+  assignees: ['catalog-reviewer'],
+  labels: ['design-system'],
+  updatedAt: at,
+  revision: 'catalog-jira-revision',
+})
+export const screenPipeline = decode(forgePipelineSchema, {
+  destination: 'catalog-destination',
+  id: '17',
+  title: 'Native UI checks',
+  url: 'https://github.com/example/catalog/actions/runs/17',
+  ref: 'main',
+  sha: 'a'.repeat(40),
+  actor: 'catalog-owner',
+  status: 'failure',
+  createdAt: at,
+  updatedAt: at,
+  workflow: 'Check',
+})
+export const screenResponses: Readonly<Record<string, unknown>> = {
+  '/api/scm/source/identity': {
+    readerIdentity: 'catalog-reader',
+    destination: 'catalog-destination',
+  },
+  '/api/scm/pulls/overview': {
+    destination: 'catalog-destination',
+    pulls: [screenPull],
+    hasMore: false,
+    page: 1,
+  },
+  '/api/scm/pulls/detail': screenPullDetail,
+  '/api/scm/connections/read': { connections: [] },
+  '/api/scm/work/options': {
+    destination: 'catalog-destination',
+    provider: 'github',
+    issues: true,
+    issueTypes: ['Issue'],
+    issueStates: ['open', 'closed'],
+    assignees: true,
+    labels: true,
+    pipelines: true,
+    pipelineActions: [],
+  },
+  '/api/scm/work/issues/list': { destination: 'catalog-destination', items: [screenIssue] },
+  '/api/scm/work/issues/detail': {
+    destination: 'catalog-destination',
+    issue: screenIssue,
+    comments: [],
+  },
+  '/api/scm/work/pipelines/list': { destination: 'catalog-destination', items: [screenPipeline] },
+  '/api/scm/work/pipelines/detail': {
+    destination: 'catalog-destination',
+    run: screenPipeline,
+    jobs: [
+      {
+        id: 'catalog-job',
+        name: 'Native accessibility',
+        status: 'failure',
+        url: 'https://github.com/example/catalog/actions/runs/17/job/1',
+        steps: [{ id: 'catalog-step', name: 'Verify touch targets', status: 'failure' }],
+      },
+    ],
+  },
+  '/api/artifacts/library': {
+    artifacts: [
+      {
+        id: 'ec327ab0-236b-482d-9b13-b74ea4fd8389',
+        taskId: 'catalog-task-2',
+        title: 'Mobile settings review',
+        format: 'markdown',
+        revision: 1,
+        createdAt: at,
+        updatedAt: at,
+        threadTitle: 'Unify the settings hierarchy',
+        threadState: 'settled',
+      },
+    ],
+  },
+}

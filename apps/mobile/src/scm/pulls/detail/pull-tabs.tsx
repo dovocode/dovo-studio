@@ -20,6 +20,8 @@ export function PullTabs({
       contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 0 }}
     >
       <View
+        accessibilityRole="tablist"
+        accessibilityLabel="Pull request tabs"
         style={{
           flexDirection: 'row',
           padding: 2,

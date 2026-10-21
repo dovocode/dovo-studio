@@ -2,13 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { AccountStore, hash, secret } from './store.js'
 import type { IdentityProvider } from './oidc.js'
 import { html, RequestError } from './http.js'
+import { connectConsent, connectSuccess } from './pages.js'
 import type { Organization } from './organizations.js'
-
-const escape = (value: string) =>
-  value.replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
-  )
 
 export function browserAuth(
   options: {
@@ -31,11 +26,7 @@ export function browserAuth(
         'Set-Cookie',
         `${cookieName}=${login.id}.${browser}; Max-Age=300; ${cookieFlags}`,
       )
-      html(
-        res,
-        200,
-        `<h2>${login.artifactsOrigin ? 'Sign in to Dovo Artifacts' : 'Sign in to connect your devices'}</h2><p>Only continue if you started sign-in in ${login.artifactsOrigin ? escape(login.artifactsOrigin) : 'Dovo Studio'} and see this code there:</p><h2><code>${escape(login.code)}</code></h2><p>${login.artifactsOrigin ? 'This sign-in is limited to hosted artifact sharing. It does not authorize access to your computers.' : 'Signing in grants access to computers where you enable Dovo Connect on this account. LAN / VPN access still requires separate device pairing.'}</p><form method="post" action="/auth/authorize"><button type="submit">Continue to Dovo sign-in</button></form>${(options.organizations ?? []).map((organization) => `<form method="post" action="/auth/authorize?organization=${encodeURIComponent(organization.id)}"><button class="secondary" type="submit">Sign in with ${escape(organization.name)} SSO</button></form>`).join('')}`,
-      )
+      html(res, 200, connectConsent(login, options.organizations ?? []))
       return true
     }
     const browserLogin = () => {
@@ -88,13 +79,7 @@ export function browserAuth(
       )
       store.approve(login, user)
       res.setHeader('Set-Cookie', `${cookieName}=; Max-Age=0; ${cookieFlags}`)
-      html(
-        res,
-        200,
-        login.artifactsOrigin
-          ? '<h2>You are signed in</h2><p>Return to Dovo Artifacts and check sign-in.</p>'
-          : '<h2>You are signed in</h2><p>Return to Dovo Studio. Your computers will appear there.</p>',
-      )
+      html(res, 200, connectSuccess(Boolean(login.artifactsOrigin)))
       return true
     }
     return false

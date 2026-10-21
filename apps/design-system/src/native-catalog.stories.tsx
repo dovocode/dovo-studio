@@ -28,6 +28,25 @@ export const NativeReference: StoryObj<typeof meta> = {
         </code>
       </div>
       <div className="grid gap-6 sm:grid-cols-2">
+        {[
+          [
+            'screens-shell.png',
+            'Actual native task list, tab bar and offline connection pill. The startup new-thread screen was dismissed using UIKit Back.',
+          ],
+          [
+            'screens-settings.png',
+            'Actual Workbench Settings reached through the native overflow menu. Settings → This app → Appearance and back navigation were exercised.',
+          ],
+          [
+            'screens-composer.png',
+            'Full production composer with a local text attachment, preserved draft, queued message, provider picker and dictation control. Sending and hardware dictation are not verified by this capture.',
+          ],
+        ].map(([file, caption]) => (
+          <figure key={file} className="grid content-start gap-3">
+            <img src={`/native/${file}`} alt={caption} className="w-full rounded-xl border" />
+            <figcaption className="text-sm text-muted-foreground">{caption}</figcaption>
+          </figure>
+        ))}
         <figure className="grid content-start gap-3">
           <img
             src="/native/ios-conversation.png"

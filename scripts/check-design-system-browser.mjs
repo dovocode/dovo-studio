@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { dirname, extname, resolve, sep } from 'node:path'
 import { chromium } from './browser/harness.mjs'
 import { checkMobileSettingsAndThreads } from './design-system-mobile-interactions.mjs'
+import { checkHostedScreens } from './catalog-hosted-interactions.mjs'
+import { checkScreenInteractions, waitForCatalogScreen } from './catalog-screen-interactions.mjs'
 const output = resolve('apps/design-system/storybook-static')
 const require = createRequire(new URL('../apps/design-system/package.json', import.meta.url))
 const axePath = require.resolve('axe-core', {
@@ -26,9 +29,10 @@ const server = createServer(async (req, res) => {
     return
   }
   try {
+    const content = await readFile(file)
     res
       .writeHead(200, { 'Content-Type': types[extname(file)] ?? 'application/octet-stream' })
-      .end(await readFile(file))
+      .end(content)
   } catch {
     res.writeHead(404).end()
   }
@@ -83,21 +87,33 @@ try {
               document.querySelector('#storybook-root')?.children.length,
           )
           assert.equal(await page.locator('html').getAttribute('data-theme'), mode)
-          await page.evaluate(async () => {
-            await document.fonts.ready
-            const transitions = document
-              .getAnimations()
-              .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
-            await Promise.all(
-              transitions.map((animation) => animation.finished.catch(() => undefined)),
+          assert.ok(
+            !(await page.locator('#storybook-root').innerText()).includes(
+              'This view could not load',
+            ),
+            `${story.id}: production view error boundary`,
+          )
+          await waitForCatalogScreen(page, story.id)
+          await page.evaluate(() => document.fonts.ready.then(() => undefined))
+          try {
+            await page.waitForFunction(() =>
+              document
+                .getAnimations()
+                .every(
+                  (animation) =>
+                    animation.effect?.getComputedTiming().iterations === Infinity ||
+                    ['finished', 'idle', 'paused'].includes(animation.playState),
+                ),
             )
-          })
+          } catch (cause) {
+            throw new Error(`${story.id} ${mode} ${width}: animations did not settle`, { cause })
+          }
           assert.ok(
             await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
             `${story.id} ${mode} ${width}: horizontal overflow`,
           )
           if (story.title === 'Dovo/Hosted services') {
-            const root = page.frameLocator('iframe[title="Hosted service preview"]').locator('html')
+            const root = page.frameLocator('iframe').locator('html')
             await root.locator('body').waitFor()
             assert.equal(await root.getAttribute('data-theme'), mode)
             assert.ok(
@@ -142,7 +158,10 @@ try {
             await button.click()
             await page.getByRole('status').waitFor()
           }
-          if (width === 390) {
+          if (
+            width === 390 &&
+            !['Dovo/Screens/Hosted', 'Dovo/Hosted services'].includes(story.title)
+          ) {
             await page.addScriptTag({ path: axePath })
             const violations = await page.evaluate(async () =>
               (
@@ -157,9 +176,33 @@ try {
             if (violations.length) accessibilityFailures.push({ story: story.id, mode, violations })
           }
           checks++
+          if (checks % 100 === 0) console.log(`Checked ${checks} story/theme/viewport cases.`)
         }
   assert.deepEqual(errors, [])
+  await writeFile(
+    resolve(tmpdir(), 'dovo-design-system-accessibility.json'),
+    JSON.stringify(accessibilityFailures, null, 2),
+  )
   assert.deepEqual(accessibilityFailures, [], 'Component accessibility violations')
+  const hostedPage = await browser.newPage()
+  try {
+    const hostedChecks = await checkHostedScreens(hostedPage, origin, {
+      interactionsOnly: Boolean(process.env.DOVO_DESIGN_INTERACTIONS_ONLY),
+    })
+    console.log(
+      `Hosted pages: ${hostedChecks} inner-frame theme/viewport/accessibility checks and local interactions passed.`,
+    )
+  } finally {
+    await hostedPage.close()
+  }
+  const screensPage = await browser.newPage()
+  try {
+    console.log(
+      `Screen compositions: ${await checkScreenInteractions(screensPage, origin)} interactions passed.`,
+    )
+  } finally {
+    await screensPage.close()
+  }
   const openStory = async (id) => {
     await page.goto(`${origin}/iframe.html?id=${id}&viewMode=story&globals=theme:dark`)
     await page.locator('#storybook-root > *').first().waitFor()

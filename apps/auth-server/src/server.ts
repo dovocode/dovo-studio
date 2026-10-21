@@ -4,7 +4,7 @@ import { fromNodeHeaders, toNodeHandler } from 'better-auth/node'
 import { verifyOAuthQueryParams } from '@better-auth/oauth-provider'
 import type { createAuth } from './auth.js'
 
-import { accountPage, page, signInPage, styles, sessionLabel } from './pages.js'
+import { accountPage, page, signInPage, styles, sessionLabel, authStatusViews } from './pages.js'
 
 export function createAuthServer(
   identity: Awaited<ReturnType<typeof createAuth>>,
@@ -46,10 +46,7 @@ export function createAuthServer(
         return
       }
       if (req.method === 'GET' && url.pathname === '/error') {
-        sendPage(
-          'Sign-in interrupted',
-          '<div class="layout"><section><div class="eyebrow">Dovo Auth</div><h1>Let’s try that again.</h1><p>Sign-in was cancelled, expired or could not be completed. Your existing computers and pairings are unchanged.</p></section><section class="card"><h2>Continue safely</h2><p>If you started in Dovo Studio or Artifacts, return there and start sign-in again. To manage your identity here, continue below.</p><a class="button" href="/sign-in">Back to sign-in</a></section></div>',
-        )
+        sendPage('Sign-in interrupted', authStatusViews.interrupted)
         return
       }
       if (url.pathname.startsWith('/internal/identities/')) {
@@ -79,12 +76,7 @@ export function createAuthServer(
       if (url.pathname === '/resume' && req.method === 'GET') {
         const context = await identity.auth.$context
         if (!(await verifyOAuthQueryParams(url.search.slice(1), context.secret))) {
-          sendPage(
-            'Sign-in expired',
-            '<h1>This sign-in has expired.</h1><p>Start again from Dovo Studio.</p><a href="/sign-in">Sign in</a>',
-            false,
-            400,
-          )
+          sendPage('Sign-in expired', authStatusViews.expired, false, 400)
           return
         }
         res.writeHead(303, { Location: origin + '/api/auth/oauth2/authorize' + url.search })
@@ -100,30 +92,19 @@ export function createAuthServer(
         const session = await identity.auth.api.getSession({ headers })
         if (!session) {
           if (req.method === 'GET') redirect('/sign-in')
-          else
-            sendPage(
-              'Sign in again',
-              '<h1>Your session has ended.</h1><p>Sign in again to manage your account.</p><a class="button" href="/sign-in">Sign in</a>',
-              false,
-              401,
-            )
+          else sendPage('Sign in again', authStatusViews.sessionEnded, false, 401)
           return
         }
         if (req.method === 'POST') {
           if (req.headers.origin !== origin) {
-            sendPage(
-              'Request blocked',
-              '<h1>Request blocked.</h1><p>Return to your account and try again.</p><a href="/account">Your account</a>',
-              true,
-              403,
-            )
+            sendPage('Request blocked', authStatusViews.blocked, true, 403)
             return
           }
           let body = ''
           for await (const chunk of req) {
             body += String(chunk)
             if (Buffer.byteLength(body) > 4096) {
-              sendPage('Request too large', '<h1>Request too large.</h1>', true, 413)
+              sendPage('Request too large', authStatusViews.tooLarge, true, 413)
               return
             }
           }
@@ -131,12 +112,7 @@ export function createAuthServer(
           if (url.pathname === '/account/profile') {
             const name = form.get('name')?.trim() ?? ''
             if (!name || name.length > 100) {
-              sendPage(
-                'Check your name',
-                '<h1>Enter a name between 1 and 100 characters.</h1><a href="/account">Back to your account</a>',
-                true,
-                400,
-              )
+              sendPage('Check your name', authStatusViews.invalidName, true, 400)
               return
             }
             await identity.auth.api.updateUser({ headers, body: { name } })
@@ -147,12 +123,7 @@ export function createAuthServer(
             const sessions = await identity.auth.api.listSessions({ headers })
             const target = sessions.find((item) => item.id === form.get('id'))
             if (!target) {
-              sendPage(
-                'Session unavailable',
-                '<h1>This session is no longer active.</h1><a href="/account">Back to your account</a>',
-                true,
-                404,
-              )
+              sendPage('Session unavailable', authStatusViews.sessionInactive, true, 404)
               return
             }
             await identity.auth.api.revokeSession({ headers, body: { token: target.token } })
@@ -172,12 +143,7 @@ export function createAuthServer(
           }
         }
         if (req.method !== 'GET' || (url.pathname !== '/' && url.pathname !== '/account')) {
-          sendPage(
-            'Not found',
-            '<h1>Page not found.</h1><a href="/account">Your account</a>',
-            true,
-            404,
-          )
+          sendPage('Not found', authStatusViews.notFound, true, 404)
           return
         }
         const sessions = await identity.auth.api.listSessions({ headers })
@@ -215,12 +181,7 @@ export function createAuthServer(
         const context = await identity.auth.$context
         if (query && !(await verifyOAuthQueryParams(query, context.secret))) {
           res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
-          res.end(
-            page(
-              'Sign-in expired',
-              '<h1>This sign-in has expired.</h1><p>Start again from Dovo Studio, or sign in to manage your account.</p><a class="button" href="/sign-in">Sign in</a>',
-            ),
-          )
+          res.end(page('Sign-in expired', authStatusViews.signInExpired))
           return
         }
         if (req.method === 'GET') {
@@ -230,12 +191,7 @@ export function createAuthServer(
         }
         if (req.method === 'POST') {
           if (req.headers.origin !== origin) {
-            sendPage(
-              'Request blocked',
-              '<h1>Request blocked.</h1><p>Start sign-in from Dovo Auth or Dovo Studio.</p><a href="/sign-in">Sign in</a>',
-              false,
-              403,
-            )
+            sendPage('Request blocked', authStatusViews.signInBlocked, false, 403)
             return
           }
           const response = await identity.auth.handler(
@@ -277,21 +233,11 @@ export function createAuthServer(
         await handler(req, res)
         return
       }
-      sendPage(
-        'Not found',
-        '<h1>Page not found.</h1><p>Return to Dovo Auth to continue.</p><a class="button" href="/">Dovo Auth</a>',
-        false,
-        404,
-      )
+      sendPage('Not found', authStatusViews.publicNotFound, false, 404)
     } catch {
       if (!res.headersSent) {
         res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(
-          page(
-            'Try again',
-            '<h1>We couldn’t complete that request.</h1><p>Try again, or restart sign-in from Dovo Studio if your request expired.</p><a class="button" href="/">Back to Dovo Auth</a>',
-          ),
-        )
+        res.end(page('Try again', authStatusViews.unavailable))
       } else res.end()
     }
   })

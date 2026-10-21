@@ -1,10 +1,14 @@
 import type { Preview } from '@storybook/react-vite'
 import { useLayoutEffect } from 'react'
 import { dovoColors } from '@dovo/design'
+import { updateAppPreferences } from '@dovo/studio-core'
 import '../src/catalog.css'
 
 function Theme({ mode, children }: { mode: 'light' | 'dark'; children: React.ReactNode }) {
   useLayoutEffect(() => {
+    // Production appearance hooks and catalog globals must resolve the same theme.
+    // Run only when the toolbar mode changes so Appearance stories remain editable.
+    updateAppPreferences({ theme: mode, themePalette: 'dovo' })
     document.documentElement.dataset.theme = mode
     document.documentElement.classList.toggle('dark', mode === 'dark')
     document.documentElement.dataset.motion = 'system'

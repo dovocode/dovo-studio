@@ -1,4 +1,6 @@
-import { createContext, useContext, useEffect, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
+import { MobileAccountContext } from './account-context'
+export { MobileAccountContext, useMobileAccount } from './account-context'
 import { Linking } from 'react-native'
 import * as SecureStore from 'expo-secure-store'
 import { useRuntime } from './provider'
@@ -15,7 +17,6 @@ const storage: AccountStorage = {
 }
 const open = (url: string) => Linking.openURL(url)
 
-const Context = createContext<ReturnType<typeof useAccount> | null>(null)
 export function MobileAccountProvider({ children }: { children: ReactNode }) {
   const account = useAccount(storage, open)
   const { syncAccountSession, registryLoaded, overviews } = useRuntime()
@@ -33,10 +34,5 @@ export function MobileAccountProvider({ children }: { children: ReactNode }) {
         /* The runtime provider exposes persistence failures. */
       })
   }, [account.loaded, session, registryLoaded, syncAccountSession, connections])
-  return <Context.Provider value={account}>{children}</Context.Provider>
-}
-export function useMobileAccount() {
-  const account = useContext(Context)
-  if (!account) throw new Error('MobileAccountProvider is missing')
-  return account
+  return <MobileAccountContext.Provider value={account}>{children}</MobileAccountContext.Provider>
 }

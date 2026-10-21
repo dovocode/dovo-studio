@@ -129,6 +129,7 @@ export default function AppearanceScreen() {
                 accessibilityLabel={palette.name}
                 accessibilityHint={palette.description}
                 accessibilityState={{ checked: selected }}
+                aria-checked={selected}
                 onPress={() => updateMobilePreferences({ themePalette: id })}
                 style={({ pressed }) => ({
                   flexDirection: 'row',

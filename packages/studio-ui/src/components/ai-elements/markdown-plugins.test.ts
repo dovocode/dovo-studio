@@ -42,3 +42,21 @@ it('renders local chat files before sanitization without allowing script links',
   expect(html).toContain('https://dovo-local-file.invalid/?path=%2Ftmp%2Fshot.png')
   expect(html).not.toContain('javascript:')
 })
+
+it('names read-only task checkboxes from their own Markdown item, excluding nested tasks', () => {
+  const html = renderToStaticMarkup(
+    createElement(Streamdown, {
+      mode: 'static',
+      rehypePlugins: markdownPluginsForLinks(),
+      children:
+        '- [x] Review **desktop** UI\n  - [ ] Check mobile UI\n- [ ] Verify [settings](https://example.com)',
+    }),
+  )
+  const checkboxes = html.match(/<input[^>]+>/g) ?? []
+  expect(checkboxes).toHaveLength(3)
+  expect(checkboxes[0]).toContain('aria-label="Review desktop UI"')
+  expect(checkboxes[0]).toContain('checked=""')
+  expect(checkboxes[1]).toContain('aria-label="Check mobile UI"')
+  expect(checkboxes[2]).toContain('aria-label="Verify settings"')
+  for (const checkbox of checkboxes) expect(checkbox).toContain('disabled=""')
+})

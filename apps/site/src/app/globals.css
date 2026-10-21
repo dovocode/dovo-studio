@@ -191,7 +191,7 @@ small {
 figcaption {
   text-align: center;
   font-size: 11px;
-  color: #a1a1a1;
+  color: var(--muted);
   margin-top: 17px;
 }
 .platform-strip {
@@ -256,7 +256,7 @@ figcaption {
 .feature-tag {
   font-size: 10px;
   letter-spacing: 1px;
-  color: #a1a1a1;
+  color: var(--muted);
   border-top: 1px solid var(--line);
   padding-top: 22px;
   width: 100%;
@@ -292,7 +292,7 @@ figcaption {
   padding: 16px 23px;
   border: 1px solid #282828;
   border-radius: 8px;
-  background: #101010;
+  background: var(--surface);
   font-size: 12px;
 }
 .map-line {
@@ -321,7 +321,7 @@ figcaption {
   border-radius: 9px;
   padding: 22px 35px;
   margin-top: 30px;
-  background: #102432;
+  background: var(--dovo-secondary);
 }
 .map-host strong {
   font-weight: 500;
@@ -330,7 +330,7 @@ figcaption {
   width: 100%;
   text-align: center;
   font-size: 11px;
-  color: #a1a1a1;
+  color: var(--muted);
 }
 .connection-map p {
   text-align: center;
@@ -415,7 +415,7 @@ figcaption {
 .callout {
   padding: 30px;
   border: 1px solid #282828;
-  background: #101010;
+  background: var(--surface);
   border-radius: 10px;
   margin-top: 65px;
 }
@@ -729,7 +729,7 @@ figcaption {
 }
 .release-channels button[aria-pressed='true'] {
   border-color: var(--accent);
-  background: #102432;
+  background: var(--dovo-secondary);
 }
 .release-channels button:focus-visible {
   outline: 2px solid var(--accent);
@@ -829,7 +829,7 @@ figcaption {
 }
 .availability-badge {
   border: 1px solid #244156;
-  background: #102432;
+  background: var(--dovo-secondary);
   color: var(--accent);
   border-radius: 5px;
   padding: 5px 9px;
@@ -875,7 +875,7 @@ figcaption {
 }
 .command-toolbar button[aria-pressed='true'] {
   border-color: #244156;
-  background: #102432;
+  background: var(--dovo-secondary);
   color: var(--accent);
 }
 .command-toolbar button:hover {
@@ -1065,7 +1065,7 @@ h3 {
   font-size: 17px;
   line-height: 1.65;
   margin-bottom: 25px;
-  color: #c1c1c1;
+  color: var(--muted);
 }
 .hero .actions {
   align-items: flex-start;
@@ -1100,7 +1100,7 @@ h3 {
 }
 .hero-preview {
   padding: 0;
-  background: #0c0c0c;
+  background: var(--dovo-sidebar);
   border: 1px solid #3a3a3a;
   border-radius: 10px;
   box-shadow: 0 30px 80px #0008;
@@ -1263,7 +1263,7 @@ h3 {
   color: var(--accent);
 }
 .feature-top > span {
-  color: #666;
+  color: var(--muted);
   font:
     11px ui-monospace,
     monospace;
@@ -1313,10 +1313,10 @@ h3 {
   font:
     10px ui-monospace,
     monospace;
-  opacity: 0.65;
+  color: var(--muted);
 }
 .tour-tabs button[aria-pressed='true'] {
-  background: #102432;
+  background: var(--dovo-secondary);
   color: var(--accent);
 }
 .tour-tabs button[aria-pressed='true']::after {
@@ -1358,7 +1358,7 @@ summary:focus-visible {
 }
 .tour-copy li {
   font-size: 12px;
-  color: #c4c4c4;
+  color: var(--muted);
   margin-block: 12px;
 }
 .tour-copy li::before {
@@ -1387,7 +1387,7 @@ summary:focus-visible {
   padding: 64px 45px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #0c0c0c;
+  background: var(--dovo-sidebar);
   gap: 60px;
 }
 .ownership h2 {
@@ -1403,7 +1403,7 @@ summary:focus-visible {
   border-color: #7cc9ff50;
 }
 .map-host {
-  background: #102432;
+  background: var(--dovo-secondary);
   border-color: #7cc9ff50;
   box-shadow: 0 0 45px color-mix(in srgb, var(--accent) 3%, transparent);
 }
@@ -1413,7 +1413,7 @@ summary:focus-visible {
 }
 .command-panel {
   border-radius: 8px;
-  background: #0c0c0c;
+  background: var(--dovo-sidebar);
 }
 .command-toolbar {
   background: var(--surface);
@@ -1459,7 +1459,7 @@ summary:focus-visible {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #101010;
+  background: var(--surface);
   padding: 85px 25px;
   margin-bottom: 70px;
 }
@@ -1769,7 +1769,7 @@ summary:focus-visible {
   margin-top: 40px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #0c0c0c;
+  background: var(--dovo-sidebar);
   overflow: hidden;
 }
 .fleet-stages {
@@ -1799,11 +1799,11 @@ summary:focus-visible {
   font:
     10px ui-monospace,
     monospace;
-  color: #777;
+  color: var(--muted);
 }
 .fleet-stages button[aria-pressed='true'] {
   color: var(--accent);
-  background: #102432;
+  background: var(--dovo-secondary);
 }
 .fleet-stages button:hover {
   background: #7cc9ff0a;
@@ -1881,13 +1881,13 @@ summary:focus-visible {
   padding: 15px 20px;
   border: 1px solid #7cc9ff55;
   border-radius: 6px;
-  background: #102432;
+  background: var(--dovo-secondary);
   color: var(--accent);
   font-size: 12px;
   letter-spacing: 1px;
 }
 .fleet-you > span:last-child {
-  color: #a8b6c0;
+  color: var(--muted);
   font-size: 11px;
   letter-spacing: 0;
 }
@@ -2163,7 +2163,7 @@ summary:focus-visible {
   grid-template-columns: 180px 1fr;
   gap: 30px;
   padding: 25px 42px;
-  background: #080b0f;
+  background: var(--dovo-sidebar);
   min-height: 185px;
 }
 .fleet-activity-title {
@@ -2194,10 +2194,10 @@ summary:focus-visible {
   font:
     10px ui-monospace,
     monospace;
-  color: #9daebb;
+  color: var(--muted);
 }
 .fleet-activity-stream strong {
-  color: #d5e1eb;
+  color: var(--text);
   font-weight: 400;
 }
 .fleet-activity-stream i {
@@ -2220,7 +2220,7 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #c1c1c1;
+  color: var(--muted);
 }
 .fleet-note {
   font-size: 10px;
