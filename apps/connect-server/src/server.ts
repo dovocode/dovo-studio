@@ -2,7 +2,7 @@ import type { DeleteIdentity } from './delete-identity.js'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { hash, type AccountStore } from './store.js'
 import type { IdentityProvider } from './oidc.js'
-import { bearerToken, json, RequestError } from './http.js'
+import { bearerToken, hostedStylesHash, json, RequestError } from './http.js'
 import { browserAuth } from './browser-auth.js'
 import { InternetStore } from './internet-store.js'
 import { internetApi } from './internet-api.js'
@@ -59,7 +59,7 @@ export function createConnectServer(
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader(
       'Content-Security-Policy',
-      `default-src 'none'; form-action 'self' ${[identityOrigin, ...(options.organizations ?? []).flatMap((organization) => [organization.provider.authorizationOrigin, ...organization.endpointOrigins])].join(' ')}; frame-ancestors 'none'; base-uri 'none'`,
+      `default-src 'none'; style-src 'sha256-${hostedStylesHash}'; form-action 'self' ${[identityOrigin, ...(options.organizations ?? []).flatMap((organization) => [organization.provider.authorizationOrigin, ...organization.endpointOrigins])].join(' ')}; frame-ancestors 'none'; base-uri 'none'`,
     )
     const url = new URL(req.url ?? '/', origin)
     if (url.pathname.startsWith('/v1/')) {

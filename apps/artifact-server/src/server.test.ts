@@ -122,6 +122,24 @@ async function fixture() {
   }
 }
 
+it('serves the shared, keyboard-accessible hosted artifact shell', async () => {
+  const f = await fixture()
+  const page = await f.request('/')
+  expect(page.status).toBe(200)
+  const markup = await page.text()
+  expect(markup).toContain('<meta name="color-scheme" content="dark">')
+  expect(markup).toContain('--dovo-background:#080808;')
+  expect(markup).toContain('--dovo-card:#101010;')
+  expect(markup).toContain('--dovo-muted-foreground:#a1a1a1;')
+  expect(markup).toContain('--dovo-border:#282828;')
+  expect(markup).toContain('--dovo-primary:#7cc9ff;')
+  expect(markup).toContain('border-radius:var(--dovo-radius-control)')
+  expect(markup).toContain(':focus-visible{outline:2px solid var(--accent);outline-offset:3px}')
+  expect(markup).toContain('id="status" role="status" aria-live="polite"')
+  expect(page.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'unsafe-inline'")
+  expect(page.headers.get('Content-Security-Policy')).toContain("style-src 'unsafe-inline'")
+})
+
 it('publishes private, immutable, idempotent copies and grants only explicitly invited accounts', async () => {
   const f = await fixture(),
     owner = f.grant(f.owner),

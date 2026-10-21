@@ -29,7 +29,7 @@ export function ComposerSurface({
   return (
     <PromptInput
       className={cn(
-        'studio-composer relative z-10 mx-auto max-w-[var(--chat-max)] rounded-2xl border-border/70 bg-card shadow-none',
+        'studio-composer relative z-10 mx-auto max-w-[var(--chat-max)] rounded-xl border-border/70 bg-card shadow-none',
         collapsed && 'max-h-12 overflow-hidden',
         className,
       )}
@@ -89,7 +89,7 @@ export function ComposerSubmit({
     <PromptInputSubmit
       busy={busy}
       className={cn(
-        'size-8 rounded-full bg-[#326bf3] text-white hover:bg-[#326bf3]/90 disabled:opacity-35',
+        'size-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-35',
         className,
       )}
       {...props}

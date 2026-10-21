@@ -38,6 +38,7 @@ export async function createAuth(options: {
     secret: options.secret,
     database: db,
     trustedOrigins: [origin],
+    onAPIError: { errorURL: origin + '/error' },
     socialProviders: { github: options.github },
     account: { encryptOAuthTokens: true, accountLinking: { enabled: false } },
     session: { expiresIn: 8 * 3600, cookieCache: { enabled: false } },

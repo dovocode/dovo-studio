@@ -12,6 +12,7 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@dovo/design": "workspace:*",
     "@dovo/protocol": "workspace:*",
     "effect": "4.0.5",
     "marked": "^18.1.1"

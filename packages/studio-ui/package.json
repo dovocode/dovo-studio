@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@dovo/design": "workspace:*",
     "@dovo/protocol": "workspace:*",
     "@dovo/studio-core": "workspace:*",
     "@mcp-ui/legacy": "npm:@mcp-ui/client@5.17.3",

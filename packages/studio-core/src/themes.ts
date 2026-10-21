@@ -1,3 +1,5 @@
+import { dovoColors } from '@dovo/design'
+
 /** Studio adaptations of the palettes reviewed in the theme preview artifact.
  * Keep surface, accent-text and filled-action colors separate for readable contrast. */
 export const studioThemeIds = [
@@ -51,42 +53,8 @@ export const studioThemes: Record<StudioThemeId, StudioTheme> = {
     source:
       'Dark colors sampled from dovocode.com’s live CSS. Light mode is a Studio adaptation of that brand palette.',
     url: 'https://dovocode.com',
-    dark: {
-      background: '#080808',
-      foreground: '#ededed',
-      sidebar: '#0c0c0c',
-      card: '#101010',
-      popover: '#101010',
-      secondary: '#102432',
-      'muted-foreground': '#a1a1a1',
-      border: '#282828',
-      primary: '#7cc9ff',
-      selection: '#102432',
-      action: '#ededed',
-      'action-foreground': '#080808',
-      signal: '#bcefff',
-      pink: '#7cc9ff',
-      'syntax-function': '#7cc9ff',
-      'syntax-keyword': '#7cc9ff',
-    },
-    light: {
-      background: '#ffffff',
-      foreground: '#151515',
-      sidebar: '#f7f7f7',
-      card: '#ffffff',
-      popover: '#ffffff',
-      secondary: '#e7f3ff',
-      'muted-foreground': '#666666',
-      border: '#dddddd',
-      primary: '#0965b5',
-      selection: '#e7f3ff',
-      action: '#151515',
-      'action-foreground': '#ffffff',
-      signal: '#006a83',
-      pink: '#0965b5',
-      'syntax-function': '#0965b5',
-      'syntax-keyword': '#0965b5',
-    },
+    dark: dovoColors.dark,
+    light: dovoColors.light,
   },
   iris: {
     name: 'Iris',

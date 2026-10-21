@@ -151,3 +151,20 @@ files are independent; deleting Dovo does not delete the user's GitHub account.
 Organization identity deletion removes the Dovo account and grants, without deleting an account in
 the organization's identity provider. Hosted publication retention is covered separately in
 [Hosted artifacts](hosted-artifacts.md). Keep backups private and respect the configured retention.
+
+## Dovo Auth account experience
+
+Open `https://auth.dovo.studio` to sign in directly with GitHub and manage your identity. The
+responsive account page supports updating your display name, inspecting active Auth browser sessions
+and their last activity/expiry, signing out an individual browser, signing out other browsers, and
+signing out the current browser. GitHub continues to manage your email address. These controls use
+Better Auth session and profile APIs; no GitHub or session tokens appear in page content. Profile
+changes do not change your mapped Dovo account identity.
+
+When sign-in starts in Dovo Studio or Artifacts, the signed OAuth request is preserved through
+GitHub and returns to the requesting application. Expired or modified requests must be restarted.
+Organization SSO remains available from the application’s organization provider selection.
+
+Signing out an Auth browser does not revoke existing Dovo app sessions, runtime grants or pairing.
+Use the account controls in Dovo Studio for computer-access revocation and full account deletion;
+that deletion also removes the linked Auth identity. LAN/VPN pairing remains account-free.

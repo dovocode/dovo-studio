@@ -62,3 +62,6 @@ apps/mobile/google-services.json
 # Next.js site output
 .next/
 apps/site/out/
+
+# Built design catalog
+apps/design-system/storybook-static/

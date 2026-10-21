@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ActivityIndicator, Pressable, type ViewStyle } from 'react-native'
+import { designTokens } from '@dovo/design'
 import { Text } from '../content/text'
 import { Icon, type IconName } from './icon'
 import { useTheme, type MobileColors } from '../theme'
@@ -8,7 +9,7 @@ const pillStyle = (pressed: boolean, colors: MobileColors): ViewStyle => ({
   flexDirection: 'row',
   alignItems: 'center',
   gap: 10,
-  minHeight: 38,
+  minHeight: designTokens.touchTarget,
   paddingHorizontal: 18,
   borderRadius: 19,
   backgroundColor: pressed ? colors.selection : colors.surface,

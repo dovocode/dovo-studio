@@ -154,7 +154,10 @@
     "test:model-catalog-cache:browser": "node scripts/check-model-catalog-cache-browser.mjs",
     "test:permission-policy:browser": "node scripts/check-permission-policy-browser.mjs",
     "test:mobile-thread-files:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-mobile-thread-files-browser.mjs",
-    "test:custom-turn:browser": "node scripts/check-custom-turn-browser.mjs"
+    "test:custom-turn:browser": "node scripts/check-custom-turn-browser.mjs",
+    "design:dev": "pnpm --filter @dovo/design build && pnpm --filter @dovo/design-system dev",
+    "design:build": "pnpm --filter @dovo/design build && pnpm --filter @dovo/design-system build",
+    "test:design-system:browser": "pnpm design:build && node scripts/check-design-system-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

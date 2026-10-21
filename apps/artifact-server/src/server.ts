@@ -23,6 +23,7 @@ import {
 } from '@dovo/protocol'
 import { marked } from 'marked'
 import { ArtifactStore, ShareError } from './store.js'
+import { artifactPage } from './pages.js'
 
 const ownersSchema = mutableArray(mutableStruct({ id: Schema.String, active: Schema.Boolean }))
 const okSchema = mutableStruct({ ready: Schema.Boolean })
@@ -180,7 +181,7 @@ export function createArtifactServer(options: {
     }
     if (req.method === 'GET' && (path === '/' || /^\/(?:s|manage)\/[a-f0-9-]{36}$/.test(path))) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-      return res.end(shell)
+      return res.end(artifactPage)
     }
     // Cookie authentication is same-origin only. Native clients use explicit bearer grants.
     if (
@@ -405,7 +406,3 @@ export function createArtifactServer(options: {
   server.maxHeadersCount = 40
   return { server, pruneOwners }
 }
-
-const shell = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dovo Artifacts</title><style>
-:root{color-scheme:light dark;font:16px system-ui;background:light-dark(#f7f8fa,#101114);color:light-dark(#151515,#ededed)}body{margin:0}main{max-width:1100px;margin:auto;padding:24px}header{display:flex;gap:16px;align-items:center;flex-wrap:wrap}h1{font-size:24px}h2{font-size:19px}button,input,select{font:inherit;padding:10px;border-radius:8px;border:1px solid #8886}button{cursor:pointer}button:disabled{opacity:.5}input{min-width:0;max-width:100%;box-sizing:border-box}button,a{overflow-wrap:anywhere}a{color:light-dark(#0965b5,#7cc9ff)}section{padding:20px;margin:16px 0;border:1px solid #8885;border-radius:12px}p{line-height:1.5}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}.muted{opacity:.75;font-size:14px}.error{color:light-dark(#b02035,#ffa3b0)}code{overflow-wrap:anywhere;white-space:pre-wrap}iframe{display:block;width:100%;height:70vh;border:1px solid #8885;border-radius:10px;background:white}#status{min-height:24px}[hidden]{display:none!important}label{display:block;margin-bottom:8px}
-</style></head><body><main><header><h1>Dovo Artifacts</h1><a href="/">Your published artifacts</a><span id="identity"></span></header><p id="status" role="status"></p><div id="auth"></div><div id="content"></div></main><script src="/viewer.js" defer></script></body></html>`

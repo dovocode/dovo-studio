@@ -8,10 +8,7 @@ import { cn } from '../../lib/utils'
 export function PromptInput({ className, ...props }: ComponentProps<'form'>) {
   return (
     <form
-      className={cn(
-        'w-full overflow-hidden rounded-xl border bg-card shadow-xs focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20',
-        className,
-      )}
+      className={cn('w-full overflow-hidden rounded-xl border bg-card', className)}
       {...props}
     />
   )

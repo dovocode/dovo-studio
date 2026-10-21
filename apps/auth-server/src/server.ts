@@ -4,11 +4,8 @@ import { fromNodeHeaders, toNodeHandler } from 'better-auth/node'
 import { verifyOAuthQueryParams } from '@better-auth/oauth-provider'
 import type { createAuth } from './auth.js'
 
-const escape = (text: string) =>
-  text.replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-  )
+import { escape, page, signInPage, styles, sessionLabel } from './pages.js'
+
 export function createAuthServer(
   identity: Awaited<ReturnType<typeof createAuth>>,
   options: {
@@ -26,13 +23,33 @@ export function createAuthServer(
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader(
       'Content-Security-Policy',
-      `default-src 'none'; form-action 'self' https://github.com ${identity.connectOrigin}; frame-ancestors 'none'; base-uri 'none'`,
+      `default-src 'none'; style-src 'self'; form-action 'self' https://github.com ${identity.connectOrigin}; frame-ancestors 'none'; base-uri 'none'`,
     )
     try {
       const url = new URL(req.url ?? '/', origin)
+      const sendPage = (title: string, body: string, signedIn = false, status = 200) => {
+        res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(page(title, body, signedIn))
+      }
+      const redirect = (location: string) => {
+        res.writeHead(303, { Location: location })
+        res.end()
+      }
+      if (req.method === 'GET' && url.pathname === '/styles.css') {
+        res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8' })
+        res.end(styles)
+        return
+      }
       if (req.method === 'GET' && url.pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end('{"ok":true}')
+        return
+      }
+      if (req.method === 'GET' && url.pathname === '/error') {
+        sendPage(
+          'Sign-in interrupted',
+          '<div class="layout"><section><div class="eyebrow">Dovo Auth</div><h1>Let’s try that again.</h1><p>Sign-in was cancelled, expired or could not be completed. Your existing computers and pairings are unchanged.</p></section><section class="card"><h2>Continue safely</h2><p>If you started in Dovo Studio or Artifacts, return there and start sign-in again. To manage your identity here, continue below.</p><a class="button" href="/sign-in">Back to sign-in</a></section></div>',
+        )
         return
       }
       if (url.pathname.startsWith('/internal/identities/')) {
@@ -62,33 +79,154 @@ export function createAuthServer(
       if (url.pathname === '/resume' && req.method === 'GET') {
         const context = await identity.auth.$context
         if (!(await verifyOAuthQueryParams(url.search.slice(1), context.secret))) {
-          res.writeHead(400)
-          res.end('Sign-in expired')
+          sendPage(
+            'Sign-in expired',
+            '<h1>This sign-in has expired.</h1><p>Start again from Dovo Studio.</p><a href="/sign-in">Sign in</a>',
+            false,
+            400,
+          )
           return
         }
         res.writeHead(303, { Location: origin + '/api/auth/oauth2/authorize' + url.search })
         res.end()
         return
       }
-      if (url.pathname === '/sign-in') {
-        const query = url.search.slice(1)
-        const context = await identity.auth.$context
-        if (!(await verifyOAuthQueryParams(query, context.secret))) {
-          res.writeHead(400)
-          res.end('Sign-in expired. Start again in Studio.')
-          return
-        }
-        if (req.method === 'GET') {
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-          res.end(
-            `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Dovo sign-in</title><h1>Sign in to Dovo</h1><form method="post" action="/sign-in?${escape(query)}"><button>Continue with GitHub</button></form></html>`,
-          )
+      if (
+        url.pathname === '/' ||
+        url.pathname === '/account' ||
+        url.pathname.startsWith('/account/')
+      ) {
+        const headers = fromNodeHeaders(req.headers)
+        const session = await identity.auth.api.getSession({ headers })
+        if (!session) {
+          if (req.method === 'GET') redirect('/sign-in')
+          else
+            sendPage(
+              'Sign in again',
+              '<h1>Your session has ended.</h1><p>Sign in again to manage your account.</p><a class="button" href="/sign-in">Sign in</a>',
+              false,
+              401,
+            )
           return
         }
         if (req.method === 'POST') {
           if (req.headers.origin !== origin) {
-            res.writeHead(403)
-            res.end()
+            sendPage(
+              'Request blocked',
+              '<h1>Request blocked.</h1><p>Return to your account and try again.</p><a href="/account">Your account</a>',
+              true,
+              403,
+            )
+            return
+          }
+          let body = ''
+          for await (const chunk of req) {
+            body += String(chunk)
+            if (Buffer.byteLength(body) > 4096) {
+              sendPage('Request too large', '<h1>Request too large.</h1>', true, 413)
+              return
+            }
+          }
+          const form = new URLSearchParams(body)
+          if (url.pathname === '/account/profile') {
+            const name = form.get('name')?.trim() ?? ''
+            if (!name || name.length > 100) {
+              sendPage(
+                'Check your name',
+                '<h1>Enter a name between 1 and 100 characters.</h1><a href="/account">Back to your account</a>',
+                true,
+                400,
+              )
+              return
+            }
+            await identity.auth.api.updateUser({ headers, body: { name } })
+            redirect('/account?notice=profile')
+            return
+          }
+          if (url.pathname === '/account/revoke-session') {
+            const sessions = await identity.auth.api.listSessions({ headers })
+            const target = sessions.find((item) => item.id === form.get('id'))
+            if (!target) {
+              sendPage(
+                'Session unavailable',
+                '<h1>This session is no longer active.</h1><a href="/account">Back to your account</a>',
+                true,
+                404,
+              )
+              return
+            }
+            await identity.auth.api.revokeSession({ headers, body: { token: target.token } })
+            redirect('/account?notice=session')
+            return
+          }
+          if (url.pathname === '/account/revoke-others') {
+            await identity.auth.api.revokeOtherSessions({ headers })
+            redirect('/account?notice=sessions')
+            return
+          }
+          if (url.pathname === '/account/sign-out') {
+            const response = await identity.auth.api.signOut({ headers, asResponse: true })
+            res.setHeader('Set-Cookie', response.headers.getSetCookie())
+            redirect('/sign-in')
+            return
+          }
+        }
+        if (req.method !== 'GET' || (url.pathname !== '/' && url.pathname !== '/account')) {
+          sendPage(
+            'Not found',
+            '<h1>Page not found.</h1><a href="/account">Your account</a>',
+            true,
+            404,
+          )
+          return
+        }
+        const sessions = await identity.auth.api.listSessions({ headers })
+        const notice = {
+          profile: 'Your profile has been updated.',
+          session: 'Session signed out.',
+          sessions: 'Other Auth sessions signed out.',
+        }[url.searchParams.get('notice') ?? '']
+        const date = (value: Date) =>
+          escape(
+            value.toLocaleString('en-GB', {
+              timeZone: 'UTC',
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            }),
+          ) + ' UTC'
+        sendPage(
+          'Your account',
+          `<div class="layout"><section><div class="eyebrow">Your Dovo identity</div><h1>Welcome, ${escape(session.user.name)}.</h1><p>Manage your profile and the browsers signed in to Dovo Auth.</p><a class="button secondary" href="https://artifacts.dovo.studio">Open Dovo Artifacts</a><p class="meta">To connect a computer, start in Dovo Studio. Account sign-in never replaces device consent.</p></section><section>${notice ? '<div class="notice" role="status">' + notice + '</div>' : ''}<div class="card"><h2>Profile</h2><form method="post" action="/account/profile"><label for="name">Display name</label><input id="name" name="name" value="${escape(session.user.name)}" required maxlength="100" autocomplete="name"><p><strong>Email from GitHub</strong></p><p>${escape(session.user.email)}</p><button>Save profile</button></form><p class="meta">GitHub manages your sign-in and email address.</p></div><div class="card"><h2>Active Auth sessions</h2><p class="meta">Signing out here ends Auth browser sessions. Existing Dovo app sessions and paired computers are managed separately in Dovo Studio.</p>${sessions.map((item) => `<div class="row"><div><strong>${escape(sessionLabel(item.userAgent))}</strong> ${item.id === session.session.id ? '<span class="badge">This browser</span>' : ''}<div class="meta">Last active ${date(item.updatedAt)}<br>Expires ${date(item.expiresAt)}</div></div>${item.id !== session.session.id ? `<form method="post" action="/account/revoke-session"><input type="hidden" name="id" value="${escape(item.id)}"><button class="secondary">Sign out session</button></form>` : ''}</div>`).join('')}<form method="post" action="/account/revoke-others"><button class="secondary">Sign out other browsers</button></form></div><div class="card"><h2>Account access</h2><p>Use Dovo Studio’s account settings to revoke computer access or delete your Dovo account and its linked identity.</p><form method="post" action="/account/sign-out"><button class="secondary">Sign out of this browser</button></form></div></section></div>`,
+          true,
+        )
+        return
+      }
+      if (url.pathname === '/sign-in') {
+        const query = url.search.slice(1)
+        const context = await identity.auth.$context
+        if (query && !(await verifyOAuthQueryParams(query, context.secret))) {
+          res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
+          res.end(
+            page(
+              'Sign-in expired',
+              '<h1>This sign-in has expired.</h1><p>Start again from Dovo Studio, or sign in to manage your account.</p><a class="button" href="/sign-in">Sign in</a>',
+            ),
+          )
+          return
+        }
+        if (req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+          res.end(signInPage(query))
+          return
+        }
+        if (req.method === 'POST') {
+          if (req.headers.origin !== origin) {
+            sendPage(
+              'Request blocked',
+              '<h1>Request blocked.</h1><p>Start sign-in from Dovo Auth or Dovo Studio.</p><a href="/sign-in">Sign in</a>',
+              false,
+              403,
+            )
             return
           }
           const response = await identity.auth.handler(
@@ -100,8 +238,8 @@ export function createAuthServer(
               },
               body: JSON.stringify({
                 provider: 'github',
-                callbackURL: origin + '/resume?' + query,
-                oauth_query: query,
+                callbackURL: query ? origin + '/resume?' + query : origin + '/account',
+                ...(query ? { oauth_query: query } : {}),
               }),
             }),
           )
@@ -130,11 +268,22 @@ export function createAuthServer(
         await handler(req, res)
         return
       }
-      res.writeHead(404)
-      res.end()
+      sendPage(
+        'Not found',
+        '<h1>Page not found.</h1><p>Return to Dovo Auth to continue.</p><a class="button" href="/">Dovo Auth</a>',
+        false,
+        404,
+      )
     } catch {
-      if (!res.headersSent) res.writeHead(503)
-      res.end('Authentication is temporarily unavailable')
+      if (!res.headersSent) {
+        res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(
+          page(
+            'Try again',
+            '<h1>We couldn’t complete that request.</h1><p>Try again, or restart sign-in from Dovo Studio if your request expired.</p><a class="button" href="/">Back to Dovo Auth</a>',
+          ),
+        )
+      } else res.end()
     }
   })
 }

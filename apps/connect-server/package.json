@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@dovo/design": "workspace:*",
     "@dovo/protocol": "workspace:*",
     "effect": "4.0.5",
     "jose": "^6.1.3",

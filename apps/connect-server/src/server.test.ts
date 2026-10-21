@@ -4,6 +4,7 @@ import { internetPublicKey, internetRegistrationPayload } from '@dovo/protocol'
 import { once } from 'node:events'
 import { AccountStore, hash } from './store.js'
 import { createConnectServer } from './server.js'
+import { hostedStylesHash } from './http.js'
 const resources: Array<() => Promise<void> | void> = []
 afterEach(async () => {
   for (const dispose of resources.splice(0).reverse()) await dispose()
@@ -80,8 +81,16 @@ describe('optional account discovery', () => {
       login = await f.login()
     const page = await f.request('/auth/start?id=' + login.id)
     expect(page.headers.get('Content-Security-Policy')).toBe(
-      "default-src 'none'; form-action 'self' https://auth.test; frame-ancestors 'none'; base-uri 'none'",
+      `default-src 'none'; style-src 'sha256-${hostedStylesHash}'; form-action 'self' https://auth.test; frame-ancestors 'none'; base-uri 'none'`,
     )
+    const markup = await page.text()
+    expect(markup).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">')
+    expect(markup).toContain('--dovo-background')
+    expect(markup).toContain(
+      'Signing in grants access to computers where you enable Dovo Connect on this account. LAN / VPN access still requires separate device pairing.',
+    )
+    expect(markup).toContain('Continue to Dovo sign-in')
+    expect(markup).not.toContain('unsafe-inline')
     await f.approve(login)
   })
 

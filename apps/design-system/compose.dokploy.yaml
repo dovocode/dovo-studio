@@ -1,0 +1,21 @@
+# ui.dovo.studio -> catalog:8080. Public, synthetic design examples only.
+services:
+  catalog:
+    build:
+      context: ../..
+      dockerfile: apps/design-system/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    expose:
+      - '8080'
+    networks:
+      - dokploy-network
+networks:
+  dokploy-network:
+    external: true
