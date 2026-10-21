@@ -17,6 +17,7 @@ import { approvedRelayInstallations } from './relay-admission.js'
 const cleanup: Array<() => void | Promise<void>> = []
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close()
+  vi.useRealTimers()
 })
 async function fixture(
   issueRelay?: PeerRelayIssuer,
@@ -331,4 +332,137 @@ it('rejects a host registration that substitutes another account installation gr
   const denied = await f.open({ ...f.hostHello, accountGrant: 'z'.repeat(43) })
   void denied.reply.catch(() => {})
   expect((await once(denied.socket, 'close'))[0]).toBe(1008)
+})
+
+it('withholds credentials when account access is revoked during asynchronous relay issuance', async () => {
+  // Exercise the authorization boundary before the background sweep can close the room.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  const account = { grant: 'g'.repeat(43), active: true }
+  let started = () => {}
+  let complete: (relay: Awaited<ReturnType<PeerRelayIssuer>>) => void = () => {}
+  const issuing = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const pending = new Promise<Awaited<ReturnType<PeerRelayIssuer>>>((resolve) => {
+    complete = resolve
+  })
+  const f = await fixture(
+    async () => {
+      started()
+      return pending
+    },
+    false,
+    account,
+  )
+  const host = await f.open(f.hostHello)
+  await host.reply
+  const client = await f.open({ ...f.clientHello, relay: 'cloudflare' })
+  void client.reply.catch(() => {})
+  const messages = vi.fn<() => void>()
+  client.socket.on('message', messages)
+  const closed = once(client.socket, 'close')
+  await issuing
+  account.active = false
+  complete({
+    provider: 'cloudflare',
+    expiresAt: Date.now() + 600000,
+    iceServers: [
+      { urls: ['turn:turn.dovo.studio:3478?transport=udp'], username: 'test', credential: 'test' },
+    ],
+  })
+  // A buggy implementation sends ready and leaves the socket open until its deadline.
+  await Promise.race([closed, client.reply])
+  expect(messages).not.toHaveBeenCalled()
+  expect((await closed)[0]).toBe(1008)
+})
+
+it('rechecks account access before accepting an installation proof', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  const account = { grant: 'g'.repeat(43), active: true }
+  const issue = vi.fn<PeerRelayIssuer>()
+  const f = await fixture(issue, false, account)
+  const host = await f.open(f.hostHello, false)
+  const challenge = JSON.parse(String((await host.reply)[0])).challenge
+  const messages = vi.fn<() => void>()
+  host.socket.on('message', messages)
+  const closed = once(host.socket, 'close')
+  account.active = false
+  host.socket.send(JSON.stringify(f.proof(challenge)))
+  await Promise.race([closed, once(host.socket, 'message')])
+  expect(messages).not.toHaveBeenCalled()
+  expect((await closed)[0]).toBe(1008)
+  expect(issue).not.toHaveBeenCalled()
+})
+
+it('rejects offers and answers immediately after account revocation without waiting for a sweep', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  for (const role of ['offer', 'answer'] as const) {
+    const account = { grant: 'g'.repeat(43), active: true }
+    const f = await fixture(undefined, false, account)
+    const host = await f.open(f.hostHello)
+    await host.reply
+    const client = await f.open(f.clientHello)
+    await client.reply
+    const sdp = 'v=0\r\na=fingerprint:sha-256 AA:BB\r\n'
+    const offer = signPeerSignal(f.config, {
+      session: f.clientHello.session,
+      role: 'offer',
+      offer: peerDigest(sdp),
+      sdp,
+    })
+    if (role === 'answer') {
+      const offered = once(host.socket, 'message')
+      client.socket.send(JSON.stringify(offer))
+      await offered
+    }
+    const sender = role === 'offer' ? client.socket : host.socket
+    const recipient = role === 'offer' ? host.socket : client.socket
+    const messages = vi.fn<() => void>()
+    recipient.on('message', messages)
+    const closed = once(sender, 'close')
+    account.active = false
+    sender.send(JSON.stringify(signPeerSignal(f.config, { ...offer, role })))
+    await Promise.race([closed, once(recipient, 'message')])
+    expect(messages).not.toHaveBeenCalled()
+    expect((await closed)[0]).toBe(1008)
+  }
+})
+
+it('bounds pending clients per room without displacing legitimate joins', async () => {
+  const f = await fixture()
+  const host = await f.open(f.hostHello)
+  await host.reply
+  const clients = []
+  for (const session of ['b', 'c', 'd', 'e']) {
+    const client = await f.open({ ...f.clientHello, session: session.repeat(64) })
+    await client.reply
+    clients.push(client)
+  }
+  const extra = await f.open({ ...f.clientHello, session: 'f'.repeat(64) })
+  void extra.reply.catch(() => {})
+  expect((await once(extra.socket, 'close'))[0]).toBe(1008)
+  expect(host.socket.readyState).toBe(WebSocket.OPEN)
+  expect(clients.every(({ socket }) => socket.readyState === WebSocket.OPEN)).toBe(true)
+  const gone = once(clients[0]!.socket, 'close')
+  clients[0]!.socket.close()
+  await gone
+  const retry = await f.open({ ...f.clientHello, session: 'f'.repeat(64) })
+  expect(JSON.parse(String((await retry.reply)[0]))).toEqual({ type: 'ready' })
+})
+
+it('rejects oversized signaling frames while keeping other rooms usable', async () => {
+  const f = await fixture()
+  const host = await f.open(f.hostHello)
+  await host.reply
+  const client = await f.open(f.clientHello)
+  await client.reply
+  const messages = vi.fn<() => void>()
+  host.socket.on('message', messages)
+  const closed = once(client.socket, 'close')
+  client.socket.send('x'.repeat(70 * 1024 + 1))
+  await closed
+  expect(messages).not.toHaveBeenCalled()
+  expect(host.socket.readyState).toBe(WebSocket.OPEN)
+  const retry = await f.open(f.clientHello)
+  expect(JSON.parse(String((await retry.reply)[0]))).toEqual({ type: 'ready' })
 })

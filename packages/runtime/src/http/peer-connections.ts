@@ -18,6 +18,7 @@ import {
   verifyPeerSignal,
   validPeerRelay,
   PEER_STUN_URLS,
+  PEER_DISCONNECT_GRACE_MS,
   createPeerPipe,
   type PeerConfig,
   type PeerSignal,
@@ -398,11 +399,13 @@ export class PeerConnections {
     const sockets = new Set<Socket>()
     let readySeen = false
     let closed = false
+    let disconnected: ReturnType<typeof setTimeout> | undefined
     const close = () => {
       if (closed) return
       closed = true
       clearTimeout(deadline)
       if (expiry) clearTimeout(expiry)
+      if (disconnected) clearTimeout(disconnected)
       for (const pipe of pipes) pipe.stop()
       pipes.clear()
       // Destroying the loopback side ends HTTP keep-alive sockets and upgraded WebSockets on
@@ -421,14 +424,30 @@ export class PeerConnections {
       : undefined
     expiry?.unref()
     pc.connectionStateChange.subscribe((state) => {
+      if (closed) return
       if (state === 'connected') clearTimeout(deadline)
-      if (state === 'failed' || state === 'closed' || state === 'disconnected') close()
+      if (state === 'disconnected') {
+        disconnected ??= setTimeout(close, PEER_DISCONNECT_GRACE_MS)
+        disconnected.unref()
+      } else {
+        if (state === 'connected') {
+          if (disconnected) clearTimeout(disconnected)
+          disconnected = undefined
+        }
+        if (state === 'failed' || state === 'closed') close()
+      }
     })
     pc.onDataChannel.subscribe((channel) => {
       if (channel.label === 'dovo-ready-v1') {
-        if (readySeen) channel.close()
+        if (readySeen || closed) {
+          channel.close()
+          return
+        }
         readySeen = true
         channel.onMessage.subscribe(() => channel.close())
+        channel.stateChange.subscribe((state) => {
+          if (state === 'closed') close()
+        })
         return
       }
       if (

@@ -58,6 +58,10 @@ access to that phone's current account session; a new sign-in authorizes a new s
 disablement closes access immediately even if the directory is unavailable. In that case, an offline
 directory entry may remain until it can be unlinked.
 
+Connect checks the current account grant before accepting installation proofs, completing joins
+(including after asynchronous relay issuance), or forwarding offers and answers. Its background
+revocation sweep only cleans up idle signaling sockets; active operations do not wait for it.
+
 On the phone, an ephemeral loopback listener carries existing HTTP, WebSockets, images, files and
 WebViews over the same peer connection. On the computer, the only tunnel destination is an ordinary
 runtime listener on loopback: it cannot forward arbitrary ports or use desktop-only routes. All
@@ -65,9 +69,14 @@ runtime authorization checks remain in place. Server-owned tunnel provenance den
 Studio APIs and binds authenticated HTTP/WebSocket access to the paired device. Unknown local
 connections to that dedicated listener are refused; forwarded headers cannot override provenance.
 Stream credits bound buffering in both directions. Connections close when mobile backgrounds and
-reconnect when it returns. Uncertain mutations retain their existing idempotency/recovery behavior;
-transport reconnect does not replay them. Native background notification replies cannot establish
-WebRTC while JavaScript is suspended; unconfirmed answers stay saved for review in Dovo.
+reconnect when it returns. A temporary ICE disconnect has a ten-second recovery window before the
+tunnel and its sockets close. Failed ICE or a closed readiness channel closes them immediately.
+Wi-Fi/cellular changes and network loss discard old tunnels and pending negotiations; the next
+request negotiates fresh candidates. Repeated events for the same connected network keep the tunnel.
+Cancellation and the setup deadline also interrupt pending native operations and ICE gathering.
+Uncertain mutations retain their existing idempotency/recovery behavior; transport reconnect does
+not replay them. Native background notification replies cannot establish WebRTC while JavaScript is
+suspended; unconfirmed answers stay saved for review in Dovo.
 
 Some CGNAT, symmetric-NAT and corporate networks need TURN. Direct-only connections report failure
 rather than switching to a relay or advertised LAN routes. TURN supports UDP and TCP/TLS. Set
@@ -100,7 +109,8 @@ TypeScript `werift` implementation, avoiding another native desktop binary.
 Connect offers no relay until its backend is configured. Set secrets in the operator's private
 Connect environment (see `apps/connect-server/.env.example`); never put them in app builds or
 pairing links. A partial configuration fails startup rather than silently publishing unusable
-credentials.
+credentials. A malformed TURN URL, unsupported transport, invalid port or more than eight URLs fails
+Connect startup, using the same URL validation as the clients.
 
 ### Dovo coturn
 
@@ -209,9 +219,12 @@ on restart. These controls bound issuance, not traffic volume or determined dist
 kernel egress quota, coturn bandwidth/allocation caps and operational monitoring remain necessary.
 
 Run `pnpm test:peer-connection:browser` for real Chromium-to-runtime negotiation and pairing UI
-checks. Set `DOVO_TEST_TURN_BINARY` to a local coturn `turnserver` binary to additionally force UDP
-and TCP relay paths using real expiring REST credentials. The test server binds only loopback.
-Mobile TCP and UI native boundaries are adapted in Chromium; it is not a physical-device test.
+checks. Set `DOVO_TEST_TURN_BINARY` to a local coturn `turnserver` binary to additionally force UDP,
+TCP and TLS relay paths using real expiring REST credentials. The test server binds only loopback.
+The TLS fixture requires OpenSSL, generates a temporary certificate and trusts it only inside the
+test process and its local fixture browser. Deployed relay checks retain normal certificate
+validation. Mobile TCP and UI native boundaries are adapted in Chromium; it is not a physical-device
+test.
 
 Set `DOVO_TEST_CONNECT_ORIGIN=https://connect.dovo.studio` to test the deployed signaling broker and
 relay. The browser check verifies direct, UDP, TCP and TLS paths independently. Set

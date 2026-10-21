@@ -21,6 +21,7 @@ import {
   peerConfigSchema,
   peerRelayAdmissionPayload,
   PEER_RELAY_MAX_TTL_MS,
+  PEER_DISCONNECT_GRACE_MS,
   type PeerConfig,
   type PeerRelay,
   type PeerSignal,
@@ -557,9 +558,49 @@ it('accepts a broker relay only for the phone-signed provider, pinned hosts and 
 })
 
 type Internals = {
-  rooms: Map<string, { sessions: Set<string>; peers: Map<unknown, unknown> }>
+  rooms: Map<string, { sessions: Set<string>; peers: Map<RTCPeerConnection, () => void> }>
   origins: Map<number, unknown>
 }
+it('preserves live runtime sockets during a transient disconnect and bounds persistent outages', async () => {
+  const f = await fixture()
+  const deviceId = f.runtime.services.devices.add('Network handover phone', 'handover-token')
+  const config = await f.runtime.services.peers.enable(deviceId)
+  const tunnel = await f.tunnel(config)
+  const idle = await keepAlive(tunnel.address)
+  expect(await idle.response).toContain('200 OK')
+  const internals = f.runtime.services.peers as unknown as Internals
+  const peers = internals.rooms.get(peerRoom(config))!.peers
+  const pc = [...peers.keys()][0]!
+  vi.useFakeTimers()
+  try {
+    pc.connectionStateChange.execute('disconnected')
+    await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS - 1)
+    expect(peers.size).toBe(1)
+    expect(internals.origins.size).toBe(1)
+    pc.connectionStateChange.execute('connected')
+    await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS)
+    expect(peers.size).toBe(1)
+    pc.connectionStateChange.execute('disconnected')
+    await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS - 1)
+    pc.connectionStateChange.execute('disconnected')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(peers.size).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+  expect(await idle.closed).toBe(true)
+}, 30000)
+
+it('closes runtime keep-alive sockets when the peer readiness channel closes', async () => {
+  const f = await fixture()
+  const deviceId = f.runtime.services.devices.add('Readiness phone', 'readiness-token')
+  const config = await f.runtime.services.peers.enable(deviceId)
+  const tunnel = await f.tunnel(config)
+  const idle = await keepAlive(tunnel.address)
+  expect(await idle.response).toContain('200 OK')
+  tunnel.ready.close()
+  expect(await idle.closed).toBe(true)
+}, 30000)
 /** A hostile broker: it admits the computer, then forwards whatever offers the test chooses
  * and records the computer's answers. */
 async function hostileBroker() {

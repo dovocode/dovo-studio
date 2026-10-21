@@ -14,6 +14,7 @@ import {
   validPeerRelay,
   PEER_STUN_URLS,
   PEER_CONNECTION_ERROR,
+  PEER_DISCONNECT_GRACE_MS,
   createPeerPipe,
   type PeerConfig,
   type PeerRelay,
@@ -41,7 +42,15 @@ export async function openPeerTunnel(
   let relay: PeerRelay | undefined
   let relayUnavailable = false
   let expiry: ReturnType<typeof setTimeout> | undefined
+  let disconnected: ReturnType<typeof setTimeout> | undefined
+  let finishGathering: (() => void) | undefined
   let fail: (error: Error) => void = () => {}
+  const closed = new Promise<never>((_, reject) => {
+    fail = reject
+  })
+  // close() can run between awaited native operations, or after the tunnel opens.
+  void closed.catch(() => {})
+  const untilClosed = <T>(operation: Promise<T>) => Promise.race([operation, closed])
   let rejectBinding: ((error: Error) => void) | undefined
   const close = (cause?: unknown) => {
     if (stopped) return
@@ -49,6 +58,8 @@ export async function openPeerTunnel(
     abort?.removeEventListener('abort', close)
     clearTimeout(timeout)
     if (expiry) clearTimeout(expiry)
+    if (disconnected) clearTimeout(disconnected)
+    finishGathering?.()
     for (const pipe of pipes) pipe.stop()
     server?.close()
     signal.close()
@@ -67,23 +78,34 @@ export async function openPeerTunnel(
     rejectBinding = undefined
   }
   const timeout = setTimeout(close, 30000)
-  const established = new Promise<void>((resolve, reject) => {
-    fail = reject
+  const established = new Promise<void>((resolve) => {
     ready.onopen = () => {
       connected = true
       resolve()
     }
     pc.onconnectionstatechange = () => {
-      if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) close()
+      if (stopped) return
+      if (pc.connectionState === 'disconnected') {
+        // ICE can recover a temporary network interruption without replacing every
+        // HTTP/WebSocket connection. Repeated events must not extend the deadline.
+        disconnected ??= setTimeout(close, PEER_DISCONNECT_GRACE_MS)
+      } else {
+        if (pc.connectionState === 'connected') {
+          if (disconnected) clearTimeout(disconnected)
+          disconnected = undefined
+        }
+        if (['failed', 'closed'].includes(pc.connectionState)) close()
+      }
     }
+    ready.onclose = () => close()
+    ready.onerror = () => close()
   })
-  // Negotiation can fail before this promise is awaited.
-  void established.catch(() => {})
   let offerHash = ''
   let accepted = false
   let brokerJoined = false
   const brokerReady = new Promise<void>((resolve, reject) => {
-    signal.onopen = () =>
+    signal.onopen = () => {
+      if (stopped) return
       signal.send(
         JSON.stringify({
           type: 'client',
@@ -93,7 +115,10 @@ export async function openPeerTunnel(
           ...(config.relay ? { relay: config.relay } : {}),
         }),
       )
+    }
     signal.onerror = () => {
+      // Once the authenticated answer arrived, signaling no longer owns the tunnel.
+      if (accepted || stopped) return
       reject(new Error('Could not reach Dovo Connect'))
       close()
     }
@@ -104,6 +129,7 @@ export async function openPeerTunnel(
       }
     }
     signal.onmessage = (event) => {
+      if (stopped) return
       try {
         const raw: unknown = event.data
         if (typeof raw !== 'string' || raw.length > 70 * 1024)
@@ -142,35 +168,33 @@ export async function openPeerTunnel(
   abort?.addEventListener('abort', close, { once: true })
   if (abort?.aborted) close()
   try {
-    await brokerReady
+    await untilClosed(brokerReady)
     if (stopped) throw new Error(PEER_CONNECTION_ERROR)
     pc.setConfiguration({
       iceServers: [...PEER_STUN_URLS.map((urls) => ({ urls })), ...(relay?.iceServers ?? [])],
       iceTransportPolicy: 'all',
     })
-    await pc.setLocalDescription()
-    await new Promise<void>((resolve) => {
-      if (pc.iceGatheringState === 'complete') {
-        resolve()
-        return
-      }
-      // Keep already gathered host/IPv6 candidates useful even when one STUN service
-      // is unreachable. The signed offer contains the candidates available now.
-      const deadline = setTimeout(
-        () => {
-          pc.onicegatheringstatechange = null
-          resolve()
-        },
-        relay ? 8000 : 4000,
-      )
-      pc.onicegatheringstatechange = () => {
+    await untilClosed(pc.setLocalDescription())
+    await untilClosed(
+      new Promise<void>((resolve) => {
         if (pc.iceGatheringState === 'complete') {
+          resolve()
+          return
+        }
+        // Keep already gathered host/IPv6 candidates useful even when one STUN service
+        // is unreachable. The signed offer contains the candidates available now.
+        const deadline = setTimeout(() => finishGathering?.(), relay ? 8000 : 4000)
+        finishGathering = () => {
           clearTimeout(deadline)
           pc.onicegatheringstatechange = null
+          finishGathering = undefined
           resolve()
         }
-      }
-    })
+        pc.onicegatheringstatechange = () => {
+          if (pc.iceGatheringState === 'complete') finishGathering?.()
+        }
+      }),
+    )
     if (stopped) throw new Error(PEER_CONNECTION_ERROR)
     const sdp = pc.localDescription?.sdp
     if (!sdp) throw new Error('No local ICE description')
@@ -186,7 +210,7 @@ export async function openPeerTunnel(
         }),
       ),
     )
-    await established
+    await untilClosed(established)
     signal.close()
     server = TcpSocket.createServer(
       { allowHalfOpen: true, pauseOnConnect: true, noDelay: true },
@@ -286,7 +310,8 @@ export async function openPeerTunnel(
     return {
       address: `http://127.0.0.1:${address.port}`,
       close,
-      alive: () => !stopped && pc.connectionState === 'connected',
+      // Keep the shared tunnel during the bounded ICE recovery window.
+      alive: () => !stopped && connected,
     }
   } catch (error) {
     close()

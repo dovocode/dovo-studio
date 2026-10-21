@@ -50,10 +50,12 @@ export function createPeerPipe(options: {
       credits--
       send(chunk)
     }
+    if (stopped) return
     if (!queue.length && sourceEnded && !sentEnd) {
       sentEnd = true
       send('end')
     }
+    if (stopped) return
     if (credits > 0 && !queue.length && !sourceEnded) stream.resume()
     else stream.pause()
   }
@@ -107,14 +109,20 @@ export function createPeerPipe(options: {
       ) {
         stop()
       } else {
-        stream.write(value, (error) => {
-          received--
-          if (error) stop()
-          else {
-            send('ack')
-            if (receivedEnd && received === 0) stream.end()
-          }
-        })
+        try {
+          // Native sockets throw when closing races an inbound data-channel frame.
+          stream.write(value, (error) => {
+            if (stopped) return
+            received--
+            if (error) stop()
+            else {
+              send('ack')
+              if (!stopped && receivedEnd && received === 0) stream.end()
+            }
+          })
+        } catch {
+          stop()
+        }
       }
     },
   }

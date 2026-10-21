@@ -47,6 +47,11 @@ change requires a new native iOS build; a JavaScript-only update cannot change I
 
 ## Dependency fixes
 
+- Markdown-it is overridden to 14.3.3 to fix the inline HTML and link-reference parsing denial of
+  service advisories. Jira's ADF conversion tests cover the affected dependency chain.
+- Local patches reject extra RSA DigestInfo algorithm elements in `node-forge` and bound nesting in
+  `braces`. `node --test scripts/packaging/security-backports.test.mjs` verifies both fixes; package
+  audits still flag their original versions because they do not inspect pnpm patches.
 - The maintained `@fastify/busboy` Dicer export replaces the abandoned `dicer` dependency. Multipart
   frame parsing is covered by a split-chunk regression test.
 - Overrides update `linkify-it` to 5.0.2 and older UUID versions to 11.1.1. Existing transitive

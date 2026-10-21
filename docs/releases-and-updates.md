@@ -126,6 +126,11 @@ identity; published updates still require the Developer ID.
 
 ## Mobile nightly pipeline
 
+A pnpm patch for `react-native-webrtc@155.0.1` lets R8 remove the unused `Dav1dDecoderJni` adapter
+bundled in the M155 Android AAR without its decoder interface. All other WebRTC JNI classes remain
+kept, and R8's missing-class checks remain enabled. Recheck the patch against the upstream AAR when
+updating WebRTC.
+
 A successfully published desktop/server nightly dispatches **Mobile nightly** from the same source
 tag. It builds signed iOS and Android artifacts, adds commit/checksum provenance, attaches them to
 the GitHub nightly, and uploads to TestFlight/Google Play testing when private credentials are

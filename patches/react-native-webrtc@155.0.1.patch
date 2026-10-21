@@ -1,0 +1,13 @@
+diff --git a/android/consumer-rules.pro b/android/consumer-rules.pro
+index 2c912057570762573473241dc6bd9aab89aa4f66..af9a20dc4c38cde85fd8a7c71567599a203beb1b 100644
+--- a/android/consumer-rules.pro
++++ b/android/consumer-rules.pro
+@@ -1,5 +1,7 @@
+ # WebRTC
+--keep class org.webrtc.** { *; }
++# M155 ships an orphan JNI adapter without Dav1dDecoder or its Natives interface.
++# Let R8 remove that unused adapter while retaining missing-class validation.
++-keep class !org.webrtc.Dav1dDecoderJni,org.webrtc.** { *; }
+ -keep class org.jni_zero.** { *; }
+ -keep class J.N { *; }
+ -dontwarn org.jni_zero.**

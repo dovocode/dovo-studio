@@ -2,6 +2,7 @@ import { mergeAccountInternetConnection } from '@dovo/protocol'
 import type { WorkspacePatchResult, PendingMessage, Task } from '@dovo/protocol'
 import {
   setPeerConnectionsActive,
+  setPeerConnectionNetwork,
   forgetPeerConnection,
   peerConnectionVersion,
   subscribePeerConnections,
@@ -262,12 +263,29 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const { computerRefresh } = useMobilePreferences()
   useEffect(() => {
     setPeerConnectionsActive(AppState.currentState === 'active')
+    let disposed = false
+    let networkObserved = false
+    const network = Network.addNetworkStateListener((state) => {
+      if (disposed) return
+      networkObserved = true
+      setPeerConnectionNetwork(state)
+    })
+    // Android may emit its initial native state before this listener is attached.
+    // A late initial read must not overwrite a newer handover event.
+    void Network.getNetworkStateAsync().then(
+      (state) => {
+        if (!disposed && !networkObserved) setPeerConnectionNetwork(state)
+      },
+      (error: unknown) => console.warn('Could not read the initial network state:', error),
+    )
     const subscription = AppState.addEventListener('change', (state) => {
       setPeerConnectionsActive(state === 'active')
       setAppActive(state === 'active')
     })
     return () => {
+      disposed = true
       subscription.remove()
+      network.remove()
       setPeerConnectionsActive(false)
     }
   }, [])

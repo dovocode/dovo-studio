@@ -1,14 +1,17 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { createPeerPipe } from './peer-pipe.js'
 
-function fixture() {
+function fixture(writeError?: Error, sendError?: Error) {
   let data: (chunk: Uint8Array) => void = () => {},
     end: () => void = () => {}
   const writes: Array<{ bytes: Uint8Array; done: (error?: Error | null) => void }> = []
-  const send = vi.fn<(value: Uint8Array | string) => void>(),
+  const send = vi.fn<(value: Uint8Array | string) => void>(() => {
+      if (sendError) throw sendError
+    }),
     close = vi.fn<() => void>(),
     destroy = vi.fn<() => void>(),
     remoteEnd = vi.fn<() => void>()
+  const resume = vi.fn<() => void>()
   const pipe = createPeerPipe({
     stream: {
       onData: (f) => {
@@ -20,11 +23,12 @@ function fixture() {
       onClose: () => {},
       onError: () => {},
       write: (bytes, done) => {
+        if (writeError) throw writeError
         writes.push({ bytes, done })
       },
       end: remoteEnd,
       pause: vi.fn<() => void>(),
-      resume: vi.fn<() => void>(),
+      resume,
       destroy,
     },
     send,
@@ -39,6 +43,7 @@ function fixture() {
     close,
     destroy,
     remoteEnd,
+    resume,
   }
 }
 it('preserves binary bytes and limits send credits until the receiver flushes its socket', () => {
@@ -57,6 +62,31 @@ it('preserves binary bytes and limits send credits until the receiver flushes it
   expect(f.send.mock.calls.at(-1)?.[0]).not.toBe('ack')
   f.writes[0]!.done()
   expect(f.send.mock.calls.at(-1)?.[0]).toBe('ack')
+})
+it('closes only the pipe when a native socket write throws during teardown', () => {
+  const f = fixture(new Error('Socket is closed.'))
+  f.pipe.ready()
+  expect(() => f.pipe.receive(new Uint8Array([1]))).not.toThrow()
+  expect(f.close).toHaveBeenCalledOnce()
+  expect(f.destroy).toHaveBeenCalledOnce()
+})
+it('ignores late write callbacks after a pipe has stopped', () => {
+  const f = fixture()
+  f.pipe.ready()
+  f.pipe.receive(new Uint8Array([1]))
+  f.pipe.receive('end')
+  f.pipe.stop()
+  f.writes[0]!.done()
+  expect(f.send).not.toHaveBeenCalled()
+  expect(f.remoteEnd).not.toHaveBeenCalled()
+})
+it('does not resume a destroyed native socket after a data-channel send fails', () => {
+  const f = fixture(undefined, new Error('Data channel is closed.'))
+  f.data(new Uint8Array([1]))
+  f.pipe.ready()
+  expect(f.close).toHaveBeenCalledOnce()
+  expect(f.destroy).toHaveBeenCalledOnce()
+  expect(f.resume).not.toHaveBeenCalled()
 })
 it('sends END after queued bytes and keeps the reverse direction open', () => {
   const f = fixture()

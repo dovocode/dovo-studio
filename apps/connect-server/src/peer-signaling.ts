@@ -71,6 +71,9 @@ export function attachPeerSignaling(
       accountGrant?: string
     }
   >()
+  const authorized = (room: { accountGrant?: string; relayIdentity?: string }) =>
+    !room.accountGrant ||
+    (!!room.relayIdentity && !!accountAdmission?.(room.accountGrant, room.relayIdentity))
   const alive = new WeakSet<WebSocket>()
   const upgrade = (
     request: import('node:http').IncomingMessage,
@@ -109,6 +112,20 @@ export function attachPeerSignaling(
         5000,
       )
       deadline.unref()
+      // Check the live room and grant at every authorization boundary, including after
+      // awaiting a relay provider. The periodic sweep is only idle-socket cleanup.
+      const availableRoom = () => {
+        const room = hello && rooms.get(hello.room)
+        return hello &&
+          room &&
+          authorized(room) &&
+          room.host.readyState === WebSocket.OPEN &&
+          (hello.type === 'host'
+            ? room.host === client
+            : room.clients.get(hello.session) === client)
+          ? room
+          : undefined
+      }
       client.on('error', () => client.terminate())
       client.on('close', () => {
         clearTimeout(deadline)
@@ -141,12 +158,7 @@ export function attachPeerSignaling(
             const input = decode(helloSchema, value)
             const existing = rooms.get(input.room)
             if (input.type === 'host') {
-              if (
-                input.accountGrant &&
-                (!input.relayIdentity ||
-                  !accountAdmission?.(input.accountGrant, input.relayIdentity))
-              )
-                throw new Error('Internet access revoked')
+              if (!authorized(input)) throw new Error('Internet access revoked')
               // A live host cannot be displaced, including by another account/device.
               if (existing || rooms.size >= 2048) throw new Error('Computer already connected')
               const admitted = new Promise<void>((resolve) => {
@@ -165,8 +177,7 @@ export function attachPeerSignaling(
             } else {
               if (
                 !existing ||
-                (existing.accountGrant &&
-                  !accountAdmission?.(existing.accountGrant, existing.relayIdentity ?? '')) ||
+                !authorized(existing) ||
                 !equal(existing.clientKey, input.key) ||
                 existing.clients.size >= 4 ||
                 existing.clients.has(input.session)
@@ -195,11 +206,11 @@ export function attachPeerSignaling(
             joining = true
             void (async () => {
               if (existing) await existing.admitted
-              if (
-                client.readyState !== WebSocket.OPEN ||
-                (existing && rooms.get(input.room) !== existing)
-              )
+              if (client.readyState !== WebSocket.OPEN) return
+              if (!availableRoom()) {
+                client.close(1008, 'Signaling access revoked')
                 return
+              }
               clearTimeout(deadline)
               const provider = input.type === 'client' ? input.relay : undefined
               const issue =
@@ -214,13 +225,17 @@ export function attachPeerSignaling(
                 }
               }
               joining = false
-              if (client.readyState === WebSocket.OPEN)
-                client.send(
-                  JSON.stringify({
-                    type: 'ready',
-                    ...(relay ? { relay } : provider ? { relayUnavailable: provider } : {}),
-                  }),
-                )
+              if (client.readyState !== WebSocket.OPEN) return
+              if (!availableRoom()) {
+                client.close(1008, 'Signaling access revoked')
+                return
+              }
+              client.send(
+                JSON.stringify({
+                  type: 'ready',
+                  ...(relay ? { relay } : provider ? { relayUnavailable: provider } : {}),
+                }),
+              )
             })()
             return
           }
@@ -228,13 +243,12 @@ export function attachPeerSignaling(
             const proof = decode(peerRelayProofSchema, value)
             const challenge = admissionChallenge
             admissionChallenge = undefined
-            const room = rooms.get(hello.room)
+            const room = availableRoom()
             if (!room || room.host !== client || !hello.relayIdentity || !relayAdmission)
               throw new Error('Relay installation is unavailable')
-            const admit =
-              room.accountGrant && accountAdmission?.(room.accountGrant, hello.relayIdentity)
-                ? approvedRelayInstallations([hello.relayIdentity])
-                : relayAdmission
+            const admit = room.accountGrant
+              ? approvedRelayInstallations([hello.relayIdentity])
+              : relayAdmission
             room.relayApproved = admit(
               hello.relayIdentity,
               peerRelayAdmissionPayload(
@@ -253,7 +267,7 @@ export function attachPeerSignaling(
             return
           }
           const signal = decode(peerSignalSchema, value)
-          const room = rooms.get(hello.room)
+          const room = availableRoom()
           if (!room) throw new Error('Computer is unavailable')
           if (hello.type === 'client') {
             if (sent || signal.role !== 'offer' || signal.session !== hello.session)
@@ -284,9 +298,7 @@ export function attachPeerSignaling(
   }, 25000)
   heartbeat.unref()
   const revocations = setInterval(() => {
-    for (const room of rooms.values())
-      if (room.accountGrant && !accountAdmission?.(room.accountGrant, room.relayIdentity ?? ''))
-        room.host.terminate()
+    for (const room of rooms.values()) if (!authorized(room)) room.host.terminate()
   }, 1000)
   revocations.unref()
   server.once('close', () => {

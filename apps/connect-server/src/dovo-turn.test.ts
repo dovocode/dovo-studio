@@ -32,6 +32,24 @@ it('rejects incomplete setup and bounds new grants even when no provider API is 
   await issue('a', 'ip')
   await expect(issue('b', 'other')).rejects.toThrow('busy')
 })
+it.each([
+  'turn:turn.example.com:0?transport=udp',
+  'turn:turn.example.com:65536?transport=tcp',
+  'turns:turn.example.com:443?transport=udp',
+  'turn:turn..example.com:3478?transport=udp',
+  'turn:-invalid.example.com:3478?transport=udp',
+  'turn:TURN.example.com:3478?transport=udp',
+])('rejects unusable TURN endpoints at startup: %s', (url) => {
+  expect(() => dovoTurn({ secret: 'a'.repeat(43), urls: [url] })).toThrow('TURN URLs')
+})
+it('rejects more TURN endpoints than clients can accept', () => {
+  expect(() =>
+    dovoTurn({
+      secret: 'a'.repeat(43),
+      urls: Array(9).fill('turn:turn.example.com:3478?transport=udp'),
+    }),
+  ).toThrow('TURN URLs')
+})
 it('refreshes cached grants before the client expiry margin, including subsecond rounding', async () => {
   let time = 1000500
   const issue = dovoTurn({

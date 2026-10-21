@@ -11,6 +11,7 @@ const tunnels = new Map<string, Tunnel>()
 const pending = new Map<string, Promise<Tunnel>>()
 const attempts = new Map<string, AbortController>()
 let active = true
+let networkType: string | undefined
 let generation = 0
 let version = 0
 const listeners = new Set<() => void>()
@@ -52,6 +53,13 @@ export function closePeerConnections() {
 export function setPeerConnectionsActive(value: boolean) {
   active = value
   if (!active) closePeerConnections()
+}
+export function setPeerConnectionNetwork(state: { type?: string; isConnected?: boolean }) {
+  const changed =
+    state.type !== undefined && networkType !== undefined && networkType !== state.type
+  networkType = state.type ?? networkType
+  // Old ICE candidates cannot describe the phone's new Wi-Fi/cellular route.
+  if (changed || state.isConnected === false) closePeerConnections()
 }
 export function forgetPeerConnection(address: string) {
   configs.delete(address)

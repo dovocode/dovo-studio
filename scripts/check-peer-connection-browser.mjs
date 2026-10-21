@@ -2,8 +2,12 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { randomBytes } from 'node:crypto'
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import { createServer as netServer } from 'node:net'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { getCACertificates, setDefaultCACertificates } from 'node:tls'
 import { fileURLToPath } from 'node:url'
 import { chromium, bundleBrowser } from './browser/harness.mjs'
 import { startRuntime } from '../packages/runtime/dist/index.js'
@@ -100,7 +104,10 @@ async function run(relay, externalOrigin, forcedProtocol, attack) {
       },
     ],
   )
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({
+    // Only the local TLS fixture uses a temporary self-signed certificate.
+    args: relay && forcedProtocol === 'tls' ? ['--ignore-certificate-errors'] : [],
+  })
   try {
     const page = await browser.newPage()
     const errors = []
@@ -280,11 +287,42 @@ try {
   await pairingBrowser.close()
 }
 if (process.env.DOVO_TEST_TURN_BINARY) {
-  const reserve = netServer()
-  reserve.listen(0, '127.0.0.1')
-  await once(reserve, 'listening')
-  const port = reserve.address().port
-  await new Promise((resolve) => reserve.close(resolve))
+  const availablePort = async () => {
+    const reserve = netServer()
+    reserve.listen(0, '127.0.0.1')
+    await once(reserve, 'listening')
+    const port = reserve.address().port
+    await new Promise((resolve) => reserve.close(resolve))
+    return port
+  }
+  const port = await availablePort()
+  const tlsPort = await availablePort()
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-turn-'))
+  const cert = join(directory, 'cert.pem')
+  const key = join(directory, 'key.pem')
+  execFileSync(
+    'openssl',
+    [
+      'req',
+      '-x509',
+      '-newkey',
+      'rsa:2048',
+      '-nodes',
+      '-days',
+      '1',
+      '-subj',
+      '/CN=127.0.0.1',
+      '-addext',
+      'subjectAltName=IP:127.0.0.1',
+      '-keyout',
+      key,
+      '-out',
+      cert,
+    ],
+    { stdio: 'pipe' },
+  )
+  const roots = getCACertificates('default')
+  setDefaultCACertificates([...roots, await readFile(cert, 'utf8')])
   const turn = spawn(
     process.env.DOVO_TEST_TURN_BINARY,
     [
@@ -292,6 +330,9 @@ if (process.env.DOVO_TEST_TURN_BINARY) {
       '--listening-ip=127.0.0.1',
       '--relay-ip=127.0.0.1',
       '--listening-port=' + port,
+      '--tls-listening-port=' + tlsPort,
+      '--cert=' + cert,
+      '--pkey=' + key,
       '--min-port=53000',
       '--max-port=53100',
       '--realm=dovo-test',
@@ -300,7 +341,8 @@ if (process.env.DOVO_TEST_TURN_BINARY) {
       '--allow-loopback-peers',
       '--no-multicast-peers',
       '--no-cli',
-      '--no-tls',
+      '--no-tlsv1',
+      '--no-tlsv1_1',
       '--no-dtls',
       '--no-stun',
       '--no-rfc5780',
@@ -339,9 +381,13 @@ if (process.env.DOVO_TEST_TURN_BINARY) {
       }
       attempt()
     })
-    for (const transport of ['udp', 'tcp']) {
+    for (const transport of ['udp', 'tcp', 'tls']) {
       const issue = dovoTurn({
-        urls: ['turn:127.0.0.1:' + port + '?transport=' + transport],
+        urls: [
+          transport === 'tls'
+            ? 'turns:127.0.0.1:' + tlsPort + '?transport=tcp'
+            : 'turn:127.0.0.1:' + port + '?transport=' + transport,
+        ],
         secret: 'local-test-only-turn-secret-1234567890',
       })
       await run(await issue('test-room-' + transport, '127.0.0.1'), undefined, transport)
@@ -349,6 +395,8 @@ if (process.env.DOVO_TEST_TURN_BINARY) {
   } finally {
     turn.kill()
     await once(turn, 'exit')
+    setDefaultCACertificates(roots)
+    await rm(directory, { recursive: true, force: true })
   }
 }
 

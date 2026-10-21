@@ -94,6 +94,20 @@ const credential = Schema.String.pipe(
   Schema.check(Schema.isMinLength(1)),
   Schema.check(Schema.isMaxLength(2048)),
 )
+/** The same TURN URL rules apply when issuing credentials and accepting them. */
+export function validPeerRelayUrl(url: string, hosts?: readonly string[]) {
+  const match = /^(turns?):([a-z0-9.-]+):(\d{1,5})\?transport=(udp|tcp)$/.exec(url)
+  return !!(
+    url.length <= 256 &&
+    match &&
+    match[2]!.length <= 253 &&
+    match[2]!.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) &&
+    (!hosts || hosts.includes(match[2]!)) &&
+    Number(match[3]) > 0 &&
+    Number(match[3]) <= 65535 &&
+    (match[1] !== 'turns' || match[4] === 'tcp')
+  )
+}
 export const peerRelaySchema = mutableStruct({
   provider: peerRelayProviderSchema,
   expiresAt: Schema.Number.pipe(
@@ -103,9 +117,10 @@ export const peerRelaySchema = mutableStruct({
   iceServers: mutableArray(
     mutableStruct({
       urls: mutableArray(
-        Schema.String.pipe(
-          Schema.check(Schema.isPattern(/^turns?:[^\s/]+$/)),
-          Schema.check(Schema.isMaxLength(256)),
+        refine(
+          Schema.String,
+          (url) => validPeerRelayUrl(url),
+          'Use a valid TURN UDP or TCP/TLS URL',
         ),
       ).pipe(Schema.check(Schema.isMinLength(1)), Schema.check(Schema.isMaxLength(8))),
       username: credential,
@@ -128,17 +143,7 @@ export function validPeerRelay(
     relay.iceServers.length > 0 &&
     relay.iceServers.every(
       (server) =>
-        server.urls.length > 0 &&
-        server.urls.every((url) => {
-          const match = /^(turns?):([a-z0-9.-]+):(\d{1,5})\?transport=(udp|tcp)$/.exec(url)
-          return (
-            match &&
-            hosts.includes(match[2]!) &&
-            Number(match[3]) > 0 &&
-            Number(match[3]) <= 65535 &&
-            (match[1] !== 'turns' || match[4] === 'tcp')
-          )
-        }),
+        server.urls.length > 0 && server.urls.every((url) => validPeerRelayUrl(url, hosts)),
     )
   )
 }
@@ -200,6 +205,7 @@ export const peerSocketUrl = (config: PeerConfig) => {
   return url.href
 }
 export const PEER_STUN_URLS = ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302']
+export const PEER_DISCONNECT_GRACE_MS = 10000
 export const PEER_CONNECTION_ERROR =
   'Internet connection failed. Keep Dovo running on the computer. If this network blocks direct WebRTC, an encrypted relay must be available through Dovo Connect.'
 
