@@ -1,118 +1,120 @@
 # Optional Dovo accounts
 
-For organization-owned OIDC providers and automatically distributed relay settings, see
+Dovo Connect hosts GitHub sign-in using Better Auth at `https://connect.dovo.studio`. Accounts are
+optional: pairing codes, device tokens and HTTP LAN/VPN connections still work without an account.
+Organization-owned OIDC and automatic relay distribution are documented in
 [Custom TURN and organization SSO](custom-turn-and-sso.md).
 
-Casdoor at `https://auth.dovo.studio` provides optional sign-in. The separate connect service at
-`https://connect.dovo.studio` stores each account's linked computer IDs, names and HTTP/HTTPS
-addresses. It does not proxy runtime traffic or store runtime/device tokens, pairing codes,
-workspaces, project contents or LLM provider credentials. Optional managed push also stores the
-phone’s native push token and grants scoped to its account session and individual paired computers;
-see [Mobile notifications](notification-relay.md).
+Connect stores account profiles, linked computer metadata and scoped access grants. It does not
+receive runtime/device credentials, workspace content or LLM provider credentials. Account-based
+runtime setup requires explicit owner or paired-device consent and installation identity proofs.
+Optional TURN carries encrypted traffic; it does not replace those checks. Hosted artifacts use
+separate, restricted grants; signing in to artifacts never authorizes access to computers.
 
-Account-free [internet pairing](internet-connections.md) also uses Connect for transient WebRTC
-signaling and optional temporary TURN credentials. Relay fallback is opt in: direct, Dovo or a
-custom/organization relay. Legacy Cloudflare profiles are retained only for migration. Connect never
-proxies runtime content or receives device tokens; the separate Dovo TURN service carries ciphertext
-only when explicitly selected. Notification relay behavior remains separate and unchanged.
+## Sign in on desktop and mobile
 
-In desktop **Devices & runtime**, or mobile **Computers**, choose **Sign in**, compare the displayed
-code with the browser, and continue through Casdoor. Studio saves its account session in the system
-keychain (Electron safeStorage or Expo SecureStore). Account sessions last 30 days. Signing out
-revokes that device's account session; it does not revoke existing runtime pairings or other
-signed-in devices. Existing direct connections remain usable without signing in, including while the
-account service is unavailable.
+Choose **Sign in**, compare the code displayed by Studio with the browser, then continue to GitHub.
+The app polls a five-minute, browser-bound login request; it does not need a provider secret or a
+native OAuth callback. Studio saves its resulting Dovo session in Electron safeStorage or Expo
+SecureStore. Dovo app sessions last up to 30 days; artifact-only sessions last up to eight hours.
 
-Choose **Link … to account** for a paired, connected computer. Select a reachable LAN/VPN address
-when more than one is advertised; loopback addresses cannot be published. Linking is explicit and
-per account; metadata is never a proof of runtime ownership or access. Other devices signed into
-that account can see the computer and choose **Pair computer**, which fills the existing pairing
-form's address. Generate a fresh pairing code on that computer and approve the new device as usual.
-Unlinking removes it from the account directory; manage trusted device access on the computer
-itself.
+The Better Auth browser session is separate from Dovo device and artifact capabilities. Browser
+cookies alone cannot call the `/v1` account API. Signing out in Studio revokes that device's Dovo
+session and its dependent grants. Other sessions and independently paired LAN/VPN access remain.
+Existing connections do not depend on the hosted identity service for every request.
 
-## Connect service
+Enable **Dovo Connect** on a trusted computer to authorize same-account access and optional relay
+fallback. A directory entry alone proves no ownership. Account-derived connections cannot grant
+owner consent or change the computer's relay settings. See
+[Internet connections](internet-connections.md).
 
-The service is split by responsibility: `main.ts` owns startup and shutdown; `server.ts` composes
-HTTP handling and request limits; `browser-auth.ts` handles browser confirmation and OAuth
-callbacks; `account-api.ts` handles app sessions and linked computers. Shared HTTP helpers live in
-`http.ts`, the request limiter in `rate-limit.ts`, Casdoor token verification in `oidc.ts`, and all
-SQLite queries in `store.ts` and `push-store.ts`. Managed delivery routes live in `push-api.ts`;
-`push-relay.ts` forwards to the private notification relay.
+## Configure GitHub and Better Auth
 
-`apps/connect-server` uses Node 24 SQLite with a persistent, private `/data/private` directory. Its
-SQLite database and WAL must remain on persistent storage. Database writes are account-scoped;
-server IDs are unique within an account, not globally claimed by a user. Addresses may use HTTP for
-LAN/VPN. The service never fetches a linked address.
+1. Register a GitHub OAuth App under
+   [GitHub developer settings](https://github.com/settings/developers). Use homepage
+   `https://connect.dovo.studio` and authorization callback
+   `https://connect.dovo.studio/api/auth/callback/github`. GitHub sign-in requests `read:user` and
+   `user:email`; repository permissions are not required. Use a separate OAuth app for localhost.
+2. To enable optional hosted sign-in, configure these backend-only values in the private Connect
+   environment file:
 
-Casdoor's public client is `30793ba9efd8e96893a9`; the exact broker callback is
-`https://connect.dovo.studio/auth/callback`. The native `dovo://oauth/callback` allowlist entry is
-retained but this flow does not require app callback handlers or OIDC secrets in clients.
+   ```dotenv
+   DOVO_CONNECT_ORIGIN=https://connect.dovo.studio
+   DOVO_AUTH_SECRET=REPLACE_WITH_A_RANDOM_PERSISTENT_32_BYTE_OR_LONGER_SECRET
+   DOVO_AUTH_GITHUB_CLIENT_ID=YOUR_OAUTH_CLIENT_ID
+   DOVO_AUTH_GITHUB_CLIENT_SECRET=YOUR_OAUTH_CLIENT_SECRET
+   DOVO_CONNECT_DATA=/data/private
+   ```
 
-The app receives a random login ticket and a five-minute browser URL. The browser shows the matching
-code before opening Casdoor. Browser cookies, origin checks, OAuth state, S256 PKCE, an OIDC nonce,
-and signed ID-token issuer/audience/expiry verification bind the approval to that login. The
-approved ticket becomes the device's account session. Only hashes of tickets and account sessions
-are stored. Casdoor access/refresh tokens are not retained. Expired pending logins and sessions are
-pruned. Sessions can be revoked with `DELETE /v1/session`, including cancellation of an unfinished
-login.
+   Generate the auth secret with `openssl rand -base64 48`. Keep the same value across restarts;
+   rotating it invalidates browser sessions and affects stored OAuth token encryption. Never put
+   these values in mobile/desktop builds, Git, screenshots or support logs. Leave all three auth
+   values unset to run an account-free signaling broker. A partially configured identity provider
+   fails startup with a configuration error; it never silently switches authentication methods.
 
-The public `/v1` API uses bearer authorization without cookies. Browser flow cookies are HttpOnly,
-SameSite=Lax and Secure in production. Response bodies and authentication URLs must not be logged by
-an ingress; keep access logs restricted and avoid retaining query strings for `/auth/callback`.
+3. Keep both `accounts.sqlite` and `identity.sqlite`, including their WAL files, on persistent
+   private storage. Better Auth owns identity, OAuth accounts and browser sessions in
+   `identity.sqlite`; Connect retains its device-specific account and artifact capabilities in
+   `accounts.sqlite`. Startup applies Better Auth's SQLite migrations before accepting requests.
+   Back up both databases consistently with SQLite's backup API and verify restores before
+   upgrading.
+4. Build with `pnpm --filter @dovo/connect-server... -r build`, or the existing Dockerfile. Dokploy
+   builds `dovocode/dovo-studio` branch `main` using `apps/connect-server/compose.dokploy.yaml`.
+   Preserve the existing data volume, private notification relay network and TURN environment file.
+5. Verify `/health`, real GitHub sign-in on desktop/mobile, sign-out, artifact-only access and
+   account deletion before retiring the previous identity service. Do not remove its data or backups
+   merely because the new service starts.
 
-Configuration:
+The production environment file is `/etc/dokploy/secrets/dovo-studio-connect/connect.env`, outside
+the checkout. The existing external `dovo-studio-connect-data` volume is retained. APNs/Firebase
+keys and the TURN master secret remain separate, private files and mounts. Build with
+`compose up -d --build --wait`, preserving the existing project name and domain routing.
 
-- `DOVO_CONNECT_ORIGIN`: externally reachable origin, default `https://connect.dovo.studio`.
-- `DOVO_ACCOUNT_ISSUER`: trusted Casdoor issuer, default `https://auth.dovo.studio`.
-- `DOVO_ACCOUNT_CLIENT_ID`: public OIDC client ID above.
-- `DOVO_CONNECT_DATA`: private persistent directory, default `/data`.
-- `DOVO_NOTIFICATION_RELAY_URL` and `DOVO_NOTIFICATION_RELAY_TOKEN`: optional private notification
-  relay connection for managed push. Keep these on the backend; never put the shared key in the app.
-- `DOVO_CONNECT_TRUSTED_PROXIES`: optional comma-separated proxy IPs/CIDRs. Configure the actual
-  immediate ingress/proxy hop (and any additional proxy hops) for Dokploy; leave empty for direct
-  access. Only trusted hops may supply `X-Forwarded-For`; the first untrusted address from the right
-  is the client. Never trust arbitrary client-provided forwarding headers or an unnecessarily wide
-  network. Anonymous requests are limited by this address; verified sessions share their account's
-  quota and delivery grants have individual quotas, so users behind the proxy don't block each
-  other.
-- `PORT`: HTTP listener, default `8080`.
+### Preserve existing ownership when moving from the previous identity provider
 
-Build with `pnpm --filter @dovo/connect-server... -r build`, or use its Dockerfile. The included
-Compose file binds port 8081 to loopback for a local ingress. Dokploy should route its configured
-domain to container port 8080. Health is `GET /health`. Account-free runtime and notification relay
-health are independent of this service.
+No legacy authentication mode is retained. Existing Dovo device sessions can continue until revoked
+or expired, but new sign-ins use GitHub. To preserve an existing owner's computers, artifact
+invitations and publications, independently verify that person's **numeric GitHub user ID** and
+existing Dovo account ID. Store an explicit mapping in a private JSON file on the persistent volume:
 
-The production Dokploy Compose deployment uses GitHub repository `dovocode/dovo-studio`, branch
-`main`, and `apps/connect-server/compose.dokploy.yaml`. Deploy with builds enabled for both services
-(`compose up -d --build`); do not retain the previous `--no-build --no-deps connect` command. Keep
-the existing project name, domain targeting `connect:8080`, and relay detached from Dokploy's
-ingress network. This definition reuses the external `dovo-studio-connect-data` volume and builds
-Connect and its private notification relay from the same checkout.
+```json
+[{ "githubId": "3958086", "accountId": "EXISTING_DOVO_OWNER_ID" }]
+```
 
-Private service configuration lives in `/etc/dokploy/secrets/dovo-studio-connect/connect.env` and
-`relay.env`, outside the checkout. Preserve the existing values when migrating; restrict these files
-to the deployment host administrator. Connect also reads the TURN operator's existing
-`/var/lib/docker/volumes/dovo-turn-operator-private/_data/turn.env`, so credential rotation
-continues to use its authoritative file. The relay's APNs and Firebase keys remain read-only mounts
-from `/etc/dokploy/secrets/dovo-notification-relay`. Back up these private settings with the
-deployment; never commit them or replace the persistent data volume during a redeploy.
+Set `DOVO_AUTH_OWNERS_FILE=/data/private/auth-owners.json`. Keep the mapping after migration: it
+assigns the verified GitHub subject the original, stable Dovo owner ID. Duplicate IDs are rejected.
+Never infer ownership from matching email addresses, display names, or there being only one user.
+Unmapped GitHub identities receive a new isolated Dovo owner ID. An operator should verify artifact
+ownership and the computer directory after the first sign-in. No old account, artifact or pairing
+needs to be deleted to move identity providers.
 
-Back up SQLite with a consistent online backup or `VACUUM INTO` from a separate SQLite connection;
-do not copy only the live database while ignoring its WAL. Keep backups private and include the
-Compose/environment configuration. Connect/SQLite and Casdoor/PostgreSQL have daily private local
-backups with 14-day retention and verified isolated restores. Connect backups also retain the
-deployed source archive for recovery. Off-host backup storage remains to be configured.
+## Security boundaries
 
-The deployed Casdoor application currently accepts administrator-provisioned users. Self-service
-signup is disabled, and no email provider is configured for email verification or password recovery.
+Better Auth handles GitHub OAuth state, PKCE, encrypted stored OAuth tokens and HttpOnly browser
+cookies. Dovo additionally binds each login to its initiating browser and code confirmation, checks
+request origins, consumes callback state once and issues a separate scoped device grant. Automatic
+provider account linking is disabled. Browser-session cookie caching is disabled so revoked browser
+sessions cannot complete a pending Dovo sign-in from a cached identity.
+
+The public `/v1` API uses bearer authorization, without cookies. Production cookies use Secure and
+SameSite=Lax. Keep authentication request bodies and callback query strings out of ingress logs.
+Keep `DOVO_CONNECT_TRUSTED_PROXIES` limited to actual proxy hops; anonymous limits otherwise use the
+socket address. `PORT` defaults to 8080. HTTPS protects the hosted service; it is not required for
+private runtime LAN/VPN addresses.
+
+Organization OIDC remains separate from personal GitHub identities, with issuer/client validation,
+signed membership claims, bounded sessions and explicit relay policy. Changing organization policy
+invalidates those sessions and their dependent relay access.
 
 ## Account deletion
 
-The signed-in account panel supports permanent deletion with confirmation. Configure the
-backend-only Casdoor deletion credentials and organization described in
-[mobile store disclosures](mobile-store-disclosures.md#account-deletion). Deletion removes the
-hosted identity, all Connect sessions, linked metadata and managed grants; separate runtime pairings
-and workspace files remain. Identity-provider failures block ordinary account access and delivery
-while keeping the deletion operation retryable. Do not deploy a client promising working deletion
-before configuring and verifying the backend on a disposable account.
+The account panel requires explicit confirmation. `DELETE /v1/account` derives its target from the
+Dovo bearer session and ignores caller-supplied IDs. The service first blocks account access and
+in-flight approvals, then deletes the Better Auth identity, OAuth account and browser sessions, and
+removes Dovo sessions, directory links and dependent grants. Failed deletion remains retryable. A
+non-reversible deleted-identity marker rejects stale approvals. Local runtime pairings and workspace
+files are independent; deleting Dovo does not delete the user's GitHub account.
+
+Organization identity deletion removes the Dovo account and grants, without deleting an account in
+the organization's identity provider. Hosted publication retention is covered separately in
+[Hosted artifacts](hosted-artifacts.md). Keep backups private and respect the configured retention.

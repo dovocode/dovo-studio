@@ -12,6 +12,7 @@ export type Login = {
   state?: string
   nonce?: string
   verifier?: string
+  identityCookies?: string[]
   browserHash?: string
   organization?: string
   artifactsOrigin?: string

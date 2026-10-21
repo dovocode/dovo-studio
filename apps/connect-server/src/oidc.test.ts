@@ -2,7 +2,7 @@ import { expect, it } from 'vite-plus/test'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { generateKeyPair, exportJWK, SignJWT } from 'jose'
-import { casdoor } from './oidc.js'
+import { oidcProvider } from './oidc.js'
 import { hash, type Login } from './store.js'
 it.each(['', '/realms/company'])(
   'uses S256 PKCE and validates signed identity, audience, nonce and expiry with issuer path %s',
@@ -59,7 +59,7 @@ it.each(['', '/realms/company'])(
     if (!address || typeof address === 'string') throw new Error('Missing port')
     origin = 'http://127.0.0.1:' + address.port + issuerPath
     try {
-      const oidc = casdoor({
+      const oidc = oidcProvider({
         issuer: origin,
         clientId: 'public-client',
         origin: 'https://connect.test',
@@ -88,7 +88,7 @@ it.each(['', '/realms/company'])(
       )
       expect(received.some((body) => body.has('client_secret'))).toBe(false)
       mode = 'valid'
-      const company = casdoor({
+      const company = oidcProvider({
         issuer: origin,
         clientId: 'public-client',
         origin: 'https://connect.test',

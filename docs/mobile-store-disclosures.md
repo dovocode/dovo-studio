@@ -76,19 +76,19 @@ does not change an existing uploaded binary.
 ## Account deletion
 
 The account panels offer confirmed deletion. `DELETE /v1/account` derives the target from the bearer
-session, requires `{ "confirm": "DELETE" }`, and ignores caller-supplied user IDs. The backend uses
-private Casdoor API credentials to look up the verified subject in one configured organization and
-remove that identity; built-in/admin/global-admin identities are refused.
+session, requires `{ "confirm": "DELETE" }`, and ignores caller-supplied user IDs. Better Auth
+removes the corresponding hosted identity, OAuth account and browser sessions; the user's GitHub
+account is not deleted. Organization OIDC accounts are removed from Dovo, not from the
+organization's identity provider.
 
-A deletion marker blocks account access, grants and old in-flight logins before contacting Casdoor.
-Failures preserve a deletion-only retry path. Success transactionally removes every Connect session,
-all push subscriptions through foreign-key cascading, directory links and profile for that user. A
-one-way hash of the deleted subject remains to prevent stale identity callbacks from recreating the
-deleted account. No profile/name is retained in that marker. Backups currently expire after 14 days;
-third-party and user-owned runtime data are independent.
+A deletion marker blocks account access, grants and old in-flight logins before deleting the hosted
+identity. Failures preserve a deletion-only retry path. Success transactionally removes Connect
+sessions, push subscriptions through cascading, directory links and the profile. A one-way hash of
+the deleted Dovo subject prevents stale identity callbacks from recreating the account. Runtime
+pairings and workspace files are independent. Private backups expire according to operator
+retention.
 
-Backend settings: `DOVO_ACCOUNT_ORGANIZATION`, `DOVO_ACCOUNT_DELETE_CLIENT_ID`,
-`DOVO_ACCOUNT_DELETE_CLIENT_SECRET`. Keep the secret outside repositories and clients. A missing
-configuration returns 503 without locking or deleting the account. Configure narrow identity
-permissions and verify on a disposable identity before deployment. A browser-side credential or an
-unrestricted built-in admin credential is not acceptable.
+Better Auth uses backend-only `DOVO_AUTH_SECRET`, `DOVO_AUTH_GITHUB_CLIENT_ID` and
+`DOVO_AUTH_GITHUB_CLIENT_SECRET`; no deletion-service credential is needed. Keep these values
+outside repositories and clients. See [Optional accounts](optional-accounts.md) for setup, explicit
+ownership migration and required sign-in/deletion checks before deployment.

@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from 'node:crypto'
 import { Schema } from 'effect'
 import { decode, customTurnSchema, normalizeTurnUrl, type PeerRelay } from '@dovo/protocol'
-import { casdoor, type IdentityProvider } from './oidc.js'
+import { oidcProvider, type IdentityProvider } from './oidc.js'
 import { hash, type AccountStore } from './store.js'
 import { managedRelayCredentials, type PeerRelayIssuer } from './relay-credentials.js'
 
@@ -93,7 +93,7 @@ export function organizations(value: unknown, origin: string): Organization[] {
       policy,
       endpointOrigins,
       issue,
-      provider: casdoor({
+      provider: oidcProvider({
         ...config,
         origin,
         organization: {

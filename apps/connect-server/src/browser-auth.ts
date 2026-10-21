@@ -61,6 +61,10 @@ export function browserAuth(
       if (id && !organization) throw new RequestError(400, 'Unknown organization')
       login.organization = organization?.id
       const location = await (organization?.provider ?? options).authorize(login)
+      if (login.identityCookies?.length) {
+        res.setHeader('Set-Cookie', login.identityCookies)
+        login.identityCookies = undefined
+      }
       store.saveLogin(login)
       res.writeHead(303, { Location: location })
       res.end()
@@ -81,7 +85,11 @@ export function browserAuth(
       const organization = options.organizations?.find((item) => item.id === login.organization)
       if (login.organization && !organization)
         throw new RequestError(403, 'Organization sign-in is unavailable')
-      const user = await (organization?.provider ?? options).exchange({ ...login, state }, code)
+      const user = await (organization?.provider ?? options).exchange(
+        { ...login, state },
+        code,
+        req.headers,
+      )
       store.approve(login, user)
       res.setHeader('Set-Cookie', `${cookieName}=; Max-Age=0; ${cookieFlags}`)
       html(

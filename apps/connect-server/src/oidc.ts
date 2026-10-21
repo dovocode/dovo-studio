@@ -1,9 +1,15 @@
+import type { IncomingHttpHeaders } from 'node:http'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { hash, secret, type Login } from './store.js'
 export type IdentityProvider = {
   authorizationOrigin: string
-  authorize(login: Login): Promise<string>
-  exchange(login: Login, code: string): Promise<AccountIdentity>
+  authorize(this: void, login: Login): Promise<string>
+  exchange(
+    this: void,
+    login: Login,
+    code: string,
+    headers?: IncomingHttpHeaders,
+  ): Promise<AccountIdentity>
 }
 export type AccountIdentity = {
   id: string
@@ -11,7 +17,7 @@ export type AccountIdentity = {
   organization?: { id: string; name: string; policy: string }
   sessionExpiresAt?: number
 }
-export function casdoor(options: {
+export function oidcProvider(options: {
   issuer: string
   clientId: string
   origin: string

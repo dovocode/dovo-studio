@@ -1,32 +1,41 @@
 import { mkdirSync, chmodSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AccountStore } from './store.js'
-import { identityDeletion } from './delete-identity.js'
 import { pushRelay } from './push-relay.js'
-import { casdoor } from './oidc.js'
+import { hostedAuth, ownerMappings } from './hosted-auth.js'
 import { createConnectServer } from './server.js'
 import { dovoTurn } from './dovo-turn.js'
 import { approvedRelayInstallations } from './relay-admission.js'
 import { organizations } from './organizations.js'
 import { artifactService } from './artifact-api.js'
+import { RequestError } from './http.js'
 const root = process.env.DOVO_CONNECT_DATA ?? '/data'
 mkdirSync(root, { recursive: true, mode: 0o700 })
 chmodSync(root, 0o700)
 const origin = new URL(process.env.DOVO_CONNECT_ORIGIN ?? 'https://connect.dovo.studio').origin
 const store = new AccountStore(join(root, 'accounts.sqlite'))
-const oidc = casdoor({
-  issuer: process.env.DOVO_ACCOUNT_ISSUER ?? 'https://auth.dovo.studio',
-  clientId: process.env.DOVO_ACCOUNT_CLIENT_ID ?? '30793ba9efd8e96893a9',
-  origin,
-})
-const deleteIdentity = process.env.DOVO_ACCOUNT_DELETE_CLIENT_SECRET
-  ? identityDeletion({
-      issuer: process.env.DOVO_ACCOUNT_ISSUER ?? 'https://auth.dovo.studio',
-      organization: process.env.DOVO_ACCOUNT_ORGANIZATION ?? '',
-      clientId: process.env.DOVO_ACCOUNT_DELETE_CLIENT_ID ?? '',
-      clientSecret: process.env.DOVO_ACCOUNT_DELETE_CLIENT_SECRET,
+const authConfigured = !!(
+  process.env.DOVO_AUTH_SECRET ||
+  process.env.DOVO_AUTH_GITHUB_CLIENT_ID ||
+  process.env.DOVO_AUTH_GITHUB_CLIENT_SECRET
+)
+const identity = authConfigured
+  ? await hostedAuth({
+      path: join(root, 'identity.sqlite'),
+      origin,
+      secret: process.env.DOVO_AUTH_SECRET ?? '',
+      github: {
+        clientId: process.env.DOVO_AUTH_GITHUB_CLIENT_ID ?? '',
+        clientSecret: process.env.DOVO_AUTH_GITHUB_CLIENT_SECRET ?? '',
+      },
+      owners: process.env.DOVO_AUTH_OWNERS_FILE
+        ? ownerMappings(JSON.parse(readFileSync(process.env.DOVO_AUTH_OWNERS_FILE, 'utf8')))
+        : {},
     })
   : undefined
+const unconfiguredSignIn = async () => {
+  throw new RequestError(503, 'Hosted sign-in is not configured on this broker')
+}
 const server = createConnectServer({
   store,
   origin,
@@ -38,7 +47,8 @@ const server = createConnectServer({
     ? organizations(JSON.parse(readFileSync(process.env.DOVO_ORGANIZATIONS_FILE, 'utf8')), origin)
     : [],
   push: pushRelay(),
-  deleteIdentity,
+  identityHandler: identity?.handle,
+  deleteIdentity: identity?.deleteIdentity,
   peerRelays: {
     dovo:
       process.env.DOVO_RELAY_TURN_URLS || process.env.DOVO_RELAY_TURN_SECRET
@@ -60,7 +70,9 @@ const server = createConnectServer({
       .map((value) => value.trim())
       .filter(Boolean),
   ),
-  ...oidc,
+  authorizationOrigin: identity?.authorizationOrigin ?? origin,
+  authorize: identity?.authorize ?? unconfiguredSignIn,
+  exchange: identity?.exchange ?? unconfiguredSignIn,
   trustedProxies: (process.env.DOVO_CONNECT_TRUSTED_PROXIES ?? '')
     .split(',')
     .map((value) => value.trim())
@@ -74,6 +86,7 @@ for (const signal of ['SIGTERM', 'SIGINT'])
     clearInterval(cleanup)
     server.close(() => {
       store.db.close()
+      identity?.close()
       process.exit(0)
     })
   })

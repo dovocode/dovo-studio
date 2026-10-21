@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@dovo/protocol": "workspace:*",
+    "better-auth": "1.7.12",
     "effect": "4.0.5",
     "jose": "^6.1.3",
     "ws": "8.22.0"
