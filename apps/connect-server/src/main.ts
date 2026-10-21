@@ -2,7 +2,7 @@ import { mkdirSync, chmodSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AccountStore } from './store.js'
 import { pushRelay } from './push-relay.js'
-import { hostedAuth, ownerMappings } from './hosted-auth.js'
+import { remoteIdentity } from './remote-identity.js'
 import { createConnectServer } from './server.js'
 import { dovoTurn } from './dovo-turn.js'
 import { approvedRelayInstallations } from './relay-admission.js'
@@ -14,23 +14,13 @@ mkdirSync(root, { recursive: true, mode: 0o700 })
 chmodSync(root, 0o700)
 const origin = new URL(process.env.DOVO_CONNECT_ORIGIN ?? 'https://connect.dovo.studio').origin
 const store = new AccountStore(join(root, 'accounts.sqlite'))
-const authConfigured = !!(
-  process.env.DOVO_AUTH_SECRET ||
-  process.env.DOVO_AUTH_GITHUB_CLIENT_ID ||
-  process.env.DOVO_AUTH_GITHUB_CLIENT_SECRET
-)
-const identity = authConfigured
-  ? await hostedAuth({
-      path: join(root, 'identity.sqlite'),
+const identity = process.env.DOVO_AUTH_ISSUER
+  ? remoteIdentity({
+      issuer: process.env.DOVO_AUTH_ISSUER,
       origin,
-      secret: process.env.DOVO_AUTH_SECRET ?? '',
-      github: {
-        clientId: process.env.DOVO_AUTH_GITHUB_CLIENT_ID ?? '',
-        clientSecret: process.env.DOVO_AUTH_GITHUB_CLIENT_SECRET ?? '',
-      },
-      owners: process.env.DOVO_AUTH_OWNERS_FILE
-        ? ownerMappings(JSON.parse(readFileSync(process.env.DOVO_AUTH_OWNERS_FILE, 'utf8')))
-        : {},
+      clientId: process.env.DOVO_AUTH_CONNECT_CLIENT_ID ?? 'dovo-connect',
+      clientSecret: process.env.DOVO_AUTH_CONNECT_CLIENT_SECRET ?? '',
+      serviceKey: process.env.DOVO_AUTH_SERVICE_KEY ?? '',
     })
   : undefined
 const unconfiguredSignIn = async () => {
@@ -47,7 +37,6 @@ const server = createConnectServer({
     ? organizations(JSON.parse(readFileSync(process.env.DOVO_ORGANIZATIONS_FILE, 'utf8')), origin)
     : [],
   push: pushRelay(),
-  identityHandler: identity?.handle,
   deleteIdentity: identity?.deleteIdentity,
   peerRelays: {
     dovo:
@@ -86,7 +75,6 @@ for (const signal of ['SIGTERM', 'SIGINT'])
     clearInterval(cleanup)
     server.close(() => {
       store.db.close()
-      identity?.close()
       process.exit(0)
     })
   })

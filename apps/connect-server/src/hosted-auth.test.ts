@@ -1,7 +1,10 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { hostedAuth, ownerMappings } from './hosted-auth.js'
+import { createAuth } from '../../auth-server/src/auth.js'
+import { createAuthServer } from '../../auth-server/src/server.js'
+import { ownerMappings } from '../../auth-server/src/owners.js'
+import { remoteIdentity } from './remote-identity.js'
 import { AccountStore } from './store.js'
 import { createConnectServer } from './server.js'
 
@@ -19,13 +22,40 @@ async function fixture() {
   if (!address || typeof address === 'string') throw new Error('Missing address')
   const origin = `http://127.0.0.1:${address.port}`
   const store = new AccountStore(':memory:')
-  const identity = await hostedAuth({
+  const authIngress = createServer((req, res) => authApp?.emit('request', req, res))
+  let authApp: ReturnType<typeof createAuthServer> | undefined
+  authIngress.listen(0, '127.0.0.1')
+  await once(authIngress, 'listening')
+  const authAddress = authIngress.address()
+  if (!authAddress || typeof authAddress === 'string') throw new Error('Missing auth address')
+  const authOrigin = `http://127.0.0.1:${authAddress.port}`
+  const clientSecret = 'test-connect-client-secret-at-least-thirty-two-characters'
+  const serviceKey = 'test-service-key-at-least-thirty-two-characters'
+  const identity = await createAuth({
     path: ':memory:',
-    origin,
+    origin: authOrigin,
     secret: 'test-secret-with-at-least-thirty-two-characters',
     github: { clientId: 'test-github-client', clientSecret: 'test-github-secret' },
     owners: { '123': 'existing-owner' },
+    connectOrigin: origin,
+    clientId: 'dovo-connect',
+    clientSecret,
   })
+  authApp = createAuthServer(identity, { origin: authOrigin, serviceKey })
+  const provider = remoteIdentity({
+    issuer: authOrigin + '/api/auth',
+    origin,
+    clientId: 'dovo-connect',
+    clientSecret,
+    serviceKey,
+  })
+  cleanup.push(
+    () =>
+      new Promise<void>((resolve) => {
+        authIngress.close(() => resolve())
+        authIngress.closeAllConnections()
+      }),
+  )
   cleanup.push(() => {
     identity.close()
     store.db.close()
@@ -39,17 +69,21 @@ async function fixture() {
       }),
   )
   app = createConnectServer({
-    ...identity,
+    ...provider,
     store,
     origin,
-    identityHandler: identity.handle,
-    deleteIdentity: identity.deleteIdentity,
   })
   const cookies = new Map<string, string>()
   const request = async (path: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers)
+    headers.set('Accept', 'text/html')
+    headers.set('sec-fetch-mode', 'navigate')
     headers.set('Cookie', [...cookies].map(([key, value]) => `${key}=${value}`).join('; '))
-    const response = await fetch(origin + path, { ...init, redirect: 'manual', headers })
+    const response = await fetch(path.startsWith('http:') ? path : origin + path, {
+      ...init,
+      redirect: 'manual',
+      headers,
+    })
     for (const header of response.headers.getSetCookie()) {
       const [key, ...value] = header.split(';')[0]!.split('=')
       cookies.set(key!, value.join('='))
@@ -78,11 +112,12 @@ async function fixture() {
         })
       if (url === 'https://api.github.com/user/emails')
         return Response.json([{ email: `${subject}@example.test`, verified: true, primary: true }])
-      if (!url.startsWith(origin + '/')) throw new Error('Unexpected external request')
+      if (!url.startsWith(origin + '/') && !url.startsWith(authOrigin + '/'))
+        throw new Error('Unexpected external request')
       return realFetch(input, init)
     }),
   )
-  async function login(artifacts = false) {
+  async function login(artifacts = false, beforeComplete?: () => void) {
     const { login, token } = store.createLogin(artifacts ? 'https://artifacts.test' : undefined)
     expect((await request(`/auth/start?id=${login.id}`)).status).toBe(200)
     const authorize = await request('/auth/authorize', {
@@ -90,22 +125,49 @@ async function fixture() {
       headers: { Origin: origin },
     })
     expect(authorize.status).toBe(303)
-    const url = new URL(authorize.headers.get('location')!)
-    expect(url.origin).toBe('https://github.com')
-    expect(store.login(login.id)?.identityCookies).toBeUndefined()
-    const callback = await request(
-      `/api/auth/callback/github?state=${url.searchParams.get('state')}&code=test-code`,
+    const oidc = new URL(authorize.headers.get('location')!)
+    expect(oidc.origin).toBe(authOrigin)
+    const authorization = await request(oidc.href)
+    expect([200, 302]).toContain(authorization.status)
+    const signIn = new URL(
+      authorization.headers.get('location') ?? (await authorization.json()).url,
+      authOrigin,
     )
-    expect(callback.status).toBe(302)
-    const completion = new URL(callback.headers.get('location')!, origin)
+    let returned = signIn
+    if (signIn.origin === authOrigin) {
+      expect((await request(signIn.href)).status).toBe(200)
+      const github = await request(signIn.href, { method: 'POST', headers: { Origin: authOrigin } })
+      expect(github.status).toBe(303)
+      const url = new URL(github.headers.get('location')!)
+      expect(url.origin).toBe('https://github.com')
+      const callback = await request(
+        `${authOrigin}/api/auth/callback/github?state=${url.searchParams.get('state')}&code=test-code`,
+      )
+      expect(callback.status).toBe(302)
+      returned = new URL(callback.headers.get('location')!, authOrigin)
+    }
+    // Better Auth resumes the saved OIDC authorization after GitHub creates its session.
+    for (let step = 0; returned.origin === authOrigin && step < 5; step++) {
+      const response = await request(returned.href)
+      expect([200, 302, 303]).toContain(response.status)
+      returned = new URL(
+        response.headers.get('location') ?? (await response.json()).url,
+        authOrigin,
+      )
+    }
+    expect(returned.origin).toBe(origin)
+    const completion = returned
     expect(completion.pathname).toBe('/auth/callback')
+    beforeComplete?.()
     const result = await request(completion.pathname + completion.search)
-    expect(result.status).toBe(200)
-    return { token, completion }
+    if (!beforeComplete) expect(result.status).toBe(200)
+    return { token, completion, result }
   }
   return {
     store,
     identity,
+    authOrigin,
+    provider,
     request,
     login,
     cookies,
@@ -119,6 +181,7 @@ it('completes GitHub sign-in with browser-bound consent and retains explicitly m
   const f = await fixture()
   const { token, completion } = await f.login()
   expect(f.store.directory(token)?.user.id).toBe('existing-owner')
+  expect(f.store.directory(token)?.user.name).toBe('Verified User')
   expect((await f.request(completion.pathname + completion.search)).status).toBe(400)
   expect((await f.request('/v1/servers')).status).toBe(401) // Browser session is not a runtime/account capability.
   f.store.revoke(token)
@@ -163,7 +226,7 @@ it('rejects cross-origin consent and completion without a hosted browser session
   const pending = f.store.login(login.id)!
   expect(
     (await f.request(`/auth/callback?state=${pending.state}&code=${pending.verifier}`)).status,
-  ).toBe(401)
+  ).toBe(502)
 })
 
 it('does not map another GitHub subject to the existing owner', async () => {
@@ -174,17 +237,14 @@ it('does not map another GitHub subject to the existing owner', async () => {
   expect(f.store.directory(token)?.user.id).not.toBe('existing-owner')
 })
 
-it('rejects a revoked hosted browser session even if its signed cookie remains', async () => {
+it('rejects unauthenticated identity deletion on the separate service', async () => {
   const f = await fixture()
   await f.login()
-  const pending = f.store.createLogin().login
-  pending.verifier = 'pending-code'
-  const headers = { cookie: [...f.cookies].map(([key, value]) => `${key}=${value}`).join('; ') }
-  await expect(f.identity.exchange(pending, 'wrong-code', headers)).rejects.toThrow('did not match')
-  f.identity.db.prepare('DELETE FROM session').run()
-  await expect(f.identity.exchange(pending, pending.verifier, headers)).rejects.toThrow(
-    'Sign in again',
-  )
+  expect(
+    (await f.request(f.authOrigin + '/internal/identities/existing-owner', { method: 'DELETE' }))
+      .status,
+  ).toBe(401)
+  expect(f.identity.db.prepare('SELECT count(*) AS n FROM user').get()?.n).toBe(1)
 })
 
 it('validates explicit ownership mappings without email or display-name matching', () => {
@@ -208,22 +268,35 @@ it('validates explicit ownership mappings without email or display-name matching
     expect(() => ownerMappings(value)).toThrow('mapping')
 })
 
-it('sets secure HttpOnly OAuth cookies on the hosted production origin', async () => {
-  const identity = await hostedAuth({
-    path: ':memory:',
-    origin: 'https://connect.example.test',
-    secret: 'test-only-thirty-two-character-or-longer-secret',
-    github: { clientId: 'test-client', clientSecret: 'test-secret' },
+it('refuses a pending authorization code after the auth browser session is revoked', async () => {
+  const f = await fixture()
+  const { token, result } = await f.login(false, () => {
+    f.identity.db.prepare('DELETE FROM session').run()
   })
-  cleanup.push(() => identity.close())
-  const store = new AccountStore(':memory:')
-  cleanup.push(() => store.db.close())
-  const { login } = store.createLogin()
-  await identity.authorize(login)
-  expect(login.identityCookies?.length).toBeGreaterThan(0)
-  for (const cookie of login.identityCookies ?? []) {
-    expect(cookie).toContain('HttpOnly')
-    expect(cookie).toContain('Secure')
-    expect(cookie).toMatch(/SameSite=Lax/i)
-  }
+  expect(result.status).toBe(502)
+  expect(f.store.directory(token)).toBeUndefined()
+})
+
+it('does not host Better Auth endpoints on Connect', async () => {
+  const f = await fixture()
+  expect((await f.request('/api/auth/get-session')).status).toBe(401)
+  expect((await f.request(f.authOrigin + '/sign-in?client_id=attacker')).status).toBe(400)
+  expect(
+    (await f.request(f.authOrigin + '/resume?redirect_uri=https://attacker.test')).status,
+  ).toBe(400)
+})
+
+it('checks the auth-page origin and rejects tampered signed login destinations', async () => {
+  const f = await fixture()
+  const { login } = f.store.createLogin()
+  const oidc = await f.provider.authorize(login)
+  const response = await f.request(oidc)
+  const destination = response.headers.get('location') ?? (await response.json()).url
+  const signIn = new URL(destination, f.authOrigin)
+  expect(
+    (await f.request(signIn.href, { method: 'POST', headers: { Origin: 'https://attacker.test' } }))
+      .status,
+  ).toBe(403)
+  signIn.searchParams.set('redirect_uri', 'https://attacker.test/callback')
+  expect((await f.request(signIn.href)).status).toBe(400)
 })

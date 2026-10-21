@@ -31,7 +31,6 @@ export function createConnectServer(
     peerRelayAdmission?: PeerRelayAdmission
     organizations?: readonly Organization[]
     artifacts?: ArtifactService
-    identityHandler?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>
   } & IdentityProvider,
 ) {
   const origin = new URL(options.origin).origin
@@ -98,7 +97,6 @@ export function createConnectServer(
                 ? `push:${hash(token)}`
                 : `ip:${address(req)}`,
       )
-    if (await options.identityHandler?.(req, res, url)) return
     if (await authenticate(req, res, url)) return
     if (await artifacts(req, res, url)) return
     if (await push(req, res, url)) return

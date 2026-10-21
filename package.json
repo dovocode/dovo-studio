@@ -34,7 +34,7 @@
     "mobile:package": "node scripts/package-mobile.mjs",
     "mobile:update": "node scripts/update-mobile.mjs",
     "verify": "pnpm typecheck && pnpm test && pnpm check && pnpm build",
-    "test:connect-auth:browser": "pnpm --filter @dovo/connect-server... -r build && node scripts/check-connect-auth-browser.mjs",
+    "test:connect-auth:browser": "pnpm --filter @dovo/auth-server... --filter @dovo/connect-server... -r build && node scripts/check-connect-auth-browser.mjs",
     "test:mcp-apps:browser": "node scripts/build-mcp-apps.mjs && node scripts/check-mcp-apps-browser.mjs",
     "test:artifacts:browser": "pnpm --filter @dovo/web build && node scripts/check-artifacts-browser.mjs && node scripts/check-inline-previews-browser.mjs && node scripts/check-floating-preview-retention-browser.mjs",
     "test:artifact-pdf:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-artifact-pdf-browser.mjs",

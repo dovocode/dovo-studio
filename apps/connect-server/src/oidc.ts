@@ -22,6 +22,8 @@ export function oidcProvider(options: {
   clientId: string
   origin: string
   clientSecret?: string
+  /** Only configured for the operator-trusted Dovo identity service. */
+  accountIdClaim?: string
   endpointOrigins?: readonly string[]
   requiredClaim?: { name: string; values: readonly string[] }
   organization?: { id: string; name: string; policy: string; sessionHours: number }
@@ -151,10 +153,13 @@ export function oidcProvider(options: {
         if (!options.requiredClaim.values.some((value) => values.includes(value)))
           throw new Error('Organization membership is required')
       }
+      const accountId = options.accountIdClaim ? payload[options.accountIdClaim] : payload.sub
+      if (typeof accountId !== 'string' || !accountId || accountId.length > 200)
+        throw new Error('Identity provider did not return a valid account ID')
       return {
         id: options.organization
           ? `oidc:${options.organization.id}:${hash(issuer + '\0' + payload.sub)}`
-          : payload.sub,
+          : accountId,
         name: typeof payload.name === 'string' ? payload.name.slice(0, 200) : payload.sub,
         ...(options.organization
           ? {

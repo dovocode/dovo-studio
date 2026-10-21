@@ -231,14 +231,20 @@ importers:
         specifier: 0.28.2
         version: 0.28.2
 
+  apps/auth-server:
+    dependencies:
+      '@better-auth/oauth-provider':
+        specifier: 1.7.12
+        version: 1.7.12(@better-auth/core@1.7.12(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.4(zod@4.6.7))(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5))(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(better-auth@1.7.12(@opentelemetry/api@1.9.1)(@tanstack/react-start@1.169.2(@voidzero-dev/vite-plus-core@1.2.0(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1))(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1))(next@16.4.1(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.0.4))(better-call@1.4.4(zod@4.6.7))
+      better-auth:
+        specifier: 1.7.12
+        version: 1.7.12(@opentelemetry/api@1.9.1)(@tanstack/react-start@1.169.2(@voidzero-dev/vite-plus-core@1.2.0(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1))(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1))(next@16.4.1(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.0.4)
+
   apps/connect-server:
     dependencies:
       '@dovo/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
-      better-auth:
-        specifier: 1.7.12
-        version: 1.7.12(@opentelemetry/api@1.9.1)(@tanstack/react-start@1.169.2(@voidzero-dev/vite-plus-core@1.2.0(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1))(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1))(next@16.4.1(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.0.4)
       effect:
         specifier: 4.0.5
         version: 4.0.5
@@ -1773,6 +1779,15 @@ packages:
     peerDependenciesMeta:
       mongodb:
         optional: true
+
+  '@better-auth/oauth-provider@1.7.12':
+    resolution: {integrity: sha512-XzjlApbWtuuoEK63CUNHbgs8zpr3AjlQeGbT1vWEPqvOvI2z4lOaIvIsogomfqFAgj/jgB0zMGYjt0MRyW0T7w==}
+    peerDependencies:
+      '@better-auth/core': ^1.7.12
+      '@better-auth/utils': ^0.4.2 || ^0.5.0
+      '@better-fetch/fetch': 1.3.2
+      better-auth: ^1.7.12
+      better-call: 1.4.4
 
   '@better-auth/prisma-adapter@1.7.12':
     resolution: {integrity: sha512-FZRX6ORbwhDmeYE1Tl0IPtUn8v3BlVFgbJxDnm/DCNHxuFRf+0t4HfddUgYeYehHFR8aSDsdYX44fEFWM9877w==}
@@ -10321,6 +10336,16 @@ snapshots:
       '@better-auth/core': 1.7.12(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.4(zod@4.6.7))(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
       '@better-auth/utils': 0.5.0
 
+  '@better-auth/oauth-provider@1.7.12(@better-auth/core@1.7.12(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.4(zod@4.6.7))(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5))(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(better-auth@1.7.12(@opentelemetry/api@1.9.1)(@tanstack/react-start@1.169.2(@voidzero-dev/vite-plus-core@1.2.0(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1))(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1))(next@16.4.1(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.0.4))(better-call@1.4.4(zod@4.6.7))':
+    dependencies:
+      '@better-auth/core': 1.7.12(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.4(zod@4.6.7))(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
+      '@better-auth/utils': 0.5.0
+      '@better-fetch/fetch': 1.3.2
+      better-auth: 1.7.12(@opentelemetry/api@1.9.1)(@tanstack/react-start@1.169.2(@voidzero-dev/vite-plus-core@1.2.0(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1))(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1))(next@16.4.1(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.0.4)
+      better-call: 1.4.4(zod@4.6.7)
+      jose: 6.2.12
+      zod: 4.6.7
+
   '@better-auth/prisma-adapter@1.7.12(@better-auth/core@1.7.12(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.4(zod@4.6.7))(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5))(@better-auth/utils@0.5.0)':
     dependencies:
       '@better-auth/core': 1.7.12(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.4(zod@4.6.7))(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
@@ -13870,7 +13895,7 @@ snapshots:
 
   baseline-browser-mapping@2.11.28: {}
 
-  better-auth@1.7.12(@opentelemetry/api@1.9.1)(@tanstack/react-start@1.169.2(@voidzero-dev/vite-plus-core@1.2.0(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1))(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1))(next@16.4.1(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.0.4):
+  better-auth@1.7.12(@opentelemetry/api@1.9.1)(@tanstack/react-start@1.169.2(@voidzero-dev/vite-plus-core@1.2.0(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1))(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@8.1.1))(next@16.4.1(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.0.4):
     dependencies:
       '@better-auth/core': 1.7.12(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.4(zod@4.6.7))(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
       '@better-auth/drizzle-adapter': 1.7.12(@better-auth/core@1.7.12(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.4(zod@4.6.7))(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5))(@better-auth/utils@0.5.0)

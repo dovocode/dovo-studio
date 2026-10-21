@@ -61,10 +61,6 @@ export function browserAuth(
       if (id && !organization) throw new RequestError(400, 'Unknown organization')
       login.organization = organization?.id
       const location = await (organization?.provider ?? options).authorize(login)
-      if (login.identityCookies?.length) {
-        res.setHeader('Set-Cookie', login.identityCookies)
-        login.identityCookies = undefined
-      }
       store.saveLogin(login)
       res.writeHead(303, { Location: location })
       res.end()

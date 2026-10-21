@@ -88,7 +88,8 @@ the deleted Dovo subject prevents stale identity callbacks from recreating the a
 pairings and workspace files are independent. Private backups expire according to operator
 retention.
 
-Better Auth uses backend-only `DOVO_AUTH_SECRET`, `DOVO_AUTH_GITHUB_CLIENT_ID` and
-`DOVO_AUTH_GITHUB_CLIENT_SECRET`; no deletion-service credential is needed. Keep these values
-outside repositories and clients. See [Optional accounts](optional-accounts.md) for setup, explicit
-ownership migration and required sign-in/deletion checks before deployment.
+The separate Auth service uses backend-only `DOVO_AUTH_SECRET`, `DOVO_AUTH_GITHUB_CLIENT_ID` and
+`DOVO_AUTH_GITHUB_CLIENT_SECRET`; Connect uses a separate server-only service key for identity
+deletion; it never receives GitHub credentials. Keep these values outside repositories and clients.
+See [Optional accounts](optional-accounts.md) for setup, explicit ownership migration and required
+sign-in/deletion checks before deployment.
