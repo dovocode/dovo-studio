@@ -5,10 +5,9 @@
 second component implementation.
 
 ```sh
-pnpm --filter @dovo/design build
-pnpm --filter @dovo/design-system dev
+pnpm design:dev
 # Static, deployable catalog:
-pnpm --filter @dovo/design-system build
+pnpm design:build
 ```
 
 The public catalog is hosted separately at `https://ui.dovo.studio`. Its deployment uses
