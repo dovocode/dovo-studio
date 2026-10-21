@@ -108,7 +108,7 @@ async function bundle(contents) {
               return { path: 'controls', namespace: 'mock' }
             if (/runtime\/state\/application-state$/.test(path))
               return { path: 'state', namespace: 'mock' }
-            if (/runtime\/connection\/provider$/.test(path))
+            if (/runtime\/connection\/(?:provider|context)$/.test(path))
               return { path: 'runtime', namespace: 'mock' }
             if (/shell\/navigation$/.test(path)) return { path: 'navigation', namespace: 'mock' }
             if (/runtime\/preferences\/app-preferences$/.test(path))
